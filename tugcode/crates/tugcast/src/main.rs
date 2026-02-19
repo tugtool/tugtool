@@ -1,5 +1,6 @@
 mod auth;
 mod cli;
+mod dev;
 mod feeds;
 mod router;
 mod server;
@@ -119,7 +120,26 @@ async fn main() {
     let (stats_build_tx, stats_build_rx) =
         watch::channel(Frame::new(FeedId::StatsBuildStatus, vec![]));
 
-    // Create feed router
+    // Create shutdown channel for control commands
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
+    // Start dev file watcher if dev mode is active (before FeedRouter::new)
+    let (reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
+        match dev::dev_file_watcher(dev_path) {
+            Ok((tx, watcher)) => {
+                info!(path = ?dev_path, "dev file watcher started");
+                (Some(tx), Some(watcher))
+            }
+            Err(e) => {
+                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Create feed router with reload_tx wired
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
         input_tx,
@@ -136,6 +156,8 @@ async fn main() {
             stats_build_rx,
             conversation_watch_rx,
         ],
+        shutdown_tx,
+        reload_tx.clone(),
     );
 
     // Start terminal feed in background task
@@ -188,16 +210,26 @@ async fn main() {
             .await;
     });
 
-    // Start server (blocks until shutdown)
-    if let Err(e) = server::run_server(cli.port, feed_router, auth).await {
-        eprintln!(
-            "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
-            cli.port, e
-        );
-        std::process::exit(1);
-    }
+    // Start server and select! on shutdown channel
+    let server_future = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx);
 
-    // Signal shutdown
+    let exit_code = tokio::select! {
+        result = server_future => {
+            if let Err(e) = result {
+                eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+                1
+            } else {
+                0
+            }
+        }
+        Some(code) = shutdown_rx.recv() => {
+            info!("shutdown requested with exit code {}", code);
+            code as i32
+        }
+    };
+
+    // Signal shutdown for background tasks
     cancel.cancel();
     info!("tugcast shut down");
+    std::process::exit(exit_code);
 }

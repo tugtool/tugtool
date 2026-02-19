@@ -10,6 +10,109 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-19T21:09:03Z
+---
+
+## audit-fix: Audit fix: removed redundant serde_json import in router.rs, changed map_or to is_some_and in dev.rs, added clippy::too_many_arguments allow on FeedRouter::new, ran cargo fmt. All clippy/fmt/test checks pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-19T21:03:15Z
+bead: tugtool-bwn.7
+---
+
+## #step-6: Created tugcode/scripts/build-app.sh (189 lines) with full build pipeline: cargo build --release, bun build, xcodebuild, app bundle assembly, code signing, notarization, DMG creation. Supports --nightly (dev.tugtool.nightly bundle ID), --skip-sign, --skip-notarize flags. Created NightlyAppIcon.appiconset for nightly icon variant. Created .github/workflows/nightly.yml for daily CI builds on macOS-14 with certificate import and release upload.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-19T20:52:07Z
+bead: tugtool-bwn.6
+---
+
+## #step-5: Created complete tugapp/ Mac app shell: Tug.xcodeproj with shared scheme, AppDelegate.swift (app lifecycle, Developer menu with dev mode toggle, Reload/Restart/Reset items), MainWindow.swift (WKWebView for 127.0.0.1:7890), ProcessManager.swift (tugcast process supervision with exit code contract 42=restart 43=reset), Info.plist with ATS exceptions for localhost/127.0.0.1, Tug.entitlements, Assets.xcassets. xcodebuild build succeeds.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-19T20:39:41Z
+bead: tugtool-bwn.5
+---
+
+## #step-4: Added CONTROL (0xc0) feed ID to tugdeck protocol.ts, controlFrame factory, sendControlFrame on TugConnection and DeckManager, three Dock menu items (Restart Server, Reset Everything, Reload Frontend). Wired reload_tx broadcast sender from dev_file_watcher into FeedRouter, replaced reload_frontend stub with real SSE dispatch. Created protocol.test.ts with 3 tests. All 475 TypeScript and 99 Rust tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-19T20:30:44Z
+bead: tugtool-bwn.4
+---
+
+## #step-3: Added FeedId::Control = 0xC0 to tugcast-core protocol with from_byte/as_byte support. Added Control frame handling in router.rs with JSON payload dispatch: restart sends exit 42, reset sends exit 43, reload_frontend is stub. Created shutdown channel pattern in main.rs with tokio::select! for orderly exit. 5 new protocol tests, all 46 tugcast-core and 99 tugcast tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-19T20:20:48Z
+bead: tugtool-bwn.3
+---
+
+## #step-2: Created tugcast dev.rs module with SSE endpoint at /dev/reload, CSP-compliant /dev/reload.js script, index.html script injection before </body>, notify-based file watcher with .html/.css/.js extension filter and 300ms debounce, ReloadSender/DevPath Extension types. Updated build_app and run_server for dev routes. All 99 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-19T20:11:11Z
+bead: tugtool-bwn.2
+---
+
+## #step-1: Added --dev and --source-tree CLI flags to tugtool, source tree auto-detection, bun dev spawning with node_modules auto-install, supervisor loop handling exit codes 42 (restart) and 43 (reset), dual child process shutdown, Table T01 error handling. Created tugdeck/scripts/watch-assets.ts and dev.ts for dev asset assembly. All 15 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-19T20:01:26Z
+bead: tugtool-bwn.1
+---
+
+## #step-0: Added tower-http workspace dependency, --dev flag to tugcast CLI, conditional ServeDir/serve_asset fallback in build_app and run_server, updated integration test helper, and added 4 new tests (2 CLI, 2 integration). All 95 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-19T18:05:06Z
 ---
 

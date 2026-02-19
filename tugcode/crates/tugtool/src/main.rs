@@ -31,6 +31,14 @@ pub struct Cli {
     /// Working directory for the tmux session
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
+
+    /// Enable dev mode: auto-detect source tree, spawn bun dev, serve assets from disk
+    #[arg(long)]
+    pub dev: bool,
+
+    /// Path to mono-repo root (overrides auto-detection when --dev is set)
+    #[arg(long)]
+    pub source_tree: Option<PathBuf>,
 }
 
 impl Cli {
@@ -51,22 +59,100 @@ fn resolve_tugcast_path() -> PathBuf {
     PathBuf::from("tugcast")
 }
 
+/// Detect the mono-repo root by walking up from the current directory looking for tugdeck/
+fn detect_source_tree() -> Result<PathBuf, String> {
+    detect_source_tree_from(
+        &std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?,
+    )
+}
+
+/// Detect the mono-repo root by walking up from a starting directory looking for tugdeck/
+fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
+    let mut dir = start.to_path_buf();
+    loop {
+        if dir.join("tugdeck").is_dir() {
+            return Ok(dir);
+        }
+        if !dir.pop() {
+            return Err(
+                "could not find tugdeck/ directory in any parent -- use --source-tree to specify the mono-repo root"
+                    .to_string(),
+            );
+        }
+    }
+}
+
+/// Check if a command is available in PATH
+async fn check_command_available(command: &str) -> bool {
+    Command::new(command)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .is_ok()
+}
+
+/// Spawn bun dev as a child process
+async fn spawn_bun_dev(source_tree: &std::path::Path) -> Result<tokio::process::Child, String> {
+    // Check if bun is installed
+    if !check_command_available("bun").await {
+        return Err(
+            "bun is required for dev mode but was not found in PATH. Install it from https://bun.sh"
+                .to_string(),
+        );
+    }
+
+    let tugdeck_dir = source_tree.join("tugdeck");
+
+    // Check if node_modules exists, run bun install if not
+    if !tugdeck_dir.join("node_modules").exists() {
+        info!("node_modules/ not found, running bun install...");
+        let install_status = Command::new("bun")
+            .arg("install")
+            .current_dir(&tugdeck_dir)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .await
+            .map_err(|e| format!("failed to run bun install: {}", e))?;
+
+        if !install_status.success() {
+            return Err("bun install failed".to_string());
+        }
+    }
+
+    // Spawn bun run dev
+    Command::new("bun")
+        .arg("run")
+        .arg("dev")
+        .current_dir(&tugdeck_dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("failed to spawn bun dev: {}", e))
+}
+
 /// Spawn tugcast as a child process with stdout piped and stderr inherited
 fn spawn_tugcast(
     session: &str,
     port: u16,
     dir: &std::path::Path,
+    dev_path: Option<&std::path::Path>,
 ) -> std::io::Result<tokio::process::Child> {
-    Command::new(resolve_tugcast_path())
-        .arg("--session")
+    let mut cmd = Command::new(resolve_tugcast_path());
+    cmd.arg("--session")
         .arg(session)
         .arg("--port")
         .arg(port.to_string())
         .arg("--dir")
-        .arg(dir.to_string_lossy().as_ref())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
+        .arg(dir.to_string_lossy().as_ref());
+
+    if let Some(path) = dev_path {
+        cmd.arg("--dev").arg(path.to_string_lossy().as_ref());
+    }
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()
 }
 
 /// Extract auth URL from tugcast's stdout by reading lines and checking against regex
@@ -150,29 +236,115 @@ async fn shutdown_child(child: &mut tokio::process::Child) -> i32 {
     1
 }
 
-/// Wait for shutdown signal or child exit
-async fn wait_for_shutdown(child: &mut tokio::process::Child) -> i32 {
+/// Shutdown multiple child processes gracefully
+async fn shutdown_children(mut children: Vec<&mut tokio::process::Child>) {
+    for child in children.iter_mut() {
+        let _ = shutdown_child(child).await;
+    }
+}
+
+/// Supervisor loop that respawns tugcast on exit codes 42/43
+async fn supervisor_loop(
+    cli: &Cli,
+    bun_child: &mut Option<tokio::process::Child>,
+    dev_path: Option<PathBuf>,
+) -> i32 {
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+    let mut first_spawn = true;
 
-    tokio::select! {
-        status = child.wait() => {
-            // Child exited on its own
-            match status {
-                Ok(s) => s.code().unwrap_or(1),
+    loop {
+        // Spawn tugcast
+        let mut tugcast = match spawn_tugcast(&cli.session, cli.port, &cli.dir, dev_path.as_deref())
+        {
+            Ok(child) => child,
+            Err(e) => {
+                eprintln!("tugtool: failed to start tugcast: {}", e);
+                return 1;
+            }
+        };
+
+        // On first spawn, extract auth URL and open browser
+        if first_spawn {
+            let stdout = tugcast.stdout.take().expect("stdout was piped");
+
+            match extract_auth_url(stdout).await {
+                Ok((url, reader)) => {
+                    info!("auth URL: {}", url);
+                    open_browser(&url);
+
+                    // Forward remaining stdout in background
+                    tokio::spawn(async move {
+                        let mut reader = reader;
+                        let mut line = String::new();
+                        loop {
+                            line.clear();
+                            match reader.read_line(&mut line).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) => print!("{}", line),
+                            }
+                        }
+                    });
+                }
                 Err(e) => {
-                    eprintln!("tugtool: error waiting for tugcast: {}", e);
-                    1
+                    eprintln!("tugtool: {}", e);
+                    let status = tugcast.wait().await.ok();
+                    let code = status.and_then(|s| s.code()).unwrap_or(1);
+                    return code;
                 }
             }
+            first_spawn = false;
         }
-        _ = sigint.recv() => {
-            info!("received SIGINT, shutting down tugcast");
-            shutdown_child(child).await
-        }
-        _ = sigterm.recv() => {
-            info!("received SIGTERM, shutting down tugcast");
-            shutdown_child(child).await
+
+        // Wait for tugcast exit or signal
+        let exit_code = tokio::select! {
+            status = tugcast.wait() => {
+                match status {
+                    Ok(s) => s.code().unwrap_or(1),
+                    Err(e) => {
+                        eprintln!("tugtool: error waiting for tugcast: {}", e);
+                        1
+                    }
+                }
+            }
+            _ = sigint.recv() => {
+                info!("received SIGINT, shutting down");
+                let mut children = vec![&mut tugcast];
+                if let Some(bun) = bun_child {
+                    children.push(bun);
+                }
+                shutdown_children(children).await;
+                return 130; // Standard SIGINT exit code
+            }
+            _ = sigterm.recv() => {
+                info!("received SIGTERM, shutting down");
+                let mut children = vec![&mut tugcast];
+                if let Some(bun) = bun_child {
+                    children.push(bun);
+                }
+                shutdown_children(children).await;
+                return 143; // Standard SIGTERM exit code
+            }
+        };
+
+        // Handle exit codes
+        match exit_code {
+            42 => {
+                info!("tugcast requested restart (exit 42), respawning...");
+                continue;
+            }
+            43 => {
+                info!("tugcast requested reset (exit 43), clearing caches and respawning...");
+                // TODO: implement cache clearing
+                continue;
+            }
+            _ => {
+                info!("tugcast exited with code {}", exit_code);
+                if let Some(bun) = bun_child {
+                    shutdown_children(vec![bun]).await;
+                }
+                return exit_code;
+            }
         }
     }
 }
@@ -191,52 +363,66 @@ async fn main() {
         session = %cli.session,
         port = cli.port,
         dir = ?cli.dir,
+        dev = cli.dev,
         "tugtool starting"
     );
 
-    // Spawn tugcast child process
-    let mut child = match spawn_tugcast(&cli.session, cli.port, &cli.dir) {
-        Ok(child) => child,
-        Err(e) => {
-            eprintln!("tugtool: failed to start tugcast: {}", e);
+    let mut bun_child: Option<tokio::process::Child> = None;
+    let dev_path: Option<PathBuf>;
+
+    if cli.dev {
+        // Check tmux is installed
+        if !check_command_available("tmux").await {
+            eprintln!(
+                "tugtool: error: tmux is required but was not found in PATH. Install it with: brew install tmux"
+            );
             std::process::exit(1);
         }
-    };
 
-    // Take stdout for URL extraction
-    let stdout = child.stdout.take().expect("stdout was piped");
-
-    // Extract auth URL from tugcast output
-    match extract_auth_url(stdout).await {
-        Ok((url, reader)) => {
-            info!("auth URL: {}", url);
-
-            // Open browser
-            open_browser(&url);
-
-            // Forward remaining stdout in background
-            tokio::spawn(async move {
-                let mut reader = reader;
-                let mut line = String::new();
-                loop {
-                    line.clear();
-                    match reader.read_line(&mut line).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(_) => print!("{}", line),
-                    }
+        // Resolve source tree
+        let source_tree = if let Some(ref path) = cli.source_tree {
+            path.clone()
+        } else {
+            match detect_source_tree() {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("tugtool: error: {}", e);
+                    std::process::exit(1);
                 }
-            });
+            }
+        };
+
+        // Validate source tree
+        if !source_tree.join("tugdeck").is_dir() {
+            eprintln!(
+                "tugtool: error: No tugdeck/ directory found in {}. Is this the right source tree?",
+                source_tree.display()
+            );
+            std::process::exit(1);
         }
-        Err(e) => {
-            eprintln!("tugtool: {}", e);
-            let status = child.wait().await.ok();
-            let code = status.and_then(|s| s.code()).unwrap_or(1);
-            std::process::exit(code);
+
+        info!("source tree: {}", source_tree.display());
+
+        // Set dev path
+        dev_path = Some(source_tree.join("tugdeck/dist"));
+
+        // Spawn bun dev
+        match spawn_bun_dev(&source_tree).await {
+            Ok(child) => {
+                info!("bun dev started");
+                bun_child = Some(child);
+            }
+            Err(e) => {
+                eprintln!("tugtool: error: {}", e);
+                std::process::exit(1);
+            }
         }
+    } else {
+        dev_path = None;
     }
 
-    // Wait for shutdown signal or child exit
-    let code = wait_for_shutdown(&mut child).await;
+    // Run supervisor loop
+    let code = supervisor_loop(&cli, &mut bun_child, dev_path).await;
     std::process::exit(code);
 }
 
@@ -378,5 +564,52 @@ mod tests {
         // Verify open_browser function exists and compiles on this platform.
         // We do NOT actually call it to avoid spawning a real browser in tests.
         let _fn_ptr: fn(&str) = open_browser;
+    }
+
+    #[test]
+    fn test_cli_dev_flag() {
+        let cli = Cli::try_parse_from(["tugtool"]).unwrap();
+        assert!(!cli.dev);
+
+        let cli = Cli::try_parse_from(["tugtool", "--dev"]).unwrap();
+        assert!(cli.dev);
+    }
+
+    #[test]
+    fn test_cli_source_tree_flag() {
+        let cli = Cli::try_parse_from(["tugtool"]).unwrap();
+        assert_eq!(cli.source_tree, None);
+
+        let cli = Cli::try_parse_from(["tugtool", "--source-tree", "/path/to/repo"]).unwrap();
+        assert_eq!(cli.source_tree, Some(PathBuf::from("/path/to/repo")));
+    }
+
+    #[test]
+    fn test_detect_source_tree_validation() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a temp directory with a tugdeck/ subdirectory
+        let temp_dir = TempDir::new().unwrap();
+        let tugdeck_dir = temp_dir.path().join("tugdeck");
+        fs::create_dir(&tugdeck_dir).unwrap();
+
+        // Should find the temp_dir as the source tree
+        let result = detect_source_tree_from(temp_dir.path());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), temp_dir.path());
+
+        // Create a subdirectory and check it finds the parent
+        let subdir = temp_dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        let result = detect_source_tree_from(&subdir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), temp_dir.path());
+
+        // Test failure case: directory without tugdeck/
+        let temp_dir2 = TempDir::new().unwrap();
+        let result = detect_source_tree_from(temp_dir2.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("could not find tugdeck/"));
     }
 }

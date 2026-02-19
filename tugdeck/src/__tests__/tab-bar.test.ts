@@ -3,7 +3,7 @@
  *
  * Tests cover:
  * - TabBar unit tests: rendering, click-to-switch, close, reorder
- * - PanelManager integration: two-tab panel via applyLayout, D09 identity
+ * - DeckManager integration: two-tab panel via applyLayout, D09 identity
  * - Closing a tab calls card.destroy() and removes from feed dispatch
  * - Drag-reorder updates tab order in panel data model
  */
@@ -91,7 +91,7 @@ function makeMockCard(feedIds: FeedIdValue[]): TugCard & {
   };
 }
 
-// ---- TabBar unit tests (pure, no PanelManager) ----
+// ---- TabBar unit tests (pure, no DeckManager) ----
 
 describe("TabBar (unit)", () => {
   let activateCalls: number[] = [];
@@ -131,7 +131,7 @@ describe("TabBar (unit)", () => {
     bar.destroy();
   });
 
-  test("active tab has panel-tab-active class; inactive tabs do not", () => {
+  test("active tab has card-tab-active class; inactive tabs do not", () => {
     const node = makeTestNode(3, 1);
     const bar = new TabBar(node, callbacks);
     const tabs = bar.getElement().querySelectorAll(".card-tab");
@@ -202,9 +202,9 @@ describe("TabBar (unit)", () => {
   });
 });
 
-// ---- PanelManager integration tests for tab groups ----
+// ---- DeckManager integration tests for tab groups ----
 
-describe("PanelManager tab groups (integration)", () => {
+describe("DeckManager tab groups (integration)", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -320,7 +320,7 @@ describe("PanelManager tab groups (integration)", () => {
     manager.destroy();
   });
 
-  test("drag-reorder updates tab order in PanelState data model", () => {
+  test("drag-reorder updates tab order in CardState data model", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const { canvasState, panelId, tabAId, tabBId } = makeTwoTabPanel();
     manager.applyLayout(canvasState);

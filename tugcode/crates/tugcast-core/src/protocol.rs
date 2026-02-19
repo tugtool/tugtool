@@ -38,6 +38,8 @@ pub enum FeedId {
     ConversationOutput = 0x40,
     /// Conversation input stream (tugdeck -> tugcast)
     ConversationInput = 0x41,
+    /// Control commands (tugdeck -> tugcast)
+    Control = 0xC0,
     /// Heartbeat/keepalive frames (bidirectional)
     Heartbeat = 0xFF,
 }
@@ -59,6 +61,7 @@ impl FeedId {
             0x33 => Some(FeedId::StatsBuildStatus),
             0x40 => Some(FeedId::ConversationOutput),
             0x41 => Some(FeedId::ConversationInput),
+            0xC0 => Some(FeedId::Control),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
         }
@@ -192,6 +195,7 @@ mod tests {
         assert_eq!(FeedId::from_byte(0x33), Some(FeedId::StatsBuildStatus));
         assert_eq!(FeedId::from_byte(0x40), Some(FeedId::ConversationOutput));
         assert_eq!(FeedId::from_byte(0x41), Some(FeedId::ConversationInput));
+        assert_eq!(FeedId::from_byte(0xC0), Some(FeedId::Control));
         assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
         assert_eq!(FeedId::from_byte(0x03), None);
         assert_eq!(FeedId::from_byte(0x34), None);
@@ -210,6 +214,7 @@ mod tests {
         assert_eq!(FeedId::StatsBuildStatus.as_byte(), 0x33);
         assert_eq!(FeedId::ConversationOutput.as_byte(), 0x40);
         assert_eq!(FeedId::ConversationInput.as_byte(), 0x41);
+        assert_eq!(FeedId::Control.as_byte(), 0xC0);
         assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
     }
 
@@ -484,5 +489,49 @@ mod tests {
         let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);
         assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_feedid_control_from_byte() {
+        assert_eq!(FeedId::from_byte(0xC0), Some(FeedId::Control));
+    }
+
+    #[test]
+    fn test_feedid_control_as_byte() {
+        assert_eq!(FeedId::Control.as_byte(), 0xC0);
+    }
+
+    #[test]
+    fn test_round_trip_control_restart() {
+        let payload = br#"{"action":"restart"}"#.to_vec();
+        let original = Frame::new(FeedId::Control, payload);
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_control_reset() {
+        let payload = br#"{"action":"reset"}"#.to_vec();
+        let original = Frame::new(FeedId::Control, payload);
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_golden_control_restart() {
+        let payload = br#"{"action":"restart"}"#;
+        let frame = Frame::new(FeedId::Control, payload.to_vec());
+        let encoded = frame.encode();
+        // Expected wire format:
+        // [0xC0] - Control
+        // [0x00, 0x00, 0x00, 0x14] - length 20 (big-endian)
+        // followed by the JSON bytes
+        assert_eq!(encoded[0], 0xC0);
+        assert_eq!(&encoded[1..5], &[0x00, 0x00, 0x00, 0x14]); // 20 bytes
+        assert_eq!(&encoded[5..], payload);
     }
 }

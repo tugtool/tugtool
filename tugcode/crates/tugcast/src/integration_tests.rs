@@ -24,6 +24,9 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
 
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -32,9 +35,11 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         "test-dummy".to_string(),
         auth.clone(),
         vec![], // No snapshot feeds for auth/WebSocket tests
+        shutdown_tx,
+        None, // reload_tx
     );
 
-    let app = build_app(feed_router);
+    let app = build_app(feed_router, None, None);
     (app, token)
 }
 
@@ -390,4 +395,153 @@ async fn test_reconnection_snapshot_delivery() {
     // Verify client 2 receives the same snapshot immediately
     assert_eq!(frame2.feed_id, FeedId::Filesystem);
     assert_eq!(frame2.payload, initial_payload);
+}
+
+#[tokio::test]
+async fn test_build_app_production_mode() {
+    let (app, _token) = build_test_app(7890);
+
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/html"));
+}
+
+#[tokio::test]
+async fn test_build_app_dev_mode() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory with an index.html file
+    let temp_dir = TempDir::new().unwrap();
+    let index_path = temp_dir.path().join("index.html");
+    fs::write(&index_path, "<html><body>Dev Mode</body></html>").unwrap();
+
+    // Build app with dev path
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None, // reload_tx
+    );
+
+    // Create broadcast channel for reload
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+
+    let app = build_app(
+        feed_router,
+        Some(temp_dir.path().to_path_buf()),
+        Some(reload_tx),
+    );
+
+    // Make request to /
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify content is from disk
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/html"));
+
+    // Read body
+    use http_body_util::BodyExt;
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body.contains("Dev Mode"));
+    // Verify reload script was injected
+    assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
+}
+
+#[tokio::test]
+async fn test_dev_reload_sse_endpoint() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory with an index.html file
+    let temp_dir = TempDir::new().unwrap();
+    let index_path = temp_dir.path().join("index.html");
+    fs::write(&index_path, "<html><body>Test</body></html>").unwrap();
+
+    // Build app with dev path and reload broadcast
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None, // reload_tx
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(
+        feed_router,
+        Some(temp_dir.path().to_path_buf()),
+        Some(reload_tx),
+    );
+
+    // Make request to /dev/reload
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/dev/reload")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify SSE content type
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/event-stream"));
 }

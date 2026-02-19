@@ -45,6 +45,7 @@ axum = { version = "0.8", features = ["ws"] }
 # Async utilities
 async-trait = "0.1"
 tokio-util = "0.7"
+futures = "0.3"
 
 # PTY management
 pty-process = { version = "0.5", features = ["async"] }
@@ -55,9 +56,6 @@ ignore = "0.4"
 
 # Random generation
 rand = "0.10"
-
-# HTTP utilities
-tower-http = { version = "0.6", features = ["fs"] }
 
 # Asset embedding
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
@@ -72,5 +70,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Testing utilities
 tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tokio-tungstenite = "0.28"
 http-body-util = "0.1"

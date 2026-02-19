@@ -40,7 +40,7 @@ deck.registerCardFactory("files", () => new FilesCard());
 deck.registerCardFactory("stats", () => new StatsCard());
 
 // Create and register cards by componentId
-// PanelManager.addCard matches cards to layout tree TabItems by componentId
+// DeckManager.addCard matches cards to layout tree TabItems by componentId
 const conversationCard = new ConversationCard(connection);
 conversationCard.setDragState(deck);
 deck.addCard(conversationCard, "conversation");
@@ -53,7 +53,7 @@ deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");
 
-// Re-render so FloatingPanel headers pick up card meta (menu buttons)
+// Re-render so CardFrame headers pick up card meta (menu buttons)
 deck.refresh();
 
 // Create Dock (48px vertical rail on right viewport edge)

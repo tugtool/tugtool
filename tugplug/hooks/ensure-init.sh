@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ensure tugtool is initialized before tugtool agents run.
+# Ensure tugplug is initialized before tugplug agents run.
 # Hooks PreToolUse:Task — fires right before the first agent is spawned.
 # Runs `tugcode init --quiet` as a side effect — milliseconds, no API call.
 # Idempotent: if .tugtool/ exists, tugcode init is a no-op.

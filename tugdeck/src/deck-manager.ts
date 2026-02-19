@@ -1,8 +1,8 @@
 /**
- * PanelManager — canvas-based panel renderer.
+ * DeckManager — canvas-based card renderer.
  *
- * Owns a flat DeckState (array of CardState), renders each panel as a
- * FloatingPanel absolutely positioned on the canvas, dispatches frames
+ * Owns a flat DeckState (array of CardState), renders each card as a
+ * CardFrame absolutely positioned on the canvas, dispatches frames
  * to cards via manager-level fan-out (D10), and implements IDragState for
  * card coupling (D05).
  *
@@ -109,7 +109,7 @@ export class DeckManager implements IDragState {
   private tabBars: Map<string, TabBar> = new Map();
 
   /**
-   * FloatingPanel instances keyed by panel.id.
+   * CardFrame instances keyed by panel.id.
    * Destroyed and recreated on render.
    */
   private cardFrames: Map<string, CardFrame> = new Map();
@@ -226,7 +226,7 @@ export class DeckManager implements IDragState {
   /**
    * Register a card with the manager.
    *
-   * PanelManager searches canvasState.cards for a panel with a tab whose
+   * DeckManager searches canvasState.cards for a panel with a tab whose
    * componentId matches. The card is added to fan-out sets and registered.
    *
    * @param card - The card instance
@@ -244,7 +244,7 @@ export class DeckManager implements IDragState {
     }
 
     if (!tabItem) {
-      console.warn(`PanelManager.addCard: no panel found for componentId "${componentId}"`);
+      console.warn(`DeckManager.addCard: no panel found for componentId "${componentId}"`);
       return;
     }
 
@@ -346,8 +346,8 @@ export class DeckManager implements IDragState {
   // ---- Rendering ----
 
   /**
-   * Re-render the entire canvas: destroy existing FloatingPanel and TabBar
-   * instances, then create one FloatingPanel per CardState in array order
+   * Re-render the entire canvas: destroy existing CardFrame and TabBar
+   * instances, then create one CardFrame per CardState in array order
    * (index = z-order). Key-capable panels get title bar tint via setKey().
    *
    * Existing card mount containers are reparented rather than recreated (D09).
@@ -359,7 +359,7 @@ export class DeckManager implements IDragState {
     }
     this.tabBars.clear();
 
-    // Destroy existing FloatingPanel DOM instances (removes from DOM)
+    // Destroy existing CardFrame DOM instances (removes from DOM)
     for (const fp of this.cardFrames.values()) {
       fp.destroy();
     }
@@ -547,7 +547,7 @@ export class DeckManager implements IDragState {
               const snapDY = snap.y !== null ? snap.y - setBBox.y : 0;
 
               for (const memberId of ctx.setMemberIds) {
-                if (memberId === panel.id) continue; // dragged panel handled by FloatingPanel
+                if (memberId === panel.id) continue; // dragged panel handled by CardFrame
                 const proposed = proposedPositions.get(memberId)!;
                 const siblingFp = this.cardFrames.get(memberId);
                 if (siblingFp) {
@@ -691,9 +691,9 @@ export class DeckManager implements IDragState {
         );
         this.tabBars.set(panel.id, tabBar);
       } else if (panel.tabs.length === 1 && activeTab) {
-        // Single-tab panel: CardHeader is rendered by FloatingPanel internally.
+        // Single-tab panel: CardHeader is rendered by CardFrame internally.
         // If we have a card with meta, update header retroactively via addCard path.
-        // (FloatingPanel already created header from cardMeta if provided.)
+        // (CardFrame already created header from cardMeta if provided.)
       }
     }
 
@@ -890,7 +890,7 @@ export class DeckManager implements IDragState {
   addNewCard(componentId: string): void {
     const factory = this.cardFactories.get(componentId);
     if (!factory) {
-      console.warn(`PanelManager.addNewCard: no factory registered for "${componentId}"`);
+      console.warn(`DeckManager.addNewCard: no factory registered for "${componentId}"`);
       return;
     }
 
@@ -945,7 +945,7 @@ export class DeckManager implements IDragState {
   addNewTab(panelId: string, componentId: string): void {
     const panel = this.deckState.cards.find((p) => p.id === panelId);
     if (!panel) {
-      console.warn(`PanelManager.addNewTab: panel "${panelId}" not found`);
+      console.warn(`DeckManager.addNewTab: panel "${panelId}" not found`);
       return;
     }
 
@@ -953,7 +953,7 @@ export class DeckManager implements IDragState {
     const existingComponentId = panel.tabs[0]?.componentId;
     if (existingComponentId && existingComponentId !== componentId) {
       console.warn(
-        `PanelManager.addNewTab: panel "${panelId}" has componentId "${existingComponentId}", ` +
+        `DeckManager.addNewTab: panel "${panelId}" has componentId "${existingComponentId}", ` +
         `cannot add tab with componentId "${componentId}"`
       );
       return;
@@ -961,7 +961,7 @@ export class DeckManager implements IDragState {
 
     const factory = this.cardFactories.get(componentId);
     if (!factory) {
-      console.warn(`PanelManager.addNewTab: no factory for "${componentId}"`);
+      console.warn(`DeckManager.addNewTab: no factory for "${componentId}"`);
       return;
     }
 
@@ -1020,7 +1020,7 @@ export class DeckManager implements IDragState {
     for (const componentId of defaults) {
       const factory = this.cardFactories.get(componentId);
       if (!factory) {
-        console.warn(`PanelManager.resetLayout: no factory for "${componentId}"`);
+        console.warn(`DeckManager.resetLayout: no factory for "${componentId}"`);
         continue;
       }
       const card = factory();
@@ -1028,6 +1028,14 @@ export class DeckManager implements IDragState {
     }
 
     this.scheduleSave();
+  }
+
+  /**
+   * Send a control frame to the server.
+   * Used by Dock to trigger restart/reset/reload_frontend actions.
+   */
+  sendControlFrame(action: string): void {
+    this.connection.sendControlFrame(action);
   }
 
   // ---- Resize Handling ----
@@ -1080,7 +1088,7 @@ export class DeckManager implements IDragState {
         return deserialize(json, canvasWidth, canvasHeight);
       }
     } catch (e) {
-      console.warn("PanelManager: failed to load layout from localStorage", e);
+      console.warn("DeckManager: failed to load layout from localStorage", e);
     }
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
@@ -1092,7 +1100,7 @@ export class DeckManager implements IDragState {
       const serialized = serialize(this.deckState);
       localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(serialized));
     } catch (e) {
-      console.warn("PanelManager: failed to save layout to localStorage", e);
+      console.warn("DeckManager: failed to save layout to localStorage", e);
     }
   }
 

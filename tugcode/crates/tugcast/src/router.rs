@@ -47,10 +47,16 @@ pub struct FeedRouter {
     session: String,
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
+    shutdown_tx: mpsc::Sender<u8>,
+    reload_tx: Option<broadcast::Sender<()>>,
 }
 
 impl FeedRouter {
     /// Create a new feed router
+    // Allow many arguments: this constructor wires together all shared state channels
+    // (terminal, conversation, snapshot, shutdown, reload) plus session and auth.
+    // Grouping into a config struct would add indirection without improving clarity.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         terminal_tx: broadcast::Sender<Frame>,
         input_tx: mpsc::Sender<Frame>,
@@ -59,6 +65,8 @@ impl FeedRouter {
         session: String,
         auth: SharedAuthState,
         snapshot_watches: Vec<watch::Receiver<Frame>>,
+        shutdown_tx: mpsc::Sender<u8>,
+        reload_tx: Option<broadcast::Sender<()>>,
     ) -> Self {
         Self {
             terminal_tx,
@@ -68,6 +76,8 @@ impl FeedRouter {
             session,
             auth,
             snapshot_watches,
+            shutdown_tx,
+            reload_tx,
         }
     }
 
@@ -267,6 +277,34 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                             FeedId::Heartbeat => {
                                                 last_heartbeat = Instant::now();
                                                 debug!("Heartbeat received from client");
+                                            }
+                                            FeedId::Control => {
+                                                // Parse JSON payload for control action
+                                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                                                    if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
+                                                        match action {
+                                                            "restart" => {
+                                                                info!("control: restart requested");
+                                                                let _ = router.shutdown_tx.send(42).await;
+                                                            }
+                                                            "reset" => {
+                                                                info!("control: reset requested");
+                                                                let _ = router.shutdown_tx.send(43).await;
+                                                            }
+                                                            "reload_frontend" => {
+                                                                if let Some(ref tx) = router.reload_tx {
+                                                                    let _ = tx.send(());
+                                                                    info!("control: reload_frontend broadcast sent");
+                                                                } else {
+                                                                    info!("control: reload_frontend ignored (not in dev mode)");
+                                                                }
+                                                            }
+                                                            other => {
+                                                                warn!("control: unknown action: {}", other);
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                             _ => {}
                                         }

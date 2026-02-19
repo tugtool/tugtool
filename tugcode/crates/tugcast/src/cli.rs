@@ -25,6 +25,10 @@ pub struct Cli {
     /// Path to tugtalk binary (overrides auto-detection)
     #[arg(long)]
     pub tugtalk_path: Option<PathBuf>,
+
+    /// Path to dev asset directory (serves from disk instead of embedded assets)
+    #[arg(long)]
+    pub dev: Option<PathBuf>,
 }
 
 impl Cli {
@@ -149,5 +153,17 @@ mod tests {
     fn test_default_tugtalk_path_none() {
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.tugtalk_path, None);
+    }
+
+    #[test]
+    fn test_cli_dev_flag_none() {
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert_eq!(cli.dev, None);
+    }
+
+    #[test]
+    fn test_cli_dev_flag_some() {
+        let cli = Cli::try_parse_from(["tugcast", "--dev", "/tmp/dist"]).unwrap();
+        assert_eq!(cli.dev, Some(PathBuf::from("/tmp/dist")));
     }
 }
