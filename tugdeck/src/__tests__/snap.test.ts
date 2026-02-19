@@ -5,9 +5,12 @@ import {
   type GuidePosition,
   type SharedEdge,
   type PanelSet,
+  type EdgeValidator,
   SNAP_THRESHOLD_PX,
+  SNAP_VISIBILITY_THRESHOLD,
   computeSnap,
   computeResizeSnap,
+  computeEdgeVisibility,
   findSharedEdges,
   computeSets,
   panelToRect,
@@ -395,5 +398,117 @@ describe("computeSets", () => {
   test("handles empty panelIds", () => {
     const sets = computeSets([], []);
     expect(sets).toEqual([]);
+  });
+});
+
+// ---- SNAP_VISIBILITY_THRESHOLD ----
+
+describe("SNAP_VISIBILITY_THRESHOLD", () => {
+  test("is 1.0 (require full edge visibility)", () => {
+    expect(SNAP_VISIBILITY_THRESHOLD).toBe(1.0);
+  });
+});
+
+// ---- computeEdgeVisibility ----
+
+describe("computeEdgeVisibility", () => {
+  test("returns 1.0 when no occluders", () => {
+    const visibility = computeEdgeVisibility(200, 0, 300, true, []);
+    expect(visibility).toBe(1.0);
+  });
+
+  test("returns 1.0 when occluder does not straddle the edge", () => {
+    // Vertical edge at x=200, range y=[0,300]
+    // Occluder at x=250..450 — entirely to the right, doesn't straddle x=200
+    const occluder: Rect = { x: 250, y: 0, width: 200, height: 300 };
+    const visibility = computeEdgeVisibility(200, 0, 300, true, [occluder]);
+    expect(visibility).toBe(1.0);
+  });
+
+  test("returns 0.0 when occluder fully covers the edge range", () => {
+    // Vertical edge at x=200, range y=[0,300]
+    // Occluder at x=100..400 (straddles x=200), y=0..300 (full coverage)
+    const occluder: Rect = { x: 100, y: 0, width: 300, height: 300 };
+    const visibility = computeEdgeVisibility(200, 0, 300, true, [occluder]);
+    expect(visibility).toBe(0.0);
+  });
+
+  test("returns partial visibility when occluder covers half the range", () => {
+    // Vertical edge at x=200, range y=[0,300]
+    // Occluder at x=100..400, y=0..150 (covers top half)
+    const occluder: Rect = { x: 100, y: 0, width: 300, height: 150 };
+    const visibility = computeEdgeVisibility(200, 0, 300, true, [occluder]);
+    expect(visibility).toBeCloseTo(0.5, 5);
+  });
+
+  test("merges overlapping occluder ranges", () => {
+    // Vertical edge at x=200, range y=[0,300]
+    // Occluder A: y=0..200, Occluder B: y=100..300 — merged covers 0..300
+    const occA: Rect = { x: 100, y: 0, width: 200, height: 200 };
+    const occB: Rect = { x: 100, y: 100, width: 200, height: 200 };
+    const visibility = computeEdgeVisibility(200, 0, 300, true, [occA, occB]);
+    expect(visibility).toBe(0.0);
+  });
+
+  test("works for horizontal edges", () => {
+    // Horizontal edge at y=200, range x=[0,400]
+    // Occluder at y=100..300 (straddles y=200), x=0..200 (covers left half)
+    const occluder: Rect = { x: 0, y: 100, width: 200, height: 200 };
+    const visibility = computeEdgeVisibility(200, 0, 400, false, [occluder]);
+    expect(visibility).toBeCloseTo(0.5, 5);
+  });
+
+  test("returns 0 for zero-length range", () => {
+    const visibility = computeEdgeVisibility(200, 100, 100, true, []);
+    expect(visibility).toBe(0);
+  });
+});
+
+// ---- computeSnap with EdgeValidator ----
+
+describe("computeSnap with EdgeValidator", () => {
+  test("validator can reject a snap candidate", () => {
+    const moving: Rect = { x: 200, y: 0, width: 200, height: 300 };
+    // Stationary left edge at 405, within threshold of moving right (400)
+    const stationary: Rect = { x: 405, y: 0, width: 200, height: 300 };
+
+    // Validator rejects all x-axis snaps
+    const validate: EdgeValidator = (axis) => axis !== "x";
+
+    const result = computeSnap(moving, [stationary], validate);
+    expect(result.x).toBeNull();
+  });
+
+  test("validator allows snap when returning true", () => {
+    const moving: Rect = { x: 200, y: 0, width: 200, height: 300 };
+    const stationary: Rect = { x: 405, y: 0, width: 200, height: 300 };
+
+    const validate: EdgeValidator = () => true;
+
+    const result = computeSnap(moving, [stationary], validate);
+    expect(result.x).toBe(205);
+  });
+
+  test("falls back to second-best snap when best is rejected", () => {
+    const moving: Rect = { x: 200, y: 0, width: 200, height: 100 };
+    // moving.right = 400
+    // A: left at 403 (dist=3, closer) — will be rejected
+    // B: left at 407 (dist=7, farther) — will be accepted
+    const stationaryA: Rect = { x: 403, y: 0, width: 100, height: 100 };
+    const stationaryB: Rect = { x: 407, y: 0, width: 100, height: 100 };
+
+    // Reject snaps to target index 0 (A)
+    const validate: EdgeValidator = (_axis, _pos, _rect, idx) => idx !== 0;
+
+    const result = computeSnap(moving, [stationaryA, stationaryB], validate);
+    expect(result.x).toBe(207); // snapped to B (407 - 200 = 207)
+  });
+
+  test("no validator means all snaps accepted (backward compat)", () => {
+    const moving: Rect = { x: 200, y: 0, width: 200, height: 300 };
+    const stationary: Rect = { x: 405, y: 500, width: 200, height: 300 };
+
+    const result = computeSnap(moving, [stationary]);
+    expect(result.x).toBe(205);
   });
 });

@@ -59,6 +59,31 @@ export interface PanelSet {
 
 export const SNAP_THRESHOLD_PX = 8;
 
+/**
+ * Minimum fraction of an edge that must be visible (not occluded by higher-z panels)
+ * for a snap to activate. 1.0 = full edge must be visible. Tune lower to be more
+ * permissive (e.g. 0.5 = at least half the edge visible).
+ */
+export const SNAP_VISIBILITY_THRESHOLD = 1.0;
+
+// ---- Callback type for snap validation ----
+
+/**
+ * Optional callback to validate a candidate snap edge before accepting it.
+ * Called for each edge-to-edge match within threshold. Return false to reject.
+ *
+ * @param axis - "x" for vertical edge alignment, "y" for horizontal
+ * @param edgePosition - The coordinate of the snap target edge
+ * @param otherRect - The target rect being snapped to
+ * @param otherIndex - Index in the others array
+ */
+export type EdgeValidator = (
+  axis: SnapAxis,
+  edgePosition: number,
+  otherRect: Rect,
+  otherIndex: number
+) => boolean;
+
 // ---- Helper: convert PanelState to Rect ----
 
 /**
@@ -85,7 +110,7 @@ export function panelToRect(panel: PanelState): Rect {
  * or null per axis if no snap is within threshold.
  * Also returns guide positions for each active snap axis.
  */
-export function computeSnap(moving: Rect, others: Rect[]): SnapResult {
+export function computeSnap(moving: Rect, others: Rect[], validate?: EdgeValidator): SnapResult {
   const movingLeft = moving.x;
   const movingRight = moving.x + moving.width;
   const movingTop = moving.y;
@@ -103,7 +128,8 @@ export function computeSnap(moving: Rect, others: Rect[]): SnapResult {
   let bestYGuide = 0;
   let snapY = false;
 
-  for (const other of others) {
+  for (let otherIdx = 0; otherIdx < others.length; otherIdx++) {
+    const other = others[otherIdx];
     const otherLeft = other.x;
     const otherRight = other.x + other.width;
     const otherTop = other.y;
@@ -117,6 +143,7 @@ export function computeSnap(moving: Rect, others: Rect[]): SnapResult {
       for (const otherEdge of xOtherEdges) {
         const dist = Math.abs(movingEdge - otherEdge);
         if (dist <= SNAP_THRESHOLD_PX && dist < bestXDist) {
+          if (validate && !validate("x", otherEdge, other, otherIdx)) continue;
           bestXDist = dist;
           bestXDelta = otherEdge - movingEdge;
           bestXGuide = otherEdge;
@@ -133,6 +160,7 @@ export function computeSnap(moving: Rect, others: Rect[]): SnapResult {
       for (const otherEdge of yOtherEdges) {
         const dist = Math.abs(movingEdge - otherEdge);
         if (dist <= SNAP_THRESHOLD_PX && dist < bestYDist) {
+          if (validate && !validate("y", otherEdge, other, otherIdx)) continue;
           bestYDist = dist;
           bestYDelta = otherEdge - movingEdge;
           bestYGuide = otherEdge;
@@ -421,4 +449,69 @@ export function computeSets(panelIds: string[], sharedEdges: SharedEdge[]): Pane
   }
 
   return sets;
+}
+
+// ---- computeEdgeVisibility ----
+
+/**
+ * Compute what fraction of an edge segment is visible (not occluded by higher-z panels).
+ *
+ * Checks a line segment along one axis (vertical edge at a given x, or horizontal
+ * edge at a given y) and determines how much of it is covered by occluder rects.
+ *
+ * @param edgePosition - x coordinate (for vertical edge) or y coordinate (for horizontal)
+ * @param rangeStart - Start of the perpendicular range to check
+ * @param rangeEnd - End of the perpendicular range to check
+ * @param isVerticalEdge - true for vertical edge (x-position), false for horizontal (y-position)
+ * @param occluders - Rects that might cover the edge (pre-filtered to higher z-index)
+ * @returns Fraction of range that is visible, from 0.0 to 1.0
+ */
+export function computeEdgeVisibility(
+  edgePosition: number,
+  rangeStart: number,
+  rangeEnd: number,
+  isVerticalEdge: boolean,
+  occluders: Rect[]
+): number {
+  const totalLength = rangeEnd - rangeStart;
+  if (totalLength <= 0) return 0;
+
+  const occludedRanges: [number, number][] = [];
+
+  for (const r of occluders) {
+    if (isVerticalEdge) {
+      // Vertical edge at x=edgePosition. Occluder must straddle this x position.
+      if (r.x < edgePosition && r.x + r.width > edgePosition) {
+        const oStart = Math.max(rangeStart, r.y);
+        const oEnd = Math.min(rangeEnd, r.y + r.height);
+        if (oStart < oEnd) occludedRanges.push([oStart, oEnd]);
+      }
+    } else {
+      // Horizontal edge at y=edgePosition. Occluder must straddle this y position.
+      if (r.y < edgePosition && r.y + r.height > edgePosition) {
+        const oStart = Math.max(rangeStart, r.x);
+        const oEnd = Math.min(rangeEnd, r.x + r.width);
+        if (oStart < oEnd) occludedRanges.push([oStart, oEnd]);
+      }
+    }
+  }
+
+  if (occludedRanges.length === 0) return 1.0;
+
+  // Merge overlapping ranges
+  occludedRanges.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [[occludedRanges[0][0], occludedRanges[0][1]]];
+  for (let i = 1; i < occludedRanges.length; i++) {
+    const last = merged[merged.length - 1];
+    if (occludedRanges[i][0] <= last[1]) {
+      last[1] = Math.max(last[1], occludedRanges[i][1]);
+    } else {
+      merged.push([occludedRanges[i][0], occludedRanges[i][1]]);
+    }
+  }
+
+  let occludedLength = 0;
+  for (const [s, e] of merged) occludedLength += e - s;
+
+  return (totalLength - occludedLength) / totalLength;
 }

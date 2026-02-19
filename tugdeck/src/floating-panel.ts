@@ -27,6 +27,9 @@ const DRAG_THRESHOLD_PX = 3;
 /** Height of the header bar in pixels */
 export const FLOATING_TITLE_BAR_HEIGHT = 28;
 
+/** Inset from canvas edges — panels can't be positioned flush against the viewport */
+const CANVAS_INSET_PX = 2;
+
 export interface FloatingPanelCallbacks {
   /** Called when the user finishes dragging the panel to a new position. */
   onMoveEnd: (x: number, y: number) => void;
@@ -186,10 +189,10 @@ export class FloatingPanel {
       }
       if (!dragging) return;
 
-      // Move freely within canvas bounds
+      // Move freely within canvas bounds (with inset)
       const canvasRect = this.canvasEl.getBoundingClientRect();
-      let newX = Math.max(0, Math.min(canvasRect.width - this.panelState.size.width, startPanelX + dx));
-      let newY = Math.max(0, Math.min(canvasRect.height - this.panelState.size.height, startPanelY + dy));
+      let newX = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.width - this.panelState.size.width - CANVAS_INSET_PX, startPanelX + dx));
+      let newY = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.height - this.panelState.size.height - CANVAS_INSET_PX, startPanelY + dy));
 
       // Apply live callback if provided (snap override)
       if (this.callbacks.onMoving) {
@@ -281,11 +284,11 @@ export class FloatingPanel {
           newH = candidateH;
         }
 
-        // Clamp to canvas bounds: prevent extending past viewport edges
-        if (newX < 0) { newW += newX; newX = 0; }
-        if (newY < 0) { newH += newY; newY = 0; }
-        if (newX + newW > canvasRect.width) { newW = canvasRect.width - newX; }
-        if (newY + newH > canvasRect.height) { newH = canvasRect.height - newY; }
+        // Clamp to canvas bounds (with inset)
+        if (newX < CANVAS_INSET_PX) { newW += newX - CANVAS_INSET_PX; newX = CANVAS_INSET_PX; }
+        if (newY < CANVAS_INSET_PX) { newH += newY - CANVAS_INSET_PX; newY = CANVAS_INSET_PX; }
+        if (newX + newW > canvasRect.width - CANVAS_INSET_PX) { newW = canvasRect.width - CANVAS_INSET_PX - newX; }
+        if (newY + newH > canvasRect.height - CANVAS_INSET_PX) { newH = canvasRect.height - CANVAS_INSET_PX - newY; }
         // Re-enforce minimum size after viewport clamping
         newW = Math.max(MIN_SIZE_PX, newW);
         newH = Math.max(MIN_SIZE_PX, newH);
