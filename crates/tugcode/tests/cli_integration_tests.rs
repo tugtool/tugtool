@@ -12,7 +12,7 @@ fn tug_binary() -> PathBuf {
     path.pop(); // repo root
     path.push("target");
     path.push("debug");
-    path.push("tugtool");
+    path.push("tugcode");
     path
 }
 

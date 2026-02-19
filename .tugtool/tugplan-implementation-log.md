@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-19T17:26:21Z
+bead: tugtool-ovp.6
+---
+
+## #step-5: Renamed launcher binary tug-launch to tugtool (final step of D01 three-step swap). Binary names now final: tugtool=launcher, tugcode=CLI
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-19T17:18:18Z
 bead: tugtool-ovp.5

@@ -553,7 +553,7 @@ describe("conversation-card", () => {
       const errorBanner = container.querySelector(".error-banner") as HTMLElement;
       expect(errorBanner).not.toBeNull();
       expect(errorBanner.style.display).toBe("flex");
-      expect(errorBanner.textContent).toContain("restart tug-launch");
+      expect(errorBanner.textContent).toContain("restart tugtool");
     });
   });
 
