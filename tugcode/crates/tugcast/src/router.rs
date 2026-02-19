@@ -10,6 +10,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde_json;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -47,6 +48,9 @@ pub struct FeedRouter {
     session: String,
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
+    shutdown_tx: mpsc::Sender<u8>,
+    #[allow(dead_code)] // wired in Step 4
+    reload_tx: Option<broadcast::Sender<()>>,
 }
 
 impl FeedRouter {
@@ -59,6 +63,8 @@ impl FeedRouter {
         session: String,
         auth: SharedAuthState,
         snapshot_watches: Vec<watch::Receiver<Frame>>,
+        shutdown_tx: mpsc::Sender<u8>,
+        reload_tx: Option<broadcast::Sender<()>>,
     ) -> Self {
         Self {
             terminal_tx,
@@ -68,6 +74,8 @@ impl FeedRouter {
             session,
             auth,
             snapshot_watches,
+            shutdown_tx,
+            reload_tx,
         }
     }
 
@@ -267,6 +275,30 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                             FeedId::Heartbeat => {
                                                 last_heartbeat = Instant::now();
                                                 debug!("Heartbeat received from client");
+                                            }
+                                            FeedId::Control => {
+                                                // Parse JSON payload for control action
+                                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                                                    if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
+                                                        match action {
+                                                            "restart" => {
+                                                                info!("control: restart requested");
+                                                                let _ = router.shutdown_tx.send(42).await;
+                                                            }
+                                                            "reset" => {
+                                                                info!("control: reset requested");
+                                                                let _ = router.shutdown_tx.send(43).await;
+                                                            }
+                                                            "reload_frontend" => {
+                                                                // TODO: wire SSE reload broadcast in Step 4
+                                                                info!("control: reload_frontend requested (stub)");
+                                                            }
+                                                            other => {
+                                                                warn!("control: unknown action: {}", other);
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                             _ => {}
                                         }

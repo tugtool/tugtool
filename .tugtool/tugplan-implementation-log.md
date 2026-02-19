@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-19T20:30:44Z
+bead: tugtool-bwn.4
+---
+
+## #step-3: Added FeedId::Control = 0xC0 to tugcast-core protocol with from_byte/as_byte support. Added Control frame handling in router.rs with JSON payload dispatch: restart sends exit 42, reset sends exit 43, reload_frontend is stub. Created shutdown channel pattern in main.rs with tokio::select! for orderly exit. 5 new protocol tests, all 46 tugcast-core and 99 tugcast tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-19T20:20:48Z
 bead: tugtool-bwn.3

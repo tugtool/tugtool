@@ -24,6 +24,9 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
 
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -32,6 +35,8 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         "test-dummy".to_string(),
         auth.clone(),
         vec![], // No snapshot feeds for auth/WebSocket tests
+        shutdown_tx,
+        None, // reload_tx
     );
 
     let app = build_app(feed_router, None, None);
@@ -429,6 +434,9 @@ async fn test_build_app_dev_mode() {
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
 
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -437,6 +445,8 @@ async fn test_build_app_dev_mode() {
         "test-dummy".to_string(),
         auth,
         vec![],
+        shutdown_tx,
+        None, // reload_tx
     );
 
     // Create broadcast channel for reload
@@ -487,6 +497,9 @@ async fn test_dev_reload_sse_endpoint() {
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
 
+    // Create dummy shutdown channel for tests
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -495,6 +508,8 @@ async fn test_dev_reload_sse_endpoint() {
         "test-dummy".to_string(),
         auth,
         vec![],
+        shutdown_tx,
+        None, // reload_tx
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);

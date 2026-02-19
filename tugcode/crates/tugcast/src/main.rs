@@ -120,6 +120,9 @@ async fn main() {
     let (stats_build_tx, stats_build_rx) =
         watch::channel(Frame::new(FeedId::StatsBuildStatus, vec![]));
 
+    // Create shutdown channel for control commands
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
     // Create feed router
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
@@ -137,6 +140,8 @@ async fn main() {
             stats_build_rx,
             conversation_watch_rx,
         ],
+        shutdown_tx,
+        None, // reload_tx wired in Step 4
     );
 
     // Start terminal feed in background task
@@ -205,16 +210,26 @@ async fn main() {
         (None, None)
     };
 
-    // Start server (blocks until shutdown)
-    if let Err(e) = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx).await {
-        eprintln!(
-            "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
-            cli.port, e
-        );
-        std::process::exit(1);
-    }
+    // Start server and select! on shutdown channel
+    let server_future = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx);
 
-    // Signal shutdown
+    let exit_code = tokio::select! {
+        result = server_future => {
+            if let Err(e) = result {
+                eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+                1
+            } else {
+                0
+            }
+        }
+        Some(code) = shutdown_rx.recv() => {
+            info!("shutdown requested with exit code {}", code);
+            code as i32
+        }
+    };
+
+    // Signal shutdown for background tasks
     cancel.cancel();
     info!("tugcast shut down");
+    std::process::exit(exit_code);
 }
