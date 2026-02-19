@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-19T02:12:51Z
+bead: tugtool-j72.2
+---
+
+## #step-1: Migrated panels.css to --td-* tokens and retronow aesthetic: titlebar gradient, rounded tabs, mono dropdowns, orange set-flash, disconnect banner moved from deck.css
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-19T02:04:55Z
 bead: tugtool-j72.1
