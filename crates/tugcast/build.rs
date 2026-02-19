@@ -94,7 +94,7 @@ fn main() {
         for entry in fs::read_dir(&fonts_dir).expect("failed to read fonts dir") {
             let entry = entry.expect("failed to read fonts dir entry");
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "woff2") {
+            if path.extension().is_some_and(|ext| ext == "woff2") {
                 let dest = fonts_out.join(path.file_name().unwrap());
                 fs::copy(&path, &dest).expect("failed to copy font file");
             }

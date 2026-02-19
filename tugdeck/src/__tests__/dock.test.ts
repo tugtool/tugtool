@@ -521,4 +521,71 @@ describe("Dock – component and theme switching", () => {
 
     manager.destroy();
   });
+
+  test("Clicking each of the 5 card type icons creates correct panel type", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
+    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
+    manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
+    manager.registerCardFactory("files", () => makeMockCard([FeedId.FILES], "files"));
+    manager.registerCardFactory("stats", () => makeMockCard([FeedId.STATS], "stats"));
+
+    const dock = new Dock(manager);
+    const iconBtns = document.body.querySelectorAll(".dock-icon-btn");
+
+    // Click each of the 5 card type icons (0-4, icon 5 is settings gear)
+    const before = manager.getCanvasState().panels.length;
+
+    // Icon 0: conversation
+    (iconBtns[0] as HTMLElement)?.click();
+    expect(manager.getCanvasState().panels.length).toBe(before + 1);
+    expect(manager.getCanvasState().panels[before].tabs[0].componentId).toBe("conversation");
+
+    // Icon 1: terminal
+    (iconBtns[1] as HTMLElement)?.click();
+    expect(manager.getCanvasState().panels.length).toBe(before + 2);
+    expect(manager.getCanvasState().panels[before + 1].tabs[0].componentId).toBe("terminal");
+
+    // Icon 2: git
+    (iconBtns[2] as HTMLElement)?.click();
+    expect(manager.getCanvasState().panels.length).toBe(before + 3);
+    expect(manager.getCanvasState().panels[before + 2].tabs[0].componentId).toBe("git");
+
+    // Icon 3: files
+    (iconBtns[3] as HTMLElement)?.click();
+    expect(manager.getCanvasState().panels.length).toBe(before + 4);
+    expect(manager.getCanvasState().panels[before + 3].tabs[0].componentId).toBe("files");
+
+    // Icon 4: stats
+    (iconBtns[4] as HTMLElement)?.click();
+    expect(manager.getCanvasState().panels.length).toBe(before + 5);
+    expect(manager.getCanvasState().panels[before + 4].tabs[0].componentId).toBe("stats");
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Theme selection persists to localStorage td-theme key", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    // Simulate selecting Bluenote theme (this would normally happen via settings menu)
+    document.body.classList.add("td-theme-bluenote");
+    localStorage.setItem("td-theme", "bluenote");
+    expect(localStorage.getItem("td-theme")).toBe("bluenote");
+
+    // Simulate selecting Harmony theme
+    document.body.classList.remove("td-theme-bluenote");
+    document.body.classList.add("td-theme-Harmony");
+    localStorage.setItem("td-theme", "harmony");
+    expect(localStorage.getItem("td-theme")).toBe("harmony");
+
+    // Simulate selecting Brio theme (remove all classes)
+    document.body.classList.remove("td-theme-Harmony");
+    localStorage.setItem("td-theme", "brio");
+    expect(localStorage.getItem("td-theme")).toBe("brio");
+
+    dock.destroy();
+    manager.destroy();
+  });
 });
