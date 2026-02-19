@@ -189,7 +189,7 @@ async fn main() {
     });
 
     // Start server (blocks until shutdown)
-    if let Err(e) = server::run_server(cli.port, feed_router, auth).await {
+    if let Err(e) = server::run_server(cli.port, feed_router, auth, cli.dev).await {
         eprintln!(
             "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
             cli.port, e

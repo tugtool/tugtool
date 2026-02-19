@@ -8,7 +8,9 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 use tracing::info;
 
 use crate::auth::SharedAuthState;
@@ -67,12 +69,18 @@ async fn serve_asset(uri: Uri) -> Response {
 ///
 /// Constructs the Router with auth, WebSocket, and static asset routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-pub(crate) fn build_app(router: FeedRouter) -> Router {
-    Router::new()
+pub(crate) fn build_app(router: FeedRouter, dev_path: Option<PathBuf>) -> Router {
+    let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
-        .route("/ws", get(crate::router::ws_handler))
-        .fallback(serve_asset)
-        .with_state(router)
+        .route("/ws", get(crate::router::ws_handler));
+
+    let app = if let Some(path) = dev_path {
+        base.fallback_service(ServeDir::new(path))
+    } else {
+        base.fallback(serve_asset)
+    };
+
+    app.with_state(router)
 }
 
 /// Run the HTTP server
@@ -82,8 +90,9 @@ pub async fn run_server(
     port: u16,
     router: FeedRouter,
     _auth: SharedAuthState,
+    dev_path: Option<PathBuf>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router);
+    let app = build_app(router, dev_path);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!(port = port, "tugcast server listening");

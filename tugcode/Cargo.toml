@@ -69,5 +69,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Testing utilities
 tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tokio-tungstenite = "0.28"
 http-body-util = "0.1"

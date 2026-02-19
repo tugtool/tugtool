@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-19T20:01:26Z
+bead: tugtool-bwn.1
+---
+
+## #step-0: Added tower-http workspace dependency, --dev flag to tugcast CLI, conditional ServeDir/serve_asset fallback in build_app and run_server, updated integration test helper, and added 4 new tests (2 CLI, 2 integration). All 95 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-19T18:05:06Z
 ---

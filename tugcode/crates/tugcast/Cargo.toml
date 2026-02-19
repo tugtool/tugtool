@@ -29,6 +29,7 @@ ignore = { workspace = true }
 sysinfo = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
+tower-http = { workspace = true }
 tugcast-core = { path = "../tugcast-core" }
 
 [dev-dependencies]

@@ -34,7 +34,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         vec![], // No snapshot feeds for auth/WebSocket tests
     );
 
-    let app = build_app(feed_router);
+    let app = build_app(feed_router, None);
     (app, token)
 }
 
@@ -390,4 +390,77 @@ async fn test_reconnection_snapshot_delivery() {
     // Verify client 2 receives the same snapshot immediately
     assert_eq!(frame2.feed_id, FeedId::Filesystem);
     assert_eq!(frame2.payload, initial_payload);
+}
+
+#[tokio::test]
+async fn test_build_app_production_mode() {
+    let (app, _token) = build_test_app(7890);
+
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/html"));
+}
+
+#[tokio::test]
+async fn test_build_app_dev_mode() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory with an index.html file
+    let temp_dir = TempDir::new().unwrap();
+    let index_path = temp_dir.path().join("index.html");
+    fs::write(&index_path, "<html><body>Dev Mode</body></html>").unwrap();
+
+    // Build app with dev path
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+    );
+
+    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()));
+
+    // Make request to /
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify content is from disk
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/html"));
+
+    // Read body
+    use http_body_util::BodyExt;
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body.contains("Dev Mode"));
 }
