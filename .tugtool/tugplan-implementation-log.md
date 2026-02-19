@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-19T20:20:48Z
+bead: tugtool-bwn.3
+---
+
+## #step-2: Created tugcast dev.rs module with SSE endpoint at /dev/reload, CSP-compliant /dev/reload.js script, index.html script injection before </body>, notify-based file watcher with .html/.css/.js extension filter and 300ms debounce, ReloadSender/DevPath Extension types. Updated build_app and run_server for dev routes. All 99 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-19T20:11:11Z
 bead: tugtool-bwn.2

@@ -34,7 +34,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         vec![], // No snapshot feeds for auth/WebSocket tests
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, None, None);
     (app, token)
 }
 
@@ -439,7 +439,10 @@ async fn test_build_app_dev_mode() {
         vec![],
     );
 
-    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()));
+    // Create broadcast channel for reload
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+
+    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()), Some(reload_tx));
 
     // Make request to /
     let response = app
@@ -463,4 +466,54 @@ async fn test_build_app_dev_mode() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8(body_bytes.to_vec()).unwrap();
     assert!(body.contains("Dev Mode"));
+    // Verify reload script was injected
+    assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
+}
+
+#[tokio::test]
+async fn test_dev_reload_sse_endpoint() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory with an index.html file
+    let temp_dir = TempDir::new().unwrap();
+    let index_path = temp_dir.path().join("index.html");
+    fs::write(&index_path, "<html><body>Test</body></html>").unwrap();
+
+    // Build app with dev path and reload broadcast
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()), Some(reload_tx));
+
+    // Make request to /dev/reload
+    let response = app
+        .oneshot(Request::builder().uri("/dev/reload").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify SSE content type
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/event-stream"));
 }

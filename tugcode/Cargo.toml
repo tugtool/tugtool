@@ -45,6 +45,7 @@ axum = { version = "0.8", features = ["ws"] }
 # Async utilities
 async-trait = "0.1"
 tokio-util = "0.7"
+futures = "0.3"
 
 # PTY management
 pty-process = { version = "0.5", features = ["async"] }

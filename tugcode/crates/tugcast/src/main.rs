@@ -1,5 +1,6 @@
 mod auth;
 mod cli;
+mod dev;
 mod feeds;
 mod router;
 mod server;
@@ -188,8 +189,24 @@ async fn main() {
             .await;
     });
 
+    // Start dev file watcher if dev mode is active
+    let (reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
+        match dev::dev_file_watcher(dev_path) {
+            Ok((tx, watcher)) => {
+                info!(path = ?dev_path, "dev file watcher started");
+                (Some(tx), Some(watcher))
+            }
+            Err(e) => {
+                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     // Start server (blocks until shutdown)
-    if let Err(e) = server::run_server(cli.port, feed_router, auth, cli.dev).await {
+    if let Err(e) = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx).await {
         eprintln!(
             "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
             cli.port, e
