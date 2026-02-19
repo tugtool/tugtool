@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-19T21:03:15Z
+bead: tugtool-bwn.7
+---
+
+## #step-6: Created tugcode/scripts/build-app.sh (189 lines) with full build pipeline: cargo build --release, bun build, xcodebuild, app bundle assembly, code signing, notarization, DMG creation. Supports --nightly (dev.tugtool.nightly bundle ID), --skip-sign, --skip-notarize flags. Created NightlyAppIcon.appiconset for nightly icon variant. Created .github/workflows/nightly.yml for daily CI builds on macOS-14 with certificate import and release upload.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-19T20:52:07Z
 bead: tugtool-bwn.6
