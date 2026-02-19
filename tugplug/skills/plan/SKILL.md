@@ -14,7 +14,7 @@ hooks:
 
 **YOUR TOOLS:** `Task` and `AskUserQuestion` ONLY. You have no other tools. You cannot read files, write files, edit files, or run commands. Everything happens through agents you spawn via `Task`.
 
-**FIRST ACTION:** Your very first tool call MUST be `Task` with `tugtool:clarifier-agent`. No exceptions. Do not think. Do not analyze. Just spawn the agent.
+**FIRST ACTION:** Your very first tool call MUST be `Task` with `tugplug:clarifier-agent`. No exceptions. Do not think. Do not analyze. Just spawn the agent.
 
 **Prerequisites are handled automatically.** A pre-hook runs `tugtool init` before this skill starts. Do not check or run initialization yourself.
 
@@ -43,14 +43,14 @@ Output these as text immediately after parsing the agent's JSON result:
 
 **clarifier-agent:**
 ```
-**tugtool:clarifier-agent**(Complete)
+**tugplug:clarifier-agent**(Complete)
   Intent: {analysis.understood_intent}
   Questions: {questions.length} | Assumptions: {assumptions.length}
 ```
 
 **author-agent:**
 ```
-**tugtool:author-agent**(Complete)
+**tugplug:author-agent**(Complete)
   Path: {plan_path} ({created ? "created" : "revised"})
   Sections: {sections_written.length} | Steps: {step_count} | Decisions: {decision_count}
   Skeleton: anchors {pass|fail} | references {pass|fail} | required sections {pass|fail}
@@ -59,7 +59,7 @@ Output these as text immediately after parsing the agent's JSON result:
 
 **critic-agent:**
 ```
-**tugtool:critic-agent**(Complete)
+**tugplug:critic-agent**(Complete)
   Recommendation: {recommendation}
   Skeleton: {skeleton_compliant ? "compliant" : "non-compliant"}
   Quality: completeness {areas.completeness} | implementability {areas.implementability} | sequencing {areas.sequencing} | source verification {areas.source_verification}
@@ -71,7 +71,7 @@ On revision loops, use `(Complete, revision {N})` in all post-call messages.
 ### Failure messages
 
 ```
-**tugtool:{agent-name}**(FAILED)
+**tugplug:{agent-name}**(FAILED)
   {error description}
   Halting: {reason}
 ```
@@ -94,7 +94,7 @@ or:
   Plan: {plan_path}
   Steps: {step_count} | Decisions: {decision_count}
   Revisions: {revision_count}
-  Next: /tugtool:implement {plan_path}
+  Next: /tugplug:implement {plan_path}
 ```
 
 ---
@@ -148,7 +148,7 @@ or:
 ┌──────────────────────────────────────────┐
 │        PLANNING PHASE COMPLETE           │
 │ Plan ready at {plan_path}                │
-│ Next: /tugtool:implement {plan_path}     │
+│ Next: /tugplug:implement {plan_path}     │
 └──────────────────────────────────────────┘
 ```
 
@@ -184,7 +184,7 @@ The clarifier runs ONCE to understand the idea and gather user input. It is NOT 
 
 ```
 Task(
-  subagent_type: "tugtool:clarifier-agent",
+  subagent_type: "tugplug:clarifier-agent",
   prompt: '{"idea": "<idea>", "plan_path": "<path or null>", "critic_feedback": null}',
   description: "Analyze idea and generate questions"
 )
@@ -220,7 +220,7 @@ Store user answers in memory.
 
 ```
 Task(
-  subagent_type: "tugtool:author-agent",
+  subagent_type: "tugplug:author-agent",
   prompt: '{
     "idea": "<idea or null>",
     "plan_path": "<path or null>",
@@ -256,7 +256,7 @@ Output the Author post-call message.
 
 ```
 Task(
-  subagent_type: "tugtool:critic-agent",
+  subagent_type: "tugplug:critic-agent",
   prompt: '{"plan_path": "<path from author>", "skeleton_path": ".tugtool/tugplan-skeleton.md"}',
   description: "Review plan quality"
 )

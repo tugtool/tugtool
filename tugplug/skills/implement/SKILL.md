@@ -74,7 +74,7 @@ Output once per step, before the architect call:
 ### architect-agent post-call
 
 ```
-**tugtool:architect-agent**(Complete)
+**tugplug:architect-agent**(Complete)
   Approach: {approach — first ~120 chars, truncate with ... if longer}
   Files to touch: {expected_touch_set.length} | Implementation steps: {implementation_steps.length} | Risks: {risks.length}
 ```
@@ -82,7 +82,7 @@ Output once per step, before the architect call:
 ### coder-agent post-call
 
 ```
-**tugtool:coder-agent**(Complete)
+**tugplug:coder-agent**(Complete)
   Created files ({files_created.length}):
     - {file1}
     - {file2}
@@ -103,7 +103,7 @@ On coder retry (from reviewer feedback), show only the files that changed in thi
 ### reviewer-agent post-call
 
 ```
-**tugtool:reviewer-agent**(Complete)
+**tugplug:reviewer-agent**(Complete)
   Recommendation: {recommendation}
   Plan conformance: {passed_tasks}/{total_tasks} tasks | {passed_checkpoints}/{total_checkpoints} checkpoints | {passed_decisions}/{total_decisions} decisions
   Quality: structure {review_categories.structure} | error handling {review_categories.error_handling} | security {review_categories.security}
@@ -120,7 +120,7 @@ If REVISE, append:
 ### committer-agent post-call
 
 ```
-**tugtool:committer-agent**(Complete)
+**tugplug:committer-agent**(Complete)
   Commit: {commit_hash} {commit_message}
   Bead: {bead_id} closed
   Files: {files_staged.length} staged and committed
@@ -130,7 +130,7 @@ If REVISE, append:
 ### committer-agent fixup post-call
 
 ```
-**tugtool:committer-agent**(Fixup complete)
+**tugplug:committer-agent**(Fixup complete)
   Commit: {commit_hash} {commit_message}
   Files: {files_staged.length} staged and committed
   Log: updated
@@ -139,7 +139,7 @@ If REVISE, append:
 ### auditor-agent post-call
 
 ```
-**tugtool:auditor-agent**(Complete)
+**tugplug:auditor-agent**(Complete)
   Recommendation: {recommendation}
   Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tests: {test.exit_code == 0 ? "pass" : "FAIL"} | Clippy: {clippy.exit_code == 0 ? "pass" : "FAIL"} | Fmt: {fmt_check.exit_code == 0 ? "pass" : "FAIL"}
   Deliverables: {passed_deliverables}/{total_deliverables} passed
@@ -156,7 +156,7 @@ If REVISE, append:
 ### integrator-agent post-call
 
 ```
-**tugtool:integrator-agent**(Complete)
+**tugplug:integrator-agent**(Complete)
   Recommendation: {recommendation}
   PR: {pr_url} (#{pr_number})
   CI status: {ci_status}
@@ -174,14 +174,14 @@ If REVISE, append:
 
 All failures use:
 ```
-**tugtool:{agent-name}**(FAILED)
+**tugplug:{agent-name}**(FAILED)
   {error description}
   Halting: {reason}
 ```
 
 For `bead_close_failed` (warn and continue):
 ```
-**tugtool:committer-agent**(WARNING: bead close failed)
+**tugplug:committer-agent**(WARNING: bead close failed)
   Commit: {commit_hash} succeeded
   Bead: {bead_id} close FAILED
   Continuing: worktree state is clean, bead can be closed manually if needed
@@ -371,7 +371,7 @@ Output the step header.
 
 ```
 Task(
-  subagent_type: "tugtool:architect-agent",
+  subagent_type: "tugplug:architect-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
@@ -405,7 +405,7 @@ Output the Architect post-call message.
 
 ```
 Task(
-  subagent_type: "tugtool:coder-agent",
+  subagent_type: "tugplug:coder-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
@@ -472,7 +472,7 @@ Output the Coder post-call message.
 
 ```
 Task(
-  subagent_type: "tugtool:reviewer-agent",
+  subagent_type: "tugplug:reviewer-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
@@ -543,7 +543,7 @@ Using persistent agents means both retain their full accumulated context — the
 
 ```
 Task(
-  subagent_type: "tugtool:committer-agent",
+  subagent_type: "tugplug:committer-agent",
   max_turns: 5,
   prompt: '{
     "operation": "commit",
@@ -592,7 +592,7 @@ After all steps complete, spawn the auditor agent for holistic quality verificat
 
 ```
 Task(
-  subagent_type: "tugtool:auditor-agent",
+  subagent_type: "tugplug:auditor-agent",
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<plan_path>"
@@ -682,7 +682,7 @@ After auditor passes, spawn the integrator agent to push branch, create PR, and 
 
 ```
 Task(
-  subagent_type: "tugtool:integrator-agent",
+  subagent_type: "tugplug:integrator-agent",
   prompt: '{
     "operation": "publish",
     "worktree_path": "<worktree_path>",
@@ -940,7 +940,7 @@ If an agent returns invalid JSON or missing required fields:
 
 If any agent fails:
 
-1. Output the failure message: `**tugtool:{agent-name}**(FAILED) at {step_anchor}: {reason}`
+1. Output the failure message: `**tugplug:{agent-name}**(FAILED) at {step_anchor}: {reason}`
 2. HALT — user must intervene
 
 Do NOT retry automatically. All errors use the standard failure message format defined in Progress Reporting.

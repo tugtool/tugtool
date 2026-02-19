@@ -29,23 +29,23 @@ class Tugtool < Formula
     bin.install "bin/tugtool"
 
     # Install skills to share directory
-    # Skills end up at #{HOMEBREW_PREFIX}/share/tugtool/skills/
-    (share/"tugtool").install "share/tugtool/skills"
+    # Skills end up at #{HOMEBREW_PREFIX}/share/tugplug/skills/
+    (share/"tugplug").install "share/tugplug/skills"
 
     # Install agents to share directory
-    # Agents end up at #{HOMEBREW_PREFIX}/share/tugtool/agents/
-    (share/"tugtool").install "share/tugtool/agents"
+    # Agents end up at #{HOMEBREW_PREFIX}/share/tugplug/agents/
+    (share/"tugplug").install "share/tugplug/agents"
   end
 
   def caveats
     <<~EOS
       Tugtool agents have been installed to:
-        #{HOMEBREW_PREFIX}/share/tugtool/agents/
+        #{HOMEBREW_PREFIX}/share/tugplug/agents/
 
       Claude Code skills have been installed to:
-        #{HOMEBREW_PREFIX}/share/tugtool/skills/
+        #{HOMEBREW_PREFIX}/share/tugplug/skills/
 
-      To use /tugtool:plan and /tugtool:implement in your projects, run:
+      To use /tugplug:plan and /tugplug:implement in your projects, run:
         tugtool setup claude
 
       This will copy the skills to your project's .claude/skills/ directory.

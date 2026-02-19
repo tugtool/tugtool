@@ -9,7 +9,7 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name')
 
 if [ "$TOOL_NAME" = "Task" ]; then
   AGENT_TYPE=$(echo "$INPUT" | jq -r '.tool_input.subagent_type // empty')
-  if [[ "$AGENT_TYPE" == tugtool:* ]]; then
+  if [[ "$AGENT_TYPE" == tugplug:* ]]; then
     tugtool init --quiet 2>/dev/null || true
   fi
 fi

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-19T16:58:00Z
+bead: tugtool-ovp.3
+---
+
+## #step-2: Moved plugin infrastructure to tugplug/ directory, renamed namespace tugtool: to tugplug:, split CLAUDE.md into root (project conventions) and tugplug/CLAUDE.md (plugin operations), updated release.yml and Formula share paths
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-19T16:47:14Z
 bead: tugtool-ovp.2
