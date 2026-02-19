@@ -173,7 +173,7 @@ tugcast, respawns. Clean slate.
 
 ```
 tugapp/                              (new directory at repo root)
-├── TugApp.xcodeproj/                (build config — built with xcodebuild)
+├── Tug.xcodeproj/                (build config — built with xcodebuild)
 ├── Sources/
 │   ├── AppDelegate.swift            (~100 lines: lifecycle, Developer menu)
 │   ├── MainWindow.swift             (~80 lines: WKWebView setup)
@@ -181,7 +181,7 @@ tugapp/                              (new directory at repo root)
 ├── Assets.xcassets/
 │   ├── AppIcon.appiconset/          (standard icon + nightly variant)
 │   └── AccentColor.colorset/
-├── TugApp.entitlements              (hardened runtime: allow unsigned exec)
+├── Tug.entitlements              (hardened runtime: allow unsigned exec)
 └── Info.plist
 ```
 
@@ -191,15 +191,15 @@ real work is all tugcast/tugdeck/tugcode.
 **Build from terminal** (no Xcode GUI):
 
 ```bash
-xcodebuild -project tugapp/TugApp.xcodeproj -scheme TugApp build
+xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug build
 ```
 
 **What's inside the .app bundle:**
 
 ```
-TugApp.app/Contents/
+Tug.app/Contents/
 ├── MacOS/
-│   ├── TugApp                       (Swift host)
+│   ├── Tug                          (Swift host)
 │   ├── tugcast                      (server binary)
 │   ├── tugcode                      (CLI binary)
 │   └── tugtalk                      (protocol bridge)
@@ -221,7 +221,7 @@ Two paths, two audiences:
 
 | Path | Audience | What ships |
 |------|----------|------------|
-| **TugApp.dmg** (direct download) | Everyone | Full .app with all binaries + plugin |
+| **Tug.dmg** (direct download) | Everyone | Full .app with all binaries + plugin |
 | **`brew install tugtool`** (formula) | Terminal-first devs | `tugcode` CLI + tugplug skills/agents |
 
 Both can coexist. Homebrew stays for the CLI tool.
