@@ -1,8 +1,8 @@
 /**
- * Canvas data model for the panel system.
+ * Canvas data model for the card system.
  *
- * CanvasState holds a flat array of PanelState values.
- * Each panel has a position, size, tabs, and an active tab ID.
+ * DeckState holds a flat array of CardState values.
+ * Each card has a position, size, tabs, and an active tab ID.
  *
  * Spec S01: Canvas Data Model Types
  */
@@ -23,7 +23,7 @@ export interface TabNode {
   activeTabIndex: number;
 }
 
-export interface PanelState {
+export interface CardState {
   id: string;
   position: { x: number; y: number };
   size: { width: number; height: number };
@@ -31,6 +31,6 @@ export interface PanelState {
   activeTabId: string;
 }
 
-export interface CanvasState {
-  panels: PanelState[];
+export interface DeckState {
+  cards: CardState[];
 }

@@ -11,7 +11,7 @@
  * D07: Shared-edge detection algorithm
  */
 
-import type { PanelState } from "./layout-tree";
+import type { CardState } from "./layout-tree";
 
 // ---- Types ----
 

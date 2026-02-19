@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-19T16:47:14Z
+bead: tugtool-ovp.2
+---
+
+## #step-1: Renamed panel/floating-panel to card/card-frame: 5 file renames, 676+ TS symbol updates, 36 CSS class renames, serialization v4→v5 with panels→cards key, build.rs and index.html updated
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-19T15:56:41Z
 bead: tugtool-ovp.1

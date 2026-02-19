@@ -4,7 +4,7 @@
  * Three-tier architecture:
  * - Tier 1: Palette tokens (--tl-* tuglook palette values)
  * - Tier 2: Semantic tokens (--td-* purpose-driven mappings)
- * - Tier 3: Component tokens (--td-panel-*, --td-tab-*, etc. in component CSS)
+ * - Tier 3: Component tokens (--td-card-*, --td-tab-*, etc. in component CSS)
  *
  * Theme system:
  * - Brio (deep graphite): Default theme in :root, no body class required
@@ -143,8 +143,8 @@ body {
   /* Surface tokens (Table T01) */
   --td-bg: var(--tl-bg);
   --td-bg-soft: var(--tl-bg-soft);
-  --td-panel: var(--tl-panel);
-  --td-panel-soft: var(--tl-panel-soft);
+  --td-card: var(--tl-panel);
+  --td-card-soft: var(--tl-panel-soft);
   --td-surface: var(--tl-surface-1);
   --td-surface-tab: var(--tl-surface-2);
   --td-surface-control: var(--tl-surface-3);
@@ -182,8 +182,8 @@ body {
   --td-chart-5: var(--td-accent-3);  /* reserved - purple */
 
   /* Titlebar and icon tokens */
-  --td-titlebar-active: #44474C;
-  --td-titlebar-inactive: #34373c;
+  --td-header-active: #44474C;
+  --td-header-inactive: #34373c;
   --td-icon-active: var(--td-accent-2);
   --td-grid-color: rgba(255, 255, 255, 0.05);
 
@@ -242,7 +242,7 @@ body {
   /* Legacy aliases (runtime contracts - Table T06) */
   --background: var(--td-bg);
   --foreground: var(--td-text);
-  --card: var(--td-panel);
+  --card: var(--td-card);
   --card-foreground: var(--td-text);
   --muted: var(--td-surface-control);
   --muted-foreground: var(--td-text-soft);
@@ -341,8 +341,8 @@ body.td-theme-bluenote {
   --td-bg: #2a3136;
   --td-bg-soft: #363e43;
   --td-canvas: #2a3136;
-  --td-panel: #3a454c;
-  --td-panel-soft: #313b43;
+  --td-card: #3a454c;
+  --td-card-soft: #313b43;
   --td-surface: #3b4348;
   --td-surface-tab: #343c41;
   --td-surface-control: #30373c;
@@ -373,8 +373,8 @@ body.td-theme-bluenote {
   --td-border-soft: #79858d;
   --td-shadow-soft: rgba(0, 0, 0, 0.44);
   --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.44);
-  --td-titlebar-active: #344f5e;
-  --td-titlebar-inactive: #2a3a44;
+  --td-header-active: #344f5e;
+  --td-header-inactive: #2a3a44;
   --td-icon-active: #4bbde8;
   --td-grid-color: rgba(255, 255, 255, 0.04);
   --td-syntax-keyword: #4bbde8;
@@ -442,8 +442,8 @@ body.td-theme-harmony {
   --td-bg: #3f474c;
   --td-bg-soft: #4c555a;
   --td-canvas: #b0ab9f;
-  --td-panel: #dad6cc;
-  --td-panel-soft: #c6c2b8;
+  --td-card: #dad6cc;
+  --td-card-soft: #c6c2b8;
   --td-surface: #f4f1ea;
   --td-surface-tab: #ece7dc;
   --td-surface-control: #e4ded1;
@@ -474,8 +474,8 @@ body.td-theme-harmony {
   --td-border-soft: #a29b8a;
   --td-shadow-soft: rgba(0, 0, 0, 0.24);
   --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
-  --td-titlebar-active: #d4b888;
-  --td-titlebar-inactive: #c8c0b0;
+  --td-header-active: #d4b888;
+  --td-header-inactive: #c8c0b0;
   --td-icon-active: #42b8e6;
   --td-grid-color: rgba(0, 0, 0, 0.06);
   --td-syntax-keyword: #42b8e6;

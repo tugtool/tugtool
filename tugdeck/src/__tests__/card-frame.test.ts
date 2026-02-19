@@ -64,10 +64,10 @@ if (!global.requestAnimationFrame) {
   };
 }
 
-import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "../floating-panel";
+import { CardFrame, CARD_TITLE_BAR_HEIGHT } from "../card-frame";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
-import type { PanelState, TabItem } from "../layout-tree";
-import { PanelManager } from "../panel-manager";
+import type { CardState, TabItem } from "../layout-tree";
+import { DeckManager } from "../deck-manager";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
@@ -86,13 +86,13 @@ function makeCanvasEl(width = 1280, height = 800): HTMLElement {
   return el;
 }
 
-function makePanelState(
+function makeCardState(
   x = 100,
   y = 100,
   width = 400,
   height = 300,
   title = "Test Panel"
-): PanelState {
+): CardState {
   const tabId = `tab-${++uuidCounter}`;
   return {
     id: `panel-${++uuidCounter}`,
@@ -104,7 +104,7 @@ function makePanelState(
 }
 
 function makeCallbacks(): {
-  callbacks: import("../floating-panel").FloatingPanelCallbacks;
+  callbacks: import("../card-frame").CardFrameCallbacks;
   moveEndCalls: Array<{ x: number; y: number }>;
   resizeEndCalls: Array<{ x: number; y: number; width: number; height: number }>;
   focusCalls: number[];
@@ -115,7 +115,7 @@ function makeCallbacks(): {
   const focusCalls: number[] = [];
   const closeCalls: number[] = [];
 
-  const callbacks: import("../floating-panel").FloatingPanelCallbacks = {
+  const callbacks: import("../card-frame").CardFrameCallbacks = {
     onMoveEnd: (x, y) => moveEndCalls.push({ x, y }),
     onResizeEnd: (x, y, width, height) => resizeEndCalls.push({ x, y, width, height }),
     onFocus: () => focusCalls.push(1),
@@ -160,63 +160,63 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
   });
 
   test("creates an element with class 'floating-panel'", () => {
-    const ps = makePanelState(100, 150, 400, 300);
+    const ps = makeCardState(100, 150, 400, 300);
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
-    expect(fp.getElement().classList.contains("floating-panel")).toBe(true);
+    const fp = new CardFrame(ps, callbacks, canvas);
+    expect(fp.getElement().classList.contains("card-frame")).toBe(true);
     fp.destroy();
   });
 
   test("positions element according to PanelState position", () => {
-    const ps = makePanelState(200, 150, 400, 300);
+    const ps = makeCardState(200, 150, 400, 300);
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     expect(fp.getElement().style.left).toBe("200px");
     expect(fp.getElement().style.top).toBe("150px");
     fp.destroy();
   });
 
   test("sizes element according to PanelState size", () => {
-    const ps = makePanelState(100, 100, 500, 400);
+    const ps = makeCardState(100, 100, 500, 400);
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     expect(fp.getElement().style.width).toBe("500px");
     expect(fp.getElement().style.height).toBe("400px");
     fp.destroy();
   });
 
   test("creates a panel-header with title from active tab", () => {
-    const ps = makePanelState(100, 100, 400, 300, "My Terminal");
+    const ps = makeCardState(100, 100, 400, 300, "My Terminal");
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
-    const header = fp.getElement().querySelector(".panel-header");
+    const fp = new CardFrame(ps, callbacks, canvas);
+    const header = fp.getElement().querySelector(".card-header");
     expect(header).not.toBeNull();
-    const titleEl = fp.getElement().querySelector(".panel-header-title");
+    const titleEl = fp.getElement().querySelector(".card-header-title");
     expect(titleEl).not.toBeNull();
     expect(titleEl!.textContent).toBe("My Terminal");
     fp.destroy();
   });
 
   test("creates a card area element with class floating-panel-content", () => {
-    const ps = makePanelState();
+    const ps = makeCardState();
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
-    expect(fp.getCardAreaElement().classList.contains("floating-panel-content")).toBe(true);
+    const fp = new CardFrame(ps, callbacks, canvas);
+    expect(fp.getCardAreaElement().classList.contains("card-frame-content")).toBe(true);
     fp.destroy();
   });
 
   test("creates all 8 resize handles", () => {
-    const ps = makePanelState();
+    const ps = makeCardState();
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     for (const dir of ["n", "s", "e", "w", "nw", "ne", "sw", "se"]) {
-      expect(fp.getElement().querySelector(`.floating-panel-resize-${dir}`)).not.toBeNull();
+      expect(fp.getElement().querySelector(`.card-frame-resize-${dir}`)).not.toBeNull();
     }
     fp.destroy();
   });
 
-  test("FLOATING_TITLE_BAR_HEIGHT is 28", () => {
-    expect(FLOATING_TITLE_BAR_HEIGHT).toBe(28);
+  test("CARD_TITLE_BAR_HEIGHT is 28", () => {
+    expect(CARD_TITLE_BAR_HEIGHT).toBe(28);
   });
 });
 
@@ -232,26 +232,26 @@ describe("FloatingPanel – API", () => {
   });
 
   test("setZIndex updates element z-index", () => {
-    const ps = makePanelState();
+    const ps = makeCardState();
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     fp.setZIndex(150);
     expect(fp.getElement().style.zIndex).toBe("150");
     fp.destroy();
   });
 
   test("getPanelState returns the same object passed to constructor", () => {
-    const ps = makePanelState();
+    const ps = makeCardState();
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     expect(fp.getPanelState()).toBe(ps);
     fp.destroy();
   });
 
   test("updatePosition updates element style and PanelState position", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     fp.updatePosition(250, 180);
     expect(fp.getElement().style.left).toBe("250px");
     expect(fp.getElement().style.top).toBe("180px");
@@ -261,9 +261,9 @@ describe("FloatingPanel – API", () => {
   });
 
   test("updateSize updates element style and PanelState size", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     fp.updateSize(600, 450);
     expect(fp.getElement().style.width).toBe("600px");
     expect(fp.getElement().style.height).toBe("450px");
@@ -273,9 +273,9 @@ describe("FloatingPanel – API", () => {
   });
 
   test("destroy removes the element from the DOM", () => {
-    const ps = makePanelState();
+    const ps = makeCardState();
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
     expect(canvas.contains(fp.getElement())).toBe(true);
     fp.destroy();
@@ -283,10 +283,10 @@ describe("FloatingPanel – API", () => {
   });
 
   test("updateTitle is a no-op; title comes from PanelState at construction", () => {
-    const ps = makePanelState(100, 100, 400, 300, "My Title");
+    const ps = makeCardState(100, 100, 400, 300, "My Title");
     const { callbacks } = makeCallbacks();
-    const fp = new FloatingPanel(ps, callbacks, canvas);
-    const titleEl = fp.getElement().querySelector(".panel-header-title");
+    const fp = new CardFrame(ps, callbacks, canvas);
+    const titleEl = fp.getElement().querySelector(".card-header-title");
     expect(titleEl!.textContent).toBe("My Title");
     fp.updateTitle("Should be no-op");
     expect(titleEl!.textContent).toBe("My Title");
@@ -299,64 +299,64 @@ describe("FloatingPanel – API", () => {
 describe("v4 serialization round-trip", () => {
   test("panel position and size survive serialize/deserialize", () => {
     const tabId = "rt-tab-1";
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "rt-panel-1",
       position: { x: 250, y: 175 },
       size: { width: 500, height: 380 },
       tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: tabId,
     };
-    const serialized = serialize({ panels: [panel] });
+    const serialized = serialize({ cards: [panel] });
     const restored = deserialize(JSON.stringify(serialized), 1280, 800);
-    expect(restored.panels.length).toBe(1);
-    expect(restored.panels[0].position.x).toBe(250);
-    expect(restored.panels[0].position.y).toBe(175);
-    expect(restored.panels[0].size.width).toBe(500);
-    expect(restored.panels[0].size.height).toBe(380);
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].position.x).toBe(250);
+    expect(restored.cards[0].position.y).toBe(175);
+    expect(restored.cards[0].size.width).toBe(500);
+    expect(restored.cards[0].size.height).toBe(380);
   });
 
   test("tab title and componentId survive round-trip", () => {
     const tabId = "rt-tab-2";
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "rt-panel-2",
       position: { x: 100, y: 100 },
       size: { width: 400, height: 300 },
       tabs: [{ id: tabId, componentId: "git", title: "My Git", closable: true }],
       activeTabId: tabId,
     };
-    const restored = deserialize(JSON.stringify(serialize({ panels: [panel] })), 1280, 800);
-    expect(restored.panels[0].tabs[0].title).toBe("My Git");
-    expect(restored.panels[0].tabs[0].componentId).toBe("git");
+    const restored = deserialize(JSON.stringify(serialize({ cards: [panel] })), 1280, 800);
+    expect(restored.cards[0].tabs[0].title).toBe("My Git");
+    expect(restored.cards[0].tabs[0].componentId).toBe("git");
   });
 
   test("off-canvas position is clamped during deserialization", () => {
     const tabId = "rt-tab-3";
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "rt-panel-3",
       position: { x: 1200, y: 750 },
       size: { width: 400, height: 300 },
       tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: tabId,
     };
-    const restored = deserialize(JSON.stringify(serialize({ panels: [panel] })), 1280, 800);
+    const restored = deserialize(JSON.stringify(serialize({ cards: [panel] })), 1280, 800);
     // x(1200) + width(400) = 1600 > 1280 -> x = 1280 - 400 = 880
-    expect(restored.panels[0].position.x).toBe(880);
+    expect(restored.cards[0].position.x).toBe(880);
     // y(750) + height(300) = 1050 > 800 -> y = 800 - 300 = 500
-    expect(restored.panels[0].position.y).toBe(500);
+    expect(restored.cards[0].position.y).toBe(500);
   });
 
   test("sub-100px size is clamped during deserialization", () => {
     const tabId = "rt-tab-4";
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "rt-panel-4",
       position: { x: 100, y: 100 },
       size: { width: 80, height: 60 },
       tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: tabId,
     };
-    const restored = deserialize(JSON.stringify(serialize({ panels: [panel] })), 1920, 1080);
-    expect(restored.panels[0].size.width).toBe(100);
-    expect(restored.panels[0].size.height).toBe(100);
+    const restored = deserialize(JSON.stringify(serialize({ cards: [panel] })), 1920, 1080);
+    expect(restored.cards[0].size.width).toBe(100);
+    expect(restored.cards[0].size.height).toBe(100);
   });
 });
 
@@ -383,26 +383,26 @@ describe("PanelManager – canvas panel integration", () => {
   });
 
   test("initial canvasState has 5 panels from buildDefaultLayout", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const state = manager.getCanvasState();
-    expect(state.panels).toBeDefined();
-    expect(Array.isArray(state.panels)).toBe(true);
-    expect(state.panels.length).toBe(5);
+    expect(state.cards).toBeDefined();
+    expect(Array.isArray(state.cards)).toBe(true);
+    expect(state.cards.length).toBe(5);
     manager.destroy();
   });
 
   test("render creates one .floating-panel per panel in canvasState", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const floatingEls = container.querySelectorAll(".floating-panel");
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
+    const floatingEls = container.querySelectorAll(".card-frame");
     expect(floatingEls.length).toBe(5);
     manager.destroy();
   });
 
   test("applyLayout with 1 panel creates 1 .floating-panel element", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "apply-tab-1";
     manager.applyLayout({
-      panels: [{
+      cards: [{
         id: "apply-panel-1",
         position: { x: 100, y: 100 },
         size: { width: 400, height: 300 },
@@ -410,22 +410,22 @@ describe("PanelManager – canvas panel integration", () => {
         activeTabId: tabId,
       }],
     });
-    expect(container.querySelectorAll(".floating-panel").length).toBe(1);
+    expect(container.querySelectorAll(".card-frame").length).toBe(1);
     manager.destroy();
   });
 
   test("z-order: panels get z-index 100+i in array order", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tab1 = "z-tab-1"; const tab2 = "z-tab-2";
     manager.applyLayout({
-      panels: [
+      cards: [
         { id: "z-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab1, componentId: "terminal", title: "T1", closable: true }], activeTabId: tab1 },
         { id: "z-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab2, componentId: "git", title: "G1", closable: true }], activeTabId: tab2 },
       ],
     });
-    const panels = Array.from(container.querySelectorAll<HTMLElement>(".floating-panel"));
+    const panels = Array.from(container.querySelectorAll<HTMLElement>(".card-frame"));
     expect(panels.length).toBe(2);
     expect(parseInt(panels[0].style.zIndex, 10)).toBe(100);
     expect(parseInt(panels[1].style.zIndex, 10)).toBe(101);
@@ -433,29 +433,29 @@ describe("PanelManager – canvas panel integration", () => {
   });
 
   test("key-capable panel (terminal) gets .panel-header-key on its header", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tab1 = "f-tab-1"; const tab2 = "f-tab-2";
     manager.applyLayout({
-      panels: [
+      cards: [
         { id: "f-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab1, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab1 },
         { id: "f-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab2, componentId: "terminal", title: "Terminal", closable: true }], activeTabId: tab2 },
       ],
     });
-    const headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    const headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
     // terminal panel header should have key class
-    expect(headers[1].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[1].classList.contains("card-header-key")).toBe(true);
     // stats panel header should not
-    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
+    expect(headers[0].classList.contains("card-header-key")).toBe(false);
     manager.destroy();
   });
 
   test("clicking stats panel makes it key (all standard panels accept key)", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tab1 = "k-tab-1"; const tab2 = "k-tab-2";
     manager.applyLayout({
-      panels: [
+      cards: [
         { id: "k-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
         { id: "k-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
@@ -463,24 +463,24 @@ describe("PanelManager – canvas panel integration", () => {
       ],
     });
     // stats is initially key (last key-capable panel in array)
-    let headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
-    expect(headers[1].classList.contains("panel-header-key")).toBe(true);
-    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
+    let headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
+    expect(headers[1].classList.contains("card-header-key")).toBe(true);
+    expect(headers[0].classList.contains("card-header-key")).toBe(false);
 
     // Focus the conversation panel — it becomes key
     manager.focusPanel("k-p1");
 
-    headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
-    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
-    expect(headers[1].classList.contains("panel-header-key")).toBe(false);
+    headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
+    expect(headers[0].classList.contains("card-header-key")).toBe(true);
+    expect(headers[1].classList.contains("card-header-key")).toBe(false);
     manager.destroy();
   });
 
   test("clicking key-capable panel (terminal) makes it key", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tab1 = "m-tab-1"; const tab2 = "m-tab-2"; const tab3 = "m-tab-3";
     manager.applyLayout({
-      panels: [
+      cards: [
         { id: "m-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
         { id: "m-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
@@ -491,24 +491,24 @@ describe("PanelManager – canvas panel integration", () => {
     });
     // terminal is initially key (last key-capable in array)
     // DOM order matches creation order: conv(0), stats(1), terminal(2)
-    let headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
-    expect(headers[2].classList.contains("panel-header-key")).toBe(true);
-    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
+    let headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
+    expect(headers[2].classList.contains("card-header-key")).toBe(true);
+    expect(headers[0].classList.contains("card-header-key")).toBe(false);
 
     // Focus conversation (key-capable) — it becomes key
     manager.focusPanel("m-p1");
 
     // DOM order is unchanged (focusPanel only updates z-index, not DOM order)
-    headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
     // conversation header (index 0) should now be key
-    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[0].classList.contains("card-header-key")).toBe(true);
     // terminal header (index 2) should no longer be key
-    expect(headers[2].classList.contains("panel-header-key")).toBe(false);
+    expect(headers[2].classList.contains("card-header-key")).toBe(false);
     manager.destroy();
   });
 
   test("D09: card instance identity preserved across applyLayout calls", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
@@ -530,13 +530,13 @@ describe("PanelManager – canvas panel integration", () => {
   });
 
   test("removeCard removes panel from canvasState when panel has single tab", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
-    const beforeCount = manager.getCanvasState().panels.length;
+    const beforeCount = manager.getCanvasState().cards.length;
     manager.removeCard(card);
-    const afterCount = manager.getCanvasState().panels.length;
+    const afterCount = manager.getCanvasState().cards.length;
     expect(afterCount).toBe(beforeCount - 1);
     expect(card.destroyCount).toBe(1);
     manager.destroy();
@@ -576,7 +576,7 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
 
   // Test a: onMoving is called on every pointermove during header drag.
   test("calls onMoving on every pointermove during header drag", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const movingCalls: Array<{ x: number; y: number }> = [];
     const { callbacks, moveEndCalls } = makeCallbacks();
     callbacks.onMoving = (x, y) => {
@@ -584,10 +584,10 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
       return { x, y }; // pass through unchanged
     };
 
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
 
-    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".card-header")!;
     expect(headerEl).not.toBeNull();
 
     // pointerdown to start drag capture
@@ -610,15 +610,15 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
 
   // Test b: onMoving return value overrides the panel position (snap override).
   test("uses returned position from onMoving (snap override)", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const { callbacks, moveEndCalls } = makeCallbacks();
     // Always snap to (500, 500)
     callbacks.onMoving = (_x, _y) => ({ x: 500, y: 500 });
 
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
 
-    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".card-header")!;
 
     // Simulate drag: pointerdown, pointermove with delta > 3, pointerup
     headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 100 }));
@@ -639,7 +639,7 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
 
   // Test c: onResizing is called on every pointermove during resize drag.
   test("calls onResizing on every pointermove during resize drag", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const resizingCalls: Array<{ x: number; y: number; width: number; height: number }> = [];
     const { callbacks } = makeCallbacks();
     callbacks.onResizing = (x, y, width, height) => {
@@ -647,11 +647,11 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
       return { x, y, width, height }; // pass through unchanged
     };
 
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
 
     // East resize handle grows width
-    const eastHandle = fp.getElement().querySelector<HTMLElement>(".floating-panel-resize-e")!;
+    const eastHandle = fp.getElement().querySelector<HTMLElement>(".card-frame-resize-e")!;
     expect(eastHandle).not.toBeNull();
 
     // pointerdown on the resize handle
@@ -676,15 +676,15 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
 
   // Test d: onMoveEnd and onResizeEnd still fire on pointerup with correct (snapped) values.
   test("onMoveEnd fires with snapped position after onMoving override", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const { callbacks, moveEndCalls } = makeCallbacks();
     // Snap to a fixed position
     callbacks.onMoving = (_x, _y) => ({ x: 300, y: 250 });
 
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
 
-    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".card-header")!;
 
     headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 100 }));
     headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 215, clientY: 115 }));
@@ -700,15 +700,15 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
 
   // Extra: onResizeEnd fires with snapped geometry when onResizing override is provided.
   test("onResizeEnd fires with snapped geometry after onResizing override", () => {
-    const ps = makePanelState(100, 100, 400, 300);
+    const ps = makeCardState(100, 100, 400, 300);
     const { callbacks, resizeEndCalls } = makeCallbacks();
     // Snap width to exactly 500
     callbacks.onResizing = (x, y, _width, height) => ({ x, y, width: 500, height });
 
-    const fp = new FloatingPanel(ps, callbacks, canvas);
+    const fp = new CardFrame(ps, callbacks, canvas);
     canvas.appendChild(fp.getElement());
 
-    const eastHandle = fp.getElement().querySelector<HTMLElement>(".floating-panel-resize-e")!;
+    const eastHandle = fp.getElement().querySelector<HTMLElement>(".card-frame-resize-e")!;
 
     eastHandle.dispatchEvent(makePointerEvent("pointerdown", { clientX: 500, clientY: 200 }));
     eastHandle.dispatchEvent(makePointerEvent("pointermove", { clientX: 530, clientY: 200 }));

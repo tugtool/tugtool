@@ -53,7 +53,7 @@ if (!global.requestAnimationFrame) {
 }
 
 import { TabBar, type TabBarCallbacks } from "../tab-bar";
-import { PanelManager } from "../panel-manager";
+import { DeckManager } from "../deck-manager";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
@@ -127,17 +127,17 @@ describe("TabBar (unit)", () => {
   test("renders one tab element per TabItem", () => {
     const node = makeTestNode(3);
     const bar = new TabBar(node, callbacks);
-    expect(bar.getElement().querySelectorAll(".panel-tab").length).toBe(3);
+    expect(bar.getElement().querySelectorAll(".card-tab").length).toBe(3);
     bar.destroy();
   });
 
   test("active tab has panel-tab-active class; inactive tabs do not", () => {
     const node = makeTestNode(3, 1);
     const bar = new TabBar(node, callbacks);
-    const tabs = bar.getElement().querySelectorAll(".panel-tab");
-    expect(tabs[0].classList.contains("panel-tab-active")).toBe(false);
-    expect(tabs[1].classList.contains("panel-tab-active")).toBe(true);
-    expect(tabs[2].classList.contains("panel-tab-active")).toBe(false);
+    const tabs = bar.getElement().querySelectorAll(".card-tab");
+    expect(tabs[0].classList.contains("card-tab-active")).toBe(false);
+    expect(tabs[1].classList.contains("card-tab-active")).toBe(true);
+    expect(tabs[2].classList.contains("card-tab-active")).toBe(false);
     bar.destroy();
   });
 
@@ -146,23 +146,23 @@ describe("TabBar (unit)", () => {
     const bar = new TabBar(node, callbacks);
     node.activeTabIndex = 2;
     bar.update(node);
-    const tabs = bar.getElement().querySelectorAll(".panel-tab");
-    expect(tabs[0].classList.contains("panel-tab-active")).toBe(false);
-    expect(tabs[2].classList.contains("panel-tab-active")).toBe(true);
+    const tabs = bar.getElement().querySelectorAll(".card-tab");
+    expect(tabs[0].classList.contains("card-tab-active")).toBe(false);
+    expect(tabs[2].classList.contains("card-tab-active")).toBe(true);
     bar.destroy();
   });
 
   test("each closable tab has a close button", () => {
     const node = makeTestNode(2);
     const bar = new TabBar(node, callbacks);
-    expect(bar.getElement().querySelectorAll(".panel-tab-close").length).toBe(2);
+    expect(bar.getElement().querySelectorAll(".card-tab-close").length).toBe(2);
     bar.destroy();
   });
 
   test("clicking close button fires onTabClose with correct tabId", () => {
     const node = makeTestNode(2);
     const bar = new TabBar(node, callbacks);
-    const closeButtons = bar.getElement().querySelectorAll(".panel-tab-close");
+    const closeButtons = bar.getElement().querySelectorAll(".card-tab-close");
     (closeButtons[1] as HTMLElement).click();
     expect(closeCalls).toEqual(["tab-id-1"]);
     expect(activateCalls).toEqual([]);
@@ -172,16 +172,16 @@ describe("TabBar (unit)", () => {
   test("tab labels match TabItem.title", () => {
     const node = makeTestNode(2);
     const bar = new TabBar(node, callbacks);
-    const labels = bar.getElement().querySelectorAll(".panel-tab-label");
+    const labels = bar.getElement().querySelectorAll(".card-tab-label");
     expect((labels[0] as HTMLElement).textContent).toBe("Tab 0");
     expect((labels[1] as HTMLElement).textContent).toBe("Tab 1");
     bar.destroy();
   });
 
-  test("getElement() returns a .panel-tab-bar div", () => {
+  test("getElement() returns a .card-tab-bar div", () => {
     const node = makeTestNode(1);
     const bar = new TabBar(node, callbacks);
-    expect(bar.getElement().className).toBe("panel-tab-bar");
+    expect(bar.getElement().className).toBe("card-tab-bar");
     bar.destroy();
   });
 
@@ -224,7 +224,7 @@ describe("PanelManager tab groups (integration)", () => {
     const tabBId = "two-tab-b";
     const panelId = "two-tab-panel";
     const canvasState: CanvasState = {
-      panels: [{
+      cards: [{
         id: panelId,
         position: { x: 100, y: 100 },
         size: { width: 400, height: 300 },
@@ -239,30 +239,30 @@ describe("PanelManager tab groups (integration)", () => {
   }
 
   test("tab bar renders for multi-tab panel", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const { canvasState } = makeTwoTabPanel();
     manager.applyLayout(canvasState);
 
-    const tabBar = container.querySelector(".panel-tab-bar");
+    const tabBar = container.querySelector(".card-tab-bar");
     expect(tabBar).not.toBeNull();
-    const tabs = tabBar!.querySelectorAll(".panel-tab");
+    const tabs = tabBar!.querySelectorAll(".card-tab");
     expect(tabs.length).toBe(2);
 
     manager.destroy();
   });
 
   test("no tab bar for single-tab panel", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     // Default layout: each panel has exactly one tab
-    const defaultPanels = manager.getCanvasState().panels;
+    const defaultPanels = manager.getCanvasState().cards;
     expect(defaultPanels.every((p) => p.tabs.length === 1)).toBe(true);
     // No tab bars should be present
-    expect(container.querySelectorAll(".panel-tab-bar").length).toBe(0);
+    expect(container.querySelectorAll(".card-tab-bar").length).toBe(0);
     manager.destroy();
   });
 
   test("D09: switching tabs does not destroy either card", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const { canvasState, panelId, tabBId } = makeTwoTabPanel();
     manager.applyLayout(canvasState);
 
@@ -276,7 +276,7 @@ describe("PanelManager tab groups (integration)", () => {
 
     // Switch active tab to tabB via applyLayout
     const state = manager.getCanvasState();
-    const panel = state.panels.find((p) => p.id === panelId)!;
+    const panel = state.cards.find((p) => p.id === panelId)!;
     panel.activeTabId = tabBId;
     manager.applyLayout(state);
 
@@ -287,7 +287,7 @@ describe("PanelManager tab groups (integration)", () => {
   });
 
   test("closing a tab calls card.destroy() and removes from feed dispatch", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
@@ -303,30 +303,30 @@ describe("PanelManager tab groups (integration)", () => {
   });
 
   test("closing the last tab removes the panel from canvasState", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
-    const before = manager.getCanvasState().panels.length;
-    const hasGit = manager.getCanvasState().panels.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    const before = manager.getCanvasState().cards.length;
+    const hasGit = manager.getCanvasState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
     expect(hasGit).toBe(true);
 
     manager.removeCard(card);
 
-    expect(manager.getCanvasState().panels.length).toBe(before - 1);
-    const stillHasGit = manager.getCanvasState().panels.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    expect(manager.getCanvasState().cards.length).toBe(before - 1);
+    const stillHasGit = manager.getCanvasState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
     expect(stillHasGit).toBe(false);
 
     manager.destroy();
   });
 
   test("drag-reorder updates tab order in PanelState data model", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const { canvasState, panelId, tabAId, tabBId } = makeTwoTabPanel();
     manager.applyLayout(canvasState);
 
     const state = manager.getCanvasState();
-    const panel = state.panels.find((p) => p.id === panelId)!;
+    const panel = state.cards.find((p) => p.id === panelId)!;
 
     // Initial order: tabA, tabB
     expect(panel.tabs[0].id).toBe(tabAId);

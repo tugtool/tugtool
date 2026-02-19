@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
-  type CanvasState,
-  type PanelState,
+  type DeckState,
+  type CardState,
   type TabItem,
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
@@ -10,10 +10,10 @@ import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
 describe("CanvasState", () => {
   test("CanvasState with empty panels array is valid", () => {
-    const state: CanvasState = { panels: [] };
-    expect(state.panels).toBeDefined();
-    expect(Array.isArray(state.panels)).toBe(true);
-    expect(state.panels.length).toBe(0);
+    const state: DeckState = { cards: [] };
+    expect(state.cards).toBeDefined();
+    expect(Array.isArray(state.cards)).toBe(true);
+    expect(state.cards.length).toBe(0);
   });
 });
 
@@ -25,7 +25,7 @@ describe("PanelState", () => {
       title: "Terminal",
       closable: true,
     };
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "panel-1",
       position: { x: 0, y: 0 },
       size: { width: 800, height: 600 },
@@ -62,7 +62,7 @@ describe("PanelState", () => {
       title: "Terminal 3",
       closable: false,
     };
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "panel-2",
       position: { x: 100, y: 200 },
       size: { width: 400, height: 300 },
@@ -89,14 +89,14 @@ describe("buildDefaultLayout", () => {
   test("buildDefaultLayout(1200, 800) returns 5 panels with correct positions and 12px gaps", () => {
     const result = buildDefaultLayout(1200, 800);
 
-    expect(result.panels.length).toBe(5);
+    expect(result.cards.length).toBe(5);
 
     // Component IDs in order
-    const componentIds = result.panels.map((p) => p.tabs[0].componentId);
+    const componentIds = result.cards.map((p) => p.tabs[0].componentId);
     expect(componentIds).toEqual(["conversation", "terminal", "git", "files", "stats"]);
 
     // Conversation panel geometry
-    const conv = result.panels[0];
+    const conv = result.cards[0];
     expect(conv.position.x).toBe(12);
     expect(conv.position.y).toBe(12);
     // width = (1200 - 36) * 0.6 = 698.4
@@ -105,7 +105,7 @@ describe("buildDefaultLayout", () => {
     expect(conv.size.height).toBe(776);
 
     // Right column panels: same x, same width
-    const rightPanels = result.panels.slice(1);
+    const rightPanels = result.cards.slice(1);
     const firstRight = rightPanels[0];
     rightPanels.forEach((p) => {
       expect(p.position.x).toBeCloseTo(firstRight.position.x, 3);
@@ -121,7 +121,7 @@ describe("buildDefaultLayout", () => {
 
   test("buildDefaultLayout panels have non-overlapping bounding boxes", () => {
     const result = buildDefaultLayout(1200, 800);
-    const panels = result.panels;
+    const panels = result.cards;
 
     for (let i = 0; i < panels.length; i++) {
       for (let j = i + 1; j < panels.length; j++) {
@@ -148,21 +148,21 @@ describe("serialize and deserialize", () => {
       title: "Terminal",
       closable: true,
     };
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "panel-known-1",
       position: { x: 100, y: 200 },
       size: { width: 400, height: 300 },
       tabs: [tab],
       activeTabId: "tab-known-1",
     };
-    const canvasState: CanvasState = { panels: [panel] };
+    const canvasState: DeckState = { cards: [panel] };
 
     const serialized = serialize(canvasState);
     const json = JSON.stringify(serialized);
     const restored = deserialize(json, 1920, 1080);
 
-    expect(restored.panels.length).toBe(1);
-    const restoredPanel = restored.panels[0];
+    expect(restored.cards.length).toBe(1);
+    const restoredPanel = restored.cards[0];
     expect(restoredPanel.id).toBe("panel-known-1");
     expect(restoredPanel.position.x).toBe(100);
     expect(restoredPanel.position.y).toBe(200);
@@ -177,12 +177,12 @@ describe("serialize and deserialize", () => {
   test("deserialize with version:3 data falls back to buildDefaultLayout", () => {
     const json = JSON.stringify({ version: 3, root: {}, floating: [] });
     const result = deserialize(json, 1200, 800);
-    expect(result.panels.length).toBe(5);
+    expect(result.cards.length).toBe(5);
   });
 
   test("deserialize with corrupt JSON falls back to buildDefaultLayout", () => {
     const result = deserialize("not-valid-json{{{", 1200, 800);
-    expect(result.panels.length).toBe(5);
+    expect(result.cards.length).toBe(5);
   });
 
   test("deserialize clamps panel positions to canvas bounds", () => {
@@ -192,9 +192,9 @@ describe("serialize and deserialize", () => {
       title: "Terminal",
       closable: true,
     };
-    const v4 = {
-      version: 4,
-      panels: [
+    const v5 = {
+      version: 5,
+      cards: [
         {
           id: "panel-clamp-1",
           position: { x: 1800, y: 900 },
@@ -204,12 +204,12 @@ describe("serialize and deserialize", () => {
         },
       ],
     };
-    const result = deserialize(JSON.stringify(v4), 1920, 1080);
-    expect(result.panels.length).toBe(1);
+    const result = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(result.cards.length).toBe(1);
     // x + width(400) = 1800 + 400 = 2200 > 1920 -> x = 1920 - 400 = 1520
-    expect(result.panels[0].position.x).toBe(1520);
+    expect(result.cards[0].position.x).toBe(1520);
     // y + height(300) = 900 + 300 = 1200 > 1080 -> y = 1080 - 300 = 780
-    expect(result.panels[0].position.y).toBe(780);
+    expect(result.cards[0].position.y).toBe(780);
   });
 
   test("deserialize enforces 100px minimum sizes", () => {
@@ -219,9 +219,9 @@ describe("serialize and deserialize", () => {
       title: "Terminal",
       closable: true,
     };
-    const v4 = {
-      version: 4,
-      panels: [
+    const v5 = {
+      version: 5,
+      cards: [
         {
           id: "panel-small-1",
           position: { x: 0, y: 0 },
@@ -231,17 +231,17 @@ describe("serialize and deserialize", () => {
         },
       ],
     };
-    const result = deserialize(JSON.stringify(v4), 1920, 1080);
-    expect(result.panels.length).toBe(1);
-    expect(result.panels[0].size.width).toBe(100);
-    expect(result.panels[0].size.height).toBe(100);
+    const result = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(result.cards.length).toBe(1);
+    expect(result.cards[0].size.width).toBe(100);
+    expect(result.cards[0].size.height).toBe(100);
   });
 });
 
 // ---- Panel management data-layer tests (D01, D06) ----
 
-/** Build a minimal PanelState with a single tab. */
-function makePanel(componentId: string): PanelState {
+/** Build a minimal CardState with a single tab. */
+function makeCard(componentId: string): CardState {
   const tabId = crypto.randomUUID();
   return {
     id: crypto.randomUUID(),
@@ -254,49 +254,49 @@ function makePanel(componentId: string): PanelState {
 
 describe("focusPanel data model (D06)", () => {
   test("moving a panel to end of array changes z-order", () => {
-    const p0 = makePanel("terminal");
-    const p1 = makePanel("git");
-    const p2 = makePanel("files");
-    const canvasState: CanvasState = { panels: [p0, p1, p2] };
+    const p0 = makeCard("terminal");
+    const p1 = makeCard("git");
+    const p2 = makeCard("files");
+    const canvasState: DeckState = { cards: [p0, p1, p2] };
 
     // Simulate focusPanel(p0.id): splice and push
-    const idx = canvasState.panels.findIndex((p) => p.id === p0.id);
-    const [focused] = canvasState.panels.splice(idx, 1);
-    canvasState.panels.push(focused);
+    const idx = canvasState.cards.findIndex((p) => p.id === p0.id);
+    const [focused] = canvasState.cards.splice(idx, 1);
+    canvasState.cards.push(focused);
 
     // p0 should now be last (highest z-order)
-    expect(canvasState.panels[canvasState.panels.length - 1].id).toBe(p0.id);
+    expect(canvasState.cards[canvasState.cards.length - 1].id).toBe(p0.id);
     // p1 and p2 shift left
-    expect(canvasState.panels[0].id).toBe(p1.id);
-    expect(canvasState.panels[1].id).toBe(p2.id);
+    expect(canvasState.cards[0].id).toBe(p1.id);
+    expect(canvasState.cards[1].id).toBe(p2.id);
   });
 
   test("focusing already-last panel does not reorder", () => {
-    const p0 = makePanel("terminal");
-    const p1 = makePanel("git");
-    const canvasState: CanvasState = { panels: [p0, p1] };
+    const p0 = makeCard("terminal");
+    const p1 = makeCard("git");
+    const canvasState: DeckState = { cards: [p0, p1] };
 
     // p1 is already last — focusPanel would early-return
-    const idx = canvasState.panels.findIndex((p) => p.id === p1.id);
-    const isAlreadyLast = idx === canvasState.panels.length - 1;
+    const idx = canvasState.cards.findIndex((p) => p.id === p1.id);
+    const isAlreadyLast = idx === canvasState.cards.length - 1;
     expect(isAlreadyLast).toBe(true);
 
     // Array unchanged
-    expect(canvasState.panels[0].id).toBe(p0.id);
-    expect(canvasState.panels[1].id).toBe(p1.id);
+    expect(canvasState.cards[0].id).toBe(p0.id);
+    expect(canvasState.cards[1].id).toBe(p1.id);
   });
 });
 
 describe("addNewCard data model (D01)", () => {
   test("pushing a new PanelState adds it at canvas center", () => {
-    const canvasState: CanvasState = { panels: [] };
+    const canvasState: DeckState = { cards: [] };
     const canvasW = 800;
     const canvasH = 600;
     const PANEL_W = 400;
     const PANEL_H = 300;
 
     const tabId = crypto.randomUUID();
-    const newPanel: PanelState = {
+    const newPanel: CardState = {
       id: crypto.randomUUID(),
       position: {
         x: Math.max(0, (canvasW - PANEL_W) / 2),
@@ -307,24 +307,24 @@ describe("addNewCard data model (D01)", () => {
       activeTabId: tabId,
     };
 
-    canvasState.panels.push(newPanel);
+    canvasState.cards.push(newPanel);
 
-    expect(canvasState.panels.length).toBe(1);
-    expect(canvasState.panels[0].position.x).toBe(200); // (800-400)/2
-    expect(canvasState.panels[0].position.y).toBe(150); // (600-300)/2
-    expect(canvasState.panels[0].tabs[0].componentId).toBe("terminal");
+    expect(canvasState.cards.length).toBe(1);
+    expect(canvasState.cards[0].position.x).toBe(200); // (800-400)/2
+    expect(canvasState.cards[0].position.y).toBe(150); // (600-300)/2
+    expect(canvasState.cards[0].tabs[0].componentId).toBe("terminal");
   });
 });
 
 describe("removeCard data model (D01)", () => {
   test("splicing a panel from the array removes it", () => {
-    const p0 = makePanel("terminal");
-    const p1 = makePanel("git");
-    const canvasState: CanvasState = { panels: [p0, p1] };
+    const p0 = makeCard("terminal");
+    const p1 = makeCard("git");
+    const canvasState: DeckState = { cards: [p0, p1] };
 
     // Simulate removeCard: filter out the panel whose tab matches
     const tabIdToRemove = p0.tabs[0].id;
-    canvasState.panels = canvasState.panels
+    canvasState.cards = canvasState.cards
       .map((panel) => {
         const newTabs = panel.tabs.filter((t) => t.id !== tabIdToRemove);
         if (newTabs.length === panel.tabs.length) return panel;
@@ -335,24 +335,24 @@ describe("removeCard data model (D01)", () => {
       })
       .filter((panel) => panel.tabs.length > 0);
 
-    expect(canvasState.panels.length).toBe(1);
-    expect(canvasState.panels[0].id).toBe(p1.id);
+    expect(canvasState.cards.length).toBe(1);
+    expect(canvasState.cards[0].id).toBe(p1.id);
   });
 
   test("removing a tab from a multi-tab panel leaves panel intact", () => {
     const tab1: TabItem = { id: "t1", componentId: "terminal", title: "T1", closable: true };
     const tab2: TabItem = { id: "t2", componentId: "terminal", title: "T2", closable: true };
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "p1",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "t1",
     };
-    const canvasState: CanvasState = { panels: [panel] };
+    const canvasState: DeckState = { cards: [panel] };
 
     // Remove tab1
-    canvasState.panels = canvasState.panels
+    canvasState.cards = canvasState.cards
       .map((p) => {
         const newTabs = p.tabs.filter((t) => t.id !== "t1");
         if (newTabs.length === p.tabs.length) return p;
@@ -364,18 +364,18 @@ describe("removeCard data model (D01)", () => {
       .filter((p) => p.tabs.length > 0);
 
     // Panel still exists with tab2
-    expect(canvasState.panels.length).toBe(1);
-    expect(canvasState.panels[0].tabs.length).toBe(1);
-    expect(canvasState.panels[0].tabs[0].id).toBe("t2");
+    expect(canvasState.cards.length).toBe(1);
+    expect(canvasState.cards[0].tabs.length).toBe(1);
+    expect(canvasState.cards[0].tabs[0].id).toBe("t2");
     // activeTabId falls back to tab2
-    expect(canvasState.panels[0].activeTabId).toBe("t2");
+    expect(canvasState.cards[0].activeTabId).toBe("t2");
   });
 });
 
 describe("addNewTab data model (D01)", () => {
   test("adding a tab to existing panel pushes to tabs array", () => {
     const existingTabId = "t-existing";
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "p1",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },
@@ -394,7 +394,7 @@ describe("addNewTab data model (D01)", () => {
   });
 
   test("same-componentId constraint: tabs must share componentId", () => {
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "p1",
       position: { x: 0, y: 0 },
       size: { width: 400, height: 300 },

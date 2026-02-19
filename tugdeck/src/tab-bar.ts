@@ -35,7 +35,7 @@ export class TabBar {
     this.callbacks = callbacks;
 
     this.rootEl = document.createElement("div");
-    this.rootEl.className = "panel-tab-bar";
+    this.rootEl.className = "card-tab-bar";
 
     this.renderTabs(node);
   }
@@ -72,21 +72,21 @@ export class TabBar {
 
       const tabEl = document.createElement("div");
       tabEl.className = isActive
-        ? "panel-tab panel-tab-active"
-        : "panel-tab";
+        ? "card-tab card-tab-active"
+        : "card-tab";
       tabEl.dataset.tabId = tab.id;
       tabEl.dataset.tabIndex = String(i);
 
       // Label
       const labelEl = document.createElement("span");
-      labelEl.className = "panel-tab-label";
+      labelEl.className = "card-tab-label";
       labelEl.textContent = tab.title;
       tabEl.appendChild(labelEl);
 
       // Close button
       if (tab.closable !== false) {
         const closeEl = document.createElement("span");
-        closeEl.className = "panel-tab-close";
+        closeEl.className = "card-tab-close";
         closeEl.textContent = "×";
         closeEl.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -112,7 +112,7 @@ export class TabBar {
       if (downEvent.button !== 0) return;
 
       // Don't start drag on the close button
-      if ((downEvent.target as HTMLElement).classList.contains("panel-tab-close")) {
+      if ((downEvent.target as HTMLElement).classList.contains("card-tab-close")) {
         return;
       }
 
@@ -169,7 +169,7 @@ export class TabBar {
    */
   private hitTestTabIndex(clientX: number): number {
     const tabs = Array.from(
-      this.rootEl.querySelectorAll(".panel-tab")
+      this.rootEl.querySelectorAll(".card-tab")
     ) as HTMLElement[];
 
     for (let i = 0; i < tabs.length; i++) {

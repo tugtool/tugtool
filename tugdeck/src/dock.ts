@@ -5,7 +5,7 @@
  * with theme selection, and runtime theme change dispatch via MutationObserver.
  */
 
-import type { PanelManager } from "./panel-manager";
+import type { DeckManager } from "./deck-manager";
 import { DropdownMenu } from "./card-menu";
 import type { CardMenuItem } from "./cards/card";
 import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Settings } from "lucide";
@@ -179,7 +179,7 @@ export class Dock {
         type: "action",
         label: "About tugdeck",
         action: () => {
-          window.alert("tugdeck v1.0\nCanvas panel system for tugtool.");
+          window.alert("tugdeck v1.0\nCanvas card system for tugtool.");
         },
       },
     ];

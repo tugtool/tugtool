@@ -76,9 +76,9 @@ fn main() {
         fs::copy(&tokens_css, tugdeck_out.join("tokens.css")).expect("failed to copy tokens.css");
     }
 
-    let panels_css = tugdeck_dir.join("styles/panels.css");
-    if panels_css.exists() {
-        fs::copy(&panels_css, tugdeck_out.join("panels.css")).expect("failed to copy panels.css");
+    let cards_chrome_css = tugdeck_dir.join("styles/cards-chrome.css");
+    if cards_chrome_css.exists() {
+        fs::copy(&cards_chrome_css, tugdeck_out.join("cards-chrome.css")).expect("failed to copy cards-chrome.css");
     }
 
     let dock_css = tugdeck_dir.join("styles/dock.css");

@@ -1,5 +1,5 @@
 /**
- * Canvas panel system styles (Tuglook design language)
+ * Canvas card system styles (Tuglook design language)
  *
  * Floating panel layout, tab bars, card headers, and associated chrome.
  * Uses only --td-* semantic tokens from tokens.css.
@@ -8,7 +8,7 @@
 
 /* ---- Root container ---- */
 
-.panel-root {
+.deck-root {
   display: flex;
   width: 100%;
   height: 100%;
@@ -22,7 +22,7 @@
  * the card area. When there is no tab bar the single child (panel-card-area
  * or panel-card-mount) expands to fill 100% via flex: 1.
  */
-.panel-card-container {
+.card-container {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -34,7 +34,7 @@
 }
 
 /* Card area below the optional tab bar — takes all remaining space. */
-.panel-card-area {
+.card-area {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -44,7 +44,7 @@
   min-width: 0;
 }
 
-.panel-card-mount {
+.card-mount {
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -52,7 +52,7 @@
 
 /* ---- Tab bar ---- */
 
-.panel-tab-bar {
+.card-tab-bar {
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -64,7 +64,7 @@
   overflow-y: hidden;
 }
 
-.panel-tab {
+.card-tab {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -82,16 +82,16 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-.panel-tab-active {
+.card-tab-active {
   color: var(--td-text);
   background: var(--td-surface);
 }
 
-.panel-tab:hover {
+.card-tab:hover {
   color: var(--td-text);
 }
 
-.panel-tab-close {
+.card-tab-close {
   display: none;
   font-size: 14px;
   line-height: 1;
@@ -101,22 +101,22 @@
   cursor: pointer;
 }
 
-.panel-tab:hover .panel-tab-close {
+.card-tab:hover .card-tab-close {
   display: inline-flex;
 }
 
-.panel-tab-close:hover {
+.card-tab-close:hover {
   color: var(--td-danger);
   background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
-.panel-tab.dragging {
+.card-tab.dragging {
   opacity: 0.5;
 }
 
 /* ---- Floating panels ---- */
 
-.floating-panel {
+.card-frame {
   position: absolute;
   display: flex;
   flex-direction: column;
@@ -132,13 +132,13 @@
 
 /* ---- Card header bar (panel-header) ---- */
 
-.panel-header {
+.card-header {
   height: 28px;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  background: var(--td-titlebar-inactive);
+  background: var(--td-header-inactive);
   border-bottom: 1px solid var(--td-border);
   border-radius: 5px 5px 0 0;
   flex-shrink: 0;
@@ -147,26 +147,26 @@
 }
 
 /* Key panel title bar: brighter/saturated version of theme's main color */
-.panel-header-key {
-  background: var(--td-titlebar-active);
+.card-header-key {
+  background: var(--td-header-active);
 }
 
-.panel-header-key .panel-header-icon {
+.card-header-key .card-header-icon {
   color: var(--td-icon-active);
 }
 
-.panel-header-key .panel-header-title {
+.card-header-key .card-header-title {
   color: var(--td-text);
 }
 
-.panel-header-icon {
+.card-header-icon {
   display: flex;
   align-items: center;
   color: var(--td-text-soft);
   flex-shrink: 0;
 }
 
-.panel-header-title {
+.card-header-title {
   font-family: var(--td-font-mono);
   font-size: 12px;
   font-weight: 600;
@@ -179,11 +179,11 @@
   text-overflow: ellipsis;
 }
 
-.panel-header-spacer {
+.card-header-spacer {
   flex: 1;
 }
 
-.panel-header-btn {
+.card-header-btn {
   width: 24px;
   height: 24px;
   display: flex;
@@ -198,7 +198,7 @@
   flex-shrink: 0;
 }
 
-.panel-header-btn:hover {
+.card-header-btn:hover {
   color: var(--td-text);
   background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
@@ -257,7 +257,7 @@
   font-weight: 600;
 }
 
-.floating-panel-content {
+.card-frame-content {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -269,47 +269,47 @@
 
 /* Resize handles: 8px hit area on each edge/corner */
 
-.floating-panel-resize {
+.card-frame-resize {
   position: absolute;
   z-index: 1;
 }
 
-.floating-panel-resize-n {
+.card-frame-resize-n {
   top: -4px; left: 8px; right: 8px; height: 8px;
   cursor: ns-resize;
 }
 
-.floating-panel-resize-s {
+.card-frame-resize-s {
   bottom: -4px; left: 8px; right: 8px; height: 8px;
   cursor: ns-resize;
 }
 
-.floating-panel-resize-e {
+.card-frame-resize-e {
   right: -4px; top: 8px; bottom: 8px; width: 8px;
   cursor: ew-resize;
 }
 
-.floating-panel-resize-w {
+.card-frame-resize-w {
   left: -4px; top: 8px; bottom: 8px; width: 8px;
   cursor: ew-resize;
 }
 
-.floating-panel-resize-nw {
+.card-frame-resize-nw {
   top: -4px; left: -4px; width: 12px; height: 12px;
   cursor: nwse-resize;
 }
 
-.floating-panel-resize-ne {
+.card-frame-resize-ne {
   top: -4px; right: -4px; width: 12px; height: 12px;
   cursor: nesw-resize;
 }
 
-.floating-panel-resize-sw {
+.card-frame-resize-sw {
   bottom: -4px; left: -4px; width: 12px; height: 12px;
   cursor: nesw-resize;
 }
 
-.floating-panel-resize-se {
+.card-frame-resize-se {
   bottom: -4px; right: -4px; width: 12px; height: 12px;
   cursor: nwse-resize;
 }

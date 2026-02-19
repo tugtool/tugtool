@@ -80,8 +80,8 @@ import { ConversationCard } from "../cards/conversation-card";
 import { GitCard } from "../cards/git-card";
 import { FilesCard } from "../cards/files-card";
 import { StatsCard } from "../cards/stats-card";
-import { FloatingPanel } from "../floating-panel";
-import { PanelManager } from "../panel-manager";
+import { CardFrame } from "../card-frame";
+import { DeckManager } from "../deck-manager";
 import type { TugConnection } from "../connection";
 import type { PanelState } from "../layout-tree";
 import { FeedId } from "../protocol";
@@ -176,14 +176,14 @@ describe("CardHeader – DOM structure", () => {
       onClose: () => {},
       onCollapse: () => {},
     });
-    expect(header.getElement().classList.contains("panel-header")).toBe(true);
+    expect(header.getElement().classList.contains("card-header")).toBe(true);
     header.destroy();
   });
 
   test("renders .panel-header-title with correct uppercase text", () => {
     const meta = makeMeta({ title: "Git", icon: "GitBranch" });
     const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
-    const title = header.getElement().querySelector(".panel-header-title");
+    const title = header.getElement().querySelector(".card-header-title");
     expect(title).not.toBeNull();
     expect(title!.textContent).toBe("Git");
     header.destroy();
@@ -192,7 +192,7 @@ describe("CardHeader – DOM structure", () => {
   test("renders .panel-header-icon element", () => {
     const meta = makeMeta({ icon: "Activity" });
     const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
-    const icon = header.getElement().querySelector(".panel-header-icon");
+    const icon = header.getElement().querySelector(".card-header-icon");
     expect(icon).not.toBeNull();
     header.destroy();
   });
@@ -486,7 +486,7 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
       activeTabId: tabId,
     };
 
-    const fp = new FloatingPanel(ps, {
+    const fp = new CardFrame(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
@@ -494,11 +494,11 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
     }, canvas);
 
     // Should have .panel-header (CardHeader)
-    const header = fp.getElement().querySelector(".panel-header");
+    const header = fp.getElement().querySelector(".card-header");
     expect(header).not.toBeNull();
 
     // Should NOT have .floating-panel-title-bar (the old temporary title bar)
-    const oldTitleBar = fp.getElement().querySelector(".floating-panel-title-bar");
+    const oldTitleBar = fp.getElement().querySelector(".card-frame-title-bar");
     expect(oldTitleBar).toBeNull();
 
     fp.destroy();
@@ -515,7 +515,7 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
       activeTabId: tabId,
     };
 
-    const fp = new FloatingPanel(ps, {
+    const fp = new CardFrame(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
@@ -540,14 +540,14 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
     };
     const meta: TugCardMeta = { title: "Git Branch", icon: "GitBranch", closable: true, menuItems: [] };
 
-    const fp = new FloatingPanel(ps, {
+    const fp = new CardFrame(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
       onClose: () => {},
     }, canvas, meta);
 
-    const titleEl = fp.getElement().querySelector(".panel-header-title");
+    const titleEl = fp.getElement().querySelector(".card-header-title");
     expect(titleEl).not.toBeNull();
     expect(titleEl!.textContent).toBe("Git Branch");
 
@@ -642,21 +642,21 @@ describe("PanelManager – single-tab CardHeader integration", () => {
   });
 
   test("single-tab docked card renders a .panel-header element", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = new GitCard();
     manager.addCard(card, "git");
     // After addCard, the container should have a .panel-header for the single-tab git card
-    const header = container.querySelector(".panel-header");
+    const header = container.querySelector(".card-header");
     expect(header).not.toBeNull();
     manager.destroy();
   });
 
   test(".panel-header title matches card meta title", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = new GitCard();
     manager.addCard(card, "git");
     // There are 5 default panels; find the one with the git title
-    const allTitles = Array.from(container.querySelectorAll(".panel-header-title"));
+    const allTitles = Array.from(container.querySelectorAll(".card-header-title"));
     const gitTitle = allTitles.find((el) => el.textContent === "Git");
     expect(gitTitle).not.toBeNull();
     expect(gitTitle!.textContent).toBe("Git");

@@ -66,7 +66,7 @@ if (!global.requestAnimationFrame) {
   };
 }
 
-import { PanelManager } from "../panel-manager";
+import { DeckManager } from "../deck-manager";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
@@ -140,18 +140,18 @@ describe("PanelManager", () => {
 
   // ---- Default layout rendering ----
 
-  test("renders default layout with 5 .floating-panel elements", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const panels = container.querySelectorAll(".floating-panel");
+  test("renders default layout with 5 .card-frame elements", () => {
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
+    const panels = container.querySelectorAll(".card-frame");
     expect(panels.length).toBe(5);
     manager.destroy();
   });
 
   test("getCanvasState returns 5 panels after construction", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const state = manager.getCanvasState();
-    expect(state.panels.length).toBe(5);
-    const componentIds = state.panels.map((p) => p.tabs[0].componentId);
+    expect(state.cards.length).toBe(5);
+    const componentIds = state.cards.map((p) => p.tabs[0].componentId);
     expect(componentIds).toContain("conversation");
     expect(componentIds).toContain("terminal");
     expect(componentIds).toContain("git");
@@ -161,13 +161,13 @@ describe("PanelManager", () => {
   });
 
   test("panel-root element exists inside container", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
-    expect(container.querySelector(".panel-root")).not.toBeNull();
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
+    expect(container.querySelector(".deck-root")).not.toBeNull();
     manager.destroy();
   });
 
   test("addCard registers the card and mounts it", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card, "git");
     expect(manager.getCardRegistry().has !== undefined).toBe(true);
@@ -180,7 +180,7 @@ describe("PanelManager", () => {
   // ---- D10: Fan-out frame dispatch ----
 
   test("D10: each output feedId has exactly one registered connection callback", () => {
-    new PanelManager(container, connection as unknown as TugConnection);
+    new DeckManager(container, connection as unknown as TugConnection);
     // PanelManager registers exactly one callback per output feedId
     expect(connection.callbackCount(FeedId.TERMINAL_OUTPUT)).toBe(1);
     expect(connection.callbackCount(FeedId.FILESYSTEM)).toBe(1);
@@ -190,7 +190,7 @@ describe("PanelManager", () => {
   });
 
   test("D10: frame delivered to all cards subscribed to that feedId", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card1 = makeMockCard([FeedId.GIT], "git");
     const card2 = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card1, "git");
@@ -210,7 +210,7 @@ describe("PanelManager", () => {
   // ---- IDragState ----
 
   test("isDragging is false initially", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     expect(manager.isDragging).toBe(false);
     manager.destroy();
   });
@@ -218,7 +218,7 @@ describe("PanelManager", () => {
   // ---- removeCard ----
 
   test("removeCard removes card from feed dispatch set", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card, "git");
 
@@ -232,18 +232,18 @@ describe("PanelManager", () => {
   });
 
   test("removeCard removes panel from canvasState when it has only one tab", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card, "git");
 
-    const beforeCount = manager.getCanvasState().panels.length;
+    const beforeCount = manager.getCanvasState().cards.length;
     manager.removeCard(card);
-    expect(manager.getCanvasState().panels.length).toBe(beforeCount - 1);
+    expect(manager.getCanvasState().cards.length).toBe(beforeCount - 1);
     manager.destroy();
   });
 
   test("after removeCard, frame is no longer delivered to removed card", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card, "git");
     manager.removeCard(card);
@@ -256,37 +256,37 @@ describe("PanelManager", () => {
   // ---- addNewCard ----
 
   test("addNewCard increases panels count by 1", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
-    const before = manager.getCanvasState().panels.length;
+    const before = manager.getCanvasState().cards.length;
     manager.addNewCard("terminal");
-    expect(manager.getCanvasState().panels.length).toBe(before + 1);
+    expect(manager.getCanvasState().cards.length).toBe(before + 1);
     manager.destroy();
   });
 
-  test("addNewCard adds a .floating-panel element to the container", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+  test("addNewCard adds a .card-frame element to the container", () => {
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
 
-    const before = container.querySelectorAll(".floating-panel").length;
+    const before = container.querySelectorAll(".card-frame").length;
     manager.addNewCard("git");
-    expect(container.querySelectorAll(".floating-panel").length).toBe(before + 1);
+    expect(container.querySelectorAll(".card-frame").length).toBe(before + 1);
     manager.destroy();
   });
 
   test("addNewCard with unknown componentId logs warning and does not change state", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const before = manager.getCanvasState().panels.length;
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
+    const before = manager.getCanvasState().cards.length;
     manager.addNewCard("unknown-component");
-    expect(manager.getCanvasState().panels.length).toBe(before);
+    expect(manager.getCanvasState().cards.length).toBe(before);
     manager.destroy();
   });
 
   // ---- resetLayout ----
 
   test("resetLayout re-renders 5 floating panels", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
@@ -297,17 +297,17 @@ describe("PanelManager", () => {
     manager.addNewCard("git");
     manager.resetLayout();
 
-    expect(manager.getCanvasState().panels.length).toBe(5);
+    expect(manager.getCanvasState().cards.length).toBe(5);
     manager.destroy();
   });
 
   // ---- applyLayout ----
 
   test("applyLayout replaces canvasState and re-renders", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "al-tab-1";
     manager.applyLayout({
-      panels: [{
+      cards: [{
         id: "al-panel-1",
         position: { x: 0, y: 0 },
         size: { width: 400, height: 300 },
@@ -315,15 +315,15 @@ describe("PanelManager", () => {
         activeTabId: tabId,
       }],
     });
-    expect(manager.getCanvasState().panels.length).toBe(1);
-    expect(container.querySelectorAll(".floating-panel").length).toBe(1);
+    expect(manager.getCanvasState().cards.length).toBe(1);
+    expect(container.querySelectorAll(".card-frame").length).toBe(1);
     manager.destroy();
   });
 
   // ---- Layout persistence ----
 
   test("serialize/deserialize round-trip via applyLayout and getCanvasState", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "persist-tab-1";
     const testPanel = {
       id: "persist-panel-1",
@@ -332,13 +332,13 @@ describe("PanelManager", () => {
       tabs: [{ id: tabId, componentId: "git", title: "Git", closable: true }],
       activeTabId: tabId,
     };
-    manager.applyLayout({ panels: [testPanel] });
+    manager.applyLayout({ cards: [testPanel] });
 
     const state = manager.getCanvasState();
-    expect(state.panels[0].position.x).toBe(50);
-    expect(state.panels[0].position.y).toBe(75);
-    expect(state.panels[0].size.width).toBe(350);
-    expect(state.panels[0].size.height).toBe(250);
+    expect(state.cards[0].position.x).toBe(50);
+    expect(state.cards[0].position.y).toBe(75);
+    expect(state.cards[0].size.width).toBe(350);
+    expect(state.cards[0].size.height).toBe(250);
     manager.destroy();
   });
 });
@@ -412,20 +412,20 @@ describe("PanelManager – snap wiring", () => {
   // onMoving fires with x=105, computeSnap snaps A so A.right aligns with B.left=310 → A.x=110.
   test("moving a panel near another panel's edge snaps to alignment", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 100, 100, 200, 200),
         makePanelState("panel-b", 310, 100, 200, 200),
       ],
     });
 
     // Get panel A's floating panel header element
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     expect(floatingPanels.length).toBe(2);
     const panelAEl = floatingPanels[0]; // Panel A is first (index 0)
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
     expect(headerA).not.toBeNull();
 
     // Simulate drag: start at (200, 150), move right by 5px (so new x~=105)
@@ -438,7 +438,7 @@ describe("PanelManager – snap wiring", () => {
     // After snap: panel A's right edge (A.x + 200) should be snapped to B.left (310)
     // So A.x = 310 - 200 = 110
     // Note: onFocus fires on pointerdown and may reorder panels; find by id.
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
     expect(panelA).toBeDefined();
     expect(panelA.position.x).toBe(110);
     expect(panelA.position.y).toBe(100); // y unchanged
@@ -453,18 +453,18 @@ describe("PanelManager – snap wiring", () => {
   // onResizing fires: snap.right = 310, so newW = 310 - 100 = 210.
   test("resizing a panel's right edge near another panel's left edge snaps to alignment", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 100, 100, 200, 200),
         makePanelState("panel-b", 310, 100, 200, 200),
       ],
     });
 
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     const panelAEl = floatingPanels[0];
-    const eastHandle = panelAEl.querySelector<HTMLElement>(".floating-panel-resize-e")!;
+    const eastHandle = panelAEl.querySelector<HTMLElement>(".card-frame-resize-e")!;
     expect(eastHandle).not.toBeNull();
 
     // Panel A's right edge is at x=300. Resize east handle by dx=7 → new right=307.
@@ -476,7 +476,7 @@ describe("PanelManager – snap wiring", () => {
 
     // Width should have snapped so right edge = 310: width = 310 - 100 = 210
     // Find by id in case panel order changed
-    const finalPanel = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const finalPanel = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
     expect(finalPanel).toBeDefined();
     expect(finalPanel.size.width).toBe(210);
     expect(finalPanel.position.x).toBe(100); // x unchanged for east resize
@@ -490,18 +490,18 @@ describe("PanelManager – snap wiring", () => {
   // No snap should occur; final position should be the unsnapped computed position.
   test("panels far apart do not snap", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 0, 200, 200),
         makePanelState("panel-b", 500, 0, 200, 200),
       ],
     });
 
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     const panelAEl = floatingPanels[0];
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Start drag at (100, 20), move 50px right
     headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 20 }));
@@ -510,7 +510,7 @@ describe("PanelManager – snap wiring", () => {
 
     // With no snap, A.x should be 0 + 50 = 50
     // Note: onFocus fires on pointerdown and may reorder panels; find by id.
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
     expect(panelA).toBeDefined();
     expect(panelA.position.x).toBe(50);
     expect(panelA.position.y).toBe(0);
@@ -533,7 +533,7 @@ describe("PanelManager – guide lines", () => {
   // Test a: 4 .snap-guide-line elements are created in the container; all initially hidden.
   test("creates 4 guide line elements in the container, all initially hidden", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     const guides = snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line");
     expect(guides.length).toBe(4);
@@ -552,7 +552,7 @@ describe("PanelManager – guide lines", () => {
   // Combined into a single end-to-end integration test.
   test("guide lines appear during snap drag and hide on drag end", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     // Panel A at (100, 100, 200, 200): right edge = 300.
     // Panel B at (310, 100, 200, 200): left edge = 310. Gap = 10px.
@@ -560,7 +560,7 @@ describe("PanelManager – guide lines", () => {
     // computeSnap returns guides: [{ axis: "x", position: 310 }].
     // showGuides positions guideElements[0] at left:310px and sets display:block.
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 100, 100, 200, 200),
         makePanelState("panel-b", 310, 100, 200, 200),
       ],
@@ -569,9 +569,9 @@ describe("PanelManager – guide lines", () => {
     const guides = Array.from(snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line"));
     expect(guides.length).toBe(4);
 
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     const panelAEl = floatingPanels[0];
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Start drag
     headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 150 }));
@@ -616,10 +616,10 @@ describe("PanelManager – set computation", () => {
   // onMoveEnd fires → recomputeSets() → 1 set with panel-a and panel-b.
   test("two panels placed edge-to-edge are in the same set after move-end", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -629,9 +629,9 @@ describe("PanelManager – set computation", () => {
     expect(manager.getSets().length).toBe(1);
 
     // Get panel A's header
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     const panelAEl = floatingPanels[0];
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Minimal drag: dx=4 (above DRAG_THRESHOLD=3, within SNAP_THRESHOLD=8 of B.left)
     headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
@@ -653,10 +653,10 @@ describe("PanelManager – set computation", () => {
   // After moveEnd + recomputeSets: A.right=200, B far away. No shared edge. getSets=[].
   test("moving a panel away removes it from the set", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -667,7 +667,7 @@ describe("PanelManager – set computation", () => {
 
     // Drag B far right (dx=500). B ends up at ~x=700, far from A.right=200.
     // Find panel B's floating element by its current left style = "200px".
-    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".card-frame"));
     let panelBEl: HTMLElement | undefined;
     for (const el of allPanels) {
       if (el.style.left === "200px") {
@@ -676,7 +676,7 @@ describe("PanelManager – set computation", () => {
       }
     }
     expect(panelBEl).toBeDefined();
-    const headerB = panelBEl!.querySelector<HTMLElement>(".panel-header")!;
+    const headerB = panelBEl!.querySelector<HTMLElement>(".card-header")!;
 
     // Drag B 500px to the right
     headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
@@ -696,10 +696,10 @@ describe("PanelManager – set computation", () => {
   // Remove B → recomputeSets. A.right=200, C.left=400, gap=200 >> 8. getSets=[].
   test("closing a panel recomputes sets correctly", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
         makePanelState("panel-c", 400, 100, 200, 200),
@@ -747,11 +747,11 @@ describe("PanelManager – virtual sashes", () => {
   // Test a: two edge-adjacent panels produce a virtual sash element in the DOM.
   test("two edge-adjacent panels produce a virtual sash in the DOM", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     // Panel A at (0,100,200,200): right=200. Panel B at (200,100,200,200): left=200.
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -776,10 +776,10 @@ describe("PanelManager – virtual sashes", () => {
   // After drag: A.width=250, B.x=250, B.width=150.
   test("dragging the sash resizes both panels", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -795,8 +795,8 @@ describe("PanelManager – virtual sashes", () => {
     sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
 
     // After drag: A grew by 50, B shrank by 50 and moved right
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
 
     expect(panelA.size.width).toBe(250);
     expect(panelB.size.width).toBe(150);
@@ -813,10 +813,10 @@ describe("PanelManager – virtual sashes", () => {
   // Would make B 50px wide — below MIN_SIZE. Should clamp B to 100, A to 200.
   test("sash drag clamps both panels to MIN_SIZE_PX", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 150, 200),
         makePanelState("panel-b", 150, 100, 150, 200),
       ],
@@ -831,8 +831,8 @@ describe("PanelManager – virtual sashes", () => {
     sash.dispatchEvent(makePointerEvent("pointermove", { clientX: 250, clientY: 200 }));
     sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
 
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
 
     // B should be clamped to MIN_SIZE=100; A gets 150 + (150-100) = 200
     expect(panelB.size.width).toBe(100);
@@ -847,10 +847,10 @@ describe("PanelManager – virtual sashes", () => {
   // After test b scenario: boundary moved from 200 to 250. New sash should be at left=246.
   test("sash is recreated at new boundary after drag and sets still contain both panels", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -905,10 +905,10 @@ describe("PanelManager – set dragging", () => {
     panelAEl: HTMLElement;
     panelBEl: HTMLElement;
   } {
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
     // panel-a at (0,100,200,200), panel-b at (200,100,200,200) — shared vertical edge.
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -918,7 +918,7 @@ describe("PanelManager – set dragging", () => {
     expect(manager.getSets().length).toBe(1);
 
     // Find elements by position: panel-a at x=0, panel-b at x=200.
-    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".card-frame"));
     const panelAEl = allPanels.find((el) => el.style.left === "0px")!;
     const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
 
@@ -935,7 +935,7 @@ describe("PanelManager – set dragging", () => {
     const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
 
     // panel-a is top-most (focusPanel moved it to index 1 during setup drag).
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Drag panel-a right by 50px (clientX 100 → 150, dx=50).
     headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
@@ -943,8 +943,8 @@ describe("PanelManager – set dragging", () => {
     headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 150, clientY: 150 }));
 
     // Both panels should have moved right by 50px.
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
     expect(panelA.position.x).toBe(50);
     expect(panelB.position.x).toBe(250);
 
@@ -959,7 +959,7 @@ describe("PanelManager – set dragging", () => {
     const { manager, panelBEl } = setupTwoPanelSet(snapContainer);
 
     // panel-b is NOT top-most (index 0 after setup drag). Drag it far right.
-    const headerB = panelBEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerB = panelBEl.querySelector<HTMLElement>(".card-header")!;
 
     // Drag panel-b right by 200px.
     headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
@@ -967,8 +967,8 @@ describe("PanelManager – set dragging", () => {
     headerB.dispatchEvent(makePointerEvent("pointerup", { clientX: 504, clientY: 150 }));
 
     // panel-a should stay at x=0; panel-b should have moved right.
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
     expect(panelA.position.x).toBe(0);
     // panel-b moved ~200px right (away from panel-a)
     expect(panelB.position.x).toBeGreaterThan(200);
@@ -982,7 +982,7 @@ describe("PanelManager – set dragging", () => {
     const snapContainer = makeSnapContainer();
     const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
 
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Drag panel-a (top-most) right by 50px — set-move (clientX 100 → 150, dx=50).
     headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
@@ -1004,10 +1004,10 @@ describe("PanelManager – set dragging", () => {
   // Drag A far away → break-out. B and C still adjacent. getSets() = [{B,C}].
   test("after break-out, remaining panels form correct sets", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
         makePanelState("panel-c", 400, 100, 200, 200),
@@ -1019,10 +1019,10 @@ describe("PanelManager – set dragging", () => {
     expect(manager.getSets()[0].panelIds.length).toBe(3);
 
     // Find panel-b (non-leader) at x=200.
-    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".card-frame"));
     const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
     expect(panelBEl).toBeDefined();
-    const headerB = panelBEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerB = panelBEl.querySelector<HTMLElement>(".card-header")!;
 
     // Drag panel-b far left to separate from the set (dx = -300).
     headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
@@ -1053,10 +1053,10 @@ describe("PanelManager – set dragging", () => {
   // After snap: set bbox right = 410, so A.x = 10, B.x = 210.
   test("snap applies during set-move against non-set panels", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
         makePanelState("panel-c", 410, 100, 200, 200),
@@ -1072,10 +1072,10 @@ describe("PanelManager – set dragging", () => {
     expect(abSet).toBeDefined();
 
     // Find panel-a element (top-most, at left=0px).
-    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".card-frame"));
     const panelAEl = allPanels.find((el) => el.style.left === "0px")!;
     expect(panelAEl).toBeDefined();
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Drag panel-a (top-most in set) right by 5px.
     // Set bbox right at proposed position = 405, dist to C.left (410) = 5px < 8px → snap.
@@ -1090,8 +1090,8 @@ describe("PanelManager – set dragging", () => {
     // Drag dx=5: proposed bbox at x=5, right=405. C.left=410, gap=5 ≤ 8 → snap.
     // snapDX = 5. panel-a.x = 0+5+5=10. panel-b.x = 200+5+5=210.
     // Set right edge = panel-b.x + 200 = 410. ✓
-    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
 
     // panel-a moved by dx=5 (drag) + 5 (snap offset) = 10.
     expect(panelA.position.x).toBe(10);
@@ -1122,11 +1122,11 @@ describe("PanelManager – close recompute and final polish", () => {
   // After removeCard on C: getSets() = [{A,B}, {D,E}]. Two sets.
   test("closing a panel that connects two sub-groups splits the set into two", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     // Each panel is exactly 100px wide, edge-to-edge.
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0,   100, 100, 200),
         makePanelState("panel-b", 100, 100, 100, 200),
         makePanelState("panel-c", 200, 100, 100, 200),
@@ -1171,10 +1171,10 @@ describe("PanelManager – close recompute and final polish", () => {
   // Remove panel-b: A is a singleton. getSets() = [].
   test("closing the last panel in a set dissolves the set", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -1201,10 +1201,10 @@ describe("PanelManager – close recompute and final polish", () => {
   // Test: after resetLayout, sets and sashes are empty.
   test("after resetLayout, sets and sashes are cleared", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 0, 100, 200, 200),
         makePanelState("panel-b", 200, 100, 200, 200),
       ],
@@ -1237,10 +1237,10 @@ describe("PanelManager – close recompute and final polish", () => {
   // Dispatch pointercancel instead of pointerup → guides should be hidden.
   test("guide lines are hidden after pointercancel during drag", () => {
     const snapContainer = makeSnapContainer();
-    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    const manager = new DeckManager(snapContainer, connection as unknown as TugConnection);
 
     manager.applyLayout({
-      panels: [
+      cards: [
         makePanelState("panel-a", 100, 100, 200, 200),
         makePanelState("panel-b", 310, 100, 200, 200),
       ],
@@ -1249,9 +1249,9 @@ describe("PanelManager – close recompute and final polish", () => {
     const guides = Array.from(snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line"));
     expect(guides.length).toBe(4);
 
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".card-frame");
     const panelAEl = floatingPanels[0];
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
     // Start drag: pointerdown at (200, 150), then move 5px right.
     // A.right at 305, B.left=310, gap=5 ≤ 8 → snap activates, guide appears.

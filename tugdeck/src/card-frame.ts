@@ -14,7 +14,7 @@
  * [D06] Key panel focus model with title bar tint
  */
 
-import type { PanelState } from "./layout-tree";
+import type { CardState } from "./layout-tree";
 import type { TugCardMeta } from "./cards/card";
 import { CardHeader } from "./card-header";
 
@@ -25,7 +25,7 @@ const MIN_SIZE_PX = 100;
 const DRAG_THRESHOLD_PX = 3;
 
 /** Height of the header bar in pixels */
-export const FLOATING_TITLE_BAR_HEIGHT = 28;
+export const CARD_TITLE_BAR_HEIGHT = 28;
 
 /** Inset from canvas edges — panels can't be positioned flush against the viewport */
 const CANVAS_INSET_PX = 2;
@@ -45,7 +45,7 @@ export interface FloatingPanelCallbacks {
   onResizing?: (x: number, y: number, width: number, height: number) => { x: number; y: number; width: number; height: number };
 }
 
-export class FloatingPanel {
+export class CardFrame {
   private el: HTMLElement;
   private cardHeader: CardHeader;
   private cardAreaEl: HTMLElement;
@@ -64,7 +64,7 @@ export class FloatingPanel {
     this.canvasEl = canvasEl;
 
     this.el = document.createElement("div");
-    this.el.className = "floating-panel";
+    this.el.className = "card-frame";
     this.applyGeometry();
 
     // Focus on click anywhere in the panel.
@@ -100,7 +100,7 @@ export class FloatingPanel {
 
     // Card area
     this.cardAreaEl = document.createElement("div");
-    this.cardAreaEl.className = "floating-panel-content";
+    this.cardAreaEl.className = "card-frame-content";
     this.el.appendChild(this.cardAreaEl);
 
     // Resize handles
@@ -142,7 +142,7 @@ export class FloatingPanel {
 
   /** Toggle the key-panel title bar tint on the header element. */
   setKey(isKey: boolean): void {
-    this.cardHeader.getElement().classList.toggle("panel-header-key", isKey);
+    this.cardHeader.getElement().classList.toggle("card-header-key", isKey);
   }
 
   destroy(): void {
@@ -233,7 +233,7 @@ export class FloatingPanel {
     const directions = ["n", "s", "e", "w", "nw", "ne", "sw", "se"] as const;
     for (const dir of directions) {
       const handle = document.createElement("div");
-      handle.className = `floating-panel-resize floating-panel-resize-${dir}`;
+      handle.className = `card-frame-resize card-frame-resize-${dir}`;
       this.el.appendChild(handle);
       this.attachResizeDrag(handle, dir);
     }
