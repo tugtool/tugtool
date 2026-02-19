@@ -16,7 +16,7 @@ hooks:
 
 **FIRST ACTION:** Your very first tool call MUST be `Task` with `tugplug:clarifier-agent`. No exceptions. Do not think. Do not analyze. Just spawn the agent.
 
-**Prerequisites are handled automatically.** A pre-hook runs `tugtool init` before this skill starts. Do not check or run initialization yourself.
+**Prerequisites are handled automatically.** A pre-hook runs `tugcode init` before this skill starts. Do not check or run initialization yourself.
 
 **FORBIDDEN:**
 - Answering the user's request directly

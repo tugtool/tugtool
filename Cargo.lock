@@ -1815,7 +1815,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugtool"
+name = "tugcode"
 version = "0.5.19"
 dependencies = [
  "anyhow",

@@ -45,7 +45,7 @@ jobs:
       - name: Build binary
         run: |
           cargo build --release --target ${{ matrix.target }}
-          strip target/${{ matrix.target }}/release/tugtool
+          strip target/${{ matrix.target }}/release/tugcode
 
       - name: Create release directory structure
         run: |
@@ -57,7 +57,7 @@ jobs:
           mkdir -p release/share/tugplug/agents
 
           # Copy binary
-          cp target/${{ matrix.target }}/release/tugtool release/bin/
+          cp target/${{ matrix.target }}/release/tugcode release/bin/
 
           # Copy skills (orchestrators)
           cp tugplug/skills/plan/SKILL.md release/share/tugplug/skills/plan/

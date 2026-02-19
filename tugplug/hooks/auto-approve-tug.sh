@@ -28,7 +28,7 @@ elif [ "$TOOL_NAME" = "Bash" ]; then
   case "$CMD_TRIMMED" in
     grep\ *|grep)       APPROVE=true ;;
     ls\ *|ls)           APPROVE=true ;;
-    tugtool\ *|tugtool) APPROVE=true ;;
+    tugtool\ *|tugcode) APPROVE=true ;;
     find\ *)            APPROVE=true ;;
   esac
 fi

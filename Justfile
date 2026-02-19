@@ -32,11 +32,11 @@ build-release:
 
 # Run the CLI
 run *ARGS:
-    cargo run -p tug -- {{ARGS}}
+    cargo run -p tugcode -- {{ARGS}}
 
 # Update golden files (for intentional schema changes)
 update-golden:
-    TUG_UPDATE_GOLDEN=1 cargo nextest run -p tug golden
+    TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugcode golden
 
 # Generate documentation
 doc:
@@ -44,7 +44,7 @@ doc:
 
 # Install locally
 install:
-    cargo install --path crates/tug
+    cargo install --path crates/tugcode
 
 # Release a new version
 release VERSION:

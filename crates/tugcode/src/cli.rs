@@ -8,11 +8,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Tug - From ideas to implementation via multi-agent orchestration
 #[derive(Parser)]
-#[command(name = "tugtool")]
+#[command(name = "tugcode")]
 #[command(version = VERSION)]
 #[command(about = "From ideas to implementation via multi-agent orchestration")]
 #[command(
-    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugtool:plan, /tugtool:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
+    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugplug:plan, /tugplug:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
 )]
 pub struct Cli {
     /// Increase output verbosity
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_init_command() {
-        let cli = Cli::try_parse_from(["tugtool", "init"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "init"]).unwrap();
 
         match cli.command {
             Some(Commands::Init { force, check }) => {
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_init_command_with_force() {
-        let cli = Cli::try_parse_from(["tugtool", "init", "--force"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "init", "--force"]).unwrap();
 
         match cli.command {
             Some(Commands::Init { force, check }) => {
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_init_command_with_check() {
-        let cli = Cli::try_parse_from(["tugtool", "init", "--check"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "init", "--check"]).unwrap();
 
         match cli.command {
             Some(Commands::Init { force, check }) => {
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_init_check_and_force_mutually_exclusive() {
-        let result = Cli::try_parse_from(["tugtool", "init", "--check", "--force"]);
+        let result = Cli::try_parse_from(["tugcode", "init", "--check", "--force"]);
         assert!(
             result.is_err(),
             "--check and --force should be mutually exclusive"
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn test_validate_command() {
-        let cli = Cli::try_parse_from(["tugtool", "validate"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "validate"]).unwrap();
 
         match cli.command {
             Some(Commands::Validate {
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_validate_command_with_file() {
-        let cli = Cli::try_parse_from(["tugtool", "validate", "tugplan-1.md"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "validate", "tugplan-1.md"]).unwrap();
 
         match cli.command {
             Some(Commands::Validate {
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_validate_command_with_level_strict() {
-        let cli = Cli::try_parse_from(["tugtool", "validate", "--level", "strict"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "validate", "--level", "strict"]).unwrap();
 
         match cli.command {
             Some(Commands::Validate {
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_validate_command_with_level_lenient() {
-        let cli = Cli::try_parse_from(["tugtool", "validate", "--level", "lenient"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "validate", "--level", "lenient"]).unwrap();
 
         match cli.command {
             Some(Commands::Validate {
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_validate_command_with_strict_deprecated() {
-        let cli = Cli::try_parse_from(["tugtool", "validate", "--strict"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "validate", "--strict"]).unwrap();
 
         match cli.command {
             Some(Commands::Validate {
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_list_command() {
-        let cli = Cli::try_parse_from(["tugtool", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "list"]).unwrap();
 
         match cli.command {
             Some(Commands::List { status }) => {
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_status_command() {
-        let cli = Cli::try_parse_from(["tugtool", "status", "tugplan-1.md"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "status", "tugplan-1.md"]).unwrap();
 
         match cli.command {
             Some(Commands::Status {
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_status_command_with_full() {
-        let cli = Cli::try_parse_from(["tugtool", "status", "tugplan-1.md", "--full"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "status", "tugplan-1.md", "--full"]).unwrap();
 
         match cli.command {
             Some(Commands::Status {
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_version_command() {
-        let cli = Cli::try_parse_from(["tugtool", "version"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "version"]).unwrap();
 
         match cli.command {
             Some(Commands::Version { verbose }) => {
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_global_flags() {
-        let cli = Cli::try_parse_from(["tugtool", "--json", "--quiet", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "--json", "--quiet", "list"]).unwrap();
 
         assert!(cli.json);
         assert!(cli.quiet);
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_merge_command() {
-        let cli = Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "merge", ".tugtool/tugplan-1.md"]).unwrap();
 
         match cli.command {
             Some(Commands::Merge {
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_merge_command_with_dry_run() {
-        let cli = Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md", "--dry-run"])
+        let cli = Cli::try_parse_from(["tugcode", "merge", ".tugtool/tugplan-1.md", "--dry-run"])
             .unwrap();
 
         match cli.command {
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn test_merge_command_with_force() {
         let cli =
-            Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md", "--force"]).unwrap();
+            Cli::try_parse_from(["tugcode", "merge", ".tugtool/tugplan-1.md", "--force"]).unwrap();
 
         match cli.command {
             Some(Commands::Merge {
@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn test_merge_command_with_both_flags() {
         let cli = Cli::try_parse_from([
-            "tugtool",
+            "tugcode",
             "merge",
             ".tugtool/tugplan-1.md",
             "--dry-run",
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn test_log_rotate_command() {
-        let cli = Cli::try_parse_from(["tugtool", "log", "rotate"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "log", "rotate"]).unwrap();
 
         match cli.command {
             Some(Commands::Log(log_cmd)) => match log_cmd {
@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_log_rotate_command_with_force() {
-        let cli = Cli::try_parse_from(["tugtool", "log", "rotate", "--force"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "log", "rotate", "--force"]).unwrap();
 
         match cli.command {
             Some(Commands::Log(log_cmd)) => match log_cmd {
@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_log_rotate_with_json_flag() {
-        let cli = Cli::try_parse_from(["tugtool", "--json", "log", "rotate"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "--json", "log", "rotate"]).unwrap();
 
         assert!(cli.json);
         match cli.command {
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn test_doctor_command() {
-        let cli = Cli::try_parse_from(["tugtool", "doctor"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "doctor"]).unwrap();
 
         match cli.command {
             Some(Commands::Doctor) => {}
@@ -752,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_doctor_with_json_flag() {
-        let cli = Cli::try_parse_from(["tugtool", "--json", "doctor"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "--json", "doctor"]).unwrap();
 
         assert!(cli.json);
         match cli.command {
@@ -763,7 +763,7 @@ mod tests {
 
     #[test]
     fn test_doctor_with_quiet_flag() {
-        let cli = Cli::try_parse_from(["tugtool", "--quiet", "doctor"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "--quiet", "doctor"]).unwrap();
 
         assert!(cli.quiet);
         match cli.command {
@@ -915,7 +915,7 @@ mod tests {
 
     #[test]
     fn test_resolve_command() {
-        let cli = Cli::try_parse_from(["tugtool", "resolve"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "resolve"]).unwrap();
 
         match cli.command {
             Some(Commands::Resolve { identifier }) => {
@@ -927,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_resolve_command_with_identifier() {
-        let cli = Cli::try_parse_from(["tugtool", "resolve", "user-auth"]).unwrap();
+        let cli = Cli::try_parse_from(["tugcode", "resolve", "user-auth"]).unwrap();
 
         match cli.command {
             Some(Commands::Resolve { identifier }) => {

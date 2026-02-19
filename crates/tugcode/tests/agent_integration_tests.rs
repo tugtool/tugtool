@@ -364,10 +364,10 @@ fn test_critic_documents_validation_workflow() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document tugtool validate as first action
+    // Critic must document tugcode validate as first action
     assert!(
-        content.contains("tugtool validate"),
-        "Critic must document tugtool validate command"
+        content.contains("tugcode validate"),
+        "Critic must document tugcode validate command"
     );
 
     // Critic must document immediate REJECT on validation failure
@@ -382,13 +382,13 @@ fn test_critic_documents_bash_restriction() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document Bash restriction to only tugtool validate
+    // Critic must document Bash restriction to only tugcode validate
     // Use case-insensitive check for "ONLY" or "only"
     let lowercase_content = content.to_lowercase();
     assert!(
         (lowercase_content.contains("only") || lowercase_content.contains("restriction"))
-            && lowercase_content.contains("tugtool validate"),
-        "Critic must document Bash tool restriction to tugtool validate only"
+            && lowercase_content.contains("tugcode validate"),
+        "Critic must document Bash tool restriction to tugcode validate only"
     );
 }
 

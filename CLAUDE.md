@@ -9,14 +9,14 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
 **Exceptions:**
-- The `tugtool worktree create` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
+- The `tugcode worktree create` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
 - The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
 
 ## Crate Structure
 
 ```
 crates/
-├── tugtool/         # CLI binary crate
+├── tugcode/         # CLI binary crate
 │   └── src/
 │       ├── main.rs      # Entry point
 │       ├── cli.rs       # Clap argument parsing
@@ -111,25 +111,25 @@ Test fixtures are in `tests/fixtures/`:
 ### CLI (Utility Commands)
 
 ```bash
-tugtool init                       # Initialize project
-tugtool validate                   # Validate all tugplans
-tugtool validate tugplan-1.md      # Validate specific file
-tugtool list                       # List all tugplans
-tugtool status tugplan-1.md        # Show progress
-tugtool resolve user-auth          # Resolve plan identifier to file path
-tugtool resolve 1                  # Resolve numeric plan
-tugtool resolve                    # Auto-select single plan
-tugtool beads sync tugplan-1.md    # Sync steps to beads
-tugtool beads status               # Show bead completion status
-tugtool beads close bd-xxx         # Close a bead
+tugcode init                       # Initialize project
+tugcode validate                   # Validate all tugplans
+tugcode validate tugplan-1.md      # Validate specific file
+tugcode list                       # List all tugplans
+tugcode status tugplan-1.md        # Show progress
+tugcode resolve user-auth          # Resolve plan identifier to file path
+tugcode resolve 1                  # Resolve numeric plan
+tugcode resolve                    # Auto-select single plan
+tugcode beads sync tugplan-1.md    # Sync steps to beads
+tugcode beads status               # Show bead completion status
+tugcode beads close bd-xxx         # Close a bead
 
 # Log management commands
-tugtool log rotate                 # Rotate implementation log when over threshold (500 lines or 100KB)
-tugtool log rotate --force        # Force rotation even if under threshold
-tugtool log prepend --step <anchor> --plan <path> --summary <text>  # Add entry to log
+tugcode log rotate                 # Rotate implementation log when over threshold (500 lines or 100KB)
+tugcode log rotate --force        # Force rotation even if under threshold
+tugcode log prepend --step <anchor> --plan <path> --summary <text>  # Add entry to log
 
 # Commit and open-pr commands (used by committer-agent and integrator-agent)
-tugtool commit \
+tugcode commit \
   --worktree <path> \
   --step <anchor> \
   --plan <path> \
@@ -139,7 +139,7 @@ tugtool commit \
   --close-reason <text> \
   --json                          # Atomic commit: log rotate, prepend, git commit, bead close
 
-tugtool open-pr \
+tugcode open-pr \
   --worktree <path> \
   --branch <name> \
   --base <branch> \
@@ -149,21 +149,21 @@ tugtool open-pr \
   --json                           # Push branch and open PR (body from git log)
 
 # Health check command
-tugtool doctor                     # Run health checks (log size, worktrees, broken refs)
-tugtool doctor --json             # Output health check results in JSON
+tugcode doctor                     # Run health checks (log size, worktrees, broken refs)
+tugcode doctor --json             # Output health check results in JSON
 
 # Worktree commands (for isolated implementation environments)
-tugtool worktree create <tugplan>  # Create isolated worktree for implementation
-tugtool worktree list              # List active worktrees
-tugtool worktree cleanup --merged  # Remove worktrees for merged PRs
-tugtool merge <tugplan>            # Merge PR and clean up (recommended approach)
+tugcode worktree create <tugplan>  # Create isolated worktree for implementation
+tugcode worktree list              # List active worktrees
+tugcode worktree cleanup --merged  # Remove worktrees for merged PRs
+tugcode merge <tugplan>            # Merge PR and clean up (recommended approach)
 ```
 
 ### Claude Code Skills (Planning and Execution)
 
-**Initialization is automatic.** A pre-hook runs `tugtool init` before the planner and implementer skills start. You can also run it manually:
+**Initialization is automatic.** A pre-hook runs `tugcode init` before the planner and implementer skills start. You can also run it manually:
 ```bash
-tugtool init
+tugcode init
 ```
 
 This creates the `.tugtool/` directory with required files:

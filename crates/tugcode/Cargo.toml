@@ -1,5 +1,5 @@
 [package]
-name = "tugtool"
+name = "tugcode"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "From ideas to implementation via multi-agent orchestration"
 
 [[bin]]
-name = "tugtool"
+name = "tugcode"
 path = "src/main.rs"
 
 [dependencies]

@@ -142,7 +142,7 @@ If drift exceeds thresholds, implementation halts. Therefore:
 **As your FIRST action**, fetch the bead data for this step:
 
 ```bash
-cd {worktree_path} && tugtool beads inspect {bead_id} --working-dir {worktree_path} --json
+cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
 ```
 
 This retrieves:
@@ -165,7 +165,7 @@ Per Table T02, you WRITE to:
 After producing your strategy, write it to the bead using a heredoc to handle multi-line content cleanly:
 
 ```bash
-cd {worktree_path} && tugtool beads append-design {bead_id} \
+cd {worktree_path} && tugcode beads append-design {bead_id} \
   --working-dir {worktree_path} \
   --content "$(cat <<'STRATEGY_EOF'
 ## Strategy

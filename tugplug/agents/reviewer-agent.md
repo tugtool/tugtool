@@ -115,7 +115,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 **As your FIRST action**, fetch the bead data for this step:
 
 ```bash
-cd {worktree_path} && tugtool beads inspect {bead_id} --working-dir {worktree_path} --json
+cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
 ```
 
 This retrieves ALL fields including:
@@ -144,7 +144,7 @@ Per Table T02, you WRITE to:
 After completing your review, append your findings to the bead using a heredoc:
 
 ```bash
-cd {worktree_path} && tugtool beads append-notes {bead_id} \
+cd {worktree_path} && tugcode beads append-notes {bead_id} \
   --working-dir {worktree_path} \
   --content "$(cat <<'NOTES_EOF'
 ## Review
@@ -329,7 +329,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 | Check | What to Look For | How to Verify |
 |-------|------------------|---------------|
-| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from bead `notes` field (via `tugtool beads inspect`) |
+| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from bead `notes` field (via `tugcode beads inspect`) |
 | **Correctness** | Off-by-one, null derefs, boundary conditions, logic errors | Read changed code |
 | **Error handling** | Unhandled errors, crashes in prod paths, swallowed exceptions | Grep for error-prone patterns |
 | **Security** | Hardcoded secrets, injection patterns, unsafe code | Grep for patterns, read security-sensitive code |
@@ -357,7 +357,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 ## Behavior Rules
 
-1. **Bash tool is ONLY for `tugtool beads` CLI commands**: You have the Bash tool ONLY to run `tugtool beads inspect` and `tugtool beads append-notes` for bead-mediated communication. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the bead.
+1. **Bash tool is ONLY for `tugcode beads` CLI commands**: You have the Bash tool ONLY to run `tugcode beads inspect` and `tugcode beads append-notes` for bead-mediated communication. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the bead.
 
 2. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
 
@@ -386,7 +386,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 ```
 
 **Process:**
-1. Fetch bead data: `cd {worktree_path} && tugtool beads inspect bd-abc123.2 --working-dir {worktree_path} --json`
+1. Fetch bead data: `cd {worktree_path} && tugcode beads inspect bd-abc123.2 --working-dir {worktree_path} --json`
 2. Parse bead response to extract:
    - `design`: Architect's strategy (expected_touch_set, implementation_steps, test_plan, risks)
    - `notes`: Coder's implementation results (files created/modified, build/test report, drift assessment)

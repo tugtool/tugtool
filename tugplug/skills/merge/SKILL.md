@@ -6,7 +6,7 @@ allowed-tools: Bash, AskUserQuestion, Read
 
 ## Purpose
 
-Wraps the `tugtool merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugplug:plan` → `/tugplug:implement` → `/tugplug:merge` flow.
+Wraps the `tugcode merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugplug:plan` → `/tugplug:implement` → `/tugplug:merge` flow.
 
 The merge command auto-detects the mode based on whether the repository has an 'origin' remote and an open PR:
 - **Remote mode**: Has origin + open PR → squash-merge the PR via `gh pr merge`
@@ -34,7 +34,7 @@ If no plan path is provided, search for plans with `ls .tugtool/tugplan-*.md`. I
 Run the merge command in dry-run mode:
 
 ```bash
-tugtool merge <plan_path> --dry-run --json 2>&1
+tugcode merge <plan_path> --dry-run --json 2>&1
 ```
 
 Parse the JSON output. Key fields:
@@ -105,7 +105,7 @@ If user selects "Cancel", halt with: "Merge cancelled."
 Run the actual merge:
 
 ```bash
-tugtool merge <plan_path> --json 2>&1
+tugcode merge <plan_path> --json 2>&1
 ```
 
 Parse the JSON output. Key fields for the result:
@@ -127,11 +127,11 @@ If the command fails, report the error and suggest recovery.
 Run health checks:
 
 ```bash
-tugtool doctor
+tugcode doctor
 ```
 
 ```bash
-tugtool worktree list
+tugcode worktree list
 ```
 
 If doctor reports issues, present them as warnings (the merge itself succeeded).

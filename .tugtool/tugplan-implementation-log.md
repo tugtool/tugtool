@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-19T17:18:18Z
+bead: tugtool-ovp.5
+---
+
+## #step-4: Renamed CLI binary tugtool to tugcode (step 2 of D01 three-step swap), claiming the freed tugcode name. Updated ~27 cli.rs occurrences, all agent/skill/hook files, both CLAUDE.md files, Formula, release.yml, and Justfile
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-19T17:05:51Z
 bead: tugtool-ovp.4

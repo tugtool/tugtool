@@ -18,7 +18,7 @@ hooks:
 
 **YOUR TOOLS:** `Task`, `AskUserQuestion`, and `Bash` (for `tugtool` CLI commands ONLY). You cannot read files, write files, or edit files. Agent work happens through Task. Worktree setup happens through direct `tugtool` CLI calls via Bash.
 
-**FIRST ACTION:** Your very first action MUST be running `tugtool worktree create` via Bash. No exceptions.
+**FIRST ACTION:** Your very first action MUST be running `tugcode worktree create` via Bash. No exceptions.
 
 **FORBIDDEN:**
 - Reading, writing, editing, or creating ANY files
@@ -54,7 +54,7 @@ Implementation complete
   PR: {pr_url}
 ```
 
-### Setup complete (after tugtool worktree create)
+### Setup complete (after tugcode worktree create)
 
 ```
 **Setup**(Complete)
@@ -193,7 +193,7 @@ For `bead_close_failed` (warn and continue):
 
 ```
 ┌──────────────────────────────────────────┐
-│  tugtool worktree create <plan> --json   │
+│  tugcode worktree create <plan> --json   │
 └────────────────────┬─────────────────────┘
                      │
                      ▼
@@ -312,7 +312,7 @@ Output the session start message.
 Run the worktree creation command via Bash:
 
 ```
-Bash: tugtool worktree create <plan_path> --json
+Bash: tugcode worktree create <plan_path> --json
 ```
 
 This runs from the repo root (the current working directory when the skill starts).
@@ -846,11 +846,11 @@ From coder output, evaluate `drift_assessment`:
 - **Plan files are never modified** by beads sync
 - Beads sync errors during worktree create remain **fatal** (fail fast)
 
-**Close after commit** (handled by committer-agent via `tugtool commit`):
+**Close after commit** (handled by committer-agent via `tugcode commit`):
 
-The committer-agent is a thin CLI wrapper that delegates to `tugtool commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
+The committer-agent is a thin CLI wrapper that delegates to `tugcode commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
 
-**Fixup commits** (audit and integration fixes) are outside the bead system. They use `tugtool log prepend` for tracking and direct git commands for commits, but do not close beads. Only step commits close beads.
+**Fixup commits** (audit and integration fixes) are outside the bead system. They use `tugcode log prepend` for tracking and direct git commands for commits, but do not close beads. Only step commits close beads.
 
 ---
 

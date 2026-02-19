@@ -5,8 +5,8 @@
 **Beads is a hard requirement.** Beads provides inter-agent communication (architect writes strategy to bead design field, coder reads it) and enables interrupt/resume via `bd ready`. Beads failures during worktree setup are fatal.
 
 - **Direct SQLite mode**: All `bd` commands run with `BEADS_NO_DAEMON=1` and `BEADS_NO_AUTO_FLUSH=1` (hardcoded in `BeadsCli` constructor). No daemon, no auto-flush.
-- **No plan file annotations**: `tugtool beads sync` creates beads in SQLite and returns `bead_mapping` in JSON output. Plan files are never modified by sync.
-- **Hook removal**: `tugtool init` detects and removes `.git/hooks/pre-commit` and `.git/hooks/post-merge` files that contain beads/bd references. This prevents beads git hooks from blocking commits.
+- **No plan file annotations**: `tugcode beads sync` creates beads in SQLite and returns `bead_mapping` in JSON output. Plan files are never modified by sync.
+- **Hook removal**: `tugcode init` detects and removes `.git/hooks/pre-commit` and `.git/hooks/post-merge` files that contain beads/bd references. This prevents beads git hooks from blocking commits.
 - **Merge checks simplified**: The unreliable bead completion check has been removed from merge preflight. The main sync check (local vs origin/main) is now a warning, not a blocker.
 
 ## Plan Mode Policy
@@ -33,7 +33,7 @@ Three skills contain the main workflow logic. Orchestrators are **pure dispatche
 |-------|------|
 | **plan** | Orchestrates planning loop: setup → clarifier → author → critic |
 | **implement** | Orchestrates implementation loop: architect → coder → reviewer → committer (worktree setup via direct CLI call) |
-| **merge** | Wraps `tugtool merge` CLI with dry-run preview, confirmation, and post-merge health checks |
+| **merge** | Wraps `tugcode merge` CLI with dry-run preview, confirmation, and post-merge health checks |
 
 ### Sub-Agents (9)
 
@@ -92,14 +92,14 @@ When you run `/tugplug:implement .tugtool/tugplan-N.md`:
 
 ### Merge Workflow (Recommended)
 
-After implementation completes and a PR is created, use the `tugtool merge` command to automate the merge workflow:
+After implementation completes and a PR is created, use the `tugcode merge` command to automate the merge workflow:
 
 ```bash
 # Preview what will happen
-tugtool merge .tugtool/tugplan-12.md --dry-run
+tugcode merge .tugtool/tugplan-12.md --dry-run
 
 # Merge the PR and clean up
-tugtool merge .tugtool/tugplan-12.md
+tugcode merge .tugtool/tugplan-12.md
 ```
 
 The merge command auto-detects the mode based on whether the repository has an `origin` remote and an open PR:
@@ -125,10 +125,10 @@ If you prefer manual control or the merge command is unavailable:
 git fetch origin main
 
 # Remove worktrees for merged PRs (dry run first)
-tugtool worktree cleanup --merged --dry-run
+tugcode worktree cleanup --merged --dry-run
 
 # Actually remove them
-tugtool worktree cleanup --merged
+tugcode worktree cleanup --merged
 ```
 
 The cleanup command:
@@ -144,7 +144,7 @@ If you see this error, it means a worktree for this tugplan already exists:
 
 ```bash
 # List all worktrees to see what exists
-tugtool worktree list
+tugcode worktree list
 
 # If the worktree is stale, remove it manually
 rm -rf .tugtree/tugplan__<name>-<timestamp>
@@ -162,7 +162,7 @@ git checkout main
 git pull origin main
 
 # Try cleanup again
-tugtool worktree cleanup --merged
+tugcode worktree cleanup --merged
 ```
 
 If cleanup still fails, you may need to remove the worktree manually:
@@ -185,32 +185,32 @@ This happens when a step commit succeeds but the bead close fails. The worktree 
 Note: Beads now uses direct SQLite mode (no daemon, no auto-flush), which eliminates most daemon-related failures. If a bead close still fails, to fix:
 
 1. Check the implementation log in the worktree for the bead ID
-2. Close the bead manually: `tugtool beads close bd-xxx`
+2. Close the bead manually: `tugcode beads close bd-xxx`
 3. If continuing implementation, the next step should proceed normally
 
 #### Implementation log is too large
 
-If the implementation log grows beyond 500 lines or 100KB, it can slow down parsing and git operations. The `tugtool doctor` command will warn you about large logs:
+If the implementation log grows beyond 500 lines or 100KB, it can slow down parsing and git operations. The `tugcode doctor` command will warn you about large logs:
 
 ```bash
 # Check project health including log size
-tugtool doctor
+tugcode doctor
 
 # If the log is oversized, rotate it to archive
-tugtool log rotate
+tugcode log rotate
 ```
 
-When you run `tugtool log rotate`, the current log is moved to `.tugtool/archive/implementation-log-YYYY-MM-DD-HHMMSS.md` and a fresh log is created. All historical entries are preserved in the archive.
+When you run `tugcode log rotate`, the current log is moved to `.tugtool/archive/implementation-log-YYYY-MM-DD-HHMMSS.md` and a fresh log is created. All historical entries are preserved in the archive.
 
-Note: `tugtool beads close` automatically rotates oversized logs, so manual rotation is rarely needed.
+Note: `tugcode beads close` automatically rotates oversized logs, so manual rotation is rarely needed.
 
 #### Doctor reports broken references
 
-If `tugtool doctor` finds broken anchor references in your tugplans, you need to fix them before implementation:
+If `tugcode doctor` finds broken anchor references in your tugplans, you need to fix them before implementation:
 
 ```bash
 # See which references are broken
-tugtool doctor --json | jq '.checks[] | select(.name == "broken_refs")'
+tugcode doctor --json | jq '.checks[] | select(.name == "broken_refs")'
 
 # Common causes:
 # - Step anchor was renamed but references weren't updated
@@ -218,7 +218,7 @@ tugtool doctor --json | jq '.checks[] | select(.name == "broken_refs")'
 # - Anchor was removed but reference remained
 
 # Fix the references in your tugplan file, then verify
-tugtool validate .tugtool/tugplan-N.md
+tugcode validate .tugtool/tugplan-N.md
 ```
 
 #### Doctor reports invalid worktree paths
@@ -227,7 +227,7 @@ Valid worktree paths must start with `.tugtree/` and exist on disk. If doctor fi
 
 ```bash
 # List all worktrees to see what's active
-tugtool worktree list
+tugcode worktree list
 
 # If a worktree is stale or misconfigured, remove it
 git worktree remove .tugtree/tugplan__<name>-<timestamp>

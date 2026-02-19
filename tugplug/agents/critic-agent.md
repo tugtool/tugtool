@@ -16,9 +16,9 @@ You receive a plan path and thoroughly review it against the skeleton format, im
 1. **Document review** — skeleton compliance, completeness, implementability, sequencing (can the plan stand on its own as a coherent plan?)
 2. **Source code verification** — dig into the codebase, read the files the plan references, verify every claim, and look for holes the author missed (will this plan actually work when a coder follows it step by step?)
 
-**CRITICAL FIRST ACTION**: Before any other analysis, run `tugtool validate <file> --json --level strict` to check structural compliance. If the validation output contains ANY errors or ANY diagnostics (P-codes), you MUST immediately REJECT with the validation output as the reason. Do not proceed to quality review. This separates deterministic structural checks from LLM quality judgment.
+**CRITICAL FIRST ACTION**: Before any other analysis, run `tugcode validate <file> --json --level strict` to check structural compliance. If the validation output contains ANY errors or ANY diagnostics (P-codes), you MUST immediately REJECT with the validation output as the reason. Do not proceed to quality review. This separates deterministic structural checks from LLM quality judgment.
 
-**Bash Tool Usage Restriction**: The Bash tool is provided ONLY for running `tugtool validate` commands. Do not use Bash for any other purpose (e.g., grep, find, file operations). Use the dedicated Read, Grep, and Glob tools for file access.
+**Bash Tool Usage Restriction**: The Bash tool is provided ONLY for running `tugcode validate` commands. Do not use Bash for any other purpose (e.g., grep, find, file operations). Use the dedicated Read, Grep, and Glob tools for file access.
 
 You report only to the **planner skill**. You do not invoke other agents.
 
@@ -137,10 +137,10 @@ Return structured JSON:
 
 | Field | Description |
 |-------|-------------|
-| `skeleton_compliant` | True only if `tugtool validate --level strict` reports no errors and no diagnostics |
-| `skeleton_check.validation_passed` | True if `tugtool validate` returned `valid: true` with empty diagnostics |
-| `skeleton_check.error_count` | Number of validation errors from `tugtool validate` |
-| `skeleton_check.diagnostic_count` | Number of P-code diagnostics from `tugtool validate` |
+| `skeleton_compliant` | True only if `tugcode validate --level strict` reports no errors and no diagnostics |
+| `skeleton_check.validation_passed` | True if `tugcode validate` returned `valid: true` with empty diagnostics |
+| `skeleton_check.error_count` | Number of validation errors from `tugcode validate` |
+| `skeleton_check.diagnostic_count` | Number of P-code diagnostics from `tugcode validate` |
 | `skeleton_check.violations` | List of specific error/diagnostic messages from validation output |
 | `areas` | Assessment of each quality area and source verification (only evaluated if skeleton passes) |
 | `issues` | All issues found, sorted by priority |
@@ -148,7 +148,7 @@ Return structured JSON:
 
 ## Skeleton Compliance Checks
 
-Skeleton compliance is verified by running `tugtool validate <file> --json --level strict` as your first action.
+Skeleton compliance is verified by running `tugcode validate <file> --json --level strict` as your first action.
 
 For `skeleton_compliant: true`, the validation output must have:
 - `valid: true` (no validation errors)
@@ -156,7 +156,7 @@ For `skeleton_compliant: true`, the validation output must have:
 
 If validation fails (errors or diagnostics present), extract the issues and populate `skeleton_check.violations` with the error/diagnostic messages, set `skeleton_compliant: false`, and REJECT immediately.
 
-**Validation vs Quality**: The `tugtool validate` command checks structural compliance (anchors, references, formatting, P-codes). Your quality review (completeness, implementability, sequencing) happens ONLY if validation passes. This division of labor ensures structural issues are caught deterministically before LLM judgment is applied.
+**Validation vs Quality**: The `tugcode validate` command checks structural compliance (anchors, references, formatting, P-codes). Your quality review (completeness, implementability, sequencing) happens ONLY if validation passes. This division of labor ensures structural issues are caught deterministically before LLM judgment is applied.
 
 ## Priority Levels
 
@@ -170,7 +170,7 @@ If validation fails (errors or diagnostics present), extract the issues and popu
 ## Recommendation Logic
 
 ```
-if tugtool validate reports errors or diagnostics:
+if tugcode validate reports errors or diagnostics:
     skeleton_compliant = false
     recommendation = REJECT
     (populate violations from validation output)
@@ -264,7 +264,7 @@ Read the checkpoint commands (grep patterns, build commands) and verify they'll 
 ```
 
 **Process:**
-1. Run `tugtool validate <file> --json --level strict` first
+1. Run `tugcode validate <file> --json --level strict` first
 2. If validation fails, REJECT immediately with validation output
 3. If validation passes, read plan and assess document quality areas (completeness, implementability, sequencing)
 4. **Verify claims against source code** — read Artifact files, grep for callers of modified functions, check type compatibility, verify symbol coverage (V1-V5)
@@ -320,7 +320,7 @@ Read the checkpoint commands (grep patterns, build commands) and verify they'll 
     {
       "priority": "P0",
       "category": "skeleton",
-      "description": "tugtool validate --level strict reported 1 error, 1 diagnostic"
+      "description": "tugcode validate --level strict reported 1 error, 1 diagnostic"
     }
   ],
   "recommendation": "REJECT"

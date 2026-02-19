@@ -152,7 +152,7 @@ Return structured JSON:
 **As your FIRST action**, fetch the bead data for this step:
 
 ```bash
-cd {worktree_path} && tugtool beads inspect {bead_id} --working-dir {worktree_path} --json
+cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
 ```
 
 This retrieves:
@@ -175,7 +175,7 @@ Per Table T02, you WRITE to:
 After completing implementation and running tests, write results to the bead using a heredoc:
 
 ```bash
-cd {worktree_path} && tugtool beads update-notes {bead_id} \
+cd {worktree_path} && tugcode beads update-notes {bead_id} \
   --working-dir {worktree_path} \
   --content "$(cat <<'NOTES_EOF'
 ## Implementation Results

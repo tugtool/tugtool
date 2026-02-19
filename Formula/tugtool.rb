@@ -26,7 +26,7 @@ class Tugtool < Formula
   end
 
   def install
-    bin.install "bin/tugtool"
+    bin.install "bin/tugcode"
 
     # Install skills to share directory
     # Skills end up at #{HOMEBREW_PREFIX}/share/tugplug/skills/
@@ -45,16 +45,18 @@ class Tugtool < Formula
       Claude Code skills have been installed to:
         #{HOMEBREW_PREFIX}/share/tugplug/skills/
 
-      To use /tugplug:plan and /tugplug:implement in your projects, run:
-        tugtool setup claude
+      To use the plugin with Claude Code:
+        cd /path/to/your-project
+        claude --plugin-dir #{HOMEBREW_PREFIX}/share/tugplug
 
-      This will copy the skills to your project's .claude/skills/ directory.
-      You can also run this during `tugtool init` for new projects.
+      Then use the skills:
+        /tugplug:plan "your idea"
+        /tugplug:implement .tugtool/tugplan-N.md
+        /tugplug:merge .tugtool/tugplan-N.md
     EOS
   end
 
   test do
-    system "#{bin}/tugtool", "--version"
-    system "#{bin}/tugtool", "setup", "claude", "--check"
+    system "#{bin}/tugcode", "--version"
   end
 end

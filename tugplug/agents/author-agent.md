@@ -113,7 +113,7 @@ Return structured JSON:
 | `created` | True if new file, false if modified existing |
 | `sections_written` | List of sections that were written/updated |
 | `skeleton_compliance` | Self-check of skeleton requirements |
-| `validation_status` | Result of running `tugtool validate` |
+| `validation_status` | Result of running `tugcode validate` |
 
 ## Skeleton Compliance Checklist
 
@@ -161,7 +161,7 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 
 2. **Respect existing content when revising**: If `plan_path` is provided, read the existing plan and make targeted changes based on `critic_feedback`.
 
-3. **Self-validate before returning**: Run `tugtool validate <path>` and report results.
+3. **Self-validate before returning**: Run `tugcode validate <path>` and report results.
 
 4. **Design decisions are decisions, not options**: Each `[D01]` entry states what WAS decided, not alternatives.
 
@@ -193,7 +193,7 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 2. Derive slug from idea: "add hello command" -> `hello-command`
 3. Check for collision: `Glob ".tugtool/tugplan-*.md"`
 4. Write plan following skeleton structure
-5. Validate: `tugtool validate .tugtool/tugplan-hello-command.md`
+5. Validate: `tugcode validate .tugtool/tugplan-hello-command.md`
 
 **Output:**
 ```json
