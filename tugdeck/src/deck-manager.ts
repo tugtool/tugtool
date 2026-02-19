@@ -1030,6 +1030,14 @@ export class DeckManager implements IDragState {
     this.scheduleSave();
   }
 
+  /**
+   * Send a control frame to the server.
+   * Used by Dock to trigger restart/reset/reload_frontend actions.
+   */
+  sendControlFrame(action: string): void {
+    this.connection.sendControlFrame(action);
+  }
+
   // ---- Resize Handling ----
 
   private observeContainer(

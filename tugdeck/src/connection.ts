@@ -11,6 +11,7 @@ import {
   Frame,
   decodeFrame,
   encodeFrame,
+  controlFrame,
 } from "./protocol";
 
 /** Callback for receiving frames from a specific feed */
@@ -240,6 +241,14 @@ export class TugConnection {
       const frame: Frame = { feedId, payload };
       this.ws.send(encodeFrame(frame));
     }
+  }
+
+  /**
+   * Send a control frame with the given action
+   */
+  sendControlFrame(action: string): void {
+    const frame = controlFrame(action);
+    this.send(frame.feedId, frame.payload);
   }
 
   /**

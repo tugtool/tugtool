@@ -123,7 +123,23 @@ async fn main() {
     // Create shutdown channel for control commands
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
 
-    // Create feed router
+    // Start dev file watcher if dev mode is active (before FeedRouter::new)
+    let (reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
+        match dev::dev_file_watcher(dev_path) {
+            Ok((tx, watcher)) => {
+                info!(path = ?dev_path, "dev file watcher started");
+                (Some(tx), Some(watcher))
+            }
+            Err(e) => {
+                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Create feed router with reload_tx wired
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
         input_tx,
@@ -141,7 +157,7 @@ async fn main() {
             conversation_watch_rx,
         ],
         shutdown_tx,
-        None, // reload_tx wired in Step 4
+        reload_tx.clone(),
     );
 
     // Start terminal feed in background task
@@ -193,22 +209,6 @@ async fn main() {
             )
             .await;
     });
-
-    // Start dev file watcher if dev mode is active
-    let (reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
-        match dev::dev_file_watcher(dev_path) {
-            Ok((tx, watcher)) => {
-                info!(path = ?dev_path, "dev file watcher started");
-                (Some(tx), Some(watcher))
-            }
-            Err(e) => {
-                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        (None, None)
-    };
 
     // Start server and select! on shutdown channel
     let server_future = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx);

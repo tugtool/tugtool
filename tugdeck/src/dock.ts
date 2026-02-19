@@ -177,6 +177,29 @@ export class Dock {
       },
       {
         type: "action",
+        label: "Restart Server",
+        action: () => pm.sendControlFrame("restart"),
+      },
+      {
+        type: "action",
+        label: "Reset Everything",
+        action: () => {
+          // Clear localStorage before sending reset, since the server
+          // will exit and the WebSocket will close
+          localStorage.clear();
+          pm.sendControlFrame("reset");
+        },
+      },
+      {
+        type: "action",
+        label: "Reload Frontend",
+        action: () => pm.sendControlFrame("reload_frontend"),
+      },
+      {
+        type: "separator",
+      },
+      {
+        type: "action",
         label: "About tugdeck",
         action: () => {
           window.alert("tugdeck v1.0\nCanvas card system for tugtool.");

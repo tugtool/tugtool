@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-19T20:39:41Z
+bead: tugtool-bwn.5
+---
+
+## #step-4: Added CONTROL (0xc0) feed ID to tugdeck protocol.ts, controlFrame factory, sendControlFrame on TugConnection and DeckManager, three Dock menu items (Restart Server, Reset Everything, Reload Frontend). Wired reload_tx broadcast sender from dev_file_watcher into FeedRouter, replaced reload_frontend stub with real SSE dispatch. Created protocol.test.ts with 3 tests. All 475 TypeScript and 99 Rust tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-19T20:30:44Z
 bead: tugtool-bwn.4

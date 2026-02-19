@@ -49,7 +49,6 @@ pub struct FeedRouter {
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
     shutdown_tx: mpsc::Sender<u8>,
-    #[allow(dead_code)] // wired in Step 4
     reload_tx: Option<broadcast::Sender<()>>,
 }
 
@@ -290,8 +289,12 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                                                 let _ = router.shutdown_tx.send(43).await;
                                                             }
                                                             "reload_frontend" => {
-                                                                // TODO: wire SSE reload broadcast in Step 4
-                                                                info!("control: reload_frontend requested (stub)");
+                                                                if let Some(ref tx) = router.reload_tx {
+                                                                    let _ = tx.send(());
+                                                                    info!("control: reload_frontend broadcast sent");
+                                                                } else {
+                                                                    info!("control: reload_frontend ignored (not in dev mode)");
+                                                                }
                                                             }
                                                             other => {
                                                                 warn!("control: unknown action: {}", other);

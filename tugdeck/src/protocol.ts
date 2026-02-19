@@ -20,6 +20,7 @@ export const FeedId = {
   STATS_BUILD_STATUS: 0x33,
   CONVERSATION_OUTPUT: 0x40,
   CONVERSATION_INPUT: 0x41,
+  CONTROL: 0xc0,
   HEARTBEAT: 0xff,
 } as const;
 
@@ -133,4 +134,15 @@ export function encodeConversationInput(msg: object): ArrayBuffer {
     payload,
   };
   return encodeFrame(frame);
+}
+
+/**
+ * Create a control frame with a JSON action payload
+ */
+export function controlFrame(action: string): Frame {
+  const json = JSON.stringify({ action });
+  return {
+    feedId: FeedId.CONTROL,
+    payload: new TextEncoder().encode(json),
+  };
 }
