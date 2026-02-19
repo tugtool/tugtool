@@ -1,6 +1,5 @@
 import Cocoa
 
-@main
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow!
     private var processManager = ProcessManager()
@@ -33,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.center()
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
 
         // Build menu bar
         buildMenuBar()
@@ -54,17 +54,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        return false
+    }
+
     // MARK: - Preferences
 
     private func loadPreferences() {
-        devModeEnabled = UserDefaults.standard.bool(forKey: "DevModeEnabled")
-        sourceTreePath = UserDefaults.standard.string(forKey: "SourceTreePath")
+        devModeEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
+        sourceTreePath = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
     }
 
     private func savePreferences() {
-        UserDefaults.standard.set(devModeEnabled, forKey: "DevModeEnabled")
+        UserDefaults.standard.set(devModeEnabled, forKey: TugConfig.keyDevModeEnabled)
         if let path = sourceTreePath {
-            UserDefaults.standard.set(path, forKey: "SourceTreePath")
+            UserDefaults.standard.set(path, forKey: TugConfig.keySourceTreePath)
         }
     }
 
@@ -167,23 +171,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.message = "Choose the tugtool mono-repo root directory"
 
         if panel.runModal() == .OK, let url = panel.url {
-            let path = url.path
-
-            // Validate source tree
-            let mainTSPath = url.appendingPathComponent("tugdeck/src/main.ts").path
-            let packageJSONPath = url.appendingPathComponent("tugdeck/package.json").path
-
-            if !FileManager.default.fileExists(atPath: mainTSPath) ||
-               !FileManager.default.fileExists(atPath: packageJSONPath) {
+            if !TugConfig.isValidSourceTree(url) {
+                let markers = TugConfig.sourceTreeMarkers.joined(separator: "\n  ")
                 let alert = NSAlert()
                 alert.messageText = "Invalid Source Tree"
-                alert.informativeText = "The selected directory does not contain tugdeck/src/main.ts and tugdeck/package.json"
+                alert.informativeText = "The selected directory is not a tugtool repo.\nExpected to find:\n  \(markers)"
                 alert.alertStyle = .warning
                 alert.runModal()
                 return
             }
 
-            sourceTreePath = path
+            sourceTreePath = url.path
             savePreferences()
 
             // Rebuild menu to show new path
@@ -192,7 +190,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Restart if dev mode is enabled
             if devModeEnabled {
                 processManager.stop()
-                processManager.start(devMode: true, sourceTree: path)
+                processManager.start(devMode: true, sourceTree: url.path)
             }
         }
     }

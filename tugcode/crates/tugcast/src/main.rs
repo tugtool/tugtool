@@ -66,11 +66,14 @@ async fn main() {
     // Create auth state
     let auth = new_shared_auth_state(cli.port);
 
-    // Print auth URL
+    // Print auth URL and flush immediately so the Mac app's ProcessManager
+    // can capture it — Rust fully buffers stdout when connected to a pipe.
     let token = auth.lock().unwrap().token().unwrap().to_string();
     let auth_url = format!("http://127.0.0.1:{}/auth?token={}", cli.port, token);
     info!("Auth URL: {}", auth_url);
     println!("\ntugcast: {}\n", auth_url);
+    use std::io::Write;
+    std::io::stdout().flush().ok();
 
     // Create broadcast channel for terminal output
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -167,23 +170,30 @@ async fn main() {
         feed.run(terminal_tx, feed_cancel).await;
     });
 
-    // Resolve tugtalk path and start agent bridge
+    // Resolve tugtalk path and start agent bridge (only if tugtalk exists)
     let tugtalk_path =
         feeds::agent_bridge::resolve_tugtalk_path(cli.tugtalk_path.as_deref(), &watch_dir);
-    let agent_cancel = cancel.clone();
-    let agent_tx = conversation_tx.clone();
-    let agent_watch_dir = watch_dir.clone();
-    tokio::spawn(async move {
-        feeds::agent_bridge::run_agent_bridge(
-            agent_tx,
-            conversation_watch_tx,
-            conversation_input_rx,
-            tugtalk_path,
-            agent_watch_dir,
-            agent_cancel,
-        )
-        .await;
-    });
+    if tugtalk_path.exists() {
+        let agent_cancel = cancel.clone();
+        let agent_tx = conversation_tx.clone();
+        let agent_watch_dir = watch_dir.clone();
+        tokio::spawn(async move {
+            feeds::agent_bridge::run_agent_bridge(
+                agent_tx,
+                conversation_watch_tx,
+                conversation_input_rx,
+                tugtalk_path,
+                agent_watch_dir,
+                agent_cancel,
+            )
+            .await;
+        });
+    } else {
+        info!(
+            "tugtalk not found at {}, conversation feed disabled",
+            tugtalk_path.display()
+        );
+    }
 
     // Start filesystem feed in background task
     let fs_cancel = cancel.clone();
