@@ -5,7 +5,7 @@ import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
 import { GitCard } from "./cards/git-card";
 import { StatsCard } from "./cards/stats-card";
-import { TugMenu } from "./tug-menu";
+import { Dock } from "./dock";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -53,8 +53,8 @@ deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");
 
-// Create Tug menu (fixed-position logo button in top-right corner)
-new TugMenu(deck);
+// Create Dock (48px vertical rail on right viewport edge)
+new Dock(deck);
 
 // Connect to the server
 connection.connect();

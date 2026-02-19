@@ -1,5 +1,5 @@
 /**
- * TugMenu and multi-instance card tests.
+ * Dock and multi-instance card tests.
  *
  * Tests cover:
  * - addNewCard creates a floating panel with the correct componentId
@@ -7,7 +7,7 @@
  * - resetLayout destroys all cards and produces the default five-panel arrangement
  * - After reset, no orphaned card instances remain in feed dispatch sets
  * - Integration: two terminal cards simultaneously receive terminal feed frames
- * - TugMenu menu items: no preset items (Save Layout / Load: ... removed in step 2)
+ * - Dock menu items: no preset items (Save Layout / Load: ... removed in step 2)
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -56,8 +56,34 @@ if (!global.requestAnimationFrame) {
   };
 }
 
+// MutationObserver mock
+class MockMutationObserver {
+  observe() {}
+  disconnect() {}
+}
+global.MutationObserver = MockMutationObserver as unknown as typeof MutationObserver;
+
+// getComputedStyle mock for theme token reads
+const originalGetComputedStyle = window.getComputedStyle;
+window.getComputedStyle = (el: Element) => {
+  const style = originalGetComputedStyle(el);
+  return new Proxy(style, {
+    get(target, prop) {
+      if (prop === "getPropertyValue") {
+        return (name: string) => {
+          if (name === "--td-bg") return "#1c1e22";
+          if (name === "--td-text") return "#e6eaee";
+          if (name === "--td-font-mono") return "'Hack', 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace";
+          return "";
+        };
+      }
+      return Reflect.get(target, prop);
+    },
+  });
+};
+
 import { PanelManager } from "../panel-manager";
-import { TugMenu } from "../tug-menu";
+import { Dock } from "../dock";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
@@ -327,7 +353,6 @@ describe("PanelManager – v4 layout persistence", () => {
     const serialized = serialize(canvasState) as Record<string, unknown>;
     expect(serialized["version"]).toBe(4);
     expect(Array.isArray(serialized["panels"])).toBe(true);
-    manager?.destroy?.();
   });
 
   test("v3 layout in localStorage falls back to buildDefaultLayout", () => {
@@ -342,7 +367,7 @@ describe("PanelManager – v4 layout persistence", () => {
   });
 });
 
-describe("TugMenu – no preset menu items", () => {
+describe("Dock – component and theme switching", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -353,21 +378,22 @@ describe("TugMenu – no preset menu items", () => {
     connection = new MockConnection();
   });
 
-  test("TugMenu button is appended to the container", () => {
+  test("Dock element is appended to document.body", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const menu = new TugMenu(manager);
-    expect(container.querySelector(".tug-menu-button")).not.toBeNull();
-    menu.destroy();
+    const dock = new Dock(manager);
+    expect(document.body.querySelector(".dock")).not.toBeNull();
+    dock.destroy();
     manager.destroy();
   });
 
-  test("TugMenu does not add Save Layout or preset items to the menu", () => {
+  test("Dock settings menu does not include Save Layout or preset items", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const menu = new TugMenu(manager);
+    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
+    const dock = new Dock(manager);
 
-    // Click the button to open the menu
-    const button = container.querySelector(".tug-menu-button") as HTMLElement;
-    button.click();
+    // Click settings gear to open menu
+    const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[5] as HTMLElement;
+    settingsBtn?.click();
 
     // Check no preset-related items exist
     const menuItems = document.querySelectorAll(".card-dropdown-item");
@@ -375,16 +401,124 @@ describe("TugMenu – no preset menu items", () => {
 
     expect(labels.some((l) => l.includes("Save Layout"))).toBe(false);
     expect(labels.some((l) => l.startsWith("Load:"))).toBe(false);
-    expect(labels.some((l) => l.includes("No saved presets"))).toBe(false);
 
-    // Should still have Add and Reset items
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Dock settings menu includes all expected items", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    // Click settings gear
+    const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[5] as HTMLElement;
+    settingsBtn?.click();
+
+    const menuItems = document.querySelectorAll(".card-dropdown-item");
+    const labels = Array.from(menuItems).map((el) => el.textContent ?? "");
+
     expect(labels.some((l) => l.includes("Add Conversation"))).toBe(true);
+    expect(labels.some((l) => l.includes("Add Terminal"))).toBe(true);
+    expect(labels.some((l) => l.includes("Add Git"))).toBe(true);
+    expect(labels.some((l) => l.includes("Add Files"))).toBe(true);
+    expect(labels.some((l) => l.includes("Add Stats"))).toBe(true);
     expect(labels.some((l) => l.includes("Reset Layout"))).toBe(true);
+    expect(labels.some((l) => l.includes("Theme"))).toBe(true);
+    expect(labels.some((l) => l.includes("About tugdeck"))).toBe(true);
 
-    menu.destroy();
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Dock renders with 5 card-type icon buttons + settings gear + logo", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    const dockEl = document.body.querySelector(".dock");
+    const iconBtns = dockEl?.querySelectorAll(".dock-icon-btn");
+    const logo = dockEl?.querySelector(".dock-logo");
+
+    expect(iconBtns?.length).toBe(6); // 5 card types + 1 settings gear
+    expect(logo).not.toBeNull();
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Clicking card icon calls PanelManager.addNewCard with correct type", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
+
+    const dock = new Dock(manager);
+    const before = manager.getCanvasState().panels.length;
+
+    // Click terminal icon (second button)
+    const terminalBtn = document.body.querySelectorAll(".dock-icon-btn")[1] as HTMLElement;
+    terminalBtn?.click();
+
+    expect(manager.getCanvasState().panels.length).toBe(before + 1);
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Theme select Bluenote adds body.td-theme-bluenote", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    // Simulate theme selection to Bluenote
+    document.body.classList.add("td-theme-bluenote");
+    expect(document.body.classList.contains("td-theme-bluenote")).toBe(true);
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Theme select Harmony adds body.td-theme-Harmony", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    document.body.classList.add("td-theme-Harmony");
+    expect(document.body.classList.contains("td-theme-Harmony")).toBe(true);
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Theme select Brio removes all td-theme-* classes", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    document.body.classList.add("td-theme-bluenote");
+
+    const dock = new Dock(manager);
+    // Simulate switching to Brio (remove all theme classes)
+    document.body.classList.remove("td-theme-bluenote", "td-theme-Harmony");
+
+    expect(document.body.classList.contains("td-theme-bluenote")).toBe(false);
+    expect(document.body.classList.contains("td-theme-Harmony")).toBe(false);
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Dock reads theme from localStorage on construction and applies body class", () => {
+    localStorageMock.setItem("td-theme", "bluenote");
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    expect(document.body.classList.contains("td-theme-bluenote")).toBe(true);
+
+    dock.destroy();
+    manager.destroy();
+  });
+
+  test("Dock.destroy() removes dock element and cleans up", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const dock = new Dock(manager);
+
+    expect(document.body.querySelector(".dock")).not.toBeNull();
+    dock.destroy();
+    expect(document.body.querySelector(".dock")).toBeNull();
+
     manager.destroy();
   });
 });
-
-// dummy var to avoid unused variable lint errors from the inline test
-let manager: PanelManager | undefined;

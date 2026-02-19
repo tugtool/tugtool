@@ -33,7 +33,12 @@ export interface CardMenuSelect {
   action: (value: string) => void;
 }
 
-export type CardMenuItem = CardMenuAction | CardMenuToggle | CardMenuSelect;
+/** A visual separator in the card dropdown menu. */
+export interface CardMenuSeparator {
+  type: "separator";
+}
+
+export type CardMenuItem = CardMenuAction | CardMenuToggle | CardMenuSelect | CardMenuSeparator;
 
 // ---- Card metadata ----
 

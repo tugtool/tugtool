@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-19T02:34:15Z
+bead: tugtool-j72.4
+---
+
+## #step-3: Created Dock component replacing TugMenu: 48px vertical rail with icon buttons, settings dropdown with theme select (Brio/Bluenote/Harmony), terminal theme reactivity via td-theme-change events
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-19T02:21:11Z
 bead: tugtool-j72.3
