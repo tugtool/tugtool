@@ -33,3 +33,6 @@ aside
 # Unwanted file dropped by bd init
 AGENTS.md
 node_modules/
+
+# Frontend build output
+tugdeck/dist/
