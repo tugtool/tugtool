@@ -159,6 +159,8 @@ export class PanelManager implements IDragState {
   /** Whether break-out flash has already fired during this drag. At most once per drag. */
   private _dragBreakOutFired = false;
 
+  /** Bound keydown handler for panel cycling shortcut */
+  private keydownHandler: (e: KeyboardEvent) => void;
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
@@ -207,6 +209,10 @@ export class PanelManager implements IDragState {
 
     // Listen for window resize
     window.addEventListener("resize", () => this.handleResize());
+
+    // Keyboard shortcut: Control+` / Control+~ cycles panel focus
+    this.keydownHandler = (e: KeyboardEvent) => this.handleKeyDown(e);
+    document.addEventListener("keydown", this.keydownHandler);
   }
 
   // ---- IDragState ----
@@ -402,7 +408,7 @@ export class PanelManager implements IDragState {
             this.ensureSetAdjacency();
             this.scheduleSave();
           },
-          onFocus: () => {
+          onFocus: (opts) => {
             // Capture set-move context BEFORE focusPanel reorders the panels array.
             // Topmost = smallest Y coordinate (visually highest on screen).
             // Tiebreaker: smallest X (leftmost). Exactly one panel per set.
@@ -441,7 +447,10 @@ export class PanelManager implements IDragState {
               this._dragInitialSetKey = null;
             }
             this._dragBreakOutFired = false;
-            this.focusPanel(panel.id);
+            // Command+click: move without raising (suppress z-order change)
+            if (!opts?.suppressZOrder) {
+              this.focusPanel(panel.id);
+            }
           },
           onClose: () => {
             const activeTabId = panel.activeTabId;
@@ -1649,9 +1658,48 @@ export class PanelManager implements IDragState {
     }
   }
 
+  /** Handle keyboard shortcuts at document level. */
+  private handleKeyDown(e: KeyboardEvent): void {
+    // Control+` or Control+~ for panel focus cycling
+    if (e.ctrlKey && (e.key === "`" || e.key === "~")) {
+      e.preventDefault();
+      this.cyclePanelFocus();
+    }
+  }
+
+  /**
+   * Cycle panel focus: bring the backmost panel to front.
+   * Repeated presses rotate through all panels in z-order.
+   * When the target panel is in a set, focus the set leader (topmost Y)
+   * so the key tint highlights the most prominent title bar.
+   */
+  private cyclePanelFocus(): void {
+    const panels = this.canvasState.panels;
+    if (panels.length === 0) return;
+
+    let targetId = panels[0].id;
+
+    // If the target is in a set, focus the leader (smallest Y, then X)
+    const targetSet = this.sets.find((s) => s.panelIds.includes(targetId));
+    if (targetSet) {
+      let leaderY = Infinity;
+      let leaderX = Infinity;
+      for (const id of targetSet.panelIds) {
+        const p = panels.find((pp) => pp.id === id);
+        if (p && (p.position.y < leaderY || (p.position.y === leaderY && p.position.x < leaderX))) {
+          leaderY = p.position.y;
+          leaderX = p.position.x;
+          targetId = id;
+        }
+      }
+    }
+
+    this.focusPanel(targetId);
+  }
+
   /** Set of componentIds that accept key status. */
   private static readonly KEY_CAPABLE = new Set([
-    "conversation", "terminal", "git", "files",
+    "conversation", "terminal", "git", "files", "stats",
   ]);
 
   /**
@@ -1718,6 +1766,7 @@ export class PanelManager implements IDragState {
     this._setMoveContext = null;
     this._dragInitialSetKey = null;
     this._dragBreakOutFired = false;
+    document.removeEventListener("keydown", this.keydownHandler);
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

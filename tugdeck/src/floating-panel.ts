@@ -36,7 +36,7 @@ export interface FloatingPanelCallbacks {
   /** Called when the user finishes resizing the panel. */
   onResizeEnd: (x: number, y: number, width: number, height: number) => void;
   /** Called when the panel receives focus (click anywhere). */
-  onFocus: () => void;
+  onFocus: (opts?: { suppressZOrder?: boolean }) => void;
   /** Called when the close button in the header is clicked. */
   onClose: () => void;
   /** Called on every pointermove during header drag. Return the (potentially snapped) position. */
@@ -67,10 +67,11 @@ export class FloatingPanel {
     this.el.className = "floating-panel";
     this.applyGeometry();
 
-    // Focus on click anywhere in the panel
+    // Focus on click anywhere in the panel.
+    // Command+click suppresses z-order change (move without raising).
     this.el.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
-      callbacks.onFocus();
+      callbacks.onFocus({ suppressZOrder: e.metaKey });
     });
 
     // Build meta from PanelState active tab if not provided
