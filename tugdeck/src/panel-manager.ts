@@ -877,7 +877,7 @@ export class PanelManager implements IDragState {
 
   /**
    * Add a new card instance of the given componentId as a floating panel
-   * at the center of the canvas. Called by TugMenu.
+   * at the center of the canvas. Called by Dock.
    */
   addNewCard(componentId: string): void {
     const factory = this.cardFactories.get(componentId);
@@ -1123,7 +1123,7 @@ export class PanelManager implements IDragState {
     return this.cardsByFeed;
   }
 
-  /** Expose the container element (for TugMenu button placement). */
+  /** Expose the container element (for Dock and other chrome). */
   getContainer(): HTMLElement {
     return this.container;
   }
@@ -1135,7 +1135,7 @@ export class PanelManager implements IDragState {
 
   /**
    * Register a card factory for a componentId.
-   * Used by TugMenu and resetLayout to create new card instances.
+   * Used by Dock and resetLayout to create new card instances.
    */
   registerCardFactory(componentId: string, factory: () => TugCard): void {
     this.cardFactories.set(componentId, factory);
