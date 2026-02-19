@@ -1,5 +1,5 @@
 {
-  "description": "Auto-approve tugtool plugin tool calls and safe Bash commands",
+  "description": "Auto-approve tugplug plugin tool calls and safe Bash commands",
   "hooks": {
     "PreToolUse": [
       {

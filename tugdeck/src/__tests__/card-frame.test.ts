@@ -1,13 +1,13 @@
 /**
- * Floating panel tests.
+ * CardFrame tests.
  *
  * Tests cover:
- * - FloatingPanel DOM creation and geometry from PanelState
+ * - CardFrame DOM creation and geometry from CardState
  * - Z-order management on focus
  * - serialize/deserialize round-trip preserves panel positions (v4 format)
- * - PanelManager integration: floating panels in canvasState
+ * - DeckManager integration: card frames in canvasState
  *
- * [D03] FloatingPanel accepts PanelState directly
+ * [D03] CardFrame accepts CardState directly
  * [D06] Focus model with CSS class
  * [D09] Instance identity preservation
  */
@@ -148,9 +148,9 @@ function makeMockCard(feedIds: FeedIdValue[]): TugCard & { destroyCount: number 
   };
 }
 
-// ---- FloatingPanel DOM tests ----
+// ---- CardFrame DOM tests ----
 
-describe("FloatingPanel – DOM creation from PanelState", () => {
+describe("CardFrame – DOM creation from CardState", () => {
   let canvas: HTMLElement;
 
   beforeEach(() => {
@@ -159,7 +159,7 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
     document.body.appendChild(canvas);
   });
 
-  test("creates an element with class 'floating-panel'", () => {
+  test("creates an element with class 'card-frame'", () => {
     const ps = makeCardState(100, 150, 400, 300);
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -167,7 +167,7 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
     fp.destroy();
   });
 
-  test("positions element according to PanelState position", () => {
+  test("positions element according to CardState position", () => {
     const ps = makeCardState(200, 150, 400, 300);
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -176,7 +176,7 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
     fp.destroy();
   });
 
-  test("sizes element according to PanelState size", () => {
+  test("sizes element according to CardState size", () => {
     const ps = makeCardState(100, 100, 500, 400);
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -185,7 +185,7 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
     fp.destroy();
   });
 
-  test("creates a panel-header with title from active tab", () => {
+  test("creates a card-header with title from active tab", () => {
     const ps = makeCardState(100, 100, 400, 300, "My Terminal");
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -197,7 +197,7 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
     fp.destroy();
   });
 
-  test("creates a card area element with class floating-panel-content", () => {
+  test("creates a card area element with class card-frame-content", () => {
     const ps = makeCardState();
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -220,9 +220,9 @@ describe("FloatingPanel – DOM creation from PanelState", () => {
   });
 });
 
-// ---- FloatingPanel API tests ----
+// ---- CardFrame API tests ----
 
-describe("FloatingPanel – API", () => {
+describe("CardFrame – API", () => {
   let canvas: HTMLElement;
 
   beforeEach(() => {
@@ -240,7 +240,7 @@ describe("FloatingPanel – API", () => {
     fp.destroy();
   });
 
-  test("getPanelState returns the same object passed to constructor", () => {
+  test("getCardState returns the same object passed to constructor", () => {
     const ps = makeCardState();
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -248,7 +248,7 @@ describe("FloatingPanel – API", () => {
     fp.destroy();
   });
 
-  test("updatePosition updates element style and PanelState position", () => {
+  test("updatePosition updates element style and CardState position", () => {
     const ps = makeCardState(100, 100, 400, 300);
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -260,7 +260,7 @@ describe("FloatingPanel – API", () => {
     fp.destroy();
   });
 
-  test("updateSize updates element style and PanelState size", () => {
+  test("updateSize updates element style and CardState size", () => {
     const ps = makeCardState(100, 100, 400, 300);
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -282,7 +282,7 @@ describe("FloatingPanel – API", () => {
     expect(canvas.contains(fp.getElement())).toBe(false);
   });
 
-  test("updateTitle is a no-op; title comes from PanelState at construction", () => {
+  test("updateTitle is a no-op; title comes from CardState at construction", () => {
     const ps = makeCardState(100, 100, 400, 300, "My Title");
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
@@ -360,9 +360,9 @@ describe("v4 serialization round-trip", () => {
   });
 });
 
-// ---- PanelManager floating panel integration tests ----
+// ---- DeckManager card frame integration tests ----
 
-describe("PanelManager – canvas panel integration", () => {
+describe("DeckManager – canvas card integration", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -391,14 +391,14 @@ describe("PanelManager – canvas panel integration", () => {
     manager.destroy();
   });
 
-  test("render creates one .floating-panel per panel in canvasState", () => {
+  test("render creates one .card-frame per card in canvasState", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const floatingEls = container.querySelectorAll(".card-frame");
     expect(floatingEls.length).toBe(5);
     manager.destroy();
   });
 
-  test("applyLayout with 1 panel creates 1 .floating-panel element", () => {
+  test("applyLayout with 1 panel creates 1 .card-frame element", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "apply-tab-1";
     manager.applyLayout({
@@ -432,7 +432,7 @@ describe("PanelManager – canvas panel integration", () => {
     manager.destroy();
   });
 
-  test("key-capable panel (terminal) gets .panel-header-key on its header", () => {
+  test("key-capable panel (terminal) gets .card-header-key on its header", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tab1 = "f-tab-1"; const tab2 = "f-tab-2";
     manager.applyLayout({
@@ -543,7 +543,7 @@ describe("PanelManager – canvas panel integration", () => {
   });
 });
 
-// ---- FloatingPanel – live callbacks (onMoving / onResizing) ----
+// ---- CardFrame – live callbacks (onMoving / onResizing) ----
 
 /**
  * Helper: create a PointerEvent using happy-dom's native PointerEvent constructor.
@@ -565,7 +565,7 @@ function makePointerEvent(
   } as PointerEventInit) as unknown as PointerEvent;
 }
 
-describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
+describe("CardFrame – live callbacks (onMoving / onResizing)", () => {
   let canvas: HTMLElement;
 
   beforeEach(() => {

@@ -141,7 +141,7 @@ function makeContainer(): HTMLElement {
 
 // ---- Tests ----
 
-describe("PanelManager – addNewCard", () => {
+describe("DeckManager – addNewCard", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -200,7 +200,7 @@ describe("PanelManager – addNewCard", () => {
   });
 });
 
-describe("PanelManager – fan-out frame dispatch", () => {
+describe("DeckManager – fan-out frame dispatch", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -242,7 +242,7 @@ describe("PanelManager – fan-out frame dispatch", () => {
   });
 });
 
-describe("PanelManager – resetLayout", () => {
+describe("DeckManager – resetLayout", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -308,7 +308,7 @@ describe("PanelManager – resetLayout", () => {
   });
 });
 
-describe("PanelManager – v4 layout persistence", () => {
+describe("DeckManager – v4 layout persistence", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -445,7 +445,7 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Clicking card icon calls PanelManager.addNewCard with correct type", () => {
+  test("Clicking card icon calls DeckManager.addNewCard with correct type", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 

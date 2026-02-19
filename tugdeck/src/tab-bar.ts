@@ -2,7 +2,7 @@
  * TabBar — renders a tab strip for multi-tab panels.
  *
  * Presentation-only component: it fires callbacks for all state mutations
- * and lets PanelManager own all panel updates and card lifecycle operations.
+ * and lets DeckManager own all card updates and card lifecycle operations.
  *
  * Supports:
  * - Click-to-switch (fires onTabActivate)
@@ -12,7 +12,7 @@
 
 import { type TabNode } from "./layout-tree";
 
-/** Callbacks wired by PanelManager. */
+/** Callbacks wired by DeckManager. */
 export interface TabBarCallbacks {
   /** Called when the user clicks a tab (not the close button). */
   onTabActivate: (tabIndex: number) => void;
@@ -47,7 +47,7 @@ export class TabBar {
 
   /**
    * Re-render the tab strip from updated TabNode state.
-   * Called by PanelManager after any panel mutation (activate, reorder, close).
+   * Called by DeckManager after any card mutation (activate, reorder, close).
    */
   update(node: TabNode): void {
     this.currentNode = node;

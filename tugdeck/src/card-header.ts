@@ -149,7 +149,7 @@ export class CardHeader {
    * in this implementation (Step 6 can add animation if desired).
    */
   setCollapsed(_collapsed: boolean): void {
-    // Intentionally minimal — collapse state is managed by PanelManager
+    // Intentionally minimal — collapse state is managed by DeckManager
   }
 
   destroy(): void {

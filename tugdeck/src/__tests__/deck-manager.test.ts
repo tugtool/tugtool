@@ -1,5 +1,5 @@
 /**
- * PanelManager unit and integration tests.
+ * DeckManager unit and integration tests.
  *
  * Tests cover:
  * - Default layout renders 5 floating panels
@@ -127,7 +127,7 @@ function makeContainer(): HTMLElement {
 
 // ---- Tests ----
 
-describe("PanelManager", () => {
+describe("DeckManager", () => {
   let connection: MockConnection;
   let container: HTMLElement;
 
@@ -160,7 +160,7 @@ describe("PanelManager", () => {
     manager.destroy();
   });
 
-  test("panel-root element exists inside container", () => {
+  test("deck-root element exists inside container", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     expect(container.querySelector(".deck-root")).not.toBeNull();
     manager.destroy();
@@ -181,7 +181,7 @@ describe("PanelManager", () => {
 
   test("D10: each output feedId has exactly one registered connection callback", () => {
     new DeckManager(container, connection as unknown as TugConnection);
-    // PanelManager registers exactly one callback per output feedId
+    // DeckManager registers exactly one callback per output feedId
     expect(connection.callbackCount(FeedId.TERMINAL_OUTPUT)).toBe(1);
     expect(connection.callbackCount(FeedId.FILESYSTEM)).toBe(1);
     expect(connection.callbackCount(FeedId.GIT)).toBe(1);
@@ -364,7 +364,7 @@ function makePointerEvent(
   } as PointerEventInit) as unknown as PointerEvent;
 }
 
-/** Build a minimal single-tab PanelState for layout setup. */
+/** Build a minimal single-tab CardState for layout setup. */
 function makeCardState(
   id: string,
   x: number, y: number,
@@ -395,7 +395,7 @@ function makeSnapContainer(width = 1280, height = 800): HTMLElement {
   return el;
 }
 
-describe("PanelManager – snap wiring", () => {
+describe("DeckManager – snap wiring", () => {
   let connection: MockConnection;
 
   beforeEach(() => {
@@ -521,7 +521,7 @@ describe("PanelManager – snap wiring", () => {
 
 // ---- Guide line tests ----
 
-describe("PanelManager – guide lines", () => {
+describe("DeckManager – guide lines", () => {
   let connection: MockConnection;
 
   beforeEach(() => {
@@ -599,7 +599,7 @@ describe("PanelManager – guide lines", () => {
 
 // ---- Set computation integration tests ----
 
-describe("PanelManager – set computation", () => {
+describe("DeckManager – set computation", () => {
   let connection: MockConnection;
 
   beforeEach(() => {
@@ -735,7 +735,7 @@ function triggerRecompute(headerEl: HTMLElement): void {
   headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
 }
 
-describe("PanelManager – virtual sashes", () => {
+describe("DeckManager – virtual sashes", () => {
   let connection: MockConnection;
 
   beforeEach(() => {
@@ -885,7 +885,7 @@ describe("PanelManager – virtual sashes", () => {
 
 // ---- Set dragging integration tests ----
 
-describe("PanelManager – set dragging", () => {
+describe("DeckManager – set dragging", () => {
   let connection: MockConnection;
 
   beforeEach(() => {
@@ -1106,7 +1106,7 @@ describe("PanelManager – set dragging", () => {
 
 // ---- Close recompute and final polish tests ----
 
-describe("PanelManager – close recompute and final polish", () => {
+describe("DeckManager – close recompute and final polish", () => {
   let connection: MockConnection;
 
   beforeEach(() => {

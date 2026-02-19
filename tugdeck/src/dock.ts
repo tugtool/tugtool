@@ -17,14 +17,14 @@ const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
 </svg>`;
 
 export class Dock {
-  private panelManager: DeckManager;
+  private deckManager: DeckManager;
   private dockEl: HTMLElement;
   private currentMenu: DropdownMenu | null = null;
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
 
-  constructor(panelManager: DeckManager) {
-    this.panelManager = panelManager;
+  constructor(deckManager: DeckManager) {
+    this.deckManager = deckManager;
 
     // Read theme from localStorage and apply on construction
     const savedTheme = localStorage.getItem("td-theme") || "brio";
@@ -102,7 +102,7 @@ export class Dock {
     const icon = createElement(iconConstructor);
     btn.appendChild(icon);
     btn.addEventListener("click", () => {
-      this.panelManager.addNewCard(cardType);
+      this.deckManager.addNewCard(cardType);
     });
     this.dockEl.appendChild(btn);
   }
@@ -125,7 +125,7 @@ export class Dock {
   }
 
   private buildSettingsMenuItems(): CardMenuItem[] {
-    const pm = this.panelManager;
+    const pm = this.deckManager;
     const currentTheme = this.getCurrentTheme();
 
     const items: CardMenuItem[] = [

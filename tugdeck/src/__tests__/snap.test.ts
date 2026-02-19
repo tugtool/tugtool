@@ -20,7 +20,7 @@ import type { CardState } from "../layout-tree";
 // ---- cardToRect ----
 
 describe("cardToRect", () => {
-  test("converts PanelState to Rect correctly", () => {
+  test("converts CardState to Rect correctly", () => {
     const panel: CardState = {
       id: "p1",
       position: { x: 10, y: 20 },

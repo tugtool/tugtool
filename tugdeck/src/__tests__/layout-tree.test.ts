@@ -6,7 +6,7 @@ import {
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
-// ---- DeckState / PanelState type tests ----
+// ---- DeckState / CardState type tests ----
 
 describe("DeckState", () => {
   test("DeckState with empty panels array is valid", () => {
@@ -17,8 +17,8 @@ describe("DeckState", () => {
   });
 });
 
-describe("PanelState", () => {
-  test("PanelState with single tab constructs correctly", () => {
+describe("CardState", () => {
+  test("CardState with single tab constructs correctly", () => {
     const tab: TabItem = {
       id: "tab-1",
       componentId: "terminal",
@@ -43,7 +43,7 @@ describe("PanelState", () => {
     expect(panel.activeTabId).toBe("tab-1");
   });
 
-  test("PanelState with multiple same-type tabs constructs correctly", () => {
+  test("CardState with multiple same-type tabs constructs correctly", () => {
     const tab1: TabItem = {
       id: "tab-a",
       componentId: "terminal",
@@ -288,7 +288,7 @@ describe("focusPanel data model (D06)", () => {
 });
 
 describe("addNewCard data model (D01)", () => {
-  test("pushing a new PanelState adds it at canvas center", () => {
+  test("pushing a new CardState adds it at canvas center", () => {
     const canvasState: DeckState = { cards: [] };
     const canvasW = 800;
     const canvasH = 600;

@@ -1,16 +1,16 @@
 /**
- * FloatingPanel — absolutely-positioned panel with move, resize, and z-order.
+ * CardFrame — absolutely-positioned card with move, resize, and z-order.
  *
- * The panel contains:
+ * The card frame contains:
  * - A CardHeader providing icon, title, close, and drag-to-move.
  * - A card area below the header where card DOM is mounted.
  * - Eight resize handles (4 edges + 4 corners).
  *
  * All mutations (move end, resize end, focus, close) fire callbacks so
- * PanelManager owns the DeckState mutations and serialization.
+ * DeckManager owns the DeckState mutations and serialization.
  *
  * Spec S01: CardState data model
- * [D03] FloatingPanel accepts CardState directly
+ * [D03] CardFrame accepts CardState directly
  * [D06] Key panel focus model with title bar tint
  */
 
@@ -49,7 +49,7 @@ export class CardFrame {
   private el: HTMLElement;
   private cardHeader: CardHeader;
   private cardAreaEl: HTMLElement;
-  private panelState: CardState;
+  private cardState: CardState;
   private callbacks: CardFrameCallbacks;
   private canvasEl: HTMLElement;
 

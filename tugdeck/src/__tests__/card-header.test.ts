@@ -8,7 +8,7 @@
  * d. DropdownMenu opens on menu button click and closes on click-outside
  * e. DropdownMenu closes on Escape key press
  * f. ConversationCard permission mode menu item sends correct IPC message
- * g. Floating panel uses full CardHeader (not temporary .floating-panel-title-bar)
+ * g. CardFrame uses full CardHeader (not temporary title bar)
  * h. Integration: all five cards display correct header metadata
  *
  * [D06] Hybrid header bar construction
@@ -170,7 +170,7 @@ class MockConnection {
 // ---- a. CardHeader DOM structure ----
 
 describe("CardHeader – DOM structure", () => {
-  test("renders .panel-header element", () => {
+  test("renders .card-header element", () => {
     const meta = makeMeta({ title: "Terminal", icon: "Terminal" });
     const header = new CardHeader(meta, {
       onClose: () => {},
@@ -180,7 +180,7 @@ describe("CardHeader – DOM structure", () => {
     header.destroy();
   });
 
-  test("renders .panel-header-title with correct uppercase text", () => {
+  test("renders .card-header-title with correct uppercase text", () => {
     const meta = makeMeta({ title: "Git", icon: "GitBranch" });
     const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
     const title = header.getElement().querySelector(".card-header-title");
@@ -189,7 +189,7 @@ describe("CardHeader – DOM structure", () => {
     header.destroy();
   });
 
-  test("renders .panel-header-icon element", () => {
+  test("renders .card-header-icon element", () => {
     const meta = makeMeta({ icon: "Activity" });
     const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
     const icon = header.getElement().querySelector(".card-header-icon");
@@ -472,8 +472,8 @@ describe("ConversationCard – permission mode meta action", () => {
 
 // ---- g. Floating panel uses full CardHeader ----
 
-describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
-  test("floating panel contains .panel-header, not .floating-panel-title-bar", () => {
+describe("CardFrame – uses full CardHeader (Step 5)", () => {
+  test("card frame contains .card-header, not .card-frame-title-bar", () => {
     const canvas = document.createElement("div");
     document.body.appendChild(canvas);
 
@@ -493,11 +493,11 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
       onClose: () => {},
     }, canvas);
 
-    // Should have .panel-header (CardHeader)
+    // Should have .card-header (CardHeader)
     const header = fp.getElement().querySelector(".card-header");
     expect(header).not.toBeNull();
 
-    // Should NOT have .floating-panel-title-bar (the old temporary title bar)
+    // Should NOT have .card-frame-title-bar (the old temporary title bar)
     const oldTitleBar = fp.getElement().querySelector(".card-frame-title-bar");
     expect(oldTitleBar).toBeNull();
 
@@ -621,9 +621,9 @@ describe("All five cards – correct header metadata", () => {
   });
 });
 
-// ---- PanelManager integration: single-tab cards get CardHeader ----
+// ---- DeckManager integration: single-tab cards get CardHeader ----
 
-describe("PanelManager – single-tab CardHeader integration", () => {
+describe("DeckManager – single-tab CardHeader integration", () => {
   let container: HTMLElement;
   let connection: MockConnection;
 
@@ -641,17 +641,17 @@ describe("PanelManager – single-tab CardHeader integration", () => {
     connection = new MockConnection();
   });
 
-  test("single-tab docked card renders a .panel-header element", () => {
+  test("single-tab docked card renders a .card-header element", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = new GitCard();
     manager.addCard(card, "git");
-    // After addCard, the container should have a .panel-header for the single-tab git card
+    // After addCard, the container should have a .card-header for the single-tab git card
     const header = container.querySelector(".card-header");
     expect(header).not.toBeNull();
     manager.destroy();
   });
 
-  test(".panel-header title matches card meta title", () => {
+  test(".card-header title matches card meta title", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = new GitCard();
     manager.addCard(card, "git");
