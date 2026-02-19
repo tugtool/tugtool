@@ -281,6 +281,14 @@ export class PanelManager implements IDragState {
   }
 
   /**
+   * Re-render to pick up card meta registered after initial render.
+   * Call once after all addCard() calls to ensure menu buttons appear.
+   */
+  refresh(): void {
+    this.render();
+  }
+
+  /**
    * Remove a card: removes from fan-out sets, calls card.destroy(),
    * removes its tab from the panel. If the panel is now empty, removes it.
    */

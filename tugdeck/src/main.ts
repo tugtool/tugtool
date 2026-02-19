@@ -53,6 +53,9 @@ deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");
 
+// Re-render so FloatingPanel headers pick up card meta (menu buttons)
+deck.refresh();
+
 // Create Dock (48px vertical rail on right viewport edge)
 new Dock(deck);
 

@@ -83,9 +83,9 @@ export class TerminalCard implements TugCard {
 
   mount(container: HTMLElement): void {
     // Read CSS tokens for terminal theme
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--td-bg").trim();
-    const fg = getComputedStyle(document.documentElement).getPropertyValue("--td-text").trim();
-    const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--td-font-mono").trim();
+    const bg = getComputedStyle(document.body).getPropertyValue("--td-surface-content").trim();
+    const fg = getComputedStyle(document.body).getPropertyValue("--td-text").trim();
+    const fontFamily = getComputedStyle(document.body).getPropertyValue("--td-font-mono").trim();
 
     // Create terminal with theme matching the dark background
     this.terminal = new Terminal({
@@ -156,14 +156,19 @@ export class TerminalCard implements TugCard {
       this.connection.send(frame.feedId, frame.payload);
     });
 
-    // Listen for theme changes and update terminal colors
+    // Listen for theme changes and update terminal colors.
+    // Defer to next frame so the browser has recalculated computed styles,
+    // then force a full refresh so the WebGL renderer repaints the background.
     this.themeChangeHandler = () => {
-      if (!this.terminal) return;
-      const newBg = getComputedStyle(document.documentElement).getPropertyValue("--td-bg").trim();
-      const newFg = getComputedStyle(document.documentElement).getPropertyValue("--td-text").trim();
-      const newFont = getComputedStyle(document.documentElement).getPropertyValue("--td-font-mono").trim();
-      this.terminal.options.theme = { background: newBg, foreground: newFg };
-      if (newFont) this.terminal.options.fontFamily = newFont;
+      requestAnimationFrame(() => {
+        if (!this.terminal) return;
+        const newBg = getComputedStyle(document.body).getPropertyValue("--td-surface-content").trim();
+        const newFg = getComputedStyle(document.body).getPropertyValue("--td-text").trim();
+        const newFont = getComputedStyle(document.body).getPropertyValue("--td-font-mono").trim();
+        this.terminal.options.theme = { background: newBg, foreground: newFg };
+        if (newFont) this.terminal.options.fontFamily = newFont;
+        this.terminal.refresh(0, this.terminal.rows - 1);
+      });
     };
     document.addEventListener("td-theme-change", this.themeChangeHandler);
   }

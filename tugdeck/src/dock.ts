@@ -203,13 +203,13 @@ export class Dock {
 
   private applyThemeClass(theme: string): void {
     // Remove all theme classes
-    document.body.classList.remove("td-theme-bluenote", "td-theme-Harmony");
+    document.body.classList.remove("td-theme-bluenote", "td-theme-harmony");
 
     // Apply theme class (no class for Brio)
     if (theme === "bluenote") {
       document.body.classList.add("td-theme-bluenote");
-    } else if (theme === "harmony" || theme === "Harmony") {
-      document.body.classList.add("td-theme-Harmony");
+    } else if (theme === "harmony") {
+      document.body.classList.add("td-theme-harmony");
     }
     // Brio: no class (default)
   }

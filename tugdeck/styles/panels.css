@@ -122,6 +122,7 @@
   flex-direction: column;
   background: var(--td-panel);
   border: 1px solid var(--td-border);
+  border-radius: 6px;
   box-shadow: var(--td-depth-raise);
   overflow: visible; /* resize handles extend outside */
   min-width: 100px;
@@ -137,16 +138,25 @@
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  background: linear-gradient(180deg, var(--td-surface) 0%, var(--td-surface-tab) 100%);
+  background: var(--td-titlebar-inactive);
   border-bottom: 1px solid var(--td-border);
+  border-radius: 5px 5px 0 0;
   flex-shrink: 0;
   user-select: none;
   box-sizing: border-box;
 }
 
-/* Key panel title bar tint: subtle accent over muted background */
+/* Key panel title bar: brighter/saturated version of theme's main color */
 .panel-header-key {
-  background: color-mix(in srgb, var(--td-accent) 12%, var(--td-surface-control));
+  background: var(--td-titlebar-active);
+}
+
+.panel-header-key .panel-header-icon {
+  color: var(--td-icon-active);
+}
+
+.panel-header-key .panel-header-title {
+  color: var(--td-text);
 }
 
 .panel-header-icon {
@@ -162,7 +172,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--td-text);
+  color: var(--td-text-soft);
   flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -254,6 +264,7 @@
   overflow: hidden;
   position: relative;
   min-height: 0;
+  border-radius: 0 0 5px 5px;
 }
 
 /* Resize handles: 8px hit area on each edge/corner */

@@ -474,12 +474,12 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Theme select Harmony adds body.td-theme-Harmony", () => {
+  test("Theme select Harmony adds body.td-theme-harmony", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
-    document.body.classList.add("td-theme-Harmony");
-    expect(document.body.classList.contains("td-theme-Harmony")).toBe(true);
+    document.body.classList.add("td-theme-harmony");
+    expect(document.body.classList.contains("td-theme-harmony")).toBe(true);
 
     dock.destroy();
     manager.destroy();
@@ -491,10 +491,10 @@ describe("Dock – component and theme switching", () => {
 
     const dock = new Dock(manager);
     // Simulate switching to Brio (remove all theme classes)
-    document.body.classList.remove("td-theme-bluenote", "td-theme-Harmony");
+    document.body.classList.remove("td-theme-bluenote", "td-theme-harmony");
 
     expect(document.body.classList.contains("td-theme-bluenote")).toBe(false);
-    expect(document.body.classList.contains("td-theme-Harmony")).toBe(false);
+    expect(document.body.classList.contains("td-theme-harmony")).toBe(false);
 
     dock.destroy();
     manager.destroy();
@@ -576,12 +576,12 @@ describe("Dock – component and theme switching", () => {
 
     // Simulate selecting Harmony theme
     document.body.classList.remove("td-theme-bluenote");
-    document.body.classList.add("td-theme-Harmony");
+    document.body.classList.add("td-theme-harmony");
     localStorage.setItem("td-theme", "harmony");
     expect(localStorage.getItem("td-theme")).toBe("harmony");
 
     // Simulate selecting Brio theme (remove all classes)
-    document.body.classList.remove("td-theme-Harmony");
+    document.body.classList.remove("td-theme-harmony");
     localStorage.setItem("td-theme", "brio");
     expect(localStorage.getItem("td-theme")).toBe("brio");
 

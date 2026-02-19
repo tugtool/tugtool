@@ -12,7 +12,7 @@ import { TugCard, type TugCardMeta } from "./card";
  * Helper function to read CSS token values
  */
 function getCSSToken(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
 }
 
 /**

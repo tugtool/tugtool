@@ -9,7 +9,7 @@
  * Theme system:
  * - Brio (deep graphite): Default theme in :root, no body class required
  * - Bluenote (cool dark): Activated via body.td-theme-bluenote
- * - Harmony (light): Activated via body.td-theme-Harmony
+ * - Harmony (light): Activated via body.td-theme-harmony
  *
  * Components MUST use only --td-* semantic tokens, never --rn-* or raw values.
  */
@@ -59,10 +59,10 @@
 }
 
 /* ============================================================================
-   :root - Brio Theme (Default)
+   body - Brio Theme (Default)
    ========================================================================= */
 
-:root {
+body {
   /* Tier 1: Palette (Brio values from retronow body.rn-theme-brio) */
   --rn-bg: #1c1e22;
   --rn-bg-soft: #272a30;
@@ -150,6 +150,9 @@
   --td-surface-control: var(--rn-surface-3);
   --td-surface-content: var(--rn-surface-4);
 
+  /* Canvas token (viewport background, distinct from --td-bg for light themes) */
+  --td-canvas: var(--td-bg);
+
   /* Text tokens (Table T02) */
   --td-text: var(--rn-text);
   --td-text-soft: var(--rn-text-soft);
@@ -177,6 +180,12 @@
   --td-chart-3: var(--td-accent-6);  /* Build Status - yellow */
   --td-chart-4: var(--td-accent-4);  /* reserved - red */
   --td-chart-5: var(--td-accent-3);  /* reserved - purple */
+
+  /* Titlebar and icon tokens */
+  --td-titlebar-active: #44474C;
+  --td-titlebar-inactive: #34373c;
+  --td-icon-active: var(--td-accent-2);
+  --td-grid-color: rgba(255, 255, 255, 0.05);
 
   /* Border, depth, utility tokens (Table T04) */
   --td-border: var(--rn-border);
@@ -327,13 +336,67 @@ body.td-theme-bluenote {
     #84939c 2px,
     #84939c 4px
   );
+
+  /* Semantic token overrides (resolved values for reliable theme switching) */
+  --td-bg: #2a3136;
+  --td-bg-soft: #363e43;
+  --td-canvas: #2a3136;
+  --td-panel: #3a454c;
+  --td-panel-soft: #313b43;
+  --td-surface: #3b4348;
+  --td-surface-tab: #343c41;
+  --td-surface-control: #30373c;
+  --td-surface-content: #2a3237;
+  --td-text: #dde4e8;
+  --td-text-soft: #a8b6bf;
+  --td-text-inverse: #edf1f3;
+  --td-accent: #ff8434;
+  --td-accent-cool: #4bbde8;
+  --td-accent-1: #ff8434;
+  --td-accent-2: #4bbde8;
+  --td-accent-3: #ab7ee4;
+  --td-accent-4: #ff5162;
+  --td-accent-5: #73c382;
+  --td-accent-6: #ffe465;
+  --td-accent-7: #ec76c9;
+  --td-accent-8: #ff9a72;
+  --td-success: #73c382;
+  --td-warning: #ffe465;
+  --td-danger: #ff5162;
+  --td-info: #4bbde8;
+  --td-chart-1: #73c382;
+  --td-chart-2: #4bbde8;
+  --td-chart-3: #ffe465;
+  --td-chart-4: #ff5162;
+  --td-chart-5: #ab7ee4;
+  --td-border: #5b6871;
+  --td-border-soft: #79858d;
+  --td-shadow-soft: rgba(0, 0, 0, 0.44);
+  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.44);
+  --td-titlebar-active: #344f5e;
+  --td-titlebar-inactive: #2a3a44;
+  --td-icon-active: #4bbde8;
+  --td-grid-color: rgba(255, 255, 255, 0.04);
+  --td-syntax-keyword: #4bbde8;
+  --td-syntax-string: #ff9a72;
+  --td-syntax-number: #73c382;
+  --td-syntax-function: #ffe465;
+  --td-syntax-type: #73c382;
+  --td-syntax-variable: #4bbde8;
+  --td-syntax-comment: #a8b6bf;
+  --td-syntax-operator: #dde4e8;
+  --td-syntax-punctuation: #dde4e8;
+  --td-syntax-constant: #4bbde8;
+  --td-syntax-decorator: #ab7ee4;
+  --td-syntax-tag: #4bbde8;
+  --td-syntax-attribute: #4bbde8;
 }
 
 /* ============================================================================
    Harmony Theme (Light)
    ========================================================================= */
 
-body.td-theme-Harmony {
+body.td-theme-harmony {
   /* Palette overrides (from retronow :root) */
   --rn-bg: #3f474c;
   --rn-bg-soft: #4c555a;
@@ -374,4 +437,58 @@ body.td-theme-Harmony {
     #d8dde0 2px,
     #d8dde0 4px
   );
+
+  /* Semantic token overrides (resolved values for reliable theme switching) */
+  --td-bg: #3f474c;
+  --td-bg-soft: #4c555a;
+  --td-canvas: #b0ab9f;
+  --td-panel: #dad6cc;
+  --td-panel-soft: #c6c2b8;
+  --td-surface: #f4f1ea;
+  --td-surface-tab: #ece7dc;
+  --td-surface-control: #e4ded1;
+  --td-surface-content: #fcf9f2;
+  --td-text: #26333b;
+  --td-text-soft: #41525c;
+  --td-text-inverse: #f4f7f8;
+  --td-accent: #ff7f2a;
+  --td-accent-cool: #42b8e6;
+  --td-accent-1: #ff7f2a;
+  --td-accent-2: #42b8e6;
+  --td-accent-3: #a77ae0;
+  --td-accent-4: #ff4458;
+  --td-accent-5: #68bf78;
+  --td-accent-6: #ffe15a;
+  --td-accent-7: #e56ac0;
+  --td-accent-8: #ff8f66;
+  --td-success: #68bf78;
+  --td-warning: #ffe15a;
+  --td-danger: #ff4458;
+  --td-info: #42b8e6;
+  --td-chart-1: #68bf78;
+  --td-chart-2: #42b8e6;
+  --td-chart-3: #ffe15a;
+  --td-chart-4: #ff4458;
+  --td-chart-5: #a77ae0;
+  --td-border: #7f796a;
+  --td-border-soft: #a29b8a;
+  --td-shadow-soft: rgba(0, 0, 0, 0.24);
+  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
+  --td-titlebar-active: #d4b888;
+  --td-titlebar-inactive: #c8c0b0;
+  --td-icon-active: #42b8e6;
+  --td-grid-color: rgba(0, 0, 0, 0.06);
+  --td-syntax-keyword: #42b8e6;
+  --td-syntax-string: #ff8f66;
+  --td-syntax-number: #68bf78;
+  --td-syntax-function: #ffe15a;
+  --td-syntax-type: #68bf78;
+  --td-syntax-variable: #42b8e6;
+  --td-syntax-comment: #41525c;
+  --td-syntax-operator: #26333b;
+  --td-syntax-punctuation: #26333b;
+  --td-syntax-constant: #42b8e6;
+  --td-syntax-decorator: #a77ae0;
+  --td-syntax-tag: #42b8e6;
+  --td-syntax-attribute: #42b8e6;
 }
