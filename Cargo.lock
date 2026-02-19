@@ -1760,6 +1760,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tug-launch"
+version = "0.5.19"
+dependencies = [
+ "clap",
+ "libc",
+ "regex",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tugcast"
 version = "0.1.0"
 dependencies = [
@@ -1800,18 +1812,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "tugcode"
-version = "0.5.19"
-dependencies = [
- "clap",
- "libc",
- "regex",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

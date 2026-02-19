@@ -1,5 +1,5 @@
 [package]
-name = "tugcode"
+name = "tug-launch"
 description = "Launcher binary for tugdeck dashboard"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "tugcode"
+name = "tug-launch"
 path = "src/main.rs"
 
 [dependencies]

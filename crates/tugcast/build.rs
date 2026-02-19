@@ -117,7 +117,7 @@ fn main() {
     }
 
     // Compile tugtalk to a standalone binary using bun build --compile.
-    // Place the binary in the cargo target profile directory (next to tugcast/tugcode).
+    // Place the binary in the cargo target profile directory (next to tugcast/tug-launch).
     // OUT_DIR is: target/{profile}/build/{crate}-{hash}/out
     // We walk up to find the profile directory (debug or release).
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());

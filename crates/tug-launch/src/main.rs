@@ -14,9 +14,9 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 static AUTH_URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"tugcast:\s+(http://\S+)").unwrap());
 
-/// tugcode: Launcher binary for tugdeck dashboard
+/// tug-launch: Launcher binary for tugdeck dashboard
 #[derive(Parser, Debug)]
-#[command(name = "tugcode")]
+#[command(name = "tug-launch")]
 #[command(version)]
 #[command(about = "Launch tugdeck dashboard - starts tugcast and opens the browser")]
 pub struct Cli {
@@ -121,7 +121,7 @@ fn open_browser(url: &str) {
     {
         match std::process::Command::new(command).arg(url).spawn() {
             Ok(_) => info!("opened browser to {}", url),
-            Err(e) => eprintln!("tugcode: warning: failed to open browser: {}", e),
+            Err(e) => eprintln!("tug-launch: warning: failed to open browser: {}", e),
         }
     }
 }
@@ -161,7 +161,7 @@ async fn wait_for_shutdown(child: &mut tokio::process::Child) -> i32 {
             match status {
                 Ok(s) => s.code().unwrap_or(1),
                 Err(e) => {
-                    eprintln!("tugcode: error waiting for tugcast: {}", e);
+                    eprintln!("tug-launch: error waiting for tugcast: {}", e);
                     1
                 }
             }
@@ -191,14 +191,14 @@ async fn main() {
         session = %cli.session,
         port = cli.port,
         dir = ?cli.dir,
-        "tugcode starting"
+        "tug-launch starting"
     );
 
     // Spawn tugcast child process
     let mut child = match spawn_tugcast(&cli.session, cli.port, &cli.dir) {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("tugcode: failed to start tugcast: {}", e);
+            eprintln!("tug-launch: failed to start tugcast: {}", e);
             std::process::exit(1);
         }
     };
@@ -228,7 +228,7 @@ async fn main() {
             });
         }
         Err(e) => {
-            eprintln!("tugcode: {}", e);
+            eprintln!("tug-launch: {}", e);
             let status = child.wait().await.ok();
             let code = status.and_then(|s| s.code()).unwrap_or(1);
             std::process::exit(code);
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_default_values() {
-        let cli = Cli::try_parse_from(["tugcode"]).unwrap();
+        let cli = Cli::try_parse_from(["tug-launch"]).unwrap();
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 7890);
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn test_override_session() {
-        let cli = Cli::try_parse_from(["tugcode", "--session", "mySession"]).unwrap();
+        let cli = Cli::try_parse_from(["tug-launch", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
         assert_eq!(cli.port, 7890);
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_override_port() {
-        let cli = Cli::try_parse_from(["tugcode", "--port", "8080"]).unwrap();
+        let cli = Cli::try_parse_from(["tug-launch", "--port", "8080"]).unwrap();
         assert_eq!(cli.port, 8080);
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.dir, PathBuf::from("."));
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_override_dir() {
-        let cli = Cli::try_parse_from(["tugcode", "--dir", "/tmp/test"]).unwrap();
+        let cli = Cli::try_parse_from(["tug-launch", "--dir", "/tmp/test"]).unwrap();
         assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 7890);
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn test_all_overrides() {
         let cli = Cli::try_parse_from([
-            "tugcode",
+            "tug-launch",
             "--session",
             "test",
             "--port",
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn test_version_flag() {
         // --version should cause an early exit with version info
-        let result = Cli::try_parse_from(["tugcode", "--version"]);
+        let result = Cli::try_parse_from(["tug-launch", "--version"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_help_flag() {
         // --help should cause an early exit with help info
-        let result = Cli::try_parse_from(["tugcode", "--help"]);
+        let result = Cli::try_parse_from(["tug-launch", "--help"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
