@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-19T15:56:41Z
+bead: tugtool-ovp.1
+---
+
+## #step-0: Renamed all retronow/--rn-* references to tuglook/--tl-* in tokens.css, panels.css, cards.css, dock.css, and roadmap file
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-19T02:55:27Z
 ---

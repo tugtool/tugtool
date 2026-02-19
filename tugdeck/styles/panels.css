@@ -1,5 +1,5 @@
 /**
- * Canvas panel system styles (Retronow design language)
+ * Canvas panel system styles (Tuglook design language)
  *
  * Floating panel layout, tab bars, card headers, and associated chrome.
  * Uses only --td-* semantic tokens from tokens.css.
@@ -76,7 +76,7 @@
   white-space: nowrap;
   user-select: none;
   color: var(--td-text-soft);
-  border: var(--rn-line-ui) solid var(--td-border-soft);
+  border: var(--tl-line-ui) solid var(--td-border-soft);
   border-bottom: 0;
   border-radius: var(--td-radius-sm) var(--td-radius-sm) 0 0;
   transition: color 0.15s ease, background 0.15s ease;

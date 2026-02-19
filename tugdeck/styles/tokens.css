@@ -1,8 +1,8 @@
 /**
- * Tugdeck Design Token System (Retronow Design Language)
+ * Tugdeck Design Token System (Tuglook Design Language)
  *
  * Three-tier architecture:
- * - Tier 1: Palette tokens (--rn-* retronow palette values)
+ * - Tier 1: Palette tokens (--tl-* tuglook palette values)
  * - Tier 2: Semantic tokens (--td-* purpose-driven mappings)
  * - Tier 3: Component tokens (--td-panel-*, --td-tab-*, etc. in component CSS)
  *
@@ -11,7 +11,7 @@
  * - Bluenote (cool dark): Activated via body.td-theme-bluenote
  * - Harmony (light): Activated via body.td-theme-harmony
  *
- * Components MUST use only --td-* semantic tokens, never --rn-* or raw values.
+ * Components MUST use only --td-* semantic tokens, never --tl-* or raw values.
  */
 
 /* ============================================================================
@@ -63,75 +63,75 @@
    ========================================================================= */
 
 body {
-  /* Tier 1: Palette (Brio values from retronow body.rn-theme-brio) */
-  --rn-bg: #1c1e22;
-  --rn-bg-soft: #272a30;
-  --rn-bg-line: rgba(255, 255, 255, 0.03);
-  --rn-panel: #2b2e35;
-  --rn-panel-soft: #23262d;
-  --rn-panel-ink: #e3e7ec;
-  --rn-surface-1: #282b32;
-  --rn-surface-2: #23262d;
-  --rn-surface-3: #1f2228;
-  --rn-surface-4: #191c22;
-  --rn-surface-screen: #353a42;
-  --rn-surface-screen-ink: #eff3f6;
-  --rn-text: #e6eaee;
-  --rn-text-soft: #bcc3cb;
-  --rn-text-inverse: #f2f7fb;
-  --rn-accent: #ff8a38;
-  --rn-accent-strong: #f17627;
-  --rn-accent-cool: #35bcff;
-  --rn-accent-1: #ff8a38;
-  --rn-accent-2: #35bcff;
-  --rn-accent-3: #b08aff;
-  --rn-accent-4: #ff5a72;
-  --rn-accent-5: #72ce8f;
-  --rn-accent-6: #ffe86b;
-  --rn-accent-7: #f07fd0;
-  --rn-accent-8: #ffa37a;
-  --rn-border: #5e656e;
-  --rn-border-soft: #7b828c;
-  --rn-shadow-hard: #1f2b33;
-  --rn-shadow-mid: #0b1117;
-  --rn-shadow-soft: rgba(0, 0, 0, 0.5);
-  --rn-glow: rgba(142, 183, 190, 0.24);
-  --rn-line-ui: 1px;
+  /* Tier 1: Palette (Brio values from tuglook body.tl-theme-brio) */
+  --tl-bg: #1c1e22;
+  --tl-bg-soft: #272a30;
+  --tl-bg-line: rgba(255, 255, 255, 0.03);
+  --tl-panel: #2b2e35;
+  --tl-panel-soft: #23262d;
+  --tl-panel-ink: #e3e7ec;
+  --tl-surface-1: #282b32;
+  --tl-surface-2: #23262d;
+  --tl-surface-3: #1f2228;
+  --tl-surface-4: #191c22;
+  --tl-surface-screen: #353a42;
+  --tl-surface-screen-ink: #eff3f6;
+  --tl-text: #e6eaee;
+  --tl-text-soft: #bcc3cb;
+  --tl-text-inverse: #f2f7fb;
+  --tl-accent: #ff8a38;
+  --tl-accent-strong: #f17627;
+  --tl-accent-cool: #35bcff;
+  --tl-accent-1: #ff8a38;
+  --tl-accent-2: #35bcff;
+  --tl-accent-3: #b08aff;
+  --tl-accent-4: #ff5a72;
+  --tl-accent-5: #72ce8f;
+  --tl-accent-6: #ffe86b;
+  --tl-accent-7: #f07fd0;
+  --tl-accent-8: #ffa37a;
+  --tl-border: #5e656e;
+  --tl-border-soft: #7b828c;
+  --tl-shadow-hard: #1f2b33;
+  --tl-shadow-mid: #0b1117;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.5);
+  --tl-glow: rgba(142, 183, 190, 0.24);
+  --tl-line-ui: 1px;
 
-  /* Shared tokens (same across all themes, from retronow :root) */
-  --rn-success: #68bf78;
-  --rn-warning: #ffe15a;
-  --rn-danger: #ff4458;
+  /* Shared tokens (same across all themes, from tuglook :root) */
+  --tl-success: #68bf78;
+  --tl-warning: #ffe15a;
+  --tl-danger: #ff4458;
 
-  --rn-radius-xs: 2px;
-  --rn-radius-sm: 4px;
-  --rn-radius-md: 6px;
-  --rn-radius-lg: 8px;
+  --tl-radius-xs: 2px;
+  --tl-radius-sm: 4px;
+  --tl-radius-md: 6px;
+  --tl-radius-lg: 8px;
 
-  --rn-space-1: 2px;
-  --rn-space-2: 4px;
-  --rn-space-3: 6px;
-  --rn-space-4: 8px;
-  --rn-space-5: 12px;
-  --rn-space-6: 16px;
+  --tl-space-1: 2px;
+  --tl-space-2: 4px;
+  --tl-space-3: 6px;
+  --tl-space-4: 8px;
+  --tl-space-5: 12px;
+  --tl-space-6: 16px;
 
-  --rn-font-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --rn-font-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
-  --rn-line-tight: 1.2;
-  --rn-line-normal: 1.45;
+  --tl-font-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tl-font-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  --tl-line-tight: 1.2;
+  --tl-line-normal: 1.45;
 
-  --rn-depth-raise:
+  --tl-depth-raise:
     0 1px 0 0 rgba(255, 255, 255, 0.18),
-    0 1px 2px -1px var(--rn-shadow-soft);
-  --rn-depth-inset:
+    0 1px 2px -1px var(--tl-shadow-soft);
+  --tl-depth-inset:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
     inset 0 0 0 1px rgba(34, 48, 57, 0.22);
-  --rn-depth-screen:
+  --tl-depth-screen:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
     inset 0 0 0 1px rgba(34, 48, 57, 0.64),
-    0 1px 2px -1px var(--rn-shadow-soft);
+    0 1px 2px -1px var(--tl-shadow-soft);
 
-  --rn-track-bg: repeating-linear-gradient(
+  --tl-track-bg: repeating-linear-gradient(
     to bottom,
     #6f757c 0px,
     #6f757c 1px,
@@ -139,40 +139,40 @@ body {
     #878e96 4px
   );
 
-  /* Tier 2: Semantic Tokens (--td-* mapped to --rn-*) */
+  /* Tier 2: Semantic Tokens (--td-* mapped to --tl-*) */
   /* Surface tokens (Table T01) */
-  --td-bg: var(--rn-bg);
-  --td-bg-soft: var(--rn-bg-soft);
-  --td-panel: var(--rn-panel);
-  --td-panel-soft: var(--rn-panel-soft);
-  --td-surface: var(--rn-surface-1);
-  --td-surface-tab: var(--rn-surface-2);
-  --td-surface-control: var(--rn-surface-3);
-  --td-surface-content: var(--rn-surface-4);
+  --td-bg: var(--tl-bg);
+  --td-bg-soft: var(--tl-bg-soft);
+  --td-panel: var(--tl-panel);
+  --td-panel-soft: var(--tl-panel-soft);
+  --td-surface: var(--tl-surface-1);
+  --td-surface-tab: var(--tl-surface-2);
+  --td-surface-control: var(--tl-surface-3);
+  --td-surface-content: var(--tl-surface-4);
 
   /* Canvas token (viewport background, distinct from --td-bg for light themes) */
   --td-canvas: var(--td-bg);
 
   /* Text tokens (Table T02) */
-  --td-text: var(--rn-text);
-  --td-text-soft: var(--rn-text-soft);
-  --td-text-inverse: var(--rn-text-inverse);
+  --td-text: var(--tl-text);
+  --td-text-soft: var(--tl-text-soft);
+  --td-text-inverse: var(--tl-text-inverse);
 
   /* Accent and status tokens (Table T03) */
-  --td-accent: var(--rn-accent);
-  --td-accent-cool: var(--rn-accent-cool);
-  --td-accent-1: var(--rn-accent-1);
-  --td-accent-2: var(--rn-accent-2);
-  --td-accent-3: var(--rn-accent-3);
-  --td-accent-4: var(--rn-accent-4);
-  --td-accent-5: var(--rn-accent-5);
-  --td-accent-6: var(--rn-accent-6);
-  --td-accent-7: var(--rn-accent-7);
-  --td-accent-8: var(--rn-accent-8);
-  --td-success: var(--rn-accent-5);
-  --td-warning: var(--rn-accent-6);
-  --td-danger: var(--rn-accent-4);
-  --td-info: var(--rn-accent-2);
+  --td-accent: var(--tl-accent);
+  --td-accent-cool: var(--tl-accent-cool);
+  --td-accent-1: var(--tl-accent-1);
+  --td-accent-2: var(--tl-accent-2);
+  --td-accent-3: var(--tl-accent-3);
+  --td-accent-4: var(--tl-accent-4);
+  --td-accent-5: var(--tl-accent-5);
+  --td-accent-6: var(--tl-accent-6);
+  --td-accent-7: var(--tl-accent-7);
+  --td-accent-8: var(--tl-accent-8);
+  --td-success: var(--tl-accent-5);
+  --td-warning: var(--tl-accent-6);
+  --td-danger: var(--tl-accent-4);
+  --td-info: var(--tl-accent-2);
 
   /* Chart tokens (runtime contract for stats-card.ts) */
   --td-chart-1: var(--td-accent-5);  /* CPU/Memory - green */
@@ -188,43 +188,43 @@ body {
   --td-grid-color: rgba(255, 255, 255, 0.05);
 
   /* Border, depth, utility tokens (Table T04) */
-  --td-border: var(--rn-border);
-  --td-border-soft: var(--rn-border-soft);
-  --td-shadow-soft: var(--rn-shadow-soft);
-  --td-depth-raise: var(--rn-depth-raise);
+  --td-border: var(--tl-border);
+  --td-border-soft: var(--tl-border-soft);
+  --td-shadow-soft: var(--tl-shadow-soft);
+  --td-depth-raise: var(--tl-depth-raise);
 
   /* Spacing and radius tokens */
-  --td-space-1: var(--rn-space-1);
-  --td-space-2: var(--rn-space-2);
-  --td-space-3: var(--rn-space-3);
-  --td-space-4: var(--rn-space-4);
-  --td-space-5: var(--rn-space-5);
-  --td-space-6: var(--rn-space-6);
-  --td-radius-xs: var(--rn-radius-xs);
-  --td-radius-sm: var(--rn-radius-sm);
-  --td-radius-md: var(--rn-radius-md);
-  --td-radius-lg: var(--rn-radius-lg);
+  --td-space-1: var(--tl-space-1);
+  --td-space-2: var(--tl-space-2);
+  --td-space-3: var(--tl-space-3);
+  --td-space-4: var(--tl-space-4);
+  --td-space-5: var(--tl-space-5);
+  --td-space-6: var(--tl-space-6);
+  --td-radius-xs: var(--tl-radius-xs);
+  --td-radius-sm: var(--tl-radius-sm);
+  --td-radius-md: var(--tl-radius-md);
+  --td-radius-lg: var(--tl-radius-lg);
 
   /* Typography tokens */
-  --td-font-sans: var(--rn-font-sans);
-  --td-font-mono: var(--rn-font-mono);
-  --td-line-tight: var(--rn-line-tight);
-  --td-line-normal: var(--rn-line-normal);
+  --td-font-sans: var(--tl-font-sans);
+  --td-font-mono: var(--tl-font-mono);
+  --td-line-tight: var(--tl-line-tight);
+  --td-line-normal: var(--tl-line-normal);
 
   /* Syntax highlighting tokens (Table T05) */
-  --td-syntax-keyword: var(--rn-accent-2);      /* cyan */
-  --td-syntax-string: var(--rn-accent-8);       /* coral */
-  --td-syntax-number: var(--rn-accent-5);       /* green */
-  --td-syntax-function: var(--rn-accent-6);     /* yellow */
-  --td-syntax-type: var(--rn-accent-5);         /* green */
-  --td-syntax-variable: var(--rn-accent-2);     /* cyan */
-  --td-syntax-comment: var(--rn-text-soft);     /* muted */
+  --td-syntax-keyword: var(--tl-accent-2);      /* cyan */
+  --td-syntax-string: var(--tl-accent-8);       /* coral */
+  --td-syntax-number: var(--tl-accent-5);       /* green */
+  --td-syntax-function: var(--tl-accent-6);     /* yellow */
+  --td-syntax-type: var(--tl-accent-5);         /* green */
+  --td-syntax-variable: var(--tl-accent-2);     /* cyan */
+  --td-syntax-comment: var(--tl-text-soft);     /* muted */
   --td-syntax-operator: var(--td-text);         /* text */
   --td-syntax-punctuation: var(--td-text);      /* text */
-  --td-syntax-constant: var(--rn-accent-2);     /* cyan */
-  --td-syntax-decorator: var(--rn-accent-3);    /* purple */
-  --td-syntax-tag: var(--rn-accent-2);          /* cyan */
-  --td-syntax-attribute: var(--rn-accent-2);    /* cyan */
+  --td-syntax-constant: var(--tl-accent-2);     /* cyan */
+  --td-syntax-decorator: var(--tl-accent-3);    /* purple */
+  --td-syntax-tag: var(--tl-accent-2);          /* cyan */
+  --td-syntax-attribute: var(--tl-accent-2);    /* cyan */
 
   /* Shiki CSS variable bridge tokens (forward compatibility) */
   --syntax-foreground: var(--td-text);
@@ -298,38 +298,38 @@ body {
    ========================================================================= */
 
 body.td-theme-bluenote {
-  /* Palette overrides (from retronow body.rn-theme-bluenote) */
-  --rn-bg: #2a3136;
-  --rn-bg-soft: #363e43;
-  --rn-bg-line: rgba(255, 255, 255, 0.018);
-  --rn-panel: #3a454c;
-  --rn-panel-soft: #313b43;
-  --rn-panel-ink: #d9e0e4;
-  --rn-surface-1: #3b4348;
-  --rn-surface-2: #343c41;
-  --rn-surface-3: #30373c;
-  --rn-surface-4: #2a3237;
-  --rn-surface-screen: #5c6871;
-  --rn-surface-screen-ink: #edf2f5;
-  --rn-text: #dde4e8;
-  --rn-text-soft: #a8b6bf;
-  --rn-text-inverse: #edf1f3;
-  --rn-accent: #ff8434;
-  --rn-accent-strong: #f27024;
-  --rn-accent-cool: #4bbde8;
-  --rn-accent-1: #ff8434;
-  --rn-accent-2: #4bbde8;
-  --rn-accent-3: #ab7ee4;
-  --rn-accent-4: #ff5162;
-  --rn-accent-5: #73c382;
-  --rn-accent-6: #ffe465;
-  --rn-accent-7: #ec76c9;
-  --rn-accent-8: #ff9a72;
-  --rn-border: #5b6871;
-  --rn-border-soft: #79858d;
-  --rn-shadow-mid: #11191f;
-  --rn-shadow-soft: rgba(0, 0, 0, 0.44);
-  --rn-track-bg: repeating-linear-gradient(
+  /* Palette overrides (from tuglook body.tl-theme-bluenote) */
+  --tl-bg: #2a3136;
+  --tl-bg-soft: #363e43;
+  --tl-bg-line: rgba(255, 255, 255, 0.018);
+  --tl-panel: #3a454c;
+  --tl-panel-soft: #313b43;
+  --tl-panel-ink: #d9e0e4;
+  --tl-surface-1: #3b4348;
+  --tl-surface-2: #343c41;
+  --tl-surface-3: #30373c;
+  --tl-surface-4: #2a3237;
+  --tl-surface-screen: #5c6871;
+  --tl-surface-screen-ink: #edf2f5;
+  --tl-text: #dde4e8;
+  --tl-text-soft: #a8b6bf;
+  --tl-text-inverse: #edf1f3;
+  --tl-accent: #ff8434;
+  --tl-accent-strong: #f27024;
+  --tl-accent-cool: #4bbde8;
+  --tl-accent-1: #ff8434;
+  --tl-accent-2: #4bbde8;
+  --tl-accent-3: #ab7ee4;
+  --tl-accent-4: #ff5162;
+  --tl-accent-5: #73c382;
+  --tl-accent-6: #ffe465;
+  --tl-accent-7: #ec76c9;
+  --tl-accent-8: #ff9a72;
+  --tl-border: #5b6871;
+  --tl-border-soft: #79858d;
+  --tl-shadow-mid: #11191f;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.44);
+  --tl-track-bg: repeating-linear-gradient(
     to bottom,
     #6c7b85 0px,
     #6c7b85 1px,
@@ -397,40 +397,40 @@ body.td-theme-bluenote {
    ========================================================================= */
 
 body.td-theme-harmony {
-  /* Palette overrides (from retronow :root) */
-  --rn-bg: #3f474c;
-  --rn-bg-soft: #4c555a;
-  --rn-bg-line: rgba(255, 255, 255, 0.02);
-  --rn-panel: #dad6cc;
-  --rn-panel-soft: #c6c2b8;
-  --rn-panel-ink: #29343c;
-  --rn-surface-1: #f4f1ea;
-  --rn-surface-2: #ece7dc;
-  --rn-surface-3: #e4ded1;
-  --rn-surface-4: #fcf9f2;
-  --rn-surface-screen: #d1dbe0;
-  --rn-surface-screen-ink: #23333b;
-  --rn-text: #26333b;
-  --rn-text-soft: #41525c;
-  --rn-text-inverse: #f4f7f8;
-  --rn-accent: #ff7f2a;
-  --rn-accent-strong: #f26d1f;
-  --rn-accent-cool: #42b8e6;
-  --rn-accent-1: #ff7f2a;
-  --rn-accent-2: #42b8e6;
-  --rn-accent-3: #a77ae0;
-  --rn-accent-4: #ff4458;
-  --rn-accent-5: #68bf78;
-  --rn-accent-6: #ffe15a;
-  --rn-accent-7: #e56ac0;
-  --rn-accent-8: #ff8f66;
-  --rn-border: #7f796a;
-  --rn-border-soft: #a29b8a;
-  --rn-shadow-hard: #1f2b33;
-  --rn-shadow-mid: #2a3841;
-  --rn-shadow-soft: rgba(0, 0, 0, 0.24);
-  --rn-glow: rgba(142, 183, 190, 0.24);
-  --rn-track-bg: repeating-linear-gradient(
+  /* Palette overrides (from tuglook :root) */
+  --tl-bg: #3f474c;
+  --tl-bg-soft: #4c555a;
+  --tl-bg-line: rgba(255, 255, 255, 0.02);
+  --tl-panel: #dad6cc;
+  --tl-panel-soft: #c6c2b8;
+  --tl-panel-ink: #29343c;
+  --tl-surface-1: #f4f1ea;
+  --tl-surface-2: #ece7dc;
+  --tl-surface-3: #e4ded1;
+  --tl-surface-4: #fcf9f2;
+  --tl-surface-screen: #d1dbe0;
+  --tl-surface-screen-ink: #23333b;
+  --tl-text: #26333b;
+  --tl-text-soft: #41525c;
+  --tl-text-inverse: #f4f7f8;
+  --tl-accent: #ff7f2a;
+  --tl-accent-strong: #f26d1f;
+  --tl-accent-cool: #42b8e6;
+  --tl-accent-1: #ff7f2a;
+  --tl-accent-2: #42b8e6;
+  --tl-accent-3: #a77ae0;
+  --tl-accent-4: #ff4458;
+  --tl-accent-5: #68bf78;
+  --tl-accent-6: #ffe15a;
+  --tl-accent-7: #e56ac0;
+  --tl-accent-8: #ff8f66;
+  --tl-border: #7f796a;
+  --tl-border-soft: #a29b8a;
+  --tl-shadow-hard: #1f2b33;
+  --tl-shadow-mid: #2a3841;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.24);
+  --tl-glow: rgba(142, 183, 190, 0.24);
+  --tl-track-bg: repeating-linear-gradient(
     to bottom,
     #bdc3c8 0px,
     #bdc3c8 1px,

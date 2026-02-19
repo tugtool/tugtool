@@ -6,12 +6,12 @@ Tugdeck has a two-tier CSS token system in tokens.css with palette and semantic 
 is VS Code Monokai-derived — generic dark editor chrome. Fonts are system stack (-apple-system, BlinkMacSystemFont). There's no theme switching, no dock, and ad-hoc
 hardcoded colors appear in component styles (e.g. rgba(255, 255, 255, 0.1) scattered throughout).
 
-Retronow has a fully-developed design language: three themes (Default/Bozeman, Bluenote, Brio), eight named accent colors, IBM Plex Sans + Hack font stack, a comprehensive
+Tuglook has a fully-developed design language: three themes (Default/Bozeman, Bluenote, Brio), eight named accent colors, IBM Plex Sans + Hack font stack, a comprehensive
 spacing/radius scale, and an instrument-panel aesthetic. Theme switching works via body class.
 
 Design Goals
 
-1. Replace the ad-hoc VS Code aesthetic with retronow's design language
+1. Replace the ad-hoc VS Code aesthetic with tuglook's design language
 2. Build a complete semantic token system that every component references — no raw colors anywhere in component CSS
 3. Theme switching via a single body class, with Brio as default
 4. Add a dock rail on the right viewport edge
@@ -35,43 +35,43 @@ deck.css is removed — its grid layout is dead code (the floating panel system 
 Token Architecture
 
 Tier 1 — Palette (raw values, only referenced by Tier 2):
-Ports the retronow --rn-* palette directly. Eight accent colors, surface stack, text hierarchy.
+Ports the tuglook --tl-* palette directly. Eight accent colors, surface stack, text hierarchy.
 
 Tier 2 — Semantic (purpose-driven, only referenced by components):
-Maps retronow tokens to tugdeck's component vocabulary:
+Maps tuglook tokens to tugdeck's component vocabulary:
 
 :root {
 /* --- Surface hierarchy --- */
---td-bg:              var(--rn-bg);           /* canvas background */
---td-bg-soft:         var(--rn-bg-soft);      /* elevated canvas areas */
---td-panel:           var(--rn-panel);        /* panel chrome */
---td-panel-soft:      var(--rn-panel-soft);   /* panel recessed areas */
---td-surface:         var(--rn-surface-1);    /* window chrome */
---td-surface-tab:     var(--rn-surface-2);    /* tab bar background */
---td-surface-control: var(--rn-surface-3);    /* control rails */
---td-surface-content: var(--rn-surface-4);    /* card content areas */
+--td-bg:              var(--tl-bg);           /* canvas background */
+--td-bg-soft:         var(--tl-bg-soft);      /* elevated canvas areas */
+--td-panel:           var(--tl-panel);        /* panel chrome */
+--td-panel-soft:      var(--tl-panel-soft);   /* panel recessed areas */
+--td-surface:         var(--tl-surface-1);    /* window chrome */
+--td-surface-tab:     var(--tl-surface-2);    /* tab bar background */
+--td-surface-control: var(--tl-surface-3);    /* control rails */
+--td-surface-content: var(--tl-surface-4);    /* card content areas */
 
 /* --- Text hierarchy --- */
---td-text:            var(--rn-text);         /* primary text */
---td-text-soft:       var(--rn-text-soft);    /* secondary/muted text */
---td-text-inverse:    var(--rn-text-inverse); /* text on accent bg */
+--td-text:            var(--tl-text);         /* primary text */
+--td-text-soft:       var(--tl-text-soft);    /* secondary/muted text */
+--td-text-inverse:    var(--tl-text-inverse); /* text on accent bg */
 
 /* --- Accent colors (8-color palette) --- */
---td-accent:          var(--rn-accent);       /* primary accent (orange) */
---td-accent-cool:     var(--rn-accent-cool);  /* secondary accent (cyan) */
+--td-accent:          var(--tl-accent);       /* primary accent (orange) */
+--td-accent-cool:     var(--tl-accent-cool);  /* secondary accent (cyan) */
 --td-accent-1 through --td-accent-8           /* full 8-color palette */
 
 /* --- Semantic status --- */
---td-success:         var(--rn-accent-5);     /* green */
---td-warning:         var(--rn-accent-6);     /* yellow */
---td-danger:          var(--rn-accent-4);     /* red */
---td-info:            var(--rn-accent-2);     /* cyan */
+--td-success:         var(--tl-accent-5);     /* green */
+--td-warning:         var(--tl-accent-6);     /* yellow */
+--td-danger:          var(--tl-accent-4);     /* red */
+--td-info:            var(--tl-accent-2);     /* cyan */
 
 /* --- Border & depth --- */
---td-border:          var(--rn-border);
---td-border-soft:     var(--rn-border-soft);
---td-shadow-soft:     var(--rn-shadow-soft);
---td-depth-raise:     var(--rn-depth-raise);
+--td-border:          var(--tl-border);
+--td-border-soft:     var(--tl-border-soft);
+--td-shadow-soft:     var(--tl-shadow-soft);
+--td-depth-raise:     var(--tl-depth-raise);
 
 /* --- Spacing --- */
 --td-space-1 through --td-space-6            /* 2/4/6/8/12/16px */
@@ -80,23 +80,23 @@ Maps retronow tokens to tugdeck's component vocabulary:
 --td-radius-xs/sm/md/lg                      /* 2/4/6/8px */
 
 /* --- Typography --- */
---td-font-sans:       var(--rn-font-sans);   /* IBM Plex Sans stack */
---td-font-mono:       var(--rn-font-mono);   /* Hack stack */
---td-line-tight:      var(--rn-line-tight);  /* 1.2 */
---td-line-normal:     var(--rn-line-normal); /* 1.45 */
+--td-font-sans:       var(--tl-font-sans);   /* IBM Plex Sans stack */
+--td-font-mono:       var(--tl-font-mono);   /* Hack stack */
+--td-line-tight:      var(--tl-line-tight);  /* 1.2 */
+--td-line-normal:     var(--tl-line-normal); /* 1.45 */
 
 /* --- Syntax highlighting (Brio-tuned) --- */
---td-syntax-keyword:   var(--rn-accent-2);   /* cyan */
---td-syntax-string:    var(--rn-accent-8);   /* coral */
---td-syntax-number:    var(--rn-accent-5);   /* green */
---td-syntax-function:  var(--rn-accent-6);   /* yellow */
---td-syntax-type:      var(--rn-accent-5);   /* green */
---td-syntax-variable:  var(--rn-accent-2);   /* cyan */
---td-syntax-comment:   var(--rn-text-soft);
---td-syntax-decorator: var(--rn-accent-3);   /* purple */
+--td-syntax-keyword:   var(--tl-accent-2);   /* cyan */
+--td-syntax-string:    var(--tl-accent-8);   /* coral */
+--td-syntax-number:    var(--tl-accent-5);   /* green */
+--td-syntax-function:  var(--tl-accent-6);   /* yellow */
+--td-syntax-type:      var(--tl-accent-5);   /* green */
+--td-syntax-variable:  var(--tl-accent-2);   /* cyan */
+--td-syntax-comment:   var(--tl-text-soft);
+--td-syntax-decorator: var(--tl-accent-3);   /* purple */
 }
 
-The --td- prefix makes tugdeck tokens distinct from retronow's --rn- tokens. Components reference only --td-* tokens.
+The --td- prefix makes tugdeck tokens distinct from tuglook's --tl- tokens. Components reference only --td-* tokens.
 
 Tier 3 — Component (optional per-component tokens for complex components):
 E.g. --td-panel-header-bg, --td-tab-active-border — derived from Tier 2 in panels.css.
@@ -106,50 +106,50 @@ Theme Switching
 Themes are applied via body class. Brio is the default (:root values). Switching themes:
 
 /* theme-bluenote.css */
-body.td-theme-bluenote { --rn-bg: #2a3136; ... }
+body.td-theme-bluenote { --tl-bg: #2a3136; ... }
 
 /* theme-bozeman.css */
-body.td-theme-bozeman { --rn-bg: #3f474c; ... }
+body.td-theme-bozeman { --tl-bg: #3f474c; ... }
 
 The TugMenu gets a "Theme" submenu with three options. Selection stores to localStorage and applies the body class.
 
 Fonts
 
-Add Google Fonts import for IBM Plex Sans + Hack (matching retronow):
+Add Google Fonts import for IBM Plex Sans + Hack (matching tuglook):
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
 @import url("https://cdnjs.cloudflare.com/ajax/libs/hack-font/3.3.0/web/hack.min.css");
 
 Every font-family declaration in component CSS switches to var(--td-font-sans) or var(--td-font-mono).
 
-Retronow Visual Language Applied to Tugdeck
+Tuglook Visual Language Applied to Tugdeck
 ┌───────────────────────┬───────────────────────────────┬──────────────────────────────────────────────────────────────┐
-│    Tugdeck Element    │        Retronow Source        │                            Notes                             │
+│    Tugdeck Element    │        Tuglook Source        │                            Notes                             │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Panel header bar      │ .rn-titlebar gradient         │ Gradient from dark to slightly lighter, mono uppercase label │
+│ Panel header bar      │ .tl-titlebar gradient         │ Gradient from dark to slightly lighter, mono uppercase label │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Panel header title    │ .rn-titlebar-label            │ Mono, 0.67rem, uppercase, 0.08em tracking                    │
+│ Panel header title    │ .tl-titlebar-label            │ Mono, 0.67rem, uppercase, 0.08em tracking                    │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Tab bar               │ .rn-tabstrip + .rn-tab        │ Dark bg with tabs that have rounded top corners              │
+│ Tab bar               │ .tl-tabstrip + .tl-tab        │ Dark bg with tabs that have rounded top corners              │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Panel border          │ .rn-border-soft               │ 1px solid, --td-border-soft                                  │
+│ Panel border          │ .tl-border-soft               │ 1px solid, --td-border-soft                                  │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Panel body            │ .rn-surface-1 / .rn-surface-4 │ Surface-1 for chrome, surface-4 for content                  │
+│ Panel body            │ .tl-surface-1 / .tl-surface-4 │ Surface-1 for chrome, surface-4 for content                  │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Buttons (send, allow) │ .rn-button gradient           │ Yellow-to-orange gradient for primary actions                │
+│ Buttons (send, allow) │ .tl-button gradient           │ Yellow-to-orange gradient for primary actions                │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Input fields          │ .rn-field                     │ Surface-4 bg, soft border, mono font                         │
+│ Input fields          │ .tl-field                     │ Surface-4 bg, soft border, mono font                         │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Dropdown menus        │ .rn-popup                     │ Surface-1 bg, mono uppercase, no shadow                      │
+│ Dropdown menus        │ .tl-popup                     │ Surface-1 bg, mono uppercase, no shadow                      │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Tool cards            │ .rn-screen                    │ Bordered readout with tone-based border color                │
+│ Tool cards            │ .tl-screen                    │ Bordered readout with tone-based border color                │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Code blocks           │ .rn-scrollbox                 │ Surface-4 content bg with custom scrollbar                   │
+│ Code blocks           │ .tl-scrollbox                 │ Surface-4 content bg with custom scrollbar                   │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Branch badge          │ .rn-chip                      │ Mono, small, uppercase                                       │
+│ Branch badge          │ .tl-chip                      │ Mono, small, uppercase                                       │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
 │ Status colors         │ 8-accent system               │ Green=success, yellow=warning, red=danger, cyan=info         │
 ├───────────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ Key panel tint        │ .rn-accent                    │ Orange accent tint instead of blue                           │
+│ Key panel tint        │ .tl-accent                    │ Orange accent tint instead of blue                           │
 └───────────────────────┴───────────────────────────────┴──────────────────────────────────────────────────────────────┘
 Dock Component
 
@@ -166,7 +166,7 @@ The dock contains icon buttons for each card type (Conversation, Terminal, Git, 
 of that type. The dock replaces the current TugMenu button.
 
 Implementation:
-- New dock.css for dock styles (following .rn-icon-btn aesthetic)
+- New dock.css for dock styles (following .tl-icon-btn aesthetic)
 - New Dock class in src/dock.ts replacing TugMenu
 - Canvas container width becomes calc(100% - 48px) to make room
 - Dock icons use lucide icons (already a dependency)
@@ -206,13 +206,13 @@ at a time (the others are injected by JS when switching).
 Alternatively, all theme overrides can be concatenated into tokens.css using body class selectors, keeping a single file. This is simpler and avoids dynamic stylesheet
 loading.
 
-Recommendation: Single-file approach — all three themes in tokens.css with body class selectors (matching retronow's pattern). No changes to build.rs file copying logic, no
+Recommendation: Single-file approach — all three themes in tokens.css with body class selectors (matching tuglook's pattern). No changes to build.rs file copying logic, no
 dynamic CSS loading.
 
 Implementation Steps
 
-1. tokens.css rewrite — Port retronow palette + Brio defaults + semantic mapping + other theme overrides
-2. panels.css rewrite — Replace all raw colors/fonts with --td-* tokens, apply retronow panel aesthetic
+1. tokens.css rewrite — Port tuglook palette + Brio defaults + semantic mapping + other theme overrides
+2. panels.css rewrite — Replace all raw colors/fonts with --td-* tokens, apply tuglook panel aesthetic
 3. cards.css rewrite — Same treatment for all card styles (preserve Git/Files content layout)
 4. dock.ts + dock.css — New dock rail component, replace TugMenu
 5. main.ts + serialization.ts — Wire dock, adjust canvas width, update default layout
