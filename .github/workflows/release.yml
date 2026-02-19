@@ -46,6 +46,7 @@ jobs:
         run: |
           cargo build --release --target ${{ matrix.target }}
           strip target/${{ matrix.target }}/release/tugcode
+        working-directory: tugcode
 
       - name: Create release directory structure
         run: |
@@ -57,7 +58,7 @@ jobs:
           mkdir -p release/share/tugplug/agents
 
           # Copy binary
-          cp target/${{ matrix.target }}/release/tugcode release/bin/
+          cp tugcode/target/${{ matrix.target }}/release/tugcode release/bin/
 
           # Copy skills (orchestrators)
           cp tugplug/skills/plan/SKILL.md release/share/tugplug/skills/plan/
@@ -165,13 +166,13 @@ jobs:
           git reset --hard origin/main
 
           # Update the formula
-          ./scripts/update-homebrew-formula.sh \
+          ./tugcode/scripts/update-homebrew-formula.sh \
             "${{ github.ref_name }}" \
             "${{ steps.checksums.outputs.arm64_sha }}" \
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
           # Commit only if there are changes
-          git add Formula/tugtool.rb
+          git add tugcode/Formula/tugtool.rb
           if ! git diff --cached --quiet; then
             VERSION=${GITHUB_REF#refs/tags/v}
             git commit -m "Update formula to $VERSION"

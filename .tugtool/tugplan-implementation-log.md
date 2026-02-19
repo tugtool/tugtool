@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-19T17:42:12Z
+bead: tugtool-ovp.7
+---
+
+## #step-6: Moved Rust workspace into tugcode/ subdirectory. Fixed build.rs path depths, updated CI workflows with working-directory: tugcode, updated .gitignore, release scripts, CLAUDE.md, and README.md. Final mono-repo layout: tugcode/ (Rust), tugdeck/ (UI), tugplug/ (plugin)
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-19T17:26:21Z
 bead: tugtool-ovp.6

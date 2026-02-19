@@ -1,0 +1,494 @@
+/**
+ * Tugdeck Design Token System (Tuglook Design Language)
+ *
+ * Three-tier architecture:
+ * - Tier 1: Palette tokens (--tl-* tuglook palette values)
+ * - Tier 2: Semantic tokens (--td-* purpose-driven mappings)
+ * - Tier 3: Component tokens (--td-card-*, --td-tab-*, etc. in component CSS)
+ *
+ * Theme system:
+ * - Brio (deep graphite): Default theme in :root, no body class required
+ * - Bluenote (cool dark): Activated via body.td-theme-bluenote
+ * - Harmony (light): Activated via body.td-theme-harmony
+ *
+ * Components MUST use only --td-* semantic tokens, never --tl-* or raw values.
+ */
+
+/* ============================================================================
+   Font Declarations
+   ========================================================================= */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hack";
+  src: url("fonts/hack-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================================
+   body - Brio Theme (Default)
+   ========================================================================= */
+
+body {
+  /* Tier 1: Palette (Brio values from tuglook body.tl-theme-brio) */
+  --tl-bg: #1c1e22;
+  --tl-bg-soft: #272a30;
+  --tl-bg-line: rgba(255, 255, 255, 0.03);
+  --tl-panel: #2b2e35;
+  --tl-panel-soft: #23262d;
+  --tl-panel-ink: #e3e7ec;
+  --tl-surface-1: #282b32;
+  --tl-surface-2: #23262d;
+  --tl-surface-3: #1f2228;
+  --tl-surface-4: #191c22;
+  --tl-surface-screen: #353a42;
+  --tl-surface-screen-ink: #eff3f6;
+  --tl-text: #e6eaee;
+  --tl-text-soft: #bcc3cb;
+  --tl-text-inverse: #f2f7fb;
+  --tl-accent: #ff8a38;
+  --tl-accent-strong: #f17627;
+  --tl-accent-cool: #35bcff;
+  --tl-accent-1: #ff8a38;
+  --tl-accent-2: #35bcff;
+  --tl-accent-3: #b08aff;
+  --tl-accent-4: #ff5a72;
+  --tl-accent-5: #72ce8f;
+  --tl-accent-6: #ffe86b;
+  --tl-accent-7: #f07fd0;
+  --tl-accent-8: #ffa37a;
+  --tl-border: #5e656e;
+  --tl-border-soft: #7b828c;
+  --tl-shadow-hard: #1f2b33;
+  --tl-shadow-mid: #0b1117;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.5);
+  --tl-glow: rgba(142, 183, 190, 0.24);
+  --tl-line-ui: 1px;
+
+  /* Shared tokens (same across all themes, from tuglook :root) */
+  --tl-success: #68bf78;
+  --tl-warning: #ffe15a;
+  --tl-danger: #ff4458;
+
+  --tl-radius-xs: 2px;
+  --tl-radius-sm: 4px;
+  --tl-radius-md: 6px;
+  --tl-radius-lg: 8px;
+
+  --tl-space-1: 2px;
+  --tl-space-2: 4px;
+  --tl-space-3: 6px;
+  --tl-space-4: 8px;
+  --tl-space-5: 12px;
+  --tl-space-6: 16px;
+
+  --tl-font-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tl-font-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  --tl-line-tight: 1.2;
+  --tl-line-normal: 1.45;
+
+  --tl-depth-raise:
+    0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px -1px var(--tl-shadow-soft);
+  --tl-depth-inset:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(34, 48, 57, 0.22);
+  --tl-depth-screen:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(34, 48, 57, 0.64),
+    0 1px 2px -1px var(--tl-shadow-soft);
+
+  --tl-track-bg: repeating-linear-gradient(
+    to bottom,
+    #6f757c 0px,
+    #6f757c 1px,
+    #878e96 2px,
+    #878e96 4px
+  );
+
+  /* Tier 2: Semantic Tokens (--td-* mapped to --tl-*) */
+  /* Surface tokens (Table T01) */
+  --td-bg: var(--tl-bg);
+  --td-bg-soft: var(--tl-bg-soft);
+  --td-card: var(--tl-panel);
+  --td-card-soft: var(--tl-panel-soft);
+  --td-surface: var(--tl-surface-1);
+  --td-surface-tab: var(--tl-surface-2);
+  --td-surface-control: var(--tl-surface-3);
+  --td-surface-content: var(--tl-surface-4);
+
+  /* Canvas token (viewport background, distinct from --td-bg for light themes) */
+  --td-canvas: var(--td-bg);
+
+  /* Text tokens (Table T02) */
+  --td-text: var(--tl-text);
+  --td-text-soft: var(--tl-text-soft);
+  --td-text-inverse: var(--tl-text-inverse);
+
+  /* Accent and status tokens (Table T03) */
+  --td-accent: var(--tl-accent);
+  --td-accent-cool: var(--tl-accent-cool);
+  --td-accent-1: var(--tl-accent-1);
+  --td-accent-2: var(--tl-accent-2);
+  --td-accent-3: var(--tl-accent-3);
+  --td-accent-4: var(--tl-accent-4);
+  --td-accent-5: var(--tl-accent-5);
+  --td-accent-6: var(--tl-accent-6);
+  --td-accent-7: var(--tl-accent-7);
+  --td-accent-8: var(--tl-accent-8);
+  --td-success: var(--tl-accent-5);
+  --td-warning: var(--tl-accent-6);
+  --td-danger: var(--tl-accent-4);
+  --td-info: var(--tl-accent-2);
+
+  /* Chart tokens (runtime contract for stats-card.ts) */
+  --td-chart-1: var(--td-accent-5);  /* CPU/Memory - green */
+  --td-chart-2: var(--td-accent-2);  /* Token Usage - cyan */
+  --td-chart-3: var(--td-accent-6);  /* Build Status - yellow */
+  --td-chart-4: var(--td-accent-4);  /* reserved - red */
+  --td-chart-5: var(--td-accent-3);  /* reserved - purple */
+
+  /* Titlebar and icon tokens */
+  --td-header-active: #44474C;
+  --td-header-inactive: #34373c;
+  --td-icon-active: var(--td-accent-2);
+  --td-grid-color: rgba(255, 255, 255, 0.05);
+
+  /* Border, depth, utility tokens (Table T04) */
+  --td-border: var(--tl-border);
+  --td-border-soft: var(--tl-border-soft);
+  --td-shadow-soft: var(--tl-shadow-soft);
+  --td-depth-raise: var(--tl-depth-raise);
+
+  /* Spacing and radius tokens */
+  --td-space-1: var(--tl-space-1);
+  --td-space-2: var(--tl-space-2);
+  --td-space-3: var(--tl-space-3);
+  --td-space-4: var(--tl-space-4);
+  --td-space-5: var(--tl-space-5);
+  --td-space-6: var(--tl-space-6);
+  --td-radius-xs: var(--tl-radius-xs);
+  --td-radius-sm: var(--tl-radius-sm);
+  --td-radius-md: var(--tl-radius-md);
+  --td-radius-lg: var(--tl-radius-lg);
+
+  /* Typography tokens */
+  --td-font-sans: var(--tl-font-sans);
+  --td-font-mono: var(--tl-font-mono);
+  --td-line-tight: var(--tl-line-tight);
+  --td-line-normal: var(--tl-line-normal);
+
+  /* Syntax highlighting tokens (Table T05) */
+  --td-syntax-keyword: var(--tl-accent-2);      /* cyan */
+  --td-syntax-string: var(--tl-accent-8);       /* coral */
+  --td-syntax-number: var(--tl-accent-5);       /* green */
+  --td-syntax-function: var(--tl-accent-6);     /* yellow */
+  --td-syntax-type: var(--tl-accent-5);         /* green */
+  --td-syntax-variable: var(--tl-accent-2);     /* cyan */
+  --td-syntax-comment: var(--tl-text-soft);     /* muted */
+  --td-syntax-operator: var(--td-text);         /* text */
+  --td-syntax-punctuation: var(--td-text);      /* text */
+  --td-syntax-constant: var(--tl-accent-2);     /* cyan */
+  --td-syntax-decorator: var(--tl-accent-3);    /* purple */
+  --td-syntax-tag: var(--tl-accent-2);          /* cyan */
+  --td-syntax-attribute: var(--tl-accent-2);    /* cyan */
+
+  /* Shiki CSS variable bridge tokens (forward compatibility) */
+  --syntax-foreground: var(--td-text);
+  --syntax-background: var(--td-surface-control);
+  --syntax-token-keyword: var(--td-syntax-keyword);
+  --syntax-token-string: var(--td-syntax-string);
+  --syntax-token-comment: var(--td-syntax-comment);
+  --syntax-token-function: var(--td-syntax-function);
+  --syntax-token-constant: var(--td-syntax-constant);
+  --syntax-token-punctuation: var(--td-syntax-punctuation);
+  --syntax-token-parameter: var(--td-syntax-variable);
+  --syntax-token-string-expression: var(--td-syntax-string);
+  --syntax-token-link: var(--td-syntax-keyword);
+
+  /* Legacy aliases (runtime contracts - Table T06) */
+  --background: var(--td-bg);
+  --foreground: var(--td-text);
+  --card: var(--td-card);
+  --card-foreground: var(--td-text);
+  --muted: var(--td-surface-control);
+  --muted-foreground: var(--td-text-soft);
+  --popover: var(--td-surface-control);
+  --popover-foreground: var(--td-text);
+  --border: var(--td-border);
+  --border-muted: var(--td-border-soft);
+  --input: var(--td-border);
+  --ring: var(--td-accent-cool);
+  --primary: var(--td-accent);
+  --primary-foreground: var(--td-text-inverse);
+  --secondary: var(--td-surface-control);
+  --secondary-foreground: var(--td-text);
+  --accent: var(--td-accent-cool);
+  --accent-foreground: var(--td-bg);
+  --success: var(--td-success);
+  --success-foreground: var(--td-bg);
+  --warning: var(--td-warning);
+  --warning-foreground: var(--td-bg);
+  --destructive: var(--td-danger);
+  --destructive-foreground: var(--td-text-inverse);
+  --info: var(--td-info);
+  --info-foreground: var(--td-bg);
+  --radius: var(--td-radius-md);
+  --radius-sm: var(--td-radius-sm);
+  --radius-lg: var(--td-radius-lg);
+
+  /* Legacy chart aliases (stats-card.ts getCSSToken contract) */
+  --chart-1: var(--td-chart-1);
+  --chart-2: var(--td-chart-2);
+  --chart-3: var(--td-chart-3);
+  --chart-4: var(--td-chart-4);
+  --chart-5: var(--td-chart-5);
+
+  /* Legacy syntax aliases */
+  --syntax-keyword: var(--td-syntax-keyword);
+  --syntax-string: var(--td-syntax-string);
+  --syntax-number: var(--td-syntax-number);
+  --syntax-function: var(--td-syntax-function);
+  --syntax-type: var(--td-syntax-type);
+  --syntax-variable: var(--td-syntax-variable);
+  --syntax-comment: var(--td-syntax-comment);
+  --syntax-operator: var(--td-syntax-operator);
+  --syntax-punctuation: var(--td-syntax-punctuation);
+  --syntax-constant: var(--td-syntax-constant);
+  --syntax-decorator: var(--td-syntax-decorator);
+  --syntax-tag: var(--td-syntax-tag);
+  --syntax-attribute: var(--td-syntax-attribute);
+}
+
+/* ============================================================================
+   Bluenote Theme (Cool Dark)
+   ========================================================================= */
+
+body.td-theme-bluenote {
+  /* Palette overrides (from tuglook body.tl-theme-bluenote) */
+  --tl-bg: #2a3136;
+  --tl-bg-soft: #363e43;
+  --tl-bg-line: rgba(255, 255, 255, 0.018);
+  --tl-panel: #3a454c;
+  --tl-panel-soft: #313b43;
+  --tl-panel-ink: #d9e0e4;
+  --tl-surface-1: #3b4348;
+  --tl-surface-2: #343c41;
+  --tl-surface-3: #30373c;
+  --tl-surface-4: #2a3237;
+  --tl-surface-screen: #5c6871;
+  --tl-surface-screen-ink: #edf2f5;
+  --tl-text: #dde4e8;
+  --tl-text-soft: #a8b6bf;
+  --tl-text-inverse: #edf1f3;
+  --tl-accent: #ff8434;
+  --tl-accent-strong: #f27024;
+  --tl-accent-cool: #4bbde8;
+  --tl-accent-1: #ff8434;
+  --tl-accent-2: #4bbde8;
+  --tl-accent-3: #ab7ee4;
+  --tl-accent-4: #ff5162;
+  --tl-accent-5: #73c382;
+  --tl-accent-6: #ffe465;
+  --tl-accent-7: #ec76c9;
+  --tl-accent-8: #ff9a72;
+  --tl-border: #5b6871;
+  --tl-border-soft: #79858d;
+  --tl-shadow-mid: #11191f;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.44);
+  --tl-track-bg: repeating-linear-gradient(
+    to bottom,
+    #6c7b85 0px,
+    #6c7b85 1px,
+    #84939c 2px,
+    #84939c 4px
+  );
+
+  /* Semantic token overrides (resolved values for reliable theme switching) */
+  --td-bg: #2a3136;
+  --td-bg-soft: #363e43;
+  --td-canvas: #2a3136;
+  --td-card: #3a454c;
+  --td-card-soft: #313b43;
+  --td-surface: #3b4348;
+  --td-surface-tab: #343c41;
+  --td-surface-control: #30373c;
+  --td-surface-content: #2a3237;
+  --td-text: #dde4e8;
+  --td-text-soft: #a8b6bf;
+  --td-text-inverse: #edf1f3;
+  --td-accent: #ff8434;
+  --td-accent-cool: #4bbde8;
+  --td-accent-1: #ff8434;
+  --td-accent-2: #4bbde8;
+  --td-accent-3: #ab7ee4;
+  --td-accent-4: #ff5162;
+  --td-accent-5: #73c382;
+  --td-accent-6: #ffe465;
+  --td-accent-7: #ec76c9;
+  --td-accent-8: #ff9a72;
+  --td-success: #73c382;
+  --td-warning: #ffe465;
+  --td-danger: #ff5162;
+  --td-info: #4bbde8;
+  --td-chart-1: #73c382;
+  --td-chart-2: #4bbde8;
+  --td-chart-3: #ffe465;
+  --td-chart-4: #ff5162;
+  --td-chart-5: #ab7ee4;
+  --td-border: #5b6871;
+  --td-border-soft: #79858d;
+  --td-shadow-soft: rgba(0, 0, 0, 0.44);
+  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.44);
+  --td-header-active: #344f5e;
+  --td-header-inactive: #2a3a44;
+  --td-icon-active: #4bbde8;
+  --td-grid-color: rgba(255, 255, 255, 0.04);
+  --td-syntax-keyword: #4bbde8;
+  --td-syntax-string: #ff9a72;
+  --td-syntax-number: #73c382;
+  --td-syntax-function: #ffe465;
+  --td-syntax-type: #73c382;
+  --td-syntax-variable: #4bbde8;
+  --td-syntax-comment: #a8b6bf;
+  --td-syntax-operator: #dde4e8;
+  --td-syntax-punctuation: #dde4e8;
+  --td-syntax-constant: #4bbde8;
+  --td-syntax-decorator: #ab7ee4;
+  --td-syntax-tag: #4bbde8;
+  --td-syntax-attribute: #4bbde8;
+}
+
+/* ============================================================================
+   Harmony Theme (Light)
+   ========================================================================= */
+
+body.td-theme-harmony {
+  /* Palette overrides (from tuglook :root) */
+  --tl-bg: #3f474c;
+  --tl-bg-soft: #4c555a;
+  --tl-bg-line: rgba(255, 255, 255, 0.02);
+  --tl-panel: #dad6cc;
+  --tl-panel-soft: #c6c2b8;
+  --tl-panel-ink: #29343c;
+  --tl-surface-1: #f4f1ea;
+  --tl-surface-2: #ece7dc;
+  --tl-surface-3: #e4ded1;
+  --tl-surface-4: #fcf9f2;
+  --tl-surface-screen: #d1dbe0;
+  --tl-surface-screen-ink: #23333b;
+  --tl-text: #26333b;
+  --tl-text-soft: #41525c;
+  --tl-text-inverse: #f4f7f8;
+  --tl-accent: #ff7f2a;
+  --tl-accent-strong: #f26d1f;
+  --tl-accent-cool: #42b8e6;
+  --tl-accent-1: #ff7f2a;
+  --tl-accent-2: #42b8e6;
+  --tl-accent-3: #a77ae0;
+  --tl-accent-4: #ff4458;
+  --tl-accent-5: #68bf78;
+  --tl-accent-6: #ffe15a;
+  --tl-accent-7: #e56ac0;
+  --tl-accent-8: #ff8f66;
+  --tl-border: #7f796a;
+  --tl-border-soft: #a29b8a;
+  --tl-shadow-hard: #1f2b33;
+  --tl-shadow-mid: #2a3841;
+  --tl-shadow-soft: rgba(0, 0, 0, 0.24);
+  --tl-glow: rgba(142, 183, 190, 0.24);
+  --tl-track-bg: repeating-linear-gradient(
+    to bottom,
+    #bdc3c8 0px,
+    #bdc3c8 1px,
+    #d8dde0 2px,
+    #d8dde0 4px
+  );
+
+  /* Semantic token overrides (resolved values for reliable theme switching) */
+  --td-bg: #3f474c;
+  --td-bg-soft: #4c555a;
+  --td-canvas: #b0ab9f;
+  --td-card: #dad6cc;
+  --td-card-soft: #c6c2b8;
+  --td-surface: #f4f1ea;
+  --td-surface-tab: #ece7dc;
+  --td-surface-control: #e4ded1;
+  --td-surface-content: #fcf9f2;
+  --td-text: #26333b;
+  --td-text-soft: #41525c;
+  --td-text-inverse: #f4f7f8;
+  --td-accent: #ff7f2a;
+  --td-accent-cool: #42b8e6;
+  --td-accent-1: #ff7f2a;
+  --td-accent-2: #42b8e6;
+  --td-accent-3: #a77ae0;
+  --td-accent-4: #ff4458;
+  --td-accent-5: #68bf78;
+  --td-accent-6: #ffe15a;
+  --td-accent-7: #e56ac0;
+  --td-accent-8: #ff8f66;
+  --td-success: #68bf78;
+  --td-warning: #ffe15a;
+  --td-danger: #ff4458;
+  --td-info: #42b8e6;
+  --td-chart-1: #68bf78;
+  --td-chart-2: #42b8e6;
+  --td-chart-3: #ffe15a;
+  --td-chart-4: #ff4458;
+  --td-chart-5: #a77ae0;
+  --td-border: #7f796a;
+  --td-border-soft: #a29b8a;
+  --td-shadow-soft: rgba(0, 0, 0, 0.24);
+  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
+  --td-header-active: #d4b888;
+  --td-header-inactive: #c8c0b0;
+  --td-icon-active: #42b8e6;
+  --td-grid-color: rgba(0, 0, 0, 0.06);
+  --td-syntax-keyword: #42b8e6;
+  --td-syntax-string: #ff8f66;
+  --td-syntax-number: #68bf78;
+  --td-syntax-function: #ffe15a;
+  --td-syntax-type: #68bf78;
+  --td-syntax-variable: #42b8e6;
+  --td-syntax-comment: #41525c;
+  --td-syntax-operator: #26333b;
+  --td-syntax-punctuation: #26333b;
+  --td-syntax-constant: #42b8e6;
+  --td-syntax-decorator: #a77ae0;
+  --td-syntax-tag: #42b8e6;
+  --td-syntax-attribute: #42b8e6;
+}

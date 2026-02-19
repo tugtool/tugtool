@@ -1,0 +1,1 @@
+/Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/target/debug/tugtool: /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/crates/tugtool/src/main.rs

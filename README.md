@@ -79,7 +79,7 @@ cd tugtool
 Fetch Rust dependencies for all workspace crates:
 
 ```bash
-cargo fetch --locked
+cd tugcode && cargo fetch --locked
 ```
 
 Install frontend dependencies for `tugdeck`:
@@ -95,7 +95,7 @@ cd ..
 Build the Rust workspace:
 
 ```bash
-cargo build
+cd tugcode && cargo build
 ```
 
 Build the `tugdeck` bundle:
@@ -109,21 +109,21 @@ cd ..
 Run tests:
 
 ```bash
-cargo nextest run
+cd tugcode && cargo nextest run
 ```
 
-### 4) Install `tugtool` CLI (Optional For Local Dev)
+### 4) Install `tugcode` CLI (Optional For Local Dev)
 
 For day-to-day use outside this repo checkout:
 
 ```bash
-cargo install --path crates/tugtool
+cd tugcode && cargo install --path crates/tugcode
 ```
 
 Verify:
 
 ```bash
-tugtool --version
+tugcode --version
 ```
 
 ### 5) Initialize A Target Project
@@ -131,9 +131,9 @@ tugtool --version
 In the project where you want to use Tug:
 
 ```bash
-tugtool init
-tugtool init --check
-tugtool doctor
+tugcode init
+tugcode init --check
+tugcode doctor
 ```
 
 ### 6) Run Tug In Claude Code
@@ -160,46 +160,46 @@ You generally don't need to run these yourself. The agents run these commands fo
 ### Core
 
 ```bash
-tugtool init
-tugtool init --check
-tugtool validate
-tugtool validate .tugtool/tugplan-1.md
-tugtool list
-tugtool status .tugtool/tugplan-1.md
-tugtool resolve
-tugtool resolve user-auth
-tugtool doctor
-tugtool version --verbose
+tugcode init
+tugcode init --check
+tugcode validate
+tugcode validate .tugtool/tugplan-1.md
+tugcode list
+tugcode status .tugtool/tugplan-1.md
+tugcode resolve
+tugcode resolve user-auth
+tugcode doctor
+tugcode version --verbose
 ```
 
 ### Beads
 
 ```bash
-tugtool beads sync .tugtool/tugplan-1.md
-tugtool beads status
-tugtool beads pull .tugtool/tugplan-1.md
-tugtool beads close bd-abc123 --reason "Step complete"
+tugcode beads sync .tugtool/tugplan-1.md
+tugcode beads status
+tugcode beads pull .tugtool/tugplan-1.md
+tugcode beads close bd-abc123 --reason "Step complete"
 ```
 
 ### Worktree And Merge
 
 ```bash
-tugtool worktree create .tugtool/tugplan-1.md --json
-tugtool worktree list
-tugtool worktree cleanup --merged
-tugtool merge .tugtool/tugplan-1.md --dry-run
-tugtool merge .tugtool/tugplan-1.md
+tugcode worktree create .tugtool/tugplan-1.md --json
+tugcode worktree list
+tugcode worktree cleanup --merged
+tugcode merge .tugtool/tugplan-1.md --dry-run
+tugcode merge .tugtool/tugplan-1.md
 ```
 
 ### Log And Commit Utilities
 
 ```bash
-tugtool log rotate
-tugtool log prepend --step "#step-0" --plan .tugtool/tugplan-1.md --summary "Completed step 0"
+tugcode log rotate
+tugcode log prepend --step "#step-0" --plan .tugtool/tugplan-1.md --summary "Completed step 0"
 
 # Primarily for automation agents:
-tugtool commit --worktree /abs/path --step "#step-0" --plan .tugtool/tugplan-1.md --message "feat: ..." --bead bd-abc --summary "..."
-tugtool open-pr --worktree /abs/path --branch tugplan/foo-123 --base main --title "..." --plan .tugtool/tugplan-1.md
+tugcode commit --worktree /abs/path --step "#step-0" --plan .tugtool/tugplan-1.md --message "feat: ..." --bead bd-abc --summary "..."
+tugcode open-pr --worktree /abs/path --branch tugplan/foo-123 --base main --title "..." --plan .tugtool/tugplan-1.md
 ```
 
 ## Repository Layout

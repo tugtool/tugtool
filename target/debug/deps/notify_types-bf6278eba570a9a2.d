@@ -1,0 +1,10 @@
+/Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/target/debug/deps/notify_types-bf6278eba570a9a2.d: /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/lib.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_full.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_mini.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/event.rs
+
+/Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/target/debug/deps/libnotify_types-bf6278eba570a9a2.rlib: /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/lib.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_full.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_mini.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/event.rs
+
+/Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/target/debug/deps/libnotify_types-bf6278eba570a9a2.rmeta: /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/lib.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_full.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_mini.rs /Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/event.rs
+
+/Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/lib.rs:
+/Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_full.rs:
+/Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/debouncer_mini.rs:
+/Users/kocienda/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-types-2.1.0/src/event.rs:

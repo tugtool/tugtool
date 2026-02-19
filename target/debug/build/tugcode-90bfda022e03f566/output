@@ -1,0 +1,5 @@
+cargo::rustc-env=TUG_COMMIT=76e224e
+cargo::rustc-env=TUG_BUILD_DATE=2026-02-19
+cargo::rustc-env=TUG_RUSTC_VERSION=1.93.0
+cargo::rerun-if-changed=.git/HEAD
+cargo::rerun-if-changed=.git/index

@@ -15,7 +15,7 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 ## Crate Structure
 
 ```
-crates/
+tugcode/crates/
 ├── tugcode/         # CLI binary crate
 │   └── src/
 │       ├── main.rs      # Entry point
@@ -34,7 +34,7 @@ crates/
 
 ## Build Policy
 
-**WARNINGS ARE ERRORS.** This project enforces `-D warnings` via `.cargo/config.toml`.
+**WARNINGS ARE ERRORS.** This project enforces `-D warnings` via `tugcode/.cargo/config.toml`.
 
 - `cargo build` will fail if there are any warnings
 - `cargo nextest run` will fail if tests have any warnings
@@ -98,10 +98,10 @@ allowed-tools: Task, AskUserQuestion
 
 Run tests with:
 ```bash
-cargo nextest run
+cd tugcode && cargo nextest run
 ```
 
-Test fixtures are in `tests/fixtures/`:
+Test fixtures are in `tugcode/tests/fixtures/`:
 - `valid/` - Valid tugplans for success cases
 - `invalid/` - Invalid tugplans for error cases
 - `golden/` - Expected JSON output
