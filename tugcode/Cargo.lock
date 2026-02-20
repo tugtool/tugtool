@@ -1842,7 +1842,7 @@ dependencies = [
 
 [[package]]
 name = "tugcode"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "anyhow",
  "clap",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "clap",
  "libc",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool-core"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "regex",
  "serde",
