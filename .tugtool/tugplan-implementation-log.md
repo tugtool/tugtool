@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-20T23:23:50Z
+bead: tugtool-5dh.6
+---
+
+## #step-5: Add tugcode tell CLI subcommand with param type coercion and ureq HTTP client
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-20T23:10:52Z
 bead: tugtool-5dh.5

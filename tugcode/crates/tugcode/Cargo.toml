@@ -20,6 +20,7 @@ anyhow.workspace = true
 regex.workspace = true
 dirs.workspace = true
 tugtool-core.workspace = true
+ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3"
