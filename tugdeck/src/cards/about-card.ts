@@ -6,13 +6,10 @@ import type { TugCard, TugCardMeta } from "./card";
 import type { FeedIdValue } from "../protocol";
 
 // Tug logo SVG (48x48 for About card)
-const TUG_LOGO_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/>
-  <path d="m3 9 2.45-4.9A2 2 0 0 1 7.24 3h9.52a2 2 0 0 1 1.8 1.1L21 9"/>
-  <path d="M12 3v6"/>
-</svg>
-`;
+const TUG_LOGO_SVG = `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect x="2" y="2" width="20" height="20" rx="4" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/>
+  <text x="12" y="16.5" text-anchor="middle" font-family="IBM Plex Sans, Inter, Segoe UI, system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" fill="currentColor">T</text>
+</svg>`;
 
 const VERSION = "0.1.0";
 

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-20T23:31:53Z
+bead: tugtool-5dh.7
+---
+
+## #step-6: Fix About card logo SVG and add end-to-end integration tests for tell endpoint round-trip and loopback security
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-20T23:23:50Z
 bead: tugtool-5dh.6
