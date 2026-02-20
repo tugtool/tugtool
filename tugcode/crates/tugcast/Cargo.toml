@@ -29,10 +29,10 @@ ignore = { workspace = true }
 sysinfo = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true }
-tower-http = { workspace = true }
 futures = { workspace = true }
 toml = { workspace = true }
 glob = { workspace = true }
+percent-encoding = { workspace = true }
 tugcast-core = { path = "../tugcast-core" }
 
 [dev-dependencies]

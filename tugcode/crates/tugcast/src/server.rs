@@ -9,13 +9,13 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
-use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
-use tower_http::services::ServeDir;
 use tracing::info;
 
 use crate::auth::SharedAuthState;
+use crate::dev::DevState;
 use crate::router::FeedRouter;
 
 /// Embedded static assets (tugdeck frontend)
@@ -24,7 +24,7 @@ use crate::router::FeedRouter;
 struct Assets;
 
 /// Determine Content-Type header for a file path
-fn content_type_for(path: &str) -> &'static str {
+pub(crate) fn content_type_for(path: &str) -> &'static str {
     if path.ends_with(".html") {
         "text/html; charset=utf-8"
     } else if path.ends_with(".js") {
@@ -39,6 +39,8 @@ fn content_type_for(path: &str) -> &'static str {
         "image/svg+xml"
     } else if path.ends_with(".json") {
         "application/json"
+    } else if path.ends_with(".woff2") {
+        "font/woff2"
     } else {
         "application/octet-stream"
     }
@@ -73,22 +75,28 @@ async fn serve_asset(uri: Uri) -> Response {
 /// Separated from `run_server` to enable testing without TCP binding.
 pub(crate) fn build_app(
     router: FeedRouter,
-    dev_path: Option<PathBuf>,
+    dev_state: Option<Arc<DevState>>,
     reload_tx: Option<broadcast::Sender<()>>,
 ) -> Router {
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler));
 
-    let app = if let (Some(path), Some(tx)) = (dev_path, reload_tx) {
+    let app = if let (Some(state), Some(tx)) = (dev_state, reload_tx) {
         let reload_sender = crate::dev::ReloadSender(tx);
-        let dev_path_ext = crate::dev::DevPath(path.clone());
+        let state_clone = state.clone();
         base.route("/", get(crate::dev::serve_dev_index))
+            .route("/index.html", get(crate::dev::serve_dev_index))
             .route("/dev/reload", get(crate::dev::dev_reload_handler))
             .route("/dev/reload.js", get(crate::dev::serve_dev_reload_js))
+            .fallback(move |uri| {
+                let state = state_clone.clone();
+                async move {
+                    crate::dev::serve_dev_asset(uri, Extension(state)).await
+                }
+            })
             .layer(Extension(reload_sender))
-            .layer(Extension(dev_path_ext))
-            .fallback_service(ServeDir::new(path))
+            .layer(Extension(state))
     } else {
         base.fallback(serve_asset)
     };
@@ -103,10 +111,10 @@ pub async fn run_server(
     port: u16,
     router: FeedRouter,
     _auth: SharedAuthState,
-    dev_path: Option<PathBuf>,
+    dev_state: Option<Arc<DevState>>,
     reload_tx: Option<broadcast::Sender<()>>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_path, reload_tx);
+    let app = build_app(router, dev_state, reload_tx);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!(port = port, "tugcast server listening");
@@ -139,6 +147,11 @@ mod tests {
     #[test]
     fn test_content_type_unknown() {
         assert_eq!(content_type_for("file.xyz"), "application/octet-stream");
+    }
+
+    #[test]
+    fn test_content_type_woff2() {
+        assert_eq!(content_type_for("font.woff2"), "font/woff2");
     }
 
     #[test]

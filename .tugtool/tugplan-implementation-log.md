@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-20T16:47:48Z
+bead: tugtool-9o5.2
+---
+
+## #step-1: Replaced DevPath/ServeDir dev mode with manifest-based source-direct serving. Added AssetManifest/DevState structs, load_manifest, serve_dev_asset with three-tier lookup (files->dirs->fallback->404), path safety (percent-decode, normalize, canonicalize), reload script injection on / and /index.html. Removed tower-http, added percent-encoding. 118 tests pass including 15 new tests for path traversal, lookup tiers, and integration.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-20T16:26:33Z
 bead: tugtool-9o5.1
