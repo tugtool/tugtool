@@ -126,6 +126,9 @@ async fn main() {
     // Create shutdown channel for control commands
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
 
+    // Create broadcast channel for client-bound Control frames
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
     // Load manifest and start dev file watcher if dev mode is active
     let (dev_state, reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
         // Load manifest
@@ -177,6 +180,7 @@ async fn main() {
         ],
         shutdown_tx,
         reload_tx.clone(),
+        client_action_tx,
     );
 
     // Start terminal feed in background task

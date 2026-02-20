@@ -4,15 +4,19 @@
 //! and static asset serving using rust-embed.
 
 use axum::Router;
-use axum::extract::Extension;
+use axum::body::Bytes;
+use axum::extract::{ConnectInfo, Extension, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use rust_embed::RustEmbed;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
-use tracing::info;
+use tracing::{info, warn};
+use tugcast_core::{FeedId, Frame};
 
 use crate::auth::SharedAuthState;
 use crate::dev::DevState;
@@ -22,6 +26,22 @@ use crate::router::FeedRouter;
 #[derive(RustEmbed)]
 #[folder = "$OUT_DIR/tugdeck/"]
 struct Assets;
+
+/// Request payload for /api/tell endpoint
+// Allow dead_code: struct is used only for testing/documentation
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct TellRequest {
+    action: String,
+}
+
+/// Response payload for /api/tell endpoint
+#[derive(Serialize)]
+struct TellResponse {
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
 
 /// Determine Content-Type header for a file path
 pub(crate) fn content_type_for(path: &str) -> &'static str {
@@ -44,6 +64,97 @@ pub(crate) fn content_type_for(path: &str) -> &'static str {
     } else {
         "application/octet-stream"
     }
+}
+
+/// Handle POST /api/tell requests for triggering actions
+async fn tell_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    // Reject non-loopback connections
+    if !addr.ip().is_loopback() {
+        warn!("tell_handler: rejected non-loopback connection from {}", addr);
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(TellResponse {
+                status: "error".to_string(),
+                message: Some("forbidden".to_string()),
+            }),
+        )
+            .into_response();
+    }
+
+    // Parse JSON payload manually (not using axum Json extractor) for custom error messages
+    let payload: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(TellResponse {
+                    status: "error".to_string(),
+                    message: Some("invalid JSON".to_string()),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Extract action field
+    let action = match payload.get("action").and_then(|a| a.as_str()) {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(TellResponse {
+                    status: "error".to_string(),
+                    message: Some("missing action field".to_string()),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Classify and handle action
+    match action {
+        "restart" => {
+            // Server-only: shutdown without broadcast
+            info!("tell_handler: restart requested");
+            let _ = router.shutdown_tx.send(42).await;
+        }
+        "reset" => {
+            // Hybrid: broadcast first, then shutdown after delay
+            info!("tell_handler: reset requested (hybrid)");
+            let frame = Frame::new(FeedId::Control, body.to_vec());
+            let _ = router.client_action_tx.send(frame);
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let _ = router.shutdown_tx.send(43).await;
+        }
+        "reload_frontend" => {
+            // Hybrid: broadcast to clients AND fire reload_tx
+            info!("tell_handler: reload_frontend requested (hybrid)");
+            let frame = Frame::new(FeedId::Control, body.to_vec());
+            let _ = router.client_action_tx.send(frame);
+            if let Some(ref tx) = router.reload_tx {
+                let _ = tx.send(());
+            }
+        }
+        _ => {
+            // Client-only: broadcast to all clients
+            info!("tell_handler: broadcasting client action: {}", action);
+            let frame = Frame::new(FeedId::Control, body.to_vec());
+            let _ = router.client_action_tx.send(frame);
+        }
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(TellResponse {
+            status: "ok".to_string(),
+            message: None,
+        }),
+    )
+        .into_response()
 }
 
 /// Serve static assets from embedded files
@@ -80,7 +191,8 @@ pub(crate) fn build_app(
 ) -> Router {
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
-        .route("/ws", get(crate::router::ws_handler));
+        .route("/ws", get(crate::router::ws_handler))
+        .route("/api/tell", post(tell_handler));
 
     let app = if let (Some(state), Some(tx)) = (dev_state, reload_tx) {
         let reload_sender = crate::dev::ReloadSender(tx);
@@ -117,7 +229,7 @@ pub async fn run_server(
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!(port = port, "tugcast server listening");
 
-    axum::serve(listener, app).await
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await
 }
 
 #[cfg(test)]
@@ -155,5 +267,32 @@ mod tests {
     #[test]
     fn test_assets_index_exists() {
         assert!(Assets::get("index.html").is_some());
+    }
+
+    #[test]
+    fn test_tell_request_deserialization() {
+        let json = r#"{"action":"test-ping"}"#;
+        let req: TellRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.action, "test-ping");
+    }
+
+    #[test]
+    fn test_tell_request_missing_action() {
+        let json = r#"{"foo":"bar"}"#;
+        let result: Result<TellRequest, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_action_classification() {
+        // Server-only
+        assert_eq!("restart", "restart");
+
+        // Hybrid
+        assert!(matches!("reset", "reset" | "reload_frontend"));
+        assert!(matches!("reload_frontend", "reset" | "reload_frontend"));
+
+        // Client-only (everything else)
+        assert!(!matches!("show-card", "restart" | "reset" | "reload_frontend"));
     }
 }
