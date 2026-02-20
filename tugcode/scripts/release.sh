@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Release tugtool
+# Release tugcode
 #
 # Usage: ./scripts/release.sh <version>
 #

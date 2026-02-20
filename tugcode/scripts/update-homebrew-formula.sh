@@ -9,7 +9,7 @@
 #
 # The script:
 # - Strips the 'v' prefix from the tag to get the version number
-# - Updates the version string in tugcode/Formula/tugtool.rb
+# - Updates the version string in tugcode/Formula/tugcode.rb
 # - Updates both SHA256 checksums in the formula
 # - Is idempotent: exits 0 with no changes if formula already has correct values
 
@@ -28,7 +28,7 @@ X86_64_SHA="$3"
 # Strip 'v' prefix from tag to get version
 VERSION="${TAG#v}"
 
-FORMULA_PATH="tugcode/Formula/tugtool.rb"
+FORMULA_PATH="tugcode/Formula/tugcode.rb"
 
 if [[ ! -f "$FORMULA_PATH" ]]; then
     echo "Error: Formula not found at $FORMULA_PATH" >&2

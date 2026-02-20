@@ -71,7 +71,7 @@ jobs:
       - name: Create tarball
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          TARBALL_NAME="tugtool-${VERSION}-macos-${{ matrix.arch }}"
+          TARBALL_NAME="tugcode-${VERSION}-macos-${{ matrix.arch }}"
 
           # Create tarball with bin/ and share/ at root (no wrapper directory)
           cd release
@@ -84,10 +84,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tugtool-macos-${{ matrix.arch }}
+          name: tugcode-macos-${{ matrix.arch }}
           path: |
-            tugtool-*.tar.gz
-            tugtool-*.tar.gz.sha256
+            tugcode-*.tar.gz
+            tugcode-*.tar.gz.sha256
 
   release:
     name: Create Release
@@ -145,8 +145,8 @@ jobs:
         id: checksums
         run: |
           # Find and extract checksums from .sha256 files
-          ARM64_SHA=$(awk '{print $1}' artifacts/tugtool-macos-arm64/tugtool-*-macos-arm64.tar.gz.sha256)
-          X86_64_SHA=$(awk '{print $1}' artifacts/tugtool-macos-x86_64/tugtool-*-macos-x86_64.tar.gz.sha256)
+          ARM64_SHA=$(awk '{print $1}' artifacts/tugcode-macos-arm64/tugcode-*-macos-arm64.tar.gz.sha256)
+          X86_64_SHA=$(awk '{print $1}' artifacts/tugcode-macos-x86_64/tugcode-*-macos-x86_64.tar.gz.sha256)
 
           echo "arm64_sha=$ARM64_SHA" >> "$GITHUB_OUTPUT"
           echo "x86_64_sha=$X86_64_SHA" >> "$GITHUB_OUTPUT"
@@ -172,7 +172,7 @@ jobs:
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
           # Commit only if there are changes
-          git add tugcode/Formula/tugtool.rb
+          git add tugcode/Formula/tugcode.rb
           if ! git diff --cached --quiet; then
             VERSION=${GITHUB_REF#refs/tags/v}
             git commit -m "Update formula to $VERSION"
