@@ -31,6 +31,8 @@ regex = { workspace = true }
 chrono = { workspace = true }
 tower-http = { workspace = true }
 futures = { workspace = true }
+toml = { workspace = true }
+glob = { workspace = true }
 tugcast-core = { path = "../tugcast-core" }
 
 [dev-dependencies]
@@ -38,3 +40,8 @@ tower = { workspace = true }
 tokio-tungstenite = { workspace = true }
 http-body-util = { workspace = true }
 tempfile = { workspace = true }
+
+[build-dependencies]
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+glob = "0.3"

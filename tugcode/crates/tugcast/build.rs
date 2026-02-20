@@ -154,6 +154,7 @@ fn main() {
     }
 
     // Set rerun-if-changed for cargo caching
+    println!("cargo:rerun-if-changed=../../../tugdeck/assets.toml");
     println!("cargo:rerun-if-changed=../../../tugdeck/src/");
     println!("cargo:rerun-if-changed=../../../tugdeck/index.html");
     println!("cargo:rerun-if-changed=../../../tugdeck/package.json");

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-20T16:26:33Z
+bead: tugtool-9o5.1
+---
+
+## #step-0: Created asset manifest (tugdeck/assets.toml) with [files], [dirs], and [build] sections. Added glob to workspace deps, toml and glob to tugcast runtime deps, and explicit version pins for build-dependencies. Added cargo:rerun-if-changed for assets.toml in build.rs.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-20T03:30:54Z
 bead: tugtool-wqb.3
