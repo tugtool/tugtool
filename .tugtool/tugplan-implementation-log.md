@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-20T17:09:10Z
+bead: tugtool-9o5.5
+---
+
+## #step-4: Deleted watch-assets.ts (168 lines of obsolete copy-to-dist logic). Rewrote dev.ts to minimal bun build --watch wrapper. Removed dev:assets script from package.json, simplified dev script to direct bun build --watch command. 475 bun tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-20T17:02:58Z
 bead: tugtool-9o5.4
