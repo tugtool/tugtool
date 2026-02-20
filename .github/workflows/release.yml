@@ -134,7 +134,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for git operations
+          path: main-repo
+          sparse-checkout: tugcode/scripts/update-homebrew-formula.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Clone tap repo
+        run: |
+          git clone https://x-access-token:${{ secrets.TAP_GITHUB_TOKEN }}@github.com/tugtool/homebrew-tugtool.git tap-repo
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -156,28 +162,24 @@ jobs:
 
       - name: Update formula
         run: |
-          # Set git identity for CI commits
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Sync to latest main (fast-forward only to avoid merge commits)
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
-
-          # Update the formula
-          ./tugcode/scripts/update-homebrew-formula.sh \
+          # Update the formula in the tap repo
+          ./main-repo/tugcode/scripts/update-homebrew-formula.sh \
+            tap-repo/Formula/tugcode.rb \
             "${{ github.ref_name }}" \
             "${{ steps.checksums.outputs.arm64_sha }}" \
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
-          # Commit only if there are changes
-          git add tugcode/Formula/tugcode.rb
+          # Commit and push only if there are changes
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Formula/tugcode.rb
           if ! git diff --cached --quiet; then
             VERSION=${GITHUB_REF#refs/tags/v}
-            git commit -m "Update formula to $VERSION"
+            git commit -m "Update tugcode to $VERSION"
             git push origin main
-            echo "Formula updated and pushed to main"
+            echo "Formula updated and pushed to homebrew-tugtool"
           else
             echo "Formula already up to date, no commit needed"
           fi

@@ -1,11 +1,13 @@
 # Homebrew formula for tugcode
 #
+# This is the source copy. The canonical formula lives in:
+#   https://github.com/tugtool/homebrew-tugtool
+#
 # To install:
-#   brew tap tugtool/tugtool https://github.com/tugtool/tugtool
+#   brew tap tugtool/tugtool
 #   brew install tugcode
 #
-# This formula downloads prebuilt binaries from GitHub Releases.
-# The version and checksums are automatically updated by CI on each release.
+# CI automatically updates the tap repo formula on each release.
 
 class Tugcode < Formula
   desc "From ideas to implementation via multi-agent orchestration"

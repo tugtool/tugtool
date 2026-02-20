@@ -2,33 +2,31 @@
 #
 # Update Homebrew formula with new version and checksums
 #
-# Usage: ./scripts/update-homebrew-formula.sh <tag> <arm64_sha256> <x86_64_sha256>
+# Usage: ./scripts/update-homebrew-formula.sh <formula_path> <tag> <arm64_sha256> <x86_64_sha256>
 #
 # Example:
-#   ./scripts/update-homebrew-formula.sh v0.2.0 abc123... def456...
+#   ./scripts/update-homebrew-formula.sh /tmp/homebrew-tugtool/Formula/tugcode.rb v0.5.20 abc123... def456...
 #
 # The script:
 # - Strips the 'v' prefix from the tag to get the version number
-# - Updates the version string in tugcode/Formula/tugcode.rb
-# - Updates both SHA256 checksums in the formula
+# - Updates the version string, URLs, and SHA256 checksums in the formula
 # - Is idempotent: exits 0 with no changes if formula already has correct values
 
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-    echo "Usage: $0 <tag> <arm64_sha256> <x86_64_sha256>" >&2
-    echo "Example: $0 v0.2.0 abc123... def456..." >&2
+if [[ $# -ne 4 ]]; then
+    echo "Usage: $0 <formula_path> <tag> <arm64_sha256> <x86_64_sha256>" >&2
+    echo "Example: $0 /tmp/tap/Formula/tugcode.rb v0.5.20 abc123... def456..." >&2
     exit 1
 fi
 
-TAG="$1"
-ARM64_SHA="$2"
-X86_64_SHA="$3"
+FORMULA_PATH="$1"
+TAG="$2"
+ARM64_SHA="$3"
+X86_64_SHA="$4"
 
 # Strip 'v' prefix from tag to get version
 VERSION="${TAG#v}"
-
-FORMULA_PATH="tugcode/Formula/tugcode.rb"
 
 if [[ ! -f "$FORMULA_PATH" ]]; then
     echo "Error: Formula not found at $FORMULA_PATH" >&2
