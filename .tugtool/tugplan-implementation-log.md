@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-20T22:56:32Z
+bead: tugtool-5dh.3
+---
+
+## #step-2: Add About and Settings cards with WKScriptMessageHandler bridge integration for theme, dev mode, and source tree settings
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-20T22:47:01Z
 bead: tugtool-5dh.2
