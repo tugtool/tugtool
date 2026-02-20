@@ -102,9 +102,8 @@ fn main() {
         for (prefix, entry) in dirs {
             let src_dir = tugdeck_dir.join(&entry.src);
             let dest_dir = tugdeck_out.join(prefix);
-            fs::create_dir_all(&dest_dir).unwrap_or_else(|e| {
-                panic!("failed to create dir {}: {}", dest_dir.display(), e)
-            });
+            fs::create_dir_all(&dest_dir)
+                .unwrap_or_else(|e| panic!("failed to create dir {}: {}", dest_dir.display(), e));
 
             let pattern = glob::Pattern::new(&entry.pattern)
                 .unwrap_or_else(|e| panic!("invalid glob pattern '{}': {}", entry.pattern, e));
@@ -182,13 +181,10 @@ fn main() {
 
     // Set rerun-if-changed for cargo caching
     // Emit for the manifest itself
-    println!(
-        "cargo:rerun-if-changed={}",
-        manifest_path.display()
-    );
+    println!("cargo:rerun-if-changed={}", manifest_path.display());
 
     // Emit for each [files] source path
-    for (_, src_path) in &manifest.files {
+    for src_path in manifest.files.values() {
         println!(
             "cargo:rerun-if-changed={}",
             tugdeck_dir.join(src_path).display()
@@ -197,7 +193,7 @@ fn main() {
 
     // Emit for each [dirs] source directory
     if let Some(ref dirs) = manifest.dirs {
-        for (_, entry) in dirs {
+        for entry in dirs.values() {
             println!(
                 "cargo:rerun-if-changed={}",
                 tugdeck_dir.join(&entry.src).display()

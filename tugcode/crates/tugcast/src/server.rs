@@ -91,9 +91,7 @@ pub(crate) fn build_app(
             .route("/dev/reload.js", get(crate::dev::serve_dev_reload_js))
             .fallback(move |uri| {
                 let state = state_clone.clone();
-                async move {
-                    crate::dev::serve_dev_asset(uri, Extension(state)).await
-                }
+                async move { crate::dev::serve_dev_asset(uri, Extension(state)).await }
             })
             .layer(Extension(reload_sender))
             .layer(Extension(state))

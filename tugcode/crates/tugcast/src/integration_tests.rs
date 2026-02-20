@@ -440,7 +440,11 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write index.html
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Dev Mode</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Dev Mode</body></html>",
+    )
+    .unwrap();
 
     // Load manifest to get DevState
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
@@ -470,11 +474,7 @@ fallback = "dist"
     // Create broadcast channel for reload
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
-    let app = build_app(
-        feed_router,
-        Some(Arc::new(dev_state)),
-        Some(reload_tx),
-    );
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
 
     // Make request to /
     let response = app
@@ -523,7 +523,11 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write index.html
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
 
     // Load manifest to get DevState
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
@@ -551,11 +555,7 @@ fallback = "dist"
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(
-        feed_router,
-        Some(Arc::new(dev_state)),
-        Some(reload_tx),
-    );
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
 
     // Make request to /dev/reload
     let response = app
@@ -603,7 +603,11 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write actual files
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
     fs::write(styles_dir.join("tokens.css"), "body { color: blue; }").unwrap();
 
     // Load manifest
@@ -686,7 +690,11 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write files
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
     fs::write(fonts_dir.join("Hack-Regular.woff2"), b"font binary data").unwrap();
 
     // Load manifest
@@ -764,7 +772,11 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write index.html
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Index Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Index Test</body></html>",
+    )
+    .unwrap();
 
     // Load manifest
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
@@ -832,7 +844,11 @@ async fn test_manifest_based_serving_path_traversal() {
 fallback = "dist"
 "#;
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
 
     // Load manifest
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
@@ -907,7 +923,11 @@ async fn test_manifest_based_serving_unknown_path_404() {
 fallback = "dist"
 "#;
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-    fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
 
     // Load manifest
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();

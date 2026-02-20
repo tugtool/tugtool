@@ -69,7 +69,8 @@ pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
     }
 
     // Extract index.html path
-    let index_path = files.get("index.html")
+    let index_path = files
+        .get("index.html")
         .ok_or_else(|| "manifest missing required entry: index.html".to_string())?
         .clone();
 
@@ -104,18 +105,29 @@ pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
 pub(crate) fn validate_manifest(state: &DevState) {
     for (url_key, path) in &state.files {
         if !path.exists() {
-            warn!("manifest [files] entry '{}' -> {} does not exist", url_key, path.display());
+            warn!(
+                "manifest [files] entry '{}' -> {} does not exist",
+                url_key,
+                path.display()
+            );
         }
     }
 
     for (prefix, dir_path, _) in &state.dirs {
         if !dir_path.exists() {
-            warn!("manifest [dirs] entry '{}' -> {} does not exist", prefix, dir_path.display());
+            warn!(
+                "manifest [dirs] entry '{}' -> {} does not exist",
+                prefix,
+                dir_path.display()
+            );
         }
     }
 
     if !state.fallback.exists() {
-        warn!("manifest [build].fallback -> {} does not exist", state.fallback.display());
+        warn!(
+            "manifest [build].fallback -> {} does not exist",
+            state.fallback.display()
+        );
     }
 }
 
@@ -145,7 +157,9 @@ pub(crate) fn watch_dirs_from_manifest(state: &DevState) -> Vec<PathBuf> {
     // Filter out subdirectories of already-watched ancestors
     let mut result = Vec::new();
     for candidate in dirs {
-        let is_subdir_of_watched = result.iter().any(|watched: &PathBuf| candidate.starts_with(watched));
+        let is_subdir_of_watched = result
+            .iter()
+            .any(|watched: &PathBuf| candidate.starts_with(watched));
         if !is_subdir_of_watched {
             result.push(candidate);
         }
@@ -201,7 +215,7 @@ pub(crate) async fn serve_dev_asset(
     for (prefix, dir_path, pattern) in &dev_state.dirs {
         if let Some(remainder) = lookup_key.strip_prefix(&format!("{}/", prefix)) {
             // Check if remainder matches the glob pattern (basename only)
-            let filename = remainder.split('/').last().unwrap_or("");
+            let filename = remainder.split('/').next_back().unwrap_or("");
             if pattern.matches(filename) {
                 let candidate = dir_path.join(remainder);
                 return serve_file_with_safety(&candidate, &dev_state).await;
@@ -260,10 +274,10 @@ async fn serve_file_with_safety(candidate: &Path, dev_state: &DevState) -> Respo
 
     // Fallback: if both roots don't exist or canonicalization failed,
     // check if the original candidate path starts with the non-canonicalized roots
-    if !allowed {
-        if candidate.starts_with(&tugdeck_root) || candidate.starts_with(&dev_state.fallback) {
-            allowed = true;
-        }
+    if !allowed
+        && (candidate.starts_with(&tugdeck_root) || candidate.starts_with(&dev_state.fallback))
+    {
+        allowed = true;
     }
 
     if !allowed {
@@ -273,9 +287,8 @@ async fn serve_file_with_safety(candidate: &Path, dev_state: &DevState) -> Respo
     // Read and serve the file
     match tokio::fs::read(&canonical_path).await {
         Ok(content) => {
-            let content_type = crate::server::content_type_for(
-                canonical_path.to_str().unwrap_or("")
-            );
+            let content_type =
+                crate::server::content_type_for(canonical_path.to_str().unwrap_or(""));
             (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, content_type)],
@@ -460,8 +473,8 @@ mod tests {
 
     #[test]
     fn test_load_manifest_valid() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -498,8 +511,8 @@ fallback = "dist"
 
     #[test]
     fn test_watch_dirs_deduplication() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -510,15 +523,19 @@ fallback = "dist"
         let mut state = DevState {
             files: HashMap::new(),
             index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![
-                ("fonts".to_string(), fonts_dir.clone(), glob::Pattern::new("*.woff2").unwrap()),
-            ],
+            dirs: vec![(
+                "fonts".to_string(),
+                fonts_dir.clone(),
+                glob::Pattern::new("*.woff2").unwrap(),
+            )],
             fallback: tugdeck_dir.join("dist"),
             source_tree: temp_dir.path().to_path_buf(),
         };
 
         // Add a file in the styles directory
-        state.files.insert("tokens.css".to_string(), styles_dir.join("tokens.css"));
+        state
+            .files
+            .insert("tokens.css".to_string(), styles_dir.join("tokens.css"));
 
         let watch_dirs = watch_dirs_from_manifest(&state);
 
@@ -526,13 +543,16 @@ fallback = "dist"
         assert!(watch_dirs.iter().any(|p| p == &styles_dir));
         // fonts/ should be filtered out by deduplication
         let fonts_count = watch_dirs.iter().filter(|p| *p == &fonts_dir).count();
-        assert_eq!(fonts_count, 0, "fonts/ should be deduplicated since styles/ is already watched");
+        assert_eq!(
+            fonts_count, 0,
+            "fonts/ should be deduplicated since styles/ is already watched"
+        );
     }
 
     #[test]
     fn test_validate_manifest_warns_missing() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -545,9 +565,11 @@ fallback = "dist"
         let state = DevState {
             files,
             index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![
-                ("missing-fonts".to_string(), tugdeck_dir.join("missing-fonts"), glob::Pattern::new("*.woff2").unwrap()),
-            ],
+            dirs: vec![(
+                "missing-fonts".to_string(),
+                tugdeck_dir.join("missing-fonts"),
+                glob::Pattern::new("*.woff2").unwrap(),
+            )],
             fallback: tugdeck_dir.join("missing-dist"),
             source_tree: temp_dir.path().to_path_buf(),
         };
@@ -558,10 +580,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_dotdot() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -584,10 +606,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_encoded() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -609,10 +631,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_double_encoded() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -634,10 +656,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_files_lookup() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -671,10 +693,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_dirs_lookup_with_glob() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -684,9 +706,11 @@ fallback = "dist"
         // Create a font file
         fs::write(fonts_dir.join("Hack-Regular.woff2"), b"fake font data").unwrap();
 
-        let dirs = vec![
-            ("fonts".to_string(), fonts_dir, glob::Pattern::new("*.woff2").unwrap()),
-        ];
+        let dirs = vec![(
+            "fonts".to_string(),
+            fonts_dir,
+            glob::Pattern::new("*.woff2").unwrap(),
+        )];
 
         let state = DevState {
             files: HashMap::new(),
@@ -708,10 +732,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_dirs_lookup_glob_mismatch() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -721,9 +745,11 @@ fallback = "dist"
         // Create a file that doesn't match the glob pattern
         fs::write(fonts_dir.join("readme.txt"), "not a font").unwrap();
 
-        let dirs = vec![
-            ("fonts".to_string(), fonts_dir, glob::Pattern::new("*.woff2").unwrap()),
-        ];
+        let dirs = vec![(
+            "fonts".to_string(),
+            fonts_dir,
+            glob::Pattern::new("*.woff2").unwrap(),
+        )];
 
         let state = DevState {
             files: HashMap::new(),
@@ -743,10 +769,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_fallback() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -777,10 +803,10 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_404_unknown() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
@@ -802,17 +828,21 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_index_html_injection() {
-        use tempfile::TempDir;
-        use std::fs;
-        use axum::http::Uri;
         use axum::extract::Extension;
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let tugdeck_dir = temp_dir.path().join("tugdeck");
         fs::create_dir_all(&tugdeck_dir).unwrap();
 
         // Create index.html
-        fs::write(tugdeck_dir.join("index.html"), "<html><body>Test</body></html>").unwrap();
+        fs::write(
+            tugdeck_dir.join("index.html"),
+            "<html><body>Test</body></html>",
+        )
+        .unwrap();
 
         let mut files = HashMap::new();
         files.insert("index.html".to_string(), tugdeck_dir.join("index.html"));

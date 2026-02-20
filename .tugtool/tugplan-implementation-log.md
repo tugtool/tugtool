@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-20T17:21:54Z
+---
+
+## audit-fix: Audit fix: Fixed 2 clippy for_kv_map lints in build.rs (use .values()), 2 additional clippy lints in dev.rs (next_back, collapsible_if), and ran cargo fmt across 4 files.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-20T17:16:39Z
 bead: tugtool-9o5.6
