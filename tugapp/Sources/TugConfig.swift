@@ -15,10 +15,6 @@ enum TugConfig {
     static let exitRestart: Int32 = 42
     static let exitReset: Int32 = 43
 
-    // MARK: - Source tree paths (relative to repo root)
-
-    static let tugdeckDistRel = "tugdeck/dist"
-
     // MARK: - Source tree validation
 
     /// Paths that must exist (relative to repo root) for a directory

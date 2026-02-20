@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-20T17:02:58Z
+bead: tugtool-9o5.4
+---
+
+## #step-3: Updated ProcessManager to pass source tree root directly to --dev (removed tugdeckDistRel appending). Added bunProcess property and bun build --watch spawning in startProcess(). Updated stop() to terminate bun first then tugcast. Removed TugConfig.tugdeckDistRel constant. xcodebuild succeeds.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-20T16:55:43Z
 bead: tugtool-9o5.3
