@@ -77,13 +77,13 @@ fi
 
 # Verify code quality (check only — do not auto-fix during a release)
 echo "==> Checking formatting..."
-if ! cargo fmt --all -- --check; then
+if ! cargo fmt --all --manifest-path tugcode/Cargo.toml -- --check; then
     echo "Error: Code is not formatted. Run: cargo fmt --all" >&2
     exit 1
 fi
 
 echo "==> Running clippy..."
-if ! cargo clippy --workspace --all-targets -- -D warnings; then
+if ! cargo clippy --workspace --manifest-path tugcode/Cargo.toml --all-targets -- -D warnings; then
     echo "Error: Clippy found warnings. Fix them first." >&2
     exit 1
 fi
@@ -100,8 +100,8 @@ if [[ "$AFTER" != "$VERSION" ]]; then
 fi
 
 # Update lockfile and commit version change
-cargo generate-lockfile --quiet
-git add tugcode/Cargo.toml Cargo.lock
+cargo generate-lockfile --manifest-path tugcode/Cargo.toml --quiet
+git add tugcode/Cargo.toml tugcode/Cargo.lock
 if git diff --cached --quiet; then
     echo "Error: No changes to commit. Version may already be $VERSION." >&2
     exit 1
