@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-20T23:00:13Z
+bead: tugtool-5dh.4
+---
+
+## #step-3: Wire dock About menu item to action dispatcher for About card integration
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-20T22:56:32Z
 bead: tugtool-5dh.3

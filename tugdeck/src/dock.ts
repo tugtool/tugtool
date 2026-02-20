@@ -9,6 +9,7 @@ import type { DeckManager } from "./deck-manager";
 import { DropdownMenu } from "./card-menu";
 import type { CardMenuItem } from "./cards/card";
 import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Settings } from "lucide";
+import { dispatchAction } from "./action-dispatch";
 
 /** Tug logo SVG (24x24 rounded square with "T" text) */
 const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -201,9 +202,7 @@ export class Dock {
       {
         type: "action",
         label: "About tugdeck",
-        action: () => {
-          window.alert("tugdeck v1.0\nCanvas card system for tugtool.");
-        },
+        action: () => dispatchAction({ action: "show-card", component: "about" }),
       },
     ];
 
