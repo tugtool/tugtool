@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-20T17:16:39Z
+bead: tugtool-9o5.6
+---
+
+## #step-5: Removed unused tower-http from workspace dependencies. Validated end-to-end: cargo build (dev + release), cargo nextest run (118 tests pass), production embed verified (12 assets identical to pre-change). All acceptance criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-20T17:09:10Z
 bead: tugtool-9o5.5
