@@ -246,8 +246,8 @@ export class TugConnection {
   /**
    * Send a control frame with the given action
    */
-  sendControlFrame(action: string): void {
-    const frame = controlFrame(action);
+  sendControlFrame(action: string, params?: Record<string, unknown>): void {
+    const frame = controlFrame(action, params);
     this.send(frame.feedId, frame.payload);
   }
 

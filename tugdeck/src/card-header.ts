@@ -21,6 +21,8 @@ import {
   Minus,
   X,
   Box,
+  Info,
+  Settings,
 } from "lucide";
 import type { TugCardMeta } from "./cards/card";
 import { DropdownMenu } from "./card-menu";
@@ -33,6 +35,8 @@ const ICON_MAP: Record<string, Parameters<typeof createElement>[0]> = {
   GitBranch,
   FolderOpen,
   Activity,
+  Info,
+  Settings,
 };
 
 export interface CardHeaderCallbacks {

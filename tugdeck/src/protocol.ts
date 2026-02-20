@@ -139,8 +139,8 @@ export function encodeConversationInput(msg: object): ArrayBuffer {
 /**
  * Create a control frame with a JSON action payload
  */
-export function controlFrame(action: string): Frame {
-  const json = JSON.stringify({ action });
+export function controlFrame(action: string, params?: Record<string, unknown>): Frame {
+  const json = JSON.stringify({ action, ...params });
   return {
     feedId: FeedId.CONTROL,
     payload: new TextEncoder().encode(json),

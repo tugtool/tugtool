@@ -6,6 +6,7 @@ import { FilesCard } from "./cards/files-card";
 import { GitCard } from "./cards/git-card";
 import { StatsCard } from "./cards/stats-card";
 import { Dock } from "./dock";
+import { initActionDispatch } from "./action-dispatch";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -58,6 +59,9 @@ deck.refresh();
 
 // Create Dock (48px vertical rail on right viewport edge)
 new Dock(deck);
+
+// Initialize action dispatch system
+initActionDispatch(connection, deck);
 
 // Connect to the server
 connection.connect();
