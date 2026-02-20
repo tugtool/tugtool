@@ -28,8 +28,8 @@ fn coerce_value(s: &str) -> Value {
     // Rule 3: integer (with leading zero check)
     if let Ok(n) = s.parse::<i64>() {
         // Reject leading zeros (except "-0" itself which is len 2)
-        let has_leading_zero = (s.len() > 1 && s.starts_with('0'))
-            || (s.len() > 2 && s.starts_with("-0"));
+        let has_leading_zero =
+            (s.len() > 1 && s.starts_with('0')) || (s.len() > 2 && s.starts_with("-0"));
         if !has_leading_zero {
             return Value::Number(n.into());
         }
@@ -243,10 +243,7 @@ mod tests {
 
     #[test]
     fn test_coerce_no_trim() {
-        assert_eq!(
-            coerce_value(" true "),
-            Value::String(" true ".to_string())
-        );
+        assert_eq!(coerce_value(" true "), Value::String(" true ".to_string()));
     }
 
     #[test]

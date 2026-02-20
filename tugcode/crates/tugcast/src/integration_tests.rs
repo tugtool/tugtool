@@ -1294,9 +1294,7 @@ async fn test_tell_client_action_round_trip() {
                 .method("POST")
                 .uri("/api/tell")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"action":"my-custom-action","key":"value"}"#,
-                ))
+                .body(Body::from(r#"{"action":"my-custom-action","key":"value"}"#))
                 .unwrap(),
         )
         .await

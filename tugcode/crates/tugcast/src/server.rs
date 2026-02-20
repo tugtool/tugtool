@@ -74,7 +74,10 @@ async fn tell_handler(
 ) -> Response {
     // Reject non-loopback connections
     if !addr.ip().is_loopback() {
-        warn!("tell_handler: rejected non-loopback connection from {}", addr);
+        warn!(
+            "tell_handler: rejected non-loopback connection from {}",
+            addr
+        );
         return (
             StatusCode::FORBIDDEN,
             axum::Json(TellResponse {
@@ -229,7 +232,11 @@ pub async fn run_server(
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!(port = port, "tugcast server listening");
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -293,6 +300,9 @@ mod tests {
         assert!(matches!("reload_frontend", "reset" | "reload_frontend"));
 
         // Client-only (everything else)
-        assert!(!matches!("show-card", "restart" | "reset" | "reload_frontend"));
+        assert!(!matches!(
+            "show-card",
+            "restart" | "reset" | "reload_frontend"
+        ));
     }
 }

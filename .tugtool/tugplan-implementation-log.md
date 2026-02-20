@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-20T23:38:08Z
+---
+
+## audit-fix: Audit fix: cargo fmt formatting corrections across 4 files, moved tell CLI tests inside mod tests block in cli.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-20T23:31:53Z
 bead: tugtool-5dh.7

@@ -955,18 +955,11 @@ mod tests {
             _ => panic!("Expected Resolve command"),
         }
     }
-}
 
     #[test]
     fn test_tell_command() {
-        let cli = Cli::try_parse_from([
-            "tugcode",
-            "tell",
-            "show-card",
-            "-p",
-            "component=about",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["tugcode", "tell", "show-card", "-p", "component=about"]).unwrap();
 
         match cli.command {
             Some(Commands::Tell {
@@ -1051,3 +1044,4 @@ mod tests {
             _ => panic!("Expected Tell command"),
         }
     }
+}
