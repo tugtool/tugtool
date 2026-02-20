@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-20T23:10:52Z
+bead: tugtool-5dh.5
+---
+
+## #step-4: Add WKScriptMessageHandler bridge to MainWindow, rewire Mac app menu actions to tell() HTTP endpoint, delete SettingsWindow
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-20T23:00:13Z
 bead: tugtool-5dh.4
