@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-20T03:30:54Z
+bead: tugtool-wqb.3
+---
+
+## #step-2: Rewrote AppDelegate.swift menu bar: six menus (Tug, File, Edit, Developer, Window, Help), Settings window wiring, About panel, Help URLs, system menu registration, removed toggleDevMode.
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-20T03:23:04Z
 bead: tugtool-wqb.2
