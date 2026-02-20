@@ -1,7 +1,30 @@
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+
+// Keep in sync with dev.rs copy
+#[derive(Debug, Deserialize)]
+struct AssetManifest {
+    files: HashMap<String, String>,
+    dirs: Option<HashMap<String, DirEntry>>,
+    #[allow(dead_code)] // Used in dev.rs but not in build.rs
+    build: Option<BuildConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DirEntry {
+    src: String,
+    pattern: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BuildConfig {
+    #[allow(dead_code)] // Used in dev.rs but not in build.rs
+    fallback: String,
+}
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -53,57 +76,61 @@ fn main() {
         panic!("bun build failed");
     }
 
-    // Copy index.html to output
-    fs::copy(
-        tugdeck_dir.join("index.html"),
-        tugdeck_out.join("index.html"),
-    )
-    .expect("failed to copy index.html");
+    // Read and parse asset manifest
+    let manifest_path = tugdeck_dir.join("assets.toml");
+    let manifest_content = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", manifest_path.display(), e));
+    let manifest: AssetManifest = toml::from_str(&manifest_content)
+        .unwrap_or_else(|e| panic!("failed to parse {}: {}", manifest_path.display(), e));
 
-    // Copy xterm.js CSS to output as app.css
-    // The xterm.js CSS is in node_modules/@xterm/xterm/css/xterm.css
-    let xterm_css = tugdeck_dir.join("node_modules/@xterm/xterm/css/xterm.css");
-    if xterm_css.exists() {
-        fs::copy(&xterm_css, tugdeck_out.join("app.css")).expect("failed to copy xterm.css");
-    } else {
-        // Create empty app.css as fallback
-        fs::write(tugdeck_out.join("app.css"), "/* xterm.css not found */")
-            .expect("failed to write placeholder app.css");
+    // Copy files from [files] section
+    for (url_key, src_path) in &manifest.files {
+        let src = tugdeck_dir.join(src_path);
+        let dest = tugdeck_out.join(url_key);
+        fs::copy(&src, &dest).unwrap_or_else(|e| {
+            panic!(
+                "failed to copy {} -> {}: {}",
+                src.display(),
+                dest.display(),
+                e
+            )
+        });
     }
 
-    // Copy CSS files to output
-    let cards_css = tugdeck_dir.join("styles/cards.css");
-    if cards_css.exists() {
-        fs::copy(&cards_css, tugdeck_out.join("cards.css")).expect("failed to copy cards.css");
-    }
+    // Copy files from [dirs] section with glob pattern matching
+    if let Some(ref dirs) = manifest.dirs {
+        for (prefix, entry) in dirs {
+            let src_dir = tugdeck_dir.join(&entry.src);
+            let dest_dir = tugdeck_out.join(prefix);
+            fs::create_dir_all(&dest_dir).unwrap_or_else(|e| {
+                panic!("failed to create dir {}: {}", dest_dir.display(), e)
+            });
 
-    let tokens_css = tugdeck_dir.join("styles/tokens.css");
-    if tokens_css.exists() {
-        fs::copy(&tokens_css, tugdeck_out.join("tokens.css")).expect("failed to copy tokens.css");
-    }
+            let pattern = glob::Pattern::new(&entry.pattern)
+                .unwrap_or_else(|e| panic!("invalid glob pattern '{}': {}", entry.pattern, e));
 
-    let cards_chrome_css = tugdeck_dir.join("styles/cards-chrome.css");
-    if cards_chrome_css.exists() {
-        fs::copy(&cards_chrome_css, tugdeck_out.join("cards-chrome.css"))
-            .expect("failed to copy cards-chrome.css");
-    }
+            if src_dir.exists() {
+                for dir_entry in fs::read_dir(&src_dir)
+                    .unwrap_or_else(|e| panic!("failed to read dir {}: {}", src_dir.display(), e))
+                {
+                    let dir_entry = dir_entry.unwrap_or_else(|e| {
+                        panic!("failed to read dir entry in {}: {}", src_dir.display(), e)
+                    });
+                    let file_name = dir_entry.file_name();
+                    let file_name_str = file_name.to_string_lossy();
 
-    let dock_css = tugdeck_dir.join("styles/dock.css");
-    if dock_css.exists() {
-        fs::copy(&dock_css, tugdeck_out.join("dock.css")).expect("failed to copy dock.css");
-    }
-
-    // Copy font files to output
-    let fonts_dir = tugdeck_dir.join("styles/fonts");
-    if fonts_dir.exists() {
-        let fonts_out = tugdeck_out.join("fonts");
-        fs::create_dir_all(&fonts_out).expect("failed to create fonts output dir");
-        for entry in fs::read_dir(&fonts_dir).expect("failed to read fonts dir") {
-            let entry = entry.expect("failed to read fonts dir entry");
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "woff2") {
-                let dest = fonts_out.join(path.file_name().unwrap());
-                fs::copy(&path, &dest).expect("failed to copy font file");
+                    if pattern.matches(&file_name_str) {
+                        let dest = dest_dir.join(&*file_name);
+                        fs::copy(dir_entry.path(), &dest).unwrap_or_else(|e| {
+                            panic!(
+                                "failed to copy {} -> {}: {}",
+                                dir_entry.path().display(),
+                                dest.display(),
+                                e
+                            )
+                        });
+                    }
+                }
             }
         }
     }
@@ -154,11 +181,45 @@ fn main() {
     }
 
     // Set rerun-if-changed for cargo caching
-    println!("cargo:rerun-if-changed=../../../tugdeck/assets.toml");
-    println!("cargo:rerun-if-changed=../../../tugdeck/src/");
-    println!("cargo:rerun-if-changed=../../../tugdeck/index.html");
-    println!("cargo:rerun-if-changed=../../../tugdeck/package.json");
-    println!("cargo:rerun-if-changed=../../../tugdeck/styles/");
-    println!("cargo:rerun-if-changed=../../../tugtalk/src/");
-    println!("cargo:rerun-if-changed=../../../tugtalk/package.json");
+    // Emit for the manifest itself
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_path.display()
+    );
+
+    // Emit for each [files] source path
+    for (_, src_path) in &manifest.files {
+        println!(
+            "cargo:rerun-if-changed={}",
+            tugdeck_dir.join(src_path).display()
+        );
+    }
+
+    // Emit for each [dirs] source directory
+    if let Some(ref dirs) = manifest.dirs {
+        for (_, entry) in dirs {
+            println!(
+                "cargo:rerun-if-changed={}",
+                tugdeck_dir.join(&entry.src).display()
+            );
+        }
+    }
+
+    // Emit for non-manifest paths (JS source, tugtalk)
+    println!(
+        "cargo:rerun-if-changed={}",
+        tugdeck_dir.join("src/").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        tugdeck_dir.join("package.json").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo_root.join("tugtalk/src/").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo_root.join("tugtalk/package.json").display()
+    );
 }

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-20T16:55:43Z
+bead: tugtool-9o5.3
+---
+
+## #step-2: Rewrote build.rs middle section to replace hardcoded fs::copy calls with manifest-driven loops. Reads tugdeck/assets.toml, iterates [files] for 1:1 copies, iterates [dirs] with glob pattern filtering. Replaced rerun-if-changed with manifest-derived entries using absolute paths. Bun build and tugtalk sections unchanged. 118 tests pass, OUT_DIR contains same 12 files.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-20T16:47:48Z
 bead: tugtool-9o5.2
