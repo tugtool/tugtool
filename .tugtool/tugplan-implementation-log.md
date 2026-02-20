@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-20T03:13:00Z
+bead: tugtool-wqb.1
+---
+
+## #step-0: Added NSHumanReadableCopyright key with 'Copyright © 2026 Ken Kocienda' to tugapp/Info.plist
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-19T21:09:03Z
 ---
