@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-20T23:43:36Z
+---
+
+## audit-fix: CI fix: changed test value 3.14 to 2.5 in tell.rs to avoid clippy approx_constant warning
+
+**Files changed:**
+- .tugtool/tugplan-tugtell-external-command.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-20T23:38:08Z
 ---
 

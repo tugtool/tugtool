@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_coerce_float() {
-        assert_eq!(coerce_value("3.14"), serde_json::json!(3.14));
+        assert_eq!(coerce_value("2.5"), serde_json::json!(2.5));
         assert_eq!(coerce_value("1e5"), serde_json::json!(100000.0));
         assert_eq!(coerce_value("-0.5"), serde_json::json!(-0.5));
     }
