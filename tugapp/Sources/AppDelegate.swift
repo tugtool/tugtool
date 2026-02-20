@@ -6,6 +6,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var devModeEnabled = false
     private var sourceTreePath: String?
     private var developerMenu: NSMenuItem!
+    private var sourceTreeMenuItem: NSMenuItem?
+
+    private lazy var settingsWindowController: SettingsWindowController = {
+        let controller = SettingsWindowController()
+
+        controller.onDevModeChanged = { [weak self] enabled in
+            guard let self = self else { return }
+            self.devModeEnabled = enabled
+            self.updateDeveloperMenuVisibility()
+            self.savePreferences()
+
+            // Restart tugcast with new mode
+            self.processManager.stop()
+            self.processManager.start(devMode: self.devModeEnabled, sourceTree: self.sourceTreePath)
+        }
+
+        controller.onSourceTreeChanged = { [weak self] path in
+            guard let self = self else { return }
+            self.sourceTreePath = path
+            self.savePreferences()
+
+            // Update Developer menu source tree display
+            if let path = path {
+                self.sourceTreeMenuItem?.title = "Source Tree: \(path)"
+            }
+
+            // Restart if dev mode is enabled
+            if self.devModeEnabled {
+                self.processManager.stop()
+                self.processManager.start(devMode: true, sourceTree: self.sourceTreePath)
+            }
+        }
+
+        return controller
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
@@ -77,72 +112,137 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenuBar() {
         let mainMenu = NSMenu()
 
-        // App Menu
+        // Tug (App) Menu - position 0
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        appMenu.addItem(NSMenuItem(title: "Quit Tug", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ","))
+        appMenu.addItem(NSMenuItem.separator())
 
-        // Edit Menu
+        // Services submenu
+        let servicesMenuItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "Services")
+        servicesMenuItem.submenu = servicesMenu
+        appMenu.addItem(servicesMenuItem)
+        NSApp.servicesMenu = servicesMenu
+
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(NSMenuItem(title: "Hide Tug", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        appMenu.addItem(NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", modifierMask: [.command, .option]))
+        appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(NSMenuItem(title: "Quit Tug", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        // File Menu - position 1
+        let fileMenuItem = NSMenuItem()
+        mainMenu.addItem(fileMenuItem)
+        let fileMenu = NSMenu(title: "File")
+        fileMenuItem.submenu = fileMenu
+        fileMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+
+        // Edit Menu - position 2
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenuItem.submenu = editMenu
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z", modifierMask: [.command, .shift]))
+        editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(NSMenuItem.separator())
 
-        // Developer Menu
+        // Find submenu
+        let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        let findMenu = NSMenu(title: "Find")
+        findMenuItem.submenu = findMenu
+        let findItem = NSMenuItem(title: "Find...", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
+        findItem.tag = 1
+        findMenu.addItem(findItem)
+        let findNextItem = NSMenuItem(title: "Find Next", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g")
+        findNextItem.tag = 2
+        findMenu.addItem(findNextItem)
+        let findPreviousItem = NSMenuItem(title: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g", modifierMask: [.command, .shift])
+        findPreviousItem.tag = 3
+        findMenu.addItem(findPreviousItem)
+        let useSelectionItem = NSMenuItem(title: "Use Selection for Find", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "e")
+        useSelectionItem.tag = 7
+        findMenu.addItem(useSelectionItem)
+        editMenu.addItem(findMenuItem)
+
+        // Developer Menu - position 3
         developerMenu = NSMenuItem()
         mainMenu.addItem(developerMenu)
         let devMenu = NSMenu(title: "Developer")
         developerMenu.submenu = devMenu
-        developerMenu.isHidden = !devModeEnabled
-
-        let enableDevMode = NSMenuItem(title: "Enable Dev Mode", action: #selector(toggleDevMode(_:)), keyEquivalent: "")
-        enableDevMode.state = devModeEnabled ? .on : .off
-        devMenu.addItem(enableDevMode)
-
-        devMenu.addItem(NSMenuItem.separator())
-
         devMenu.addItem(NSMenuItem(title: "Reload Frontend", action: #selector(reloadFrontend(_:)), keyEquivalent: "r"))
         devMenu.addItem(NSMenuItem(title: "Restart Server", action: #selector(restartServer(_:)), keyEquivalent: "r", modifierMask: [.command, .shift]))
         devMenu.addItem(NSMenuItem(title: "Reset Everything", action: #selector(resetEverything(_:)), keyEquivalent: "r", modifierMask: [.command, .option]))
-
         devMenu.addItem(NSMenuItem.separator())
-
         devMenu.addItem(NSMenuItem(title: "Open Web Inspector", action: #selector(openWebInspector(_:)), keyEquivalent: ""))
-
         devMenu.addItem(NSMenuItem.separator())
 
+        // Source tree display item
         if let path = sourceTreePath {
             let sourceTreeItem = NSMenuItem(title: "Source Tree: \(path)", action: nil, keyEquivalent: "")
             sourceTreeItem.isEnabled = false
             devMenu.addItem(sourceTreeItem)
+            sourceTreeMenuItem = sourceTreeItem
         }
         devMenu.addItem(NSMenuItem(title: "Choose Source Tree...", action: #selector(chooseSourceTree(_:)), keyEquivalent: ""))
+        developerMenu.isHidden = !devModeEnabled
+
+        // Window Menu - position 4
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+        windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
+        windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f", modifierMask: [.command, .control]))
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
+        NSApp.windowsMenu = windowMenu
+
+        // Help Menu - position 5
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        helpMenuItem.submenu = helpMenu
+        helpMenu.addItem(NSMenuItem(title: "Project Home", action: #selector(openProjectHome(_:)), keyEquivalent: ""))
+        helpMenu.addItem(NSMenuItem(title: "GitHub", action: #selector(openGitHub(_:)), keyEquivalent: ""))
+        NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
     }
 
     // MARK: - Actions
 
-    @objc private func toggleDevMode(_ sender: NSMenuItem) {
-        devModeEnabled = !devModeEnabled
-        sender.state = devModeEnabled ? .on : .off
+    @objc func showSettings(_ sender: Any?) {
+        settingsWindowController.showWindow(nil)
+    }
 
-        if devModeEnabled && sourceTreePath == nil {
-            chooseSourceTree(sender)
+    @objc func showAbout(_ sender: Any?) {
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @objc func openProjectHome(_ sender: Any?) {
+        if let url = URL(string: "https://tugtool.dev") {
+            NSWorkspace.shared.open(url)
         }
+    }
 
-        developerMenu.isHidden = !devModeEnabled
-        savePreferences()
-
-        // Restart tugcast with new mode
-        processManager.stop()
-        processManager.start(devMode: devModeEnabled, sourceTree: sourceTreePath)
+    @objc func openGitHub(_ sender: Any?) {
+        if let url = URL(string: "https://github.com/tugtool/tugtool") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func reloadFrontend(_ sender: Any) {
@@ -184,8 +284,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sourceTreePath = url.path
             savePreferences()
 
-            // Rebuild menu to show new path
-            buildMenuBar()
+            // Update Developer menu source tree display
+            sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
 
             // Restart if dev mode is enabled
             if devModeEnabled {
@@ -193,6 +293,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 processManager.start(devMode: true, sourceTree: url.path)
             }
         }
+    }
+
+    private func updateDeveloperMenuVisibility() {
+        developerMenu.isHidden = !devModeEnabled
     }
 }
 

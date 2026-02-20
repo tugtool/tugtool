@@ -9,6 +9,45 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-20T03:30:54Z
+bead: tugtool-wqb.3
+---
+
+## #step-2: Rewrote AppDelegate.swift menu bar: six menus (Tug, File, Edit, Developer, Window, Help), Settings window wiring, About panel, Help URLs, system menu registration, removed toggleDevMode.
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-20T03:23:04Z
+bead: tugtool-wqb.2
+---
+
+## #step-1: Created SettingsWindow.swift with SettingsWindowController, registered in Xcode project. Settings window has dev mode toggle, source tree picker with validation, callback closures, and frame autosave.
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-20T03:13:00Z
+bead: tugtool-wqb.1
+---
+
+## #step-0: Added NSHumanReadableCopyright key with 'Copyright © 2026 Ken Kocienda' to tugapp/Info.plist
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-19T21:09:03Z
 ---

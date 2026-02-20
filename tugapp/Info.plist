@@ -42,5 +42,7 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Ken Kocienda</string>
 </dict>
 </plist>
