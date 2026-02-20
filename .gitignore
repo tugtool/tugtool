@@ -17,6 +17,13 @@ Cargo.lock
 # macOS
 .DS_Store
 
+# Xcode
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
 # Test artifacts
 *.log
 

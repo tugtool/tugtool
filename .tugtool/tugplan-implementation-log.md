@@ -9,6 +9,96 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-20T17:21:54Z
+---
+
+## audit-fix: Audit fix: Fixed 2 clippy for_kv_map lints in build.rs (use .values()), 2 additional clippy lints in dev.rs (next_back, collapsible_if), and ran cargo fmt across 4 files.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-20T17:16:39Z
+bead: tugtool-9o5.6
+---
+
+## #step-5: Removed unused tower-http from workspace dependencies. Validated end-to-end: cargo build (dev + release), cargo nextest run (118 tests pass), production embed verified (12 assets identical to pre-change). All acceptance criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-20T17:09:10Z
+bead: tugtool-9o5.5
+---
+
+## #step-4: Deleted watch-assets.ts (168 lines of obsolete copy-to-dist logic). Rewrote dev.ts to minimal bun build --watch wrapper. Removed dev:assets script from package.json, simplified dev script to direct bun build --watch command. 475 bun tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-20T17:02:58Z
+bead: tugtool-9o5.4
+---
+
+## #step-3: Updated ProcessManager to pass source tree root directly to --dev (removed tugdeckDistRel appending). Added bunProcess property and bun build --watch spawning in startProcess(). Updated stop() to terminate bun first then tugcast. Removed TugConfig.tugdeckDistRel constant. xcodebuild succeeds.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-20T16:55:43Z
+bead: tugtool-9o5.3
+---
+
+## #step-2: Rewrote build.rs middle section to replace hardcoded fs::copy calls with manifest-driven loops. Reads tugdeck/assets.toml, iterates [files] for 1:1 copies, iterates [dirs] with glob pattern filtering. Replaced rerun-if-changed with manifest-derived entries using absolute paths. Bun build and tugtalk sections unchanged. 118 tests pass, OUT_DIR contains same 12 files.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-20T16:47:48Z
+bead: tugtool-9o5.2
+---
+
+## #step-1: Replaced DevPath/ServeDir dev mode with manifest-based source-direct serving. Added AssetManifest/DevState structs, load_manifest, serve_dev_asset with three-tier lookup (files->dirs->fallback->404), path safety (percent-decode, normalize, canonicalize), reload script injection on / and /index.html. Removed tower-http, added percent-encoding. 118 tests pass including 15 new tests for path traversal, lookup tiers, and integration.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-20T16:26:33Z
+bead: tugtool-9o5.1
+---
+
+## #step-0: Created asset manifest (tugdeck/assets.toml) with [files], [dirs], and [build] sections. Added glob to workspace deps, toml and glob to tugcast runtime deps, and explicit version pins for build-dependencies. Added cargo:rerun-if-changed for assets.toml in build.rs.
+
+**Files changed:**
+- .tugtool/tugplan-dev-source-direct.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-20T03:30:54Z
 bead: tugtool-wqb.3

@@ -5,10 +5,12 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 
 use crate::auth::{self, SESSION_COOKIE_NAME};
+use crate::dev;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 use crate::server::build_app;
 
@@ -422,12 +424,32 @@ async fn test_build_app_dev_mode() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create a temp directory with an index.html file
+    // Create a temp directory with tugdeck structure
     let temp_dir = TempDir::new().unwrap();
-    let index_path = temp_dir.path().join("index.html");
-    fs::write(&index_path, "<html><body>Dev Mode</body></html>").unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    fs::create_dir_all(&tugdeck_dir).unwrap();
 
-    // Build app with dev path
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+    // Write index.html
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Dev Mode</body></html>",
+    )
+    .unwrap();
+
+    // Load manifest to get DevState
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app with dev state
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
@@ -452,11 +474,7 @@ async fn test_build_app_dev_mode() {
     // Create broadcast channel for reload
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
-    let app = build_app(
-        feed_router,
-        Some(temp_dir.path().to_path_buf()),
-        Some(reload_tx),
-    );
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
 
     // Make request to /
     let response = app
@@ -489,12 +507,32 @@ async fn test_dev_reload_sse_endpoint() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create a temp directory with an index.html file
+    // Create a temp directory with tugdeck structure
     let temp_dir = TempDir::new().unwrap();
-    let index_path = temp_dir.path().join("index.html");
-    fs::write(&index_path, "<html><body>Test</body></html>").unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    fs::create_dir_all(&tugdeck_dir).unwrap();
 
-    // Build app with dev path and reload broadcast
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+    // Write index.html
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+
+    // Load manifest to get DevState
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app with dev state and reload broadcast
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
@@ -517,11 +555,7 @@ async fn test_dev_reload_sse_endpoint() {
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(
-        feed_router,
-        Some(temp_dir.path().to_path_buf()),
-        Some(reload_tx),
-    );
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
 
     // Make request to /dev/reload
     let response = app
@@ -544,4 +578,393 @@ async fn test_dev_reload_sse_endpoint() {
         .to_str()
         .unwrap();
     assert!(content_type.contains("text/event-stream"));
+}
+
+#[tokio::test]
+async fn test_manifest_based_serving_files_entry() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create temp directory with tugdeck structure
+    let temp_dir = TempDir::new().unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    let styles_dir = tugdeck_dir.join("styles");
+    fs::create_dir_all(&styles_dir).unwrap();
+
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+"tokens.css" = "styles/tokens.css"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+    // Write actual files
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+    fs::write(styles_dir.join("tokens.css"), "body { color: blue; }").unwrap();
+
+    // Load manifest
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+
+    // Request /tokens.css
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/tokens.css")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify content type
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.contains("text/css"));
+
+    // Verify body content
+    use http_body_util::BodyExt;
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body.contains("color: blue"));
+}
+
+#[tokio::test]
+async fn test_manifest_based_serving_dirs_entry() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create temp directory with tugdeck structure
+    let temp_dir = TempDir::new().unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    let fonts_dir = tugdeck_dir.join("styles/fonts");
+    fs::create_dir_all(&fonts_dir).unwrap();
+
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[dirs]
+"fonts" = { src = "styles/fonts", pattern = "*.woff2" }
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+    // Write files
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+    fs::write(fonts_dir.join("Hack-Regular.woff2"), b"font binary data").unwrap();
+
+    // Load manifest
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+
+    // Request /fonts/Hack-Regular.woff2
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/fonts/Hack-Regular.woff2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify content type
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(content_type, "font/woff2");
+
+    // Verify body
+    use http_body_util::BodyExt;
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&body_bytes[..], b"font binary data");
+}
+
+#[tokio::test]
+async fn test_manifest_based_serving_index_html_injection() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create temp directory with tugdeck structure
+    let temp_dir = TempDir::new().unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    fs::create_dir_all(&tugdeck_dir).unwrap();
+
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+    // Write index.html
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Index Test</body></html>",
+    )
+    .unwrap();
+
+    // Load manifest
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+
+    // Request /index.html (not /) to verify D10 compliance
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/index.html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify reload script was injected
+    use http_body_util::BodyExt;
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body.contains("Index Test"));
+    assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
+}
+
+#[tokio::test]
+async fn test_manifest_based_serving_path_traversal() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create temp directory with tugdeck structure
+    let temp_dir = TempDir::new().unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    fs::create_dir_all(&tugdeck_dir).unwrap();
+
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+
+    // Load manifest
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+
+    // Test path traversal with /../../../etc/passwd
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/../../../etc/passwd")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Test percent-encoded traversal /%2e%2e/secret
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/%2e%2e/secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_manifest_based_serving_unknown_path_404() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create temp directory with tugdeck structure
+    let temp_dir = TempDir::new().unwrap();
+    let tugdeck_dir = temp_dir.path().join("tugdeck");
+    fs::create_dir_all(&tugdeck_dir).unwrap();
+
+    // Write assets.toml
+    let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+    fs::write(
+        tugdeck_dir.join("index.html"),
+        "<html><body>Test</body></html>",
+    )
+    .unwrap();
+
+    // Load manifest
+    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+
+    // Build app
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+    );
+
+    let (reload_tx, _) = broadcast::channel::<()>(16);
+    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+
+    // Request unknown file
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/nonexistent.css")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

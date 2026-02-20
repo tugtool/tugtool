@@ -26,7 +26,7 @@ pub struct Cli {
     #[arg(long)]
     pub tugtalk_path: Option<PathBuf>,
 
-    /// Path to dev asset directory (serves from disk instead of embedded assets)
+    /// Path to source tree root (serves assets directly from source via manifest)
     #[arg(long)]
     pub dev: Option<PathBuf>,
 }

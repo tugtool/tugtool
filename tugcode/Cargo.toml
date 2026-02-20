@@ -53,6 +53,10 @@ pty-process = { version = "0.5", features = ["async"] }
 # Filesystem watching
 notify = "8"
 ignore = "0.4"
+glob = "0.3"
+
+# URL encoding
+percent-encoding = "2.3"
 
 # Random generation
 rand = "0.10"
@@ -70,6 +74,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Testing utilities
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs"] }
 tokio-tungstenite = "0.28"
 http-body-util = "0.1"

@@ -126,12 +126,28 @@ async fn main() {
     // Create shutdown channel for control commands
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
 
-    // Start dev file watcher if dev mode is active (before FeedRouter::new)
-    let (reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
-        match dev::dev_file_watcher(dev_path) {
+    // Load manifest and start dev file watcher if dev mode is active
+    let (dev_state, reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
+        // Load manifest
+        let state = match dev::load_manifest(dev_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("tugcast: error: failed to load asset manifest: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        // Validate manifest (logs warnings)
+        dev::validate_manifest(&state);
+
+        // Derive watch directories
+        let watch_dirs = dev::watch_dirs_from_manifest(&state);
+
+        // Start file watcher
+        match dev::dev_file_watcher(&watch_dirs) {
             Ok((tx, watcher)) => {
                 info!(path = ?dev_path, "dev file watcher started");
-                (Some(tx), Some(watcher))
+                (Some(Arc::new(state)), Some(tx), Some(watcher))
             }
             Err(e) => {
                 eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
@@ -139,7 +155,7 @@ async fn main() {
             }
         }
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     // Create feed router with reload_tx wired
@@ -221,7 +237,7 @@ async fn main() {
     });
 
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(cli.port, feed_router, auth, cli.dev, reload_tx);
+    let server_future = server::run_server(cli.port, feed_router, auth, dev_state, reload_tx);
 
     let exit_code = tokio::select! {
         result = server_future => {

@@ -3,6 +3,7 @@ import Foundation
 /// Manages the tugcast server process lifecycle with supervisor loop
 class ProcessManager {
     private var process: Process?
+    private var bunProcess: Process?
     private var sourceTree: String?
     private var devPath: String?
     private let authURLPattern = try! NSRegularExpression(pattern: "tugcast:\\s+(http://\\S+)")
@@ -88,12 +89,20 @@ class ProcessManager {
     /// Start tugcast with optional dev mode
     func start(devMode: Bool, sourceTree: String?) {
         self.sourceTree = sourceTree
-        self.devPath = devMode ? sourceTree.map { ($0 as NSString).appendingPathComponent(TugConfig.tugdeckDistRel) } : nil
+        self.devPath = devMode ? sourceTree : nil
         startProcess()
     }
 
     /// Stop the tugcast process
     func stop() {
+        // Stop bun first
+        if let proc = bunProcess, proc.isRunning {
+            proc.terminate()
+            proc.waitUntilExit()
+        }
+        bunProcess = nil
+
+        // Then stop tugcast
         if let proc = process, proc.isRunning {
             proc.terminate()
             proc.waitUntilExit()
@@ -162,6 +171,39 @@ class ProcessManager {
         do {
             try proc.run()
             self.process = proc
+
+            // Start bun build --watch if in dev mode
+            if let sourceTree = self.sourceTree, self.devPath != nil {
+                if let bunPath = ProcessManager.which("bun") {
+                    let bunProc = Process()
+                    bunProc.executableURL = URL(fileURLWithPath: bunPath)
+                    bunProc.arguments = ["build", "src/main.ts", "--outfile=dist/app.js", "--watch"]
+                    bunProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
+
+                    // Pass same environment with shell PATH
+                    var bunEnv = ProcessInfo.processInfo.environment
+                    bunEnv["PATH"] = ProcessManager.shellPATH
+                    bunProc.environment = bunEnv
+
+                    bunProc.standardOutput = FileHandle.standardOutput
+                    bunProc.standardError = FileHandle.standardError
+
+                    // Handle bun exit: log but do not crash
+                    bunProc.terminationHandler = { process in
+                        NSLog("ProcessManager: bun build --watch exited with code %d", process.terminationStatus)
+                    }
+
+                    do {
+                        try bunProc.run()
+                        self.bunProcess = bunProc
+                        NSLog("ProcessManager: bun build --watch started (pid %d)", bunProc.processIdentifier)
+                    } catch {
+                        NSLog("ProcessManager: failed to start bun build --watch: %@", error.localizedDescription)
+                    }
+                } else {
+                    NSLog("ProcessManager: bun not found on PATH; JS hot-reload disabled")
+                }
+            }
 
             // Supervisor loop in background
             DispatchQueue.global(qos: .background).async { [weak self] in
