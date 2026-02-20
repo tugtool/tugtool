@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-20T03:23:04Z
+bead: tugtool-wqb.2
+---
+
+## #step-1: Created SettingsWindow.swift with SettingsWindowController, registered in Xcode project. Settings window has dev mode toggle, source tree picker with validation, callback closures, and frame autosave.
+
+**Files changed:**
+- .tugtool/tugplan-mac-menus-settings.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-20T03:13:00Z
 bead: tugtool-wqb.1
