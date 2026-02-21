@@ -23,6 +23,10 @@ export class SettingsCard implements TugCard {
   private devModeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
   private initialDevMode: boolean = false;
   private devNoteEl: HTMLElement | null = null;
+  private restartPromptEl: HTMLElement | null = null;
+  private restartBtn: HTMLElement | null = null;
+  private restartFailsafeTimer: ReturnType<typeof setTimeout> | null = null;
+  private closeUnsubscribe: (() => void) | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -117,6 +121,37 @@ export class SettingsCard implements TugCard {
     this.devNoteEl.style.display = "none";
     devSection.appendChild(this.devNoteEl);
 
+    this.restartPromptEl = document.createElement("div");
+    this.restartPromptEl.className = "settings-restart-prompt";
+    this.restartPromptEl.style.display = "none";
+    const restartText = document.createElement("span");
+    restartText.textContent = "Dev mode changed. Restart to apply.";
+    this.restartBtn = document.createElement("button");
+    this.restartBtn.className = "settings-choose-btn";
+    this.restartBtn.textContent = "Restart Now";
+    this.restartBtn.addEventListener("click", () => {
+      if (this.restartBtn) {
+        this.restartBtn.textContent = "Restarting...";
+        (this.restartBtn as HTMLButtonElement).disabled = true;
+      }
+      fetch("/api/tell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restart" }),
+      }).catch((err) => console.error("restart fetch failed:", err));
+      // Fail-safe: re-enable if WebSocket doesn't disconnect within 5s
+      this.restartFailsafeTimer = setTimeout(() => {
+        if (this.restartBtn) {
+          this.restartBtn.textContent = "Restart Now";
+          (this.restartBtn as HTMLButtonElement).disabled = false;
+        }
+        this.showDevNote("Restart failed. Try again or restart the app.");
+      }, 5000);
+    });
+    this.restartPromptEl.appendChild(restartText);
+    this.restartPromptEl.appendChild(this.restartBtn);
+    devSection.appendChild(this.restartPromptEl);
+
     content.appendChild(devSection);
 
     // SECTION 3: Source Tree
@@ -202,7 +237,9 @@ export class SettingsCard implements TugCard {
   }
 
   private updateRestartPrompt(): void {
-    // Stub: restart prompt UI added in step 4
+    if (!this.restartPromptEl) return;
+    const currentState = this.devModeCheckbox?.checked ?? false;
+    this.restartPromptEl.style.display = currentState !== this.initialDevMode ? "flex" : "none";
   }
 
   private initBridge(): void {
@@ -212,14 +249,16 @@ export class SettingsCard implements TugCard {
       // Bridge is available - register callbacks and request settings
       const bridge = ((window as any).__tugBridge = (window as any).__tugBridge || {});
 
-      bridge.onSettingsLoaded = (data: { devMode: boolean; sourceTree: string | null }) => {
+      bridge.onSettingsLoaded = (data: { devMode: boolean; runtimeDevMode: boolean; sourceTree: string | null }) => {
         if (!this.container) return;
         if (this.devModeCheckbox) {
           this.devModeCheckbox.checked = data.devMode;
         }
+        this.initialDevMode = data.runtimeDevMode;
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = data.sourceTree || "(not set)";
         }
+        this.updateRestartPrompt();
       };
 
       bridge.onDevModeChanged = (confirmed: boolean) => {
@@ -249,6 +288,14 @@ export class SettingsCard implements TugCard {
 
       // Request current settings
       webkit.messageHandlers.getSettings.postMessage({});
+
+      // Clear restart fail-safe timer on WebSocket disconnect (restart success signal)
+      this.closeUnsubscribe = this.connection.onClose(() => {
+        if (this.restartFailsafeTimer) {
+          clearTimeout(this.restartFailsafeTimer);
+          this.restartFailsafeTimer = null;
+        }
+      });
     } else {
       // Bridge unavailable
       this.showDevNote("Developer features require the Tug app");
@@ -272,6 +319,13 @@ export class SettingsCard implements TugCard {
       this.devModeConfirmTimer = null;
     }
 
+    this.closeUnsubscribe?.();
+    this.closeUnsubscribe = null;
+    if (this.restartFailsafeTimer) {
+      clearTimeout(this.restartFailsafeTimer);
+      this.restartFailsafeTimer = null;
+    }
+
     // Clear bridge callbacks
     const bridge = (window as any).__tugBridge;
     if (bridge) {
@@ -289,6 +343,8 @@ export class SettingsCard implements TugCard {
     this.devModeCheckbox = null;
     this.sourceTreePathEl = null;
     this.devNoteEl = null;
+    this.restartPromptEl = null;
+    this.restartBtn = null;
     this.themeRadios = [];
   }
 }

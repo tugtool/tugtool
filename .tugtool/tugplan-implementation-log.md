@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-21T03:49:38Z
+bead: tugtool-bs2.5
+---
+
+## #step-4: Added Restart Now prompt to Settings card with fail-safe timer, onClose API to TugConnection mirroring onOpen with unsubscribe, wired initialDevMode from runtimeDevMode for correct prompt persistence, added CSS styling for restart prompt.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-21T03:40:58Z
 bead: tugtool-bs2.4

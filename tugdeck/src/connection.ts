@@ -46,6 +46,7 @@ export class TugConnection {
   private ws: WebSocket | null = null;
   private callbacks: Map<number, FrameCallback[]> = new Map();
   private openCallbacks: Array<() => void> = [];
+  private closeCallbacks: Array<() => void> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
 
@@ -102,6 +103,11 @@ export class TugConnection {
       // Store close info for banner display
       this.lastCloseCode = event.code;
       this.lastCloseReason = event.reason || null;
+
+      // Notify close callbacks
+      for (const cb of this.closeCallbacks) {
+        try { cb(); } catch (e) { console.error("onClose callback error:", e); }
+      }
 
       // Don't reconnect if close was intentional
       if (this.intentionalClose) {
@@ -256,6 +262,14 @@ export class TugConnection {
    */
   onOpen(callback: () => void): void {
     this.openCallbacks.push(callback);
+  }
+
+  onClose(callback: () => void): () => void {
+    this.closeCallbacks.push(callback);
+    return () => {
+      const idx = this.closeCallbacks.indexOf(callback);
+      if (idx >= 0) this.closeCallbacks.splice(idx, 1);
+    };
   }
 
   /**

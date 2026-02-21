@@ -1340,3 +1340,14 @@
 .settings-card .settings-choose-btn:hover {
   border-color: var(--td-text-soft);
 }
+
+.settings-card .settings-restart-prompt {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--td-text-soft);
+  font-style: italic;
+}
