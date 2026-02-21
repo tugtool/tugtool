@@ -69,6 +69,8 @@ function titleForComponent(componentId: string): string {
     git: "Git",
     files: "Files",
     stats: "Stats",
+    about: "About",
+    settings: "Settings",
   };
   return titles[componentId] ?? componentId;
 }
@@ -997,6 +999,38 @@ export class DeckManager implements IDragState {
   }
 
   /**
+   * Find the topmost panel (highest z-index) containing a tab with the given componentId.
+   * Returns null if no panel found.
+   * Iterates in reverse order (topmost first) per D09.
+   */
+  findPanelByComponent(componentId: string): CardState | null {
+    for (let i = this.deckState.cards.length - 1; i >= 0; i--) {
+      const panel = this.deckState.cards[i];
+      if (panel.tabs.some((tab) => tab.componentId === componentId)) {
+        return panel;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Close the topmost panel containing a tab with the given componentId.
+   * No-op if no panel found.
+   */
+  closePanelByComponent(componentId: string): void {
+    const panel = this.findPanelByComponent(componentId);
+    if (!panel) {
+      return;
+    }
+
+    // Find the active card for this panel and remove it
+    const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId);
+    if (activeTab) {
+      this.removeCard(activeTab.id);
+    }
+  }
+
+  /**
    * Destroy all current cards, reset to the default layout, and recreate
    * the default five cards using registered factories.
    */
@@ -1034,8 +1068,8 @@ export class DeckManager implements IDragState {
    * Send a control frame to the server.
    * Used by Dock to trigger restart/reset/reload_frontend actions.
    */
-  sendControlFrame(action: string): void {
-    this.connection.sendControlFrame(action);
+  sendControlFrame(action: string, params?: Record<string, unknown>): void {
+    this.connection.sendControlFrame(action, params);
   }
 
   // ---- Resize Handling ----

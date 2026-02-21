@@ -176,6 +176,11 @@ fn main() -> ExitCode {
         }) => commands::run_open_pr(
             worktree, branch, base, title, plan, repo, cli.json, cli.quiet,
         ),
+        Some(Commands::Tell {
+            action,
+            port,
+            param,
+        }) => commands::run_tell(action, port, param, cli.json),
         None => {
             // No subcommand - show splash screen
             if !cli.quiet {

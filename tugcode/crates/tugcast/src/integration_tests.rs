@@ -5,6 +5,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower::ServiceExt;
@@ -29,6 +30,9 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     // Create dummy shutdown channel for tests
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
 
+    // Create dummy client action channel for tests
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -39,6 +43,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         vec![], // No snapshot feeds for auth/WebSocket tests
         shutdown_tx,
         None, // reload_tx
+        client_action_tx,
     );
 
     let app = build_app(feed_router, None, None);
@@ -459,6 +464,9 @@ fallback = "dist"
     // Create dummy shutdown channel for tests
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
 
+    // Create dummy client action channel for tests
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -469,6 +477,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None, // reload_tx
+        client_action_tx,
     );
 
     // Create broadcast channel for reload
@@ -542,6 +551,9 @@ fallback = "dist"
     // Create dummy shutdown channel for tests
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
 
+    // Create dummy client action channel for tests
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -552,6 +564,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None, // reload_tx
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -620,6 +633,7 @@ fallback = "dist"
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -631,6 +645,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None,
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -707,6 +722,7 @@ fallback = "dist"
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -718,6 +734,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None,
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -788,6 +805,7 @@ fallback = "dist"
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -799,6 +817,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None,
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -860,6 +879,7 @@ fallback = "dist"
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -871,6 +891,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None,
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -939,6 +960,7 @@ fallback = "dist"
     let (conversation_tx, _) = broadcast::channel(1024);
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -950,6 +972,7 @@ fallback = "dist"
         vec![],
         shutdown_tx,
         None,
+        client_action_tx,
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -967,4 +990,366 @@ fallback = "dist"
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_tell_client_action() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"action":"test-ping"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body_str.contains(r#""status":"ok""#));
+}
+
+#[tokio::test]
+async fn test_tell_malformed_json() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("not json"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body_str.contains(r#""status":"error""#));
+    assert!(body_str.contains(r#""message":"invalid JSON""#));
+}
+
+#[tokio::test]
+async fn test_tell_missing_action() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"foo":"bar"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body_str.contains(r#""status":"error""#));
+    assert!(body_str.contains(r#""message":"missing action field""#));
+}
+
+#[tokio::test]
+async fn test_tell_restart_triggers_shutdown() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    // Build test app with a shutdown channel we can verify
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+        client_action_tx,
+    );
+
+    let app = build_app(feed_router, None, None);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"action":"restart"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify shutdown signal was sent
+    let code = shutdown_rx.try_recv().unwrap();
+    assert_eq!(code, 42);
+}
+
+#[tokio::test]
+async fn test_tell_reload_frontend() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    // Build test app with reload_tx
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
+    let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        Some(reload_tx),
+        client_action_tx,
+    );
+
+    let app = build_app(feed_router, None, None);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"action":"reload_frontend"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify reload_tx was fired
+    reload_rx.try_recv().unwrap();
+
+    // Verify client_action_tx was broadcast
+    let frame = client_action_rx.try_recv().unwrap();
+    use tugcast_core::FeedId;
+    assert_eq!(frame.feed_id, FeedId::Control);
+}
+
+#[tokio::test]
+async fn test_tell_hybrid_reset_timing() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    // Build test app with channels we can verify
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+        client_action_tx,
+    );
+
+    let app = build_app(feed_router, None, None);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    // Spawn the request in the background since it will sleep 100ms
+    let handle = tokio::spawn(async move {
+        app_with_connect_info
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/tell")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"action":"reset"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    });
+
+    // Broadcast should arrive before shutdown
+    let frame = client_action_rx.recv().await.unwrap();
+    use tugcast_core::FeedId;
+    assert_eq!(frame.feed_id, FeedId::Control);
+
+    // Wait for the request to complete
+    let response = handle.await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Shutdown signal should arrive after broadcast
+    let code = shutdown_rx.try_recv().unwrap();
+    assert_eq!(code, 43);
+}
+
+#[tokio::test]
+async fn test_tell_client_action_round_trip() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    // Build test app with client_action_tx subscriber
+    let auth = auth::new_shared_auth_state(7890);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        conversation_tx,
+        conversation_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        None,
+        client_action_tx,
+    );
+
+    let app = build_app(feed_router, None, None);
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    // POST a custom client-only action
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"action":"my-custom-action","key":"value"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Verify HTTP response is 200
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body_str.contains(r#""status":"ok""#));
+
+    // Verify client_action_rx receives the frame
+    let frame = client_action_rx.recv().await.unwrap();
+    use tugcast_core::FeedId;
+    assert_eq!(frame.feed_id, FeedId::Control);
+
+    // Verify payload contains the original JSON body
+    let payload_str = String::from_utf8(frame.payload.to_vec()).unwrap();
+    assert!(payload_str.contains("my-custom-action"));
+    assert!(payload_str.contains(r#""key":"value""#));
+}
+
+#[tokio::test]
+async fn test_tell_rejects_non_loopback() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+
+    // Use a non-loopback address
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tell")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"action":"test-ping"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Verify response is 403 Forbidden
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+    assert!(body_str.contains(r#""status":"error""#));
+    assert!(body_str.contains(r#""message":"forbidden""#));
 }

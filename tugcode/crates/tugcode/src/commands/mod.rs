@@ -10,6 +10,7 @@ pub mod merge;
 pub mod open_pr;
 pub mod resolve;
 pub mod status;
+pub mod tell;
 pub mod validate;
 pub mod version;
 pub mod worktree;
@@ -27,6 +28,7 @@ pub use merge::run_merge;
 pub use open_pr::run_open_pr;
 pub use resolve::run_resolve;
 pub use status::run_status;
+pub use tell::run_tell;
 pub use validate::run_validate;
 pub use version::run_version;
 pub use worktree::{

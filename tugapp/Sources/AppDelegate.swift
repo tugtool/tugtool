@@ -7,40 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreePath: String?
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
-
-    private lazy var settingsWindowController: SettingsWindowController = {
-        let controller = SettingsWindowController()
-
-        controller.onDevModeChanged = { [weak self] enabled in
-            guard let self = self else { return }
-            self.devModeEnabled = enabled
-            self.updateDeveloperMenuVisibility()
-            self.savePreferences()
-
-            // Restart tugcast with new mode
-            self.processManager.stop()
-            self.processManager.start(devMode: self.devModeEnabled, sourceTree: self.sourceTreePath)
-        }
-
-        controller.onSourceTreeChanged = { [weak self] path in
-            guard let self = self else { return }
-            self.sourceTreePath = path
-            self.savePreferences()
-
-            // Update Developer menu source tree display
-            if let path = path {
-                self.sourceTreeMenuItem?.title = "Source Tree: \(path)"
-            }
-
-            // Restart if dev mode is enabled
-            if self.devModeEnabled {
-                self.processManager.stop()
-                self.processManager.start(devMode: true, sourceTree: self.sourceTreePath)
-            }
-        }
-
-        return controller
-    }()
+    private var serverPort: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
@@ -69,12 +36,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // Wire bridge delegate
+        window.bridgeDelegate = self
+
         // Build menu bar
         buildMenuBar()
 
         // Setup process manager
         processManager.onAuthURL = { [weak self] url in
             self?.window.loadURL(url)
+            // Extract port from auth URL
+            if let urlObj = URL(string: url), let port = urlObj.port {
+                self?.serverPort = port
+            }
         }
 
         // Start tugcast
@@ -82,6 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        window.cleanupBridge()
         processManager.stop()
     }
 
@@ -226,11 +201,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     @objc func showSettings(_ sender: Any?) {
-        settingsWindowController.showWindow(nil)
+        tell("show-card", params: ["component": "settings"])
     }
 
     @objc func showAbout(_ sender: Any?) {
-        NSApp.orderFrontStandardAboutPanel(nil)
+        tell("show-card", params: ["component": "about"])
     }
 
     @objc func openProjectHome(_ sender: Any?) {
@@ -246,17 +221,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reloadFrontend(_ sender: Any) {
-        window.reload()
+        tell("reload_frontend")
     }
 
     @objc private func restartServer(_ sender: Any) {
-        processManager.restart()
+        tell("restart")
     }
 
     @objc private func resetEverything(_ sender: Any) {
-        // Clear web storage and restart
-        processManager.restart()
-        window.reload()
+        tell("reset")
     }
 
     @objc private func openWebInspector(_ sender: Any) {
@@ -297,6 +270,76 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateDeveloperMenuVisibility() {
         developerMenu.isHidden = !devModeEnabled
+    }
+
+    // MARK: - HTTP tell() helper
+
+    private func tell(_ action: String, params: [String: Any] = [:]) {
+        guard let port = serverPort else { return }
+        var body: [String: Any] = ["action": action]
+        for (key, value) in params {
+            body[key] = value
+        }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
+        guard let url = URL(string: "http://127.0.0.1:\(port)/api/tell") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        // Fire-and-forget
+        URLSession.shared.dataTask(with: request).resume()
+    }
+}
+
+// MARK: - BridgeDelegate
+
+extension AppDelegate: BridgeDelegate {
+    func bridgeChooseSourceTree(completion: @escaping (String?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the tugtool mono-repo root directory"
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else {
+                completion(nil)
+                return
+            }
+            if !TugConfig.isValidSourceTree(url) {
+                let markers = TugConfig.sourceTreeMarkers.joined(separator: "\n  ")
+                let alert = NSAlert()
+                alert.messageText = "Invalid Source Tree"
+                alert.informativeText = "The selected directory is not a tugtool repo.\nExpected to find:\n  \(markers)"
+                alert.alertStyle = .warning
+                alert.runModal()
+                completion(nil)
+                return
+            }
+            self.sourceTreePath = url.path
+            self.savePreferences()
+            // Update Developer menu source tree display
+            self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
+            // Restart if dev mode is enabled
+            if self.devModeEnabled {
+                self.processManager.stop()
+                self.processManager.start(devMode: true, sourceTree: url.path)
+            }
+            completion(url.path)
+        }
+    }
+
+    func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
+        self.devModeEnabled = enabled
+        self.updateDeveloperMenuVisibility()
+        self.savePreferences()
+        // Restart tugcast with new mode
+        self.processManager.stop()
+        self.processManager.start(devMode: self.devModeEnabled, sourceTree: self.sourceTreePath)
+        completion(enabled)
+    }
+
+    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
+        completion(devModeEnabled, sourceTreePath)
     }
 }
 

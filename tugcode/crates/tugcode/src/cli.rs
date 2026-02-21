@@ -244,6 +244,25 @@ pub enum Commands {
         #[arg(long, value_name = "REPO")]
         repo: Option<String>,
     },
+
+    /// Send an action to tugcast via HTTP POST
+    ///
+    /// Posts a JSON action to the tugcast /api/tell endpoint.
+    #[command(
+        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugcode tell restart\n  tugcode tell show-card -p component=about\n  tugcode tell set-dev-mode -p enabled=true"
+    )]
+    Tell {
+        /// Action name (e.g., restart, show-card, reload_frontend)
+        action: String,
+
+        /// Tugcast server port
+        #[arg(long, default_value = "7890")]
+        port: u16,
+
+        /// Parameters as KEY=VALUE pairs (repeatable)
+        #[arg(short = 'p', long = "param", value_name = "KEY=VALUE")]
+        param: Vec<String>,
+    },
 }
 
 /// Get the command args for use in the application
@@ -934,6 +953,95 @@ mod tests {
                 assert_eq!(identifier, Some("user-auth".to_string()));
             }
             _ => panic!("Expected Resolve command"),
+        }
+    }
+
+    #[test]
+    fn test_tell_command() {
+        let cli =
+            Cli::try_parse_from(["tugcode", "tell", "show-card", "-p", "component=about"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Tell {
+                action,
+                port,
+                param,
+            }) => {
+                assert_eq!(action, "show-card");
+                assert_eq!(port, 7890); // default
+                assert_eq!(param, vec!["component=about"]);
+            }
+            _ => panic!("Expected Tell command"),
+        }
+    }
+
+    #[test]
+    fn test_tell_command_no_params() {
+        let cli = Cli::try_parse_from(["tugcode", "tell", "restart"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Tell { action, param, .. }) => {
+                assert_eq!(action, "restart");
+                assert!(param.is_empty());
+            }
+            _ => panic!("Expected Tell command"),
+        }
+    }
+
+    #[test]
+    fn test_tell_command_with_port() {
+        let cli = Cli::try_parse_from([
+            "tugcode",
+            "tell",
+            "show-card",
+            "--port",
+            "8080",
+            "-p",
+            "component=settings",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Tell { port, .. }) => {
+                assert_eq!(port, 8080);
+            }
+            _ => panic!("Expected Tell command"),
+        }
+    }
+
+    #[test]
+    fn test_tell_command_multiple_params() {
+        let cli = Cli::try_parse_from([
+            "tugcode",
+            "tell",
+            "show-card",
+            "-p",
+            "component=about",
+            "-p",
+            "tab=1",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Tell { param, .. }) => {
+                assert_eq!(param.len(), 2);
+                assert_eq!(param[0], "component=about");
+                assert_eq!(param[1], "tab=1");
+            }
+            _ => panic!("Expected Tell command"),
+        }
+    }
+
+    #[test]
+    fn test_tell_with_json_flag() {
+        let cli = Cli::try_parse_from(["tugcode", "--json", "tell", "show-card"]).unwrap();
+
+        assert!(cli.json);
+        match cli.command {
+            Some(Commands::Tell { action, .. }) => {
+                assert_eq!(action, "show-card");
+            }
+            _ => panic!("Expected Tell command"),
         }
     }
 }

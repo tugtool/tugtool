@@ -1187,3 +1187,156 @@
   border-top: 1px solid var(--td-border);
   border-bottom: 1px solid var(--td-border);
 }
+
+/* ---- About Card ---- */
+
+.about-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--td-surface-content);
+  color: var(--td-text);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-family: var(--td-font-sans);
+}
+
+.about-card .about-logo {
+  margin-bottom: 12px;
+  color: var(--td-text);
+}
+
+.about-card .about-logo svg {
+  display: block;
+}
+
+.about-card .about-name {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+}
+
+.about-card .about-version {
+  font-size: 12px;
+  color: var(--td-text-soft);
+  margin-bottom: 12px;
+}
+
+.about-card .about-description {
+  font-size: 13px;
+  color: var(--td-text);
+  margin-bottom: 8px;
+}
+
+.about-card .about-copyright {
+  font-size: 11px;
+  color: var(--td-text-soft);
+}
+
+/* ---- Settings Card ---- */
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--td-surface-content);
+  color: var(--td-text);
+  font-family: var(--td-font-sans);
+}
+
+.settings-card .settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.settings-card .settings-section {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--td-border);
+}
+
+.settings-card .settings-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.settings-card .settings-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--td-text-soft);
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.settings-card .settings-theme-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-card .settings-theme-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.settings-card .settings-theme-option input[type="radio"] {
+  accent-color: var(--td-accent-cool);
+  cursor: pointer;
+}
+
+.settings-card .settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.settings-card .settings-toggle input[type="checkbox"] {
+  accent-color: var(--td-accent-cool);
+  cursor: pointer;
+}
+
+.settings-card .settings-dev-note {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.settings-card .settings-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-card .settings-source-path {
+  font-family: var(--td-font-mono);
+  font-size: 12px;
+  color: var(--td-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.settings-card .settings-choose-btn {
+  background: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  color: var(--td-text);
+  border-radius: var(--td-radius-sm);
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--td-font-sans);
+  white-space: nowrap;
+}
+
+.settings-card .settings-choose-btn:hover {
+  border-color: var(--td-text-soft);
+}

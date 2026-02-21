@@ -496,6 +496,13 @@ pub struct ResolveData {
     pub candidates: Option<Vec<String>>,
 }
 
+/// Data payload for tell command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TellData {
+    /// Server response status
+    pub server_status: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,14 +47,15 @@ pub struct FeedRouter {
     session: String,
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
-    shutdown_tx: mpsc::Sender<u8>,
-    reload_tx: Option<broadcast::Sender<()>>,
+    pub(crate) shutdown_tx: mpsc::Sender<u8>,
+    pub(crate) reload_tx: Option<broadcast::Sender<()>>,
+    pub(crate) client_action_tx: broadcast::Sender<Frame>,
 }
 
 impl FeedRouter {
     /// Create a new feed router
     // Allow many arguments: this constructor wires together all shared state channels
-    // (terminal, conversation, snapshot, shutdown, reload) plus session and auth.
+    // (terminal, conversation, snapshot, shutdown, reload, client_action) plus session and auth.
     // Grouping into a config struct would add indirection without improving clarity.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -67,6 +68,7 @@ impl FeedRouter {
         snapshot_watches: Vec<watch::Receiver<Frame>>,
         shutdown_tx: mpsc::Sender<u8>,
         reload_tx: Option<broadcast::Sender<()>>,
+        client_action_tx: broadcast::Sender<Frame>,
     ) -> Self {
         Self {
             terminal_tx,
@@ -78,6 +80,7 @@ impl FeedRouter {
             snapshot_watches,
             shutdown_tx,
             reload_tx,
+            client_action_tx,
         }
     }
 
@@ -122,6 +125,9 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
 
     // Subscribe to conversation output broadcast
     let mut conversation_rx = router.conversation_tx.subscribe();
+
+    // Subscribe to client action broadcast
+    let mut client_action_rx = router.client_action_tx.subscribe();
 
     // Skip BOOTSTRAP snapshot on initial connect — the client's resize frame
     // will trigger a PTY resize → tmux SIGWINCH → full screen redraw at the
@@ -262,6 +268,26 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                             }
                         }
 
+                        // Receive frame from client action broadcast channel
+                        result = client_action_rx.recv() => {
+                            match result {
+                                Ok(frame) => {
+                                    if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
+                                        info!("Client disconnected");
+                                        return;
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!("Client action channel lagged {} messages", n);
+                                    // For client actions, we don't re-bootstrap, just warn
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    info!("Client action broadcast channel closed");
+                                    // Continue - client actions are optional
+                                }
+                            }
+                        }
+
                         // Receive message from client
                         msg = socket.recv() => {
                             match msg {
@@ -284,23 +310,29 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                                     if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
                                                         match action {
                                                             "restart" => {
+                                                                // Server-only: shutdown without broadcast
                                                                 info!("control: restart requested");
                                                                 let _ = router.shutdown_tx.send(42).await;
                                                             }
                                                             "reset" => {
-                                                                info!("control: reset requested");
+                                                                // Hybrid: broadcast first, then shutdown after delay
+                                                                info!("control: reset requested (hybrid)");
+                                                                let _ = router.client_action_tx.send(frame.clone());
+                                                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                                                 let _ = router.shutdown_tx.send(43).await;
                                                             }
                                                             "reload_frontend" => {
+                                                                // Hybrid: broadcast to clients AND fire reload_tx
+                                                                info!("control: reload_frontend requested (hybrid)");
+                                                                let _ = router.client_action_tx.send(frame.clone());
                                                                 if let Some(ref tx) = router.reload_tx {
                                                                     let _ = tx.send(());
-                                                                    info!("control: reload_frontend broadcast sent");
-                                                                } else {
-                                                                    info!("control: reload_frontend ignored (not in dev mode)");
                                                                 }
                                                             }
                                                             other => {
-                                                                warn!("control: unknown action: {}", other);
+                                                                // Client-only: broadcast to all clients
+                                                                info!("control: broadcasting client action: {}", other);
+                                                                let _ = router.client_action_tx.send(frame.clone());
                                                             }
                                                         }
                                                     }
