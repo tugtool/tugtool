@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-21T04:19:08Z
+bead: tugtool-bs2.9
+---
+
+## #step-8: Applied deferred-restart pattern to source tree changes. Removed processManager restart blocks from chooseSourceTree and bridgeChooseSourceTree in AppDelegate.swift. Added initialSourceTree/currentSourceTree tracking to settings-card.ts, generalized prompt text to 'Settings changed. Restart to apply.', extended updateRestartPrompt to handle source tree changes when dev mode is enabled.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-21T04:11:28Z
 bead: tugtool-bs2.8

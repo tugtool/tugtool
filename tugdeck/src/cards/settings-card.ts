@@ -22,6 +22,8 @@ export class SettingsCard implements TugCard {
   private sourceTreePathEl: HTMLElement | null = null;
   private devModeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
   private initialDevMode: boolean = false;
+  private initialSourceTree: string | null = null;
+  private currentSourceTree: string | null = null;
   private devNoteEl: HTMLElement | null = null;
   private restartPromptEl: HTMLElement | null = null;
   private restartBtn: HTMLElement | null = null;
@@ -125,7 +127,7 @@ export class SettingsCard implements TugCard {
     this.restartPromptEl.className = "settings-restart-prompt";
     this.restartPromptEl.style.display = "none";
     const restartText = document.createElement("span");
-    restartText.textContent = "Dev mode changed. Restart to apply.";
+    restartText.textContent = "Settings changed. Restart to apply.";
     this.restartBtn = document.createElement("button");
     this.restartBtn.className = "settings-choose-btn";
     this.restartBtn.textContent = "Restart Now";
@@ -238,8 +240,11 @@ export class SettingsCard implements TugCard {
 
   private updateRestartPrompt(): void {
     if (!this.restartPromptEl) return;
-    const currentState = this.devModeCheckbox?.checked ?? false;
-    this.restartPromptEl.style.display = currentState !== this.initialDevMode ? "flex" : "none";
+    const devModeChanged = (this.devModeCheckbox?.checked ?? false) !== this.initialDevMode;
+    const sourceTreeChanged = this.currentSourceTree !== this.initialSourceTree;
+    // Source tree only matters when dev mode is enabled (source tree controls dev-mode serving)
+    const needsRestart = devModeChanged || (sourceTreeChanged && (this.devModeCheckbox?.checked ?? false));
+    this.restartPromptEl.style.display = needsRestart ? "flex" : "none";
   }
 
   private initBridge(): void {
@@ -255,6 +260,8 @@ export class SettingsCard implements TugCard {
           this.devModeCheckbox.checked = data.devMode;
         }
         this.initialDevMode = data.runtimeDevMode;
+        this.initialSourceTree = data.sourceTree;
+        this.currentSourceTree = data.sourceTree;
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = data.sourceTree || "(not set)";
         }
@@ -280,6 +287,8 @@ export class SettingsCard implements TugCard {
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = path;
         }
+        this.currentSourceTree = path;
+        this.updateRestartPrompt();
       };
 
       bridge.onSourceTreeCancelled = () => {
@@ -345,6 +354,8 @@ export class SettingsCard implements TugCard {
     this.devNoteEl = null;
     this.restartPromptEl = null;
     this.restartBtn = null;
+    this.initialSourceTree = null;
+    this.currentSourceTree = null;
     this.themeRadios = [];
   }
 }

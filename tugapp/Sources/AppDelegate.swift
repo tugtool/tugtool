@@ -273,12 +273,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Update Developer menu source tree display
             sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
-
-            // Restart if dev mode is enabled
-            if devModeEnabled {
-                processManager.stop()
-                processManager.start(devMode: true, sourceTree: url.path)
-            }
         }
     }
 
@@ -341,11 +335,6 @@ extension AppDelegate: BridgeDelegate {
             self.savePreferences()
             // Update Developer menu source tree display
             self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
-            // Restart if dev mode is enabled
-            if self.devModeEnabled {
-                self.processManager.stop()
-                self.processManager.start(devMode: true, sourceTree: url.path)
-            }
             completion(url.path)
         }
     }
