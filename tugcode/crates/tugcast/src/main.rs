@@ -8,6 +8,7 @@ mod server;
 #[cfg(test)]
 mod integration_tests;
 
+use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -240,13 +241,23 @@ async fn main() {
             .await;
     });
 
+    // Bind TCP listener
+    let listener = match TcpListener::bind(format!("127.0.0.1:{}", cli.port)).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+            std::process::exit(1);
+        }
+    };
+    info!(port = cli.port, "tugcast server listening");
+
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(cli.port, feed_router, auth, dev_state, reload_tx);
+    let server_future = server::run_server(listener, feed_router, dev_state, reload_tx);
 
     let exit_code = tokio::select! {
         result = server_future => {
             if let Err(e) = result {
-                eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+                eprintln!("tugcast: error: server error: {}", e);
                 1
             } else {
                 0

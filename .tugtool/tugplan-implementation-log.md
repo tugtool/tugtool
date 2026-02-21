@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-21T16:20:00Z
+bead: tugtool-i2v.2
+---
+
+## #step-1: Extracted TcpListener::bind from run_server to main.rs, removed unused SharedAuthState parameter
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-21T16:15:11Z
 bead: tugtool-i2v.1

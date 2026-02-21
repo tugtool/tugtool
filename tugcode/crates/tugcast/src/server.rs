@@ -18,7 +18,6 @@ use tokio::sync::broadcast;
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
 
-use crate::auth::SharedAuthState;
 use crate::dev::DevState;
 use crate::router::FeedRouter;
 
@@ -219,18 +218,14 @@ pub(crate) fn build_app(
 
 /// Run the HTTP server
 ///
-/// Sets up axum routes and binds to `127.0.0.1:<port>`
+/// Serves the axum application on the provided `TcpListener`
 pub async fn run_server(
-    port: u16,
+    listener: TcpListener,
     router: FeedRouter,
-    _auth: SharedAuthState,
     dev_state: Option<Arc<DevState>>,
     reload_tx: Option<broadcast::Sender<()>>,
 ) -> Result<(), std::io::Error> {
     let app = build_app(router, dev_state, reload_tx);
-
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
-    info!(port = port, "tugcast server listening");
 
     axum::serve(
         listener,
