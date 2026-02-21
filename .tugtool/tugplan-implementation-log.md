@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-21T16:15:11Z
+bead: tugtool-i2v.1
+---
+
+## #step-0: Added --control-socket CLI flag to tugcast with three unit tests
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-21T04:27:50Z
 ---

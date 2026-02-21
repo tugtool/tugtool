@@ -29,6 +29,10 @@ pub struct Cli {
     /// Path to source tree root (serves assets directly from source via manifest)
     #[arg(long)]
     pub dev: Option<PathBuf>,
+
+    /// Unix domain socket path for parent IPC
+    #[arg(long)]
+    pub control_socket: Option<PathBuf>,
 }
 
 impl Cli {
@@ -122,6 +126,10 @@ mod tests {
             help_text.contains("--version"),
             "help should contain --version"
         );
+        assert!(
+            help_text.contains("--control-socket"),
+            "help should contain --control-socket"
+        );
     }
 
     #[test]
@@ -165,5 +173,37 @@ mod tests {
     fn test_cli_dev_flag_some() {
         let cli = Cli::try_parse_from(["tugcast", "--dev", "/tmp/dist"]).unwrap();
         assert_eq!(cli.dev, Some(PathBuf::from("/tmp/dist")));
+    }
+
+    #[test]
+    fn test_control_socket_flag_none() {
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert_eq!(cli.control_socket, None);
+    }
+
+    #[test]
+    fn test_control_socket_flag_some() {
+        let cli = Cli::try_parse_from(["tugcast", "--control-socket", "/tmp/test.sock"]).unwrap();
+        assert_eq!(cli.control_socket, Some(PathBuf::from("/tmp/test.sock")));
+    }
+
+    #[test]
+    fn test_control_socket_with_other_flags() {
+        let cli = Cli::try_parse_from([
+            "tugcast",
+            "--port",
+            "8080",
+            "--session",
+            "dev",
+            "--dev",
+            "/tmp/dist",
+            "--control-socket",
+            "/tmp/ctl.sock",
+        ])
+        .unwrap();
+        assert_eq!(cli.port, 8080);
+        assert_eq!(cli.session, "dev");
+        assert_eq!(cli.dev, Some(PathBuf::from("/tmp/dist")));
+        assert_eq!(cli.control_socket, Some(PathBuf::from("/tmp/ctl.sock")));
     }
 }
