@@ -13,6 +13,7 @@
 		AA0000010000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000004 /* Assets.xcassets */; };
 		AA0000010000000000000005 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000007 /* main.swift */; };
 		AA0000010000000000000006 /* TugConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* TugConfig.swift */; };
+		AA0000010000000000000009 /* ControlSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000009 /* ControlSocket.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 		AA0000020000000000000006 /* Tug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Tug.entitlements; sourceTree = "<group>"; };
 		AA0000020000000000000007 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		AA0000020000000000000008 /* TugConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugConfig.swift; sourceTree = "<group>"; };
+		AA0000020000000000000009 /* ControlSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSocket.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -57,6 +59,7 @@
 				AA0000020000000000000002 /* MainWindow.swift */,
 				AA0000020000000000000003 /* ProcessManager.swift */,
 				AA0000020000000000000008 /* TugConfig.swift */,
+				AA0000020000000000000009 /* ControlSocket.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -138,6 +141,7 @@
 				AA0000010000000000000002 /* MainWindow.swift in Sources */,
 				AA0000010000000000000003 /* ProcessManager.swift in Sources */,
 				AA0000010000000000000006 /* TugConfig.swift in Sources */,
+				AA0000010000000000000009 /* ControlSocket.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

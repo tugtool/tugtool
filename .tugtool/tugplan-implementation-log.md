@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-21T16:54:02Z
+bead: tugtool-i2v.6
+---
+
+## #step-5: Created ControlSocket.swift with UDS server infrastructure, integrated into ProcessManager with RestartDecision state machine, graceful shutdown, and --control-socket arg passing
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-21T16:44:06Z
 bead: tugtool-i2v.5
