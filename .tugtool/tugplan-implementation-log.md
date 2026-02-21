@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-21T04:02:20Z
+bead: tugtool-bs2.7
+---
+
+## #step-6: Verification-only step: traced bridgeGetSettings/onSettingsLoaded flow across settings-card.ts, MainWindow.swift, and AppDelegate.swift. Confirmed runtimeDevMode tracking is correct for restart prompt persistence across close-and-reopen. No issues found, no code changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-21T03:56:57Z
 bead: tugtool-bs2.6
