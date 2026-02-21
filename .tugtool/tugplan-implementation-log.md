@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-21T20:33:07Z
+bead: tugtool-4m1.4
+---
+
+## #step-3: Added DevMode control message to ControlMessage enum. Created make_dev_mode_result and make_shutdown_message helpers. Added into_inner to ControlWriter. Updated run_recv_loop with DevMode handler managing DevRuntime lifecycle and broadcasting reload_frontend. Restructured main.rs with mpsc channel and draining task for control socket writes. Removed dead_code annotations from dev.rs functions now having production callers.
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-21T20:22:38Z
 bead: tugtool-4m1.3

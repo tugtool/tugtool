@@ -5,7 +5,7 @@ use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
-use tugcast_core::Frame;
+use tugcast_core::{FeedId, Frame};
 
 /// Control message received from parent process over UDS
 #[derive(Debug, Deserialize)]
@@ -18,6 +18,11 @@ pub enum ControlMessage {
         payload: serde_json::Value,
     },
     Shutdown,
+    DevMode {
+        enabled: bool,
+        #[serde(default)]
+        source_tree: Option<String>,
+    },
 }
 
 /// Control socket writer half
@@ -51,6 +56,7 @@ impl ControlWriter {
     }
 
     /// Send shutdown message to parent
+    #[allow(dead_code)] // Replaced by make_shutdown_message + draining task in Step 3
     pub async fn send_shutdown(&mut self, reason: &str, pid: u32) -> std::io::Result<()> {
         #[derive(Serialize)]
         struct ShutdownMessage<'a> {
@@ -71,6 +77,11 @@ impl ControlWriter {
         self.writer.flush().await?;
         Ok(())
     }
+
+    /// Extract inner writer for use by draining task
+    pub(crate) fn into_inner(self) -> BufWriter<OwnedWriteHalf> {
+        self.writer
+    }
 }
 
 /// Control socket reader half
@@ -84,8 +95,11 @@ impl ControlReader {
         mut self,
         shutdown_tx: mpsc::Sender<u8>,
         client_action_tx: broadcast::Sender<Frame>,
+        shared_dev_state: crate::dev::SharedDevState,
+        response_tx: mpsc::Sender<String>,
     ) {
         let mut line = String::new();
+        let mut dev_runtime: Option<crate::dev::DevRuntime> = None;
 
         loop {
             line.clear();
@@ -110,6 +124,61 @@ impl ControlReader {
                                     &client_action_tx,
                                 )
                                 .await;
+                            }
+                        }
+                        Ok(ControlMessage::DevMode {
+                            enabled,
+                            source_tree,
+                        }) => {
+                            if enabled {
+                                // If already enabled, teardown old watcher first
+                                if let Some(runtime) = dev_runtime.take() {
+                                    crate::dev::disable_dev_mode(runtime, &shared_dev_state);
+                                }
+
+                                let source_path = match source_tree {
+                                    Some(p) => std::path::PathBuf::from(p),
+                                    None => {
+                                        let _ = response_tx
+                                            .send(make_dev_mode_result(
+                                                false,
+                                                Some("source_tree is required when enabled is true"),
+                                            ))
+                                            .await;
+                                        continue;
+                                    }
+                                };
+
+                                match crate::dev::enable_dev_mode(
+                                    source_path,
+                                    &shared_dev_state,
+                                    client_action_tx.clone(),
+                                )
+                                .await
+                                {
+                                    Ok(runtime) => {
+                                        dev_runtime = Some(runtime);
+                                        let _ =
+                                            response_tx.send(make_dev_mode_result(true, None)).await;
+
+                                        // Broadcast reload_frontend for mid-session toggles (per D11)
+                                        let payload = br#"{"action":"reload_frontend"}"#;
+                                        let frame =
+                                            Frame::new(FeedId::Control, payload.to_vec());
+                                        let _ = client_action_tx.send(frame);
+                                    }
+                                    Err(e) => {
+                                        let _ = response_tx
+                                            .send(make_dev_mode_result(false, Some(&e)))
+                                            .await;
+                                    }
+                                }
+                            } else {
+                                // Disable
+                                if let Some(runtime) = dev_runtime.take() {
+                                    crate::dev::disable_dev_mode(runtime, &shared_dev_state);
+                                }
+                                let _ = response_tx.send(make_dev_mode_result(true, None)).await;
                             }
                         }
                         Ok(ControlMessage::Shutdown) => {
@@ -160,6 +229,34 @@ impl ControlSocket {
             },
         )
     }
+}
+
+/// Serialize dev_mode_result message
+pub(crate) fn make_dev_mode_result(success: bool, error: Option<&str>) -> String {
+    if let Some(err) = error {
+        serde_json::json!({
+            "type": "dev_mode_result",
+            "success": success,
+            "error": err
+        })
+        .to_string()
+    } else {
+        serde_json::json!({
+            "type": "dev_mode_result",
+            "success": success
+        })
+        .to_string()
+    }
+}
+
+/// Serialize shutdown message
+pub(crate) fn make_shutdown_message(reason: &str, pid: u32) -> String {
+    serde_json::json!({
+        "type": "shutdown",
+        "reason": reason,
+        "pid": pid
+    })
+    .to_string()
 }
 
 #[cfg(test)]
@@ -270,5 +367,64 @@ mod tests {
         assert_eq!(msg["pid"], 999);
 
         handle.await.unwrap();
+    }
+
+    #[test]
+    fn test_control_message_dev_mode_enable_deserialization() {
+        let json = r#"{"type":"dev_mode","enabled":true,"source_tree":"/path/to/src"}"#;
+        let msg: ControlMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ControlMessage::DevMode {
+                enabled,
+                source_tree,
+            } => {
+                assert_eq!(enabled, true);
+                assert_eq!(source_tree, Some("/path/to/src".to_string()));
+            }
+            _ => panic!("Expected DevMode variant"),
+        }
+    }
+
+    #[test]
+    fn test_control_message_dev_mode_disable_deserialization() {
+        let json = r#"{"type":"dev_mode","enabled":false}"#;
+        let msg: ControlMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ControlMessage::DevMode {
+                enabled,
+                source_tree,
+            } => {
+                assert_eq!(enabled, false);
+                assert_eq!(source_tree, None);
+            }
+            _ => panic!("Expected DevMode variant"),
+        }
+    }
+
+    #[test]
+    fn test_make_dev_mode_result_success() {
+        let result = make_dev_mode_result(true, None);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["type"], "dev_mode_result");
+        assert_eq!(parsed["success"], true);
+        assert!(parsed.get("error").is_none());
+    }
+
+    #[test]
+    fn test_make_dev_mode_result_error() {
+        let result = make_dev_mode_result(false, Some("load failed"));
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["type"], "dev_mode_result");
+        assert_eq!(parsed["success"], false);
+        assert_eq!(parsed["error"], "load failed");
+    }
+
+    #[test]
+    fn test_make_shutdown_message() {
+        let result = make_shutdown_message("restart", 12345);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["type"], "shutdown");
+        assert_eq!(parsed["reason"], "restart");
+        assert_eq!(parsed["pid"], 12345);
     }
 }

@@ -59,7 +59,6 @@ pub(crate) fn new_shared_dev_state() -> SharedDevState {
 }
 
 /// Enable dev mode: load manifest, start file watcher, populate shared state
-#[cfg_attr(not(test), allow(dead_code))] // Called by control recv loop in Step 3
 pub(crate) async fn enable_dev_mode(
     source_tree: PathBuf,
     shared_state: &SharedDevState,
@@ -89,7 +88,6 @@ pub(crate) async fn enable_dev_mode(
 }
 
 /// Disable dev mode: clear shared state, drop file watcher
-#[cfg_attr(not(test), allow(dead_code))] // Called by control recv loop in Step 3
 pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevState) {
     // Clear shared state
     shared_state.store(Arc::new(None));
@@ -101,7 +99,6 @@ pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevStat
 }
 
 /// Load and parse the asset manifest from source tree
-#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
     let manifest_path = source_tree.join("tugdeck/assets.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
@@ -153,7 +150,6 @@ pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
 }
 
 /// Validate manifest at startup: warn about missing files/directories
-#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn validate_manifest(state: &DevState) {
     for (url_key, path) in &state.files {
         if !path.exists() {
@@ -184,7 +180,6 @@ pub(crate) fn validate_manifest(state: &DevState) {
 }
 
 /// Derive watch directories from manifest, with deduplication to avoid overlapping recursive watches
-#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn watch_dirs_from_manifest(state: &DevState) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -381,7 +376,6 @@ fn has_reload_extension(event: &notify::Event) -> bool {
 /// Uses a quiet-period debounce: after the first qualifying file event,
 /// keeps consuming events until 100ms of silence, then fires a single
 /// reload signal. No polling, no fixed delays.
-#[cfg_attr(not(test), allow(dead_code))] // Called by enable_dev_mode
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
     client_action_tx: broadcast::Sender<Frame>,
