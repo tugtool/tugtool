@@ -5,8 +5,9 @@ import WebKit
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
-    func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void)
+    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
+    func bridgeDevModeError(message: String)
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -87,6 +88,16 @@ class MainWindow: NSWindow, WKNavigationDelegate {
            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
+    /// Send dev mode error to frontend
+    func bridgeDevModeError(message: String) {
+        let escaped = escapeForJS(message)
+        webView.evaluateJavaScript("window.__tugBridge?.onDevModeError?.('\(escaped)')") { _, error in
+            if let error = error {
+                NSLog("MainWindow: evaluateJavaScript failed for bridgeDevModeError: %@", error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -138,7 +149,7 @@ extension MainWindow: WKScriptMessageHandler {
                 }
             }
         case "getSettings":
-            bridgeDelegate?.bridgeGetSettings { [weak self] devMode, runtimeDevMode, sourceTree in
+            bridgeDelegate?.bridgeGetSettings { [weak self] devMode, sourceTree in
                 guard let self = self else { return }
                 let stValue: String
                 if let st = sourceTree {
@@ -146,7 +157,7 @@ extension MainWindow: WKScriptMessageHandler {
                 } else {
                     stValue = "null"
                 }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), runtimeDevMode: \(runtimeDevMode), sourceTree: \(stValue)})") { _, error in
+                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), sourceTree: \(stValue)})") { _, error in
                     if let error = error {
                         NSLog("MainWindow: evaluateJavaScript failed for getSettings: %@", error.localizedDescription)
                     }

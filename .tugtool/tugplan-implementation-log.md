@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-21T20:45:07Z
+bead: tugtool-4m1.5
+---
+
+## #step-4: Replaced --dev CLI flag with runtime dev_mode control messages across Mac app and frontend. ProcessManager gains sendDevMode(), dev_mode_result handling, error callbacks. AppDelegate gates initial page load on dev_mode_result per D11, sends dev_mode on toggle and source tree change per D12. MainWindow simplified BridgeDelegate protocol, added bridgeDevModeError. settings-card.ts removed restart prompt machinery, added onDevModeError handler.
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-21T20:33:07Z
 bead: tugtool-4m1.4

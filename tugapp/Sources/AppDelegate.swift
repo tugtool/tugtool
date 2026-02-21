@@ -4,8 +4,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow!
     private var processManager = ProcessManager()
     private var devModeEnabled = false
-    private var runtimeDevMode: Bool = false
     private var sourceTreePath: String?
+    private var awaitingDevModeResult: Bool = false
+    private var lastAuthURL: String?
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
@@ -25,9 +26,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load preferences
         loadPreferences()
-
-        // Initialize runtime dev mode to match preference at launch
-        runtimeDevMode = devModeEnabled
 
         // Create main window
         let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
@@ -49,9 +47,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup process manager
         processManager.onReady = { [weak self] url in
-            self?.window.loadURL(url)
-            // Update runtime dev mode on every process (re)start
-            self?.runtimeDevMode = self?.devModeEnabled ?? false
+            guard let self = self else { return }
+            self.lastAuthURL = url
+            // If dev mode is enabled and source tree is set, send dev_mode and gate loadURL
+            let devEnabled = self.devModeEnabled
+            let sourceTree = self.sourceTreePath
+            if devEnabled, let path = sourceTree {
+                self.processManager.sendDevMode(enabled: true, sourceTree: path)
+                self.awaitingDevModeResult = true
+                // Do NOT call loadURL -- wait for dev_mode_result
+            } else {
+                // No dev mode or no source tree -- load immediately
+                self.window.loadURL(url)
+            }
+        }
+
+        processManager.onDevModeResult = { [weak self] success in
+            guard let self = self else { return }
+            if self.awaitingDevModeResult {
+                // Gate lifted -- load the page (success = dev assets, failure = embedded assets)
+                if let url = self.lastAuthURL {
+                    self.window.loadURL(url)
+                }
+                self.awaitingDevModeResult = false
+            }
+        }
+
+        processManager.onDevModeError = { [weak self] message in
+            guard let self = self else { return }
+            self.window.bridgeDevModeError(message: message)
         }
 
         // Start tugcast
@@ -310,6 +334,10 @@ extension AppDelegate: BridgeDelegate {
             self.savePreferences()
             // Update Developer menu source tree display
             self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
+            // Re-send dev_mode if already enabled (per D12)
+            if self.devModeEnabled {
+                self.processManager.sendDevMode(enabled: true, sourceTree: url.path)
+            }
             completion(url.path)
         }
     }
@@ -318,11 +346,18 @@ extension AppDelegate: BridgeDelegate {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()
         self.savePreferences()
+        // Send runtime control message
+        if enabled, let path = sourceTreePath {
+            processManager.sendDevMode(enabled: true, sourceTree: path)
+        } else if !enabled {
+            processManager.sendDevMode(enabled: false, sourceTree: nil)
+        }
+        // If enabling without source tree, skip sendDevMode silently per D08
         completion(enabled)
     }
 
-    func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void) {
-        completion(devModeEnabled, runtimeDevMode, sourceTreePath)
+    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
+        completion(devModeEnabled, sourceTreePath)
     }
 
     func bridgeFrontendReady() {
@@ -330,6 +365,10 @@ extension AppDelegate: BridgeDelegate {
             self.aboutMenuItem?.isEnabled = true
             self.settingsMenuItem?.isEnabled = true
         }
+    }
+
+    func bridgeDevModeError(message: String) {
+        window.bridgeDevModeError(message: message)
     }
 }
 
