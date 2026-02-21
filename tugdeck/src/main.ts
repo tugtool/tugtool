@@ -67,17 +67,6 @@ new Dock(deck);
 // Initialize action dispatch system
 initActionDispatch(connection, deck);
 
-// Re-show Settings card after dev mode toggle restart
-connection.onOpen(() => {
-  const reopen = localStorage.getItem("td-reopen-settings");
-  if (reopen) {
-    localStorage.removeItem("td-reopen-settings");
-    if (!deck.findPanelByComponent("settings")) {
-      deck.addNewCard("settings");
-    }
-  }
-});
-
 // Connect to the server
 connection.connect();
 

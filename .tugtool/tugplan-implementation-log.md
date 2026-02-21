@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-21T03:40:58Z
+bead: tugtool-bs2.4
+---
+
+## #step-3: Deleted td-reopen-settings onOpen callback block from main.ts (lines 70-79). This completes full removal of the hack — step 2 removed the WRITE side, this step removed the READ side. Zero references remain in codebase.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-21T03:37:25Z
 bead: tugtool-bs2.3
