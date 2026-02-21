@@ -69,14 +69,9 @@ async fn main() {
     // Create auth state
     let auth = new_shared_auth_state(cli.port);
 
-    // Print auth URL and flush immediately so the Mac app's ProcessManager
-    // can capture it — Rust fully buffers stdout when connected to a pipe.
     let token = auth.lock().unwrap().token().unwrap().to_string();
     let auth_url = format!("http://127.0.0.1:{}/auth?token={}", cli.port, token);
     info!("Auth URL: {}", auth_url);
-    println!("\ntugcast: {}\n", auth_url);
-    use std::io::Write;
-    std::io::stdout().flush().ok();
 
     // Connect to control socket if specified
     let control_socket = if let Some(ref path) = cli.control_socket {

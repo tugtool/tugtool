@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-21T16:44:06Z
+bead: tugtool-i2v.5
+---
+
+## #step-4: Removed println/flush/Write stdout auth URL printing from tugcast main.rs, kept tracing info! line
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-21T16:39:56Z
 bead: tugtool-i2v.4
