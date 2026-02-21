@@ -183,6 +183,11 @@ export class SettingsCard implements TugCard {
       this.showDevNote("dev mode toggle requires the Tug app");
     }, 3000);
 
+    // The native bridge restarts tugcast on dev mode change, which navigates
+    // the WebView to a new auth URL, destroying all card state. Save a flag
+    // so Settings reopens automatically after the page reloads.
+    localStorage.setItem("td-reopen-settings", "1");
+
     // Send control frame
     this.connection.sendControlFrame("set-dev-mode", { enabled: newState });
   }
