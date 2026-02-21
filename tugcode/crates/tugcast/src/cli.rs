@@ -26,10 +26,6 @@ pub struct Cli {
     #[arg(long)]
     pub tugtalk_path: Option<PathBuf>,
 
-    /// Path to source tree root (serves assets directly from source via manifest)
-    #[arg(long, hide = true)]
-    pub dev: Option<PathBuf>,
-
     /// Unix domain socket path for parent IPC
     #[arg(long)]
     pub control_socket: Option<PathBuf>,
@@ -193,21 +189,9 @@ mod tests {
     }
 
     #[test]
-    fn test_dev_flag_still_accepted() {
-        // Verify --dev flag is still parsed (deprecated, not removed)
-        let cli = Cli::try_parse_from(["tugcast", "--dev", "/tmp"]).unwrap();
-        assert_eq!(cli.dev, Some(PathBuf::from("/tmp")));
-    }
-
-    #[test]
-    fn test_dev_flag_hidden_from_help() {
-        // Verify --dev flag is hidden from help output
-        let result = Cli::try_parse_from(["tugcast", "--help"]);
-        let err = result.unwrap_err();
-        let help_text = err.to_string();
-        assert!(
-            !help_text.contains("--dev"),
-            "help should NOT contain deprecated --dev flag"
-        );
+    fn test_dev_flag_rejected() {
+        // --dev flag was removed; verify it is no longer recognized
+        let result = Cli::try_parse_from(["tugcast", "--dev", "/tmp"]);
+        assert!(result.is_err(), "--dev should no longer be a valid flag");
     }
 }
