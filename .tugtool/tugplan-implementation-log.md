@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-21T17:09:06Z
+bead: tugtool-i2v.9
+---
+
+## #step-8: Replaced HTTP tell() with UDS sendControl() in AppDelegate, migrated settings card restart to WebSocket sendControlFrame, removed serverPort property
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-21T17:02:58Z
 bead: tugtool-i2v.8

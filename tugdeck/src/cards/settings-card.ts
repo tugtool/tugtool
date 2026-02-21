@@ -136,11 +136,7 @@ export class SettingsCard implements TugCard {
         this.restartBtn.textContent = "Restarting...";
         (this.restartBtn as HTMLButtonElement).disabled = true;
       }
-      fetch("/api/tell", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "restart" }),
-      }).catch((err) => console.error("restart fetch failed:", err));
+      this.connection.sendControlFrame("restart");
       // Fail-safe: re-enable if WebSocket doesn't disconnect within 5s
       this.restartFailsafeTimer = setTimeout(() => {
         if (this.restartBtn) {

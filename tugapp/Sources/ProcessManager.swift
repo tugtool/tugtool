@@ -189,6 +189,19 @@ class ProcessManager {
         }
     }
 
+    /// Send a control command to tugcast via UDS
+    func sendControl(_ action: String, params: [String: Any] = [:]) {
+        guard let connection = controlConnection else {
+            NSLog("ProcessManager: sendControl skipped, no control connection (action: %@)", action)
+            return
+        }
+        var msg: [String: Any] = ["type": "tell", "action": action]
+        for (key, value) in params {
+            msg[key] = value
+        }
+        connection.send(msg)
+    }
+
     /// Stop the tugcast process
     func stop() {
         // Stop bun first

@@ -10,7 +10,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
-    private var serverPort: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
@@ -51,10 +50,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup process manager
         processManager.onReady = { [weak self] url in
             self?.window.loadURL(url)
-            // Extract port from auth URL (still needed for tell() until step 8 migrates to sendControl)
-            if let urlObj = URL(string: url), let port = urlObj.port {
-                self?.serverPort = port
-            }
             // Update runtime dev mode on every process (re)start
             self?.runtimeDevMode = self?.devModeEnabled ?? false
         }
@@ -215,11 +210,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     @objc func showSettings(_ sender: Any?) {
-        tell("show-card", params: ["component": "settings"])
+        sendControl("show-card", params: ["component": "settings"])
     }
 
     @objc func showAbout(_ sender: Any?) {
-        tell("show-card", params: ["component": "about"])
+        sendControl("show-card", params: ["component": "about"])
     }
 
     @objc func openProjectHome(_ sender: Any?) {
@@ -235,15 +230,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reloadFrontend(_ sender: Any) {
-        tell("reload_frontend")
+        sendControl("reload_frontend")
     }
 
     @objc private func restartServer(_ sender: Any) {
-        tell("restart")
+        sendControl("restart")
     }
 
     @objc private func resetEverything(_ sender: Any) {
-        tell("reset")
+        sendControl("reset")
     }
 
     @objc private func openWebInspector(_ sender: Any) {
@@ -280,30 +275,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         developerMenu.isHidden = !devModeEnabled
     }
 
-    // MARK: - HTTP tell() helper
+    // MARK: - UDS control commands
 
-    private func tell(_ action: String, params: [String: Any] = [:]) {
-        guard let port = serverPort else {
-            NSLog("AppDelegate: tell() skipped, serverPort is nil (action: %@)", action)
-            return
-        }
-        var body: [String: Any] = ["action": action]
-        for (key, value) in params {
-            body[key] = value
-        }
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
-        guard let url = URL(string: "http://127.0.0.1:\(port)/api/tell") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            if let error = error {
-                NSLog("AppDelegate: tell(%@) failed: %@", action, error.localizedDescription)
-            } else if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                NSLog("AppDelegate: tell(%@) returned status %d", action, http.statusCode)
-            }
-        }.resume()
+    private func sendControl(_ action: String, params: [String: Any] = [:]) {
+        processManager.sendControl(action, params: params)
     }
 }
 
