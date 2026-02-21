@@ -163,25 +163,22 @@ pub(crate) fn build_app(router: FeedRouter, dev_state: SharedDevState) -> Router
 
     // Unified fallback handler: checks shared dev state per request
     let shared = dev_state;
-    let app = base
-        .fallback(move |uri: Uri| {
-            let s = shared.clone();
-            async move {
-                let guard = s.load();
-                if let Some(ref state) = **guard {
-                    if uri.path() == "/" || uri.path() == "/index.html" {
-                        crate::dev::serve_dev_index(state).await
-                    } else {
-                        crate::dev::serve_dev_asset(uri, state).await
-                    }
+    base.fallback(move |uri: Uri| {
+        let s = shared.clone();
+        async move {
+            let guard = s.load();
+            if let Some(ref state) = **guard {
+                if uri.path() == "/" || uri.path() == "/index.html" {
+                    crate::dev::serve_dev_index(state).await
                 } else {
-                    serve_asset(uri).await
+                    crate::dev::serve_dev_asset(uri, state).await
                 }
+            } else {
+                serve_asset(uri).await
             }
-        })
-        .with_state(router);
-
-    app
+        }
+    })
+    .with_state(router)
 }
 
 /// Run the HTTP server

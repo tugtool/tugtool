@@ -142,7 +142,9 @@ impl ControlReader {
                                         let _ = response_tx
                                             .send(make_dev_mode_result(
                                                 false,
-                                                Some("source_tree is required when enabled is true"),
+                                                Some(
+                                                    "source_tree is required when enabled is true",
+                                                ),
                                             ))
                                             .await;
                                         continue;
@@ -158,13 +160,13 @@ impl ControlReader {
                                 {
                                     Ok(runtime) => {
                                         dev_runtime = Some(runtime);
-                                        let _ =
-                                            response_tx.send(make_dev_mode_result(true, None)).await;
+                                        let _ = response_tx
+                                            .send(make_dev_mode_result(true, None))
+                                            .await;
 
                                         // Broadcast reload_frontend for mid-session toggles (per D11)
                                         let payload = br#"{"action":"reload_frontend"}"#;
-                                        let frame =
-                                            Frame::new(FeedId::Control, payload.to_vec());
+                                        let frame = Frame::new(FeedId::Control, payload.to_vec());
                                         let _ = client_action_tx.send(frame);
                                     }
                                     Err(e) => {

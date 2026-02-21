@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-21T20:54:24Z
+---
+
+## audit-fix: Audit fix: resolved clippy needless_borrow (4x dev.rs), let_and_return (server.rs), and cargo fmt formatting issues (control.rs, dev.rs)
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-21T20:49:39Z
 bead: tugtool-4m1.6

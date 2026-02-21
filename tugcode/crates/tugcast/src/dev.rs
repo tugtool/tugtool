@@ -248,12 +248,12 @@ pub(crate) async fn serve_dev_asset(uri: Uri, dev_state: &DevState) -> Response 
 
     // Special case: index.html served from disk
     if lookup_key == "index.html" {
-        return serve_dev_index_impl(&dev_state).await;
+        return serve_dev_index_impl(dev_state).await;
     }
 
     // Tier 1: Check files map for exact match
     if let Some(file_path) = dev_state.files.get(&lookup_key) {
-        return serve_file_with_safety(file_path, &dev_state).await;
+        return serve_file_with_safety(file_path, dev_state).await;
     }
 
     // Tier 2: Check dirs for prefix match with glob filter
@@ -263,14 +263,14 @@ pub(crate) async fn serve_dev_asset(uri: Uri, dev_state: &DevState) -> Response 
             let filename = remainder.split('/').next_back().unwrap_or("");
             if pattern.matches(filename) {
                 let candidate = dir_path.join(remainder);
-                return serve_file_with_safety(&candidate, &dev_state).await;
+                return serve_file_with_safety(&candidate, dev_state).await;
             }
         }
     }
 
     // Tier 3: Fallback directory
     let fallback_path = dev_state.fallback.join(&lookup_key);
-    serve_file_with_safety(&fallback_path, &dev_state).await
+    serve_file_with_safety(&fallback_path, dev_state).await
 }
 
 /// Serve a file with path safety verification
@@ -882,7 +882,8 @@ fallback = "dist"
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
 
-        let result = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+        let result =
+            enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
 
         assert!(result.is_ok());
         assert!(shared.load().is_some());
@@ -901,7 +902,8 @@ fallback = "dist"
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
 
-        let result = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+        let result =
+            enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
 
         assert!(result.is_err());
         assert!(shared.load().is_none());
@@ -1039,7 +1041,11 @@ fallback = "dist"
             .unwrap();
 
         // Modify the .html file to trigger a file event
-        fs::write(tugdeck_dir.join("index.html"), "<html><body>modified</body></html>").unwrap();
+        fs::write(
+            tugdeck_dir.join("index.html"),
+            "<html><body>modified</body></html>",
+        )
+        .unwrap();
 
         // Immediately disable dev mode (before the 100ms debounce fires)
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
