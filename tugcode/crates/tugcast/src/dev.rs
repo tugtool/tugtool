@@ -374,7 +374,7 @@ async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
 /// `/System/Volumes/Data/Users`, producing paths that FSEvents ignores.
 /// This function resolves symlinks and then normalizes the firmlink
 /// prefix back to `/Users/` so FSEvents works correctly.
-fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
+pub(crate) fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
     let mut resolved = PathBuf::new();
     for component in path.components() {
         resolved.push(component);
