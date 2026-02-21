@@ -2,9 +2,7 @@
 
 use axum::extract::Extension;
 use axum::http::{StatusCode, Uri, header};
-use axum::response::{
-    IntoResponse, Response,
-};
+use axum::response::{IntoResponse, Response};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -302,14 +300,12 @@ pub(crate) async fn serve_dev_index(Extension(dev_state): Extension<Arc<DevState
 /// Internal implementation of index serving
 async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
     match std::fs::read(&dev_state.index_path) {
-        Ok(content) => {
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                content,
-            )
-                .into_response()
-        }
+        Ok(content) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            content,
+        )
+            .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
     }
 }

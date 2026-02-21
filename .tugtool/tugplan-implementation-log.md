@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-21T18:44:54Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix 5 formatting diffs in dev.rs and server.rs
+
+**Files changed:**
+- .tugtool/tugplan-sse-to-websocket-reload.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-21T18:41:40Z
 bead: tugtool-otr.1

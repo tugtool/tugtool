@@ -116,13 +116,8 @@ async fn tell_handler(
     };
 
     // Dispatch action
-    crate::actions::dispatch_action(
-        action,
-        &body,
-        &router.shutdown_tx,
-        &router.client_action_tx,
-    )
-    .await;
+    crate::actions::dispatch_action(action, &body, &router.shutdown_tx, &router.client_action_tx)
+        .await;
 
     (
         StatusCode::OK,
@@ -161,10 +156,7 @@ async fn serve_asset(uri: Uri) -> Response {
 ///
 /// Constructs the Router with auth, WebSocket, and static asset routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-pub(crate) fn build_app(
-    router: FeedRouter,
-    dev_state: Option<Arc<DevState>>,
-) -> Router {
+pub(crate) fn build_app(router: FeedRouter, dev_state: Option<Arc<DevState>>) -> Router {
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
@@ -263,13 +255,7 @@ mod tests {
         assert!(matches!("reset", "reset"));
 
         // Client-only (everything else)
-        assert!(!matches!(
-            "show-card",
-            "restart" | "reset"
-        ));
-        assert!(!matches!(
-            "reload_frontend",
-            "restart" | "reset"
-        ));
+        assert!(!matches!("show-card", "restart" | "reset"));
+        assert!(!matches!("reload_frontend", "restart" | "reset"));
     }
 }
