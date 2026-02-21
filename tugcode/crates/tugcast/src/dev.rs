@@ -64,6 +64,11 @@ pub(crate) async fn enable_dev_mode(
     shared_state: &SharedDevState,
     client_action_tx: broadcast::Sender<Frame>,
 ) -> Result<DevRuntime, String> {
+    // Resolve symlinks without canonicalize(), which on macOS resolves through
+    // the /Users firmlink to /System/Volumes/Data/Users — a path FSEvents ignores.
+    let source_tree = resolve_symlinks(&source_tree)
+        .map_err(|e| format!("failed to resolve source_tree {}: {}", source_tree.display(), e))?;
+
     // Load manifest via spawn_blocking (blocking filesystem I/O)
     let source = source_tree.clone();
     let state = tokio::task::spawn_blocking(move || load_manifest(&source))
@@ -361,6 +366,42 @@ async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
             .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
     }
+}
+
+/// Resolve symlinks in a path, producing a path FSEvents can watch.
+///
+/// On macOS, `canonicalize()` resolves through the `/Users` firmlink to
+/// `/System/Volumes/Data/Users`, producing paths that FSEvents ignores.
+/// This function resolves symlinks and then normalizes the firmlink
+/// prefix back to `/Users/` so FSEvents works correctly.
+fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        resolved.push(component);
+        if resolved.symlink_metadata()?.file_type().is_symlink() {
+            let target = std::fs::read_link(&resolved)?;
+            if target.is_absolute() {
+                resolved = target;
+            } else {
+                resolved.pop();
+                resolved.push(target);
+            }
+        }
+    }
+
+    // macOS firmlink normalization: FSEvents expects /Users/..., not
+    // /System/Volumes/Data/Users/... which canonicalize/read_link may produce.
+    #[cfg(target_os = "macos")]
+    {
+        const FIRMLINK_PREFIX: &str = "/System/Volumes/Data/Users/";
+        if let Some(path_str) = resolved.to_str() {
+            if let Some(suffix) = path_str.strip_prefix(FIRMLINK_PREFIX) {
+                resolved = PathBuf::from(format!("/Users/{}", suffix));
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 /// Check whether a notify event contains paths with reload-worthy extensions
@@ -998,10 +1039,11 @@ fallback = "dist"
             .await
             .unwrap();
 
-        // Verify the source_tree in the loaded state matches path2
+        // Verify the source_tree in the loaded state matches path2 (resolved)
+        let expected = resolve_symlinks(temp_dir2.path()).unwrap();
         let guard = shared.load();
         if let Some(ref state) = **guard {
-            assert_eq!(state.source_tree, temp_dir2.path());
+            assert_eq!(state.source_tree, expected);
         } else {
             panic!("Expected Some(DevState) after enable");
         }
