@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-9
+date: 2025-02-21T04:23:55Z
+bead: tugtool-bs2.10
+---
+
+## #step-9: Added error logging completion handlers to all four evaluateJavaScript calls in MainWindow.swift WKScriptMessageHandler extension (chooseSourceTree selected/cancelled, setDevMode, getSettings). Makes invisible WebKit-level errors observable via Console.app without disrupting UX.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-8
 date: 2025-02-21T04:19:08Z
 bead: tugtool-bs2.9

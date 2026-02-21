@@ -113,9 +113,17 @@ extension MainWindow: WKScriptMessageHandler {
                 guard let self = self else { return }
                 if let path = path {
                     let escaped = self.escapeForJS(path)
-                    self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeSelected?.('\(escaped)')")
+                    self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeSelected?.('\(escaped)')") { _, error in
+                        if let error = error {
+                            NSLog("MainWindow: evaluateJavaScript failed for chooseSourceTree (selected): %@", error.localizedDescription)
+                        }
+                    }
                 } else {
-                    self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeCancelled?.()")
+                    self.webView.evaluateJavaScript("window.__tugBridge?.onSourceTreeCancelled?.()") { _, error in
+                        if let error = error {
+                            NSLog("MainWindow: evaluateJavaScript failed for chooseSourceTree (cancelled): %@", error.localizedDescription)
+                        }
+                    }
                 }
             }
         case "setDevMode":
@@ -123,7 +131,11 @@ extension MainWindow: WKScriptMessageHandler {
                   let enabled = body["enabled"] as? Bool else { return }
             bridgeDelegate?.bridgeSetDevMode(enabled: enabled) { [weak self] confirmed in
                 guard let self = self else { return }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onDevModeChanged?.(\(confirmed))")
+                self.webView.evaluateJavaScript("window.__tugBridge?.onDevModeChanged?.(\(confirmed))") { _, error in
+                    if let error = error {
+                        NSLog("MainWindow: evaluateJavaScript failed for setDevMode: %@", error.localizedDescription)
+                    }
+                }
             }
         case "getSettings":
             bridgeDelegate?.bridgeGetSettings { [weak self] devMode, runtimeDevMode, sourceTree in
@@ -134,7 +146,11 @@ extension MainWindow: WKScriptMessageHandler {
                 } else {
                     stValue = "null"
                 }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), runtimeDevMode: \(runtimeDevMode), sourceTree: \(stValue)})")
+                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), runtimeDevMode: \(runtimeDevMode), sourceTree: \(stValue)})") { _, error in
+                    if let error = error {
+                        NSLog("MainWindow: evaluateJavaScript failed for getSettings: %@", error.localizedDescription)
+                    }
+                }
             }
         case "frontendReady":
             bridgeDelegate?.bridgeFrontendReady()
