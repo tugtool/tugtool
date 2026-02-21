@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-21T03:37:25Z
+bead: tugtool-bs2.3
+---
+
+## #step-2: Replaced optimistic-update-with-rollback UI with confirmed UI pattern for dev mode toggle. Checkbox disables during bridge round-trip, confirms on ack, reverts on timeout. Removed td-reopen-settings localStorage hack and previousDevModeState field. Added updateRestartPrompt stub for step 4.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-21T03:31:29Z
 bead: tugtool-bs2.2

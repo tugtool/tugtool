@@ -20,8 +20,8 @@ export class SettingsCard implements TugCard {
   private themeRadios: HTMLInputElement[] = [];
   private devModeCheckbox: HTMLInputElement | null = null;
   private sourceTreePathEl: HTMLElement | null = null;
-  private devModeRollbackTimer: ReturnType<typeof setTimeout> | null = null;
-  private previousDevModeState: boolean = false;
+  private devModeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
+  private initialDevMode: boolean = false;
   private devNoteEl: HTMLElement | null = null;
 
   constructor(connection: TugConnection) {
@@ -172,23 +172,19 @@ export class SettingsCard implements TugCard {
 
   private handleDevModeToggle(): void {
     if (!this.devModeCheckbox) return;
-
     const newState = this.devModeCheckbox.checked;
-    this.previousDevModeState = !newState;
-
-    // Start rollback timer
-    this.devModeRollbackTimer = setTimeout(() => {
+    // Confirmed UI: disable checkbox during bridge round-trip
+    this.devModeCheckbox.disabled = true;
+    // Capture pre-toggle state for revert on timeout
+    const preToggleState = !newState;
+    // Confirmation timeout: revert if bridge doesn't respond
+    this.devModeConfirmTimer = setTimeout(() => {
       if (!this.container || !this.devModeCheckbox) return;
-      this.devModeCheckbox.checked = this.previousDevModeState;
+      this.devModeCheckbox.checked = preToggleState;
+      this.devModeCheckbox.disabled = false;
       this.showDevNote("dev mode toggle requires the Tug app");
     }, 3000);
-
-    // The native bridge restarts tugcast on dev mode change, which navigates
-    // the WebView to a new auth URL, destroying all card state. Save a flag
-    // so Settings reopens automatically after the page reloads.
-    localStorage.setItem("td-reopen-settings", "1");
-
-    // Send control frame
+    // Send control frame (do NOT write to localStorage)
     this.connection.sendControlFrame("set-dev-mode", { enabled: newState });
   }
 
@@ -205,6 +201,10 @@ export class SettingsCard implements TugCard {
     }
   }
 
+  private updateRestartPrompt(): void {
+    // Stub: restart prompt UI added in step 4
+  }
+
   private initBridge(): void {
     const webkit = (window as any).webkit;
 
@@ -217,7 +217,6 @@ export class SettingsCard implements TugCard {
         if (this.devModeCheckbox) {
           this.devModeCheckbox.checked = data.devMode;
         }
-        this.previousDevModeState = data.devMode;
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = data.sourceTree || "(not set)";
         }
@@ -225,15 +224,16 @@ export class SettingsCard implements TugCard {
 
       bridge.onDevModeChanged = (confirmed: boolean) => {
         if (!this.container) return;
-        if (this.devModeRollbackTimer) {
-          clearTimeout(this.devModeRollbackTimer);
-          this.devModeRollbackTimer = null;
+        if (this.devModeConfirmTimer) {
+          clearTimeout(this.devModeConfirmTimer);
+          this.devModeConfirmTimer = null;
         }
         if (this.devModeCheckbox) {
           this.devModeCheckbox.checked = confirmed;
+          this.devModeCheckbox.disabled = false;
         }
-        this.previousDevModeState = confirmed;
         this.hideDevNote();
+        this.updateRestartPrompt();
       };
 
       bridge.onSourceTreeSelected = (path: string) => {
@@ -267,9 +267,9 @@ export class SettingsCard implements TugCard {
   }
 
   destroy(): void {
-    if (this.devModeRollbackTimer) {
-      clearTimeout(this.devModeRollbackTimer);
-      this.devModeRollbackTimer = null;
+    if (this.devModeConfirmTimer) {
+      clearTimeout(this.devModeConfirmTimer);
+      this.devModeConfirmTimer = null;
     }
 
     // Clear bridge callbacks
