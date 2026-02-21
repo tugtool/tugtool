@@ -4,6 +4,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow!
     private var processManager = ProcessManager()
     private var devModeEnabled = false
+    private var runtimeDevMode: Bool = false
     private var sourceTreePath: String?
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
@@ -23,6 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load preferences
         loadPreferences()
+
+        // Initialize runtime dev mode to match preference at launch
+        runtimeDevMode = devModeEnabled
 
         // Create main window
         let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
@@ -49,6 +53,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let urlObj = URL(string: url), let port = urlObj.port {
                 self?.serverPort = port
             }
+            // Update runtime dev mode on every process (re)start
+            self?.runtimeDevMode = self?.devModeEnabled ?? false
         }
 
         // Start tugcast
@@ -332,14 +338,11 @@ extension AppDelegate: BridgeDelegate {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()
         self.savePreferences()
-        // Restart tugcast with new mode
-        self.processManager.stop()
-        self.processManager.start(devMode: self.devModeEnabled, sourceTree: self.sourceTreePath)
         completion(enabled)
     }
 
-    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
-        completion(devModeEnabled, sourceTreePath)
+    func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void) {
+        completion(devModeEnabled, runtimeDevMode, sourceTreePath)
     }
 }
 

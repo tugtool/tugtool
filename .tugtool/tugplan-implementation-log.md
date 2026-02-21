@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-21T03:27:20Z
+bead: tugtool-bs2.1
+---
+
+## #step-0: Removed processManager.stop()/start() from bridgeSetDevMode, added runtimeDevMode field to AppDelegate, updated bridgeGetSettings to return both preference and runtime dev mode state, updated BridgeDelegate protocol and MainWindow handler
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-20T23:43:36Z
 ---

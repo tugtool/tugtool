@@ -5,7 +5,7 @@ import WebKit
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
-    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
+    func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void)
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -123,7 +123,7 @@ extension MainWindow: WKScriptMessageHandler {
                 self.webView.evaluateJavaScript("window.__tugBridge?.onDevModeChanged?.(\(confirmed))")
             }
         case "getSettings":
-            bridgeDelegate?.bridgeGetSettings { [weak self] devMode, sourceTree in
+            bridgeDelegate?.bridgeGetSettings { [weak self] devMode, runtimeDevMode, sourceTree in
                 guard let self = self else { return }
                 let stValue: String
                 if let st = sourceTree {
@@ -131,7 +131,7 @@ extension MainWindow: WKScriptMessageHandler {
                 } else {
                     stValue = "null"
                 }
-                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), sourceTree: \(stValue)})")
+                self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), runtimeDevMode: \(runtimeDevMode), sourceTree: \(stValue)})")
             }
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
