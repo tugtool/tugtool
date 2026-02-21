@@ -140,37 +140,8 @@ async fn main() {
     // Create broadcast channel for client-bound Control frames
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
-    // Load manifest and start dev file watcher if dev mode is active
-    let (dev_state, _watcher) = if let Some(ref dev_path) = cli.dev {
-        // Load manifest
-        let state = match dev::load_manifest(dev_path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("tugcast: error: failed to load asset manifest: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        // Validate manifest (logs warnings)
-        dev::validate_manifest(&state);
-
-        // Derive watch directories
-        let watch_dirs = dev::watch_dirs_from_manifest(&state);
-
-        // Start file watcher
-        match dev::dev_file_watcher(&watch_dirs, client_action_tx.clone()) {
-            Ok(watcher) => {
-                info!(path = ?dev_path, "dev file watcher started");
-                (Some(Arc::new(state)), Some(watcher))
-            }
-            Err(e) => {
-                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        (None, None)
-    };
+    // Create shared dev state (empty until runtime dev_mode control message)
+    let shared_dev_state = dev::new_shared_dev_state();
 
     // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
     let ctl_shutdown_tx = shutdown_tx.clone();
@@ -294,7 +265,7 @@ async fn main() {
     }
 
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(listener, feed_router, dev_state);
+    let server_future = server::run_server(listener, feed_router, shared_dev_state);
 
     let exit_code = tokio::select! {
         result = server_future => {

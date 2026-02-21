@@ -5,18 +5,17 @@
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Extension, State};
+use axum::extract::{ConnectInfo, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::warn;
 
-use crate::dev::DevState;
+use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
 
 /// Embedded static assets (tugdeck frontend)
@@ -156,26 +155,33 @@ async fn serve_asset(uri: Uri) -> Response {
 ///
 /// Constructs the Router with auth, WebSocket, and static asset routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-pub(crate) fn build_app(router: FeedRouter, dev_state: Option<Arc<DevState>>) -> Router {
+pub(crate) fn build_app(router: FeedRouter, dev_state: SharedDevState) -> Router {
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler));
 
-    let app = if let Some(state) = dev_state {
-        let state_clone = state.clone();
-        base.route("/", get(crate::dev::serve_dev_index))
-            .route("/index.html", get(crate::dev::serve_dev_index))
-            .fallback(move |uri| {
-                let state = state_clone.clone();
-                async move { crate::dev::serve_dev_asset(uri, Extension(state)).await }
-            })
-            .layer(Extension(state))
-    } else {
-        base.fallback(serve_asset)
-    };
+    // Unified fallback handler: checks shared dev state per request
+    let shared = dev_state;
+    let app = base
+        .fallback(move |uri: Uri| {
+            let s = shared.clone();
+            async move {
+                let guard = s.load();
+                if let Some(ref state) = **guard {
+                    if uri.path() == "/" || uri.path() == "/index.html" {
+                        crate::dev::serve_dev_index(state).await
+                    } else {
+                        crate::dev::serve_dev_asset(uri, state).await
+                    }
+                } else {
+                    serve_asset(uri).await
+                }
+            }
+        })
+        .with_state(router);
 
-    app.with_state(router)
+    app
 }
 
 /// Run the HTTP server
@@ -184,7 +190,7 @@ pub(crate) fn build_app(router: FeedRouter, dev_state: Option<Arc<DevState>>) ->
 pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
-    dev_state: Option<Arc<DevState>>,
+    dev_state: SharedDevState,
 ) -> Result<(), std::io::Error> {
     let app = build_app(router, dev_state);
 

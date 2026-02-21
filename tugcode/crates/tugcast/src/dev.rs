@@ -1,7 +1,6 @@
 //! Dev mode: file watcher, manifest-based serving, and dev asset serving
 
 use arc_swap::ArcSwap;
-use axum::extract::Extension;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -16,6 +15,7 @@ use tugcast_core::{FeedId, Frame};
 
 // Keep in sync with build.rs copy
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct AssetManifest {
     files: HashMap<String, String>,
     dirs: Option<HashMap<String, DirEntry>>,
@@ -23,12 +23,14 @@ struct AssetManifest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct DirEntry {
     src: String,
     pattern: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct BuildConfig {
     fallback: String,
 }
@@ -44,7 +46,6 @@ pub(crate) struct DevState {
 }
 
 /// Shared dev state type for lock-free runtime swapping
-#[allow(dead_code)] // Used in Step 1 when wired through server.rs and main.rs
 pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
 
 /// Dev runtime: holds file watcher for RAII cleanup
@@ -54,12 +55,12 @@ pub(crate) struct DevRuntime {
 }
 
 /// Create a new shared dev state initialized to None
-#[allow(dead_code)] // Used in Step 1 when wired through server.rs and main.rs
 pub(crate) fn new_shared_dev_state() -> SharedDevState {
     Arc::new(ArcSwap::from_pointee(None))
 }
 
 /// Load and parse the asset manifest from source tree
+#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
     let manifest_path = source_tree.join("tugdeck/assets.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
@@ -111,6 +112,7 @@ pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
 }
 
 /// Validate manifest at startup: warn about missing files/directories
+#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn validate_manifest(state: &DevState) {
     for (url_key, path) in &state.files {
         if !path.exists() {
@@ -141,6 +143,7 @@ pub(crate) fn validate_manifest(state: &DevState) {
 }
 
 /// Derive watch directories from manifest, with deduplication to avoid overlapping recursive watches
+#[cfg_attr(not(test), allow(dead_code))] // Used in tests and enable_dev_mode (Step 2)
 pub(crate) fn watch_dirs_from_manifest(state: &DevState) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -178,10 +181,7 @@ pub(crate) fn watch_dirs_from_manifest(state: &DevState) -> Vec<PathBuf> {
 }
 
 /// Serve dev asset with three-tier lookup and path safety
-pub(crate) async fn serve_dev_asset(
-    uri: Uri,
-    Extension(dev_state): Extension<Arc<DevState>>,
-) -> Response {
+pub(crate) async fn serve_dev_asset(uri: Uri, dev_state: &DevState) -> Response {
     // Path safety: decode percent-encoding and normalize
     let raw_path = uri.path();
     let decoded = match percent_encoding::percent_decode_str(raw_path).decode_utf8() {
@@ -310,8 +310,8 @@ async fn serve_file_with_safety(candidate: &Path, dev_state: &DevState) -> Respo
 }
 
 /// Serve index.html (public handler for / and /index.html routes)
-pub(crate) async fn serve_dev_index(Extension(dev_state): Extension<Arc<DevState>>) -> Response {
-    serve_dev_index_impl(&dev_state).await
+pub(crate) async fn serve_dev_index(dev_state: &DevState) -> Response {
+    serve_dev_index_impl(dev_state).await
 }
 
 /// Internal implementation of index serving
@@ -340,6 +340,7 @@ fn has_reload_extension(event: &notify::Event) -> bool {
 /// Uses a quiet-period debounce: after the first qualifying file event,
 /// keeps consuming events until 100ms of silence, then fires a single
 /// reload signal. No polling, no fixed delays.
+#[allow(dead_code)] // Called by enable_dev_mode, added in Step 2
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
     client_action_tx: broadcast::Sender<Frame>,
@@ -507,7 +508,6 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_dotdot() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -526,14 +526,13 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/../../../etc/passwd");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_encoded() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -551,14 +550,13 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/%2e%2e/secret");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_serve_dev_asset_path_traversal_double_encoded() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -576,14 +574,13 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/%252e%252e%252f%252e%252e%252fetc%252fpasswd");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_serve_dev_asset_files_lookup() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -608,7 +605,7 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/tokens.css");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -620,7 +617,6 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_dirs_lookup_with_glob() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -648,7 +644,7 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/fonts/Hack-Regular.woff2");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -659,7 +655,6 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_dirs_lookup_glob_mismatch() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -688,7 +683,7 @@ fallback = "dist"
 
         // Request a file that doesn't match the glob pattern
         let uri = Uri::from_static("/fonts/readme.txt");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         // Should fall through to fallback/404 since glob pattern doesn't match
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -696,7 +691,6 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_fallback() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -718,7 +712,7 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/app.js");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -730,7 +724,6 @@ fallback = "dist"
 
     #[tokio::test]
     async fn test_serve_dev_asset_404_unknown() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -748,14 +741,13 @@ fallback = "dist"
         };
 
         let uri = Uri::from_static("/nonexistent.css");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_serve_dev_asset_index_html_injection() {
-        use axum::extract::Extension;
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
@@ -781,7 +773,7 @@ fallback = "dist"
 
         // Request /index.html (not /) to test special case in serve_dev_asset
         let uri = Uri::from_static("/index.html");
-        let response = serve_dev_asset(uri, Extension(Arc::new(state))).await;
+        let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::OK);
 

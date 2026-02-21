@@ -45,7 +45,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, dev::new_shared_dev_state());
     (app, token)
 }
 
@@ -478,7 +478,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Make request to /
     let response = app
@@ -560,7 +562,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Request /tokens.css
     let response = app
@@ -647,7 +651,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Request /fonts/Hack-Regular.woff2
     let response = app
@@ -725,7 +731,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Request /index.html (not /) to verify HTML served unmodified
     let response = app
@@ -797,7 +805,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Test path traversal with /../../../etc/passwd
     let response = app
@@ -876,7 +886,9 @@ fallback = "dist"
         client_action_tx,
     );
 
-    let app = build_app(feed_router, Some(Arc::new(dev_state)));
+    let shared_state = dev::new_shared_dev_state();
+    shared_state.store(Arc::new(Some(dev_state)));
+    let app = build_app(feed_router, shared_state);
 
     // Request unknown file
     let response = app
@@ -1013,7 +1025,7 @@ async fn test_tell_restart_triggers_shutdown() {
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, dev::new_shared_dev_state());
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1063,7 +1075,7 @@ async fn test_tell_reload_frontend() {
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, dev::new_shared_dev_state());
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1114,7 +1126,7 @@ async fn test_tell_hybrid_reset_timing() {
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, dev::new_shared_dev_state());
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1174,7 +1186,7 @@ async fn test_tell_client_action_round_trip() {
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None);
+    let app = build_app(feed_router, dev::new_shared_dev_state());
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));

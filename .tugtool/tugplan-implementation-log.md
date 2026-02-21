@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-21T20:15:17Z
+bead: tugtool-4m1.2
+---
+
+## #step-1: Wired SharedDevState through server. Deprecated --dev CLI flag (hidden). Removed static dev setup from main.rs. Changed build_app/run_server signatures to accept SharedDevState. Implemented unified fallback handler checking ArcSwap per-request. Updated serve_dev_asset/serve_dev_index to accept &DevState. Updated all integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-21T20:03:27Z
 bead: tugtool-4m1.1
