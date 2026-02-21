@@ -49,9 +49,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenuBar()
 
         // Setup process manager
-        processManager.onAuthURL = { [weak self] url in
+        processManager.onReady = { [weak self] url in
             self?.window.loadURL(url)
-            // Extract port from auth URL
+            // Extract port from auth URL (still needed for tell() until step 8 migrates to sendControl)
             if let urlObj = URL(string: url), let port = urlObj.port {
                 self?.serverPort = port
             }

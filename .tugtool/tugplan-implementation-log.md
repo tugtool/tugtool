@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-21T16:59:09Z
+bead: tugtool-i2v.7
+---
+
+## #step-6: Migrated AppDelegate from onAuthURL to onReady callback, removed onAuthURL property and backward-compat call from ProcessManager
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-21T16:54:02Z
 bead: tugtool-i2v.6

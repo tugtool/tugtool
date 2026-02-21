@@ -26,9 +26,6 @@ class ProcessManager {
     private var restartDecision: RestartDecision = .pending
     private var backoffSeconds: TimeInterval = 0
 
-    /// Callback for auth URL extraction (legacy, kept for compatibility)
-    var onAuthURL: ((String) -> Void)?
-
     /// Callback for ready message (UDS-based)
     var onReady: ((String) -> Void)?
 
@@ -162,8 +159,6 @@ class ProcessManager {
             backoffSeconds = 0
             NSLog("ProcessManager: ready (auth_url=%@)", authURL)
             onReady?(authURL)
-            // Also call legacy onAuthURL for backward compatibility
-            onAuthURL?(authURL)
         case "shutdown":
             guard restartDecision == .pending else {
                 NSLog("ProcessManager: ignoring duplicate shutdown signal (decision already set)")
@@ -292,7 +287,7 @@ class ProcessManager {
                    let urlRange = Range(match.range(at: 1), in: line) {
                     let url = String(line[urlRange])
                     DispatchQueue.main.async {
-                        self?.onAuthURL?(url)
+                        self?.onReady?(url)
                     }
                 }
             }
