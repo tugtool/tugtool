@@ -29,6 +29,15 @@ export function registerAction(action: string, handler: ActionHandler): void {
 }
 
 /**
+ * Reset handler registry and module state for test isolation.
+ * Internal/test-only -- must never be called from production code.
+ */
+export function _resetForTest(): void {
+  handlers.clear();
+  reloadPending = false;
+}
+
+/**
  * Dispatch an action to its registered handler
  */
 export function dispatchAction(payload: Record<string, unknown>): void {

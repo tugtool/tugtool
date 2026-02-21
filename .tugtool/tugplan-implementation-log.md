@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-21T04:11:28Z
+bead: tugtool-bs2.8
+---
+
+## #step-7: Added _resetForTest() to action-dispatch.ts. Created deck-manager.test.ts (closePanelByComponent regression) and action-dispatch.test.ts (show-card/close-card dispatch). 7 tests pass covering all branches. Added bunfig.toml for happy-dom preload.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-21T04:02:20Z
 bead: tugtool-bs2.7
