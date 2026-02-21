@@ -10,11 +10,6 @@ enum TugConfig {
     static let keySourceTreePath = "SourceTreePath"
     static let keyDevModeEnabled = "DevModeEnabled"
 
-    // MARK: - Process exit codes (must match tugcast's convention)
-
-    static let exitRestart: Int32 = 42
-    static let exitReset: Int32 = 43
-
     // MARK: - Source tree validation
 
     /// Paths that must exist (relative to repo root) for a directory

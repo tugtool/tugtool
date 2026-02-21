@@ -15,10 +15,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
-use tugcast_core::{FeedId, Frame};
+use tracing::warn;
 
-use crate::auth::SharedAuthState;
 use crate::dev::DevState;
 use crate::router::FeedRouter;
 
@@ -118,37 +116,15 @@ async fn tell_handler(
         }
     };
 
-    // Classify and handle action
-    match action {
-        "restart" => {
-            // Server-only: shutdown without broadcast
-            info!("tell_handler: restart requested");
-            let _ = router.shutdown_tx.send(42).await;
-        }
-        "reset" => {
-            // Hybrid: broadcast first, then shutdown after delay
-            info!("tell_handler: reset requested (hybrid)");
-            let frame = Frame::new(FeedId::Control, body.to_vec());
-            let _ = router.client_action_tx.send(frame);
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            let _ = router.shutdown_tx.send(43).await;
-        }
-        "reload_frontend" => {
-            // Hybrid: broadcast to clients AND fire reload_tx
-            info!("tell_handler: reload_frontend requested (hybrid)");
-            let frame = Frame::new(FeedId::Control, body.to_vec());
-            let _ = router.client_action_tx.send(frame);
-            if let Some(ref tx) = router.reload_tx {
-                let _ = tx.send(());
-            }
-        }
-        _ => {
-            // Client-only: broadcast to all clients
-            info!("tell_handler: broadcasting client action: {}", action);
-            let frame = Frame::new(FeedId::Control, body.to_vec());
-            let _ = router.client_action_tx.send(frame);
-        }
-    }
+    // Dispatch action
+    crate::actions::dispatch_action(
+        action,
+        &body,
+        &router.shutdown_tx,
+        &router.client_action_tx,
+        &router.reload_tx,
+    )
+    .await;
 
     (
         StatusCode::OK,
@@ -219,18 +195,14 @@ pub(crate) fn build_app(
 
 /// Run the HTTP server
 ///
-/// Sets up axum routes and binds to `127.0.0.1:<port>`
+/// Serves the axum application on the provided `TcpListener`
 pub async fn run_server(
-    port: u16,
+    listener: TcpListener,
     router: FeedRouter,
-    _auth: SharedAuthState,
     dev_state: Option<Arc<DevState>>,
     reload_tx: Option<broadcast::Sender<()>>,
 ) -> Result<(), std::io::Error> {
     let app = build_app(router, dev_state, reload_tx);
-
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
-    info!(port = port, "tugcast server listening");
 
     axum::serve(
         listener,

@@ -10,6 +10,161 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-21T17:26:21Z
+---
+
+## audit-fix: Audit fix: collapsed nested if in tugtool/main.rs, applied cargo fmt to 3 files
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-10
+date: 2025-02-21T17:21:57Z
+bead: tugtool-i2v.11
+---
+
+## #step-10: End-to-end validation: all grep checks pass, all builds/tests pass, manual verification checklist documented
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-9
+date: 2025-02-21T17:14:54Z
+bead: tugtool-i2v.10
+---
+
+## #step-9: Fixed stale devPath bug by reading fresh UserDefaults in startProcess(), removed devPath property, removed exitRestart/exitReset constants from TugConfig
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-8
+date: 2025-02-21T17:09:06Z
+bead: tugtool-i2v.9
+---
+
+## #step-8: Replaced HTTP tell() with UDS sendControl() in AppDelegate, migrated settings card restart to WebSocket sendControlFrame, removed serverPort property
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-7
+date: 2025-02-21T17:02:58Z
+bead: tugtool-i2v.8
+---
+
+## #step-7: Removed authURLPattern regex, stdout pipe setup, and readabilityHandler block from ProcessManager; replaced with FileHandle.standardOutput passthrough
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-21T16:59:09Z
+bead: tugtool-i2v.7
+---
+
+## #step-6: Migrated AppDelegate from onAuthURL to onReady callback, removed onAuthURL property and backward-compat call from ProcessManager
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-21T16:54:02Z
+bead: tugtool-i2v.6
+---
+
+## #step-5: Created ControlSocket.swift with UDS server infrastructure, integrated into ProcessManager with RestartDecision state machine, graceful shutdown, and --control-socket arg passing
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-21T16:44:06Z
+bead: tugtool-i2v.5
+---
+
+## #step-4: Removed println/flush/Write stdout auth URL printing from tugcast main.rs, kept tracing info! line
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-21T16:39:56Z
+bead: tugtool-i2v.4
+---
+
+## #step-3: Replaced tugtool CLI stdout-parsing with UDS control socket IPC, removed regex dependency, added create_control_listener/wait_for_ready, rewrote supervisor_loop with RestartDecision state machine
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-21T16:29:55Z
+bead: tugtool-i2v.3
+---
+
+## #step-2: Created actions.rs with dispatch_action(), control.rs with ControlSocket UDS client, refactored server.rs and router.rs to use dispatch_action, wired control socket into main.rs
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-21T16:20:00Z
+bead: tugtool-i2v.2
+---
+
+## #step-1: Extracted TcpListener::bind from run_server to main.rs, removed unused SharedAuthState parameter
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-21T16:15:11Z
+bead: tugtool-i2v.1
+---
+
+## #step-0: Added --control-socket CLI flag to tugcast with three unit tests
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-21T04:27:50Z
 ---
 

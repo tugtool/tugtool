@@ -1,5 +1,7 @@
+mod actions;
 mod auth;
 mod cli;
+mod control;
 mod dev;
 mod feeds;
 mod router;
@@ -8,6 +10,7 @@ mod server;
 #[cfg(test)]
 mod integration_tests;
 
+use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -66,14 +69,22 @@ async fn main() {
     // Create auth state
     let auth = new_shared_auth_state(cli.port);
 
-    // Print auth URL and flush immediately so the Mac app's ProcessManager
-    // can capture it — Rust fully buffers stdout when connected to a pipe.
     let token = auth.lock().unwrap().token().unwrap().to_string();
     let auth_url = format!("http://127.0.0.1:{}/auth?token={}", cli.port, token);
     info!("Auth URL: {}", auth_url);
-    println!("\ntugcast: {}\n", auth_url);
-    use std::io::Write;
-    std::io::stdout().flush().ok();
+
+    // Connect to control socket if specified
+    let control_socket = if let Some(ref path) = cli.control_socket {
+        match control::ControlSocket::connect(path).await {
+            Ok(cs) => Some(cs),
+            Err(e) => {
+                eprintln!("tugcast: error: failed to connect to control socket: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
 
     // Create broadcast channel for terminal output
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -161,6 +172,21 @@ async fn main() {
         (None, None, None)
     };
 
+    // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
+    let ctl_shutdown_tx = shutdown_tx.clone();
+    let ctl_client_action_tx = client_action_tx.clone();
+    let ctl_reload_tx = reload_tx.clone();
+
+    // Split control socket into reader and writer halves
+    let mut control_writer: Option<control::ControlWriter> = None;
+    let control_reader: Option<control::ControlReader> = if let Some(cs) = control_socket {
+        let (writer, reader) = cs.split();
+        control_writer = Some(writer);
+        Some(reader)
+    } else {
+        None
+    };
+
     // Create feed router with reload_tx wired
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
@@ -240,13 +266,42 @@ async fn main() {
             .await;
     });
 
+    // Bind TCP listener
+    let listener = match TcpListener::bind(format!("127.0.0.1:{}", cli.port)).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!(
+                "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
+                cli.port, e
+            );
+            std::process::exit(1);
+        }
+    };
+    info!(port = cli.port, "tugcast server listening");
+
+    // Send ready message over control socket
+    if let Some(ref mut writer) = control_writer {
+        if let Err(e) = writer
+            .send_ready(&auth_url, cli.port, std::process::id())
+            .await
+        {
+            eprintln!("tugcast: warning: failed to send ready message: {}", e);
+            // Non-fatal: continue without control socket
+        }
+    }
+
+    // Spawn control socket receive loop
+    if let Some(reader) = control_reader {
+        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx, ctl_reload_tx));
+    }
+
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(cli.port, feed_router, auth, dev_state, reload_tx);
+    let server_future = server::run_server(listener, feed_router, dev_state, reload_tx);
 
     let exit_code = tokio::select! {
         result = server_future => {
             if let Err(e) = result {
-                eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+                eprintln!("tugcast: error: server error: {}", e);
                 1
             } else {
                 0
@@ -257,6 +312,17 @@ async fn main() {
             code as i32
         }
     };
+
+    // Send shutdown message over control socket (best-effort)
+    if let Some(ref mut writer) = control_writer {
+        let reason = match exit_code {
+            42 => "restart",
+            43 => "reset",
+            0 => "normal",
+            _ => "error",
+        };
+        let _ = writer.send_shutdown(reason, std::process::id()).await;
+    }
 
     // Signal shutdown for background tasks
     cancel.cancel();

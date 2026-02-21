@@ -2177,7 +2177,7 @@ version = "0.5.21"
 dependencies = [
  "clap",
  "libc",
- "regex",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
