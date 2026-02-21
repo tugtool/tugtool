@@ -49,7 +49,6 @@ pub(crate) struct DevState {
 pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
 
 /// Dev runtime: holds file watcher for RAII cleanup
-#[allow(dead_code)] // Used in Step 2 when enable_dev_mode is implemented
 pub(crate) struct DevRuntime {
     pub(crate) _watcher: RecommendedWatcher,
 }
@@ -57,6 +56,48 @@ pub(crate) struct DevRuntime {
 /// Create a new shared dev state initialized to None
 pub(crate) fn new_shared_dev_state() -> SharedDevState {
     Arc::new(ArcSwap::from_pointee(None))
+}
+
+/// Enable dev mode: load manifest, start file watcher, populate shared state
+#[cfg_attr(not(test), allow(dead_code))] // Called by control recv loop in Step 3
+pub(crate) async fn enable_dev_mode(
+    source_tree: PathBuf,
+    shared_state: &SharedDevState,
+    client_action_tx: broadcast::Sender<Frame>,
+) -> Result<DevRuntime, String> {
+    // Load manifest via spawn_blocking (blocking filesystem I/O)
+    let source = source_tree.clone();
+    let state = tokio::task::spawn_blocking(move || load_manifest(&source))
+        .await
+        .map_err(|e| format!("manifest load task panicked: {}", e))??;
+
+    // Validate manifest (logs warnings)
+    validate_manifest(&state);
+
+    // Derive watch directories
+    let watch_dirs = watch_dirs_from_manifest(&state);
+
+    // Create file watcher (passing shared_state clone for debounce gating)
+    let watcher = dev_file_watcher(&watch_dirs, client_action_tx, shared_state.clone())?;
+
+    // Store loaded DevState into shared state
+    shared_state.store(Arc::new(Some(state)));
+
+    info!(source_tree = ?source_tree, "dev mode enabled");
+
+    Ok(DevRuntime { _watcher: watcher })
+}
+
+/// Disable dev mode: clear shared state, drop file watcher
+#[cfg_attr(not(test), allow(dead_code))] // Called by control recv loop in Step 3
+pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevState) {
+    // Clear shared state
+    shared_state.store(Arc::new(None));
+
+    // Drop runtime (stops file watcher)
+    drop(runtime);
+
+    info!("dev mode disabled");
 }
 
 /// Load and parse the asset manifest from source tree
@@ -340,10 +381,11 @@ fn has_reload_extension(event: &notify::Event) -> bool {
 /// Uses a quiet-period debounce: after the first qualifying file event,
 /// keeps consuming events until 100ms of silence, then fires a single
 /// reload signal. No polling, no fixed delays.
-#[allow(dead_code)] // Called by enable_dev_mode, added in Step 2
+#[cfg_attr(not(test), allow(dead_code))] // Called by enable_dev_mode
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
     client_action_tx: broadcast::Sender<Frame>,
+    shared_state: SharedDevState,
 ) -> Result<RecommendedWatcher, String> {
     // Bridge notify's sync callback into the tokio world.
     // UnboundedSender::send() is non-async, safe to call from notify's thread.
@@ -362,7 +404,8 @@ pub(crate) fn dev_file_watcher(
         info!("dev: watching {}", dir.display());
     }
 
-    // Quiet-period debounce task
+    // Quiet-period debounce task with dev state gating
+    let debounce_state = shared_state;
     tokio::spawn(async move {
         let quiet_period = Duration::from_millis(100);
         loop {
@@ -384,7 +427,10 @@ pub(crate) fn dev_file_watcher(
                 }
             }
 
-            // Phase 3: Fire reload via WebSocket Control frame
+            // Phase 3: Gate on dev state, then fire reload
+            if debounce_state.load().is_none() {
+                continue; // dev mode disabled during debounce
+            }
             let payload = br#"{"action":"reload_frontend"}"#;
             let frame = Frame::new(FeedId::Control, payload.to_vec());
             let _ = client_action_tx.send(frame);
@@ -818,5 +864,200 @@ fallback = "dist"
 
         // Load and verify
         assert!(shared.load().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_enable_dev_mode_valid() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a TempDir with a valid tugdeck/assets.toml manifest
+        let temp_dir = TempDir::new().unwrap();
+        let tugdeck_dir = temp_dir.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir).unwrap();
+
+        let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+        let shared = new_shared_dev_state();
+        let (client_action_tx, _) = broadcast::channel(16);
+
+        let result = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+
+        assert!(result.is_ok());
+        assert!(shared.load().is_some());
+
+        // Drop runtime to clean up the watcher
+        drop(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_enable_dev_mode_invalid_path() {
+        use tempfile::TempDir;
+
+        // Create a TempDir with NO tugdeck directory (invalid path)
+        let temp_dir = TempDir::new().unwrap();
+
+        let shared = new_shared_dev_state();
+        let (client_action_tx, _) = broadcast::channel(16);
+
+        let result = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+
+        assert!(result.is_err());
+        assert!(shared.load().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_disable_dev_mode_clears_state() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Enable dev mode with valid manifest
+        let temp_dir = TempDir::new().unwrap();
+        let tugdeck_dir = temp_dir.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir).unwrap();
+
+        let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+        let shared = new_shared_dev_state();
+        let (client_action_tx, _) = broadcast::channel(16);
+
+        let runtime = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx)
+            .await
+            .unwrap();
+
+        assert!(shared.load().is_some());
+
+        // Disable dev mode
+        disable_dev_mode(runtime, &shared);
+
+        assert!(shared.load().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_enable_disable_enable_different_path() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create two TempDirs each with valid manifests
+        let temp_dir1 = TempDir::new().unwrap();
+        let tugdeck_dir1 = temp_dir1.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir1).unwrap();
+
+        let manifest_content1 = r#"
+[files]
+"index.html" = "index.html"
+"file1.css" = "file1.css"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir1.join("assets.toml"), manifest_content1).unwrap();
+
+        let temp_dir2 = TempDir::new().unwrap();
+        let tugdeck_dir2 = temp_dir2.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir2).unwrap();
+
+        let manifest_content2 = r#"
+[files]
+"index.html" = "index.html"
+"file2.css" = "file2.css"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir2.join("assets.toml"), manifest_content2).unwrap();
+
+        let shared = new_shared_dev_state();
+        let (client_action_tx, _) = broadcast::channel(16);
+
+        // Enable with path1
+        let runtime1 = enable_dev_mode(
+            temp_dir1.path().to_path_buf(),
+            &shared,
+            client_action_tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(shared.load().is_some());
+
+        // Disable
+        disable_dev_mode(runtime1, &shared);
+
+        // Enable with path2
+        let runtime2 = enable_dev_mode(temp_dir2.path().to_path_buf(), &shared, client_action_tx)
+            .await
+            .unwrap();
+
+        // Verify the source_tree in the loaded state matches path2
+        let guard = shared.load();
+        if let Some(ref state) = **guard {
+            assert_eq!(state.source_tree, temp_dir2.path());
+        } else {
+            panic!("Expected Some(DevState) after enable");
+        }
+
+        drop(runtime2);
+    }
+
+    #[tokio::test]
+    async fn test_debounce_gating_after_disable() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a TempDir with valid manifest and a real .html file
+        let temp_dir = TempDir::new().unwrap();
+        let tugdeck_dir = temp_dir.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir).unwrap();
+
+        let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+        // Create the index.html file
+        fs::write(tugdeck_dir.join("index.html"), "<html></html>").unwrap();
+
+        let shared = new_shared_dev_state();
+        let (client_action_tx, _) = broadcast::channel(16);
+        let mut client_action_rx = client_action_tx.subscribe();
+
+        // Enable dev mode
+        let runtime = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx)
+            .await
+            .unwrap();
+
+        // Modify the .html file to trigger a file event
+        fs::write(tugdeck_dir.join("index.html"), "<html><body>modified</body></html>").unwrap();
+
+        // Immediately disable dev mode (before the 100ms debounce fires)
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        disable_dev_mode(runtime, &shared);
+
+        // Wait 200ms (enough for debounce to complete)
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        // Assert client_action_rx.try_recv() returns Err (no reload was sent)
+        assert!(
+            client_action_rx.try_recv().is_err(),
+            "Expected no reload after disable during debounce"
+        );
     }
 }

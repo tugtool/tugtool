@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-21T20:22:38Z
+bead: tugtool-4m1.3
+---
+
+## #step-2: Added enable_dev_mode (async, uses spawn_blocking) and disable_dev_mode functions to dev.rs. Updated dev_file_watcher to accept SharedDevState and gate reload broadcasts on shared state per D07. Added 5 unit tests covering enable/disable lifecycle and debounce gating.
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-21T20:15:17Z
 bead: tugtool-4m1.2
