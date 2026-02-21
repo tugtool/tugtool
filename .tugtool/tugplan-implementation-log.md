@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-21T03:56:57Z
+bead: tugtool-bs2.6
+---
+
+## #step-5: Gate About Tug and Settings menu items on frontendReady bridge signal fired from connection.onOpen in main.ts. Harden tell() with error logging (nil serverPort guard, HTTP error/status logging). Added bridgeFrontendReady to BridgeDelegate protocol and routing in MainWindow.swift.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-21T03:49:38Z
 bead: tugtool-bs2.5

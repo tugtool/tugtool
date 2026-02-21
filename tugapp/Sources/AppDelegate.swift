@@ -8,6 +8,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreePath: String?
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
+    private var aboutMenuItem: NSMenuItem?
+    private var settingsMenuItem: NSMenuItem?
     private var serverPort: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -98,9 +100,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        appMenu.addItem(NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: ""))
+        let aboutItem = NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: "")
+        aboutItem.isEnabled = false
+        self.aboutMenuItem = aboutItem
+        appMenu.addItem(aboutItem)
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ","))
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
+        settingsItem.isEnabled = false
+        self.settingsMenuItem = settingsItem
+        appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
         // Services submenu
@@ -281,7 +289,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - HTTP tell() helper
 
     private func tell(_ action: String, params: [String: Any] = [:]) {
-        guard let port = serverPort else { return }
+        guard let port = serverPort else {
+            NSLog("AppDelegate: tell() skipped, serverPort is nil (action: %@)", action)
+            return
+        }
         var body: [String: Any] = ["action": action]
         for (key, value) in params {
             body[key] = value
@@ -292,8 +303,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-        // Fire-and-forget
-        URLSession.shared.dataTask(with: request).resume()
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error = error {
+                NSLog("AppDelegate: tell(%@) failed: %@", action, error.localizedDescription)
+            } else if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                NSLog("AppDelegate: tell(%@) returned status %d", action, http.statusCode)
+            }
+        }.resume()
     }
 }
 
@@ -343,6 +359,13 @@ extension AppDelegate: BridgeDelegate {
 
     func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void) {
         completion(devModeEnabled, runtimeDevMode, sourceTreePath)
+    }
+
+    func bridgeFrontendReady() {
+        DispatchQueue.main.async {
+            self.aboutMenuItem?.isEnabled = true
+            self.settingsMenuItem?.isEnabled = true
+        }
     }
 }
 

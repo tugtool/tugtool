@@ -67,6 +67,11 @@ new Dock(deck);
 // Initialize action dispatch system
 initActionDispatch(connection, deck);
 
+// Signal frontend readiness to native app (enables menu items)
+connection.onOpen(() => {
+  (window as any).webkit?.messageHandlers?.frontendReady?.postMessage({});
+});
+
 // Connect to the server
 connection.connect();
 

@@ -6,6 +6,7 @@ protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void)
+    func bridgeFrontendReady()
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -26,6 +27,7 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         contentController.add(self, name: "chooseSourceTree")
         contentController.add(self, name: "setDevMode")
         contentController.add(self, name: "getSettings")
+        contentController.add(self, name: "frontendReady")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -70,6 +72,7 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         contentController.removeScriptMessageHandler(forName: "chooseSourceTree")
         contentController.removeScriptMessageHandler(forName: "setDevMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
+        contentController.removeScriptMessageHandler(forName: "frontendReady")
         bridgeCleaned = true
     }
 
@@ -133,6 +136,8 @@ extension MainWindow: WKScriptMessageHandler {
                 }
                 self.webView.evaluateJavaScript("window.__tugBridge?.onSettingsLoaded?.({devMode: \(devMode), runtimeDevMode: \(runtimeDevMode), sourceTree: \(stValue)})")
             }
+        case "frontendReady":
+            bridgeDelegate?.bridgeFrontendReady()
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }
