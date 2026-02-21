@@ -11,7 +11,6 @@ pub async fn dispatch_action(
     raw_payload: &[u8],
     shutdown_tx: &mpsc::Sender<u8>,
     client_action_tx: &broadcast::Sender<Frame>,
-    reload_tx: &Option<broadcast::Sender<()>>,
 ) {
     match action {
         "restart" => {
@@ -24,14 +23,6 @@ pub async fn dispatch_action(
             let _ = client_action_tx.send(frame);
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             let _ = shutdown_tx.send(43).await;
-        }
-        "reload_frontend" => {
-            info!("dispatch_action: reload_frontend requested (hybrid)");
-            let frame = Frame::new(FeedId::Control, raw_payload.to_vec());
-            let _ = client_action_tx.send(frame);
-            if let Some(tx) = reload_tx {
-                let _ = tx.send(());
-            }
         }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
@@ -49,14 +40,12 @@ mod tests {
     async fn test_dispatch_action_restart() {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         let (client_action_tx, _) = broadcast::channel(16);
-        let reload_tx = None;
 
         dispatch_action(
             "restart",
             br#"{"action":"restart"}"#,
             &shutdown_tx,
             &client_action_tx,
-            &reload_tx,
         )
         .await;
 
@@ -67,14 +56,12 @@ mod tests {
     async fn test_dispatch_action_unknown() {
         let (shutdown_tx, _) = mpsc::channel(1);
         let (client_action_tx, mut client_action_rx) = broadcast::channel(16);
-        let reload_tx = None;
 
         dispatch_action(
             "show-card",
             br#"{"action":"show-card"}"#,
             &shutdown_tx,
             &client_action_tx,
-            &reload_tx,
         )
         .await;
 

@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::broadcast;
 use tracing::warn;
 
 use crate::dev::DevState;
@@ -122,7 +121,6 @@ async fn tell_handler(
         &body,
         &router.shutdown_tx,
         &router.client_action_tx,
-        &router.reload_tx,
     )
     .await;
 
@@ -166,25 +164,20 @@ async fn serve_asset(uri: Uri) -> Response {
 pub(crate) fn build_app(
     router: FeedRouter,
     dev_state: Option<Arc<DevState>>,
-    reload_tx: Option<broadcast::Sender<()>>,
 ) -> Router {
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler));
 
-    let app = if let (Some(state), Some(tx)) = (dev_state, reload_tx) {
-        let reload_sender = crate::dev::ReloadSender(tx);
+    let app = if let Some(state) = dev_state {
         let state_clone = state.clone();
         base.route("/", get(crate::dev::serve_dev_index))
             .route("/index.html", get(crate::dev::serve_dev_index))
-            .route("/dev/reload", get(crate::dev::dev_reload_handler))
-            .route("/dev/reload.js", get(crate::dev::serve_dev_reload_js))
             .fallback(move |uri| {
                 let state = state_clone.clone();
                 async move { crate::dev::serve_dev_asset(uri, Extension(state)).await }
             })
-            .layer(Extension(reload_sender))
             .layer(Extension(state))
     } else {
         base.fallback(serve_asset)
@@ -200,9 +193,8 @@ pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: Option<Arc<DevState>>,
-    reload_tx: Option<broadcast::Sender<()>>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state, reload_tx);
+    let app = build_app(router, dev_state);
 
     axum::serve(
         listener,
@@ -268,13 +260,16 @@ mod tests {
         assert_eq!("restart", "restart");
 
         // Hybrid
-        assert!(matches!("reset", "reset" | "reload_frontend"));
-        assert!(matches!("reload_frontend", "reset" | "reload_frontend"));
+        assert!(matches!("reset", "reset"));
 
         // Client-only (everything else)
         assert!(!matches!(
             "show-card",
-            "restart" | "reset" | "reload_frontend"
+            "restart" | "reset"
+        ));
+        assert!(!matches!(
+            "reload_frontend",
+            "restart" | "reset"
         ));
     }
 }

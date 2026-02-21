@@ -48,14 +48,13 @@ pub struct FeedRouter {
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
     pub(crate) shutdown_tx: mpsc::Sender<u8>,
-    pub(crate) reload_tx: Option<broadcast::Sender<()>>,
     pub(crate) client_action_tx: broadcast::Sender<Frame>,
 }
 
 impl FeedRouter {
     /// Create a new feed router
     // Allow many arguments: this constructor wires together all shared state channels
-    // (terminal, conversation, snapshot, shutdown, reload, client_action) plus session and auth.
+    // (terminal, conversation, snapshot, shutdown, client_action) plus session and auth.
     // Grouping into a config struct would add indirection without improving clarity.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -67,7 +66,6 @@ impl FeedRouter {
         auth: SharedAuthState,
         snapshot_watches: Vec<watch::Receiver<Frame>>,
         shutdown_tx: mpsc::Sender<u8>,
-        reload_tx: Option<broadcast::Sender<()>>,
         client_action_tx: broadcast::Sender<Frame>,
     ) -> Self {
         Self {
@@ -79,7 +77,6 @@ impl FeedRouter {
             auth,
             snapshot_watches,
             shutdown_tx,
-            reload_tx,
             client_action_tx,
         }
     }
@@ -313,7 +310,6 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                                             &frame.payload,
                                                             &router.shutdown_tx,
                                                             &router.client_action_tx,
-                                                            &router.reload_tx,
                                                         ).await;
                                                     }
                                                 }

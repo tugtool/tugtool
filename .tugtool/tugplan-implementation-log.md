@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-21T18:41:40Z
+bead: tugtool-otr.1
+---
+
+## #step-0: Removed SSE reload infrastructure: deleted ReloadSender struct, inject_reload_script, serve_dev_reload_js, dev_reload_handler functions; removed reload_tx parameter threading from dispatch_action, FeedRouter, run_recv_loop, build_app, run_server, and main; updated 7 source files; 135 tests pass with zero warnings
+
+**Files changed:**
+- .tugtool/tugplan-sse-to-websocket-reload.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-21T17:26:21Z
 ---
