@@ -32,7 +32,7 @@ class ControlSocketListener {
         // Bind
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
-        _ = withUnsafeMutableBytes(of: &addr.sun_path.0) { dst in
+        _ = withUnsafeMutableBytes(of: &addr.sun_path) { dst in
             path.withCString { src in
                 strlcpy(dst.baseAddress!.assumingMemoryBound(to: CChar.self), src, dst.count)
             }

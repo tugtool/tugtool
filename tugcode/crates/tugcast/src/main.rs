@@ -158,7 +158,7 @@ async fn main() {
         let watch_dirs = dev::watch_dirs_from_manifest(&state);
 
         // Start file watcher
-        match dev::dev_file_watcher(&watch_dirs) {
+        match dev::dev_file_watcher(&watch_dirs, client_action_tx.clone()) {
             Ok((tx, watcher)) => {
                 info!(path = ?dev_path, "dev file watcher started");
                 (Some(Arc::new(state)), Some(tx), Some(watcher))

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
+use tugcast_core::{FeedId, Frame};
 
 /// Newtype wrapper for the reload broadcast sender (shared state for SSE handlers)
 #[derive(Clone)]
@@ -381,6 +382,7 @@ fn has_reload_extension(event: &notify::Event) -> bool {
 /// reload signal. No polling, no fixed delays.
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
+    client_action_tx: broadcast::Sender<Frame>,
 ) -> Result<(broadcast::Sender<()>, RecommendedWatcher), String> {
     let (reload_tx, _) = broadcast::channel::<()>(16);
     let tx_clone = reload_tx.clone();
@@ -424,8 +426,11 @@ pub(crate) fn dev_file_watcher(
                 }
             }
 
-            // Phase 3: Fire reload
+            // Phase 3: Fire reload via SSE and WebSocket
             let _ = tx_clone.send(());
+            let payload = br#"{"action":"reload_frontend"}"#;
+            let frame = Frame::new(FeedId::Control, payload.to_vec());
+            let _ = client_action_tx.send(frame);
             info!("dev: triggered reload");
         }
     });
