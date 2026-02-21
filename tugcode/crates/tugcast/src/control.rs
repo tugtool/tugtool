@@ -84,7 +84,6 @@ impl ControlReader {
         mut self,
         shutdown_tx: mpsc::Sender<u8>,
         client_action_tx: broadcast::Sender<Frame>,
-        reload_tx: Option<broadcast::Sender<()>>,
     ) {
         let mut line = String::new();
 
@@ -109,7 +108,6 @@ impl ControlReader {
                                     &bytes,
                                     &shutdown_tx,
                                     &client_action_tx,
-                                    &reload_tx,
                                 )
                                 .await;
                             }

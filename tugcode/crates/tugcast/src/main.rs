@@ -141,7 +141,7 @@ async fn main() {
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     // Load manifest and start dev file watcher if dev mode is active
-    let (dev_state, reload_tx, _watcher) = if let Some(ref dev_path) = cli.dev {
+    let (dev_state, _watcher) = if let Some(ref dev_path) = cli.dev {
         // Load manifest
         let state = match dev::load_manifest(dev_path) {
             Ok(s) => s,
@@ -159,9 +159,9 @@ async fn main() {
 
         // Start file watcher
         match dev::dev_file_watcher(&watch_dirs, client_action_tx.clone()) {
-            Ok((tx, watcher)) => {
+            Ok(watcher) => {
                 info!(path = ?dev_path, "dev file watcher started");
-                (Some(Arc::new(state)), Some(tx), Some(watcher))
+                (Some(Arc::new(state)), Some(watcher))
             }
             Err(e) => {
                 eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
@@ -169,13 +169,12 @@ async fn main() {
             }
         }
     } else {
-        (None, None, None)
+        (None, None)
     };
 
     // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
     let ctl_shutdown_tx = shutdown_tx.clone();
     let ctl_client_action_tx = client_action_tx.clone();
-    let ctl_reload_tx = reload_tx.clone();
 
     // Split control socket into reader and writer halves
     let mut control_writer: Option<control::ControlWriter> = None;
@@ -187,7 +186,7 @@ async fn main() {
         None
     };
 
-    // Create feed router with reload_tx wired
+    // Create feed router
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
         input_tx,
@@ -205,7 +204,6 @@ async fn main() {
             conversation_watch_rx,
         ],
         shutdown_tx,
-        reload_tx.clone(),
         client_action_tx,
     );
 
@@ -292,11 +290,11 @@ async fn main() {
 
     // Spawn control socket receive loop
     if let Some(reader) = control_reader {
-        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx, ctl_reload_tx));
+        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx));
     }
 
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(listener, feed_router, dev_state, reload_tx);
+    let server_future = server::run_server(listener, feed_router, dev_state);
 
     let exit_code = tokio::select! {
         result = server_future => {

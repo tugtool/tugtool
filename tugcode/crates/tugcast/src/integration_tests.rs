@@ -42,11 +42,10 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         auth.clone(),
         vec![], // No snapshot feeds for auth/WebSocket tests
         shutdown_tx,
-        None, // reload_tx
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None, None);
+    let app = build_app(feed_router, None);
     (app, token)
 }
 
@@ -476,14 +475,10 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None, // reload_tx
         client_action_tx,
     );
 
-    // Create broadcast channel for reload
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
     // Make request to /
     let response = app
@@ -507,90 +502,8 @@ fallback = "dist"
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8(body_bytes.to_vec()).unwrap();
     assert!(body.contains("Dev Mode"));
-    // Verify reload script was injected
-    assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
-}
-
-#[tokio::test]
-async fn test_dev_reload_sse_endpoint() {
-    use std::fs;
-    use tempfile::TempDir;
-
-    // Create a temp directory with tugdeck structure
-    let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    fs::create_dir_all(&tugdeck_dir).unwrap();
-
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-    // Write index.html
-    fs::write(
-        tugdeck_dir.join("index.html"),
-        "<html><body>Test</body></html>",
-    )
-    .unwrap();
-
-    // Load manifest to get DevState
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
-
-    // Build app with dev state and reload broadcast
-    let auth = auth::new_shared_auth_state(7890);
-    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
-
-    // Create dummy shutdown channel for tests
-    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
-
-    // Create dummy client action channel for tests
-    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        conversation_tx,
-        conversation_input_tx,
-        "test-dummy".to_string(),
-        auth,
-        vec![],
-        shutdown_tx,
-        None, // reload_tx
-        client_action_tx,
-    );
-
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
-
-    // Make request to /dev/reload
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/dev/reload")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify SSE content type
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(content_type.contains("text/event-stream"));
+    // Verify reload script was NOT injected
+    assert!(!body.contains(r#"<script src="/dev/reload.js"></script>"#));
 }
 
 #[tokio::test]
@@ -644,12 +557,10 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
     // Request /tokens.css
     let response = app
@@ -733,12 +644,10 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
     // Request /fonts/Hack-Regular.woff2
     let response = app
@@ -769,7 +678,7 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_index_html_injection() {
+async fn test_manifest_based_serving_index_html() {
     use std::fs;
     use tempfile::TempDir;
 
@@ -789,11 +698,8 @@ fallback = "dist"
     fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
 
     // Write index.html
-    fs::write(
-        tugdeck_dir.join("index.html"),
-        "<html><body>Index Test</body></html>",
-    )
-    .unwrap();
+    let original_html = "<html><body>Index Test</body></html>";
+    fs::write(tugdeck_dir.join("index.html"), original_html).unwrap();
 
     // Load manifest
     let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
@@ -816,14 +722,12 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
-    // Request /index.html (not /) to verify D10 compliance
+    // Request /index.html (not /) to verify HTML served unmodified
     let response = app
         .oneshot(
             Request::builder()
@@ -836,12 +740,12 @@ fallback = "dist"
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Verify reload script was injected
+    // Verify HTML is served unmodified
     use http_body_util::BodyExt;
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8(body_bytes.to_vec()).unwrap();
-    assert!(body.contains("Index Test"));
-    assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
+    assert_eq!(body, original_html);
+    assert!(!body.contains(r#"<script src="/dev/reload.js"></script>"#));
 }
 
 #[tokio::test]
@@ -890,12 +794,10 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
     // Test path traversal with /../../../etc/passwd
     let response = app
@@ -971,12 +873,10 @@ fallback = "dist"
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(Arc::new(dev_state)), Some(reload_tx));
+    let app = build_app(feed_router, Some(Arc::new(dev_state)));
 
     // Request unknown file
     let response = app
@@ -1110,11 +1010,10 @@ async fn test_tell_restart_triggers_shutdown() {
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None, None);
+    let app = build_app(feed_router, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1143,7 +1042,7 @@ async fn test_tell_reload_frontend() {
     use axum::extract::connect_info::MockConnectInfo;
     use std::net::{IpAddr, Ipv4Addr};
 
-    // Build test app with reload_tx
+    // Build test app
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
@@ -1151,7 +1050,6 @@ async fn test_tell_reload_frontend() {
     let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
-    let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
@@ -1162,11 +1060,10 @@ async fn test_tell_reload_frontend() {
         auth,
         vec![],
         shutdown_tx,
-        Some(reload_tx),
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None, None);
+    let app = build_app(feed_router, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1184,9 +1081,6 @@ async fn test_tell_reload_frontend() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-
-    // Verify reload_tx was fired
-    reload_rx.try_recv().unwrap();
 
     // Verify client_action_tx was broadcast
     let frame = client_action_rx.try_recv().unwrap();
@@ -1217,11 +1111,10 @@ async fn test_tell_hybrid_reset_timing() {
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None, None);
+    let app = build_app(feed_router, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -1278,11 +1171,10 @@ async fn test_tell_client_action_round_trip() {
         auth,
         vec![],
         shutdown_tx,
-        None,
         client_action_tx,
     );
 
-    let app = build_app(feed_router, None, None);
+    let app = build_app(feed_router, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));

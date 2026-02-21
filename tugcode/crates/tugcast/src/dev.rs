@@ -1,26 +1,17 @@
-//! Dev mode: SSE reload endpoint, file watcher, manifest-based serving, and index.html injection
+//! Dev mode: file watcher, manifest-based serving, and dev asset serving
 
 use axum::extract::Extension;
 use axum::http::{StatusCode, Uri, header};
-use axum::response::{
-    IntoResponse, Response,
-    sse::{Event, KeepAlive, Sse},
-};
-use futures::Stream;
+use axum::response::{IntoResponse, Response};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
-
-/// Newtype wrapper for the reload broadcast sender (shared state for SSE handlers)
-#[derive(Clone)]
-pub(crate) struct ReloadSender(pub broadcast::Sender<()>);
 
 // Keep in sync with build.rs copy
 #[derive(Debug, Deserialize)]
@@ -202,7 +193,7 @@ pub(crate) async fn serve_dev_asset(
     }
     let lookup_key = components.join("/");
 
-    // Special case: index.html gets reload script injection
+    // Special case: index.html served from disk
     if lookup_key == "index.html" {
         return serve_dev_index_impl(&dev_state).await;
     }
@@ -301,68 +292,20 @@ async fn serve_file_with_safety(candidate: &Path, dev_state: &DevState) -> Respo
     }
 }
 
-/// Inject the reload script tag before </body>
-fn inject_reload_script(html: &str) -> String {
-    let script_tag = r#"<script src="/dev/reload.js"></script>"#;
-    if let Some(pos) = html.rfind("</body>") {
-        let mut result = String::with_capacity(html.len() + script_tag.len() + 1);
-        result.push_str(&html[..pos]);
-        result.push_str(script_tag);
-        result.push('\n');
-        result.push_str(&html[pos..]);
-        result
-    } else {
-        format!("{}\n{}", html, script_tag)
-    }
-}
-
-/// Serve the reload client JS file
-pub(crate) async fn serve_dev_reload_js() -> impl IntoResponse {
-    (
-        [(
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        )],
-        r#"new EventSource("/dev/reload").onmessage = () => location.reload();"#,
-    )
-}
-
-/// SSE endpoint for live reload notifications
-pub(crate) async fn dev_reload_handler(
-    Extension(reload_tx): Extension<ReloadSender>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let rx = reload_tx.0.subscribe();
-
-    let stream = futures::stream::unfold(rx, |mut rx| async move {
-        loop {
-            match rx.recv().await {
-                Ok(()) => return Some((Ok(Event::default().data("reload")), rx)),
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => return None,
-            }
-        }
-    });
-
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-/// Serve index.html with injected reload script (public handler for / and /index.html routes)
+/// Serve index.html (public handler for / and /index.html routes)
 pub(crate) async fn serve_dev_index(Extension(dev_state): Extension<Arc<DevState>>) -> Response {
     serve_dev_index_impl(&dev_state).await
 }
 
-/// Internal implementation of index serving with reload script injection
+/// Internal implementation of index serving
 async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
-    match std::fs::read_to_string(&dev_state.index_path) {
-        Ok(html) => {
-            let modified = inject_reload_script(&html);
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                modified,
-            )
-                .into_response()
-        }
+    match std::fs::read(&dev_state.index_path) {
+        Ok(content) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            content,
+        )
+            .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
     }
 }
@@ -383,10 +326,7 @@ fn has_reload_extension(event: &notify::Event) -> bool {
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
     client_action_tx: broadcast::Sender<Frame>,
-) -> Result<(broadcast::Sender<()>, RecommendedWatcher), String> {
-    let (reload_tx, _) = broadcast::channel::<()>(16);
-    let tx_clone = reload_tx.clone();
-
+) -> Result<RecommendedWatcher, String> {
     // Bridge notify's sync callback into the tokio world.
     // UnboundedSender::send() is non-async, safe to call from notify's thread.
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -426,8 +366,7 @@ pub(crate) fn dev_file_watcher(
                 }
             }
 
-            // Phase 3: Fire reload via SSE and WebSocket
-            let _ = tx_clone.send(());
+            // Phase 3: Fire reload via WebSocket Control frame
             let payload = br#"{"action":"reload_frontend"}"#;
             let frame = Frame::new(FeedId::Control, payload.to_vec());
             let _ = client_action_tx.send(frame);
@@ -435,56 +374,12 @@ pub(crate) fn dev_file_watcher(
         }
     });
 
-    Ok((reload_tx, watcher))
+    Ok(watcher)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_inject_reload_script() {
-        let html = "<html><head></head><body><h1>Test</h1></body></html>";
-        let result = inject_reload_script(html);
-        assert!(result.contains(r#"<script src="/dev/reload.js"></script>"#));
-        assert!(result.contains("</body>"));
-        // Script should be before </body>
-        let script_pos = result
-            .find(r#"<script src="/dev/reload.js"></script>"#)
-            .unwrap();
-        let body_pos = result.find("</body>").unwrap();
-        assert!(script_pos < body_pos);
-    }
-
-    #[test]
-    fn test_inject_reload_script_no_body_tag() {
-        let html = "<html><head></head><div>Test</div>";
-        let result = inject_reload_script(html);
-        assert!(result.contains(r#"<script src="/dev/reload.js"></script>"#));
-        // Script should be at the end
-        assert!(result.ends_with(r#"<script src="/dev/reload.js"></script>"#));
-    }
-
-    #[tokio::test]
-    async fn test_serve_dev_reload_js() {
-        let response = serve_dev_reload_js().await.into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let content_type = response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(content_type.contains("application/javascript"));
-
-        // Read body
-        use http_body_util::BodyExt;
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let body = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(body.contains("EventSource"));
-        assert!(body.contains("/dev/reload"));
-    }
 
     #[test]
     fn test_load_manifest_valid() {
@@ -853,11 +748,8 @@ fallback = "dist"
         fs::create_dir_all(&tugdeck_dir).unwrap();
 
         // Create index.html
-        fs::write(
-            tugdeck_dir.join("index.html"),
-            "<html><body>Test</body></html>",
-        )
-        .unwrap();
+        let original_html = "<html><body>Test</body></html>";
+        fs::write(tugdeck_dir.join("index.html"), original_html).unwrap();
 
         let mut files = HashMap::new();
         files.insert("index.html".to_string(), tugdeck_dir.join("index.html"));
@@ -879,7 +771,8 @@ fallback = "dist"
         use http_body_util::BodyExt;
         let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8(body_bytes.to_vec()).unwrap();
-        // Verify reload script was injected
-        assert!(body.contains(r#"<script src="/dev/reload.js"></script>"#));
+        // Verify reload script was NOT injected
+        assert!(!body.contains(r#"<script src="/dev/reload.js"></script>"#));
+        assert_eq!(body, original_html);
     }
 }
