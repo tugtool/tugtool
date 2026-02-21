@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-21T04:27:50Z
+---
+
+## audit-fix: Audit fix: cargo fmt on tugcode/crates/tugcast/src/dev.rs to fix chain formatting and comment alignment
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-9
 date: 2025-02-21T04:23:55Z
 bead: tugtool-bs2.10

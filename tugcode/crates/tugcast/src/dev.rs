@@ -368,10 +368,10 @@ async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
 
 /// Check whether a notify event contains paths with reload-worthy extensions
 fn has_reload_extension(event: &notify::Event) -> bool {
-    event
-        .paths
-        .iter()
-        .any(|p| p.extension().is_some_and(|ext| ext == "html" || ext == "css" || ext == "js"))
+    event.paths.iter().any(|p| {
+        p.extension()
+            .is_some_and(|ext| ext == "html" || ext == "css" || ext == "js")
+    })
 }
 
 /// Start file watcher for dev mode live reload
@@ -418,9 +418,9 @@ pub(crate) fn dev_file_watcher(
             // Phase 2: Consume events until quiet_period of silence
             loop {
                 match tokio::time::timeout(quiet_period, event_rx.recv()).await {
-                    Ok(Some(_)) => continue,  // more events — restart quiet period
-                    Ok(None) => return,        // channel closed
-                    Err(_) => break,           // timeout — silence achieved
+                    Ok(Some(_)) => continue, // more events — restart quiet period
+                    Ok(None) => return,      // channel closed
+                    Err(_) => break,         // timeout — silence achieved
                 }
             }
 
