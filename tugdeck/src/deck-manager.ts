@@ -1038,7 +1038,10 @@ export class DeckManager implements IDragState {
     // Find the active card for this panel and remove it
     const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId);
     if (activeTab) {
-      this.removeCard(activeTab.id);
+      const card = this.cardRegistry.get(activeTab.id);
+      if (card) {
+        this.removeCard(card);
+      }
     }
   }
 

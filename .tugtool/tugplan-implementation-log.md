@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-21T03:31:29Z
+bead: tugtool-bs2.2
+---
+
+## #step-1: Fixed closePanelByComponent type mismatch where activeTab.id (string) was passed to removeCard() which expects TugCard. Now uses cardRegistry.get() lookup matching existing patterns.
+
+**Files changed:**
+- .tugtool/tugplan-fix-external-commands.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-21T03:27:20Z
 bead: tugtool-bs2.1
