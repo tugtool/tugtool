@@ -55,7 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Start tugcast
-        processManager.start(devMode: devModeEnabled, sourceTree: sourceTreePath)
+        processManager.start(sourceTree: sourceTreePath)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -13,7 +13,6 @@ class ProcessManager {
     private var process: Process?
     private var bunProcess: Process?
     private var sourceTree: String?
-    private var devPath: String?
 
     /// Control socket infrastructure
     private var controlListener: ControlSocketListener?
@@ -103,10 +102,9 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
-    /// Start tugcast with optional dev mode
-    func start(devMode: Bool, sourceTree: String?) {
+    /// Start tugcast
+    func start(sourceTree: String?) {
         self.sourceTree = sourceTree
-        self.devPath = devMode ? sourceTree : nil
 
         // Create control socket listener (persists across child restarts)
         if controlListener == nil {
@@ -275,7 +273,10 @@ class ProcessManager {
         if let dir = sourceTree {
             args += ["--dir", dir]
         }
-        if let devPath = devPath {
+        // Read fresh dev mode preferences to fix stale devPath bug (D08)
+        let devEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
+        let freshSourceTree = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
+        if devEnabled, let devPath = freshSourceTree {
             args += ["--dev", devPath]
         }
         args += ["--control-socket", controlSocketPath]
@@ -290,12 +291,12 @@ class ProcessManager {
             self.childPID = proc.processIdentifier
 
             // Start bun build --watch if in dev mode
-            if let sourceTree = self.sourceTree, self.devPath != nil {
+            if devEnabled, let bunSourceTree = freshSourceTree {
                 if let bunPath = ProcessManager.which("bun") {
                     let bunProc = Process()
                     bunProc.executableURL = URL(fileURLWithPath: bunPath)
                     bunProc.arguments = ["build", "src/main.ts", "--outfile=dist/app.js", "--watch"]
-                    bunProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
+                    bunProc.currentDirectoryURL = URL(fileURLWithPath: (bunSourceTree as NSString).appendingPathComponent("tugdeck"))
 
                     // Pass same environment with shell PATH
                     var bunEnv = ProcessInfo.processInfo.environment

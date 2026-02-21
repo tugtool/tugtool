@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-9
+date: 2025-02-21T17:14:54Z
+bead: tugtool-i2v.10
+---
+
+## #step-9: Fixed stale devPath bug by reading fresh UserDefaults in startProcess(), removed devPath property, removed exitRestart/exitReset constants from TugConfig
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-8
 date: 2025-02-21T17:09:06Z
 bead: tugtool-i2v.9
