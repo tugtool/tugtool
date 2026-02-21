@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-10
+date: 2025-02-21T17:21:57Z
+bead: tugtool-i2v.11
+---
+
+## #step-10: End-to-end validation: all grep checks pass, all builds/tests pass, manual verification checklist documented
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-9
 date: 2025-02-21T17:14:54Z
 bead: tugtool-i2v.10
