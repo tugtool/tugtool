@@ -24,6 +24,9 @@ chrono = "0.4"
 thiserror = "2"
 anyhow = "1"
 
+# Atomic shared state
+arc-swap = "1"
+
 # Regex for parsing
 regex = "1"
 

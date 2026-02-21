@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-21T20:03:27Z
+bead: tugtool-4m1.1
+---
+
+## #step-0: Added arc-swap dependency to workspace and tugcast. Defined SharedDevState type alias, DevRuntime struct, and new_shared_dev_state() constructor in dev.rs. Added two unit tests for ArcSwap semantics.
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-21T18:44:54Z
 ---

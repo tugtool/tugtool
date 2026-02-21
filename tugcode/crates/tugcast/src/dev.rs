@@ -1,5 +1,6 @@
 //! Dev mode: file watcher, manifest-based serving, and dev asset serving
 
+use arc_swap::ArcSwap;
 use axum::extract::Extension;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
@@ -40,6 +41,22 @@ pub(crate) struct DevState {
     pub dirs: Vec<(String, PathBuf, glob::Pattern)>,
     pub fallback: PathBuf,
     pub source_tree: PathBuf,
+}
+
+/// Shared dev state type for lock-free runtime swapping
+#[allow(dead_code)] // Used in Step 1 when wired through server.rs and main.rs
+pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
+
+/// Dev runtime: holds file watcher for RAII cleanup
+#[allow(dead_code)] // Used in Step 2 when enable_dev_mode is implemented
+pub(crate) struct DevRuntime {
+    pub(crate) _watcher: RecommendedWatcher,
+}
+
+/// Create a new shared dev state initialized to None
+#[allow(dead_code)] // Used in Step 1 when wired through server.rs and main.rs
+pub(crate) fn new_shared_dev_state() -> SharedDevState {
+    Arc::new(ArcSwap::from_pointee(None))
 }
 
 /// Load and parse the asset manifest from source tree
@@ -774,5 +791,40 @@ fallback = "dist"
         // Verify reload script was NOT injected
         assert!(!body.contains(r#"<script src="/dev/reload.js"></script>"#));
         assert_eq!(body, original_html);
+    }
+
+    #[test]
+    fn test_new_shared_dev_state_is_none() {
+        let shared = new_shared_dev_state();
+        assert!(shared.load().is_none());
+    }
+
+    #[test]
+    fn test_shared_dev_state_store_load() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a fixture with a valid DevState
+        let temp_dir = TempDir::new().unwrap();
+        let tugdeck_dir = temp_dir.path().join("tugdeck");
+        fs::create_dir_all(&tugdeck_dir).unwrap();
+
+        let manifest_content = r#"
+[files]
+"index.html" = "index.html"
+
+[build]
+fallback = "dist"
+"#;
+        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+
+        let state = load_manifest(temp_dir.path()).unwrap();
+        let shared = new_shared_dev_state();
+
+        // Store the state
+        shared.store(Arc::new(Some(state)));
+
+        // Load and verify
+        assert!(shared.load().is_some());
     }
 }
