@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-21T16:39:56Z
+bead: tugtool-i2v.4
+---
+
+## #step-3: Replaced tugtool CLI stdout-parsing with UDS control socket IPC, removed regex dependency, added create_control_listener/wait_for_ready, rewrote supervisor_loop with RestartDecision state machine
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-21T16:29:55Z
 bead: tugtool-i2v.3

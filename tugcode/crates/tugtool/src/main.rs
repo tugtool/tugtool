@@ -1,18 +1,14 @@
 use clap::Parser;
-use regex::Regex;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::LazyLock;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixListener;
 use tokio::process::Command;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::timeout;
 use tracing::info;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-
-static AUTH_URL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"tugcast:\s+(http://\S+)").unwrap());
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// tugtool: Launcher binary for tugdeck dashboard
 #[derive(Parser, Debug)]
@@ -133,12 +129,13 @@ async fn spawn_bun_dev(source_tree: &std::path::Path) -> Result<tokio::process::
         .map_err(|e| format!("failed to spawn bun dev: {}", e))
 }
 
-/// Spawn tugcast as a child process with stdout piped and stderr inherited
+/// Spawn tugcast as a child process with control socket path
 fn spawn_tugcast(
     session: &str,
     port: u16,
     dir: &std::path::Path,
     dev_path: Option<&std::path::Path>,
+    control_socket_path: &std::path::Path,
 ) -> std::io::Result<tokio::process::Child> {
     let mut cmd = Command::new(resolve_tugcast_path());
     cmd.arg("--session")
@@ -152,36 +149,64 @@ fn spawn_tugcast(
         cmd.arg("--dev").arg(path.to_string_lossy().as_ref());
     }
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()
+    cmd.arg("--control-socket")
+        .arg(control_socket_path.to_string_lossy().as_ref());
+
+    cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit()).spawn()
 }
 
-/// Extract auth URL from tugcast's stdout by reading lines and checking against regex
-async fn extract_auth_url(
-    stdout: tokio::process::ChildStdout,
-) -> Result<(String, BufReader<tokio::process::ChildStdout>), String> {
-    let mut reader = BufReader::new(stdout);
+/// Create a Unix domain socket listener for control socket IPC
+fn create_control_listener(port: u16) -> std::io::Result<(UnixListener, PathBuf)> {
+    let tmpdir = std::env::temp_dir();
+    let path = tmpdir.join(format!("tugcast-ctl-{}.sock", port));
+    // Delete stale socket file if it exists
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    let listener = UnixListener::bind(&path)?;
+    Ok((listener, path))
+}
+
+/// Wait for a tugcast child to connect and send a `ready` message over UDS.
+/// Returns the auth URL and the connected stream (kept alive for shutdown messages).
+async fn wait_for_ready(
+    listener: &UnixListener,
+) -> Result<
+    (
+        String,
+        BufReader<tokio::net::unix::OwnedReadHalf>,
+        tokio::net::unix::OwnedWriteHalf,
+    ),
+    String,
+> {
+    let (stream, _) = match timeout(Duration::from_secs(30), listener.accept()).await {
+        Ok(Ok(conn)) => conn,
+        Ok(Err(e)) => return Err(format!("control socket accept failed: {}", e)),
+        Err(_) => return Err("timeout waiting for tugcast ready".to_string()),
+    };
+
+    let (read_half, write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
     let mut line = String::new();
 
     loop {
         line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => {
-                // EOF before URL found
-                return Err("tugcast exited before printing auth URL".to_string());
-            }
-            Ok(_) => {
-                // Forward the line to stdout (including the URL line per D05)
-                print!("{}", line);
-
-                // Check if this line matches the auth URL pattern
-                if let Some(caps) = AUTH_URL_REGEX.captures(&line) {
-                    let url = caps.get(1).unwrap().as_str().to_string();
-                    return Ok((url, reader));
+        match timeout(Duration::from_secs(30), reader.read_line(&mut line)).await {
+            Ok(Ok(0)) => return Err("tugcast disconnected before sending ready".to_string()),
+            Ok(Ok(_)) => {
+                if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if msg.get("type").and_then(|t| t.as_str()) == Some("ready") {
+                        let auth_url = msg
+                            .get("auth_url")
+                            .and_then(|u| u.as_str())
+                            .ok_or("ready message missing auth_url")?
+                            .to_string();
+                        return Ok((auth_url, reader, write_half));
+                    }
                 }
             }
-            Err(e) => {
-                return Err(format!("error reading tugcast output: {}", e));
-            }
+            Ok(Err(e)) => return Err(format!("error reading control socket: {}", e)),
+            Err(_) => return Err("timeout reading ready message".to_string()),
         }
     }
 }
@@ -243,7 +268,16 @@ async fn shutdown_children(mut children: Vec<&mut tokio::process::Child>) {
     }
 }
 
-/// Supervisor loop that respawns tugcast on exit codes 42/43
+/// Restart decision for the supervisor loop
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RestartDecision {
+    Pending,
+    Restart,
+    RestartWithBackoff,
+    DoNotRestart,
+}
+
+/// Supervisor loop that manages tugcast lifecycle via UDS control socket
 async fn supervisor_loop(
     cli: &Cli,
     bun_child: &mut Option<tokio::process::Child>,
@@ -252,97 +286,202 @@ async fn supervisor_loop(
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
     let mut first_spawn = true;
+    let mut backoff_secs: u64 = 0;
+
+    // Create UDS listener once -- persists across child restarts
+    let (listener, socket_path) = match create_control_listener(cli.port) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("tugtool: failed to create control socket: {}", e);
+            return 1;
+        }
+    };
 
     loop {
+        // Apply backoff delay if needed
+        if backoff_secs > 0 {
+            info!("waiting {}s before respawning...", backoff_secs);
+            tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+        }
+
         // Spawn tugcast
-        let mut tugcast = match spawn_tugcast(&cli.session, cli.port, &cli.dir, dev_path.as_deref())
-        {
+        let mut tugcast = match spawn_tugcast(
+            &cli.session,
+            cli.port,
+            &cli.dir,
+            dev_path.as_deref(),
+            &socket_path,
+        ) {
             Ok(child) => child,
             Err(e) => {
                 eprintln!("tugtool: failed to start tugcast: {}", e);
+                let _ = std::fs::remove_file(&socket_path);
                 return 1;
             }
         };
 
-        // On first spawn, extract auth URL and open browser
-        if first_spawn {
-            let stdout = tugcast.stdout.take().expect("stdout was piped");
+        let child_pid = tugcast.id();
 
-            match extract_auth_url(stdout).await {
-                Ok((url, reader)) => {
-                    info!("auth URL: {}", url);
-                    open_browser(&url);
-
-                    // Forward remaining stdout in background
-                    tokio::spawn(async move {
-                        let mut reader = reader;
-                        let mut line = String::new();
-                        loop {
-                            line.clear();
-                            match reader.read_line(&mut line).await {
-                                Ok(0) | Err(_) => break,
-                                Ok(_) => print!("{}", line),
-                            }
-                        }
-                    });
-                }
-                Err(e) => {
-                    eprintln!("tugtool: {}", e);
-                    let status = tugcast.wait().await.ok();
-                    let code = status.and_then(|s| s.code()).unwrap_or(1);
-                    return code;
-                }
+        // Wait for ready message
+        let (auth_url, mut reader, mut write_half) = match wait_for_ready(&listener).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("tugtool: {}", e);
+                let status = tugcast.wait().await.ok();
+                let code = status.and_then(|s| s.code()).unwrap_or(1);
+                let _ = std::fs::remove_file(&socket_path);
+                return code;
             }
+        };
+
+        // Reset backoff on successful ready
+        backoff_secs = 0;
+
+        if first_spawn {
+            info!("auth URL: {}", auth_url);
+            open_browser(&auth_url);
             first_spawn = false;
         }
 
-        // Wait for tugcast exit or signal
-        let exit_code = tokio::select! {
-            status = tugcast.wait() => {
-                match status {
-                    Ok(s) => s.code().unwrap_or(1),
-                    Err(e) => {
-                        eprintln!("tugtool: error waiting for tugcast: {}", e);
+        // Supervisor select loop: wait for UDS messages, process exit, or signals
+        let mut decision = RestartDecision::Pending;
+        let mut line = String::new();
+
+        enum LoopOutcome {
+            ProcessExited(i32),
+            Eof,
+        }
+
+        let outcome = loop {
+            tokio::select! {
+                // Read UDS messages from child
+                result = reader.read_line(&mut line) => {
+                    match result {
+                        Ok(0) => {
+                            // EOF: child disconnected without shutdown message
+                            if decision == RestartDecision::Pending {
+                                info!("control socket EOF without shutdown message");
+                                decision = RestartDecision::RestartWithBackoff;
+                            }
+                            break LoopOutcome::Eof;
+                        }
+                        Ok(_) => {
+                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+                                if msg.get("type").and_then(|t| t.as_str()) == Some("shutdown") {
+                                    if decision == RestartDecision::Pending {
+                                        // Validate PID
+                                        let msg_pid = msg.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32);
+                                        if msg_pid != child_pid {
+                                            info!("ignoring shutdown from unknown pid {:?}", msg_pid);
+                                            line.clear();
+                                            continue;
+                                        }
+                                        let reason = msg.get("reason").and_then(|r| r.as_str()).unwrap_or("unknown");
+                                        match reason {
+                                            "restart" | "reset" => {
+                                                info!("tugcast shutdown: reason={}, restarting", reason);
+                                                decision = RestartDecision::Restart;
+                                            }
+                                            "error" => {
+                                                info!("tugcast shutdown: reason=error");
+                                                decision = RestartDecision::DoNotRestart;
+                                            }
+                                            _ => {
+                                                info!("tugcast shutdown: reason={}", reason);
+                                                decision = RestartDecision::DoNotRestart;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            line.clear();
+                        }
+                        Err(e) => {
+                            info!("control socket read error: {}", e);
+                            if decision == RestartDecision::Pending {
+                                decision = RestartDecision::RestartWithBackoff;
+                            }
+                            break LoopOutcome::Eof;
+                        }
+                    }
+                }
+                // Wait for process exit
+                status = tugcast.wait() => {
+                    let code = match status {
+                        Ok(s) => s.code().unwrap_or(1),
+                        Err(e) => {
+                            eprintln!("tugtool: error waiting for tugcast: {}", e);
+                            1
+                        }
+                    };
+                    // If no decision was set by UDS, treat as unexpected death
+                    if decision == RestartDecision::Pending {
+                        decision = RestartDecision::RestartWithBackoff;
+                    }
+                    break LoopOutcome::ProcessExited(code);
+                }
+                _ = sigint.recv() => {
+                    info!("received SIGINT, shutting down");
+                    // Send shutdown over UDS (best effort)
+                    let _ = write_half.write_all(b"{\"type\":\"shutdown\"}\n").await;
+                    let mut children = vec![&mut tugcast];
+                    if let Some(bun) = bun_child {
+                        children.push(bun);
+                    }
+                    shutdown_children(children).await;
+                    let _ = std::fs::remove_file(&socket_path);
+                    return 130;
+                }
+                _ = sigterm.recv() => {
+                    info!("received SIGTERM, shutting down");
+                    let _ = write_half.write_all(b"{\"type\":\"shutdown\"}\n").await;
+                    let mut children = vec![&mut tugcast];
+                    if let Some(bun) = bun_child {
+                        children.push(bun);
+                    }
+                    shutdown_children(children).await;
+                    let _ = std::fs::remove_file(&socket_path);
+                    return 143;
+                }
+            }
+        };
+
+        // Handle outcome and get exit code
+        let exit_code = match outcome {
+            LoopOutcome::ProcessExited(code) => code,
+            LoopOutcome::Eof => {
+                // Wait for process to actually exit
+                match timeout(Duration::from_secs(5), tugcast.wait()).await {
+                    Ok(Ok(s)) => s.code().unwrap_or(1),
+                    _ => {
+                        shutdown_child(&mut tugcast).await;
                         1
                     }
                 }
             }
-            _ = sigint.recv() => {
-                info!("received SIGINT, shutting down");
-                let mut children = vec![&mut tugcast];
-                if let Some(bun) = bun_child {
-                    children.push(bun);
-                }
-                shutdown_children(children).await;
-                return 130; // Standard SIGINT exit code
-            }
-            _ = sigterm.recv() => {
-                info!("received SIGTERM, shutting down");
-                let mut children = vec![&mut tugcast];
-                if let Some(bun) = bun_child {
-                    children.push(bun);
-                }
-                shutdown_children(children).await;
-                return 143; // Standard SIGTERM exit code
-            }
         };
 
-        // Handle exit codes
-        match exit_code {
-            42 => {
-                info!("tugcast requested restart (exit 42), respawning...");
+        // Apply restart decision
+        match decision {
+            RestartDecision::Restart => {
+                info!("restarting tugcast (immediate)");
                 continue;
             }
-            43 => {
-                info!("tugcast requested reset (exit 43), clearing caches and respawning...");
-                // TODO: implement cache clearing
+            RestartDecision::RestartWithBackoff => {
+                backoff_secs = if backoff_secs == 0 {
+                    1
+                } else {
+                    (backoff_secs * 2).min(30)
+                };
+                info!("restarting tugcast with {}s backoff", backoff_secs);
                 continue;
             }
-            _ => {
-                info!("tugcast exited with code {}", exit_code);
+            RestartDecision::DoNotRestart | RestartDecision::Pending => {
+                info!("tugcast exited with code {}, not restarting", exit_code);
                 if let Some(bun) = bun_child {
                     shutdown_children(vec![bun]).await;
                 }
+                let _ = std::fs::remove_file(&socket_path);
                 return exit_code;
             }
         }
@@ -495,68 +634,6 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
-    }
-
-    #[test]
-    fn test_auth_url_regex_matches_standard_url() {
-        let line = "tugcast: http://127.0.0.1:7890/auth?token=abc123def456";
-        let caps = AUTH_URL_REGEX.captures(line);
-        assert!(caps.is_some(), "regex should match standard auth URL line");
-        let url = caps.unwrap().get(1).unwrap().as_str();
-        assert_eq!(url, "http://127.0.0.1:7890/auth?token=abc123def456");
-    }
-
-    #[test]
-    fn test_auth_url_regex_captures_full_url() {
-        let line = "tugcast: http://127.0.0.1:8080/auth?token=deadbeef0123456789abcdef";
-        let caps = AUTH_URL_REGEX.captures(line).unwrap();
-        let url = caps.get(1).unwrap().as_str();
-        assert_eq!(
-            url,
-            "http://127.0.0.1:8080/auth?token=deadbeef0123456789abcdef"
-        );
-    }
-
-    #[test]
-    fn test_auth_url_regex_does_not_match_log_lines() {
-        assert!(AUTH_URL_REGEX.captures("INFO tugcast starting").is_none());
-        assert!(
-            AUTH_URL_REGEX
-                .captures("2024-01-01 tugcast ready")
-                .is_none()
-        );
-        assert!(AUTH_URL_REGEX.captures("").is_none());
-        assert!(AUTH_URL_REGEX.captures("some random text").is_none());
-    }
-
-    #[test]
-    fn test_auth_url_regex_various_ports() {
-        // Port 80
-        let caps = AUTH_URL_REGEX
-            .captures("tugcast: http://127.0.0.1:80/auth?token=abc")
-            .unwrap();
-        assert_eq!(
-            caps.get(1).unwrap().as_str(),
-            "http://127.0.0.1:80/auth?token=abc"
-        );
-
-        // Port 8080
-        let caps = AUTH_URL_REGEX
-            .captures("tugcast: http://127.0.0.1:8080/auth?token=abc")
-            .unwrap();
-        assert_eq!(
-            caps.get(1).unwrap().as_str(),
-            "http://127.0.0.1:8080/auth?token=abc"
-        );
-
-        // Port 7890 (default)
-        let caps = AUTH_URL_REGEX
-            .captures("tugcast: http://127.0.0.1:7890/auth?token=abc")
-            .unwrap();
-        assert_eq!(
-            caps.get(1).unwrap().as_str(),
-            "http://127.0.0.1:7890/auth?token=abc"
-        );
     }
 
     #[test]
