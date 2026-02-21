@@ -54,13 +54,13 @@ export class AboutCard implements TugCard {
     // Description
     const description = document.createElement("div");
     description.className = "about-description";
-    description.textContent = "Canvas card system for tugtool.";
+    description.textContent = "AI-assisted software construction. Hi!";
     content.appendChild(description);
 
     // Copyright
     const copyright = document.createElement("div");
     copyright.className = "about-copyright";
-    copyright.textContent = "Copyright 2025 Ken Kocienda. All rights reserved.";
+    copyright.textContent = "Copyright 2026 Ken Kocienda. All rights reserved.";
     content.appendChild(copyright);
 
     container.appendChild(content);

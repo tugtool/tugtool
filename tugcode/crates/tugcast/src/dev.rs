@@ -366,15 +366,28 @@ async fn serve_dev_index_impl(dev_state: &DevState) -> Response {
     }
 }
 
+/// Check whether a notify event contains paths with reload-worthy extensions
+fn has_reload_extension(event: &notify::Event) -> bool {
+    event.paths.iter().any(|p| {
+        p.extension()
+            .is_some_and(|ext| ext == "html" || ext == "css" || ext == "js")
+    })
+}
+
 /// Start file watcher for dev mode live reload
+///
+/// Uses a quiet-period debounce: after the first qualifying file event,
+/// keeps consuming events until 100ms of silence, then fires a single
+/// reload signal. No polling, no fixed delays.
 pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
 ) -> Result<(broadcast::Sender<()>, RecommendedWatcher), String> {
     let (reload_tx, _) = broadcast::channel::<()>(16);
     let tx_clone = reload_tx.clone();
 
-    // Use std::sync::mpsc for the notify callback
-    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    // Bridge notify's sync callback into the tokio world.
+    // UnboundedSender::send() is non-async, safe to call from notify's thread.
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
@@ -382,7 +395,6 @@ pub(crate) fn dev_file_watcher(
         })
         .map_err(|e| format!("failed to create dev file watcher: {}", e))?;
 
-    // Watch each directory individually with recursive mode
     for dir in watch_dirs {
         watcher
             .watch(dir, RecursiveMode::Recursive)
@@ -390,33 +402,31 @@ pub(crate) fn dev_file_watcher(
         info!("dev: watching {}", dir.display());
     }
 
-    // Spawn debounce task
+    // Quiet-period debounce task
     tokio::spawn(async move {
-        let debounce_duration = Duration::from_millis(300);
+        let quiet_period = Duration::from_millis(100);
         loop {
-            match event_rx.try_recv() {
-                Ok(Ok(event)) => {
-                    // Extension filter: only .html, .css, .js (no .woff2 per D08)
-                    let should_reload = event.paths.iter().any(|p| {
-                        p.extension()
-                            .is_some_and(|ext| ext == "html" || ext == "css" || ext == "js")
-                    });
-                    if should_reload {
-                        // Debounce: wait 300ms
-                        tokio::time::sleep(debounce_duration).await;
-                        // Drain remaining events
-                        while event_rx.try_recv().is_ok() {}
-                        // Send reload signal
-                        let _ = tx_clone.send(());
-                        info!("dev: triggered reload");
-                    }
+            // Phase 1: Wait (suspended, zero CPU) for a qualifying event
+            loop {
+                match event_rx.recv().await {
+                    Some(Ok(event)) if has_reload_extension(&event) => break,
+                    Some(_) => continue,
+                    None => return, // channel closed
                 }
-                Ok(Err(_)) => {}
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
             }
+
+            // Phase 2: Consume events until quiet_period of silence
+            loop {
+                match tokio::time::timeout(quiet_period, event_rx.recv()).await {
+                    Ok(Some(_)) => continue, // more events — restart quiet period
+                    Ok(None) => return,      // channel closed
+                    Err(_) => break,         // timeout — silence achieved
+                }
+            }
+
+            // Phase 3: Fire reload
+            let _ = tx_clone.send(());
+            info!("dev: triggered reload");
         }
     });
 

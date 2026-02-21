@@ -4,9 +4,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: MainWindow!
     private var processManager = ProcessManager()
     private var devModeEnabled = false
+    private var runtimeDevMode: Bool = false
     private var sourceTreePath: String?
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
+    private var aboutMenuItem: NSMenuItem?
+    private var settingsMenuItem: NSMenuItem?
     private var serverPort: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -23,6 +26,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load preferences
         loadPreferences()
+
+        // Initialize runtime dev mode to match preference at launch
+        runtimeDevMode = devModeEnabled
 
         // Create main window
         let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
@@ -49,6 +55,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let urlObj = URL(string: url), let port = urlObj.port {
                 self?.serverPort = port
             }
+            // Update runtime dev mode on every process (re)start
+            self?.runtimeDevMode = self?.devModeEnabled ?? false
         }
 
         // Start tugcast
@@ -92,9 +100,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        appMenu.addItem(NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: ""))
+        let aboutItem = NSMenuItem(title: "About Tug", action: #selector(showAbout(_:)), keyEquivalent: "")
+        aboutItem.isEnabled = false
+        self.aboutMenuItem = aboutItem
+        appMenu.addItem(aboutItem)
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ","))
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(showSettings(_:)), keyEquivalent: ",")
+        settingsItem.isEnabled = false
+        self.settingsMenuItem = settingsItem
+        appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
         // Services submenu
@@ -259,12 +273,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Update Developer menu source tree display
             sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
-
-            // Restart if dev mode is enabled
-            if devModeEnabled {
-                processManager.stop()
-                processManager.start(devMode: true, sourceTree: url.path)
-            }
         }
     }
 
@@ -275,7 +283,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - HTTP tell() helper
 
     private func tell(_ action: String, params: [String: Any] = [:]) {
-        guard let port = serverPort else { return }
+        guard let port = serverPort else {
+            NSLog("AppDelegate: tell() skipped, serverPort is nil (action: %@)", action)
+            return
+        }
         var body: [String: Any] = ["action": action]
         for (key, value) in params {
             body[key] = value
@@ -286,8 +297,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-        // Fire-and-forget
-        URLSession.shared.dataTask(with: request).resume()
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error = error {
+                NSLog("AppDelegate: tell(%@) failed: %@", action, error.localizedDescription)
+            } else if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                NSLog("AppDelegate: tell(%@) returned status %d", action, http.statusCode)
+            }
+        }.resume()
     }
 }
 
@@ -319,11 +335,6 @@ extension AppDelegate: BridgeDelegate {
             self.savePreferences()
             // Update Developer menu source tree display
             self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
-            // Restart if dev mode is enabled
-            if self.devModeEnabled {
-                self.processManager.stop()
-                self.processManager.start(devMode: true, sourceTree: url.path)
-            }
             completion(url.path)
         }
     }
@@ -332,14 +343,18 @@ extension AppDelegate: BridgeDelegate {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()
         self.savePreferences()
-        // Restart tugcast with new mode
-        self.processManager.stop()
-        self.processManager.start(devMode: self.devModeEnabled, sourceTree: self.sourceTreePath)
         completion(enabled)
     }
 
-    func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {
-        completion(devModeEnabled, sourceTreePath)
+    func bridgeGetSettings(completion: @escaping (Bool, Bool, String?) -> Void) {
+        completion(devModeEnabled, runtimeDevMode, sourceTreePath)
+    }
+
+    func bridgeFrontendReady() {
+        DispatchQueue.main.async {
+            self.aboutMenuItem?.isEnabled = true
+            self.settingsMenuItem?.isEnabled = true
+        }
     }
 }
 

@@ -664,8 +664,20 @@ export class DeckManager implements IDragState {
         // Reparent into floating panel card area (D09)
         fp.getCardAreaElement().appendChild(mountEl);
 
-        // Mount the card if registered and not yet mounted
-        const card = this.cardRegistry.get(tab.id);
+        // Mount the card if registered; auto-create from factory if
+        // the tab was restored from persisted layout with no card instance.
+        let card = this.cardRegistry.get(tab.id);
+        if (!card) {
+          const factory = this.cardFactories.get(tab.componentId);
+          if (factory) {
+            card = factory();
+            for (const feedId of card.feedIds) {
+              const set = this.cardsByFeed.get(feedId as FeedIdValue);
+              if (set) set.add(card);
+            }
+            this.cardRegistry.set(tab.id, card);
+          }
+        }
         if (card && mountEl.children.length === 0) {
           card.mount(mountEl);
           this.observeContainer(tab.id, mountEl, card);
@@ -1026,7 +1038,10 @@ export class DeckManager implements IDragState {
     // Find the active card for this panel and remove it
     const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId);
     if (activeTab) {
-      this.removeCard(activeTab.id);
+      const card = this.cardRegistry.get(activeTab.id);
+      if (card) {
+        this.removeCard(card);
+      }
     }
   }
 
