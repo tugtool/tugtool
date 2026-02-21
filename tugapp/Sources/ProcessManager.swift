@@ -14,7 +14,6 @@ class ProcessManager {
     private var bunProcess: Process?
     private var sourceTree: String?
     private var devPath: String?
-    private let authURLPattern = try! NSRegularExpression(pattern: "tugcast:\\s+(http://\\S+)")
 
     /// Control socket infrastructure
     private var controlListener: ControlSocketListener?
@@ -269,29 +268,8 @@ class ProcessManager {
         args += ["--control-socket", controlSocketPath]
         proc.arguments = args
 
-        let pipe = Pipe()
-        proc.standardOutput = pipe
+        proc.standardOutput = FileHandle.standardOutput
         proc.standardError = FileHandle.standardError
-
-        // Read stdout for auth URL
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-
-            if let line = String(data: data, encoding: .utf8) {
-                // Forward to stdout
-                print(line, terminator: "")
-
-                // Check for auth URL
-                if let match = self?.authURLPattern.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-                   let urlRange = Range(match.range(at: 1), in: line) {
-                    let url = String(line[urlRange])
-                    DispatchQueue.main.async {
-                        self?.onReady?(url)
-                    }
-                }
-            }
-        }
 
         do {
             try proc.run()

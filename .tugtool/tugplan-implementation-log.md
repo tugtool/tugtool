@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-21T17:02:58Z
+bead: tugtool-i2v.8
+---
+
+## #step-7: Removed authURLPattern regex, stdout pipe setup, and readabilityHandler block from ProcessManager; replaced with FileHandle.standardOutput passthrough
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-21T16:59:09Z
 bead: tugtool-i2v.7
