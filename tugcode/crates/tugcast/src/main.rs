@@ -1,5 +1,7 @@
+mod actions;
 mod auth;
 mod cli;
+mod control;
 mod dev;
 mod feeds;
 mod router;
@@ -75,6 +77,19 @@ async fn main() {
     println!("\ntugcast: {}\n", auth_url);
     use std::io::Write;
     std::io::stdout().flush().ok();
+
+    // Connect to control socket if specified
+    let control_socket = if let Some(ref path) = cli.control_socket {
+        match control::ControlSocket::connect(path).await {
+            Ok(cs) => Some(cs),
+            Err(e) => {
+                eprintln!("tugcast: error: failed to connect to control socket: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
 
     // Create broadcast channel for terminal output
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -160,6 +175,21 @@ async fn main() {
         }
     } else {
         (None, None, None)
+    };
+
+    // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
+    let ctl_shutdown_tx = shutdown_tx.clone();
+    let ctl_client_action_tx = client_action_tx.clone();
+    let ctl_reload_tx = reload_tx.clone();
+
+    // Split control socket into reader and writer halves
+    let mut control_writer: Option<control::ControlWriter> = None;
+    let control_reader: Option<control::ControlReader> = if let Some(cs) = control_socket {
+        let (writer, reader) = cs.split();
+        control_writer = Some(writer);
+        Some(reader)
+    } else {
+        None
     };
 
     // Create feed router with reload_tx wired
@@ -251,6 +281,19 @@ async fn main() {
     };
     info!(port = cli.port, "tugcast server listening");
 
+    // Send ready message over control socket
+    if let Some(ref mut writer) = control_writer {
+        if let Err(e) = writer.send_ready(&auth_url, cli.port, std::process::id()).await {
+            eprintln!("tugcast: warning: failed to send ready message: {}", e);
+            // Non-fatal: continue without control socket
+        }
+    }
+
+    // Spawn control socket receive loop
+    if let Some(reader) = control_reader {
+        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx, ctl_reload_tx));
+    }
+
     // Start server and select! on shutdown channel
     let server_future = server::run_server(listener, feed_router, dev_state, reload_tx);
 
@@ -268,6 +311,17 @@ async fn main() {
             code as i32
         }
     };
+
+    // Send shutdown message over control socket (best-effort)
+    if let Some(ref mut writer) = control_writer {
+        let reason = match exit_code {
+            42 => "restart",
+            43 => "reset",
+            0 => "normal",
+            _ => "error",
+        };
+        let _ = writer.send_shutdown(reason, std::process::id()).await;
+    }
 
     // Signal shutdown for background tasks
     cancel.cancel();

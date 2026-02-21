@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-21T16:29:55Z
+bead: tugtool-i2v.3
+---
+
+## #step-2: Created actions.rs with dispatch_action(), control.rs with ControlSocket UDS client, refactored server.rs and router.rs to use dispatch_action, wired control socket into main.rs
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-21T16:20:00Z
 bead: tugtool-i2v.2

@@ -308,33 +308,13 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                                 // Parse JSON payload for control action
                                                 if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
                                                     if let Some(action) = payload.get("action").and_then(|a| a.as_str()) {
-                                                        match action {
-                                                            "restart" => {
-                                                                // Server-only: shutdown without broadcast
-                                                                info!("control: restart requested");
-                                                                let _ = router.shutdown_tx.send(42).await;
-                                                            }
-                                                            "reset" => {
-                                                                // Hybrid: broadcast first, then shutdown after delay
-                                                                info!("control: reset requested (hybrid)");
-                                                                let _ = router.client_action_tx.send(frame.clone());
-                                                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                                                let _ = router.shutdown_tx.send(43).await;
-                                                            }
-                                                            "reload_frontend" => {
-                                                                // Hybrid: broadcast to clients AND fire reload_tx
-                                                                info!("control: reload_frontend requested (hybrid)");
-                                                                let _ = router.client_action_tx.send(frame.clone());
-                                                                if let Some(ref tx) = router.reload_tx {
-                                                                    let _ = tx.send(());
-                                                                }
-                                                            }
-                                                            other => {
-                                                                // Client-only: broadcast to all clients
-                                                                info!("control: broadcasting client action: {}", other);
-                                                                let _ = router.client_action_tx.send(frame.clone());
-                                                            }
-                                                        }
+                                                        crate::actions::dispatch_action(
+                                                            action,
+                                                            &frame.payload,
+                                                            &router.shutdown_tx,
+                                                            &router.client_action_tx,
+                                                            &router.reload_tx,
+                                                        ).await;
                                                     }
                                                 }
                                             }
