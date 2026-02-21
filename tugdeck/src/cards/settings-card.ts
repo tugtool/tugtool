@@ -21,14 +21,7 @@ export class SettingsCard implements TugCard {
   private devModeCheckbox: HTMLInputElement | null = null;
   private sourceTreePathEl: HTMLElement | null = null;
   private devModeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
-  private initialDevMode: boolean = false;
-  private initialSourceTree: string | null = null;
-  private currentSourceTree: string | null = null;
   private devNoteEl: HTMLElement | null = null;
-  private restartPromptEl: HTMLElement | null = null;
-  private restartBtn: HTMLElement | null = null;
-  private restartFailsafeTimer: ReturnType<typeof setTimeout> | null = null;
-  private closeUnsubscribe: (() => void) | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -123,33 +116,6 @@ export class SettingsCard implements TugCard {
     this.devNoteEl.style.display = "none";
     devSection.appendChild(this.devNoteEl);
 
-    this.restartPromptEl = document.createElement("div");
-    this.restartPromptEl.className = "settings-restart-prompt";
-    this.restartPromptEl.style.display = "none";
-    const restartText = document.createElement("span");
-    restartText.textContent = "Settings changed. Restart to apply.";
-    this.restartBtn = document.createElement("button");
-    this.restartBtn.className = "settings-choose-btn";
-    this.restartBtn.textContent = "Restart Now";
-    this.restartBtn.addEventListener("click", () => {
-      if (this.restartBtn) {
-        this.restartBtn.textContent = "Restarting...";
-        (this.restartBtn as HTMLButtonElement).disabled = true;
-      }
-      this.connection.sendControlFrame("restart");
-      // Fail-safe: re-enable if WebSocket doesn't disconnect within 5s
-      this.restartFailsafeTimer = setTimeout(() => {
-        if (this.restartBtn) {
-          this.restartBtn.textContent = "Restart Now";
-          (this.restartBtn as HTMLButtonElement).disabled = false;
-        }
-        this.showDevNote("Restart failed. Try again or restart the app.");
-      }, 5000);
-    });
-    this.restartPromptEl.appendChild(restartText);
-    this.restartPromptEl.appendChild(this.restartBtn);
-    devSection.appendChild(this.restartPromptEl);
-
     content.appendChild(devSection);
 
     // SECTION 3: Source Tree
@@ -234,15 +200,6 @@ export class SettingsCard implements TugCard {
     }
   }
 
-  private updateRestartPrompt(): void {
-    if (!this.restartPromptEl) return;
-    const devModeChanged = (this.devModeCheckbox?.checked ?? false) !== this.initialDevMode;
-    const sourceTreeChanged = this.currentSourceTree !== this.initialSourceTree;
-    // Source tree only matters when dev mode is enabled (source tree controls dev-mode serving)
-    const needsRestart = devModeChanged || (sourceTreeChanged && (this.devModeCheckbox?.checked ?? false));
-    this.restartPromptEl.style.display = needsRestart ? "flex" : "none";
-  }
-
   private initBridge(): void {
     const webkit = (window as any).webkit;
 
@@ -250,18 +207,14 @@ export class SettingsCard implements TugCard {
       // Bridge is available - register callbacks and request settings
       const bridge = ((window as any).__tugBridge = (window as any).__tugBridge || {});
 
-      bridge.onSettingsLoaded = (data: { devMode: boolean; runtimeDevMode: boolean; sourceTree: string | null }) => {
+      bridge.onSettingsLoaded = (data: { devMode: boolean; sourceTree: string | null }) => {
         if (!this.container) return;
         if (this.devModeCheckbox) {
           this.devModeCheckbox.checked = data.devMode;
         }
-        this.initialDevMode = data.runtimeDevMode;
-        this.initialSourceTree = data.sourceTree;
-        this.currentSourceTree = data.sourceTree;
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = data.sourceTree || "(not set)";
         }
-        this.updateRestartPrompt();
       };
 
       bridge.onDevModeChanged = (confirmed: boolean) => {
@@ -275,7 +228,15 @@ export class SettingsCard implements TugCard {
           this.devModeCheckbox.disabled = false;
         }
         this.hideDevNote();
-        this.updateRestartPrompt();
+      };
+
+      bridge.onDevModeError = (message: string) => {
+        if (!this.container) return;
+        if (this.devModeCheckbox) {
+          this.devModeCheckbox.checked = false;
+          this.devModeCheckbox.disabled = false;
+        }
+        this.showDevNote(message);
       };
 
       bridge.onSourceTreeSelected = (path: string) => {
@@ -283,8 +244,6 @@ export class SettingsCard implements TugCard {
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = path;
         }
-        this.currentSourceTree = path;
-        this.updateRestartPrompt();
       };
 
       bridge.onSourceTreeCancelled = () => {
@@ -293,14 +252,6 @@ export class SettingsCard implements TugCard {
 
       // Request current settings
       webkit.messageHandlers.getSettings.postMessage({});
-
-      // Clear restart fail-safe timer on WebSocket disconnect (restart success signal)
-      this.closeUnsubscribe = this.connection.onClose(() => {
-        if (this.restartFailsafeTimer) {
-          clearTimeout(this.restartFailsafeTimer);
-          this.restartFailsafeTimer = null;
-        }
-      });
     } else {
       // Bridge unavailable
       this.showDevNote("Developer features require the Tug app");
@@ -324,18 +275,12 @@ export class SettingsCard implements TugCard {
       this.devModeConfirmTimer = null;
     }
 
-    this.closeUnsubscribe?.();
-    this.closeUnsubscribe = null;
-    if (this.restartFailsafeTimer) {
-      clearTimeout(this.restartFailsafeTimer);
-      this.restartFailsafeTimer = null;
-    }
-
     // Clear bridge callbacks
     const bridge = (window as any).__tugBridge;
     if (bridge) {
       bridge.onSettingsLoaded = undefined;
       bridge.onDevModeChanged = undefined;
+      bridge.onDevModeError = undefined;
       bridge.onSourceTreeSelected = undefined;
       bridge.onSourceTreeCancelled = undefined;
     }
@@ -348,10 +293,6 @@ export class SettingsCard implements TugCard {
     this.devModeCheckbox = null;
     this.sourceTreePathEl = null;
     this.devNoteEl = null;
-    this.restartPromptEl = null;
-    this.restartBtn = null;
-    this.initialSourceTree = null;
-    this.currentSourceTree = null;
     this.themeRadios = [];
   }
 }

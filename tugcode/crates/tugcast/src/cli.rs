@@ -26,10 +26,6 @@ pub struct Cli {
     #[arg(long)]
     pub tugtalk_path: Option<PathBuf>,
 
-    /// Path to source tree root (serves assets directly from source via manifest)
-    #[arg(long)]
-    pub dev: Option<PathBuf>,
-
     /// Unix domain socket path for parent IPC
     #[arg(long)]
     pub control_socket: Option<PathBuf>,
@@ -164,18 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_dev_flag_none() {
-        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
-        assert_eq!(cli.dev, None);
-    }
-
-    #[test]
-    fn test_cli_dev_flag_some() {
-        let cli = Cli::try_parse_from(["tugcast", "--dev", "/tmp/dist"]).unwrap();
-        assert_eq!(cli.dev, Some(PathBuf::from("/tmp/dist")));
-    }
-
-    #[test]
     fn test_control_socket_flag_none() {
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.control_socket, None);
@@ -195,15 +179,19 @@ mod tests {
             "8080",
             "--session",
             "dev",
-            "--dev",
-            "/tmp/dist",
             "--control-socket",
             "/tmp/ctl.sock",
         ])
         .unwrap();
         assert_eq!(cli.port, 8080);
         assert_eq!(cli.session, "dev");
-        assert_eq!(cli.dev, Some(PathBuf::from("/tmp/dist")));
         assert_eq!(cli.control_socket, Some(PathBuf::from("/tmp/ctl.sock")));
+    }
+
+    #[test]
+    fn test_dev_flag_rejected() {
+        // --dev flag was removed; verify it is no longer recognized
+        let result = Cli::try_parse_from(["tugcast", "--dev", "/tmp"]);
+        assert!(result.is_err(), "--dev should no longer be a valid flag");
     }
 }

@@ -140,37 +140,8 @@ async fn main() {
     // Create broadcast channel for client-bound Control frames
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
-    // Load manifest and start dev file watcher if dev mode is active
-    let (dev_state, _watcher) = if let Some(ref dev_path) = cli.dev {
-        // Load manifest
-        let state = match dev::load_manifest(dev_path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("tugcast: error: failed to load asset manifest: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        // Validate manifest (logs warnings)
-        dev::validate_manifest(&state);
-
-        // Derive watch directories
-        let watch_dirs = dev::watch_dirs_from_manifest(&state);
-
-        // Start file watcher
-        match dev::dev_file_watcher(&watch_dirs, client_action_tx.clone()) {
-            Ok(watcher) => {
-                info!(path = ?dev_path, "dev file watcher started");
-                (Some(Arc::new(state)), Some(watcher))
-            }
-            Err(e) => {
-                eprintln!("tugcast: error: failed to start dev file watcher: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        (None, None)
-    };
+    // Create shared dev state (empty until runtime dev_mode control message)
+    let shared_dev_state = dev::new_shared_dev_state();
 
     // Clone channel senders for control socket recv loop BEFORE FeedRouter takes ownership
     let ctl_shutdown_tx = shutdown_tx.clone();
@@ -288,13 +259,37 @@ async fn main() {
         }
     }
 
+    // Create response channel and draining task for control socket writes
+    let response_tx = if let Some(writer) = control_writer.take() {
+        let (tx, mut rx) = mpsc::channel::<String>(4);
+        let mut raw_writer = writer.into_inner();
+
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            while let Some(msg) = rx.recv().await {
+                let _ = raw_writer.write_all(msg.as_bytes()).await;
+                let _ = raw_writer.write_all(b"\n").await;
+                let _ = raw_writer.flush().await;
+            }
+            // Channel closed -- task exits
+        });
+
+        Some(tx)
+    } else {
+        None
+    };
+
     // Spawn control socket receive loop
     if let Some(reader) = control_reader {
-        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx));
+        let dev_state = shared_dev_state.clone();
+        let tx = response_tx
+            .clone()
+            .expect("response_tx must exist when control_reader exists");
+        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx, dev_state, tx));
     }
 
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(listener, feed_router, dev_state);
+    let server_future = server::run_server(listener, feed_router, shared_dev_state);
 
     let exit_code = tokio::select! {
         result = server_future => {
@@ -311,15 +306,17 @@ async fn main() {
         }
     };
 
-    // Send shutdown message over control socket (best-effort)
-    if let Some(ref mut writer) = control_writer {
+    // Send shutdown message via response channel (draining task writes to socket)
+    if let Some(tx) = response_tx {
         let reason = match exit_code {
             42 => "restart",
             43 => "reset",
             0 => "normal",
             _ => "error",
         };
-        let _ = writer.send_shutdown(reason, std::process::id()).await;
+        let shutdown_json = control::make_shutdown_message(reason, std::process::id());
+        let _ = tx.send(shutdown_json).await;
+        drop(tx); // Close channel -- draining task exits after writing
     }
 
     // Signal shutdown for background tasks

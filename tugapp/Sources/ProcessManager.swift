@@ -27,6 +27,12 @@ class ProcessManager {
     /// Callback for ready message (UDS-based)
     var onReady: ((String) -> Void)?
 
+    /// Callback for dev_mode_result message
+    var onDevModeResult: ((Bool) -> Void)?
+
+    /// Callback for dev_mode errors
+    var onDevModeError: ((String) -> Void)?
+
     /// Resolve the user's login shell PATH so child processes can find tools like tmux and bun.
     /// Mac apps inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) — this gets the real one
     /// by launching the user's actual login shell (from /etc/passwd via dscl) in login-interactive
@@ -156,6 +162,13 @@ class ProcessManager {
             backoffSeconds = 0
             NSLog("ProcessManager: ready (auth_url=%@)", authURL)
             onReady?(authURL)
+        case "dev_mode_result":
+            let success = msg.data["success"] as? Bool ?? false
+            onDevModeResult?(success)
+            if !success {
+                let errorMessage = msg.data["error"] as? String ?? "Unknown error"
+                onDevModeError?(errorMessage)
+            }
         case "shutdown":
             guard restartDecision == .pending else {
                 NSLog("ProcessManager: ignoring duplicate shutdown signal (decision already set)")
@@ -196,6 +209,19 @@ class ProcessManager {
         var msg: [String: Any] = ["type": "tell", "action": action]
         for (key, value) in params {
             msg[key] = value
+        }
+        connection.send(msg)
+    }
+
+    /// Send dev_mode control message to tugcast via UDS
+    func sendDevMode(enabled: Bool, sourceTree: String?) {
+        guard let connection = controlConnection else {
+            NSLog("ProcessManager: sendDevMode skipped, no control connection")
+            return
+        }
+        var msg: [String: Any] = ["type": "dev_mode", "enabled": enabled]
+        if let path = sourceTree {
+            msg["source_tree"] = path
         }
         connection.send(msg)
     }
@@ -273,12 +299,9 @@ class ProcessManager {
         if let dir = sourceTree {
             args += ["--dir", dir]
         }
-        // Read fresh dev mode preferences to fix stale devPath bug (D08)
+        // Read fresh dev mode preferences (for bun build --watch)
         let devEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
         let freshSourceTree = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
-        if devEnabled, let devPath = freshSourceTree {
-            args += ["--dev", devPath]
-        }
         args += ["--control-socket", controlSocketPath]
         proc.arguments = args
 

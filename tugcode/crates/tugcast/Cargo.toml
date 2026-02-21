@@ -10,6 +10,7 @@ name = "tugcast"
 path = "src/main.rs"
 
 [dependencies]
+arc-swap = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }
