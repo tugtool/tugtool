@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-21T17:26:21Z
+---
+
+## audit-fix: Audit fix: collapsed nested if in tugtool/main.rs, applied cargo fmt to 3 files
+
+**Files changed:**
+- .tugtool/tugplan-control-socket.md
+
+---
+
+---
 step: #step-10
 date: 2025-02-21T17:21:57Z
 bead: tugtool-i2v.11

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 use tugcast_core::Frame;
@@ -27,12 +27,7 @@ pub struct ControlWriter {
 
 impl ControlWriter {
     /// Send ready message to parent
-    pub async fn send_ready(
-        &mut self,
-        auth_url: &str,
-        port: u16,
-        pid: u32,
-    ) -> std::io::Result<()> {
+    pub async fn send_ready(&mut self, auth_url: &str, port: u16, pid: u32) -> std::io::Result<()> {
         #[derive(Serialize)]
         struct ReadyMessage<'a> {
             r#type: &'static str,

@@ -5,10 +5,10 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::process::Command;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::timeout;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// tugtool: Launcher binary for tugdeck dashboard
 #[derive(Parser, Debug)]
@@ -152,7 +152,9 @@ fn spawn_tugcast(
     cmd.arg("--control-socket")
         .arg(control_socket_path.to_string_lossy().as_ref());
 
-    cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit()).spawn()
+    cmd.stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
 }
 
 /// Create a Unix domain socket listener for control socket IPC
@@ -367,16 +369,15 @@ async fn supervisor_loop(
                         }
                         Ok(_) => {
                             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
-                                if msg.get("type").and_then(|t| t.as_str()) == Some("shutdown") {
-                                    if decision == RestartDecision::Pending {
-                                        // Validate PID
-                                        let msg_pid = msg.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32);
-                                        if msg_pid != child_pid {
-                                            info!("ignoring shutdown from unknown pid {:?}", msg_pid);
-                                            line.clear();
-                                            continue;
-                                        }
-                                        let reason = msg.get("reason").and_then(|r| r.as_str()).unwrap_or("unknown");
+                                if msg.get("type").and_then(|t| t.as_str()) == Some("shutdown") && decision == RestartDecision::Pending {
+                                    // Validate PID
+                                    let msg_pid = msg.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32);
+                                    if msg_pid != child_pid {
+                                        info!("ignoring shutdown from unknown pid {:?}", msg_pid);
+                                        line.clear();
+                                        continue;
+                                    }
+                                    let reason = msg.get("reason").and_then(|r| r.as_str()).unwrap_or("unknown");
                                         match reason {
                                             "restart" | "reset" => {
                                                 info!("tugcast shutdown: reason={}, restarting", reason);
@@ -391,7 +392,6 @@ async fn supervisor_loop(
                                                 decision = RestartDecision::DoNotRestart;
                                             }
                                         }
-                                    }
                                 }
                             }
                             line.clear();

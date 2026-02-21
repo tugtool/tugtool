@@ -270,7 +270,10 @@ async fn main() {
     let listener = match TcpListener::bind(format!("127.0.0.1:{}", cli.port)).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+            eprintln!(
+                "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
+                cli.port, e
+            );
             std::process::exit(1);
         }
     };
@@ -278,7 +281,10 @@ async fn main() {
 
     // Send ready message over control socket
     if let Some(ref mut writer) = control_writer {
-        if let Err(e) = writer.send_ready(&auth_url, cli.port, std::process::id()).await {
+        if let Err(e) = writer
+            .send_ready(&auth_url, cli.port, std::process::id())
+            .await
+        {
             eprintln!("tugcast: warning: failed to send ready message: {}", e);
             // Non-fatal: continue without control socket
         }
