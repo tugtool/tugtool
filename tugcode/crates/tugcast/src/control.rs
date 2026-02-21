@@ -380,7 +380,7 @@ mod tests {
                 enabled,
                 source_tree,
             } => {
-                assert_eq!(enabled, true);
+                assert!(enabled);
                 assert_eq!(source_tree, Some("/path/to/src".to_string()));
             }
             _ => panic!("Expected DevMode variant"),
@@ -396,7 +396,7 @@ mod tests {
                 enabled,
                 source_tree,
             } => {
-                assert_eq!(enabled, false);
+                assert!(!enabled);
                 assert_eq!(source_tree, None);
             }
             _ => panic!("Expected DevMode variant"),

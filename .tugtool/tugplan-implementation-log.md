@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-21T20:59:14Z
+---
+
+## audit-fix: CI fix: resolved clippy bool_assert_comparison warnings in control.rs tests
+
+**Files changed:**
+- .tugtool/tugplan-runtime-dev-mode.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-21T20:54:24Z
 ---
 
