@@ -162,13 +162,18 @@ Per Table T01, you READ:
 Per Table T02, you WRITE to:
 - **design**: Append your strategy after a `---` separator
 
-After producing your strategy, write it to the bead using the **Write tool** and `--content-file` to avoid shell quoting issues:
+After producing your strategy, persist it to the bead in two tool calls:
 
-**Step 1.** Use the **Write tool** to create a temp file with your strategy content:
-- Path: `{worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md`
-- Content: your strategy text (markdown)
+**Step 1 — Write tool:** Create the temp file with your strategy content.
 
-**Step 2.** Run the CLI command to persist the content to the bead, then clean up the temp file:
+```
+Write(
+  file_path: "{worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md"
+  content: <your strategy markdown>
+)
+```
+
+**Step 2 — Bash tool:** Append to bead via `--content-file`, then clean up.
 
 ```bash
 cd {worktree_path} && tugcode beads append-design {bead_id} \
@@ -177,7 +182,7 @@ cd {worktree_path} && tugcode beads append-design {bead_id} \
   rm .tugtool/_tmp_{bead_id}_strategy.md
 ```
 
-**IMPORTANT:** Always use the Write tool for the content file — **never** use heredocs, `echo`, or `cat` to create it. The Write tool bypasses the shell entirely, eliminating all quoting and delimiter issues that can cause the terminal to hang. The `rm` at the end cleans up the temp file after the CLI reads it.
+**Do NOT pass content via Bash directly.** The CLI has no `--content` flag — it does not exist. Create the file with Write first, then pass it with `--content-file`.
 
 ### Artifact Files
 

@@ -172,29 +172,18 @@ Per Table T01, you READ:
 Per Table T02, you WRITE to:
 - **notes**: Implementation results (build/test output, completion status)
 
-After completing implementation and running tests, write results to the bead using the **Write tool** and `--content-file` to avoid shell quoting issues:
+After completing implementation and running tests, persist results to the bead in two tool calls:
 
-**Step 1.** Use the **Write tool** to create a temp file with your results:
-- Path: `{worktree_path}/.tugtool/_tmp_{bead_id}_notes.md`
-- Content: your implementation results (markdown), e.g.:
+**Step 1 — Write tool:** Create the temp file with your implementation results.
 
-```markdown
-## Implementation Results
-
-Build: Success
-Tests: All 305 tests passed
-
-Files created:
-- src/new_module.rs
-
-Files modified:
-- src/main.rs
-- src/lib.rs
-
-Drift: None (all changes in expected_touch_set)
+```
+Write(
+  file_path: "{worktree_path}/.tugtool/_tmp_{bead_id}_notes.md"
+  content: <your results markdown — build status, test counts, files created/modified, drift>
+)
 ```
 
-**Step 2.** Run the CLI command to persist the content to the bead, then clean up the temp file:
+**Step 2 — Bash tool:** Update bead notes via `--content-file`, then clean up.
 
 ```bash
 cd {worktree_path} && tugcode beads update-notes {bead_id} \
@@ -203,7 +192,7 @@ cd {worktree_path} && tugcode beads update-notes {bead_id} \
   rm .tugtool/_tmp_{bead_id}_notes.md
 ```
 
-**IMPORTANT:** Always use the Write tool for the content file — **never** use heredocs, `echo`, or `cat` to create it. The Write tool bypasses the shell entirely, eliminating all quoting and delimiter issues that can cause the terminal to hang. The `rm` at the end cleans up the temp file after the CLI reads it.
+**Do NOT pass content via Bash directly.** The CLI has no `--content` flag — it does not exist. Create the file with Write first, then pass it with `--content-file`.
 
 **Note**: Use `update-notes` (not `append-notes`) because coder writes first. Reviewer will append their review afterward.
 
