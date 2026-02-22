@@ -964,9 +964,10 @@ impl BeadsCli {
         cmd.arg("ready");
 
         if let Some(parent) = parent_id {
-            cmd.arg(parent);
+            cmd.args(["--parent", parent]);
         }
 
+        cmd.args(["--limit", "0"]);
         cmd.arg("--json");
 
         let output = cmd.output().map_err(|e| {
