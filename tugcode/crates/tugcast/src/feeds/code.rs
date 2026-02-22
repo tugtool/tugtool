@@ -35,10 +35,7 @@ mod tests {
 
     #[test]
     fn test_parse_code_input() {
-        let frame = Frame::new(
-            FeedId::CodeInput,
-            b"{\"type\":\"user_message\"}".to_vec(),
-        );
+        let frame = Frame::new(FeedId::CodeInput, b"{\"type\":\"user_message\"}".to_vec());
         let result = parse_code_input(&frame);
         assert_eq!(result, Some("{\"type\":\"user_message\"}".to_string()));
     }

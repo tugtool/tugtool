@@ -90,11 +90,9 @@ async fn main() {
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     // Create code channels
-    let (code_tx, _) =
-        broadcast::channel(feeds::code::CODE_BROADCAST_CAPACITY);
+    let (code_tx, _) = broadcast::channel(feeds::code::CODE_BROADCAST_CAPACITY);
     let (code_input_tx, code_input_rx) = mpsc::channel(256);
-    let (code_watch_tx, code_watch_rx) =
-        watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
+    let (code_watch_tx, code_watch_rx) = watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
 
     // Create terminal feed
     let feed = TerminalFeed::new(cli.session.clone());

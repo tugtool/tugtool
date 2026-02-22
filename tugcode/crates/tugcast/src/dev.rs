@@ -66,8 +66,13 @@ pub(crate) async fn enable_dev_mode(
 ) -> Result<DevRuntime, String> {
     // Resolve symlinks without canonicalize(), which on macOS resolves through
     // the /Users firmlink to /System/Volumes/Data/Users — a path FSEvents ignores.
-    let source_tree = resolve_symlinks(&source_tree)
-        .map_err(|e| format!("failed to resolve source_tree {}: {}", source_tree.display(), e))?;
+    let source_tree = resolve_symlinks(&source_tree).map_err(|e| {
+        format!(
+            "failed to resolve source_tree {}: {}",
+            source_tree.display(),
+            e
+        )
+    })?;
 
     // Load manifest via spawn_blocking (blocking filesystem I/O)
     let source = source_tree.clone();
@@ -430,9 +435,10 @@ pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
                     // the same form as the input path
                     let target = resolve_symlinks(Path::new(raw_target))
                         .unwrap_or_else(|_| PathBuf::from(raw_target));
-                    if let Some(suffix) = path.to_str().and_then(|p| {
-                        p.strip_prefix(target.to_str().unwrap_or(""))
-                    }) {
+                    if let Some(suffix) = path
+                        .to_str()
+                        .and_then(|p| p.strip_prefix(target.to_str().unwrap_or("")))
+                    {
                         return PathBuf::from(format!("/{}{}", name, suffix));
                     }
                 }
