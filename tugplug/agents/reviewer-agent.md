@@ -141,26 +141,34 @@ You verify:
 Per Table T02, you WRITE to:
 - **notes**: Append your review findings below coder's results
 
-After completing your review, append your findings to the bead using a heredoc:
+After completing your review, append your findings to the bead using the **Write tool** and `--content-file` to avoid shell quoting issues:
 
-```bash
-cd {worktree_path} && tugcode beads append-notes {bead_id} \
-  --working-dir {worktree_path} \
-  --content "$(cat <<'NOTES_EOF'
+**Step 1.** Use the **Write tool** to create a temp file with your review:
+- Path: `{worktree_path}/.tugtool/_tmp_{bead_id}_review.md`
+- Content: your review findings (markdown), e.g.:
+
+```markdown
 ## Review
 
 Recommendation: APPROVE
 
-Plan conformance: ✅ All tasks verified
-Tests: ✅ Match test plan
-Code quality: ✅ PASS
+Plan conformance: All tasks verified
+Tests: Match test plan
+Code quality: PASS
 
 Issues: None
-NOTES_EOF
-)"
 ```
 
-**IMPORTANT:** Pass content inline via the heredoc. Do NOT write temp files to `/tmp` or anywhere outside the worktree.
+**Step 2.** Run the CLI command to persist the content to the bead, then clean up the temp file:
+
+```bash
+cd {worktree_path} && tugcode beads append-notes {bead_id} \
+  --content-file .tugtool/_tmp_{bead_id}_review.md \
+  --working-dir {worktree_path} && \
+  rm .tugtool/_tmp_{bead_id}_review.md
+```
+
+**IMPORTANT:** Always use the Write tool for the content file — **never** use heredocs, `echo`, or `cat` to create it. The Write tool bypasses the shell entirely, eliminating all quoting and delimiter issues that can cause the terminal to hang. The `rm` at the end cleans up the temp file after the CLI reads it.
 
 **Note**: Use `append-notes` (not `update-notes`) because reviewer appends to coder's existing notes. The `---` separator is automatically added.
 

@@ -172,16 +172,17 @@ Per Table T01, you READ:
 Per Table T02, you WRITE to:
 - **notes**: Implementation results (build/test output, completion status)
 
-After completing implementation and running tests, write results to the bead using a heredoc:
+After completing implementation and running tests, write results to the bead using the **Write tool** and `--content-file` to avoid shell quoting issues:
 
-```bash
-cd {worktree_path} && tugcode beads update-notes {bead_id} \
-  --working-dir {worktree_path} \
-  --content "$(cat <<'NOTES_EOF'
+**Step 1.** Use the **Write tool** to create a temp file with your results:
+- Path: `{worktree_path}/.tugtool/_tmp_{bead_id}_notes.md`
+- Content: your implementation results (markdown), e.g.:
+
+```markdown
 ## Implementation Results
 
-Build: ✅ Success
-Tests: ✅ All 305 tests passed
+Build: Success
+Tests: All 305 tests passed
 
 Files created:
 - src/new_module.rs
@@ -191,11 +192,18 @@ Files modified:
 - src/lib.rs
 
 Drift: None (all changes in expected_touch_set)
-NOTES_EOF
-)"
 ```
 
-**IMPORTANT:** Pass content inline via the heredoc. Do NOT write temp files to `/tmp` or anywhere outside the worktree.
+**Step 2.** Run the CLI command to persist the content to the bead, then clean up the temp file:
+
+```bash
+cd {worktree_path} && tugcode beads update-notes {bead_id} \
+  --content-file .tugtool/_tmp_{bead_id}_notes.md \
+  --working-dir {worktree_path} && \
+  rm .tugtool/_tmp_{bead_id}_notes.md
+```
+
+**IMPORTANT:** Always use the Write tool for the content file — **never** use heredocs, `echo`, or `cat` to create it. The Write tool bypasses the shell entirely, eliminating all quoting and delimiter issues that can cause the terminal to hang. The `rm` at the end cleans up the temp file after the CLI reads it.
 
 **Note**: Use `update-notes` (not `append-notes`) because coder writes first. Reviewer will append their review afterward.
 
@@ -311,7 +319,7 @@ Record each checkpoint in `build_and_test_report.checkpoints` with command, pass
 
 7. **Always include drift_assessment**: Even if all files are green.
 
-8. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create directories in `/tmp` or run commands outside the worktree.
+8. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files used for bead content (see Bead-Mediated Communication), which must be cleaned up immediately after use.
 
 9. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
 
