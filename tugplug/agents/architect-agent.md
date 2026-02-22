@@ -162,9 +162,9 @@ Per Table T01, you READ:
 Per Table T02, you WRITE to:
 - **design**: Append your strategy after a `---` separator
 
-After producing your strategy, persist it to the bead in two tool calls:
+After producing your strategy, persist it to the bead. This requires exactly two tool calls — a Write then a Bash:
 
-**Step 1 — Write tool:** Create the temp file with your strategy content.
+**Tool call 1 — Write:** Create a temp file with your strategy content.
 
 ```
 Write(
@@ -173,16 +173,13 @@ Write(
 )
 ```
 
-**Step 2 — Bash tool:** Append to bead via `--content-file`, then clean up.
+**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
 
 ```bash
-cd {worktree_path} && tugcode beads append-design {bead_id} \
-  --content-file .tugtool/_tmp_{bead_id}_strategy.md \
-  --working-dir {worktree_path} && \
-  rm .tugtool/_tmp_{bead_id}_strategy.md
+cd {worktree_path} && tugcode beads append-design {bead_id} --content-file .tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_strategy.md
 ```
 
-**Do NOT pass content via Bash directly.** The CLI has no `--content` flag — it does not exist. Create the file with Write first, then pass it with `--content-file`.
+`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
 
 ### Artifact Files
 

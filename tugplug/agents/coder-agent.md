@@ -172,9 +172,9 @@ Per Table T01, you READ:
 Per Table T02, you WRITE to:
 - **notes**: Implementation results (build/test output, completion status)
 
-After completing implementation and running tests, persist results to the bead in two tool calls:
+After completing implementation and running tests, persist results to the bead. This requires exactly two tool calls — a Write then a Bash:
 
-**Step 1 — Write tool:** Create the temp file with your implementation results.
+**Tool call 1 — Write:** Create a temp file with your implementation results.
 
 ```
 Write(
@@ -183,16 +183,13 @@ Write(
 )
 ```
 
-**Step 2 — Bash tool:** Update bead notes via `--content-file`, then clean up.
+**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
 
 ```bash
-cd {worktree_path} && tugcode beads update-notes {bead_id} \
-  --content-file .tugtool/_tmp_{bead_id}_notes.md \
-  --working-dir {worktree_path} && \
-  rm .tugtool/_tmp_{bead_id}_notes.md
+cd {worktree_path} && tugcode beads update-notes {bead_id} --content-file .tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_notes.md
 ```
 
-**Do NOT pass content via Bash directly.** The CLI has no `--content` flag — it does not exist. Create the file with Write first, then pass it with `--content-file`.
+`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
 
 **Note**: Use `update-notes` (not `append-notes`) because coder writes first. Reviewer will append their review afterward.
 

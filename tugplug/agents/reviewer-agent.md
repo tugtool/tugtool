@@ -141,9 +141,9 @@ You verify:
 Per Table T02, you WRITE to:
 - **notes**: Append your review findings below coder's results
 
-After completing your review, persist findings to the bead in two tool calls:
+After completing your review, persist findings to the bead. This requires exactly two tool calls — a Write then a Bash:
 
-**Step 1 — Write tool:** Create the temp file with your review.
+**Tool call 1 — Write:** Create a temp file with your review.
 
 ```
 Write(
@@ -152,16 +152,13 @@ Write(
 )
 ```
 
-**Step 2 — Bash tool:** Append to bead notes via `--content-file`, then clean up.
+**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
 
 ```bash
-cd {worktree_path} && tugcode beads append-notes {bead_id} \
-  --content-file .tugtool/_tmp_{bead_id}_review.md \
-  --working-dir {worktree_path} && \
-  rm .tugtool/_tmp_{bead_id}_review.md
+cd {worktree_path} && tugcode beads append-notes {bead_id} --content-file .tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_review.md
 ```
 
-**Do NOT pass content via Bash directly.** The CLI has no `--content` flag — it does not exist. Create the file with Write first, then pass it with `--content-file`.
+`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
 
 **Note**: Use `append-notes` (not `update-notes`) because reviewer appends to coder's existing notes. The `---` separator is automatically added.
 

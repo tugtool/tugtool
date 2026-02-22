@@ -15,34 +15,13 @@ pub struct UpdateData {
 /// Run the beads update-notes command
 pub fn run_update_notes(
     bead_id: String,
-    content: Option<String>,
-    content_file: Option<String>,
+    content_file: String,
     working_dir: Option<String>,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
-    // Require either content or content_file
-    let content_text = match (content, content_file) {
-        (Some(c), None) => c,
-        (None, Some(f)) => std::fs::read_to_string(&f)
-            .map_err(|e| format!("Failed to read content file {}: {}", f, e))?,
-        (Some(_), Some(_)) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Cannot specify both content and --content-file",
-                21,
-            );
-        }
-        (None, None) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Must specify either content or --content-file",
-                21,
-            );
-        }
-    };
+    let content_text = std::fs::read_to_string(&content_file)
+        .map_err(|e| format!("Failed to read content file {}: {}", content_file, e))?;
 
     // Convert working_dir to Path if provided
     let working_path = working_dir
@@ -114,34 +93,13 @@ pub fn run_update_notes(
 /// Run the beads append-notes command
 pub fn run_append_notes(
     bead_id: String,
-    content: Option<String>,
-    content_file: Option<String>,
+    content_file: String,
     working_dir: Option<String>,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
-    // Require either content or content_file
-    let content_text = match (content, content_file) {
-        (Some(c), None) => c,
-        (None, Some(f)) => std::fs::read_to_string(&f)
-            .map_err(|e| format!("Failed to read content file {}: {}", f, e))?,
-        (Some(_), Some(_)) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Cannot specify both content and --content-file",
-                21,
-            );
-        }
-        (None, None) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Must specify either content or --content-file",
-                21,
-            );
-        }
-    };
+    let content_text = std::fs::read_to_string(&content_file)
+        .map_err(|e| format!("Failed to read content file {}: {}", content_file, e))?;
 
     // Convert working_dir to Path if provided
     let working_path = working_dir
@@ -213,34 +171,13 @@ pub fn run_append_notes(
 /// Run the beads append-design command
 pub fn run_append_design(
     bead_id: String,
-    content: Option<String>,
-    content_file: Option<String>,
+    content_file: String,
     working_dir: Option<String>,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
-    // Require either content or content_file
-    let content_text = match (content, content_file) {
-        (Some(c), None) => c,
-        (None, Some(f)) => std::fs::read_to_string(&f)
-            .map_err(|e| format!("Failed to read content file {}: {}", f, e))?,
-        (Some(_), Some(_)) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Cannot specify both content and --content-file",
-                21,
-            );
-        }
-        (None, None) => {
-            return output_error(
-                json_output,
-                "E021",
-                "Must specify either content or --content-file",
-                21,
-            );
-        }
-    };
+    let content_text = std::fs::read_to_string(&content_file)
+        .map_err(|e| format!("Failed to read content file {}: {}", content_file, e))?;
 
     // Convert working_dir to Path if provided
     let working_path = working_dir

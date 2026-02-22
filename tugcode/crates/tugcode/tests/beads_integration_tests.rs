@@ -843,7 +843,10 @@ fn test_beads_append_design_adds_content_with_separator() {
         serde_json::from_str(&String::from_utf8_lossy(&create_output.stdout)).unwrap();
     let bead_id = create_json["id"].as_str().unwrap();
 
-    // Append design via tug beads append-design
+    // Append design via tug beads append-design --content-file
+    let content_path = temp.path().join("_content.txt");
+    fs::write(&content_path, "Strategy: use exponential backoff")
+        .expect("failed to write content file");
     let append_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -851,7 +854,8 @@ fn test_beads_append_design_adds_content_with_separator() {
             "beads",
             "append-design",
             bead_id,
-            "Strategy: use exponential backoff",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -910,6 +914,8 @@ fn test_beads_update_notes_overwrites_content() {
     let bead_id = create_json["id"].as_str().unwrap();
 
     // Update notes (first time)
+    let content_path = temp.path().join("_content.txt");
+    fs::write(&content_path, "First implementation").expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -917,7 +923,8 @@ fn test_beads_update_notes_overwrites_content() {
             "beads",
             "update-notes",
             bead_id,
-            "First implementation",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -925,6 +932,8 @@ fn test_beads_update_notes_overwrites_content() {
         .expect("failed to update notes first time");
 
     // Update notes (second time - should overwrite)
+    fs::write(&content_path, "Second implementation - revised")
+        .expect("failed to write content file");
     let update_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -932,7 +941,8 @@ fn test_beads_update_notes_overwrites_content() {
             "beads",
             "update-notes",
             bead_id,
-            "Second implementation - revised",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -984,6 +994,9 @@ fn test_beads_append_notes_preserves_existing_content() {
     let bead_id = create_json["id"].as_str().unwrap();
 
     // Coder updates notes
+    let content_path = temp.path().join("_content.txt");
+    fs::write(&content_path, "Coder: implementation complete")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -991,7 +1004,8 @@ fn test_beads_append_notes_preserves_existing_content() {
             "beads",
             "update-notes",
             bead_id,
-            "Coder: implementation complete",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -999,6 +1013,8 @@ fn test_beads_append_notes_preserves_existing_content() {
         .expect("failed to update notes");
 
     // Reviewer appends notes
+    fs::write(&content_path, "Reviewer: APPROVE - all tests pass")
+        .expect("failed to write content file");
     let append_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1006,7 +1022,8 @@ fn test_beads_append_notes_preserves_existing_content() {
             "beads",
             "append-notes",
             bead_id,
-            "Reviewer: APPROVE - all tests pass",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1068,6 +1085,8 @@ fn test_beads_inspect_shows_all_fields() {
     let bead_id = create_json["id"].as_str().unwrap();
 
     // Add design
+    let content_path = temp.path().join("_content.txt");
+    fs::write(&content_path, "Design: strategy here").expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1075,7 +1094,8 @@ fn test_beads_inspect_shows_all_fields() {
             "beads",
             "append-design",
             bead_id,
-            "Design: strategy here",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1083,6 +1103,8 @@ fn test_beads_inspect_shows_all_fields() {
         .expect("failed to append design");
 
     // Add notes
+    fs::write(&content_path, "Notes: implementation results")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1090,7 +1112,8 @@ fn test_beads_inspect_shows_all_fields() {
             "beads",
             "update-notes",
             bead_id,
-            "Notes: implementation results",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1180,6 +1203,12 @@ fn test_full_agent_cycle_bead_audit_trail() {
         .expect("should have step bead");
 
     // Step 2: Architect appends design
+    let content_path = temp.path().join("_content.txt");
+    fs::write(
+        &content_path,
+        "Architect: approach is to create project structure",
+    )
+    .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1187,7 +1216,8 @@ fn test_full_agent_cycle_bead_audit_trail() {
             "beads",
             "append-design",
             step_bead_id,
-            "Architect: approach is to create project structure",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1195,6 +1225,8 @@ fn test_full_agent_cycle_bead_audit_trail() {
         .expect("failed to append design");
 
     // Step 3: Coder updates notes
+    fs::write(&content_path, "Coder: created files, tests pass")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1202,7 +1234,8 @@ fn test_full_agent_cycle_bead_audit_trail() {
             "beads",
             "update-notes",
             step_bead_id,
-            "Coder: created files, tests pass",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1210,6 +1243,11 @@ fn test_full_agent_cycle_bead_audit_trail() {
         .expect("failed to update notes");
 
     // Step 4: Reviewer appends notes
+    fs::write(
+        &content_path,
+        "Reviewer: APPROVE - plan conformance verified",
+    )
+    .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1217,7 +1255,8 @@ fn test_full_agent_cycle_bead_audit_trail() {
             "beads",
             "append-notes",
             step_bead_id,
-            "Reviewer: APPROVE - plan conformance verified",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1304,6 +1343,9 @@ fn test_revision_loop_update_notes_overwrites() {
     let bead_id = create_json["id"].as_str().unwrap();
 
     // Iteration 1: Coder updates notes
+    let content_path = temp.path().join("_content.txt");
+    fs::write(&content_path, "Coder v1: implementation attempt")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1311,7 +1353,8 @@ fn test_revision_loop_update_notes_overwrites() {
             "beads",
             "update-notes",
             bead_id,
-            "Coder v1: implementation attempt",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1319,6 +1362,8 @@ fn test_revision_loop_update_notes_overwrites() {
         .expect("failed to update notes v1");
 
     // Reviewer appends notes
+    fs::write(&content_path, "Reviewer v1: REVISE - missing tests")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1326,7 +1371,8 @@ fn test_revision_loop_update_notes_overwrites() {
             "beads",
             "append-notes",
             bead_id,
-            "Reviewer v1: REVISE - missing tests",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())
@@ -1334,6 +1380,8 @@ fn test_revision_loop_update_notes_overwrites() {
         .expect("failed to append notes v1");
 
     // Iteration 2: Coder updates notes again (should overwrite BOTH coder v1 AND reviewer v1)
+    fs::write(&content_path, "Coder v2: revised with tests added")
+        .expect("failed to write content file");
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
@@ -1341,7 +1389,8 @@ fn test_revision_loop_update_notes_overwrites() {
             "beads",
             "update-notes",
             bead_id,
-            "Coder v2: revised with tests added",
+            "--content-file",
+            content_path.to_str().unwrap(),
             "--json",
         ])
         .current_dir(temp.path())

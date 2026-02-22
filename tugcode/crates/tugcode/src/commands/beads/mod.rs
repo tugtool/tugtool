@@ -139,19 +139,15 @@ pub enum BeadsCommands {
     ///
     /// Replaces the entire notes field with new content.
     #[command(
-        long_about = "Update the notes field of a bead.\n\nReplaces the entire notes field with new content.\nFor large content (>64KB), uses temporary file to avoid ARG_MAX issues.\n\nTo append instead of replace, use `tug beads append-notes`."
+        long_about = "Update the notes field of a bead.\n\nReplaces the entire notes field with content read from --content-file.\n\nTo append instead of replace, use `tug beads append-notes`."
     )]
     UpdateNotes {
         /// Bead ID to update
         bead_id: String,
 
-        /// New notes content (use --content-file to read from file instead)
-        #[arg(conflicts_with = "content_file")]
-        content: Option<String>,
-
         /// Path to file containing content to write
-        #[arg(long, conflicts_with = "content")]
-        content_file: Option<String>,
+        #[arg(long)]
+        content_file: String,
 
         /// Working directory for bd command (optional, for worktree context)
         #[arg(long)]
@@ -162,19 +158,15 @@ pub enum BeadsCommands {
     ///
     /// Appends content to existing notes using "---" separator.
     #[command(
-        long_about = "Append content to the notes field of a bead.\n\nAppends new content to existing notes with a \"---\" separator.\nIf notes field is empty, no separator is added.\n\nFor large content (>64KB), uses temporary file to avoid ARG_MAX issues."
+        long_about = "Append content to the notes field of a bead.\n\nAppends new content to existing notes with a \"---\" separator.\nIf notes field is empty, no separator is added.\n\nContent is read from --content-file."
     )]
     AppendNotes {
         /// Bead ID to update
         bead_id: String,
 
-        /// Content to append (use --content-file to read from file instead)
-        #[arg(conflicts_with = "content_file")]
-        content: Option<String>,
-
         /// Path to file containing content to append
-        #[arg(long, conflicts_with = "content")]
-        content_file: Option<String>,
+        #[arg(long)]
+        content_file: String,
 
         /// Working directory for bd command (optional, for worktree context)
         #[arg(long)]
@@ -185,19 +177,15 @@ pub enum BeadsCommands {
     ///
     /// Appends content to existing design using "---" separator.
     #[command(
-        long_about = "Append content to the design field of a bead.\n\nAppends new content to existing design with a \"---\" separator.\nIf design field is empty, no separator is added.\n\nFor large content (>64KB), uses temporary file to avoid ARG_MAX issues."
+        long_about = "Append content to the design field of a bead.\n\nAppends new content to existing design with a \"---\" separator.\nIf design field is empty, no separator is added.\n\nContent is read from --content-file."
     )]
     AppendDesign {
         /// Bead ID to update
         bead_id: String,
 
-        /// Content to append (use --content-file to read from file instead)
-        #[arg(conflicts_with = "content_file")]
-        content: Option<String>,
-
         /// Path to file containing content to append
-        #[arg(long, conflicts_with = "content")]
-        content_file: Option<String>,
+        #[arg(long)]
+        content_file: String,
 
         /// Working directory for bd command (optional, for worktree context)
         #[arg(long)]
