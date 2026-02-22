@@ -4,7 +4,7 @@
 //! showing beads execution status, pulling bead completion back to checkboxes,
 //! and closing beads to mark work complete.
 //!
-//! Requires: beads CLI (`bd`) installed, `.beads/` initialized, network connectivity.
+//! Requires: beads CLI (`bd`) installed, worktree context (`.beads/` initialized via `tugcode worktree create`).
 
 pub mod close;
 pub mod inspect;
@@ -27,12 +27,11 @@ pub use update::{run_append_design, run_append_notes, run_update_notes};
 /// Beads subcommands
 #[derive(Subcommand, Debug)]
 pub enum BeadsCommands {
-    /// Sync plan steps to beads (creates/updates beads, writes IDs back)
+    /// Sync plan steps to beads (creates/updates beads)
     ///
     /// Creates a root bead for the plan and child beads for each step.
-    /// Bead IDs are written back to the plan file.
     #[command(
-        long_about = "Sync plan steps to beads.\n\nCreates:\n  - Root bead (epic) for the plan\n  - Child beads for each execution step\n  - Dependency edges matching **Depends on:** lines\n\nWrites bead IDs back to the plan file:\n  - **Beads Root:** `bd-xxx` in Plan Metadata\n  - **Bead:** `bd-xxx.N` in each step\n\nRe-running sync is idempotent—existing beads are reused."
+        long_about = "Sync plan steps to beads.\n\nCreates:\n  - Root bead (epic) for the plan\n  - Child beads for each execution step\n  - Dependency edges matching **Depends on:** lines\n\nUses title-based matching for idempotent resolution.\nBead IDs are returned in JSON output, not written to plan files.\n\nRe-running sync is idempotent—existing beads are reused."
     )]
     Sync {
         /// Plan file to sync
@@ -76,7 +75,7 @@ pub enum BeadsCommands {
     ///
     /// Displays completion status for each step based on linked beads.
     #[command(
-        long_about = "Show execution status for each step based on linked beads.\n\nStatus values:\n  - complete: bead is closed (work done)\n  - ready: bead is open, all dependencies complete\n  - blocked: waiting on dependencies to complete\n  - pending: no bead linked yet\n\nUse with --pull to also update plan checkboxes."
+        long_about = "Show execution status for each step based on linked beads.\n\nStatus values:\n  - complete: bead is closed (work done)\n  - ready: bead is open, all dependencies complete\n  - blocked: waiting on dependencies to complete\n  - pending: no matching bead found\n\nUse with --pull to also update plan checkboxes."
     )]
     Status {
         /// Plan file (shows all plans if not specified)
@@ -91,7 +90,7 @@ pub enum BeadsCommands {
     ///
     /// Marks checkboxes as complete when their associated bead is closed.
     #[command(
-        long_about = "Pull bead completion status to plan checkboxes.\n\nFor each step with a linked bead:\n  - If bead is closed, marks checkpoint items as complete\n  - By default only updates **Checkpoint:** items\n  - Configure pull_checkbox_mode in config.toml for all items\n\nUse --no-overwrite to preserve manually checked items."
+        long_about = "Pull bead completion status to plan checkboxes.\n\nFor each step with a matching bead:\n  - If bead is closed, marks checkpoint items as complete\n  - By default only updates **Checkpoint:** items\n  - Configure pull_checkbox_mode in config.toml for all items\n\nUse --no-overwrite to preserve manually checked items."
     )]
     Pull {
         /// Plan file (pulls all plans if not specified)

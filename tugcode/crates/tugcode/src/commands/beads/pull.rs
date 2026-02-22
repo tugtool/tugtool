@@ -47,7 +47,7 @@ pub fn run_pull(
     let beads = BeadsCli::new(bd_path);
 
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",

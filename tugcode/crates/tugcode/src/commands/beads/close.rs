@@ -27,8 +27,11 @@ pub fn run_close(
         std::env::var("TUG_BD_PATH").unwrap_or_else(|_| config.tugtool.beads.bd_path.clone());
     let beads = BeadsCli::new(bd_path);
 
+    // Convert working_dir to Path if provided
+    let working_path = working_dir.as_ref().map(|s| std::path::Path::new(s));
+
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(working_path) {
         return output_error(
             json_output,
             "E005",
@@ -36,9 +39,6 @@ pub fn run_close(
             5,
         );
     }
-
-    // Convert working_dir to Path if provided
-    let working_path = working_dir.as_ref().map(|s| std::path::Path::new(s));
 
     // Check if beads is initialized
     let check_path = working_path.unwrap_or(&project_root);

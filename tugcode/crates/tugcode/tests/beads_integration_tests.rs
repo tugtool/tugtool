@@ -1368,3 +1368,83 @@ fn test_revision_loop_update_notes_overwrites() {
         "notes should contain new coder content"
     );
 }
+
+#[test]
+fn test_standalone_sync_errors_outside_worktree() {
+    let temp = tempfile::tempdir().expect("failed to create temp dir");
+
+    // Run tug init to create .tugtool/ but DON'T create .beads/
+    let output = Command::new(tug_binary())
+        .arg("init")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run tug init");
+
+    assert!(
+        output.status.success(),
+        "tug init failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Create a minimal tugplan
+    let plan_content = r#"# Test Plan
+
+## Execution Plan
+
+### Phase 1
+
+#### Step 0 {#step-0}
+
+**Task:** Do something
+
+**Checkpoint:**
+- [ ] Something done
+"#;
+    fs::write(temp.path().join(".tugtool/tugplan-test.md"), plan_content)
+        .expect("failed to write tugplan");
+
+    // Run beads sync without .beads/ directory (should fail with E013)
+    let sync_output = Command::new(tug_binary())
+        .args(["beads", "sync", ".tugtool/tugplan-test.md", "--json"])
+        .env("TUG_BD_PATH", bd_fake_path())
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run beads sync");
+
+    // Should fail
+    assert!(
+        !sync_output.status.success(),
+        "beads sync should fail outside worktree"
+    );
+
+    // Parse JSON output
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&sync_output.stdout))
+            .expect("failed to parse JSON");
+
+    // Check status is error
+    assert_eq!(
+        json["status"].as_str().unwrap(),
+        "error",
+        "Status should be error"
+    );
+
+    // Check issues array contains E013
+    let issues = json["issues"].as_array().expect("Should have issues array");
+    assert!(!issues.is_empty(), "Issues array should not be empty");
+
+    let first_issue = &issues[0];
+    assert_eq!(
+        first_issue["code"].as_str().unwrap(),
+        "E013",
+        "Should return E013 error code"
+    );
+
+    // Check error message mentions worktree
+    let error_msg = first_issue["message"].as_str().unwrap();
+    assert!(
+        error_msg.contains("worktree") || error_msg.contains("tugcode worktree create"),
+        "Error message should mention worktree: {}",
+        error_msg
+    );
+}

@@ -62,7 +62,7 @@ pub fn run_link(
 
     // Check beads is installed and initialized (unconditional)
     let beads = BeadsCli::new(bd_path);
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",

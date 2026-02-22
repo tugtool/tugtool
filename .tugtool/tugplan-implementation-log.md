@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-22T17:40:39Z
+bead: tugtool-cfa.5
+---
+
+## #step-4: Updated CLI help text in beads/mod.rs to reflect title-based matching and worktree-only usage. Fixed all is_installed(None) calls to pass proper working directory paths. Fixed SyncContext working_dir to use project_root. Added test_standalone_sync_errors_outside_worktree integration test for E013 error behavior.
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-22T17:28:28Z
 bead: tugtool-cfa.4

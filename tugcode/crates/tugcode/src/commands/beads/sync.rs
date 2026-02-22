@@ -70,7 +70,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
     let beads = BeadsCli::new(bd_path);
 
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",
@@ -150,7 +150,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
         prune_deps,
         substeps_mode: &substeps_mode,
         quiet,
-        working_dir: None,
+        working_dir: Some(project_root.as_path()),
     };
     let result = sync_plan_to_beads(&path, &plan, &content, &ctx);
 
