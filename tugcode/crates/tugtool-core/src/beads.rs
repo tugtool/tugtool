@@ -165,8 +165,10 @@ impl BeadsCli {
         self.env_vars.insert(key.into(), value.into());
     }
 
-    /// Build a Command with the bd path and any configured env vars applied
-    /// If working_dir is provided, sets the command's current directory
+    /// Build a Command with the bd path and any configured env vars applied.
+    /// If working_dir is provided, sets the command's current directory AND
+    /// passes `--db <working_dir>/.beads/beads.db` to bypass bd's auto-discovery
+    /// (which refuses to run inside git worktrees).
     fn cmd_with_dir(&self, working_dir: Option<&Path>) -> Command {
         let mut cmd = Command::new(&self.bd_path);
         for (k, v) in &self.env_vars {
@@ -174,6 +176,7 @@ impl BeadsCli {
         }
         if let Some(dir) = working_dir {
             cmd.current_dir(dir);
+            cmd.arg("--db").arg(dir.join(".beads/beads.db"));
         }
         cmd
     }

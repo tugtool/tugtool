@@ -432,7 +432,14 @@ cmd_version() {
   echo "bd-fake 1.0.0 (mock for tugtool testing)"
 }
 
-# Parse global --json for create/show/dep
+# Strip global flags (--db <path>) before parsing subcommand
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --db) shift 2 ;;  # Skip --db and its argument
+    *) break ;;
+  esac
+done
+
 SUBCMD="${1:-}"
 shift || true
 case "$SUBCMD" in
