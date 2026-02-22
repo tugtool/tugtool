@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-22T04:36:15Z
+bead: tugtool-d47.4
+---
+
+## #step-3: Added binary_updated case in ProcessManager shutdown handler, copyBinaryFromSourceTree() method, and bun duplication guard in startProcess()
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-22T04:31:19Z
 bead: tugtool-d47.3
