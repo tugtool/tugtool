@@ -28,10 +28,19 @@ next_id() {
   local parent="$1"
   need_jq
   init_state
+
+  # Read prefix from prefix.txt if it exists, strip any whitespace
+  local prefix
+  if [[ -f "$STATE_DIR/prefix.txt" ]]; then
+    prefix=$(cat "$STATE_DIR/prefix.txt" 2>/dev/null | tr -d '\n\r' | tr -d ' ')
+  fi
+  # Default to "bd-fake" if no prefix file or empty
+  prefix="${prefix:-bd-fake}"
+
   if [[ -z "$parent" ]]; then
     local n
     n=$(jq -r 'to_entries | map(select(.key | test("\\.") | not)) | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
-    echo "bd-fake-$(( n + 1 ))"
+    echo "${prefix}-$(( n + 1 ))"
   else
     local count
     count=$(jq -r --arg p "$parent" '[. | keys[] | select(startswith($p + "."))] | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
@@ -161,7 +170,21 @@ cmd_dep_list() {
 }
 
 cmd_init() {
+  local prefix=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --prefix) prefix="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
   init_state
+
+  # Store prefix if provided
+  if [[ -n "$prefix" ]]; then
+    echo -n "$prefix" > "$STATE_DIR/prefix.txt"
+  fi
+
   echo "Initialized bd-fake state at $STATE_DIR"
 }
 
@@ -356,28 +379,53 @@ cmd_list() {
   need_jq
   init_state
   local filter_ids=""
+  local title_contains=""
+  local parent_filter=""
+  local limit=""
   local json_output=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --id) filter_ids="$2"; shift 2 ;;
+      --title-contains) title_contains="$2"; shift 2 ;;
+      --parent) parent_filter="$2"; shift 2 ;;
+      --limit) limit="$2"; shift 2 ;;
       --json) json_output="true"; shift ;;
-      --limit) shift 2 ;;  # Ignored in fake
       --all) shift ;;      # Ignored in fake
       *) shift ;;
     esac
   done
 
+  local result
   if [[ -n "$filter_ids" ]]; then
     # Filter by comma-separated IDs
     # Convert comma-separated to JSON array
     local ids_array
     ids_array=$(echo "$filter_ids" | tr ',' '\n' | jq -R . | jq -s .)
     # Filter issues by these IDs and return as array
-    jq -c --argjson ids "$ids_array" '[to_entries[] | select(.key as $k | $ids | index($k)) | .value]' "$ISSUES_JSON"
+    result=$(jq -c --argjson ids "$ids_array" '[to_entries[] | select(.key as $k | $ids | index($k)) | .value]' "$ISSUES_JSON")
   else
-    # Return all issues as array
-    jq -c '[.[] | .]' "$ISSUES_JSON"
+    # Return all issues as array (will be filtered below if needed)
+    result=$(jq -c '[.[] | .]' "$ISSUES_JSON")
   fi
+
+  # Apply title-contains filter if specified (case-insensitive substring match)
+  if [[ -n "$title_contains" ]]; then
+    result=$(echo "$result" | jq -c --arg search "$title_contains" \
+      '[.[] | select(.title | ascii_downcase | contains($search | ascii_downcase))]')
+  fi
+
+  # Apply parent filter if specified (ID starts with "parent.")
+  if [[ -n "$parent_filter" ]]; then
+    result=$(echo "$result" | jq -c --arg parent "$parent_filter" \
+      '[.[] | select(.id | startswith($parent + "."))]')
+  fi
+
+  # Apply limit if specified
+  if [[ -n "$limit" ]]; then
+    result=$(echo "$result" | jq -c --argjson lim "$limit" '.[:$lim]')
+  fi
+
+  echo "$result"
 }
 
 cmd_version() {

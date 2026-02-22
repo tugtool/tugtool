@@ -60,23 +60,45 @@ pub fn run_link(
         );
     }
 
+    // Check beads is installed and initialized (unconditional)
+    let beads = BeadsCli::new(bd_path);
+    if !beads.is_installed(Some(&project_root)) {
+        return output_error(
+            json_output,
+            "E005",
+            "beads CLI not installed or not found",
+            &file,
+            &step_anchor,
+            &bead_id,
+            5,
+        );
+    }
+    if !beads.is_initialized(&project_root) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            &file,
+            &step_anchor,
+            &bead_id,
+            13,
+        );
+    }
+
     // If beads validation is enabled, verify bead exists
-    if config.tugtool.beads.enabled && config.tugtool.beads.validate_bead_ids {
-        let beads = BeadsCli::new(bd_path);
-        if beads.is_installed(None)
-            && beads.is_initialized(&project_root)
-            && !beads.bead_exists(&bead_id, None)
-        {
-            return output_error(
-                json_output,
-                "E015",
-                &format!("bead not found: {}", bead_id),
-                &file,
-                &step_anchor,
-                &bead_id,
-                1,
-            );
-        }
+    if config.tugtool.beads.enabled
+        && config.tugtool.beads.validate_bead_ids
+        && !beads.bead_exists(&bead_id, None)
+    {
+        return output_error(
+            json_output,
+            "E015",
+            &format!("bead not found: {}", bead_id),
+            &file,
+            &step_anchor,
+            &bead_id,
+            1,
+        );
     }
 
     // Resolve file path

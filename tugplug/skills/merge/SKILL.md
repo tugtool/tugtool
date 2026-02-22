@@ -47,7 +47,6 @@ Parse the JSON output. Key fields:
 | `worktree_path` | Path to the worktree directory |
 | `pr_url` | PR URL (remote mode only) |
 | `pr_number` | PR number (remote mode only) |
-| `dirty_files` | Uncommitted files in main (if any) |
 | `warnings` | Non-blocking preflight warnings (array of strings, omitted when empty) |
 | `error` | Error message (if status is error) |
 | `message` | Human-readable summary |
@@ -56,14 +55,13 @@ If the command fails (exit code non-zero), report the error and halt. The error 
 
 ### 2. Ask for Confirmation
 
-Note: The CLI handles dirty files automatically during the actual merge (commits infrastructure files, discards leaked implementation files). The skill does NOT need to commit or clean up dirty files — just report them if present in the dry-run output.
+Note: Any uncommitted changes in main will block the merge — the user must commit or stash them before merging.
 
 If the dry-run output includes a `warnings` array, present each warning to the user before asking for confirmation. Warnings are non-blocking (the merge can proceed) but surface important information such as:
 - Main sync warning (local main is out of sync with origin/main)
 - Multiple worktrees found for the plan
 - gh CLI unavailable (falling back to local mode)
 - Branch divergence details (commit count, diff stat)
-- Infrastructure file differences
 - Failing CI checks on the PR
 
 Present the dry-run results and ask the user to confirm:
@@ -167,9 +165,11 @@ If any step fails, report clearly and suggest recovery. Do not retry automatical
 - **Multiple worktrees**: More than one worktree matches the plan. The most recent is used; others may be stale.
 - **gh CLI unavailable**: Remote origin detected but `gh` is not installed or authenticated. Falls back to local merge mode.
 - **Branch divergence**: Shows commit count and diff stat for the branch ahead of main. Informational only.
-- **Infrastructure diff**: Lists .tugtool/ and .beads/ files that differ between main and the branch. These are auto-resolved during merge.
 - **Failing CI checks**: PR has failing or pending CI checks. User should review before merging.
-- **Dirty implementation worktree** (blocking): Uncommitted changes in the implementation worktree would be lost during cleanup. Must commit or discard before merging.
+
+**Blocking errors**:
+- **Uncommitted changes in main**: Any tracked modified files on main will block the merge. User must commit or stash these changes before merging.
+- **Dirty implementation worktree**: Uncommitted changes in the implementation worktree would be lost during cleanup. Must commit or discard before merging.
 
 ---
 

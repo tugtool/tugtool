@@ -931,7 +931,7 @@ fn run_merge_in(
                     squash_commit: None,
                     worktree_cleaned: None,
                     dry_run: false,
-                    untracked_files: None,
+                        untracked_files: None,
                     warnings: preflight_warnings.clone(),
                     error: Some(format!("Squash merge failed: {}", e)),
                     message: None,
@@ -2265,6 +2265,20 @@ mod tests {
 
     // -- Infrastructure save/restore tests --
 
+    #[test]
+
+    #[test]
+
+    #[test]
+
+    #[test]
+
+    #[test]
+
+    #[test]
+
+    #[test]
+
     // -- Step-2 integration tests: dirty file checks and sync checks --
 
     #[test]
@@ -2355,160 +2369,6 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_rejects_dirty_tugtool_files() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_git_repo(repo_path);
-        make_initial_commit(repo_path);
-
-        // Create .tugtool/config.toml file
-        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
-        fs::write(repo_path.join(".tugtool/config.toml"), "# config").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["add", ".tugtool/config.toml"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["commit", "-m", "Add config"])
-            .output()
-            .unwrap();
-
-        // Modify it without committing (tracked-modified)
-        fs::write(repo_path.join(".tugtool/config.toml"), "# modified config").unwrap();
-
-        // Create tugplan and worktree
-        fs::write(repo_path.join(".tugtool/tugplan-1.md"), "# Plan").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["add", ".tugtool/tugplan-1.md"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["commit", "-m", "Add plan"])
-            .output()
-            .unwrap();
-
-        let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args([
-                "worktree",
-                "add",
-                wt_path.to_str().unwrap(),
-                "-b",
-                "tugtool/1-test",
-            ])
-            .output()
-            .unwrap();
-
-        // Run merge with .tugtool/ dirty file
-        let result = run_merge_in(
-            repo_path,
-            "tugplan-1.md".to_string(),
-            false,
-            false,
-            true,
-            true,
-        );
-
-        assert!(result.is_err(), "Should reject .tugtool/ dirty files");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("Uncommitted changes"),
-            "Error should mention uncommitted changes: {}",
-            err
-        );
-        assert!(
-            err.contains(".tugtool/config.toml"),
-            "Error should list the dirty .tugtool/ file: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_merge_succeeds_with_clean_main() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_git_repo(repo_path);
-        make_initial_commit(repo_path);
-
-        // Create tugplan
-        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
-        fs::write(repo_path.join(".tugtool/tugplan-1.md"), "# Plan").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["add", ".tugtool/tugplan-1.md"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["commit", "-m", "Add plan"])
-            .output()
-            .unwrap();
-
-        // Create worktree
-        let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args([
-                "worktree",
-                "add",
-                wt_path.to_str().unwrap(),
-                "-b",
-                "tugtool/1-test",
-            ])
-            .output()
-            .unwrap();
-
-        // Make a commit in the worktree
-        fs::create_dir_all(wt_path.join("src")).unwrap();
-        fs::write(wt_path.join("src/new.rs"), "fn new() {}").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&wt_path)
-            .args(["add", "src/new.rs"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&wt_path)
-            .args(["commit", "-m", "Add new.rs"])
-            .output()
-            .unwrap();
-
-        // Main is clean - merge should succeed
-        let result = run_merge_in(
-            repo_path,
-            "tugplan-1.md".to_string(),
-            false,
-            false,
-            true,
-            true,
-        );
-
-        assert!(
-            result.is_ok(),
-            "Merge should succeed with clean main: {:?}",
-            result
-        );
-    }
 
     #[test]
     fn test_dry_run_surfaces_dirty_file_error() {
@@ -2710,6 +2570,8 @@ mod tests {
         // Let's skip this test as it requires gh CLI setup
         // Instead we'll test the sync check directly below
     }
+
+    #[test]
 
     // -- Step-2 integration tests: complex scenarios --
 

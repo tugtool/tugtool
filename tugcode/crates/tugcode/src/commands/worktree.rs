@@ -571,39 +571,6 @@ pub fn run_worktree_create_with_root(
     // Ensure git repository is ready (auto-init for fresh directories)
     ensure_git_repo(&repo_root, &base)?;
 
-    // Ensure beads is initialized in the project root.
-    // All worktrees are subdirectories of repo_root, so bd finds this database
-    // by walking up the directory tree. This must happen before worktree creation
-    // so there's no rollback to worry about.
-    {
-        use tugtool_core::beads::BeadsCli;
-        let beads = BeadsCli::default();
-        if !beads.is_installed(None) {
-            let err = tugtool_core::error::TugError::BeadsNotInstalled;
-            if json_output {
-                let error_json = serde_json::json!({
-                    "status": "error",
-                    "error": err.to_string(),
-                    "exit_code": err.exit_code()
-                });
-                eprintln!("{}", error_json);
-            } else if !quiet {
-                eprintln!("error: {}", err);
-            }
-            return Ok(err.exit_code());
-        }
-        if !beads.is_initialized(&repo_root) {
-            if let Err(e) = beads.init(&repo_root) {
-                if json_output {
-                    eprintln!(r#"{{"error": "{}"}}"#, e);
-                } else if !quiet {
-                    eprintln!("error: {}", e);
-                }
-                return Ok(e.exit_code());
-            }
-        }
-    }
-
     // Commit the plan file to the current branch so it's in the worktree after branching
     {
         use std::process::Command;
@@ -640,7 +607,7 @@ pub fn run_worktree_create_with_root(
     };
 
     match create_worktree(&config) {
-        Ok((worktree_path, branch_name, _plan_slug)) => {
+        Ok((worktree_path, branch_name, plan_slug)) => {
             let plan_name = plan_path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -730,8 +697,40 @@ pub fn run_worktree_create_with_root(
                 return Ok(e.exit_code());
             }
 
+            // Initialize beads in the worktree
+            {
+                use tugtool_core::beads::BeadsCli;
+                let beads = BeadsCli::default();
+                if !beads.is_installed(None) {
+                    let err = tugtool_core::error::TugError::BeadsNotInstalled;
+                    let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
+                    if json_output {
+                        let error_json = serde_json::json!({
+                            "status": "error",
+                            "error": err.to_string(),
+                            "exit_code": err.exit_code()
+                        });
+                        eprintln!("{}", error_json);
+                    } else if !quiet {
+                        eprintln!("error: {}", err);
+                        eprintln!("Rolled back worktree creation");
+                    }
+                    return Ok(err.exit_code());
+                }
+                if let Err(e) = beads.init_with_prefix(&worktree_path, Some(&plan_slug)) {
+                    let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
+                    if json_output {
+                        eprintln!(r#"{{"error": "{}"}}"#, e);
+                    } else if !quiet {
+                        eprintln!("error: {}", e);
+                        eprintln!("Rolled back worktree creation");
+                    }
+                    return Ok(e.exit_code());
+                }
+            }
+
             // Sync beads and commit (always-on)
-            // Beads database lives in repo_root; bd finds it by walking up from worktree.
+            // Beads database lives in the worktree now.
             let (bead_mapping, root_bead_id) = match sync_beads_in_worktree(&worktree_path, &plan) {
                 Ok((mapping, root_id)) => {
                     // Try to commit the changes
@@ -815,7 +814,7 @@ pub fn run_worktree_create_with_root(
             let ready_steps: Option<Vec<String>> = if let Some(ref root_id) = root_bead_id {
                 use tugtool_core::beads::BeadsCli;
                 let bd = BeadsCli::default();
-                match bd.ready(Some(root_id), None) {
+                match bd.ready(Some(root_id), Some(&worktree_path)) {
                     Ok(ready_beads) => {
                         // Map bead IDs to step anchors using bead_mapping
                         if let Some(ref mapping) = bead_mapping {

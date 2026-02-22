@@ -73,6 +73,17 @@ pub fn run_update_notes(
         );
     }
 
+    // Check if beads is initialized
+    let check_path = working_path.unwrap_or(&project_root);
+    if !beads.is_initialized(check_path) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
+        );
+    }
+
     // Update notes
     match beads.update_notes(&bead_id, &content_text, working_path) {
         Ok(()) => {
@@ -161,6 +172,17 @@ pub fn run_append_notes(
         );
     }
 
+    // Check if beads is initialized
+    let check_path = working_path.unwrap_or(&project_root);
+    if !beads.is_initialized(check_path) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
+        );
+    }
+
     // Append notes
     match beads.append_notes(&bead_id, &content_text, working_path) {
         Ok(()) => {
@@ -246,6 +268,17 @@ pub fn run_append_design(
             "E005",
             "beads CLI not installed or not found",
             5,
+        );
+    }
+
+    // Check if beads is initialized
+    let check_path = working_path.unwrap_or(&project_root);
+    if !beads.is_initialized(check_path) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
         );
     }
 

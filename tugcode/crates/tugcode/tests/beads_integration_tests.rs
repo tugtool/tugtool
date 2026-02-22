@@ -312,6 +312,58 @@ fn test_mock_bd_dep_add_and_list_track_dependencies() {
 }
 
 #[test]
+fn test_mock_bd_init_with_prefix() {
+    let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
+
+    // Initialize with custom prefix
+    let init_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["init", "--prefix", "auth"])
+        .output()
+        .expect("failed to init with prefix");
+
+    assert!(init_output.status.success(), "init --prefix failed");
+
+    // Create root issue
+    let root_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["create", "Root Issue", "--json"])
+        .output()
+        .expect("failed to create root issue");
+
+    assert!(root_output.status.success(), "create root failed");
+    let root_json: serde_json::Value =
+        serde_json::from_slice(&root_output.stdout).expect("failed to parse root JSON");
+
+    let root_id = root_json["id"].as_str().expect("root id missing");
+    assert!(
+        root_id.starts_with("auth-"),
+        "root ID should start with 'auth-', got: {}",
+        root_id
+    );
+
+    // Create child issue
+    let child_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["create", "Child", "--parent", root_id, "--json"])
+        .output()
+        .expect("failed to create child");
+
+    assert!(child_output.status.success(), "create child failed");
+    let child_json: serde_json::Value =
+        serde_json::from_slice(&child_output.stdout).expect("failed to parse child JSON");
+
+    let child_id = child_json["id"].as_str().expect("child id missing");
+    let expected_prefix = format!("{}.", root_id);
+    assert!(
+        child_id.starts_with(&expected_prefix),
+        "child ID should start with '{}', got: {}",
+        expected_prefix,
+        child_id
+    );
+}
+
+#[test]
 fn test_mock_bd_ready_returns_unblocked_issues() {
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
 
@@ -442,11 +494,9 @@ fn test_beads_sync_creates_root_and_step_beads() {
 }
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so cannot detect existing beads without pre-populated annotations"]
 fn test_beads_sync_is_idempotent() {
-    // NOTE: This test validated that running sync twice on the same plan doesn't create duplicate beads.
-    // With the new behavior (no plan file annotations), sync cannot detect existing beads unless
-    // the plan already has bead IDs. This test is kept for reference but ignored.
+    // Validates that running sync twice on the same plan doesn't create duplicate beads.
+    // With title-based matching, the second sync should find and reuse existing beads.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "test", SINGLE_STEP_PLAN);
@@ -531,11 +581,9 @@ fn test_beads_sync_creates_dependency_edges() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so status command cannot detect beads"]
 fn test_beads_status_computes_readiness() {
-    // NOTE: This test validated that `beads status` correctly computes readiness based on dependencies.
-    // With the new behavior (no plan file annotations), the status command cannot find bead IDs
-    // in the plan file, so all steps show as "pending". This test is kept for reference but ignored.
+    // Validates that `beads status` correctly computes readiness based on dependencies.
+    // With title-based matching, status resolves beads by title and shows correct readiness.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "multi", MULTI_STEP_PLAN);
@@ -593,11 +641,9 @@ fn test_beads_status_computes_readiness() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so pull command cannot detect beads"]
 fn test_beads_pull_updates_checkboxes() {
-    // NOTE: This test validated that `beads pull` updates checkboxes based on bead status.
-    // With the new behavior (no plan file annotations), the pull command cannot find bead IDs
-    // in the plan file. This test is kept for reference but ignored.
+    // Validates that `beads pull` updates checkboxes based on bead status.
+    // With title-based matching, pull resolves beads by title and updates checkboxes.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "test", SINGLE_STEP_PLAN);
@@ -667,11 +713,7 @@ fn test_beads_pull_updates_checkboxes() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan"]
 fn test_full_beads_workflow_sync_work_pull() {
-    // NOTE: This test exercised the complete workflow: sync → work → status → pull.
-    // With the new behavior (no plan file annotations), status and pull commands cannot find
-    // bead IDs in the plan file. This test is kept for reference but ignored.
     // This test exercises the complete workflow documented in README:
     // 1. tug beads sync (Plan → Beads)
     // 2. bd close (Work in Beads)
@@ -695,14 +737,6 @@ fn test_full_beads_workflow_sync_work_pull() {
     let sync_json: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&sync_output.stdout)).unwrap();
     assert_eq!(sync_json["data"]["steps_synced"], 3, "should sync 3 steps");
-
-    // Verify bead IDs were written to plan
-    let plan_after_sync = fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md"))
-        .expect("failed to read plan");
-    assert!(
-        plan_after_sync.contains("**Bead:**"),
-        "plan should have Bead IDs after sync"
-    );
 
     // Step 2: Check initial status - Step 0 should be ready, others blocked
     let status_output = Command::new(tug_binary())
@@ -1340,5 +1374,85 @@ fn test_revision_loop_update_notes_overwrites() {
     assert!(
         notes.contains("Coder v2: revised with tests added"),
         "notes should contain new coder content"
+    );
+}
+
+#[test]
+fn test_standalone_sync_errors_outside_worktree() {
+    let temp = tempfile::tempdir().expect("failed to create temp dir");
+
+    // Run tug init to create .tugtool/ but DON'T create .beads/
+    let output = Command::new(tug_binary())
+        .arg("init")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run tug init");
+
+    assert!(
+        output.status.success(),
+        "tug init failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Create a minimal tugplan
+    let plan_content = r#"# Test Plan
+
+## Execution Plan
+
+### Phase 1
+
+#### Step 0 {#step-0}
+
+**Task:** Do something
+
+**Checkpoint:**
+- [ ] Something done
+"#;
+    fs::write(temp.path().join(".tugtool/tugplan-test.md"), plan_content)
+        .expect("failed to write tugplan");
+
+    // Run beads sync without .beads/ directory (should fail with E013)
+    let sync_output = Command::new(tug_binary())
+        .args(["beads", "sync", ".tugtool/tugplan-test.md", "--json"])
+        .env("TUG_BD_PATH", bd_fake_path())
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run beads sync");
+
+    // Should fail
+    assert!(
+        !sync_output.status.success(),
+        "beads sync should fail outside worktree"
+    );
+
+    // Parse JSON output
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&sync_output.stdout))
+            .expect("failed to parse JSON");
+
+    // Check status is error
+    assert_eq!(
+        json["status"].as_str().unwrap(),
+        "error",
+        "Status should be error"
+    );
+
+    // Check issues array contains E013
+    let issues = json["issues"].as_array().expect("Should have issues array");
+    assert!(!issues.is_empty(), "Issues array should not be empty");
+
+    let first_issue = &issues[0];
+    assert_eq!(
+        first_issue["code"].as_str().unwrap(),
+        "E013",
+        "Should return E013 error code"
+    );
+
+    // Check error message mentions worktree
+    let error_msg = first_issue["message"].as_str().unwrap();
+    assert!(
+        error_msg.contains("worktree") || error_msg.contains("tugcode worktree create"),
+        "Error message should mention worktree: {}",
+        error_msg
     );
 }

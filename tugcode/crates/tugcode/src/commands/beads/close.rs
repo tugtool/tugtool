@@ -9,6 +9,7 @@ use crate::output::{BeadsCloseData, JsonIssue, JsonResponse};
 pub fn run_close(
     bead_id: String,
     reason: Option<String>,
+    working_dir: Option<String>,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -26,8 +27,11 @@ pub fn run_close(
         std::env::var("TUG_BD_PATH").unwrap_or_else(|_| config.tugtool.beads.bd_path.clone());
     let beads = BeadsCli::new(bd_path);
 
+    // Convert working_dir to Path if provided
+    let working_path = working_dir.as_ref().map(std::path::Path::new);
+
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(working_path) {
         return output_error(
             json_output,
             "E005",
@@ -36,8 +40,19 @@ pub fn run_close(
         );
     }
 
+    // Check if beads is initialized
+    let check_path = working_path.unwrap_or(&project_root);
+    if !beads.is_initialized(check_path) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
+        );
+    }
+
     // Attempt to close the bead
-    match beads.close(&bead_id, reason.as_deref(), None) {
+    match beads.close(&bead_id, reason.as_deref(), working_path) {
         Ok(()) => {
             // Check if log rotation is needed
             let (log_rotated, archived_path) = check_and_rotate_log(&project_root)?;

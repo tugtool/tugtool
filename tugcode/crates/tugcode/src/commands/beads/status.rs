@@ -60,12 +60,22 @@ pub fn run_beads_status(
     let beads = BeadsCli::new(bd_path);
 
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",
             "beads CLI not installed or not found",
             5,
+        );
+    }
+
+    // Check if beads is initialized
+    if !beads.is_initialized(&project_root) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
         );
     }
 
@@ -159,40 +169,68 @@ pub fn run_beads_status(
     Ok(0)
 }
 
+/// Resolve beads for a plan using title-based matching
+fn resolve_beads_for_status(
+    plan: &TugPlan,
+    beads: &BeadsCli,
+) -> (Option<String>, HashMap<String, (String, bool)>) {
+    let mut bead_statuses: HashMap<String, (String, bool)> = HashMap::new();
+
+    // Find root bead by phase title
+    let phase_title = plan.phase_title.as_deref().unwrap_or("Untitled plan");
+
+    let root_id = beads
+        .find_by_title(phase_title, None, None)
+        .ok()
+        .flatten()
+        .map(|issue| issue.id);
+
+    // Only resolve steps if we found a root bead
+    if let Some(ref root_id) = root_id {
+        // Resolve each step bead by title
+        for step in &plan.steps {
+            let title = format!("Step {}: {}", step.number, step.title);
+            if let Ok(Some(issue)) = beads.find_by_title(&title, Some(root_id), None) {
+                let is_complete = check_bead_complete(&issue.id, beads);
+                bead_statuses.insert(step.anchor.clone(), (issue.id.clone(), is_complete));
+
+                // Resolve substeps
+                for substep in &step.substeps {
+                    let sub_title = format!("Step {}: {}", substep.number, substep.title);
+                    if let Ok(Some(sub_issue)) =
+                        beads.find_by_title(&sub_title, Some(&issue.id), None)
+                    {
+                        let sub_complete = check_bead_complete(&sub_issue.id, beads);
+                        bead_statuses.insert(substep.anchor.clone(), (sub_issue.id, sub_complete));
+                    }
+                }
+            }
+        }
+    }
+
+    (root_id, bead_statuses)
+}
+
 /// Get beads status for a file
 fn get_file_beads_status(path: &Path, plan: &TugPlan, beads: &BeadsCli) -> FileBeadsStatus {
     let name = tugplan_name_from_path(path).unwrap_or_else(|| "unknown".to_string());
     let file = path.to_string_lossy().to_string();
 
-    // Build map of anchor -> bead status
-    let mut bead_statuses: HashMap<String, (String, bool)> = HashMap::new(); // anchor -> (bead_id, is_complete)
+    // Resolve beads using title-based matching
+    let (root_bead_id, bead_statuses) = resolve_beads_for_status(plan, beads);
 
-    // First pass: get bead statuses
-    for step in &plan.steps {
-        if let Some(ref bead_id) = step.bead_id {
-            let is_complete = check_bead_complete(bead_id, beads);
-            bead_statuses.insert(step.anchor.clone(), (bead_id.clone(), is_complete));
-        }
-
-        for substep in &step.substeps {
-            if let Some(ref bead_id) = substep.bead_id {
-                let is_complete = check_bead_complete(bead_id, beads);
-                bead_statuses.insert(substep.anchor.clone(), (bead_id.clone(), is_complete));
-            }
-        }
-    }
-
-    // Second pass: compute status for each step
+    // Compute status for each step
     let mut steps_status: Vec<StepBeadsStatus> = Vec::new();
     let mut steps_complete = 0;
     let mut steps_total = 0;
 
     for step in &plan.steps {
+        let resolved_bead_id = bead_statuses.get(&step.anchor).map(|(id, _)| id.clone());
         let status = compute_step_status(
             &step.anchor,
             &step.depends_on,
             &bead_statuses,
-            &step.bead_id,
+            &resolved_bead_id,
         );
         let blocked_by = get_blocked_by(&step.depends_on, &bead_statuses);
 
@@ -204,18 +242,19 @@ fn get_file_beads_status(path: &Path, plan: &TugPlan, beads: &BeadsCli) -> FileB
         steps_status.push(StepBeadsStatus {
             anchor: step.anchor.clone(),
             title: format!("Step {}: {}", step.number, step.title),
-            bead_id: step.bead_id.clone(),
+            bead_id: resolved_bead_id,
             status: status.to_string(),
             blocked_by,
         });
 
         // Add substeps
         for substep in &step.substeps {
+            let resolved_sub_id = bead_statuses.get(&substep.anchor).map(|(id, _)| id.clone());
             let sub_status = compute_step_status(
                 &substep.anchor,
                 &substep.depends_on,
                 &bead_statuses,
-                &substep.bead_id,
+                &resolved_sub_id,
             );
             let sub_blocked_by = get_blocked_by(&substep.depends_on, &bead_statuses);
 
@@ -227,7 +266,7 @@ fn get_file_beads_status(path: &Path, plan: &TugPlan, beads: &BeadsCli) -> FileB
             steps_status.push(StepBeadsStatus {
                 anchor: substep.anchor.clone(),
                 title: format!("  Step {}: {}", substep.number, substep.title),
-                bead_id: substep.bead_id.clone(),
+                bead_id: resolved_sub_id,
                 status: sub_status.to_string(),
                 blocked_by: sub_blocked_by,
             });
@@ -237,7 +276,7 @@ fn get_file_beads_status(path: &Path, plan: &TugPlan, beads: &BeadsCli) -> FileB
     FileBeadsStatus {
         file,
         name,
-        root_bead_id: plan.metadata.beads_root_id.clone(),
+        root_bead_id,
         steps_complete,
         steps_total,
         steps: steps_status,

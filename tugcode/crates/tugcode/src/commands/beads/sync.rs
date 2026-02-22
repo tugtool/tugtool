@@ -70,7 +70,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
     let beads = BeadsCli::new(bd_path);
 
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",
@@ -85,7 +85,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
         return output_error(
             json_output,
             "E013",
-            "beads not initialized (run `bd init`)",
+            "beads not initialized. Run: tugcode worktree create <plan>",
             &file,
             13,
         );
@@ -150,6 +150,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
         prune_deps,
         substeps_mode: &substeps_mode,
         quiet,
+        working_dir: Some(project_root.as_path()),
     };
     let result = sync_plan_to_beads(&path, &plan, &content, &ctx);
 
@@ -221,7 +222,9 @@ struct SyncContext<'a> {
     enrich: bool,
     prune_deps: bool,
     substeps_mode: &'a str,
+    #[allow(dead_code)] // Used for debugging/warnings - may be re-enabled later
     quiet: bool,
+    working_dir: Option<&'a Path>,
 }
 
 /// Sync a plan to beads
@@ -250,33 +253,8 @@ fn sync_plan_to_beads(
         .clone()
         .unwrap_or_else(|| "Untitled plan".to_string());
 
-    // Phase 1: Collect all known bead IDs from plan for batch existence check
-    let mut known_ids: Vec<String> = Vec::new();
-    if let Some(ref root_id) = plan.metadata.beads_root_id {
-        known_ids.push(root_id.clone());
-    }
-    for step in &plan.steps {
-        if let Some(ref bead_id) = step.bead_id {
-            known_ids.push(bead_id.clone());
-        }
-        if ctx.substeps_mode == "children" {
-            for substep in &step.substeps {
-                if let Some(ref bead_id) = substep.bead_id {
-                    known_ids.push(bead_id.clone());
-                }
-            }
-        }
-    }
-
-    // Phase 2: Single batch query to check which beads exist (major performance win)
-    let existing_ids = if ctx.dry_run || known_ids.is_empty() {
-        HashSet::new()
-    } else {
-        ctx.beads.list_by_ids(&known_ids, None).unwrap_or_default()
-    };
-
-    // Step 1: Ensure root bead exists
-    let (root_id, root_created) = ensure_root_bead(plan, &phase_title, ctx, &existing_ids)?;
+    // Ensure root bead exists (uses title-based matching)
+    let (root_id, root_created) = ensure_root_bead(plan, &phase_title, ctx)?;
 
     // Track newly created beads to avoid double-updates during enrichment
     let mut created_beads: HashSet<String> = HashSet::new();
@@ -287,10 +265,9 @@ fn sync_plan_to_beads(
     // Build a map of step anchors to bead IDs (existing)
     let mut anchor_to_bead: HashMap<String, String> = HashMap::new();
 
-    // Step 2: Process each step
+    // Process each step
     for step in &plan.steps {
-        let (step_bead_id, step_created) =
-            ensure_step_bead(step, &root_id, plan, ctx, &existing_ids)?;
+        let (step_bead_id, step_created) = ensure_step_bead(step, &root_id, plan, ctx)?;
 
         anchor_to_bead.insert(step.anchor.clone(), step_bead_id.clone());
         if step_created {
@@ -302,7 +279,7 @@ fn sync_plan_to_beads(
         if ctx.substeps_mode == "children" {
             for substep in &step.substeps {
                 let (substep_bead_id, substep_created) =
-                    ensure_substep_bead(substep, &step_bead_id, plan, ctx, &existing_ids)?;
+                    ensure_substep_bead(substep, &step_bead_id, plan, ctx)?;
 
                 anchor_to_bead.insert(substep.anchor.clone(), substep_bead_id.clone());
                 if substep_created {
@@ -314,16 +291,12 @@ fn sync_plan_to_beads(
     }
 
     // Step 3: Create dependency edges
-    // Optimization: if bead already existed (in existing_ids) and we're not pruning,
+    // Optimization: if bead was reused (not in created_beads) and we're not pruning,
     // skip dependency sync entirely - deps were set when bead was first created.
     for step in &plan.steps {
         if let Some(bead_id) = anchor_to_bead.get(&step.anchor) {
-            // Skip if bead already existed and not pruning (deps already set)
-            let bead_existed = step
-                .bead_id
-                .as_ref()
-                .is_some_and(|id| existing_ids.contains(id));
-            if !bead_existed || ctx.prune_deps {
+            // Skip if bead was reused and not pruning (deps already set)
+            if created_beads.contains(bead_id) || ctx.prune_deps {
                 let added = sync_dependencies(
                     bead_id,
                     &step.depends_on,
@@ -331,6 +304,7 @@ fn sync_plan_to_beads(
                     ctx.beads,
                     ctx.prune_deps,
                     ctx.dry_run,
+                    ctx.working_dir,
                 )?;
                 deps_added += added;
             }
@@ -340,12 +314,8 @@ fn sync_plan_to_beads(
         if ctx.substeps_mode == "children" {
             for substep in &step.substeps {
                 if let Some(bead_id) = anchor_to_bead.get(&substep.anchor) {
-                    // Skip if bead already existed and not pruning
-                    let bead_existed = substep
-                        .bead_id
-                        .as_ref()
-                        .is_some_and(|id| existing_ids.contains(id));
-                    if !bead_existed || ctx.prune_deps {
+                    // Skip if bead was reused and not pruning
+                    if created_beads.contains(bead_id) || ctx.prune_deps {
                         // Substeps inherit parent deps if no explicit deps
                         let deps = if substep.depends_on.is_empty() {
                             &step.depends_on
@@ -359,6 +329,7 @@ fn sync_plan_to_beads(
                             ctx.beads,
                             ctx.prune_deps,
                             ctx.dry_run,
+                            ctx.working_dir,
                         )?;
                         deps_added += added;
                     }
@@ -433,31 +404,26 @@ fn ensure_root_bead(
     plan: &TugPlan,
     phase_title: &str,
     ctx: &SyncContext<'_>,
-    existing_ids: &HashSet<String>,
 ) -> Result<(String, bool), TugError> {
-    // Check if we already have a root ID
-    if let Some(ref root_id) = plan.metadata.beads_root_id {
-        // Use pre-fetched existence check (no subprocess call)
-        if existing_ids.contains(root_id) {
-            return Ok((root_id.clone(), false));
-        }
-        // Root bead was deleted, need to recreate
-        if !ctx.quiet {
-            eprintln!("warning: root bead {} not found, recreating", root_id);
-        }
-    }
-
-    // Render rich content for new bead
-    let description = plan.render_root_description();
-    let design = plan.render_root_design();
-    let acceptance = plan.render_root_acceptance();
-    let issue_type = &ctx.config.tugtool.beads.root_issue_type;
-
     if ctx.dry_run {
         // Generate a fake ID for dry run
         let fake_id = "bd-dryrun-root".to_string();
         return Ok((fake_id, true));
     }
+
+    // Try to find existing root bead by title
+    if let Some(existing) = ctx
+        .beads
+        .find_by_title(phase_title, None, ctx.working_dir)?
+    {
+        return Ok((existing.id, false));
+    }
+
+    // No existing bead found, create new one
+    let description = plan.render_root_description();
+    let design = plan.render_root_design();
+    let acceptance = plan.render_root_acceptance();
+    let issue_type = &ctx.config.tugtool.beads.root_issue_type;
 
     let issue = ctx.beads.create(
         phase_title,
@@ -476,7 +442,7 @@ fn ensure_root_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -488,31 +454,27 @@ fn ensure_step_bead(
     root_id: &str,
     plan: &TugPlan,
     ctx: &SyncContext<'_>,
-    existing_ids: &HashSet<String>,
 ) -> Result<(String, bool), TugError> {
-    // Check if step already has a bead ID
-    if let Some(ref bead_id) = step.bead_id {
-        // Use pre-fetched existence check (no subprocess call)
-        if existing_ids.contains(bead_id) {
-            return Ok((bead_id.clone(), false));
-        }
-        // Bead was deleted, need to recreate
-        if !ctx.quiet {
-            eprintln!("warning: step bead {} not found, recreating", bead_id);
-        }
-    }
-
-    // Render rich content for new bead
     let title = format!("Step {}: {}", step.number, step.title);
-    let description = step.render_description();
-    let acceptance = step.render_acceptance_criteria();
-    let design = resolve_step_design(step, plan);
 
     if ctx.dry_run {
         // Generate a fake ID for dry run
         let fake_id = format!("bd-dryrun-{}", step.anchor);
         return Ok((fake_id, true));
     }
+
+    // Try to find existing step bead by title (within parent)
+    if let Some(existing) = ctx
+        .beads
+        .find_by_title(&title, Some(root_id), ctx.working_dir)?
+    {
+        return Ok((existing.id, false));
+    }
+
+    // No existing bead found, create new one
+    let description = step.render_description();
+    let acceptance = step.render_acceptance_criteria();
+    let design = resolve_step_design(step, plan);
 
     let issue = ctx.beads.create(
         &title,
@@ -531,7 +493,7 @@ fn ensure_step_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -543,20 +505,23 @@ fn ensure_substep_bead(
     parent_bead_id: &str,
     plan: &TugPlan,
     ctx: &SyncContext<'_>,
-    existing_ids: &HashSet<String>,
 ) -> Result<(String, bool), TugError> {
-    // Check if substep already has a bead ID
-    if let Some(ref bead_id) = substep.bead_id {
-        // Use pre-fetched existence check (no subprocess call)
-        if existing_ids.contains(bead_id) {
-            return Ok((bead_id.clone(), false));
-        }
-        // Bead was deleted, need to recreate
-        if !ctx.quiet {
-            eprintln!("warning: substep bead {} not found, recreating", bead_id);
-        }
+    let title = format!("Step {}: {}", substep.number, substep.title);
+
+    if ctx.dry_run {
+        let fake_id = format!("bd-dryrun-{}", substep.anchor);
+        return Ok((fake_id, true));
     }
 
+    // Try to find existing substep bead by title (within parent)
+    if let Some(existing) =
+        ctx.beads
+            .find_by_title(&title, Some(parent_bead_id), ctx.working_dir)?
+    {
+        return Ok((existing.id, false));
+    }
+
+    // No existing bead found, create new one
     // Convert Substep to Step for rendering (substeps have same fields)
     let substep_as_step = tugtool_core::Step {
         number: substep.number.clone(),
@@ -575,16 +540,9 @@ fn ensure_substep_bead(
         substeps: vec![],
     };
 
-    // Render rich content for new bead
-    let title = format!("Step {}: {}", substep.number, substep.title);
     let description = substep_as_step.render_description();
     let acceptance = substep_as_step.render_acceptance_criteria();
     let design = resolve_step_design(&substep_as_step, plan);
-
-    if ctx.dry_run {
-        let fake_id = format!("bd-dryrun-{}", substep.anchor);
-        return Ok((fake_id, true));
-    }
 
     let issue = ctx.beads.create(
         &title,
@@ -603,7 +561,7 @@ fn ensure_substep_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -617,6 +575,7 @@ fn sync_dependencies(
     beads: &BeadsCli,
     prune_deps: bool,
     dry_run: bool,
+    working_dir: Option<&Path>,
 ) -> Result<usize, TugError> {
     if dry_run {
         return Ok(depends_on.len());
@@ -625,7 +584,7 @@ fn sync_dependencies(
     let mut added = 0;
 
     // Get current dependencies
-    let current_deps = beads.dep_list(bead_id, None).unwrap_or_default();
+    let current_deps = beads.dep_list(bead_id, working_dir).unwrap_or_default();
     let current_dep_ids: std::collections::HashSet<String> =
         current_deps.iter().map(|d| d.id.clone()).collect();
 
@@ -633,7 +592,7 @@ fn sync_dependencies(
     for dep_anchor in depends_on {
         if let Some(dep_bead_id) = anchor_to_bead.get(dep_anchor) {
             if !current_dep_ids.contains(dep_bead_id) {
-                beads.dep_add(bead_id, dep_bead_id, None)?;
+                beads.dep_add(bead_id, dep_bead_id, working_dir)?;
                 added += 1;
             }
         }
@@ -648,7 +607,7 @@ fn sync_dependencies(
 
         for dep in current_deps {
             if !desired_dep_ids.contains(&dep.id) {
-                beads.dep_remove(bead_id, &dep.id, None)?;
+                beads.dep_remove(bead_id, &dep.id, working_dir)?;
             }
         }
     }
@@ -733,7 +692,10 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update description (purpose + strategy + success criteria)
     let description = plan.render_root_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(root_id, &description, None) {
+        if let Err(e) = ctx
+            .beads
+            .update_description(root_id, &description, ctx.working_dir)
+        {
             errors.push(format!("Failed to update root description: {}", e));
         }
     }
@@ -741,7 +703,7 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update design (decision summary)
     let design = plan.render_root_design();
     if !design.is_empty() {
-        if let Err(e) = ctx.beads.update_design(root_id, &design, None) {
+        if let Err(e) = ctx.beads.update_design(root_id, &design, ctx.working_dir) {
             errors.push(format!("Failed to update root design: {}", e));
         }
     }
@@ -749,7 +711,10 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update acceptance criteria (phase exit criteria)
     let acceptance = plan.render_root_acceptance();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(root_id, &acceptance, None) {
+        if let Err(e) = ctx
+            .beads
+            .update_acceptance(root_id, &acceptance, ctx.working_dir)
+        {
             errors.push(format!("Failed to update root acceptance: {}", e));
         }
     }
@@ -773,7 +738,10 @@ fn enrich_step_bead(
     // Update description (tasks + artifacts + commit template)
     let description = step.render_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(bead_id, &description, None) {
+        if let Err(e) = ctx
+            .beads
+            .update_description(bead_id, &description, ctx.working_dir)
+        {
             errors.push(format!(
                 "Failed to update description for {}: {}",
                 bead_id, e
@@ -784,7 +752,10 @@ fn enrich_step_bead(
     // Update acceptance criteria (tests + checkpoints)
     let acceptance = step.render_acceptance_criteria();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(bead_id, &acceptance, None) {
+        if let Err(e) = ctx
+            .beads
+            .update_acceptance(bead_id, &acceptance, ctx.working_dir)
+        {
             errors.push(format!(
                 "Failed to update acceptance for {}: {}",
                 bead_id, e
@@ -795,7 +766,7 @@ fn enrich_step_bead(
     // Update design (resolved references)
     let design = resolve_step_design(step, plan);
     if !design.is_empty() {
-        if let Err(e) = ctx.beads.update_design(bead_id, &design, None) {
+        if let Err(e) = ctx.beads.update_design(bead_id, &design, ctx.working_dir) {
             errors.push(format!("Failed to update design for {}: {}", bead_id, e));
         }
     }

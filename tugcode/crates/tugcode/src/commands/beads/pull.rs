@@ -47,7 +47,7 @@ pub fn run_pull(
     let beads = BeadsCli::new(bd_path);
 
     // Check if beads CLI is installed
-    if !beads.is_installed(None) {
+    if !beads.is_installed(Some(&project_root)) {
         return output_error(
             json_output,
             "E005",
@@ -61,7 +61,7 @@ pub fn run_pull(
         return output_error(
             json_output,
             "E013",
-            "beads not initialized (run `bd init`)",
+            "beads not initialized. Run: tugcode worktree create <plan>",
             13,
         );
     }
@@ -154,6 +154,42 @@ pub fn run_pull(
     Ok(0)
 }
 
+/// Resolve beads for a plan using title-based matching
+fn resolve_beads_for_pull(
+    plan: &tugtool_core::TugPlan,
+    beads: &BeadsCli,
+) -> std::collections::HashMap<String, String> {
+    let mut anchor_to_bead: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
+    // Find root bead by phase title
+    let phase_title = plan.phase_title.as_deref().unwrap_or("Untitled plan");
+
+    let root_id = match beads.find_by_title(phase_title, None, None) {
+        Ok(Some(issue)) => issue.id,
+        _ => return anchor_to_bead, // No root bead, return empty map
+    };
+
+    // Resolve each step bead by title
+    for step in &plan.steps {
+        let title = format!("Step {}: {}", step.number, step.title);
+        if let Ok(Some(issue)) = beads.find_by_title(&title, Some(&root_id), None) {
+            anchor_to_bead.insert(step.anchor.clone(), issue.id.clone());
+
+            // Resolve substeps
+            for substep in &step.substeps {
+                let sub_title = format!("Step {}: {}", substep.number, substep.title);
+                if let Ok(Some(sub_issue)) = beads.find_by_title(&sub_title, Some(&issue.id), None)
+                {
+                    anchor_to_bead.insert(substep.anchor.clone(), sub_issue.id);
+                }
+            }
+        }
+    }
+
+    anchor_to_bead
+}
+
 /// Pull bead status to checkboxes
 fn pull_bead_status_to_checkboxes(
     tugplan: &tugtool_core::TugPlan,
@@ -168,8 +204,11 @@ fn pull_bead_status_to_checkboxes(
 
     let checkbox_mode = &config.tugtool.beads.pull_checkbox_mode;
 
+    // Resolve all beads by title
+    let anchor_to_bead = resolve_beads_for_pull(tugplan, beads);
+
     for step in &tugplan.steps {
-        if let Some(ref bead_id) = step.bead_id {
+        if let Some(bead_id) = anchor_to_bead.get(&step.anchor) {
             // Check if bead is complete
             if is_bead_complete(bead_id, beads) {
                 // Update checkboxes for this step
@@ -190,7 +229,7 @@ fn pull_bead_status_to_checkboxes(
 
         // Process substeps
         for substep in &step.substeps {
-            if let Some(ref bead_id) = substep.bead_id {
+            if let Some(bead_id) = anchor_to_bead.get(&substep.anchor) {
                 if is_bead_complete(bead_id, beads) {
                     let (new_content, count) = mark_step_checkboxes_complete(
                         &updated_content,

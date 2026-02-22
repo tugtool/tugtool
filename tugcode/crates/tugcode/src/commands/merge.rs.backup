@@ -931,7 +931,7 @@ fn run_merge_in(
                     squash_commit: None,
                     worktree_cleaned: None,
                     dry_run: false,
-                    untracked_files: None,
+                        untracked_files: None,
                     warnings: preflight_warnings.clone(),
                     error: Some(format!("Squash merge failed: {}", e)),
                     message: None,
@@ -2265,10 +2265,324 @@ mod tests {
 
     // -- Infrastructure save/restore tests --
 
+    #[test]
+    fn test_save_infra_to_temp() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure files after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "test config").unwrap();
+        fs::write(
+            repo_path.join(".tugtool/tugplan-implementation-log.md"),
+            "# Log\nentry1\nentry2",
+        )
+        .unwrap();
+
+        // Save to temp
+        let infra_files = vec![
+            ".tugtool/config.toml",
+            ".tugtool/tugplan-implementation-log.md",
+        ];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Verify temp directory exists
+        assert!(temp_backup.exists());
+        assert!(temp_backup.join(".tugtool/config.toml").exists());
+        assert!(
+            temp_backup
+                .join(".tugtool/tugplan-implementation-log.md")
+                .exists()
+        );
+
+        // Verify content
+        let config_content = fs::read_to_string(temp_backup.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(config_content, "test config");
+
+        let log_content =
+            fs::read_to_string(temp_backup.join(".tugtool/tugplan-implementation-log.md")).unwrap();
+        assert_eq!(log_content, "# Log\nentry1\nentry2");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_backup);
+    }
+
+    #[test]
+    fn test_copy_infra_from_temp() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure file after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "original").unwrap();
+
+        // Save to temp
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Modify original
+        fs::write(repo_path.join(".tugtool/config.toml"), "modified").unwrap();
+        assert_eq!(
+            fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap(),
+            "modified"
+        );
+
+        // Copy back from temp
+        copy_infra_from_temp(&temp_backup, repo_path, &infra_files).unwrap();
+
+        // Verify content was restored
+        let restored = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(restored, "original");
+
+        // Verify nothing is staged (copy doesn't touch git)
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        let staged = String::from_utf8_lossy(&status.stdout);
+        assert!(staged.is_empty(), "No files should be staged after copy");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_backup);
+    }
+
+    #[test]
+    fn test_restore_infra_from_temp() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure file after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "original").unwrap();
+
+        // Save to temp
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Modify original
+        fs::write(repo_path.join(".tugtool/config.toml"), "modified").unwrap();
+
+        // Stage and commit the modification
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["add", ".tugtool/config.toml"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["commit", "-m", "Modified config"])
+            .output()
+            .unwrap();
+
+        // Restore from temp (this creates a commit and cleans up temp)
+        restore_infra_from_temp(&temp_backup, repo_path, &infra_files).unwrap();
+
+        // Verify content was restored
+        let restored = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(restored, "original");
+
+        // Verify changes are committed
+        let log = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["log", "--oneline"])
+            .output()
+            .unwrap();
+        let log_str = String::from_utf8_lossy(&log.stdout);
+        assert!(
+            log_str.contains("post-merge infrastructure sync"),
+            "Should have commit message: {}",
+            log_str
+        );
+
+        // Verify temp directory was cleaned up by restore_infra_from_temp
+        assert!(!temp_backup.exists(), "Temp dir should be removed");
+    }
+
+    #[test]
+    fn test_save_restore_round_trip() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure file with specific content after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        let original_content = "original content\nline 2\nline 3";
+        fs::write(repo_path.join(".tugtool/config.toml"), original_content).unwrap();
+
+        // Save to temp
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Modify original significantly
+        fs::write(
+            repo_path.join(".tugtool/config.toml"),
+            "completely different",
+        )
+        .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["add", ".tugtool/config.toml"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["commit", "-m", "Changed"])
+            .output()
+            .unwrap();
+
+        // Restore (this cleans up temp_backup)
+        restore_infra_from_temp(&temp_backup, repo_path, &infra_files).unwrap();
+
+        // Verify exact content match
+        let final_content = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(
+            final_content, original_content,
+            "Content should be identical to original"
+        );
+    }
+
+    #[test]
+    fn test_save_infra_nested_dirs() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create nested infrastructure structure after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool/archive")).unwrap();
+        fs::write(
+            repo_path.join(".tugtool/archive/old.md"),
+            "archived content",
+        )
+        .unwrap();
+        fs::create_dir_all(repo_path.join(".beads")).unwrap();
+        fs::write(repo_path.join(".beads/beads.jsonl"), "{}").unwrap();
+
+        // Save nested files
+        let infra_files = vec![".tugtool/archive/old.md", ".beads/beads.jsonl"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Verify nested directories were created in temp
+        assert!(temp_backup.join(".tugtool/archive").is_dir());
+        assert!(temp_backup.join(".tugtool/archive/old.md").exists());
+        assert!(temp_backup.join(".beads/beads.jsonl").exists());
+
+        // Verify content
+        let archived = fs::read_to_string(temp_backup.join(".tugtool/archive/old.md")).unwrap();
+        assert_eq!(archived, "archived content");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_backup);
+    }
+
+    #[test]
+    fn test_temp_dir_guard_drop() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure file after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "original").unwrap();
+
+        // Save to temp
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Modify original
+        fs::write(repo_path.join(".tugtool/config.toml"), "modified").unwrap();
+
+        {
+            // Create guard and drop it (simulates error path)
+            let _guard = TempDirGuard::new(
+                temp_backup.clone(),
+                repo_path.to_path_buf(),
+                infra_files.iter().map(|s| s.to_string()).collect(),
+            );
+
+            // Guard drops here, should restore files
+        }
+
+        // Verify content was restored by drop
+        let restored = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(restored, "original", "Drop should have restored the file");
+    }
+
+    #[test]
+    fn test_temp_dir_guard_defuse() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create infrastructure file after initial commit
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "original").unwrap();
+
+        // Save to temp
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Modify original
+        fs::write(repo_path.join(".tugtool/config.toml"), "modified").unwrap();
+
+        {
+            // Create guard, defuse it, then drop
+            let mut guard = TempDirGuard::new(
+                temp_backup.clone(),
+                repo_path.to_path_buf(),
+                infra_files.iter().map(|s| s.to_string()).collect(),
+            );
+
+            guard.defuse();
+
+            // Guard drops here but should NOT restore files
+        }
+
+        // Verify content was NOT restored (defused)
+        let final_content = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(
+            final_content, "modified",
+            "Defused guard should not restore files"
+        );
+
+        // Manual cleanup
+        let _ = fs::remove_dir_all(temp_backup);
+    }
+
     // -- Step-2 integration tests: dirty file checks and sync checks --
 
     #[test]
-    fn test_merge_rejects_dirty_files() {
+    fn test_merge_rejects_non_infra_dirty_files() {
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
@@ -2355,7 +2669,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_rejects_dirty_tugtool_files() {
+    fn test_merge_allows_infra_only_dirty_files() {
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
@@ -2363,26 +2677,13 @@ mod tests {
         init_git_repo(repo_path);
         make_initial_commit(repo_path);
 
-        // Create .tugtool/config.toml file
+        // Create infrastructure dirty files only
         fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
-        fs::write(repo_path.join(".tugtool/config.toml"), "# config").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["add", ".tugtool/config.toml"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["commit", "-m", "Add config"])
-            .output()
-            .unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "test").unwrap();
+        fs::create_dir_all(repo_path.join(".beads")).unwrap();
+        fs::write(repo_path.join(".beads/beads.jsonl"), "{}").unwrap();
 
-        // Modify it without committing (tracked-modified)
-        fs::write(repo_path.join(".tugtool/config.toml"), "# modified config").unwrap();
-
-        // Create tugplan and worktree
+        // Create a plan file
         fs::write(repo_path.join(".tugtool/tugplan-1.md"), "# Plan").unwrap();
         Command::new("git")
             .arg("-C")
@@ -2397,6 +2698,7 @@ mod tests {
             .output()
             .unwrap();
 
+        // Create worktree OUTSIDE the main repo to avoid it showing as dirty
         let wt_dir = TempDir::new().unwrap();
         let wt_path = wt_dir.path().join("tugtool__1-test");
         Command::new("git")
@@ -2412,7 +2714,22 @@ mod tests {
             .output()
             .unwrap();
 
-        // Run merge with .tugtool/ dirty file
+        // Make a commit in the worktree so merge has content
+        fs::write(wt_path.join("test.txt"), "content").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&wt_path)
+            .args(["add", "test.txt"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(&wt_path)
+            .args(["commit", "-m", "Test change"])
+            .output()
+            .unwrap();
+
+        // Run merge with only infra dirty files - should NOT error on dirty check
         let result = run_merge_in(
             repo_path,
             "tugplan-1.md".to_string(),
@@ -2422,92 +2739,14 @@ mod tests {
             true,
         );
 
-        assert!(result.is_err(), "Should reject .tugtool/ dirty files");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("Uncommitted changes"),
-            "Error should mention uncommitted changes: {}",
-            err
-        );
-        assert!(
-            err.contains(".tugtool/config.toml"),
-            "Error should list the dirty .tugtool/ file: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_merge_succeeds_with_clean_main() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_git_repo(repo_path);
-        make_initial_commit(repo_path);
-
-        // Create tugplan
-        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
-        fs::write(repo_path.join(".tugtool/tugplan-1.md"), "# Plan").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["add", ".tugtool/tugplan-1.md"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["commit", "-m", "Add plan"])
-            .output()
-            .unwrap();
-
-        // Create worktree
-        let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
-        Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args([
-                "worktree",
-                "add",
-                wt_path.to_str().unwrap(),
-                "-b",
-                "tugtool/1-test",
-            ])
-            .output()
-            .unwrap();
-
-        // Make a commit in the worktree
-        fs::create_dir_all(wt_path.join("src")).unwrap();
-        fs::write(wt_path.join("src/new.rs"), "fn new() {}").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&wt_path)
-            .args(["add", "src/new.rs"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&wt_path)
-            .args(["commit", "-m", "Add new.rs"])
-            .output()
-            .unwrap();
-
-        // Main is clean - merge should succeed
-        let result = run_merge_in(
-            repo_path,
-            "tugplan-1.md".to_string(),
-            false,
-            false,
-            true,
-            true,
-        );
-
-        assert!(
-            result.is_ok(),
-            "Merge should succeed with clean main: {:?}",
-            result
-        );
+        // May fail for other reasons (no origin, etc.) but NOT due to dirty files
+        if let Err(e) = result {
+            assert!(
+                !e.contains("Uncommitted changes"),
+                "Should not reject infra-only dirty files: {}",
+                e
+            );
+        }
     }
 
     #[test]
@@ -2711,6 +2950,63 @@ mod tests {
         // Instead we'll test the sync check directly below
     }
 
+    #[test]
+    fn test_targeted_infra_discard() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create both infra and non-infra dirty files
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        fs::write(repo_path.join(".tugtool/config.toml"), "infra content").unwrap();
+        fs::create_dir_all(repo_path.join("src")).unwrap();
+        fs::write(repo_path.join("src/main.rs"), "non-infra content").unwrap();
+
+        // Commit the non-infra file
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["add", "src/main.rs"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["commit", "-m", "Add main"])
+            .output()
+            .unwrap();
+
+        // Manually test git checkout/clean on infra only
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["checkout", "--", ".tugtool/config.toml"])
+            .output();
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["clean", "-f", "--", ".tugtool/config.toml"])
+            .output();
+
+        // Verify infra file is gone but non-infra file remains
+        assert!(
+            !repo_path.join(".tugtool/config.toml").exists(),
+            "Infra file should be discarded"
+        );
+        assert!(
+            repo_path.join("src/main.rs").exists(),
+            "Non-infra file should remain"
+        );
+        assert_eq!(
+            fs::read_to_string(repo_path.join("src/main.rs")).unwrap(),
+            "non-infra content",
+            "Non-infra content should be unchanged"
+        );
+    }
+
     // -- Step-2 integration tests: complex scenarios --
 
     #[test]
@@ -2850,5 +3146,109 @@ mod tests {
             .unwrap();
         let count = String::from_utf8_lossy(&output.stdout).trim().to_string();
         assert_eq!(count, "0", "Should have zero divergence after push");
+    }
+
+    #[test]
+    fn test_infra_restored_on_merge_failure() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create and save infra files
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        let original_content = "original infra content";
+        fs::write(repo_path.join(".tugtool/config.toml"), original_content).unwrap();
+
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Create guard
+        let _guard = TempDirGuard::new(
+            temp_backup.clone(),
+            repo_path.to_path_buf(),
+            infra_files.iter().map(|s| s.to_string()).collect(),
+        );
+
+        // Simulate merge failure by modifying the file and dropping guard
+        fs::write(repo_path.join(".tugtool/config.toml"), "corrupted").unwrap();
+
+        // Drop guard (simulates error path)
+        drop(_guard);
+
+        // Verify file was restored
+        let restored = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(
+            restored, original_content,
+            "File should be restored on error"
+        );
+
+        // Verify file is not staged
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        let staged = String::from_utf8_lossy(&status.stdout);
+        assert!(staged.is_empty(), "File should not be staged after restore");
+
+        // Verify temp was cleaned up (best-effort)
+        // Note: Guard cleanup is best-effort, so we don't assert on this
+    }
+
+    #[test]
+    fn test_infra_restored_on_pull_failure() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_git_repo(repo_path);
+        make_initial_commit(repo_path);
+
+        // Create and save infra files
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        let original_content = "original for pull test";
+        fs::write(repo_path.join(".tugtool/config.toml"), original_content).unwrap();
+
+        let infra_files = vec![".tugtool/config.toml"];
+        let temp_backup = save_infra_to_temp(repo_path, &infra_files).unwrap();
+
+        // Create guard
+        {
+            let _guard = TempDirGuard::new(
+                temp_backup.clone(),
+                repo_path.to_path_buf(),
+                infra_files.iter().map(|s| s.to_string()).collect(),
+            );
+
+            // Modify file (simulating changes during merge)
+            fs::write(
+                repo_path.join(".tugtool/config.toml"),
+                "modified during merge",
+            )
+            .unwrap();
+
+            // Guard drops here (simulates pull failure)
+        }
+
+        // Verify file was restored
+        let restored = fs::read_to_string(repo_path.join(".tugtool/config.toml")).unwrap();
+        assert_eq!(
+            restored, original_content,
+            "File should be restored on pull failure"
+        );
+
+        // Verify not staged
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        let staged = String::from_utf8_lossy(&status.stdout);
+        assert!(staged.is_empty(), "File should not be staged");
     }
 }
