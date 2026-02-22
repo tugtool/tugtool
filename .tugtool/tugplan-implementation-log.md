@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-22T04:40:11Z
+bead: tugtool-d47.5
+---
+
+## #step-4: Added binary_updated to supervisor loop match arm triggering RestartDecision::Restart; dev mode re-established automatically after restart
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-22T04:36:15Z
 bead: tugtool-d47.4

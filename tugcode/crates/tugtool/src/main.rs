@@ -471,7 +471,7 @@ async fn supervisor_loop(
                                     }
                                     let reason = msg.get("reason").and_then(|r| r.as_str()).unwrap_or("unknown");
                                         match reason {
-                                            "restart" | "reset" => {
+                                            "restart" | "reset" | "binary_updated" => {
                                                 info!("tugcast shutdown: reason={}, restarting", reason);
                                                 decision = RestartDecision::Restart;
                                             }
