@@ -332,11 +332,15 @@ fn test_mock_bd_init_with_prefix() {
         .expect("failed to create root issue");
 
     assert!(root_output.status.success(), "create root failed");
-    let root_json: serde_json::Value = serde_json::from_slice(&root_output.stdout)
-        .expect("failed to parse root JSON");
+    let root_json: serde_json::Value =
+        serde_json::from_slice(&root_output.stdout).expect("failed to parse root JSON");
 
     let root_id = root_json["id"].as_str().expect("root id missing");
-    assert!(root_id.starts_with("auth-"), "root ID should start with 'auth-', got: {}", root_id);
+    assert!(
+        root_id.starts_with("auth-"),
+        "root ID should start with 'auth-', got: {}",
+        root_id
+    );
 
     // Create child issue
     let child_output = Command::new(bd_fake_path())
@@ -346,13 +350,17 @@ fn test_mock_bd_init_with_prefix() {
         .expect("failed to create child");
 
     assert!(child_output.status.success(), "create child failed");
-    let child_json: serde_json::Value = serde_json::from_slice(&child_output.stdout)
-        .expect("failed to parse child JSON");
+    let child_json: serde_json::Value =
+        serde_json::from_slice(&child_output.stdout).expect("failed to parse child JSON");
 
     let child_id = child_json["id"].as_str().expect("child id missing");
     let expected_prefix = format!("{}.", root_id);
-    assert!(child_id.starts_with(&expected_prefix),
-        "child ID should start with '{}', got: {}", expected_prefix, child_id);
+    assert!(
+        child_id.starts_with(&expected_prefix),
+        "child ID should start with '{}', got: {}",
+        expected_prefix,
+        child_id
+    );
 }
 
 #[test]

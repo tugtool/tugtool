@@ -267,8 +267,7 @@ fn sync_plan_to_beads(
 
     // Process each step
     for step in &plan.steps {
-        let (step_bead_id, step_created) =
-            ensure_step_bead(step, &root_id, plan, ctx)?;
+        let (step_bead_id, step_created) = ensure_step_bead(step, &root_id, plan, ctx)?;
 
         anchor_to_bead.insert(step.anchor.clone(), step_bead_id.clone());
         if step_created {
@@ -413,7 +412,10 @@ fn ensure_root_bead(
     }
 
     // Try to find existing root bead by title
-    if let Some(existing) = ctx.beads.find_by_title(phase_title, None, ctx.working_dir)? {
+    if let Some(existing) = ctx
+        .beads
+        .find_by_title(phase_title, None, ctx.working_dir)?
+    {
         return Ok((existing.id, false));
     }
 
@@ -462,7 +464,10 @@ fn ensure_step_bead(
     }
 
     // Try to find existing step bead by title (within parent)
-    if let Some(existing) = ctx.beads.find_by_title(&title, Some(root_id), ctx.working_dir)? {
+    if let Some(existing) = ctx
+        .beads
+        .find_by_title(&title, Some(root_id), ctx.working_dir)?
+    {
         return Ok((existing.id, false));
     }
 
@@ -509,7 +514,10 @@ fn ensure_substep_bead(
     }
 
     // Try to find existing substep bead by title (within parent)
-    if let Some(existing) = ctx.beads.find_by_title(&title, Some(parent_bead_id), ctx.working_dir)? {
+    if let Some(existing) =
+        ctx.beads
+            .find_by_title(&title, Some(parent_bead_id), ctx.working_dir)?
+    {
         return Ok((existing.id, false));
     }
 
@@ -684,7 +692,10 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update description (purpose + strategy + success criteria)
     let description = plan.render_root_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(root_id, &description, ctx.working_dir) {
+        if let Err(e) = ctx
+            .beads
+            .update_description(root_id, &description, ctx.working_dir)
+        {
             errors.push(format!("Failed to update root description: {}", e));
         }
     }
@@ -700,7 +711,10 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update acceptance criteria (phase exit criteria)
     let acceptance = plan.render_root_acceptance();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(root_id, &acceptance, ctx.working_dir) {
+        if let Err(e) = ctx
+            .beads
+            .update_acceptance(root_id, &acceptance, ctx.working_dir)
+        {
             errors.push(format!("Failed to update root acceptance: {}", e));
         }
     }
@@ -724,7 +738,10 @@ fn enrich_step_bead(
     // Update description (tasks + artifacts + commit template)
     let description = step.render_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(bead_id, &description, ctx.working_dir) {
+        if let Err(e) = ctx
+            .beads
+            .update_description(bead_id, &description, ctx.working_dir)
+        {
             errors.push(format!(
                 "Failed to update description for {}: {}",
                 bead_id, e
@@ -735,7 +752,10 @@ fn enrich_step_bead(
     // Update acceptance criteria (tests + checkpoints)
     let acceptance = step.render_acceptance_criteria();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(bead_id, &acceptance, ctx.working_dir) {
+        if let Err(e) = ctx
+            .beads
+            .update_acceptance(bead_id, &acceptance, ctx.working_dir)
+        {
             errors.push(format!(
                 "Failed to update acceptance for {}: {}",
                 bead_id, e

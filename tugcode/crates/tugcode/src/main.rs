@@ -59,9 +59,11 @@ fn main() -> ExitCode {
             BeadsCommands::Pull { file, no_overwrite } => {
                 commands::run_pull(file, no_overwrite, cli.json, cli.quiet)
             }
-            BeadsCommands::Close { bead_id, reason, working_dir } => {
-                commands::run_close(bead_id, reason, working_dir, cli.json, cli.quiet)
-            }
+            BeadsCommands::Close {
+                bead_id,
+                reason,
+                working_dir,
+            } => commands::run_close(bead_id, reason, working_dir, cli.json, cli.quiet),
             BeadsCommands::Inspect {
                 bead_id,
                 working_dir,

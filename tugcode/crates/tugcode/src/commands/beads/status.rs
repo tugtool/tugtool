@@ -177,11 +177,7 @@ fn resolve_beads_for_status(
     let mut bead_statuses: HashMap<String, (String, bool)> = HashMap::new();
 
     // Find root bead by phase title
-    let phase_title = plan
-        .phase_title
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("Untitled plan");
+    let phase_title = plan.phase_title.as_deref().unwrap_or("Untitled plan");
 
     let root_id = beads
         .find_by_title(phase_title, None, None)
@@ -201,7 +197,9 @@ fn resolve_beads_for_status(
                 // Resolve substeps
                 for substep in &step.substeps {
                     let sub_title = format!("Step {}: {}", substep.number, substep.title);
-                    if let Ok(Some(sub_issue)) = beads.find_by_title(&sub_title, Some(&issue.id), None) {
+                    if let Ok(Some(sub_issue)) =
+                        beads.find_by_title(&sub_title, Some(&issue.id), None)
+                    {
                         let sub_complete = check_bead_complete(&sub_issue.id, beads);
                         bead_statuses.insert(substep.anchor.clone(), (sub_issue.id, sub_complete));
                     }

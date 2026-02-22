@@ -28,7 +28,7 @@ pub fn run_close(
     let beads = BeadsCli::new(bd_path);
 
     // Convert working_dir to Path if provided
-    let working_path = working_dir.as_ref().map(|s| std::path::Path::new(s));
+    let working_path = working_dir.as_ref().map(std::path::Path::new);
 
     // Check if beads CLI is installed
     if !beads.is_installed(working_path) {

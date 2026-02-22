@@ -163,11 +163,7 @@ fn resolve_beads_for_pull(
         std::collections::HashMap::new();
 
     // Find root bead by phase title
-    let phase_title = plan
-        .phase_title
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or("Untitled plan");
+    let phase_title = plan.phase_title.as_deref().unwrap_or("Untitled plan");
 
     let root_id = match beads.find_by_title(phase_title, None, None) {
         Ok(Some(issue)) => issue.id,

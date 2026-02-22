@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-22T17:47:02Z
+---
+
+## audit-fix: Audit fix: fixed 4 clippy warnings (redundant closure, collapsible if, option_as_ref_deref x2), applied cargo fmt to 7 files, updated link command help text
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-22T17:40:39Z
 bead: tugtool-cfa.5

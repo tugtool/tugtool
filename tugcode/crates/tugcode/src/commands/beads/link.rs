@@ -86,19 +86,19 @@ pub fn run_link(
     }
 
     // If beads validation is enabled, verify bead exists
-    if config.tugtool.beads.enabled && config.tugtool.beads.validate_bead_ids {
-        if !beads.bead_exists(&bead_id, None)
-        {
-            return output_error(
-                json_output,
-                "E015",
-                &format!("bead not found: {}", bead_id),
-                &file,
-                &step_anchor,
-                &bead_id,
-                1,
-            );
-        }
+    if config.tugtool.beads.enabled
+        && config.tugtool.beads.validate_bead_ids
+        && !beads.bead_exists(&bead_id, None)
+    {
+        return output_error(
+            json_output,
+            "E015",
+            &format!("bead not found: {}", bead_id),
+            &file,
+            &step_anchor,
+            &bead_id,
+            1,
+        );
     }
 
     // Resolve file path

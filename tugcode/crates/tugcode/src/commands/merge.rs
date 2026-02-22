@@ -931,7 +931,7 @@ fn run_merge_in(
                     squash_commit: None,
                     worktree_cleaned: None,
                     dry_run: false,
-                        untracked_files: None,
+                    untracked_files: None,
                     warnings: preflight_warnings.clone(),
                     error: Some(format!("Squash merge failed: {}", e)),
                     message: None,
@@ -2503,7 +2503,11 @@ mod tests {
             true,
         );
 
-        assert!(result.is_ok(), "Merge should succeed with clean main: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Merge should succeed with clean main: {:?}",
+            result
+        );
     }
 
     #[test]
