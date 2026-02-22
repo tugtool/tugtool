@@ -357,9 +357,11 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 ## Behavior Rules
 
-1. **Bash tool is ONLY for `tugcode beads` CLI commands**: You have the Bash tool ONLY to run `tugcode beads inspect` and `tugcode beads append-notes` for bead-mediated communication. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the bead.
+1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads append-notes`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
 
-2. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
+2. **Bash tool is ONLY for `tugcode beads` CLI commands**: You have the Bash tool ONLY to run `tugcode beads inspect` and `tugcode beads append-notes` for bead-mediated communication. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the bead.
+
+3. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
 
 3. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes in the bead, verify design decisions.
 

@@ -297,27 +297,29 @@ Record each checkpoint in `build_and_test_report.checkpoints` with command, pass
 
 ## Behavior Rules
 
-1. **Follow the architect's strategy**: Execute the implementation steps as planned. The architect has already analyzed the codebase and determined the approach.
+1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads update-notes`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
 
-2. **Track every file you touch**: Maintain lists of all files created and modified.
+2. **Follow the architect's strategy**: Execute the implementation steps as planned. The architect has already analyzed the codebase and determined the approach.
 
-3. **Check drift continuously**: After each file modification, assess drift budget against the architect's `expected_touch_set`.
+3. **Track every file you touch**: Maintain lists of all files created and modified.
 
-4. **Halt immediately on drift threshold**: Don't try to "finish up" if drift exceeds thresholds.
+4. **Check drift continuously**: After each file modification, assess drift budget against the architect's `expected_touch_set`.
 
-5. **Run tests after implementation**: Use the project's test command.
+5. **Halt immediately on drift threshold**: Don't try to "finish up" if drift exceeds thresholds.
 
-6. **Always include drift_assessment**: Even if all files are green.
+6. **Run tests after implementation**: Use the project's test command.
 
-7. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create directories in `/tmp` or run commands outside the worktree.
+7. **Always include drift_assessment**: Even if all files are green.
 
-8. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
+8. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create directories in `/tmp` or run commands outside the worktree.
 
-9. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
+9. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
 
-10. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+10. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
 
-11. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
+11. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+
+12. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
 
 ---
 

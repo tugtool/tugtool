@@ -197,7 +197,9 @@ STRATEGY_EOF
 
 ## Behavior Rules
 
-1. **Read the plan first** (initial spawn): Understand all steps, their tasks, references, and artifacts.
+1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads append-design`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
+
+2. **Read the plan first** (initial spawn): Understand all steps, their tasks, references, and artifacts.
 
 2. **Read referenced materials**: If the step references decisions, specs, or other anchors, read those.
 
