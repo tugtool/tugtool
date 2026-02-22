@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-22T04:45:03Z
+bead: tugtool-d47.6
+---
+
+## #step-5: Fixed dev recipe to remove --dev flag; added dev-watch recipe with cargo-watch for automatic tugcast rebuilds on .rs changes
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-22T04:40:11Z
 bead: tugtool-d47.5
