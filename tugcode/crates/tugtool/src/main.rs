@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -7,7 +7,7 @@ use tokio::net::UnixListener;
 use tokio::process::Command;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::timeout;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// tugtool: Launcher binary for tugdeck dashboard
@@ -52,8 +52,6 @@ fn resolve_tugcast_path() -> PathBuf {
 }
 
 /// Detect the mono-repo root by walking up from the current directory looking for tugdeck/
-// Used in Step 1 when send_dev_mode() is added to the supervisor loop
-#[allow(dead_code)]
 fn detect_source_tree() -> Result<PathBuf, String> {
     detect_source_tree_from(
         &std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?,
@@ -77,8 +75,6 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
 }
 
 /// Check if a command is available in PATH
-// Used in Step 1 when bun spawning is migrated into the supervisor loop
-#[allow(dead_code)]
 async fn check_command_available(command: &str) -> bool {
     Command::new(command)
         .arg("--version")
@@ -90,8 +86,6 @@ async fn check_command_available(command: &str) -> bool {
 }
 
 /// Spawn bun dev as a child process
-// Used in Step 1 when bun spawning is migrated into the supervisor loop
-#[allow(dead_code)]
 async fn spawn_bun_dev(source_tree: &std::path::Path) -> Result<tokio::process::Child, String> {
     // Check if bun is installed
     if !check_command_available("bun").await {
@@ -152,6 +146,70 @@ fn spawn_tugcast(
     cmd.stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
+}
+
+/// Send a dev_mode control message to tugcast over the write half of the control socket
+async fn send_dev_mode(
+    write_half: &mut tokio::net::unix::OwnedWriteHalf,
+    source_tree: &Path,
+) -> Result<(), String> {
+    let msg = format!(
+        "{{\"type\":\"dev_mode\",\"enabled\":true,\"source_tree\":\"{}\"}}\n",
+        source_tree.to_string_lossy()
+    );
+    write_half
+        .write_all(msg.as_bytes())
+        .await
+        .map_err(|e| format!("failed to send dev_mode: {}", e))
+}
+
+/// Wait for a dev_mode_result acknowledgment from tugcast.
+/// Returns Ok(true) on success, Ok(false) on reported failure, Err on timeout or I/O error.
+/// If a shutdown message arrives first, returns Err (tugcast is going down).
+/// Ignores unrecognized message types while waiting.
+async fn wait_for_dev_mode_result(
+    reader: &mut BufReader<tokio::net::unix::OwnedReadHalf>,
+) -> Result<bool, String> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match timeout(Duration::from_secs(5), reader.read_line(&mut line)).await {
+            Ok(Ok(0)) => {
+                return Err("control socket closed while waiting for dev_mode_result".to_string())
+            }
+            Ok(Ok(_)) => {
+                if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+                    match msg.get("type").and_then(|t| t.as_str()) {
+                        Some("dev_mode_result") => {
+                            let success = msg
+                                .get("success")
+                                .and_then(|s| s.as_bool())
+                                .unwrap_or(false);
+                            if !success {
+                                let error = msg
+                                    .get("error")
+                                    .and_then(|e| e.as_str())
+                                    .unwrap_or("unknown error");
+                                warn!("dev mode failed: {}", error);
+                            }
+                            return Ok(success);
+                        }
+                        Some("shutdown") => {
+                            return Err(
+                                "tugcast sent shutdown while waiting for dev_mode_result"
+                                    .to_string(),
+                            );
+                        }
+                        _ => {
+                            // Ignore unrecognized message types; keep reading
+                        }
+                    }
+                }
+            }
+            Ok(Err(e)) => return Err(format!("control socket read error: {}", e)),
+            Err(_) => return Err("timeout waiting for dev_mode_result".to_string()),
+        }
+    }
 }
 
 /// Create a Unix domain socket listener for control socket IPC
@@ -276,9 +334,12 @@ enum RestartDecision {
     DoNotRestart,
 }
 
-/// Supervisor loop that manages tugcast lifecycle via UDS control socket
+/// Supervisor loop that manages tugcast lifecycle via UDS control socket.
+/// source_tree: if Some, dev mode is activated after every ready by sending dev_mode control message.
+/// bun_child: spawned once on first_spawn if source_tree is present; persists across tugcast restarts.
 async fn supervisor_loop(
     cli: &Cli,
+    source_tree: Option<PathBuf>,
     bun_child: &mut Option<tokio::process::Child>,
 ) -> i32 {
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
@@ -334,9 +395,45 @@ async fn supervisor_loop(
         // Reset backoff on successful ready
         backoff_secs = 0;
 
+        // Activate dev mode after every ready (not gated on first_spawn).
+        // Dev mode must be re-established after every restart because a restarted
+        // tugcast comes up with empty dev state.
+        if let Some(ref st) = source_tree {
+            match send_dev_mode(&mut write_half, st).await {
+                Ok(()) => {
+                    match wait_for_dev_mode_result(&mut reader).await {
+                        Ok(true) => info!("dev mode enabled"),
+                        Ok(false) => warn!("dev mode could not be enabled, continuing without dev features"),
+                        Err(e) => {
+                            // Timeout or shutdown message -- proceed anyway; supervisor
+                            // loop will handle any subsequent shutdown from tugcast.
+                            warn!("dev mode ack error: {}, continuing", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("failed to send dev_mode: {}, continuing without dev features", e);
+                }
+            }
+        }
+
         if first_spawn {
             info!("auth URL: {}", auth_url);
             open_browser(&auth_url);
+
+            // Spawn bun dev on first spawn only -- bun persists across tugcast restarts.
+            if let Some(ref st) = source_tree {
+                match spawn_bun_dev(st).await {
+                    Ok(child) => {
+                        info!("bun dev started");
+                        *bun_child = Some(child);
+                    }
+                    Err(e) => {
+                        warn!("could not start bun dev: {}", e);
+                    }
+                }
+            }
+
             first_spawn = false;
         }
 
@@ -500,16 +597,43 @@ async fn main() {
         "tugtool starting"
     );
 
+    // Resolve source tree for dev mode.
+    // --source-tree explicitly provided: validate it (fatal if invalid).
+    // Not provided: auto-detect (non-fatal if fails; log warning, run without dev mode).
+    let source_tree: Option<PathBuf> = if let Some(ref path) = cli.source_tree {
+        if !path.join("tugdeck").is_dir() {
+            eprintln!(
+                "tugtool: error: No tugdeck/ directory found in {}. Is this the right source tree?",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        info!("source tree (explicit): {}", path.display());
+        Some(path.clone())
+    } else {
+        match detect_source_tree() {
+            Ok(path) => {
+                info!("source tree (auto-detected): {}", path.display());
+                Some(path)
+            }
+            Err(e) => {
+                warn!("could not auto-detect source tree: {}. Running without dev mode.", e);
+                None
+            }
+        }
+    };
+
     let mut bun_child: Option<tokio::process::Child> = None;
 
     // Run supervisor loop
-    let code = supervisor_loop(&cli, &mut bun_child).await;
+    let code = supervisor_loop(&cli, source_tree, &mut bun_child).await;
     std::process::exit(code);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::net::UnixListener;
 
     #[test]
     fn test_default_values() {
@@ -630,5 +754,150 @@ mod tests {
         let result = detect_source_tree_from(temp_dir2.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("could not find tugdeck/"));
+    }
+
+    /// Verify that send_dev_mode writes valid JSON with the correct fields.
+    /// Creates a real Unix socket pair to capture what is written.
+    #[tokio::test]
+    async fn test_send_dev_mode_writes_valid_json() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test.sock");
+
+        // Create listener, connect, split
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (_, mut write_half) = client.into_split();
+        let (server_read, _) = server.into_split();
+        let mut server_reader = BufReader::new(server_read);
+
+        let source_tree = Path::new("/some/source/tree");
+        send_dev_mode(&mut write_half, source_tree).await.unwrap();
+
+        let mut line = String::new();
+        server_reader.read_line(&mut line).await.unwrap();
+
+        let msg: serde_json::Value = serde_json::from_str(&line).expect("must be valid JSON");
+        assert_eq!(msg.get("type").and_then(|v| v.as_str()), Some("dev_mode"));
+        assert_eq!(
+            msg.get("enabled").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            msg.get("source_tree").and_then(|v| v.as_str()),
+            Some("/some/source/tree")
+        );
+    }
+
+    /// Verify wait_for_dev_mode_result returns Ok(true) on a success response.
+    #[tokio::test]
+    async fn test_wait_for_dev_mode_result_success() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test2.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (client_read, _) = client.into_split();
+        let (_, mut server_write) = server.into_split();
+        let mut client_reader = BufReader::new(client_read);
+
+        // Server sends dev_mode_result success
+        server_write
+            .write_all(b"{\"type\":\"dev_mode_result\",\"success\":true}\n")
+            .await
+            .unwrap();
+
+        let result = wait_for_dev_mode_result(&mut client_reader).await;
+        assert!(matches!(result, Ok(true)));
+    }
+
+    /// Verify wait_for_dev_mode_result returns Ok(false) on a failure response.
+    #[tokio::test]
+    async fn test_wait_for_dev_mode_result_failure() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test3.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (client_read, _) = client.into_split();
+        let (_, mut server_write) = server.into_split();
+        let mut client_reader = BufReader::new(client_read);
+
+        // Server sends dev_mode_result failure
+        server_write
+            .write_all(b"{\"type\":\"dev_mode_result\",\"success\":false,\"error\":\"path not found\"}\n")
+            .await
+            .unwrap();
+
+        let result = wait_for_dev_mode_result(&mut client_reader).await;
+        assert!(matches!(result, Ok(false)));
+    }
+
+    /// Verify wait_for_dev_mode_result returns Err when a shutdown message arrives first.
+    #[tokio::test]
+    async fn test_wait_for_dev_mode_result_shutdown_interrupts() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test4.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (client_read, _) = client.into_split();
+        let (_, mut server_write) = server.into_split();
+        let mut client_reader = BufReader::new(client_read);
+
+        // Server sends shutdown before dev_mode_result
+        server_write
+            .write_all(b"{\"type\":\"shutdown\",\"reason\":\"error\"}\n")
+            .await
+            .unwrap();
+
+        let result = wait_for_dev_mode_result(&mut client_reader).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("shutdown"));
+    }
+
+    /// Verify wait_for_dev_mode_result skips unrecognized message types and returns on the result.
+    #[tokio::test]
+    async fn test_wait_for_dev_mode_result_skips_unknown_messages() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test5.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (client_read, _) = client.into_split();
+        let (_, mut server_write) = server.into_split();
+        let mut client_reader = BufReader::new(client_read);
+
+        // Server sends some unrecognized messages first, then the result
+        server_write
+            .write_all(b"{\"type\":\"log\",\"msg\":\"hello\"}\n")
+            .await
+            .unwrap();
+        server_write
+            .write_all(b"{\"type\":\"dev_mode_result\",\"success\":true}\n")
+            .await
+            .unwrap();
+
+        let result = wait_for_dev_mode_result(&mut client_reader).await;
+        assert!(matches!(result, Ok(true)));
     }
 }

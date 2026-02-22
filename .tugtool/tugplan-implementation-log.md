@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-22T04:22:33Z
+bead: tugtool-d47.2
+---
+
+## #step-1: Added send_dev_mode() and wait_for_dev_mode_result() async functions; dev mode sent after every restart; bun spawning gated on first_spawn; source tree auto-detection
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-22T03:53:27Z
 bead: tugtool-go5.1
