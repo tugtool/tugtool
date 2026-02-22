@@ -58,7 +58,7 @@ pub enum BeadsCommands {
     ///
     /// Manually links a pre-existing bead to a step in the plan.
     #[command(
-        long_about = "Link an existing bead to a step.\n\nWrites **Bead:** `<bead-id>` line to the specified step.\nValidates that both the step anchor exists in the plan\nand the bead ID exists in beads.\n\nUseful when you have pre-existing beads you want to\nassociate with plan steps without full sync."
+        long_about = "Link an existing bead to a step.\n\nValidates that both the step anchor exists in the plan\nand the bead ID exists in beads, then associates them.\n\nNote: With title-based matching (introduced in beads improvements),\nthis command is primarily for validation and backward compatibility.\nMost users should use `tugcode beads sync` instead."
     )]
     Link {
         /// Plan file to modify

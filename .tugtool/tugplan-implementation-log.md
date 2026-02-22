@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-22T17:50:59Z
+---
+
+## audit-fix: Audit fix: updated link command long_about to remove stale 'Writes **Bead:**' sentence, clarified link validates/associates beads
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-22T17:47:02Z
 ---
 
