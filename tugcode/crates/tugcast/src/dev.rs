@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
 
@@ -48,9 +48,10 @@ pub(crate) struct DevState {
 /// Shared dev state type for lock-free runtime swapping
 pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
 
-/// Dev runtime: holds file watcher for RAII cleanup
+/// Dev runtime: holds file watcher and binary watcher for RAII cleanup
 pub(crate) struct DevRuntime {
     pub(crate) _watcher: RecommendedWatcher,
+    pub(crate) _binary_watcher: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Create a new shared dev state initialized to None
@@ -58,11 +59,12 @@ pub(crate) fn new_shared_dev_state() -> SharedDevState {
     Arc::new(ArcSwap::from_pointee(None))
 }
 
-/// Enable dev mode: load manifest, start file watcher, populate shared state
+/// Enable dev mode: load manifest, start file watcher and binary watcher, populate shared state
 pub(crate) async fn enable_dev_mode(
     source_tree: PathBuf,
     shared_state: &SharedDevState,
     client_action_tx: broadcast::Sender<Frame>,
+    shutdown_tx: mpsc::Sender<u8>,
 ) -> Result<DevRuntime, String> {
     // Resolve symlinks without canonicalize(), which on macOS resolves through
     // the /Users firmlink to /System/Volumes/Data/Users — a path FSEvents ignores.
@@ -89,18 +91,30 @@ pub(crate) async fn enable_dev_mode(
     // Create file watcher (passing shared_state clone for debounce gating)
     let watcher = dev_file_watcher(&watch_dirs, client_action_tx, shared_state.clone())?;
 
+    // Derive binary path and spawn binary watcher
+    let binary_path = source_tree.join("tugcode/target/debug/tugcast");
+    let binary_watcher = spawn_binary_watcher(binary_path, shutdown_tx);
+
     // Store loaded DevState into shared state
     shared_state.store(Arc::new(Some(state)));
 
     info!(source_tree = ?source_tree, "dev mode enabled");
 
-    Ok(DevRuntime { _watcher: watcher })
+    Ok(DevRuntime {
+        _watcher: watcher,
+        _binary_watcher: Some(binary_watcher),
+    })
 }
 
-/// Disable dev mode: clear shared state, drop file watcher
-pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevState) {
+/// Disable dev mode: clear shared state, abort binary watcher, drop file watcher
+pub(crate) fn disable_dev_mode(mut runtime: DevRuntime, shared_state: &SharedDevState) {
     // Clear shared state
     shared_state.store(Arc::new(None));
+
+    // Abort binary watcher explicitly (drop() alone does NOT abort spawned tokio tasks)
+    if let Some(handle) = runtime._binary_watcher.take() {
+        handle.abort();
+    }
 
     // Drop runtime (stops file watcher)
     drop(runtime);
@@ -518,6 +532,92 @@ pub(crate) fn dev_file_watcher(
     });
 
     Ok(watcher)
+}
+
+/// Spawn a binary mtime watcher that polls for changes to the tugcast binary.
+///
+/// Polls `binary_path` every 2 seconds. When mtime changes, waits 500ms for stabilization,
+/// then sends exit code 44 via `shutdown_tx` to trigger a `binary_updated` shutdown.
+///
+/// If the binary file doesn't exist at start, polls until it appears (common case: dev mode
+/// enabled before first `cargo build`).
+///
+/// The watcher runs as a tokio task and must be `.abort()`ed explicitly to stop.
+pub(crate) fn spawn_binary_watcher(
+    binary_path: PathBuf,
+    shutdown_tx: mpsc::Sender<u8>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        // Phase 1: Wait for the binary to exist (if it doesn't already)
+        loop {
+            match std::fs::metadata(&binary_path) {
+                Ok(metadata) => {
+                    if metadata.is_file() {
+                        info!("binary watcher: monitoring {}", binary_path.display());
+                        break;
+                    }
+                }
+                Err(_) => {
+                    // File doesn't exist yet
+                }
+            }
+            interval.tick().await;
+        }
+
+        // Phase 2: Record initial mtime and poll for changes
+        let mut last_mtime = match std::fs::metadata(&binary_path)
+            .and_then(|m| m.modified())
+        {
+            Ok(mtime) => mtime,
+            Err(_) => {
+                // File disappeared between existence check and mtime read
+                warn!("binary watcher: failed to read initial mtime for {}", binary_path.display());
+                return;
+            }
+        };
+
+        loop {
+            interval.tick().await;
+
+            let current_mtime = match std::fs::metadata(&binary_path)
+                .and_then(|m| m.modified())
+            {
+                Ok(mtime) => mtime,
+                Err(_) => {
+                    // File disappeared or unreadable; keep polling
+                    continue;
+                }
+            };
+
+            if current_mtime != last_mtime {
+                // Mtime changed; wait for stabilization
+                tokio::time::sleep(Duration::from_millis(500)).await;
+
+                // Re-check mtime after stabilization
+                let stabilized_mtime = match std::fs::metadata(&binary_path)
+                    .and_then(|m| m.modified())
+                {
+                    Ok(mtime) => mtime,
+                    Err(_) => {
+                        // File disappeared during stabilization
+                        continue;
+                    }
+                };
+
+                // If mtime is still different from the value before stabilization,
+                // the binary has been fully written
+                if stabilized_mtime != last_mtime {
+                    info!("binary watcher: tugcast binary changed, initiating restart");
+                    let _ = shutdown_tx.send(44).await;
+                    last_mtime = stabilized_mtime;
+                    // Continue polling (process will shut down, but the watcher doesn't need to know)
+                }
+            }
+        }
+    })
 }
 
 #[cfg(test)]
@@ -966,9 +1066,15 @@ fallback = "dist"
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel::<u8>(1);
 
-        let result =
-            enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+        let result = enable_dev_mode(
+            temp_dir.path().to_path_buf(),
+            &shared,
+            client_action_tx,
+            shutdown_tx,
+        )
+        .await;
 
         assert!(result.is_ok());
         assert!(shared.load().is_some());
@@ -986,9 +1092,15 @@ fallback = "dist"
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel::<u8>(1);
 
-        let result =
-            enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx).await;
+        let result = enable_dev_mode(
+            temp_dir.path().to_path_buf(),
+            &shared,
+            client_action_tx,
+            shutdown_tx,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(shared.load().is_none());
@@ -1015,10 +1127,16 @@ fallback = "dist"
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel::<u8>(1);
 
-        let runtime = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx)
-            .await
-            .unwrap();
+        let runtime = enable_dev_mode(
+            temp_dir.path().to_path_buf(),
+            &shared,
+            client_action_tx,
+            shutdown_tx,
+        )
+        .await
+        .unwrap();
 
         assert!(shared.load().is_some());
 
@@ -1064,12 +1182,15 @@ fallback = "dist"
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx1, _shutdown_rx1) = mpsc::channel::<u8>(1);
+        let (shutdown_tx2, _shutdown_rx2) = mpsc::channel::<u8>(1);
 
         // Enable with path1
         let runtime1 = enable_dev_mode(
             temp_dir1.path().to_path_buf(),
             &shared,
             client_action_tx.clone(),
+            shutdown_tx1,
         )
         .await
         .unwrap();
@@ -1079,9 +1200,14 @@ fallback = "dist"
         disable_dev_mode(runtime1, &shared);
 
         // Enable with path2
-        let runtime2 = enable_dev_mode(temp_dir2.path().to_path_buf(), &shared, client_action_tx)
-            .await
-            .unwrap();
+        let runtime2 = enable_dev_mode(
+            temp_dir2.path().to_path_buf(),
+            &shared,
+            client_action_tx,
+            shutdown_tx2,
+        )
+        .await
+        .unwrap();
 
         // Verify the source_tree in the loaded state matches path2 (resolved)
         let expected = resolve_symlinks(temp_dir2.path()).unwrap();
@@ -1120,11 +1246,17 @@ fallback = "dist"
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
         let mut client_action_rx = client_action_tx.subscribe();
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel::<u8>(1);
 
         // Enable dev mode
-        let runtime = enable_dev_mode(temp_dir.path().to_path_buf(), &shared, client_action_tx)
-            .await
-            .unwrap();
+        let runtime = enable_dev_mode(
+            temp_dir.path().to_path_buf(),
+            &shared,
+            client_action_tx,
+            shutdown_tx,
+        )
+        .await
+        .unwrap();
 
         // Modify the .html file to trigger a file event
         fs::write(
@@ -1145,5 +1277,141 @@ fallback = "dist"
             client_action_rx.try_recv().is_err(),
             "Expected no reload after disable during debounce"
         );
+    }
+
+    /// Test that the binary watcher detects mtime changes and sends exit code 44
+    #[tokio::test]
+    async fn test_binary_watcher_detects_mtime_change() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let binary_path = temp_dir.path().join("test_binary");
+
+        // Create the binary file
+        fs::write(&binary_path, b"initial content").unwrap();
+
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
+        let _handle = spawn_binary_watcher(binary_path.clone(), shutdown_tx);
+
+        // Wait a bit for the watcher to start and record initial mtime
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Modify the file
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        fs::write(&binary_path, b"modified content").unwrap();
+
+        // Wait for watcher to detect change (2s poll + 500ms stabilization + buffer)
+        match tokio::time::timeout(Duration::from_secs(5), shutdown_rx.recv()).await {
+            Ok(Some(code)) => assert_eq!(code, 44, "Expected exit code 44 for binary_updated"),
+            Ok(None) => panic!("shutdown_rx closed without receiving exit code"),
+            Err(_) => panic!("Timeout waiting for binary watcher to send exit code 44"),
+        }
+    }
+
+    /// Test that the binary watcher waits for stabilization after mtime change
+    #[tokio::test]
+    async fn test_binary_watcher_stabilization() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let binary_path = temp_dir.path().join("test_binary");
+
+        // Create the binary file
+        fs::write(&binary_path, b"initial").unwrap();
+
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
+        let _handle = spawn_binary_watcher(binary_path.clone(), shutdown_tx);
+
+        // Wait for watcher to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Modify the file
+        fs::write(&binary_path, b"modified").unwrap();
+
+        // Wait less than stabilization period (500ms)
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Should NOT have received shutdown yet (still in stabilization)
+        assert!(
+            shutdown_rx.try_recv().is_err(),
+            "Expected no shutdown during stabilization period"
+        );
+
+        // Wait for the full detection cycle (2s poll + 500ms stabilization)
+        match tokio::time::timeout(Duration::from_secs(5), shutdown_rx.recv()).await {
+            Ok(Some(44)) => {} // Success
+            Ok(Some(code)) => panic!("Expected exit code 44, got {}", code),
+            Ok(None) => panic!("shutdown_rx closed"),
+            Err(_) => panic!("Timeout waiting for stabilized exit code"),
+        }
+    }
+
+    /// Test that the binary watcher does not send when mtime is unchanged
+    #[tokio::test]
+    async fn test_binary_watcher_no_change() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let binary_path = temp_dir.path().join("test_binary");
+
+        // Create the binary file
+        fs::write(&binary_path, b"content").unwrap();
+
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
+        let _handle = spawn_binary_watcher(binary_path, shutdown_tx);
+
+        // Wait for a few poll cycles without modifying the file
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Should NOT have received any shutdown
+        assert!(
+            shutdown_rx.try_recv().is_err(),
+            "Expected no shutdown when binary is unchanged"
+        );
+    }
+
+    /// Test that the binary watcher polls until the binary appears, then detects changes
+    #[tokio::test]
+    async fn test_binary_watcher_missing_then_appears() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let binary_path = temp_dir.path().join("test_binary");
+
+        // Start watcher with non-existent file
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
+
+        let _handle = spawn_binary_watcher(binary_path.clone(), shutdown_tx);
+
+        // Wait a bit; should NOT send (file doesn't exist yet)
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert!(
+            shutdown_rx.try_recv().is_err(),
+            "Expected no shutdown while binary missing"
+        );
+
+        // Create the file
+        fs::write(&binary_path, b"initial").unwrap();
+
+        // Wait for watcher to detect file appearance
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // Modify the file
+        fs::write(&binary_path, b"modified").unwrap();
+
+        // Wait for watcher to detect change
+        match tokio::time::timeout(Duration::from_secs(5), shutdown_rx.recv()).await {
+            Ok(Some(44)) => {} // Success
+            Ok(Some(code)) => panic!("Expected exit code 44, got {}", code),
+            Ok(None) => panic!("shutdown_rx closed"),
+            Err(_) => panic!("Timeout waiting for binary watcher after file appears"),
+        }
     }
 }

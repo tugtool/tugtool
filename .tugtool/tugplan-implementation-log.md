@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-22T04:31:19Z
+bead: tugtool-d47.3
+---
+
+## #step-2: Added spawn_binary_watcher() in dev.rs with 2s polling and 500ms stabilization delay; exit code 44 mapped to binary_updated in main.rs; updated enable/disable_dev_mode and all test call sites; 4 new tests
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-22T04:22:33Z
 bead: tugtool-d47.2
