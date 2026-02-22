@@ -224,7 +224,12 @@ impl BeadsCli {
         self.init_with_prefix(working_dir, None)
     }
 
-    /// Initialize beads in a directory with optional prefix (runs `bd init --prefix <prefix>`).
+    /// Initialize beads in a directory with optional prefix.
+    ///
+    /// Bypasses `bd init` (which refuses to run inside git worktrees) by
+    /// manually creating the `.beads/` directory and bootstrapping the database
+    /// via `bd --db <path> config set issue_prefix <prefix>`. The first `--db`
+    /// command auto-creates the SQLite database with the full schema.
     ///
     /// Idempotent: succeeds if beads is already initialized.
     pub fn init_with_prefix(
@@ -232,32 +237,48 @@ impl BeadsCli {
         working_dir: &Path,
         prefix: Option<&str>,
     ) -> Result<(), TugError> {
-        let mut cmd = self.cmd_with_dir(Some(working_dir));
-        cmd.arg("init");
+        let beads_dir = working_dir.join(".beads");
 
-        if let Some(p) = prefix {
-            cmd.arg("--prefix").arg(p);
+        // Already initialized — nothing to do
+        if beads_dir.is_dir() {
+            return Ok(());
         }
+
+        // Create .beads/ directory
+        std::fs::create_dir_all(&beads_dir).map_err(|e| {
+            TugError::BeadsCommand(format!("failed to create .beads directory: {}", e))
+        })?;
+
+        // Bootstrap the database by setting issue_prefix via --db.
+        // This auto-creates the SQLite DB with the full schema.
+        let db_path = beads_dir.join("beads.db");
+        let prefix_value = prefix.unwrap_or("bd");
+
+        let mut cmd = Command::new(&self.bd_path);
+        for (k, v) in &self.env_vars {
+            cmd.env(k, v);
+        }
+        cmd.current_dir(working_dir);
+        cmd.arg("--db")
+            .arg(&db_path)
+            .arg("config")
+            .arg("set")
+            .arg("issue_prefix")
+            .arg(prefix_value);
 
         let output = cmd
             .output()
-            .map_err(|e| TugError::BeadsCommand(format!("failed to run bd init: {}", e)))?;
+            .map_err(|e| TugError::BeadsCommand(format!("failed to bootstrap beads db: {}", e)))?;
 
         if !output.status.success() {
+            // Clean up on failure
+            let _ = std::fs::remove_dir_all(&beads_dir);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            // Already initialized (locally or in a parent directory) is not an error
-            if stderr.contains("existing database") {
-                return Ok(());
-            }
             return Err(TugError::BeadsCommand(format!(
-                "bd init failed: {}",
+                "failed to bootstrap beads db: {}",
                 stderr.trim()
             )));
         }
-
-        // bd init drops an AGENTS.md file we don't want — remove it silently
-        let agents_md = working_dir.join("AGENTS.md");
-        let _ = std::fs::remove_file(agents_md);
 
         Ok(())
     }
