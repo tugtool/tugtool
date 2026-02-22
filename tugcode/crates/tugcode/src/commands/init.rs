@@ -388,8 +388,8 @@ fn clean_beads_gitattributes(root: &Path) -> bool {
         .filter(|line| {
             let trimmed = line.trim();
             // Remove the merge=beads attribute line and its comment
-            !trimmed.contains("merge=beads")
-                && !(trimmed.starts_with('#') && trimmed.to_lowercase().contains("bd merge"))
+            !(trimmed.contains("merge=beads")
+                || trimmed.starts_with('#') && trimmed.to_lowercase().contains("bd merge"))
         })
         .collect();
 
