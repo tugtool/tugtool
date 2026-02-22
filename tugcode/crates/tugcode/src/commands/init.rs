@@ -139,11 +139,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             files_created.push("removed AGENTS.md".to_string());
         }
 
-        // Remove stale .beads/ directory (beads now lives in worktrees)
-        if remove_stale_beads_dir(Path::new(".")) {
-            files_created.push("removed .beads/".to_string());
-        }
-
         // Remove stale beads merge driver from git config
         for key in remove_beads_merge_driver(Path::new(".")) {
             files_created.push(format!("removed git config {}", key));
@@ -222,11 +217,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     // Remove AGENTS.md dropped by bd init
     if remove_agents_md(Path::new(".")) {
         files_created.push("removed AGENTS.md".to_string());
-    }
-
-    // Remove stale .beads/ directory (beads now lives in worktrees)
-    if remove_stale_beads_dir(Path::new(".")) {
-        files_created.push("removed .beads/".to_string());
     }
 
     // Remove stale beads merge driver from git config
@@ -313,20 +303,6 @@ fn remove_beads_hooks(root: &Path) -> Vec<String> {
 fn remove_agents_md(root: &Path) -> bool {
     let agents_md = root.join("AGENTS.md");
     fs::remove_file(agents_md).is_ok()
-}
-
-/// Remove stale `.beads/` directory from the repo root.
-///
-/// Beads now lives exclusively in worktrees. A `.beads/` at the repo root
-/// is a leftover from the old beads-at-root setup and should be removed.
-/// Returns true if the directory existed and was removed.
-fn remove_stale_beads_dir(root: &Path) -> bool {
-    let beads_dir = root.join(".beads");
-    if beads_dir.is_dir() {
-        fs::remove_dir_all(&beads_dir).is_ok()
-    } else {
-        false
-    }
 }
 
 /// Remove stale beads merge driver from `.git/config`.
