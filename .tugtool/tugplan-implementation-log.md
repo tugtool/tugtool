@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-22T17:28:28Z
+bead: tugtool-cfa.4
+---
+
+## #step-3: Removed infrastructure file machinery from merge.rs. Deleted 8 functions and TempDirGuard struct. Simplified dirty-file check to block on any tracked modified files. Removed dirty_files field from MergeData. Deleted 13 infrastructure tests, added test_merge_rejects_dirty_tugtool_files and test_merge_succeeds_with_clean_main. Updated merge SKILL.md to remove infrastructure references.
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-22T17:10:41Z
 bead: tugtool-cfa.3
