@@ -312,6 +312,50 @@ fn test_mock_bd_dep_add_and_list_track_dependencies() {
 }
 
 #[test]
+fn test_mock_bd_init_with_prefix() {
+    let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
+
+    // Initialize with custom prefix
+    let init_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["init", "--prefix", "auth"])
+        .output()
+        .expect("failed to init with prefix");
+
+    assert!(init_output.status.success(), "init --prefix failed");
+
+    // Create root issue
+    let root_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["create", "Root Issue", "--json"])
+        .output()
+        .expect("failed to create root issue");
+
+    assert!(root_output.status.success(), "create root failed");
+    let root_json: serde_json::Value = serde_json::from_slice(&root_output.stdout)
+        .expect("failed to parse root JSON");
+
+    let root_id = root_json["id"].as_str().expect("root id missing");
+    assert!(root_id.starts_with("auth-"), "root ID should start with 'auth-', got: {}", root_id);
+
+    // Create child issue
+    let child_output = Command::new(bd_fake_path())
+        .env("TUG_BD_STATE", temp_state.path())
+        .args(["create", "Child", "--parent", root_id, "--json"])
+        .output()
+        .expect("failed to create child");
+
+    assert!(child_output.status.success(), "create child failed");
+    let child_json: serde_json::Value = serde_json::from_slice(&child_output.stdout)
+        .expect("failed to parse child JSON");
+
+    let child_id = child_json["id"].as_str().expect("child id missing");
+    let expected_prefix = format!("{}.", root_id);
+    assert!(child_id.starts_with(&expected_prefix),
+        "child ID should start with '{}', got: {}", expected_prefix, child_id);
+}
+
+#[test]
 fn test_mock_bd_ready_returns_unblocked_issues() {
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
 

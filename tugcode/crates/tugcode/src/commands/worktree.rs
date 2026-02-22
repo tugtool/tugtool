@@ -607,7 +607,7 @@ pub fn run_worktree_create_with_root(
     };
 
     match create_worktree(&config) {
-        Ok((worktree_path, branch_name, _plan_slug)) => {
+        Ok((worktree_path, branch_name, plan_slug)) => {
             let plan_name = plan_path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -717,7 +717,7 @@ pub fn run_worktree_create_with_root(
                     }
                     return Ok(err.exit_code());
                 }
-                if let Err(e) = beads.init(&worktree_path) {
+                if let Err(e) = beads.init_with_prefix(&worktree_path, Some(&plan_slug)) {
                     let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
                     if json_output {
                         eprintln!(r#"{{"error": "{}"}}"#, e);

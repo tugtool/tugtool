@@ -28,10 +28,19 @@ next_id() {
   local parent="$1"
   need_jq
   init_state
+
+  # Read prefix from prefix.txt if it exists, strip any whitespace
+  local prefix
+  if [[ -f "$STATE_DIR/prefix.txt" ]]; then
+    prefix=$(cat "$STATE_DIR/prefix.txt" 2>/dev/null | tr -d '\n\r' | tr -d ' ')
+  fi
+  # Default to "bd-fake" if no prefix file or empty
+  prefix="${prefix:-bd-fake}"
+
   if [[ -z "$parent" ]]; then
     local n
     n=$(jq -r 'to_entries | map(select(.key | test("\\.") | not)) | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
-    echo "bd-fake-$(( n + 1 ))"
+    echo "${prefix}-$(( n + 1 ))"
   else
     local count
     count=$(jq -r --arg p "$parent" '[. | keys[] | select(startswith($p + "."))] | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
@@ -161,7 +170,21 @@ cmd_dep_list() {
 }
 
 cmd_init() {
+  local prefix=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --prefix) prefix="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
   init_state
+
+  # Store prefix if provided
+  if [[ -n "$prefix" ]]; then
+    echo -n "$prefix" > "$STATE_DIR/prefix.txt"
+  fi
+
   echo "Initialized bd-fake state at $STATE_DIR"
 }
 

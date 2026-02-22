@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-22T17:10:41Z
+bead: tugtool-cfa.3
+---
+
+## #step-2: Made bead IDs human-readable by deriving prefix from plan slug. Updated bd-fake to accept --prefix flag in init and read prefix.txt in next_id. Updated worktree.rs to pass plan_slug to beads.init_with_prefix(). Added test_mock_bd_init_with_prefix integration test.
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-22T17:02:50Z
 bead: tugtool-cfa.2
