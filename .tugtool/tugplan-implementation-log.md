@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-22T16:47:40Z
+bead: tugtool-cfa.1
+---
+
+## #step-0: Moved beads initialization from repo root to worktree, removed parent-directory walk-up from is_initialized(), added init_with_prefix() method, threaded working_dir through sync.rs SyncContext, added is_initialized guards to all beads commands (sync, pull, link, close, inspect, update, status), deleted .beads/ from version control, added .beads/ to .gitignore
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-22T04:48:47Z
 ---

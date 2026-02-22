@@ -61,6 +61,17 @@ pub fn run_inspect(
         );
     }
 
+    // Check if beads is initialized
+    let check_path = working_path.unwrap_or(&project_root);
+    if !beads.is_initialized(check_path) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
+        );
+    }
+
     // Show the bead
     match beads.show(&bead_id, working_path) {
         Ok(details) => {

@@ -85,7 +85,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
         return output_error(
             json_output,
             "E013",
-            "beads not initialized (run `bd init`)",
+            "beads not initialized. Run: tugcode worktree create <plan>",
             &file,
             13,
         );
@@ -150,6 +150,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
         prune_deps,
         substeps_mode: &substeps_mode,
         quiet,
+        working_dir: None,
     };
     let result = sync_plan_to_beads(&path, &plan, &content, &ctx);
 
@@ -222,6 +223,7 @@ struct SyncContext<'a> {
     prune_deps: bool,
     substeps_mode: &'a str,
     quiet: bool,
+    working_dir: Option<&'a Path>,
 }
 
 /// Sync a plan to beads
@@ -272,7 +274,7 @@ fn sync_plan_to_beads(
     let existing_ids = if ctx.dry_run || known_ids.is_empty() {
         HashSet::new()
     } else {
-        ctx.beads.list_by_ids(&known_ids, None).unwrap_or_default()
+        ctx.beads.list_by_ids(&known_ids, ctx.working_dir).unwrap_or_default()
     };
 
     // Step 1: Ensure root bead exists
@@ -331,6 +333,7 @@ fn sync_plan_to_beads(
                     ctx.beads,
                     ctx.prune_deps,
                     ctx.dry_run,
+                    ctx.working_dir,
                 )?;
                 deps_added += added;
             }
@@ -359,6 +362,7 @@ fn sync_plan_to_beads(
                             ctx.beads,
                             ctx.prune_deps,
                             ctx.dry_run,
+                            ctx.working_dir,
                         )?;
                         deps_added += added;
                     }
@@ -476,7 +480,7 @@ fn ensure_root_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -531,7 +535,7 @@ fn ensure_step_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -603,7 +607,7 @@ fn ensure_substep_bead(
             None
         },
         None,
-        None,
+        ctx.working_dir,
     )?;
 
     Ok((issue.id, true))
@@ -617,6 +621,7 @@ fn sync_dependencies(
     beads: &BeadsCli,
     prune_deps: bool,
     dry_run: bool,
+    working_dir: Option<&Path>,
 ) -> Result<usize, TugError> {
     if dry_run {
         return Ok(depends_on.len());
@@ -625,7 +630,7 @@ fn sync_dependencies(
     let mut added = 0;
 
     // Get current dependencies
-    let current_deps = beads.dep_list(bead_id, None).unwrap_or_default();
+    let current_deps = beads.dep_list(bead_id, working_dir).unwrap_or_default();
     let current_dep_ids: std::collections::HashSet<String> =
         current_deps.iter().map(|d| d.id.clone()).collect();
 
@@ -633,7 +638,7 @@ fn sync_dependencies(
     for dep_anchor in depends_on {
         if let Some(dep_bead_id) = anchor_to_bead.get(dep_anchor) {
             if !current_dep_ids.contains(dep_bead_id) {
-                beads.dep_add(bead_id, dep_bead_id, None)?;
+                beads.dep_add(bead_id, dep_bead_id, working_dir)?;
                 added += 1;
             }
         }
@@ -648,7 +653,7 @@ fn sync_dependencies(
 
         for dep in current_deps {
             if !desired_dep_ids.contains(&dep.id) {
-                beads.dep_remove(bead_id, &dep.id, None)?;
+                beads.dep_remove(bead_id, &dep.id, working_dir)?;
             }
         }
     }
@@ -733,7 +738,7 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update description (purpose + strategy + success criteria)
     let description = plan.render_root_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(root_id, &description, None) {
+        if let Err(e) = ctx.beads.update_description(root_id, &description, ctx.working_dir) {
             errors.push(format!("Failed to update root description: {}", e));
         }
     }
@@ -741,7 +746,7 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update design (decision summary)
     let design = plan.render_root_design();
     if !design.is_empty() {
-        if let Err(e) = ctx.beads.update_design(root_id, &design, None) {
+        if let Err(e) = ctx.beads.update_design(root_id, &design, ctx.working_dir) {
             errors.push(format!("Failed to update root design: {}", e));
         }
     }
@@ -749,7 +754,7 @@ fn enrich_root_bead(plan: &TugPlan, root_id: &str, ctx: &SyncContext<'_>) -> Vec
     // Update acceptance criteria (phase exit criteria)
     let acceptance = plan.render_root_acceptance();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(root_id, &acceptance, None) {
+        if let Err(e) = ctx.beads.update_acceptance(root_id, &acceptance, ctx.working_dir) {
             errors.push(format!("Failed to update root acceptance: {}", e));
         }
     }
@@ -773,7 +778,7 @@ fn enrich_step_bead(
     // Update description (tasks + artifacts + commit template)
     let description = step.render_description();
     if !description.is_empty() {
-        if let Err(e) = ctx.beads.update_description(bead_id, &description, None) {
+        if let Err(e) = ctx.beads.update_description(bead_id, &description, ctx.working_dir) {
             errors.push(format!(
                 "Failed to update description for {}: {}",
                 bead_id, e
@@ -784,7 +789,7 @@ fn enrich_step_bead(
     // Update acceptance criteria (tests + checkpoints)
     let acceptance = step.render_acceptance_criteria();
     if !acceptance.is_empty() {
-        if let Err(e) = ctx.beads.update_acceptance(bead_id, &acceptance, None) {
+        if let Err(e) = ctx.beads.update_acceptance(bead_id, &acceptance, ctx.working_dir) {
             errors.push(format!(
                 "Failed to update acceptance for {}: {}",
                 bead_id, e
@@ -795,7 +800,7 @@ fn enrich_step_bead(
     // Update design (resolved references)
     let design = resolve_step_design(step, plan);
     if !design.is_empty() {
-        if let Err(e) = ctx.beads.update_design(bead_id, &design, None) {
+        if let Err(e) = ctx.beads.update_design(bead_id, &design, ctx.working_dir) {
             errors.push(format!("Failed to update design for {}: {}", bead_id, e));
         }
     }

@@ -69,6 +69,16 @@ pub fn run_beads_status(
         );
     }
 
+    // Check if beads is initialized
+    if !beads.is_initialized(&project_root) {
+        return output_error(
+            json_output,
+            "E013",
+            "beads not initialized. Run: tugcode worktree create <plan>",
+            13,
+        );
+    }
+
     // Get files to process
     let files = match &file {
         Some(f) => {

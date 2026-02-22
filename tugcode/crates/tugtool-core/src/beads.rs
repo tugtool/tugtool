@@ -216,28 +216,34 @@ impl BeadsCli {
 
     /// Check if beads is initialized (`.beads/` directory exists).
     ///
-    /// Walks parent directories because `bd` searches upward for its database.
-    /// A worktree at `.tugtree/foo/` will find `.beads/` in the main repo.
+    /// Checks only the given directory; does not walk parent directories.
     pub fn is_initialized(&self, project_root: &Path) -> bool {
-        let mut dir = project_root.to_path_buf();
-        loop {
-            if dir.join(".beads").is_dir() {
-                return true;
-            }
-            if !dir.pop() {
-                break;
-            }
-        }
-        false
+        project_root.join(".beads").is_dir()
     }
 
     /// Initialize beads in a directory (runs `bd init`).
     ///
     /// Idempotent: succeeds if beads is already initialized (locally or in a parent directory).
     pub fn init(&self, working_dir: &Path) -> Result<(), TugError> {
-        let output = self
-            .cmd_with_dir(Some(working_dir))
-            .arg("init")
+        self.init_with_prefix(working_dir, None)
+    }
+
+    /// Initialize beads in a directory with optional prefix (runs `bd init --prefix <prefix>`).
+    ///
+    /// Idempotent: succeeds if beads is already initialized.
+    pub fn init_with_prefix(
+        &self,
+        working_dir: &Path,
+        prefix: Option<&str>,
+    ) -> Result<(), TugError> {
+        let mut cmd = self.cmd_with_dir(Some(working_dir));
+        cmd.arg("init");
+
+        if let Some(p) = prefix {
+            cmd.arg("--prefix").arg(p);
+        }
+
+        let output = cmd
             .output()
             .map_err(|e| TugError::BeadsCommand(format!("failed to run bd init: {}", e)))?;
 
@@ -1265,5 +1271,41 @@ mod tests {
             Some(&"1".to_string())
         );
         assert_eq!(cli.env_vars.len(), 2);
+    }
+
+    #[test]
+    fn test_is_initialized_false_when_beads_only_in_parent() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let parent = temp_dir.path();
+        let child = parent.join("child");
+        fs::create_dir(&child).unwrap();
+
+        // Create .beads/ in parent
+        let beads_dir = parent.join(".beads");
+        fs::create_dir(&beads_dir).unwrap();
+
+        // is_initialized should return false for child (no walk-up)
+        let cli = BeadsCli::default();
+        assert!(!cli.is_initialized(&child));
+    }
+
+    #[test]
+    fn test_is_initialized_true_when_beads_in_given_directory() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path();
+
+        // Create .beads/ in given directory
+        let beads_dir = dir.join(".beads");
+        fs::create_dir(&beads_dir).unwrap();
+
+        // is_initialized should return true
+        let cli = BeadsCli::default();
+        assert!(cli.is_initialized(dir));
     }
 }

@@ -61,7 +61,7 @@ pub fn run_pull(
         return output_error(
             json_output,
             "E013",
-            "beads not initialized (run `bd init`)",
+            "beads not initialized. Run: tugcode worktree create <plan>",
             13,
         );
     }

@@ -115,6 +115,10 @@ pub enum BeadsCommands {
         /// Reason for closing (e.g., "Step completed per plan")
         #[arg(long)]
         reason: Option<String>,
+
+        /// Working directory for bd command (optional, for worktree context)
+        #[arg(long)]
+        working_dir: Option<String>,
     },
 
     /// Inspect a bead showing all fields

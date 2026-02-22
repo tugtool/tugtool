@@ -61,7 +61,7 @@ pub enum TugError {
     InvalidBeadId { id: String, line: Option<usize> },
 
     /// E013: Beads not initialized in project
-    #[error("E013: Beads not initialized in project (run `bd init`)")]
+    #[error("E013: Beads not initialized. Run: tugcode worktree create <plan>")]
     BeadsNotInitialized,
 
     /// E014: Beads Root bead does not exist
