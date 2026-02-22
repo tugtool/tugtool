@@ -389,6 +389,7 @@ Task(
 
 ```
 Task(
+  subagent_type: "tugplug:architect-agent",
   resume: "<architect_id>",
   prompt: 'Plan strategy for step #step-N. Bead: <bead_id from bead_mapping>. Previous step accomplished: <step_summary>.',
   description: "Plan strategy for step N"
@@ -422,6 +423,7 @@ Task(
 
 ```
 Task(
+  subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
   prompt: 'Implement step #step-N. Bead: <bead_id from bead_mapping>.',
   description: "Implement step N"
@@ -458,6 +460,7 @@ Evaluate `drift_assessment.drift_severity` from coder output:
 
 ```
 Task(
+  subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
   prompt: 'Revision needed. Bead: <bead_id>. Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope.',
   description: "Revise implementation for step N"
@@ -489,6 +492,7 @@ Task(
 
 ```
 Task(
+  subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
   prompt: 'Review step #step-N. Bead: <bead_id from bead_mapping>.',
   description: "Verify step N completion"
@@ -513,6 +517,7 @@ Increment `reviewer_attempts`. If `reviewer_attempts >= 3`, ESCALATE to user.
 
 ```
 Task(
+  subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
   prompt: 'Reviewer found issues. Bead: <bead_id>. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output.',
   description: "Fix reviewer issues for step N"
@@ -525,6 +530,7 @@ Output the Coder post-call message.
 
 ```
 Task(
+  subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
   prompt: 'Coder has addressed the issues. Bead: <bead_id>. Re-review.',
   description: "Re-review step N"
@@ -567,6 +573,7 @@ Task(
 
 ```
 Task(
+  subagent_type: "tugplug:committer-agent",
   resume: "<committer_id>",
   max_turns: 5,
   prompt: '<same JSON payload as above for the new step>',
@@ -633,6 +640,7 @@ AskUserQuestion: "Auditor retry limit reached (3 attempts). Issues: <issues>. Op
 
 ```
 Task(
+  subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
   prompt: 'Auditor found issues. Fix these: <issues array with P0/P1 priority>. Then return updated output.',
   description: "Fix auditor issues"
@@ -645,6 +653,7 @@ Output the Coder post-call message.
 
 ```
 Task(
+  subagent_type: "tugplug:committer-agent",
   resume: "<committer_id>",
   max_turns: 5,
   prompt: '{
@@ -666,6 +675,7 @@ Output the Committer fixup post-call message.
 
 ```
 Task(
+  subagent_type: "tugplug:auditor-agent",
   resume: "<auditor_id>",
   prompt: 'Re-audit after coder fixes. Previous issues: <issues_json>.',
   description: "Re-audit after fixes"
@@ -728,6 +738,7 @@ AskUserQuestion: "Integrator retry limit reached (3 attempts). CI status: <ci_st
 
 ```
 Task(
+  subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
   prompt: 'CI checks failed. Status: <ci_status>. Details: <ci_details array>. Fix the failures and return updated output.',
   description: "Fix CI failures"
@@ -740,6 +751,7 @@ Output the Coder post-call message.
 
 ```
 Task(
+  subagent_type: "tugplug:committer-agent",
   resume: "<committer_id>",
   max_turns: 5,
   prompt: '{
@@ -761,6 +773,7 @@ Output the Committer fixup post-call message.
 
 ```
 Task(
+  subagent_type: "tugplug:integrator-agent",
   resume: "<integrator_id>",
   prompt: 'Fixup committed. Re-push and re-check CI. PR: <pr_url>.',
   description: "Re-push and re-check CI"
@@ -805,7 +818,7 @@ All six implementation agents are **spawned once** and **resumed** for retries o
 **Agent ID management:**
 - Store `architect_id`, `coder_id`, `reviewer_id`, `committer_id` after first spawn (step 0)
 - Store `auditor_id`, `integrator_id` after post-loop spawn
-- Pass these IDs to `Task(resume: "<id>")` for all subsequent invocations
+- Pass these IDs to `Task(subagent_type: "<type>", resume: "<id>")` for all subsequent invocations
 - IDs persist for the entire implementer session
 - Never reset IDs between steps or phases
 
