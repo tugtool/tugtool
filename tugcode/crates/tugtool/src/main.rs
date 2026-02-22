@@ -28,11 +28,7 @@ pub struct Cli {
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
 
-    /// Enable dev mode: auto-detect source tree, spawn bun dev, serve assets from disk
-    #[arg(long)]
-    pub dev: bool,
-
-    /// Path to mono-repo root (overrides auto-detection when --dev is set)
+    /// Path to mono-repo root (overrides auto-detection for dev mode)
     #[arg(long)]
     pub source_tree: Option<PathBuf>,
 }
@@ -56,6 +52,8 @@ fn resolve_tugcast_path() -> PathBuf {
 }
 
 /// Detect the mono-repo root by walking up from the current directory looking for tugdeck/
+// Used in Step 1 when send_dev_mode() is added to the supervisor loop
+#[allow(dead_code)]
 fn detect_source_tree() -> Result<PathBuf, String> {
     detect_source_tree_from(
         &std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?,
@@ -79,6 +77,8 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
 }
 
 /// Check if a command is available in PATH
+// Used in Step 1 when bun spawning is migrated into the supervisor loop
+#[allow(dead_code)]
 async fn check_command_available(command: &str) -> bool {
     Command::new(command)
         .arg("--version")
@@ -90,6 +90,8 @@ async fn check_command_available(command: &str) -> bool {
 }
 
 /// Spawn bun dev as a child process
+// Used in Step 1 when bun spawning is migrated into the supervisor loop
+#[allow(dead_code)]
 async fn spawn_bun_dev(source_tree: &std::path::Path) -> Result<tokio::process::Child, String> {
     // Check if bun is installed
     if !check_command_available("bun").await {
@@ -134,7 +136,6 @@ fn spawn_tugcast(
     session: &str,
     port: u16,
     dir: &std::path::Path,
-    dev_path: Option<&std::path::Path>,
     control_socket_path: &std::path::Path,
 ) -> std::io::Result<tokio::process::Child> {
     let mut cmd = Command::new(resolve_tugcast_path());
@@ -144,10 +145,6 @@ fn spawn_tugcast(
         .arg(port.to_string())
         .arg("--dir")
         .arg(dir.to_string_lossy().as_ref());
-
-    if let Some(path) = dev_path {
-        cmd.arg("--dev").arg(path.to_string_lossy().as_ref());
-    }
 
     cmd.arg("--control-socket")
         .arg(control_socket_path.to_string_lossy().as_ref());
@@ -283,7 +280,6 @@ enum RestartDecision {
 async fn supervisor_loop(
     cli: &Cli,
     bun_child: &mut Option<tokio::process::Child>,
-    dev_path: Option<PathBuf>,
 ) -> i32 {
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
@@ -311,7 +307,6 @@ async fn supervisor_loop(
             &cli.session,
             cli.port,
             &cli.dir,
-            dev_path.as_deref(),
             &socket_path,
         ) {
             Ok(child) => child,
@@ -502,66 +497,13 @@ async fn main() {
         session = %cli.session,
         port = cli.port,
         dir = ?cli.dir,
-        dev = cli.dev,
         "tugtool starting"
     );
 
     let mut bun_child: Option<tokio::process::Child> = None;
-    let dev_path: Option<PathBuf>;
-
-    if cli.dev {
-        // Check tmux is installed
-        if !check_command_available("tmux").await {
-            eprintln!(
-                "tugtool: error: tmux is required but was not found in PATH. Install it with: brew install tmux"
-            );
-            std::process::exit(1);
-        }
-
-        // Resolve source tree
-        let source_tree = if let Some(ref path) = cli.source_tree {
-            path.clone()
-        } else {
-            match detect_source_tree() {
-                Ok(path) => path,
-                Err(e) => {
-                    eprintln!("tugtool: error: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        };
-
-        // Validate source tree
-        if !source_tree.join("tugdeck").is_dir() {
-            eprintln!(
-                "tugtool: error: No tugdeck/ directory found in {}. Is this the right source tree?",
-                source_tree.display()
-            );
-            std::process::exit(1);
-        }
-
-        info!("source tree: {}", source_tree.display());
-
-        // Set dev path
-        dev_path = Some(source_tree.join("tugdeck/dist"));
-
-        // Spawn bun dev
-        match spawn_bun_dev(&source_tree).await {
-            Ok(child) => {
-                info!("bun dev started");
-                bun_child = Some(child);
-            }
-            Err(e) => {
-                eprintln!("tugtool: error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        dev_path = None;
-    }
 
     // Run supervisor loop
-    let code = supervisor_loop(&cli, &mut bun_child, dev_path).await;
+    let code = supervisor_loop(&cli, &mut bun_child).await;
     std::process::exit(code);
 }
 
@@ -644,12 +586,12 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_dev_flag() {
-        let cli = Cli::try_parse_from(["tugtool"]).unwrap();
-        assert!(!cli.dev);
-
-        let cli = Cli::try_parse_from(["tugtool", "--dev"]).unwrap();
-        assert!(cli.dev);
+    fn test_dev_flag_rejected() {
+        // --dev is no longer accepted by clap; it should be rejected as an unknown argument
+        let result = Cli::try_parse_from(["tugtool", "--dev"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 
     #[test]

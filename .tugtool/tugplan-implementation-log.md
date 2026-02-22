@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-22T03:53:27Z
+bead: tugtool-go5.1
+---
+
+## #step-0: Removed dead --dev flag and dev_path parameter chain from tugtool. Functions detect_source_tree, check_command_available, spawn_bun_dev retained with #[allow(dead_code)] for Step 1 reuse.
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-21T20:59:14Z
 ---
