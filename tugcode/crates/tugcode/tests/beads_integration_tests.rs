@@ -442,11 +442,9 @@ fn test_beads_sync_creates_root_and_step_beads() {
 }
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so cannot detect existing beads without pre-populated annotations"]
 fn test_beads_sync_is_idempotent() {
-    // NOTE: This test validated that running sync twice on the same plan doesn't create duplicate beads.
-    // With the new behavior (no plan file annotations), sync cannot detect existing beads unless
-    // the plan already has bead IDs. This test is kept for reference but ignored.
+    // Validates that running sync twice on the same plan doesn't create duplicate beads.
+    // With title-based matching, the second sync should find and reuse existing beads.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "test", SINGLE_STEP_PLAN);
@@ -531,11 +529,9 @@ fn test_beads_sync_creates_dependency_edges() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so status command cannot detect beads"]
 fn test_beads_status_computes_readiness() {
-    // NOTE: This test validated that `beads status` correctly computes readiness based on dependencies.
-    // With the new behavior (no plan file annotations), the status command cannot find bead IDs
-    // in the plan file, so all steps show as "pending". This test is kept for reference but ignored.
+    // Validates that `beads status` correctly computes readiness based on dependencies.
+    // With title-based matching, status resolves beads by title and shows correct readiness.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "multi", MULTI_STEP_PLAN);
@@ -593,11 +589,9 @@ fn test_beads_status_computes_readiness() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan, so pull command cannot detect beads"]
 fn test_beads_pull_updates_checkboxes() {
-    // NOTE: This test validated that `beads pull` updates checkboxes based on bead status.
-    // With the new behavior (no plan file annotations), the pull command cannot find bead IDs
-    // in the plan file. This test is kept for reference but ignored.
+    // Validates that `beads pull` updates checkboxes based on bead status.
+    // With title-based matching, pull resolves beads by title and updates checkboxes.
     let temp = setup_test_project();
     let temp_state = tempfile::tempdir().expect("failed to create temp state dir");
     create_test_plan(&temp, "test", SINGLE_STEP_PLAN);
@@ -667,11 +661,7 @@ fn test_beads_pull_updates_checkboxes() {
 // =============================================================================
 
 #[test]
-#[ignore = "Test no longer applicable: sync no longer writes bead IDs to plan"]
 fn test_full_beads_workflow_sync_work_pull() {
-    // NOTE: This test exercised the complete workflow: sync → work → status → pull.
-    // With the new behavior (no plan file annotations), status and pull commands cannot find
-    // bead IDs in the plan file. This test is kept for reference but ignored.
     // This test exercises the complete workflow documented in README:
     // 1. tug beads sync (Plan → Beads)
     // 2. bd close (Work in Beads)
@@ -695,14 +685,6 @@ fn test_full_beads_workflow_sync_work_pull() {
     let sync_json: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&sync_output.stdout)).unwrap();
     assert_eq!(sync_json["data"]["steps_synced"], 3, "should sync 3 steps");
-
-    // Verify bead IDs were written to plan
-    let plan_after_sync = fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md"))
-        .expect("failed to read plan");
-    assert!(
-        plan_after_sync.contains("**Bead:**"),
-        "plan should have Bead IDs after sync"
-    );
 
     // Step 2: Check initial status - Step 0 should be ready, others blocked
     let status_output = Command::new(tug_binary())

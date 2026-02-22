@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-22T17:02:50Z
+bead: tugtool-cfa.2
+---
+
+## #step-1: Replaced ID-based bead matching with title-based resolution via find_by_title(). Enhanced bd-fake with --title-contains and --parent filters. Refactored sync.rs to use title-based resolution in ensure_root_bead/ensure_step_bead/ensure_substep_bead. Refactored status.rs and pull.rs with resolve helpers. Un-ignored 4 integration tests (sync idempotency, status readiness, pull checkboxes, full workflow).
+
+**Files changed:**
+- .tugtool/tugplan-beads-improvements.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-22T16:47:40Z
 bead: tugtool-cfa.1
