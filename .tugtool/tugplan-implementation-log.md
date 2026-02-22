@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-22T04:48:47Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix formatting in tugcast/src/dev.rs and tugtool/src/main.rs
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-22T04:45:03Z
 bead: tugtool-d47.6

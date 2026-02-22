@@ -175,7 +175,7 @@ async fn wait_for_dev_mode_result(
         line.clear();
         match timeout(Duration::from_secs(5), reader.read_line(&mut line)).await {
             Ok(Ok(0)) => {
-                return Err("control socket closed while waiting for dev_mode_result".to_string())
+                return Err("control socket closed while waiting for dev_mode_result".to_string());
             }
             Ok(Ok(_)) => {
                 if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
@@ -195,10 +195,8 @@ async fn wait_for_dev_mode_result(
                             return Ok(success);
                         }
                         Some("shutdown") => {
-                            return Err(
-                                "tugcast sent shutdown while waiting for dev_mode_result"
-                                    .to_string(),
-                            );
+                            return Err("tugcast sent shutdown while waiting for dev_mode_result"
+                                .to_string());
                         }
                         _ => {
                             // Ignore unrecognized message types; keep reading
@@ -364,12 +362,7 @@ async fn supervisor_loop(
         }
 
         // Spawn tugcast
-        let mut tugcast = match spawn_tugcast(
-            &cli.session,
-            cli.port,
-            &cli.dir,
-            &socket_path,
-        ) {
+        let mut tugcast = match spawn_tugcast(&cli.session, cli.port, &cli.dir, &socket_path) {
             Ok(child) => child,
             Err(e) => {
                 eprintln!("tugtool: failed to start tugcast: {}", e);
@@ -403,7 +396,9 @@ async fn supervisor_loop(
                 Ok(()) => {
                     match wait_for_dev_mode_result(&mut reader).await {
                         Ok(true) => info!("dev mode enabled"),
-                        Ok(false) => warn!("dev mode could not be enabled, continuing without dev features"),
+                        Ok(false) => {
+                            warn!("dev mode could not be enabled, continuing without dev features")
+                        }
                         Err(e) => {
                             // Timeout or shutdown message -- proceed anyway; supervisor
                             // loop will handle any subsequent shutdown from tugcast.
@@ -412,7 +407,10 @@ async fn supervisor_loop(
                     }
                 }
                 Err(e) => {
-                    warn!("failed to send dev_mode: {}, continuing without dev features", e);
+                    warn!(
+                        "failed to send dev_mode: {}, continuing without dev features",
+                        e
+                    );
                 }
             }
         }
@@ -617,7 +615,10 @@ async fn main() {
                 Some(path)
             }
             Err(e) => {
-                warn!("could not auto-detect source tree: {}. Running without dev mode.", e);
+                warn!(
+                    "could not auto-detect source tree: {}. Running without dev mode.",
+                    e
+                );
                 None
             }
         }
@@ -782,10 +783,7 @@ mod tests {
 
         let msg: serde_json::Value = serde_json::from_str(&line).expect("must be valid JSON");
         assert_eq!(msg.get("type").and_then(|v| v.as_str()), Some("dev_mode"));
-        assert_eq!(
-            msg.get("enabled").and_then(|v| v.as_bool()),
-            Some(true)
-        );
+        assert_eq!(msg.get("enabled").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(
             msg.get("source_tree").and_then(|v| v.as_str()),
             Some("/some/source/tree")
@@ -836,7 +834,9 @@ mod tests {
 
         // Server sends dev_mode_result failure
         server_write
-            .write_all(b"{\"type\":\"dev_mode_result\",\"success\":false,\"error\":\"path not found\"}\n")
+            .write_all(
+                b"{\"type\":\"dev_mode_result\",\"success\":false,\"error\":\"path not found\"}\n",
+            )
             .await
             .unwrap();
 

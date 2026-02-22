@@ -568,13 +568,14 @@ pub(crate) fn spawn_binary_watcher(
         }
 
         // Phase 2: Record initial mtime and poll for changes
-        let mut last_mtime = match std::fs::metadata(&binary_path)
-            .and_then(|m| m.modified())
-        {
+        let mut last_mtime = match std::fs::metadata(&binary_path).and_then(|m| m.modified()) {
             Ok(mtime) => mtime,
             Err(_) => {
                 // File disappeared between existence check and mtime read
-                warn!("binary watcher: failed to read initial mtime for {}", binary_path.display());
+                warn!(
+                    "binary watcher: failed to read initial mtime for {}",
+                    binary_path.display()
+                );
                 return;
             }
         };
@@ -582,9 +583,7 @@ pub(crate) fn spawn_binary_watcher(
         loop {
             interval.tick().await;
 
-            let current_mtime = match std::fs::metadata(&binary_path)
-                .and_then(|m| m.modified())
-            {
+            let current_mtime = match std::fs::metadata(&binary_path).and_then(|m| m.modified()) {
                 Ok(mtime) => mtime,
                 Err(_) => {
                     // File disappeared or unreadable; keep polling
@@ -597,15 +596,14 @@ pub(crate) fn spawn_binary_watcher(
                 tokio::time::sleep(Duration::from_millis(500)).await;
 
                 // Re-check mtime after stabilization
-                let stabilized_mtime = match std::fs::metadata(&binary_path)
-                    .and_then(|m| m.modified())
-                {
-                    Ok(mtime) => mtime,
-                    Err(_) => {
-                        // File disappeared during stabilization
-                        continue;
-                    }
-                };
+                let stabilized_mtime =
+                    match std::fs::metadata(&binary_path).and_then(|m| m.modified()) {
+                        Ok(mtime) => mtime,
+                        Err(_) => {
+                            // File disappeared during stabilization
+                            continue;
+                        }
+                    };
 
                 // If mtime is still different from the value before stabilization,
                 // the binary has been fully written
