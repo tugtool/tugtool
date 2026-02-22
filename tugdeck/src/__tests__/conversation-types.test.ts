@@ -8,7 +8,7 @@ import {
   type TurnComplete,
   type ErrorEvent,
 } from "../cards/conversation/types.ts";
-import { encodeConversationInput, decodeFrame, FeedId } from "../protocol.ts";
+import { encodeCodeInput, decodeFrame, FeedId } from "../protocol.ts";
 
 describe("conversation types", () => {
   test("parseConversationEvent parses assistant_text", () => {
@@ -125,13 +125,13 @@ describe("conversation types", () => {
     expect(isConversationEvent({ type: "invalid" })).toBe(false);
   });
 
-  test("encodeConversationInput produces correct binary frame", () => {
+  test("encodeCodeInput produces correct binary frame", () => {
     const msg = { type: "user_message", text: "Hello", attachments: [] };
-    const encoded = encodeConversationInput(msg);
+    const encoded = encodeCodeInput(msg);
 
     // Decode and verify
     const frame = decodeFrame(encoded);
-    expect(frame.feedId).toBe(FeedId.CONVERSATION_INPUT);
+    expect(frame.feedId).toBe(FeedId.CODE_INPUT);
 
     const decoded = JSON.parse(new TextDecoder().decode(frame.payload));
     expect(decoded.type).toBe("user_message");

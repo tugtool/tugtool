@@ -255,7 +255,7 @@ describe("DeckManager – resetLayout", () => {
 
   test("resetLayout produces exactly 5 panels", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
+    manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
     manager.registerCardFactory("files", () => makeMockCard([FeedId.FILESYSTEM], "files"));
@@ -276,7 +276,7 @@ describe("DeckManager – resetLayout", () => {
     const oldCard = makeMockCard([FeedId.GIT], "git");
     manager.addCard(oldCard, "git");
 
-    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
+    manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
     manager.registerCardFactory("files", () => makeMockCard([FeedId.FILESYSTEM], "files"));
@@ -293,7 +293,7 @@ describe("DeckManager – resetLayout", () => {
     const oldCard = makeMockCard([FeedId.GIT], "git");
     manager.addCard(oldCard, "git");
 
-    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
+    manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
     manager.registerCardFactory("files", () => makeMockCard([FeedId.FILESYSTEM], "files"));
@@ -388,7 +388,7 @@ describe("Dock – component and theme switching", () => {
 
   test("Dock settings menu does not include Save Layout or preset items", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
+    manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     const dock = new Dock(manager);
 
     // Click settings gear to open menu
@@ -417,7 +417,7 @@ describe("Dock – component and theme switching", () => {
     const menuItems = document.querySelectorAll(".card-dropdown-item");
     const labels = Array.from(menuItems).map((el) => el.textContent ?? "");
 
-    expect(labels.some((l) => l.includes("Add Conversation"))).toBe(true);
+    expect(labels.some((l) => l.includes("Add Code"))).toBe(true);
     expect(labels.some((l) => l.includes("Add Terminal"))).toBe(true);
     expect(labels.some((l) => l.includes("Add Git"))).toBe(true);
     expect(labels.some((l) => l.includes("Add Files"))).toBe(true);
@@ -524,7 +524,7 @@ describe("Dock – component and theme switching", () => {
 
   test("Clicking each of the 5 card type icons creates correct panel type", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
+    manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
     manager.registerCardFactory("files", () => makeMockCard([FeedId.FILES], "files"));
@@ -536,10 +536,10 @@ describe("Dock – component and theme switching", () => {
     // Click each of the 5 card type icons (0-4, icon 5 is settings gear)
     const before = manager.getDeckState().cards.length;
 
-    // Icon 0: conversation
+    // Icon 0: code
     (iconBtns[0] as HTMLElement)?.click();
     expect(manager.getDeckState().cards.length).toBe(before + 1);
-    expect(manager.getDeckState().cards[before].tabs[0].componentId).toBe("conversation");
+    expect(manager.getDeckState().cards[before].tabs[0].componentId).toBe("code");
 
     // Icon 1: terminal
     (iconBtns[1] as HTMLElement)?.click();

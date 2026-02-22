@@ -28,7 +28,7 @@ const deck = new DeckManager(container, connection);
 // Register card factories for multi-instance and reset-layout support.
 // Factories capture connection in their closures; TugConnection is a single
 // instance that reconnects internally, so the reference stays valid.
-deck.registerCardFactory("conversation", () => {
+deck.registerCardFactory("code", () => {
   const card = new ConversationCard(connection);
   card.setDragState(deck);
   return card;
@@ -46,9 +46,9 @@ deck.registerCardFactory("settings", () => new SettingsCard(connection));
 
 // Create and register cards by componentId
 // DeckManager.addCard matches cards to layout tree TabItems by componentId
-const conversationCard = new ConversationCard(connection);
-conversationCard.setDragState(deck);
-deck.addCard(conversationCard, "conversation");
+const codeCard = new ConversationCard(connection);
+codeCard.setDragState(deck);
+deck.addCard(codeCard, "code");
 
 const terminalCard = new TerminalCard(connection);
 terminalCard.setDragState(deck);

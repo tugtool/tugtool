@@ -457,7 +457,7 @@ describe("DeckManager – canvas card integration", () => {
     manager.applyLayout({
       cards: [
         { id: "k-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
-          tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
+          tabs: [{ id: tab1, componentId: "code", title: "Conv", closable: true }], activeTabId: tab1 },
         { id: "k-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab2, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab2 },
       ],
@@ -467,7 +467,7 @@ describe("DeckManager – canvas card integration", () => {
     expect(headers[1].classList.contains("card-header-key")).toBe(true);
     expect(headers[0].classList.contains("card-header-key")).toBe(false);
 
-    // Focus the conversation panel — it becomes key
+    // Focus the code panel — it becomes key
     manager.focusPanel("k-p1");
 
     headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
@@ -482,7 +482,7 @@ describe("DeckManager – canvas card integration", () => {
     manager.applyLayout({
       cards: [
         { id: "m-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
-          tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
+          tabs: [{ id: tab1, componentId: "code", title: "Conv", closable: true }], activeTabId: tab1 },
         { id: "m-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
           tabs: [{ id: tab2, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab2 },
         { id: "m-p3", position: { x: 100, y: 100 }, size: { width: 400, height: 300 },
@@ -495,12 +495,12 @@ describe("DeckManager – canvas card integration", () => {
     expect(headers[2].classList.contains("card-header-key")).toBe(true);
     expect(headers[0].classList.contains("card-header-key")).toBe(false);
 
-    // Focus conversation (key-capable) — it becomes key
+    // Focus code (key-capable) — it becomes key
     manager.focusPanel("m-p1");
 
     // DOM order is unchanged (focusPanel only updates z-index, not DOM order)
     headers = Array.from(container.querySelectorAll<HTMLElement>(".card-header"));
-    // conversation header (index 0) should now be key
+    // code header (index 0) should now be key
     expect(headers[0].classList.contains("card-header-key")).toBe(true);
     // terminal header (index 2) should no longer be key
     expect(headers[2].classList.contains("card-header-key")).toBe(false);

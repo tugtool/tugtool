@@ -129,7 +129,7 @@ function makeCardState(
  * Build the default five-card canvas layout.
  *
  * Layout (Spec S03):
- *   Conversation card: left column, 60% width
+ *   Code card: left column, 60% width
  *   Terminal / Git / Files / Stats: right column, equal height, 12px gaps
  *
  * All cards use 12px margins from canvas edges and 12px gaps between cards.
@@ -138,20 +138,20 @@ export function buildDefaultLayout(
   canvasWidth: number,
   canvasHeight: number
 ): DeckState {
-  const conversationWidth = (canvasWidth - 3 * GAP) * LEFT_FRACTION;
-  const conversationHeight = canvasHeight - 2 * GAP;
+  const codeWidth = (canvasWidth - 3 * GAP) * LEFT_FRACTION;
+  const codeHeight = canvasHeight - 2 * GAP;
 
-  const rightX = GAP + conversationWidth + GAP;
+  const rightX = GAP + codeWidth + GAP;
   const rightWidth = canvasWidth - rightX - GAP;
   const cardHeight = (canvasHeight - 2 * GAP - 3 * GAP) / 4;
 
-  const conversation = makeCardState(
-    "conversation",
-    "Conversation",
+  const code = makeCardState(
+    "code",
+    "Code",
     GAP,
     GAP,
-    conversationWidth,
-    conversationHeight
+    codeWidth,
+    codeHeight
   );
 
   const rightCards = (
@@ -174,6 +174,6 @@ export function buildDefaultLayout(
   });
 
   return {
-    cards: [conversation, ...rightCards],
+    cards: [code, ...rightCards],
   };
 }

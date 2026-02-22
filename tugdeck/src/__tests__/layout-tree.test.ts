@@ -93,7 +93,7 @@ describe("buildDefaultLayout", () => {
 
     // Component IDs in order
     const componentIds = result.cards.map((p) => p.tabs[0].componentId);
-    expect(componentIds).toEqual(["conversation", "terminal", "git", "files", "stats"]);
+    expect(componentIds).toEqual(["code", "terminal", "git", "files", "stats"]);
 
     // Conversation panel geometry
     const conv = result.cards[0];

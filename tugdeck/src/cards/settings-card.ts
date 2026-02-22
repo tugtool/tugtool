@@ -19,6 +19,7 @@ export class SettingsCard implements TugCard {
   private connection: TugConnection;
   private themeRadios: HTMLInputElement[] = [];
   private devModeCheckbox: HTMLInputElement | null = null;
+  private devModeLabel: HTMLSpanElement | null = null;
   private sourceTreePathEl: HTMLElement | null = null;
   private devModeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
   private devNoteEl: HTMLElement | null = null;
@@ -85,40 +86,7 @@ export class SettingsCard implements TugCard {
     themeSection.appendChild(themeGroup);
     content.appendChild(themeSection);
 
-    // SECTION 2: Developer Mode
-    const devSection = document.createElement("div");
-    devSection.className = "settings-section";
-
-    const devTitle = document.createElement("h3");
-    devTitle.className = "settings-section-title";
-    devTitle.textContent = "Developer Mode";
-    devSection.appendChild(devTitle);
-
-    const devToggle = document.createElement("label");
-    devToggle.className = "settings-toggle";
-
-    this.devModeCheckbox = document.createElement("input");
-    this.devModeCheckbox.type = "checkbox";
-
-    this.devModeCheckbox.addEventListener("change", () => {
-      this.handleDevModeToggle();
-    });
-
-    const devSpan = document.createElement("span");
-    devSpan.textContent = "Enable developer mode";
-
-    devToggle.appendChild(this.devModeCheckbox);
-    devToggle.appendChild(devSpan);
-    devSection.appendChild(devToggle);
-
-    this.devNoteEl = document.createElement("div");
-    this.devNoteEl.className = "settings-dev-note";
-    this.devNoteEl.style.display = "none";
-    devSection.appendChild(this.devNoteEl);
-
-    content.appendChild(devSection);
-
-    // SECTION 3: Source Tree
+    // SECTION 2: Source Tree
     const sourceSection = document.createElement("div");
     sourceSection.className = "settings-section";
 
@@ -145,6 +113,40 @@ export class SettingsCard implements TugCard {
     sourceRow.appendChild(chooseBtn);
     sourceSection.appendChild(sourceRow);
     content.appendChild(sourceSection);
+
+    // SECTION 3: Developer Mode
+    const devSection = document.createElement("div");
+    devSection.className = "settings-section";
+
+    const devTitle = document.createElement("h3");
+    devTitle.className = "settings-section-title";
+    devTitle.textContent = "Developer Mode";
+    devSection.appendChild(devTitle);
+
+    const devToggle = document.createElement("label");
+    devToggle.className = "settings-toggle";
+
+    this.devModeCheckbox = document.createElement("input");
+    this.devModeCheckbox.type = "checkbox";
+    this.devModeCheckbox.disabled = true;
+
+    this.devModeCheckbox.addEventListener("change", () => {
+      this.handleDevModeToggle();
+    });
+
+    this.devModeLabel = document.createElement("span");
+    this.devModeLabel.textContent = "Tug source tree required for developer mode";
+
+    devToggle.appendChild(this.devModeCheckbox);
+    devToggle.appendChild(this.devModeLabel);
+    devSection.appendChild(devToggle);
+
+    this.devNoteEl = document.createElement("div");
+    this.devNoteEl.className = "settings-dev-note";
+    this.devNoteEl.style.display = "none";
+    devSection.appendChild(this.devNoteEl);
+
+    content.appendChild(devSection);
 
     container.appendChild(content);
 
@@ -194,6 +196,20 @@ export class SettingsCard implements TugCard {
     }
   }
 
+  private updateDevModeAvailability(hasSourceTree: boolean): void {
+    if (this.devModeCheckbox) {
+      this.devModeCheckbox.disabled = !hasSourceTree;
+      if (!hasSourceTree) {
+        this.devModeCheckbox.checked = false;
+      }
+    }
+    if (this.devModeLabel) {
+      this.devModeLabel.textContent = hasSourceTree
+        ? "Enable developer mode"
+        : "Tug source tree required for developer mode";
+    }
+  }
+
   private hideDevNote(): void {
     if (this.devNoteEl) {
       this.devNoteEl.style.display = "none";
@@ -209,11 +225,12 @@ export class SettingsCard implements TugCard {
 
       bridge.onSettingsLoaded = (data: { devMode: boolean; sourceTree: string | null }) => {
         if (!this.container) return;
-        if (this.devModeCheckbox) {
-          this.devModeCheckbox.checked = data.devMode;
-        }
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = data.sourceTree || "(not set)";
+        }
+        this.updateDevModeAvailability(!!data.sourceTree);
+        if (this.devModeCheckbox && data.sourceTree) {
+          this.devModeCheckbox.checked = data.devMode;
         }
       };
 
@@ -244,6 +261,7 @@ export class SettingsCard implements TugCard {
         if (this.sourceTreePathEl) {
           this.sourceTreePathEl.textContent = path;
         }
+        this.updateDevModeAvailability(!!path);
       };
 
       bridge.onSourceTreeCancelled = () => {
@@ -291,6 +309,7 @@ export class SettingsCard implements TugCard {
     }
 
     this.devModeCheckbox = null;
+    this.devModeLabel = null;
     this.sourceTreePathEl = null;
     this.devNoteEl = null;
     this.themeRadios = [];

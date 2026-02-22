@@ -11,7 +11,7 @@
 
 export interface TabItem {
   id: string; // unique card instance ID
-  componentId: string; // "terminal" | "git" | "files" | "stats" | "conversation"
+  componentId: string; // "terminal" | "git" | "files" | "stats" | "code"
   title: string;
   closable: boolean;
 }

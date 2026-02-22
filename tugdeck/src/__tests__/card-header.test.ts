@@ -401,7 +401,7 @@ describe("ConversationCard – permission mode meta action", () => {
     const card = new ConversationCard(conn as unknown as TugConnection);
     const meta = card.meta;
 
-    expect(meta.title).toBe("Conversation");
+    expect(meta.title).toBe("Code");
     expect(meta.icon).toBe("MessageSquare");
     expect(meta.closable).toBe(true);
     expect(meta.menuItems.length).toBeGreaterThan(0);
@@ -431,7 +431,7 @@ describe("ConversationCard – permission mode meta action", () => {
 
     expect(conn.sentMessages.length).toBe(1);
     const { feedId, payload } = conn.sentMessages[0];
-    expect(feedId).toBe(FeedId.CONVERSATION_INPUT);
+    expect(feedId).toBe(FeedId.CODE_INPUT);
     const decoded = JSON.parse(new TextDecoder().decode(payload));
     expect(decoded.type).toBe("permission_mode");
     expect(decoded.mode).toBe("bypassPermissions");
@@ -595,7 +595,7 @@ describe("All five cards – correct header metadata", () => {
     const conn = new MockConnection();
     const card = new ConversationCard(conn as unknown as TugConnection);
     const meta = card.meta;
-    expect(meta.title).toBe("Conversation");
+    expect(meta.title).toBe("Code");
     expect(meta.icon).toBe("MessageSquare");
     expect(meta.closable).toBe(true);
     const permItem = meta.menuItems.find((m) => m.type === "select" && m.label === "Permission Mode");

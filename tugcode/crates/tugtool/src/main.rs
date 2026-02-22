@@ -21,7 +21,7 @@ pub struct Cli {
     pub session: String,
 
     /// Port for tugcast HTTP server
-    #[arg(long, default_value_t = 7890)]
+    #[arg(long, default_value_t = 55255)]
     pub port: u16,
 
     /// Working directory for the tmux session
@@ -573,7 +573,7 @@ mod tests {
     fn test_default_values() {
         let cli = Cli::try_parse_from(["tugtool"]).unwrap();
         assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 7890);
+        assert_eq!(cli.port, 55255);
         assert_eq!(cli.dir, PathBuf::from("."));
     }
 
@@ -581,7 +581,7 @@ mod tests {
     fn test_override_session() {
         let cli = Cli::try_parse_from(["tugtool", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
-        assert_eq!(cli.port, 7890);
+        assert_eq!(cli.port, 55255);
         assert_eq!(cli.dir, PathBuf::from("."));
     }
 
@@ -598,7 +598,7 @@ mod tests {
         let cli = Cli::try_parse_from(["tugtool", "--dir", "/tmp/test"]).unwrap();
         assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
         assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 7890);
+        assert_eq!(cli.port, 55255);
     }
 
     #[test]

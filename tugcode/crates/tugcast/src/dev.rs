@@ -404,6 +404,44 @@ pub(crate) fn resolve_symlinks(path: &Path) -> std::io::Result<PathBuf> {
     Ok(resolved)
 }
 
+/// Shorten a path by reversing macOS `/etc/synthetic.conf` firmlinks.
+///
+/// On macOS, synthetic.conf maps short names to real paths, e.g.:
+///   `u\t/Users/kocienda/Mounts/u`
+/// This function reverses that mapping for display: given
+/// `/Users/kocienda/Mounts/u/src/tugtool`, it returns `/u/src/tugtool`.
+///
+/// On non-macOS platforms, returns the path unchanged.
+pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(contents) = std::fs::read_to_string("/etc/synthetic.conf") {
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                // Format: name<TAB>target
+                let parts: Vec<&str> = line.splitn(2, '\t').collect();
+                if parts.len() == 2 {
+                    let name = parts[0].trim();
+                    let raw_target = parts[1].trim();
+                    // Normalize the target through resolve_symlinks so it matches
+                    // the same form as the input path
+                    let target = resolve_symlinks(Path::new(raw_target))
+                        .unwrap_or_else(|_| PathBuf::from(raw_target));
+                    if let Some(suffix) = path.to_str().and_then(|p| {
+                        p.strip_prefix(target.to_str().unwrap_or(""))
+                    }) {
+                        return PathBuf::from(format!("/{}{}", name, suffix));
+                    }
+                }
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Check whether a notify event contains paths with reload-worthy extensions
 fn has_reload_extension(event: &notify::Event) -> bool {
     event.paths.iter().any(|p| {

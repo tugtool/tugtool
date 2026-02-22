@@ -1,7 +1,7 @@
 import Foundation
 
 /// Centralized configuration constants for the Tug app.
-/// Tugcast CLI flags have their own defaults (session=cc0, port=7890, dir=.).
+/// Tugcast CLI flags have their own defaults (session=cc0, port=55255, dir=.).
 /// ProcessManager only passes flags it has explicit values for, so tugcast's
 /// defaults are never duplicated here.
 enum TugConfig {

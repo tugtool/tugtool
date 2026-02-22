@@ -34,10 +34,10 @@ pub enum FeedId {
     StatsTokenUsage = 0x32,
     /// Build status stats (tugcast -> tugdeck)
     StatsBuildStatus = 0x33,
-    /// Conversation output stream (tugcast -> tugdeck)
-    ConversationOutput = 0x40,
-    /// Conversation input stream (tugdeck -> tugcast)
-    ConversationInput = 0x41,
+    /// Code output stream (tugcast -> tugdeck)
+    CodeOutput = 0x40,
+    /// Code input stream (tugdeck -> tugcast)
+    CodeInput = 0x41,
     /// Control commands (tugdeck -> tugcast)
     Control = 0xC0,
     /// Heartbeat/keepalive frames (bidirectional)
@@ -59,8 +59,8 @@ impl FeedId {
             0x31 => Some(FeedId::StatsProcessInfo),
             0x32 => Some(FeedId::StatsTokenUsage),
             0x33 => Some(FeedId::StatsBuildStatus),
-            0x40 => Some(FeedId::ConversationOutput),
-            0x41 => Some(FeedId::ConversationInput),
+            0x40 => Some(FeedId::CodeOutput),
+            0x41 => Some(FeedId::CodeInput),
             0xC0 => Some(FeedId::Control),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
@@ -193,8 +193,8 @@ mod tests {
         assert_eq!(FeedId::from_byte(0x31), Some(FeedId::StatsProcessInfo));
         assert_eq!(FeedId::from_byte(0x32), Some(FeedId::StatsTokenUsage));
         assert_eq!(FeedId::from_byte(0x33), Some(FeedId::StatsBuildStatus));
-        assert_eq!(FeedId::from_byte(0x40), Some(FeedId::ConversationOutput));
-        assert_eq!(FeedId::from_byte(0x41), Some(FeedId::ConversationInput));
+        assert_eq!(FeedId::from_byte(0x40), Some(FeedId::CodeOutput));
+        assert_eq!(FeedId::from_byte(0x41), Some(FeedId::CodeInput));
         assert_eq!(FeedId::from_byte(0xC0), Some(FeedId::Control));
         assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
         assert_eq!(FeedId::from_byte(0x03), None);
@@ -212,8 +212,8 @@ mod tests {
         assert_eq!(FeedId::StatsProcessInfo.as_byte(), 0x31);
         assert_eq!(FeedId::StatsTokenUsage.as_byte(), 0x32);
         assert_eq!(FeedId::StatsBuildStatus.as_byte(), 0x33);
-        assert_eq!(FeedId::ConversationOutput.as_byte(), 0x40);
-        assert_eq!(FeedId::ConversationInput.as_byte(), 0x41);
+        assert_eq!(FeedId::CodeOutput.as_byte(), 0x40);
+        assert_eq!(FeedId::CodeInput.as_byte(), 0x41);
         assert_eq!(FeedId::Control.as_byte(), 0xC0);
         assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
     }
@@ -468,9 +468,9 @@ mod tests {
     }
 
     #[test]
-    fn test_round_trip_conversation_output() {
+    fn test_round_trip_code_output() {
         let original = Frame::new(
-            FeedId::ConversationOutput,
+            FeedId::CodeOutput,
             b"{\"type\":\"assistant_text\",\"msg_id\":\"123\"}".to_vec(),
         );
         let encoded = original.encode();
@@ -480,9 +480,9 @@ mod tests {
     }
 
     #[test]
-    fn test_round_trip_conversation_input() {
+    fn test_round_trip_code_input() {
         let original = Frame::new(
-            FeedId::ConversationInput,
+            FeedId::CodeInput,
             b"{\"type\":\"user_message\",\"text\":\"hello\"}".to_vec(),
         );
         let encoded = original.encode();

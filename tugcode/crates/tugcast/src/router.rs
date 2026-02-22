@@ -42,8 +42,8 @@ enum ClientState {
 pub struct FeedRouter {
     terminal_tx: broadcast::Sender<Frame>,
     input_tx: mpsc::Sender<Frame>,
-    conversation_tx: broadcast::Sender<Frame>,
-    conversation_input_tx: mpsc::Sender<Frame>,
+    code_tx: broadcast::Sender<Frame>,
+    code_input_tx: mpsc::Sender<Frame>,
     session: String,
     auth: SharedAuthState,
     snapshot_watches: Vec<watch::Receiver<Frame>>,
@@ -54,14 +54,14 @@ pub struct FeedRouter {
 impl FeedRouter {
     /// Create a new feed router
     // Allow many arguments: this constructor wires together all shared state channels
-    // (terminal, conversation, snapshot, shutdown, client_action) plus session and auth.
+    // (terminal, code, snapshot, shutdown, client_action) plus session and auth.
     // Grouping into a config struct would add indirection without improving clarity.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         terminal_tx: broadcast::Sender<Frame>,
         input_tx: mpsc::Sender<Frame>,
-        conversation_tx: broadcast::Sender<Frame>,
-        conversation_input_tx: mpsc::Sender<Frame>,
+        code_tx: broadcast::Sender<Frame>,
+        code_input_tx: mpsc::Sender<Frame>,
         session: String,
         auth: SharedAuthState,
         snapshot_watches: Vec<watch::Receiver<Frame>>,
@@ -71,8 +71,8 @@ impl FeedRouter {
         Self {
             terminal_tx,
             input_tx,
-            conversation_tx,
-            conversation_input_tx,
+            code_tx,
+            code_input_tx,
             session,
             auth,
             snapshot_watches,
@@ -120,8 +120,8 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
     // Subscribe to terminal output broadcast
     let mut broadcast_rx = router.terminal_tx.subscribe();
 
-    // Subscribe to conversation output broadcast
-    let mut conversation_rx = router.conversation_tx.subscribe();
+    // Subscribe to code output broadcast
+    let mut code_rx = router.code_tx.subscribe();
 
     // Subscribe to client action broadcast
     let mut client_action_rx = router.client_action_tx.subscribe();
@@ -245,8 +245,8 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                             }
                         }
 
-                        // Receive frame from conversation broadcast channel
-                        result = conversation_rx.recv() => {
+                        // Receive frame from code broadcast channel
+                        result = code_rx.recv() => {
                             match result {
                                 Ok(frame) => {
                                     if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
@@ -255,12 +255,12 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                     }
                                 }
                                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                                    warn!("Conversation channel lagged {} messages", n);
-                                    // For conversation, we don't re-bootstrap, just warn
+                                    warn!("Code channel lagged {} messages", n);
+                                    // For code, we don't re-bootstrap, just warn
                                 }
                                 Err(broadcast::error::RecvError::Closed) => {
-                                    info!("Conversation broadcast channel closed");
-                                    // Don't return - conversation is optional
+                                    info!("Code broadcast channel closed");
+                                    // Don't return - code is optional
                                 }
                             }
                         }
@@ -294,8 +294,8 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                             FeedId::TerminalInput | FeedId::TerminalResize => {
                                                 let _ = router.input_tx.send(frame).await;
                                             }
-                                            FeedId::ConversationInput => {
-                                                let _ = router.conversation_input_tx.send(frame).await;
+                                            FeedId::CodeInput => {
+                                                let _ = router.code_input_tx.send(frame).await;
                                             }
                                             FeedId::Heartbeat => {
                                                 last_heartbeat = Instant::now();

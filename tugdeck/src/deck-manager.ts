@@ -31,7 +31,7 @@ const SAVE_DEBOUNCE_MS = 500;
 /**
  * Output feed IDs that cards subscribe to.
  * We register exactly ONE callback per output feedId with the connection (D10).
- * Input feedIds (TERMINAL_INPUT, TERMINAL_RESIZE, CONVERSATION_INPUT, HEARTBEAT)
+ * Input feedIds (TERMINAL_INPUT, TERMINAL_RESIZE, CODE_INPUT, HEARTBEAT)
  * are excluded — only the cards/connection themselves write to those.
  */
 const OUTPUT_FEED_IDS: FeedIdValue[] = [
@@ -42,7 +42,7 @@ const OUTPUT_FEED_IDS: FeedIdValue[] = [
   FeedId.STATS_PROCESS_INFO,
   FeedId.STATS_TOKEN_USAGE,
   FeedId.STATS_BUILD_STATUS,
-  FeedId.CONVERSATION_OUTPUT,
+  FeedId.CODE_OUTPUT,
 ];
 
 /**
@@ -64,7 +64,7 @@ function constructTabNode(panel: CardState): TabNode {
  */
 function titleForComponent(componentId: string): string {
   const titles: Record<string, string> = {
-    conversation: "Conversation",
+    code: "Code",
     terminal: "Terminal",
     git: "Git",
     files: "Files",
@@ -116,7 +116,7 @@ export class DeckManager implements IDragState {
    */
   private cardFrames: Map<string, CardFrame> = new Map();
 
-  /** Key panel: only conversation/terminal panels get title bar tint */
+  /** Key panel: only code/terminal panels get title bar tint */
   private keyPanelId: string | null = null;
 
   /** D05: drag state flag */
@@ -232,7 +232,7 @@ export class DeckManager implements IDragState {
    * componentId matches. The card is added to fan-out sets and registered.
    *
    * @param card - The card instance
-   * @param componentId - Component identifier (e.g. "conversation", "terminal")
+   * @param componentId - Component identifier (e.g. "code", "terminal")
    */
   addCard(card: TugCard, componentId: string): void {
     // Find the first panel containing a tab with the matching componentId
@@ -279,6 +279,14 @@ export class DeckManager implements IDragState {
       // After mount, ensure the key panel has DOM focus.
       // Cards must not self-focus on mount — the panel manager owns focus.
       requestAnimationFrame(() => this.focusKeyPanelCard());
+    }
+
+    // Replay last frame for each subscribed feed so the card isn't empty
+    for (const feedId of card.feedIds) {
+      const payload = this.lastPayload.get(feedId as FeedIdValue);
+      if (payload) {
+        card.onFrame(feedId, payload);
+      }
     }
   }
 
@@ -1065,7 +1073,7 @@ export class DeckManager implements IDragState {
 
     this.render();
 
-    const defaults = ["conversation", "terminal", "git", "files", "stats"];
+    const defaults = ["code", "terminal", "git", "files", "stats"];
     for (const componentId of defaults) {
       const factory = this.cardFactories.get(componentId);
       if (!factory) {
@@ -1223,8 +1231,141 @@ export class DeckManager implements IDragState {
     const cardIds = this.deckState.cards.map((p) => p.id);
     this.sets = computeSets(cardIds, sharedEdges);
     this.sharedEdges = sharedEdges;
+    this.normalizeSetPositions();
     this.destroySashes();
     this.createSashes();
+    this.updateDockedStyles();
+  }
+
+  /**
+   * Close small gaps between panels in sets by nudging "B" panels
+   * (below or right-of) so their edges meet exactly.
+   */
+  private normalizeSetPositions(): void {
+    for (const edge of this.sharedEdges) {
+      const panelA = this.deckState.cards.find((p) => p.id === edge.cardAId);
+      const panelB = this.deckState.cards.find((p) => p.id === edge.cardBId);
+      if (!panelA || !panelB) continue;
+
+      if (edge.axis === "horizontal") {
+        // A is above B: set B.top = A.bottom
+        const target = panelA.position.y + panelA.size.height;
+        if (panelB.position.y !== target) {
+          panelB.position.y = target;
+          const fp = this.cardFrames.get(edge.cardBId);
+          if (fp) fp.updatePosition(panelB.position.x, panelB.position.y);
+        }
+      } else {
+        // A is left of B: set B.left = A.right
+        const target = panelA.position.x + panelA.size.width;
+        if (panelB.position.x !== target) {
+          panelB.position.x = target;
+          const fp = this.cardFrames.get(edge.cardBId);
+          if (fp) fp.updatePosition(panelB.position.x, panelB.position.y);
+        }
+      }
+    }
+  }
+
+  /**
+   * Apply 1px overlap and corner radius adjustments for docked card sets.
+   *
+   * For each shared edge:
+   * - Horizontal (A above B): B scoots up 1px; A loses bottom corners, B loses top corners
+   * - Vertical (A left of B): B scoots left 1px; A loses right corners, B loses left corners
+   *
+   * Corner radius is tracked per-card as a 4-element array [TL, TR, BR, BL].
+   */
+  private updateDockedStyles(): void {
+    const RADIUS = "6px";
+    const HEADER_RADIUS = "5px";
+
+    // Track which corners should be squared per card: [TL, TR, BR, BL]
+    // true = keep radius, false = zero
+    const corners = new Map<string, [boolean, boolean, boolean, boolean]>();
+    // Track 1px offsets per card
+    const offsets = new Map<string, { dx: number; dy: number }>();
+
+    for (const card of this.deckState.cards) {
+      corners.set(card.id, [true, true, true, true]);
+      offsets.set(card.id, { dx: 0, dy: 0 });
+    }
+
+    for (const edge of this.sharedEdges) {
+      const cornersA = corners.get(edge.cardAId);
+      const cornersB = corners.get(edge.cardBId);
+      const offsetB = offsets.get(edge.cardBId);
+      if (!cornersA || !cornersB || !offsetB) continue;
+
+      if (edge.axis === "horizontal") {
+        // A is above B (A.bottom ~ B.top)
+        cornersA[2] = false; // BR
+        cornersA[3] = false; // BL
+        cornersB[0] = false; // TL
+        cornersB[1] = false; // TR
+        offsetB.dy = -1;
+      } else {
+        // A is left of B (A.right ~ B.left)
+        cornersA[1] = false; // TR
+        cornersA[2] = false; // BR
+        cornersB[0] = false; // TL
+        cornersB[3] = false; // BL
+        offsetB.dx = -1;
+      }
+    }
+
+    // Apply styles to card frame elements
+    for (const card of this.deckState.cards) {
+      const fp = this.cardFrames.get(card.id);
+      if (!fp) continue;
+
+      const el = fp.getElement();
+      const c = corners.get(card.id)!;
+      const o = offsets.get(card.id)!;
+
+      // Build border-radius string: TL TR BR BL
+      const r = (v: boolean) => v ? RADIUS : "0";
+      const hr = (v: boolean) => v ? HEADER_RADIUS : "0";
+      el.style.borderRadius = `${r(c[0])} ${r(c[1])} ${r(c[2])} ${r(c[3])}`;
+
+      // Apply to child elements
+      const header = el.querySelector(".card-header") as HTMLElement | null;
+      if (header) {
+        header.style.borderRadius = `${hr(c[0])} ${hr(c[1])} 0 0`;
+      }
+      const content = el.querySelector(".card-frame-content") as HTMLElement | null;
+      if (content) {
+        content.style.borderRadius = `0 0 ${hr(c[2])} ${hr(c[3])}`;
+      }
+
+      // Apply 1px overlap by nudging the DOM element position directly.
+      // The logical cardState position stays unchanged for edge detection.
+      if (o.dx !== 0 || o.dy !== 0) {
+        const card = this.deckState.cards.find((c) => c.id === fp.getCardState().id);
+        if (card) {
+          el.style.top = `${card.position.y + o.dy}px`;
+          el.style.left = `${card.position.x + o.dx}px`;
+        }
+      }
+    }
+  }
+
+  /** Reset docked styles on a single panel to fully-rounded solo appearance. */
+  private resetDockedStyles(panelId: string): void {
+    const fp = this.cardFrames.get(panelId);
+    if (!fp) return;
+    const el = fp.getElement();
+    el.style.borderRadius = "6px";
+    // Restore DOM position to logical position
+    const card = this.deckState.cards.find((c) => c.id === panelId);
+    if (card) {
+      el.style.top = `${card.position.y}px`;
+      el.style.left = `${card.position.x}px`;
+    }
+    const header = el.querySelector(".card-header") as HTMLElement | null;
+    if (header) header.style.borderRadius = "5px 5px 0 0";
+    const content = el.querySelector(".card-frame-content") as HTMLElement | null;
+    if (content) content.style.borderRadius = "0 0 5px 5px";
   }
 
   /** Create the pool of 4 guide line elements appended to the canvas container. */
@@ -1455,6 +1596,8 @@ export class DeckManager implements IDragState {
       // Panel is no longer in its original confirmed set — flash once
       this.flashPanels([panelId]);
       this._dragBreakOutFired = true;
+      // Restore rounded corners immediately so the panel looks solo during drag
+      this.resetDockedStyles(panelId);
     }
   }
 
@@ -1764,7 +1907,7 @@ export class DeckManager implements IDragState {
 
   /** Set of componentIds that accept key status. */
   private static readonly KEY_CAPABLE = new Set([
-    "conversation", "terminal", "git", "files", "stats",
+    "code", "terminal", "git", "files", "stats",
   ]);
 
   /**

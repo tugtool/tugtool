@@ -492,3 +492,33 @@ body.td-theme-harmony {
   --td-syntax-tag: #42b8e6;
   --td-syntax-attribute: #42b8e6;
 }
+
+/* ============================================================================
+   Scrollbar Styling (WebKit)
+   ========================================================================= */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--td-border);
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--td-border-soft);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -404,8 +404,8 @@ describe("computeSets", () => {
 // ---- SNAP_VISIBILITY_THRESHOLD ----
 
 describe("SNAP_VISIBILITY_THRESHOLD", () => {
-  test("is 1.0 (require full edge visibility)", () => {
-    expect(SNAP_VISIBILITY_THRESHOLD).toBe(1.0);
+  test("is 0.3 (permissive edge visibility)", () => {
+    expect(SNAP_VISIBILITY_THRESHOLD).toBe(0.3);
   });
 });
 

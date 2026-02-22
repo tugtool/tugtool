@@ -89,12 +89,12 @@ async fn main() {
     // Create broadcast channel for terminal output
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
-    // Create conversation channels
-    let (conversation_tx, _) =
-        broadcast::channel(feeds::conversation::CONVERSATION_BROADCAST_CAPACITY);
-    let (conversation_input_tx, conversation_input_rx) = mpsc::channel(256);
-    let (conversation_watch_tx, conversation_watch_rx) =
-        watch::channel(Frame::new(FeedId::ConversationOutput, vec![]));
+    // Create code channels
+    let (code_tx, _) =
+        broadcast::channel(feeds::code::CODE_BROADCAST_CAPACITY);
+    let (code_input_tx, code_input_rx) = mpsc::channel(256);
+    let (code_watch_tx, code_watch_rx) =
+        watch::channel(Frame::new(FeedId::CodeOutput, vec![]));
 
     // Create terminal feed
     let feed = TerminalFeed::new(cli.session.clone());
@@ -162,8 +162,8 @@ async fn main() {
     let feed_router = FeedRouter::new(
         terminal_tx.clone(),
         input_tx,
-        conversation_tx.clone(),
-        conversation_input_tx,
+        code_tx.clone(),
+        code_input_tx,
         cli.session.clone(),
         auth.clone(),
         vec![
@@ -173,7 +173,7 @@ async fn main() {
             stats_proc_rx,
             stats_token_rx,
             stats_build_rx,
-            conversation_watch_rx,
+            code_watch_rx,
         ],
         shutdown_tx,
         client_action_tx,
@@ -186,30 +186,29 @@ async fn main() {
         feed.run(terminal_tx, feed_cancel).await;
     });
 
-    // Resolve tugtalk path and start agent bridge (only if tugtalk exists)
+    // Resolve tugtalk path and start agent bridge
     let tugtalk_path =
         feeds::agent_bridge::resolve_tugtalk_path(cli.tugtalk_path.as_deref(), &watch_dir);
-    if tugtalk_path.exists() {
-        let agent_cancel = cancel.clone();
-        let agent_tx = conversation_tx.clone();
-        let agent_watch_dir = watch_dir.clone();
-        tokio::spawn(async move {
-            feeds::agent_bridge::run_agent_bridge(
-                agent_tx,
-                conversation_watch_tx,
-                conversation_input_rx,
-                tugtalk_path,
-                agent_watch_dir,
-                agent_cancel,
-            )
-            .await;
-        });
-    } else {
-        info!(
-            "tugtalk not found at {}, conversation feed disabled",
+    if !tugtalk_path.exists() {
+        panic!(
+            "tugtalk not found at {} — tugtalk is required for tugcast to run",
             tugtalk_path.display()
         );
     }
+    let agent_cancel = cancel.clone();
+    let agent_tx = code_tx.clone();
+    let agent_watch_dir = watch_dir.clone();
+    tokio::spawn(async move {
+        feeds::agent_bridge::run_agent_bridge(
+            agent_tx,
+            code_watch_tx,
+            code_input_rx,
+            tugtalk_path,
+            agent_watch_dir,
+            agent_cancel,
+        )
+        .await;
+    });
 
     // Start filesystem feed in background task
     let fs_cancel = cancel.clone();

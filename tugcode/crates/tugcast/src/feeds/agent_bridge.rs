@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use tugcast_core::protocol::Frame;
 
-use super::conversation::conversation_output_frame;
+use super::code::code_output_frame;
 
 /// Crash budget tracking
 #[derive(Debug)]
@@ -81,9 +81,16 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
         }
     }
 
-    // Try PATH using Command lookup
-    // If "tugtalk" is in PATH, Command::new will find it
-    // For now, we skip explicit PATH lookup and go straight to fallback
+    // Try PATH lookup
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(':') {
+            let candidate = PathBuf::from(dir).join("tugtalk");
+            if candidate.exists() {
+                info!("Found tugtalk in PATH at {}", candidate.display());
+                return candidate;
+            }
+        }
+    }
 
     // Fallback to bun run (for development without cargo build)
     info!("tugtalk binary not found, falling back to bun run");
@@ -95,9 +102,9 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
 /// Spawns tugtalk, performs protocol handshake, relays messages, handles crashes.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_bridge(
-    conversation_tx: broadcast::Sender<Frame>,
-    conversation_watch_tx: watch::Sender<Frame>,
-    mut conversation_input_rx: mpsc::Receiver<Frame>,
+    code_tx: broadcast::Sender<Frame>,
+    code_watch_tx: watch::Sender<Frame>,
+    mut code_input_rx: mpsc::Receiver<Frame>,
     tugtalk_path: PathBuf,
     project_dir: PathBuf,
     cancel: CancellationToken,
@@ -105,21 +112,21 @@ pub async fn run_agent_bridge(
     let mut crash_budget = CrashBudget::new(3, Duration::from_secs(60));
 
     // Send project_info frame before starting the loop
+    let display_dir = crate::dev::shorten_synthetic_path(&project_dir);
     let project_info_json = format!(
         r#"{{"type":"project_info","project_dir":"{}"}}"#,
-        project_dir.display()
+        display_dir.display()
     );
-    let project_info_frame = conversation_output_frame(project_info_json.as_bytes());
-    let _ = conversation_tx.send(project_info_frame.clone());
-    let _ = conversation_watch_tx.send(project_info_frame);
+    let project_info_frame = code_output_frame(project_info_json.as_bytes());
+    let _ = code_tx.send(project_info_frame.clone());
+    let _ = code_watch_tx.send(project_info_frame);
 
     loop {
         if crash_budget.is_exhausted() {
             error!("Crash budget exhausted, stopping agent bridge");
             let error_json = r#"{"type":"error","message":"tugtalk crashed too many times","recoverable":false}"#;
-            let frame = conversation_output_frame(error_json.as_bytes());
-            let _ = conversation_tx.send(frame.clone());
-            let _ = conversation_watch_tx.send(frame);
+            let frame = code_output_frame(error_json.as_bytes());
+            let _ = code_tx.send(frame);
             break;
         }
 
@@ -197,10 +204,9 @@ pub async fn run_agent_bridge(
                 line_result = stdout_reader.next_line() => {
                     match line_result {
                         Ok(Some(line)) => {
-                            // Parse and forward to conversation feed
-                            let frame = conversation_output_frame(line.as_bytes());
-                            let _ = conversation_tx.send(frame.clone());
-                            let _ = conversation_watch_tx.send(frame);
+                            // Parse and forward to code broadcast feed
+                            let frame = code_output_frame(line.as_bytes());
+                            let _ = code_tx.send(frame);
                         }
                         Ok(None) => {
                             // tugtalk stdout closed
@@ -215,8 +221,8 @@ pub async fn run_agent_bridge(
                 }
 
                 // Write to tugtalk stdin
-                Some(frame) = conversation_input_rx.recv() => {
-                    if let Some(json) = super::conversation::parse_conversation_input(&frame) {
+                Some(frame) = code_input_rx.recv() => {
+                    if let Some(json) = super::code::parse_code_input(&frame) {
                         let mut line = json;
                         line.push('\n');
                         if let Err(e) = stdin.write_all(line.as_bytes()).await {

@@ -256,7 +256,7 @@ pub enum Commands {
         action: String,
 
         /// Tugcast server port
-        #[arg(long, default_value = "7890")]
+        #[arg(long, default_value = "55255")]
         port: u16,
 
         /// Parameters as KEY=VALUE pairs (repeatable)
@@ -968,7 +968,7 @@ mod tests {
                 param,
             }) => {
                 assert_eq!(action, "show-card");
-                assert_eq!(port, 7890); // default
+                assert_eq!(port, 55255); // default
                 assert_eq!(param, vec!["component=about"]);
             }
             _ => panic!("Expected Tell command"),

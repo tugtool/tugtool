@@ -236,6 +236,8 @@
 .conversation-card {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   background: var(--td-surface-content);
   color: var(--td-text);
 }
@@ -403,9 +405,9 @@
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  background: linear-gradient(180deg, var(--td-warning) 0%, var(--td-accent) 100%);
+  background: var(--td-accent);
   color: var(--td-bg);
-  border: 1px solid var(--td-border-soft);
+  border: none;
   border-radius: var(--td-radius-sm);
   cursor: pointer;
   display: flex;
@@ -846,9 +848,9 @@
 }
 
 .approval-prompt-allow {
-  background: linear-gradient(180deg, var(--td-warning) 0%, var(--td-accent) 100%);
+  background: var(--td-accent);
   color: var(--td-bg);
-  border: 1px solid var(--td-border-soft);
+  border: none;
   border-radius: var(--td-radius-sm);
   padding: 6px 16px;
   cursor: pointer;

@@ -23,9 +23,9 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
 
-    // Create dummy conversation channels for testing
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    // Create dummy code channels for testing
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
 
     // Create dummy shutdown channel for tests
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
@@ -36,8 +36,8 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth.clone(),
         vec![], // No snapshot feeds for auth/WebSocket tests
@@ -457,8 +457,8 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
 
     // Create dummy shutdown channel for tests
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
@@ -469,8 +469,8 @@ fallback = "dist"
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -545,16 +545,16 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -634,16 +634,16 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -714,16 +714,16 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -788,16 +788,16 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -869,16 +869,16 @@ fallback = "dist"
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -1008,16 +1008,16 @@ async fn test_tell_restart_triggers_shutdown() {
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -1058,16 +1058,16 @@ async fn test_tell_reload_frontend() {
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -1109,16 +1109,16 @@ async fn test_tell_hybrid_reset_timing() {
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],
@@ -1169,16 +1169,16 @@ async fn test_tell_client_action_round_trip() {
     let auth = auth::new_shared_auth_state(7890);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (conversation_tx, _) = broadcast::channel(1024);
-    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
-        conversation_tx,
-        conversation_input_tx,
+        code_tx,
+        code_input_tx,
         "test-dummy".to_string(),
         auth,
         vec![],

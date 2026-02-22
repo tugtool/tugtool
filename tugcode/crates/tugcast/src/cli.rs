@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[command(version)]
 #[command(
     about = "Attach to a tmux session and serve a live dashboard over WebSocket",
-    long_about = "tugcast attaches to a tmux session and serves a live dashboard over WebSocket.\n\nIt provides real-time terminal output, filesystem events, git status, and system\nstats to the tugdeck browser frontend. Multiple data feeds run concurrently:\nterminal I/O, filesystem watching, git polling, and stats collection.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 7890)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory"
+    long_about = "tugcast attaches to a tmux session and serves a live dashboard over WebSocket.\n\nIt provides real-time terminal output, filesystem events, git status, and system\nstats to the tugdeck browser frontend. Multiple data feeds run concurrently:\nterminal I/O, filesystem watching, git polling, and stats collection.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 55255)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory"
 )]
 pub struct Cli {
     /// Tmux session name to attach to (created if it doesn't exist)
@@ -15,7 +15,7 @@ pub struct Cli {
     pub session: String,
 
     /// Port to bind the HTTP server to
-    #[arg(long, default_value_t = 7890)]
+    #[arg(long, default_value_t = 55255)]
     pub port: u16,
 
     /// Working directory for the tmux session
@@ -46,7 +46,7 @@ mod tests {
     fn test_default_values() {
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 7890);
+        assert_eq!(cli.port, 55255);
         assert_eq!(cli.dir, PathBuf::from("."));
     }
 
@@ -54,7 +54,7 @@ mod tests {
     fn test_override_session() {
         let cli = Cli::try_parse_from(["tugcast", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
-        assert_eq!(cli.port, 7890);
+        assert_eq!(cli.port, 55255);
     }
 
     #[test]

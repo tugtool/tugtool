@@ -18,7 +18,7 @@ class ProcessManager {
     private var controlListener: ControlSocketListener?
     private var controlConnection: ControlSocketConnection?
     private var controlSocketPath: String {
-        NSTemporaryDirectory() + "tugcast-ctl-7890.sock"
+        NSTemporaryDirectory() + "tugcast-ctl-55255.sock"
     }
     private var childPID: Int32 = 0
     private var restartDecision: RestartDecision = .pending
@@ -293,7 +293,7 @@ class ProcessManager {
         proc.environment = env
 
         // Build args: only pass flags we have explicit values for.
-        // Tugcast has its own CLI defaults (session=cc0, port=7890, dir=.)
+        // Tugcast has its own CLI defaults (session=cc0, port=55255, dir=.)
         // so we don't duplicate them here.
         var args: [String] = []
         if let dir = sourceTree {

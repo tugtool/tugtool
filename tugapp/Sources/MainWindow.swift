@@ -43,6 +43,9 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = false
+        if #available(macOS 13.3, *) {
+            webView.isInspectable = true
+        }
 
         self.contentView = webView
     }
@@ -61,10 +64,8 @@ class MainWindow: NSWindow, WKNavigationDelegate {
 
     /// Open web inspector
     func openWebInspector() {
-        if #available(macOS 13.3, *) {
-            webView.isInspectable = true
-        }
-        // Web inspector opens via context menu or Develop menu if enabled
+        guard let inspector = webView.value(forKey: "_inspector") as? NSObject else { return }
+        inspector.perform(NSSelectorFromString("show"))
     }
 
     /// Clean up WKScriptMessageHandler registrations to break retain cycle

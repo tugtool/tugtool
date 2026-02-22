@@ -83,9 +83,11 @@ export class TerminalCard implements TugCard {
 
   mount(container: HTMLElement): void {
     // Read CSS tokens for terminal theme
-    const bg = getComputedStyle(document.body).getPropertyValue("--td-surface-content").trim();
-    const fg = getComputedStyle(document.body).getPropertyValue("--td-text").trim();
-    const fontFamily = getComputedStyle(document.body).getPropertyValue("--td-font-mono").trim();
+    const styles = getComputedStyle(document.body);
+    const bg = styles.getPropertyValue("--td-surface-content").trim();
+    const fg = styles.getPropertyValue("--td-text").trim();
+    const accent = styles.getPropertyValue("--tl-accent-2").trim();
+    const fontFamily = styles.getPropertyValue("--td-font-mono").trim();
 
     // Create terminal with theme matching the dark background
     this.terminal = new Terminal({
@@ -95,6 +97,7 @@ export class TerminalCard implements TugCard {
       theme: {
         background: bg,
         foreground: fg,
+        green: accent,
       },
     });
 
@@ -162,10 +165,12 @@ export class TerminalCard implements TugCard {
     this.themeChangeHandler = () => {
       requestAnimationFrame(() => {
         if (!this.terminal) return;
-        const newBg = getComputedStyle(document.body).getPropertyValue("--td-surface-content").trim();
-        const newFg = getComputedStyle(document.body).getPropertyValue("--td-text").trim();
-        const newFont = getComputedStyle(document.body).getPropertyValue("--td-font-mono").trim();
-        this.terminal.options.theme = { background: newBg, foreground: newFg };
+        const s = getComputedStyle(document.body);
+        const newBg = s.getPropertyValue("--td-surface-content").trim();
+        const newFg = s.getPropertyValue("--td-text").trim();
+        const newAccent = s.getPropertyValue("--tl-accent-2").trim();
+        const newFont = s.getPropertyValue("--td-font-mono").trim();
+        this.terminal.options.theme = { background: newBg, foreground: newFg, green: newAccent };
         if (newFont) this.terminal.options.fontFamily = newFont;
         this.terminal.refresh(0, this.terminal.rows - 1);
       });

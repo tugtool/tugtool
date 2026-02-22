@@ -18,8 +18,8 @@ export const FeedId = {
   STATS_PROCESS_INFO: 0x31,
   STATS_TOKEN_USAGE: 0x32,
   STATS_BUILD_STATUS: 0x33,
-  CONVERSATION_OUTPUT: 0x40,
-  CONVERSATION_INPUT: 0x41,
+  CODE_OUTPUT: 0x40,
+  CODE_INPUT: 0x41,
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,
 } as const;
@@ -124,13 +124,13 @@ export function resizeFrame(cols: number, rows: number): Frame {
 }
 
 /**
- * Create a conversation input frame from a message object
+ * Create a code input frame from a message object
  */
-export function encodeConversationInput(msg: object): ArrayBuffer {
+export function encodeCodeInput(msg: object): ArrayBuffer {
   const json = JSON.stringify(msg);
   const payload = new TextEncoder().encode(json);
   const frame: Frame = {
-    feedId: FeedId.CONVERSATION_INPUT,
+    feedId: FeedId.CODE_INPUT,
     payload,
   };
   return encodeFrame(frame);

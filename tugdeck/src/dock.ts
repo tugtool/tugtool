@@ -36,7 +36,7 @@ export class Dock {
     this.dockEl.className = "dock";
 
     // Create card-type icon buttons
-    this.addIconButton(MessageSquare, "conversation");
+    this.addIconButton(MessageSquare, "code");
     this.addIconButton(Terminal, "terminal");
     this.addIconButton(GitBranch, "git");
     this.addIconButton(FolderOpen, "files");
@@ -132,8 +132,8 @@ export class Dock {
     const items: CardMenuItem[] = [
       {
         type: "action",
-        label: "Add Conversation",
-        action: () => pm.addNewCard("conversation"),
+        label: "Add Code",
+        action: () => pm.addNewCard("code"),
       },
       {
         type: "action",

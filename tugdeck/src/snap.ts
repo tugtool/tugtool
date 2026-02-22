@@ -61,10 +61,10 @@ export const SNAP_THRESHOLD_PX = 8;
 
 /**
  * Minimum fraction of an edge that must be visible (not occluded by higher-z panels)
- * for a snap to activate. 1.0 = full edge must be visible. Tune lower to be more
- * permissive (e.g. 0.5 = at least half the edge visible).
+ * for a snap to activate. 1.0 = full edge must be visible. Lower values are more
+ * permissive (e.g. 0.3 = at least 30% of the edge visible).
  */
-export const SNAP_VISIBILITY_THRESHOLD = 1.0;
+export const SNAP_VISIBILITY_THRESHOLD = 0.3;
 
 // ---- Callback type for snap validation ----
 

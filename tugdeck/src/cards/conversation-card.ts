@@ -46,7 +46,7 @@ const SPINNER_TEXTS = [
 ];
 
 export class ConversationCard implements TugCard {
-  readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
+  readonly feedIds = [FeedId.CODE_OUTPUT];
   private connection: TugConnection;
   private container!: HTMLElement;
   private messageList!: HTMLElement;
@@ -78,7 +78,9 @@ export class ConversationCard implements TugCard {
   get meta(): TugCardMeta {
     const connection = this.connection;
     return {
-      title: "Conversation",
+      title: this.projectDir
+        ? `CODE: ${this.projectDir}`
+        : "Code",
       icon: "MessageSquare",
       closable: true,
       menuItems: [
@@ -90,7 +92,7 @@ export class ConversationCard implements TugCard {
           action: (mode: string) => {
             const msg: PermissionModeInput = { type: "permission_mode", mode };
             const payload = new TextEncoder().encode(JSON.stringify(msg));
-            connection.send(FeedId.CONVERSATION_INPUT, payload);
+            connection.send(FeedId.CODE_INPUT, payload);
           },
         },
         {
@@ -393,6 +395,9 @@ export class ConversationCard implements TugCard {
     this.projectDir = event.project_dir;
     this.projectHash = await this.computeProjectHash(event.project_dir);
 
+    // Update title bar with project path
+    this.updateTitleWithProject();
+
     // Create new SessionCache with project hash
     if (this.sessionCache) {
       this.sessionCache.close();
@@ -401,6 +406,16 @@ export class ConversationCard implements TugCard {
 
     // Load cached messages for this project
     await this.loadCachedMessages();
+  }
+
+  private updateTitleWithProject(): void {
+    if (!this.projectDir || !this.container) return;
+    const frame = this.container.closest(".card-frame-content")?.parentElement;
+    const titleEl = frame?.querySelector(".card-header-title") as HTMLElement | null;
+    if (titleEl) {
+      titleEl.textContent = `CODE: ${this.projectDir}`;
+      titleEl.style.textTransform = "none";
+    }
   }
 
   private async computeProjectHash(dir: string): Promise<string> {
@@ -571,7 +586,7 @@ export class ConversationCard implements TugCard {
       attachments,
     };
     const payload = new TextEncoder().encode(JSON.stringify(msg));
-    this.connection.send(FeedId.CONVERSATION_INPUT, payload);
+    this.connection.send(FeedId.CODE_INPUT, payload);
 
     // Clear input and attachments
     this.textarea.value = "";
@@ -707,7 +722,7 @@ export class ConversationCard implements TugCard {
           decision: "allow",
         };
         const payload = new TextEncoder().encode(JSON.stringify(approval));
-        this.connection.send(FeedId.CONVERSATION_INPUT, payload);
+        this.connection.send(FeedId.CODE_INPUT, payload);
 
         // Remove approval prompt from DOM
         const promptEl = prompt.render();
@@ -735,7 +750,7 @@ export class ConversationCard implements TugCard {
           decision: "deny",
         };
         const payload = new TextEncoder().encode(JSON.stringify(approval));
-        this.connection.send(FeedId.CONVERSATION_INPUT, payload);
+        this.connection.send(FeedId.CODE_INPUT, payload);
 
         // Re-enable input
         this.setInputEnabled(true);
@@ -770,7 +785,7 @@ export class ConversationCard implements TugCard {
         answers,
       };
       const payload = new TextEncoder().encode(JSON.stringify(response));
-      this.connection.send(FeedId.CONVERSATION_INPUT, payload);
+      this.connection.send(FeedId.CODE_INPUT, payload);
 
       // Re-enable input
       this.setInputEnabled(true);
@@ -810,7 +825,7 @@ export class ConversationCard implements TugCard {
       type: "interrupt",
     };
     const payload = new TextEncoder().encode(JSON.stringify(interrupt));
-    this.connection.send(FeedId.CONVERSATION_INPUT, payload);
+    this.connection.send(FeedId.CODE_INPUT, payload);
   }
 
   private updateButtonState(): void {
