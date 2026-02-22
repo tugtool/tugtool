@@ -800,7 +800,7 @@ fn run_merge_in(
 
     // Step 3: Merge
     let squash_commit = if effective_mode == "remote" {
-        // Remote mode: save infra, discard from working tree, merge PR, pull, restore infra
+        // Remote mode: merge PR via gh, fetch, reset to origin/main
         let pr = pr_info.as_ref().unwrap();
         if !quiet {
             println!("Merging PR #{} via squash...", pr.number);

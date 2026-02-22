@@ -139,6 +139,21 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             files_created.push("removed AGENTS.md".to_string());
         }
 
+        // Remove stale .beads/ directory (beads now lives in worktrees)
+        if remove_stale_beads_dir(Path::new(".")) {
+            files_created.push("removed .beads/".to_string());
+        }
+
+        // Remove stale beads merge driver from git config
+        for key in remove_beads_merge_driver(Path::new(".")) {
+            files_created.push(format!("removed git config {}", key));
+        }
+
+        // Remove stale beads entries from .gitattributes
+        if clean_beads_gitattributes(Path::new(".")) {
+            files_created.push("cleaned .gitattributes".to_string());
+        }
+
         if json_output {
             let response = JsonResponse::ok(
                 "init",
@@ -154,7 +169,7 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             } else {
                 println!("Tug project in .tugtool/ updated:");
                 for f in &files_created {
-                    if f.starts_with("removed ") {
+                    if f.starts_with("removed ") || f.starts_with("cleaned ") {
                         println!("  {}", f);
                     } else {
                         println!("  Created: {}", f);
@@ -207,6 +222,21 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     // Remove AGENTS.md dropped by bd init
     if remove_agents_md(Path::new(".")) {
         files_created.push("removed AGENTS.md".to_string());
+    }
+
+    // Remove stale .beads/ directory (beads now lives in worktrees)
+    if remove_stale_beads_dir(Path::new(".")) {
+        files_created.push("removed .beads/".to_string());
+    }
+
+    // Remove stale beads merge driver from git config
+    for key in remove_beads_merge_driver(Path::new(".")) {
+        files_created.push(format!("removed git config {}", key));
+    }
+
+    // Remove stale beads entries from .gitattributes
+    if clean_beads_gitattributes(Path::new(".")) {
+        files_created.push("cleaned .gitattributes".to_string());
     }
 
     if json_output {
@@ -283,6 +313,103 @@ fn remove_beads_hooks(root: &Path) -> Vec<String> {
 fn remove_agents_md(root: &Path) -> bool {
     let agents_md = root.join("AGENTS.md");
     fs::remove_file(agents_md).is_ok()
+}
+
+/// Remove stale `.beads/` directory from the repo root.
+///
+/// Beads now lives exclusively in worktrees. A `.beads/` at the repo root
+/// is a leftover from the old beads-at-root setup and should be removed.
+/// Returns true if the directory existed and was removed.
+fn remove_stale_beads_dir(root: &Path) -> bool {
+    let beads_dir = root.join(".beads");
+    if beads_dir.is_dir() {
+        fs::remove_dir_all(&beads_dir).is_ok()
+    } else {
+        false
+    }
+}
+
+/// Remove stale beads merge driver from `.git/config`.
+///
+/// The old beads-at-root setup configured `merge.beads.driver` and `merge.beads.name`
+/// in the local git config. These are no longer needed since `.beads/` files are not
+/// tracked in the repo.
+/// Returns a list of removed config keys.
+fn remove_beads_merge_driver(root: &Path) -> Vec<String> {
+    let mut removed = vec![];
+    let keys = ["merge.beads.driver", "merge.beads.name"];
+
+    for key in &keys {
+        let check = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", "--local", "--get", key])
+            .output();
+
+        if let Ok(output) = check {
+            if output.status.success() {
+                let unset = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(root)
+                    .args(["config", "--local", "--unset", key])
+                    .output();
+                if let Ok(o) = unset {
+                    if o.status.success() {
+                        removed.push(key.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    removed
+}
+
+/// Remove stale beads merge driver entry from `.gitattributes`.
+///
+/// The old beads-at-root setup added `.beads/issues.jsonl merge=beads` to
+/// `.gitattributes`. This is no longer needed. If the file becomes empty
+/// (or only whitespace/comments) after removal, delete it entirely.
+/// Returns true if the file was modified or removed.
+fn clean_beads_gitattributes(root: &Path) -> bool {
+    let path = root.join(".gitattributes");
+    if !path.exists() {
+        return false;
+    }
+
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    // Filter out lines related to beads merge driver
+    let filtered: Vec<&str> = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Remove the merge=beads attribute line and its comment
+            !trimmed.contains("merge=beads")
+                && !(trimmed.starts_with('#') && trimmed.to_lowercase().contains("bd merge"))
+        })
+        .collect();
+
+    // Check if anything meaningful remains
+    let has_content = filtered
+        .iter()
+        .any(|line| !line.trim().is_empty() && !line.trim().starts_with('#'));
+
+    if has_content {
+        // Rewrite with beads lines removed
+        let new_content = filtered.join("\n");
+        if new_content != content {
+            let _ = fs::write(&path, new_content);
+            return true;
+        }
+        false
+    } else {
+        // File is empty or only comments — remove it
+        fs::remove_file(&path).is_ok()
+    }
 }
 
 /// Ensure .tugtree/ is listed in .gitignore

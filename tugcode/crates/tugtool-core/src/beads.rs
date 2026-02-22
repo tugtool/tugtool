@@ -178,13 +178,6 @@ impl BeadsCli {
         cmd
     }
 
-    /// Build a Command with the bd path and any configured env vars applied
-    /// (internal convenience wrapper for cmd_with_dir)
-    #[allow(dead_code)]
-    fn cmd(&self) -> Command {
-        self.cmd_with_dir(None)
-    }
-
     /// Write content to a temporary file and return the path
     /// Used when content exceeds BODY_FILE_THRESHOLD to avoid ARG_MAX issues
     fn write_temp_body_file(content: &str) -> Result<std::path::PathBuf, TugError> {
