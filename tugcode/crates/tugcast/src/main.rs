@@ -309,6 +309,7 @@ async fn main() {
         let reason = match exit_code {
             42 => "restart",
             43 => "reset",
+            44 => "binary_updated",
             0 => "normal",
             _ => "error",
         };

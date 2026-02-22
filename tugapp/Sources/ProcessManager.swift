@@ -179,6 +179,10 @@ class ProcessManager {
             case "restart", "reset":
                 NSLog("ProcessManager: shutdown reason=%@, will restart", reason)
                 restartDecision = .restart
+            case "binary_updated":
+                NSLog("ProcessManager: shutdown reason=binary_updated, copying new binary and restarting")
+                copyBinaryFromSourceTree()
+                restartDecision = .restart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)
@@ -273,6 +277,51 @@ class ProcessManager {
         startProcess()
     }
 
+    /// Copy the new tugcast binary from the source tree into the app bundle.
+    /// Called when receiving a binary_updated shutdown signal from tugcast.
+    /// On failure, logs error and continues (restart proceeds with existing binary).
+    private func copyBinaryFromSourceTree() {
+        // Read source tree path from UserDefaults
+        guard let sourceTreePath = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath) else {
+            NSLog("ProcessManager: copyBinaryFromSourceTree failed: no source tree path in UserDefaults")
+            return
+        }
+
+        // Source: <sourceTree>/tugcode/target/debug/tugcast
+        let sourcePath = (sourceTreePath as NSString)
+            .appendingPathComponent("tugcode/target/debug/tugcast")
+
+        // Destination: app bundle's Contents/MacOS/tugcast
+        guard let executableURL = Bundle.main.executableURL else {
+            NSLog("ProcessManager: copyBinaryFromSourceTree failed: cannot determine bundle executable path")
+            return
+        }
+        let destPath = executableURL.deletingLastPathComponent()
+            .appendingPathComponent("tugcast")
+            .path
+
+        let fileManager = FileManager.default
+
+        // Verify source exists
+        guard fileManager.fileExists(atPath: sourcePath) else {
+            NSLog("ProcessManager: copyBinaryFromSourceTree failed: source binary not found at %@", sourcePath)
+            return
+        }
+
+        do {
+            // Remove existing destination if present
+            if fileManager.fileExists(atPath: destPath) {
+                try fileManager.removeItem(atPath: destPath)
+            }
+
+            // Copy new binary
+            try fileManager.copyItem(atPath: sourcePath, toPath: destPath)
+            NSLog("ProcessManager: copied new tugcast binary from %@ to %@", sourcePath, destPath)
+        } catch {
+            NSLog("ProcessManager: copyBinaryFromSourceTree failed: %@", error.localizedDescription)
+        }
+    }
+
     /// Internal: Start the process and supervise
     private func startProcess() {
         guard let tugcastURL = resolveTugcastPath() else {
@@ -313,9 +362,12 @@ class ProcessManager {
             self.process = proc
             self.childPID = proc.processIdentifier
 
-            // Start bun build --watch if in dev mode
+            // Start bun build --watch if in dev mode (guard against duplication on restarts)
             if devEnabled, let bunSourceTree = freshSourceTree {
-                if let bunPath = ProcessManager.which("bun") {
+                // Bun duplication guard: skip if already running (prevents duplicate watchers on binary_updated restarts)
+                if bunProcess?.isRunning == true {
+                    NSLog("ProcessManager: bun build --watch already running, skipping spawn")
+                } else if let bunPath = ProcessManager.which("bun") {
                     let bunProc = Process()
                     bunProc.executableURL = URL(fileURLWithPath: bunPath)
                     bunProc.arguments = ["build", "src/main.ts", "--outfile=dist/app.js", "--watch"]

@@ -7,9 +7,22 @@ default:
 build:
     cd tugcode && cargo build -p tugcast -p tugtool -p tugcode
 
-# Build all binaries, then run tugtool --dev
+# Build all binaries, then run tugtool (auto-detects source tree, activates dev mode via control socket)
 dev: build
-    tugcode/target/debug/tugtool --dev
+    tugcode/target/debug/tugtool
+
+# Build binaries, run tugtool + cargo-watch for hands-free Rust hot reload
+dev-watch: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v cargo-watch &>/dev/null; then
+        echo "cargo-watch not found. Install with: cargo install cargo-watch"
+        exit 1
+    fi
+    (cd tugcode && cargo watch -w crates -s "cargo build -p tugcast") &
+    CARGO_WATCH_PID=$!
+    trap "kill $CARGO_WATCH_PID 2>/dev/null" EXIT
+    tugcode/target/debug/tugtool
 
 # Run all tests (Rust + TypeScript)
 test: test-rust test-ts

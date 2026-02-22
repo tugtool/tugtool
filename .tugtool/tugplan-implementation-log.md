@@ -10,6 +10,96 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-22T04:48:47Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix formatting in tugcast/src/dev.rs and tugtool/src/main.rs
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-22T04:45:03Z
+bead: tugtool-d47.6
+---
+
+## #step-5: Fixed dev recipe to remove --dev flag; added dev-watch recipe with cargo-watch for automatic tugcast rebuilds on .rs changes
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-22T04:40:11Z
+bead: tugtool-d47.5
+---
+
+## #step-4: Added binary_updated to supervisor loop match arm triggering RestartDecision::Restart; dev mode re-established automatically after restart
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-22T04:36:15Z
+bead: tugtool-d47.4
+---
+
+## #step-3: Added binary_updated case in ProcessManager shutdown handler, copyBinaryFromSourceTree() method, and bun duplication guard in startProcess()
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-22T04:31:19Z
+bead: tugtool-d47.3
+---
+
+## #step-2: Added spawn_binary_watcher() in dev.rs with 2s polling and 500ms stabilization delay; exit code 44 mapped to binary_updated in main.rs; updated enable/disable_dev_mode and all test call sites; 4 new tests
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-22T04:22:33Z
+bead: tugtool-d47.2
+---
+
+## #step-1: Added send_dev_mode() and wait_for_dev_mode_result() async functions; dev mode sent after every restart; bun spawning gated on first_spawn; source tree auto-detection
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-22T03:53:27Z
+bead: tugtool-go5.1
+---
+
+## #step-0: Removed dead --dev flag and dev_path parameter chain from tugtool. Functions detect_source_tree, check_command_available, spawn_bun_dev retained with #[allow(dead_code)] for Step 1 reuse.
+
+**Files changed:**
+- .tugtool/tugplan-full-hot-reload.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-21T20:59:14Z
 ---
 
