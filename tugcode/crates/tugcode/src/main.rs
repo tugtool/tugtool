@@ -8,7 +8,7 @@ mod splash;
 use std::process::ExitCode;
 
 use cli::Commands;
-use commands::{BeadsCommands, LogCommands, WorktreeCommands};
+use commands::{BeadsCommands, LogCommands, StateCommands, WorktreeCommands};
 
 fn main() -> ExitCode {
     let cli = cli::parse();
@@ -109,6 +109,9 @@ fn main() -> ExitCode {
             WorktreeCommands::Remove { target, force } => {
                 commands::run_worktree_remove(target, force, cli.json, cli.quiet)
             }
+        },
+        Some(Commands::State(state_cmd)) => match state_cmd {
+            StateCommands::Init { plan } => commands::run_state_init(plan, cli.json, cli.quiet),
         },
         Some(Commands::Merge {
             plan,

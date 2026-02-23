@@ -2,7 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{BeadsCommands, LogCommands, WorktreeCommands};
+use crate::commands::{BeadsCommands, LogCommands, StateCommands, WorktreeCommands};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -117,6 +117,13 @@ pub enum Commands {
         long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  create  Create worktree and branch for a plan (optionally sync beads)\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree create .tugtool/tugplan-auth.md --sync-beads\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
     )]
     Worktree(WorktreeCommands),
+
+    /// State management commands
+    #[command(
+        subcommand,
+        long_about = "State management commands for tracking plan execution.\n\nSubcommands:\n  init  Initialize state database from a plan"
+    )]
+    State(StateCommands),
 
     /// Log management commands
     ///

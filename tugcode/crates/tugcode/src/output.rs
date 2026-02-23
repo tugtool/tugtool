@@ -685,3 +685,22 @@ mod tests {
         assert!(json.contains("\"number\""));
     }
 }
+
+/// Data payload for state init command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateInitData {
+    /// Plan file path (relative to repo root)
+    pub plan_path: String,
+    /// SHA-256 hash of the plan file
+    pub plan_hash: String,
+    /// True if the plan was already initialized
+    pub already_initialized: bool,
+    /// Number of top-level steps created
+    pub step_count: usize,
+    /// Number of substeps created
+    pub substep_count: usize,
+    /// Number of dependency edges created
+    pub dep_count: usize,
+    /// Number of checklist items created
+    pub checklist_count: usize,
+}

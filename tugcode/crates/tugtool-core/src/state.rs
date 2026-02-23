@@ -5,7 +5,9 @@
 //! and artifacts for each initialized plan.
 
 use crate::error::TugError;
-use rusqlite::Connection;
+use crate::session::now_iso8601;
+use crate::types::{Checkpoint, TugPlan};
+use rusqlite::{Connection, TransactionBehavior};
 use std::path::Path;
 
 /// Embedded SQLite state database manager.
@@ -131,6 +133,218 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
                 reason: format!("failed to query schema version: {}", e),
             })
     }
+
+    /// Initialize a plan in the database.
+    ///
+    /// Populates plans, steps, step_deps, and checklist_items tables in a single
+    /// transaction. Returns `already_initialized: true` if the plan already exists.
+    pub fn init_plan(
+        &mut self,
+        plan_path: &str,
+        plan: &TugPlan,
+        plan_hash: &str,
+    ) -> Result<InitResult, TugError> {
+        // Check if already initialized
+        let exists: bool = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM plans WHERE plan_path = ?1",
+                [plan_path],
+                |_row| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if exists {
+            return Ok(InitResult {
+                already_initialized: true,
+                step_count: 0,
+                substep_count: 0,
+                dep_count: 0,
+                checklist_count: 0,
+            });
+        }
+
+        // Begin transaction
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        // Insert plan row
+        let now = now_iso8601();
+        tx.execute(
+            "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'active', ?4, ?5)",
+            rusqlite::params![
+                plan_path,
+                plan_hash,
+                plan.phase_title.as_deref(),
+                &now,
+                &now
+            ],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to insert plan: {}", e),
+        })?;
+
+        // Insert steps and substeps with interleaved step_index
+        let mut step_index: i32 = 0;
+        let mut step_count = 0;
+        let mut substep_count = 0;
+
+        for step in &plan.steps {
+            // Insert top-level step
+            tx.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
+                 VALUES (?1, ?2, NULL, ?3, ?4, 'pending')",
+                rusqlite::params![plan_path, &step.anchor, step_index, &step.title],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to insert step {}: {}", step.anchor, e),
+            })?;
+            step_count += 1;
+            step_index += 1;
+
+            // Insert substeps
+            for substep in &step.substeps {
+                tx.execute(
+                    "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                    rusqlite::params![
+                        plan_path,
+                        &substep.anchor,
+                        &step.anchor,
+                        step_index,
+                        &substep.title
+                    ],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to insert substep {}: {}", substep.anchor, e),
+                })?;
+                substep_count += 1;
+                step_index += 1;
+            }
+        }
+
+        // Insert dependencies
+        let mut dep_count = 0;
+        for step in &plan.steps {
+            for dep in &step.depends_on {
+                tx.execute(
+                    "INSERT INTO step_deps (plan_path, step_anchor, depends_on) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![plan_path, &step.anchor, dep],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to insert dependency: {}", e),
+                })?;
+                dep_count += 1;
+            }
+            for substep in &step.substeps {
+                for dep in &substep.depends_on {
+                    tx.execute(
+                        "INSERT INTO step_deps (plan_path, step_anchor, depends_on) VALUES (?1, ?2, ?3)",
+                        rusqlite::params![plan_path, &substep.anchor, dep],
+                    )
+                    .map_err(|e| TugError::StateDbQuery {
+                        reason: format!("failed to insert substep dependency: {}", e),
+                    })?;
+                    dep_count += 1;
+                }
+            }
+        }
+
+        // Insert checklist items
+        let mut checklist_count = 0;
+        for step in &plan.steps {
+            checklist_count +=
+                insert_checklist_items(&tx, plan_path, &step.anchor, &step.tasks, "task")?;
+            checklist_count +=
+                insert_checklist_items(&tx, plan_path, &step.anchor, &step.tests, "test")?;
+            checklist_count += insert_checklist_items(
+                &tx,
+                plan_path,
+                &step.anchor,
+                &step.checkpoints,
+                "checkpoint",
+            )?;
+
+            for substep in &step.substeps {
+                checklist_count += insert_checklist_items(
+                    &tx,
+                    plan_path,
+                    &substep.anchor,
+                    &substep.tasks,
+                    "task",
+                )?;
+                checklist_count += insert_checklist_items(
+                    &tx,
+                    plan_path,
+                    &substep.anchor,
+                    &substep.tests,
+                    "test",
+                )?;
+                checklist_count += insert_checklist_items(
+                    &tx,
+                    plan_path,
+                    &substep.anchor,
+                    &substep.checkpoints,
+                    "checkpoint",
+                )?;
+            }
+        }
+
+        // Commit transaction
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit transaction: {}", e),
+        })?;
+
+        Ok(InitResult {
+            already_initialized: false,
+            step_count,
+            substep_count,
+            dep_count,
+            checklist_count,
+        })
+    }
+}
+
+/// Result from init_plan operation
+pub struct InitResult {
+    /// True if the plan was already initialized (idempotent return)
+    pub already_initialized: bool,
+    /// Number of top-level steps created
+    pub step_count: usize,
+    /// Number of substeps created
+    pub substep_count: usize,
+    /// Number of dependency edges created
+    pub dep_count: usize,
+    /// Number of checklist items created
+    pub checklist_count: usize,
+}
+
+/// Helper to insert checklist items for a step
+fn insert_checklist_items(
+    tx: &rusqlite::Transaction,
+    plan_path: &str,
+    anchor: &str,
+    items: &[Checkpoint],
+    kind: &str,
+) -> Result<usize, TugError> {
+    let mut count = 0;
+    for (ordinal, item) in items.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
+            rusqlite::params![plan_path, anchor, kind, ordinal as i32, &item.text],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to insert checklist item: {}", e),
+        })?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 /// Compute SHA-256 hash of a plan file, returned as lowercase hex string.
@@ -209,6 +423,173 @@ mod tests {
             hash1
                 .chars()
                 .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
+    }
+
+    // Helper to create a test plan with substeps
+    fn make_test_plan() -> TugPlan {
+        use crate::types::*;
+        TugPlan {
+            phase_title: Some("Test Phase".to_string()),
+            steps: vec![
+                Step {
+                    anchor: "step-0".to_string(),
+                    title: "Step Zero".to_string(),
+                    tasks: vec![Checkpoint {
+                        checked: false,
+                        text: "Task 1".to_string(),
+                        kind: CheckpointKind::Task,
+                        line: 1,
+                    }],
+                    tests: vec![Checkpoint {
+                        checked: false,
+                        text: "Test 1".to_string(),
+                        kind: CheckpointKind::Test,
+                        line: 2,
+                    }],
+                    checkpoints: vec![],
+                    substeps: vec![],
+                    depends_on: vec![],
+                    ..Default::default()
+                },
+                Step {
+                    anchor: "step-1".to_string(),
+                    title: "Step One".to_string(),
+                    depends_on: vec!["step-0".to_string()],
+                    tasks: vec![],
+                    tests: vec![],
+                    checkpoints: vec![Checkpoint {
+                        checked: false,
+                        text: "Check 1".to_string(),
+                        kind: CheckpointKind::Checkpoint,
+                        line: 3,
+                    }],
+                    substeps: vec![
+                        Substep {
+                            anchor: "step-1-1".to_string(),
+                            title: "Substep 1.1".to_string(),
+                            depends_on: vec![],
+                            tasks: vec![
+                                Checkpoint {
+                                    checked: false,
+                                    text: "Sub task 1".to_string(),
+                                    kind: CheckpointKind::Task,
+                                    line: 4,
+                                },
+                                Checkpoint {
+                                    checked: false,
+                                    text: "Sub task 2".to_string(),
+                                    kind: CheckpointKind::Task,
+                                    line: 5,
+                                },
+                            ],
+                            tests: vec![],
+                            checkpoints: vec![],
+                            ..Default::default()
+                        },
+                        Substep {
+                            anchor: "step-1-2".to_string(),
+                            title: "Substep 1.2".to_string(),
+                            depends_on: vec!["step-1-1".to_string()],
+                            tasks: vec![],
+                            tests: vec![Checkpoint {
+                                checked: false,
+                                text: "Sub test".to_string(),
+                                kind: CheckpointKind::Test,
+                                line: 6,
+                            }],
+                            checkpoints: vec![],
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                Step {
+                    anchor: "step-2".to_string(),
+                    title: "Step Two".to_string(),
+                    depends_on: vec!["step-1".to_string()],
+                    tasks: vec![],
+                    tests: vec![],
+                    checkpoints: vec![],
+                    substeps: vec![],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_init_plan_creates_correct_counts() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        let result = db
+            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        assert!(!result.already_initialized);
+        assert_eq!(result.step_count, 3); // step-0, step-1, step-2
+        assert_eq!(result.substep_count, 2); // step-1-1, step-1-2
+        assert_eq!(result.dep_count, 3); // step-1->step-0, step-1-2->step-1-1, step-2->step-1
+        assert_eq!(result.checklist_count, 6); // task1, test1, check1, sub-task1, sub-task2, sub-test
+    }
+
+    #[test]
+    fn test_init_plan_is_idempotent() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        let r1 = db
+            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+        assert!(!r1.already_initialized);
+
+        let r2 = db
+            .init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+        assert!(r2.already_initialized);
+        assert_eq!(r2.step_count, 0);
+    }
+
+    #[test]
+    fn test_init_plan_step_index_interleaved() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Query step_index values
+        let mut stmt = db
+            .conn
+            .prepare(
+                "SELECT anchor, step_index FROM steps WHERE plan_path = ?1 ORDER BY step_index",
+            )
+            .unwrap();
+        let rows: Vec<(String, i32)> = stmt
+            .query_map([".tugtool/tugplan-test.md"], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert_eq!(
+            rows,
+            vec![
+                ("step-0".to_string(), 0),
+                ("step-1".to_string(), 1),
+                ("step-1-1".to_string(), 2),
+                ("step-1-2".to_string(), 3),
+                ("step-2".to_string(), 4),
+            ]
         );
     }
 }
