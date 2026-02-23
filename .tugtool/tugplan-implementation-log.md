@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-23T18:36:49Z
+bead: add-tugstate-7x8.2
+---
+
+## #step-1: Refactored find_repo_root into tugtool-core with testable find_repo_root_from variant
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-23T18:29:30Z
 bead: add-tugstate-7x8.1

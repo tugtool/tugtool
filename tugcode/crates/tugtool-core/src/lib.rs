@@ -57,8 +57,9 @@ pub use validator::{
 pub use worktree::{
     CleanupMode, CleanupResult, DiscoveredWorktree, WorktreeConfig, WorktreeDiscovery,
     cleanup_stale_branches, cleanup_worktrees, create_worktree, derive_tugplan_slug,
-    find_worktree_by_tugplan, generate_branch_name, is_valid_worktree_path, list_tugtool_branches,
-    list_worktrees, remove_worktree, resolve_worktree, sanitize_branch_name,
+    find_repo_root, find_repo_root_from, find_worktree_by_tugplan, generate_branch_name,
+    is_valid_worktree_path, list_tugtool_branches, list_worktrees, remove_worktree,
+    resolve_worktree, sanitize_branch_name,
 };
 
 #[cfg(test)]

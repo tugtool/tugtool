@@ -5,7 +5,7 @@
 
 use clap::Subcommand;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tugtool_core::{
     ResolveResult, TugError, ValidationLevel, derive_tugplan_slug, resolve_plan,
     worktree::{
@@ -135,44 +135,6 @@ pub struct RemoveData {
     pub worktree_path: String,
     pub branch_name: String,
     pub plan_path: String,
-}
-
-/// Resolve the main repository root, even when CWD is inside a linked worktree.
-///
-/// If CWD is a linked worktree (`.git` is a file, not a directory), this resolves
-/// to the main repository root by querying git for the common directory. This prevents
-/// nested worktree creation when the shell's CWD drifts into an existing worktree.
-fn resolve_main_repo_root() -> Result<PathBuf, String> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let git_path = cwd.join(".git");
-
-    // If .git is a directory, we're in the main repo — use CWD directly
-    if git_path.is_dir() {
-        return Ok(cwd);
-    }
-
-    // If .git is a file, we're in a linked worktree — resolve to main repo
-    if git_path.is_file() {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&cwd)
-            .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-            .output()
-            .map_err(|e| format!("failed to resolve main repo root: {}", e))?;
-
-        if output.status.success() {
-            let common_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // common_dir is the shared .git directory (e.g., /repo/.git)
-            // Its parent is the main repo root
-            let common_path = PathBuf::from(&common_dir);
-            if let Some(parent) = common_path.parent() {
-                return Ok(parent.to_path_buf());
-            }
-        }
-    }
-
-    // Fallback: use CWD as-is (no .git found at all — will fail downstream)
-    Ok(cwd)
 }
 
 /// Sync beads within the worktree and return bead mapping
@@ -479,7 +441,7 @@ pub fn run_worktree_create_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // Resolve plan path and strip repo_root to get relative path
@@ -960,7 +922,7 @@ pub fn run_worktree_list_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     match list_worktrees(&repo_root) {
@@ -1034,7 +996,7 @@ pub fn run_worktree_cleanup_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // Determine cleanup mode
@@ -1160,7 +1122,7 @@ pub fn run_worktree_remove_with_root(
 
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // List all worktrees
@@ -1478,6 +1440,7 @@ mod tests {
 mod integration_tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::TempDir;
 
