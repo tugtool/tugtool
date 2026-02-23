@@ -193,6 +193,15 @@ pub enum TugError {
     /// E037: Init failed during worktree creation
     #[error("E037: Init failed: {reason}")]
     InitFailed { reason: String },
+
+    // === State errors (E046-E053) ===
+    /// E046: Failed to open state.db
+    #[error("E046: Failed to open state database: {reason}")]
+    StateDbOpen { reason: String },
+
+    /// E047: SQL query failed
+    #[error("E047: State database query failed: {reason}")]
+    StateDbQuery { reason: String },
 }
 
 impl TugError {
@@ -239,6 +248,8 @@ impl TugError {
             TugError::BeadsSyncFailed { .. } => "E035",
             TugError::BeadCommitFailed { .. } => "E036",
             TugError::InitFailed { .. } => "E037",
+            TugError::StateDbOpen { .. } => "E046",
+            TugError::StateDbQuery { .. } => "E047",
         }
     }
 
@@ -317,6 +328,8 @@ impl TugError {
             TugError::BeadsSyncFailed { .. } => 10, // Beads sync failed (exit code 10 per S02)
             TugError::BeadCommitFailed { .. } => 11, // Bead commit failed (exit code 11 per S02)
             TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
+            TugError::StateDbOpen { .. } => 14,   // State DB open failed
+            TugError::StateDbQuery { .. } => 14,  // State DB query failed
         }
     }
 }
