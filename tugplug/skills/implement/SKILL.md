@@ -11,26 +11,26 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugtool\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugtool commands' >&2; exit 2 ;; esac"
+          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugcode\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugcode commands' >&2; exit 2 ;; esac"
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator
 
-**YOUR TOOLS:** `Task`, `AskUserQuestion`, and `Bash` (for `tugtool` CLI commands ONLY). You cannot read files, write files, or edit files. Agent work happens through Task. Worktree setup happens through direct `tugtool` CLI calls via Bash.
+**YOUR TOOLS:** `Task`, `AskUserQuestion`, and `Bash` (for `tugcode` CLI commands ONLY). You cannot read files, write files, or edit files. Agent work happens through Task. Worktree setup happens through direct `tugcode` CLI calls via Bash.
 
 **FIRST ACTION:** Your very first action MUST be running `tugcode worktree create` via Bash. No exceptions.
 
 **FORBIDDEN:**
 - Reading, writing, editing, or creating ANY files
-- Running ANY shell commands other than `tugtool` CLI commands
+- Running ANY shell commands other than `tugcode` CLI commands
 - Implementing code (the coder-agent does this)
 - Analyzing the plan yourself (the architect-agent does this)
 - Spawning planning agents (clarifier, author, critic)
-- Using any tool other than Task, AskUserQuestion, and Bash (tugtool commands only)
+- Using any tool other than Task, AskUserQuestion, and Bash (tugcode commands only)
 
 **YOUR ENTIRE JOB:** Spawn agents in sequence, parse their JSON output, pass data between them, ask the user questions when needed, and **report progress at every step**.
 
-**GOAL:** Execute plan steps by creating the worktree via `tugtool` CLI, then orchestrating: architect, coder, reviewer, committer.
+**GOAL:** Execute plan steps by creating the worktree via `tugcode` CLI, then orchestrating: architect, coder, reviewer, committer.
 
 ---
 
@@ -293,13 +293,29 @@ For `bead_close_failed` (warn and continue):
 ```
 
 **Architecture principles:**
-- Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugtool CLI only)
-- All file I/O, git operations, and code execution happen in subagents (except tugtool CLI calls which the orchestrator runs directly)
+- Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugcode CLI only)
+- All file I/O, git operations, and code execution happen in subagents (except tugcode CLI calls which the orchestrator runs directly)
 - **Persistent agents**: architect, coder, reviewer, committer are each spawned ONCE (during step 0) and RESUMED for all subsequent steps
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
 - Agents accumulate cross-step knowledge: codebase structure, files created, patterns established
 - Architect does read-only strategy; coder receives strategy and implements
 - Task-Resumed for retry loops AND across steps (same agent IDs throughout session)
+
+---
+
+## Bead Write Protocol
+
+After each agent call that produces a bead temp file, run the corresponding CLI command to persist it. The agent writes the temp file; you run the CLI call and clean up.
+
+| After agent | Temp file | CLI command |
+|-------------|-----------|-------------|
+| architect | `.../_tmp_{bead_id}_strategy.md` | `tugcode beads append-design {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path}` |
+| coder | `.../_tmp_{bead_id}_notes.md` | `tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path}` |
+| reviewer | `.../_tmp_{bead_id}_review.md` | `tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path}` |
+
+After the CLI call, delete the temp file: append `&& rm {worktree_path}/.tugtool/_tmp_{bead_id}_{suffix}.md` to the command.
+
+**Error handling:** If the CLI call fails (non-zero exit — e.g., temp file missing), output a warning and continue. Do NOT halt. The agent's JSON output already contains all data needed by downstream agents.
 
 ---
 
@@ -400,6 +416,14 @@ Parse the architect's JSON output. Extract `approach`, `expected_touch_set`, `im
 
 Output the Architect post-call message.
 
+**Bead write** (see Bead Write Protocol): persist architect's temp file.
+
+```
+Bash: tugcode beads append-design {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md
+```
+
+If this fails, output a warning and continue.
+
 #### 3b. Coder: Implement Strategy
 
 **First step (coder_id is null) — FRESH spawn:**
@@ -442,6 +466,14 @@ Save the NEW agent ID as `coder_id` (replacing the exhausted one). The old coder
 
 Output the Coder post-call message.
 
+**Bead write** (see Bead Write Protocol): persist coder's temp file.
+
+```
+Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+```
+
+If this fails, output a warning and continue.
+
 #### 3c. Drift Check
 
 Evaluate `drift_assessment.drift_severity` from coder output:
@@ -468,6 +500,14 @@ Task(
 ```
 
 Output the Coder post-call message.
+
+**Bead write** (see Bead Write Protocol): persist coder's temp file.
+
+```
+Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+```
+
+If this fails, output a warning and continue.
 
 #### 3d. Reviewer: Verify Implementation
 
@@ -501,6 +541,14 @@ Task(
 
 Output the Reviewer post-call message.
 
+**Bead write** (see Bead Write Protocol): persist reviewer's temp file.
+
+```
+Bash: tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_review.md
+```
+
+If this fails, output a warning and continue.
+
 #### 3e. Handle Reviewer Recommendation
 
 | Recommendation | Action |
@@ -526,6 +574,14 @@ Task(
 
 Output the Coder post-call message.
 
+**Bead write** (see Bead Write Protocol): persist coder's temp file.
+
+```
+Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+```
+
+If this fails, output a warning and continue.
+
 2. **Resume reviewer** for re-review:
 
 ```
@@ -538,6 +594,14 @@ Task(
 ```
 
 Output the Reviewer post-call message.
+
+**Bead write** (see Bead Write Protocol): persist reviewer's temp file.
+
+```
+Bash: tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_review.md
+```
+
+If this fails, output a warning and continue.
 
 Go back to 3e to check the new recommendation.
 

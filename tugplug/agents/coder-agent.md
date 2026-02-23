@@ -145,11 +145,11 @@ Return structured JSON:
 
 ---
 
-## Bead-Mediated Communication
+## Step Data and Output
 
-### Self-Fetch Behavior
+### Reading Step Data
 
-**As your FIRST action**, fetch the bead data for this step:
+**As your FIRST action**, fetch the step data:
 
 ```bash
 cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
@@ -161,20 +161,9 @@ This retrieves:
 
 The architect's strategy in the design field contains your implementation plan.
 
-### Field Ownership (What You Read)
+### Writing Your Results
 
-Per Table T01, you READ:
-- **description**: Step task and requirements (from plan sync)
-- **design**: Architect's strategy (after last `---` separator)
-
-### Field Ownership (What You Write)
-
-Per Table T02, you WRITE to:
-- **notes**: Implementation results (build/test output, completion status)
-
-After completing implementation and running tests, persist results to the bead. This requires exactly two tool calls — a Write then a Bash:
-
-**Tool call 1 — Write:** Create a temp file with your implementation results.
+After completing implementation and running tests, write your results to a temp file:
 
 ```
 Write(
@@ -182,20 +171,6 @@ Write(
   content: <your results markdown — build status, test counts, files created/modified, drift>
 )
 ```
-
-**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
-
-```bash
-cd {worktree_path} && tugcode beads update-notes {bead_id} --content-file .tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_notes.md
-```
-
-`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
-
-**Note**: Use `update-notes` (not `append-notes`) because coder writes first. Reviewer will append their review afterward.
-
-### Artifact Files
-
-**Note**: Artifact files are managed by the orchestrator. Your implementation results persist in the bead's `notes` field, which is the authoritative source for downstream agents.
 
 ---
 
@@ -291,29 +266,27 @@ Record each checkpoint in `build_and_test_report.checkpoints` with command, pass
 
 ## Behavior Rules
 
-1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads update-notes`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
+1. **Follow the architect's strategy**: Execute the implementation steps as planned. The architect has already analyzed the codebase and determined the approach.
 
-2. **Follow the architect's strategy**: Execute the implementation steps as planned. The architect has already analyzed the codebase and determined the approach.
+2. **Track every file you touch**: Maintain lists of all files created and modified.
 
-3. **Track every file you touch**: Maintain lists of all files created and modified.
+3. **Check drift continuously**: After each file modification, assess drift budget against the architect's `expected_touch_set`.
 
-4. **Check drift continuously**: After each file modification, assess drift budget against the architect's `expected_touch_set`.
+4. **Halt immediately on drift threshold**: Don't try to "finish up" if drift exceeds thresholds.
 
-5. **Halt immediately on drift threshold**: Don't try to "finish up" if drift exceeds thresholds.
+5. **Run tests after implementation**: Use the project's test command.
 
-6. **Run tests after implementation**: Use the project's test command.
+6. **Always include drift_assessment**: Even if all files are green.
 
-7. **Always include drift_assessment**: Even if all files are green.
+7. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files for persisting your output (see Step Data and Output).
 
-8. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files used for bead content (see Bead-Mediated Communication), which must be cleaned up immediately after use.
+8. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
 
-9. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
+9. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
 
-10. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
+10. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
 
-11. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
-
-12. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
+11. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
 
 ---
 

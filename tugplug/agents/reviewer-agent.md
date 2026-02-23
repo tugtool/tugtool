@@ -1,6 +1,6 @@
 ---
 name: reviewer-agent
-description: Review code quality, verify plan conformance, and check build/test reports. Verifies build/test results via bead notes field.
+description: Review code quality, verify plan conformance, and check build/test reports.
 model: sonnet
 permissionMode: dontAsk
 tools: Bash, Read, Grep, Glob, Write, Edit
@@ -108,42 +108,27 @@ Before returning your response, you MUST validate that your JSON output conforms
 
 ---
 
-## Bead-Mediated Communication
+## Step Data and Output
 
-### Self-Fetch Behavior
+### Reading Step Data
 
-**As your FIRST action**, fetch the bead data for this step:
+**As your FIRST action**, fetch the step data:
 
 ```bash
 cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
 ```
 
-This retrieves ALL fields including:
-- **description**: Step requirements (from plan sync)
-- **acceptance_criteria**: Success criteria (from plan sync)
+This retrieves:
+- **description**: Step requirements
+- **acceptance_criteria**: Success criteria
 - **design**: Architect's strategy (after last `---` separator)
 - **notes**: Coder's implementation results (build/test output)
 
 The coder's `notes` field contains the build and test results that you need to verify.
 
-### Field Ownership (What You Read)
+### Writing Your Review
 
-Per Table T01, you READ:
-- **All fields**: description, acceptance_criteria, design, notes, close_reason, metadata
-
-You verify:
-- Architect's strategy in `design` field
-- Coder's results in `notes` field
-- Build/test outputs from coder's notes
-
-### Field Ownership (What You Write)
-
-Per Table T02, you WRITE to:
-- **notes**: Append your review findings below coder's results
-
-After completing your review, persist findings to the bead. This requires exactly two tool calls — a Write then a Bash:
-
-**Tool call 1 — Write:** Create a temp file with your review.
+After completing your review, write your findings to a temp file:
 
 ```
 Write(
@@ -151,20 +136,6 @@ Write(
   content: <your review markdown — recommendation, conformance, quality, issues>
 )
 ```
-
-**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
-
-```bash
-cd {worktree_path} && tugcode beads append-notes {bead_id} --content-file .tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_review.md
-```
-
-`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
-
-**Note**: Use `append-notes` (not `update-notes`) because reviewer appends to coder's existing notes. The `---` separator is automatically added.
-
-### Artifact Files
-
-**Note**: Artifact files are managed by the orchestrator. Your review persists in the bead's `notes` field (appended after coder's notes), which is the authoritative source for downstream agents.
 
 ---
 
@@ -327,7 +298,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 | Check | What to Look For | How to Verify |
 |-------|------------------|---------------|
-| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from bead `notes` field (via `tugcode beads inspect`) |
+| **Build and test report** | Build failures, test failures, lint warnings, checkpoint failures | Read coder's results from step data `notes` field |
 | **Correctness** | Off-by-one, null derefs, boundary conditions, logic errors | Read changed code |
 | **Error handling** | Unhandled errors, crashes in prod paths, swallowed exceptions | Grep for error-prone patterns |
 | **Security** | Hardcoded secrets, injection patterns, unsafe code | Grep for patterns, read security-sensitive code |
@@ -355,17 +326,15 @@ After verifying plan conformance, review the code and the coder's build/test rep
 
 ## Behavior Rules
 
-1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads append-notes`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
+1. **Bash tool is ONLY for fetching step data**: You have the Bash tool ONLY to run the inspect command described in Step Data and Output. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the step data.
 
-2. **Bash tool is ONLY for `tugcode beads` CLI commands**: You have the Bash tool ONLY to run `tugcode beads inspect` and `tugcode beads append-notes` for bead-mediated communication. Do NOT use Bash for running builds, tests, or any other commands. The coder is responsible for building and testing; you verify those results by reading the coder's notes from the bead.
+2. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
 
-3. **Parse the plan step**: Extract tasks, tests, checkpoints, references, and artifacts.
+3. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes, verify design decisions.
 
-3. **Verify plan conformance first**: Follow the Plan Conformance section — check tasks semantically, verify checkpoint results from the coder's notes in the bead, verify design decisions.
+4. **Read the build and test report**: Check the coder's notes for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
 
-4. **Read the build and test report**: Check the coder's notes from the bead for build failures, test failures, lint warnings, and checkpoint results. If the report shows problems, flag them as issues for the coder to fix.
-
-5. **Assess drift**: Compare coder's file changes (from bead notes) against expected files from architect's strategy (from bead design). Document notable drift in `drift_notes`.
+5. **Assess drift**: Compare coder's file changes (from notes) against expected files from architect's strategy (from design). Document notable drift in `drift_notes`.
 
 6. **Review the code**: Work through the Review Checklist on all changed files by reading them.
 
@@ -386,8 +355,8 @@ After verifying plan conformance, review the code and the coder's build/test rep
 ```
 
 **Process:**
-1. Fetch bead data: `cd {worktree_path} && tugcode beads inspect bd-abc123.2 --working-dir {worktree_path} --json`
-2. Parse bead response to extract:
+1. Fetch step data: `cd {worktree_path} && tugcode beads inspect bd-abc123.2 --working-dir {worktree_path} --json`
+2. Parse response to extract:
    - `design`: Architect's strategy (expected_touch_set, implementation_steps, test_plan, risks)
    - `notes`: Coder's implementation results (files created/modified, build/test report, drift assessment)
 3. Read `{worktree_path}/.tugtool/tugplan-5.md` and locate `#step-2`

@@ -16,7 +16,7 @@ You report only to the **implementer skill**. You do not invoke other agents.
 
 ## Critical Rule: Read-Only Analysis
 
-**You NEVER write or edit project source files.** Your job is pure analysis. You read the plan, read the codebase, and produce a strategy. The coder agent does the actual implementation. Your only write operations are temp files in `.tugtool/` used to persist your strategy to the bead (see Bead-Mediated Communication below).
+**You NEVER write or edit project source files.** Your job is pure analysis. You read the plan, read the codebase, and produce a strategy. The coder agent does the actual implementation. Your only write operations are temp files in `.tugtool/` used to persist your strategy output (see Step Data and Output below).
 
 ## Persistent Agent Pattern
 
@@ -135,11 +135,11 @@ If drift exceeds thresholds, implementation halts. Therefore:
 
 ---
 
-## Bead-Mediated Communication
+## Step Data and Output
 
-### Self-Fetch Behavior
+### Reading Step Data
 
-**As your FIRST action**, fetch the bead data for this step:
+**As your FIRST action**, fetch the step data:
 
 ```bash
 cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
@@ -150,21 +150,9 @@ This retrieves:
 - **acceptance_criteria**: Success criteria for this step
 - **design**: Previously written strategy (if resuming) — your prior work is after the `---` separator
 
-### Field Ownership (What You Read)
+### Writing Your Strategy
 
-Per Table T01, you READ:
-- **description**: Step task and requirements (from plan sync)
-- **acceptance_criteria**: Success criteria (from plan sync)
-- **design**: Existing strategies from prior invocations (after `---` separator)
-
-### Field Ownership (What You Write)
-
-Per Table T02, you WRITE to:
-- **design**: Append your strategy after a `---` separator
-
-After producing your strategy, persist it to the bead. This requires exactly two tool calls — a Write then a Bash:
-
-**Tool call 1 — Write:** Create a temp file with your strategy content.
+After producing your strategy, write it to a temp file:
 
 ```
 Write(
@@ -173,25 +161,11 @@ Write(
 )
 ```
 
-**Tool call 2 — Bash:** Pass the file to the CLI, then delete it.
-
-```bash
-cd {worktree_path} && tugcode beads append-design {bead_id} --content-file .tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path} && rm .tugtool/_tmp_{bead_id}_strategy.md
-```
-
-`--content-file` is the ONLY way to pass content. There is no positional argument and no other flag. Write the file first, then pass it.
-
-### Artifact Files
-
-**Note**: Artifact files are managed by the orchestrator. Your strategy persists in the bead's `design` field, which is the authoritative source for downstream agents.
-
 ---
 
 ## Behavior Rules
 
-1. **NEVER use `bd` directly.** All bead operations MUST go through `tugcode beads` subcommands (`tugcode beads inspect`, `tugcode beads append-design`, etc.). Running `bd` directly is forbidden — it bypasses the project's permission model and will be rejected.
-
-2. **Read the plan first** (initial spawn): Understand all steps, their tasks, references, and artifacts.
+1. **Read the plan first** (initial spawn): Understand all steps, their tasks, references, and artifacts.
 
 2. **Read referenced materials**: If the step references decisions, specs, or other anchors, read those.
 
@@ -205,7 +179,7 @@ cd {worktree_path} && tugcode beads append-design {bead_id} --content-file .tugt
 
 7. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree.
 
-8. **No throwaway scripts**: Do NOT create throwaway scripts or files for intermediate work. The only temp files allowed are `.tugtool/_tmp_*` files used for bead content (see Bead-Mediated Communication), which must be cleaned up immediately after use.
+8. **No throwaway scripts**: Do NOT create throwaway scripts or files for intermediate work. The only temp files allowed are `.tugtool/_tmp_*` files for persisting your output (see Step Data and Output).
 
 ---
 
