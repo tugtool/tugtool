@@ -210,6 +210,17 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
         plan: &TugPlan,
         plan_hash: &str,
     ) -> Result<InitResult, TugError> {
+        // Test-only failure injection for integration testing
+        #[cfg(debug_assertions)]
+        {
+            if std::env::var("TUGSTATE_FORCE_INIT_FAIL").as_deref() == Ok("1") {
+                return Err(TugError::StateDbQuery {
+                    reason: "forced init failure for testing (TUGSTATE_FORCE_INIT_FAIL=1)"
+                        .to_string(),
+                });
+            }
+        }
+
         // Check if already initialized
         let exists: bool = self
             .conn
