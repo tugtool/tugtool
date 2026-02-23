@@ -32,6 +32,8 @@ hooks:
 
 **GOAL:** Execute plan steps by creating the worktree via `tugcode` CLI, then orchestrating: architect, coder, reviewer, committer.
 
+**EXECUTION STYLE:** Be mechanical. Parse JSON, format message, spawn agent, parse output, repeat. Do not deliberate or second-guess data from the CLI or from agents. If a field is present, use it as-is. If a field is missing, halt. No analysis beyond what this prompt explicitly specifies.
+
 ---
 
 ## Progress Reporting
@@ -350,18 +352,18 @@ Parse the JSON output from stdout. The output is a CreateData object with these 
 
 **If zero exit code:**
 
-The CLI output tells you everything — do not derive or compute additional state. Just read the fields:
+Use the JSON fields directly. Do not compute or derive anything beyond what is specified here.
 
-- If `ready_steps` is empty: output "All steps already complete." and HALT.
-- If `ready_steps` is null (legacy fallback): treat all steps as needing implementation — set `steps_to_implement = all_steps`, `completed_count = 0`.
-- Otherwise: find the first `ready_steps` entry in `all_steps` order. Everything before it is already complete; everything from it onward needs implementation.
-  - `completed_count` = index of first ready step in `all_steps`
-  - `steps_to_implement` = `all_steps[completed_count ..]`
-  - `remaining_count` = `len(steps_to_implement)`
+**Set `steps_to_implement`:**
+1. If `ready_steps` is empty → output "All steps already complete." and HALT.
+2. If `ready_steps` is null → `steps_to_implement = all_steps`, `completed_count = 0`.
+3. Otherwise → find `ready_steps[0]` in `all_steps`. Set `completed_count` = its index. Set `steps_to_implement = all_steps[completed_count..]`.
 
-Output the Setup complete progress message and immediately proceed to the step loop. No further analysis.
+**Progress values:** `remaining_count = len(steps_to_implement)`, `total_count = total_steps`.
 
-Store in memory: `worktree_path`, `branch_name`, `base_branch`, `steps_to_implement`, `bead_mapping`, `root_bead_id`
+Output the Setup complete progress message. Immediately proceed to the step loop.
+
+Store: `worktree_path`, `branch_name`, `base_branch`, `steps_to_implement`, `bead_mapping`, `root_bead_id`
 
 ### 3. For Each Step in `steps_to_implement`
 
