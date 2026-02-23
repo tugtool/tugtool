@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-02-23T04:13:13Z
+bead: dev-mode-notifications-73p.8
+---
+
+## step-7: Documented Q01 resolution in plan file. Validated full CI suite passes. Confirmed all removed items are gone via grep. All 1,129 tests pass (646 Rust + 483 TypeScript). Implementation complete.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-6
 date: 2025-02-23T03:57:16Z
 bead: dev-mode-notifications-73p.7

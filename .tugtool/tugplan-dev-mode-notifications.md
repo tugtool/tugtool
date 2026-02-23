@@ -99,7 +99,7 @@ The fix: keep instant automatic reload for CSS and non-compiled markup (Category
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] bun build --watch management strategy (OPEN) {#q01-bun-watch-management}
+#### [Q01] bun build --watch management strategy (RESOLVED) {#q01-bun-watch-management}
 
 **Question:** Should `bun build --watch` be managed by tugtool/ProcessManager as a subprocess (current approach), or should its lifecycle be restructured? Both tugtool and ProcessManager currently spawn bun as a long-lived child process that persists across tugcast restarts.
 
@@ -112,7 +112,7 @@ The fix: keep instant automatic reload for CSS and non-compiled markup (Category
 
 **Plan to resolve:** Investigate during Step 0 (spike). Test reliability of current approach under restart cycles. Recommend in Step 0 checkpoint.
 
-**Resolution:** OPEN -- will be resolved in Step 0 spike with recommendation documented before proceeding.
+**Resolution:** RESOLVED — Keep current approach. tugtool (CLI path) and ProcessManager (app path) manage bun build --watch as a long-lived subprocess that persists across tugcast restarts. This approach is proven reliable and works correctly with the Category 2 compiled code watcher (dev_compiled_watcher). No restructuring needed.
 
 ---
 
