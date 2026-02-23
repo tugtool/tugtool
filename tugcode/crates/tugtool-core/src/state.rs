@@ -909,12 +909,14 @@ pub enum ChecklistUpdate {
 }
 
 /// Result from update_checklist operation
+#[derive(Debug)]
 pub struct UpdateResult {
     /// Number of checklist items updated
     pub items_updated: usize,
 }
 
 /// Result from complete_step operation
+#[derive(Debug)]
 pub struct CompleteResult {
     /// True if step was completed
     pub completed: bool,
@@ -1570,6 +1572,9 @@ mod tests {
             )
             .unwrap();
 
+        // Sleep briefly to ensure timestamp changes (now_iso8601 has millisecond precision)
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
         // Send heartbeat
         let new_lease = db
             .heartbeat_step(".tugtool/tugplan-test.md", "step-0", "wt-a", 7200)
@@ -1614,5 +1619,344 @@ mod tests {
             TugError::StateOwnershipViolation { .. } => {} // expected
             other => panic!("Expected StateOwnershipViolation, got: {:?}", other),
         }
+    }
+
+    // Helper: setup a test with plan initialized and step-0 claimed and started
+    fn setup_claimed_plan() -> (TempDir, StateDb) {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim and start step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+            .unwrap();
+
+        (temp, db)
+    }
+
+    #[test]
+    fn test_update_checklist_individual() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // Update task 1 (0-indexed in storage)
+        let updates = vec![ChecklistUpdate::Individual {
+            kind: "task".to_string(),
+            ordinal: 0,
+            status: "completed".to_string(),
+        }];
+
+        let result = db
+            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .unwrap();
+
+        assert_eq!(result.items_updated, 1);
+
+        // Verify it was updated
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
+
+    #[test]
+    fn test_update_checklist_bulk_by_kind() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // Update all tasks
+        let updates = vec![ChecklistUpdate::BulkByKind {
+            kind: "task".to_string(),
+            status: "in_progress".to_string(),
+        }];
+
+        let result = db
+            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .unwrap();
+
+        // step-0 has 1 task
+        assert_eq!(result.items_updated, 1);
+    }
+
+    #[test]
+    fn test_update_checklist_all_items() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // Update all checklist items
+        let updates = vec![ChecklistUpdate::AllItems {
+            status: "completed".to_string(),
+        }];
+
+        let result = db
+            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .unwrap();
+
+        // step-0 has 1 task + 1 test = 2 items
+        assert_eq!(result.items_updated, 2);
+    }
+
+    #[test]
+    fn test_update_checklist_ownership_enforced() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // Try to update as different worktree
+        let updates = vec![ChecklistUpdate::AllItems {
+            status: "completed".to_string(),
+        }];
+
+        let result = db.update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-b", &updates);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TugError::StateOwnershipViolation { .. } => {} // expected
+            other => panic!("Expected StateOwnershipViolation, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_record_artifact() {
+        let (_temp, db) = setup_claimed_plan();
+
+        let artifact_id = db
+            .record_artifact(
+                ".tugtool/tugplan-test.md",
+                "step-0",
+                "wt-a",
+                "architect_strategy",
+                "Test strategy summary",
+            )
+            .unwrap();
+
+        assert!(artifact_id > 0);
+
+        // Verify it was recorded
+        let count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-0' AND kind = 'architect_strategy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_record_artifact_truncates_long_summary() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // Create a 600-character summary (all ASCII)
+        let long_summary = "a".repeat(600);
+
+        let artifact_id = db
+            .record_artifact(
+                ".tugtool/tugplan-test.md",
+                "step-0",
+                "wt-a",
+                "auditor_summary",
+                &long_summary,
+            )
+            .unwrap();
+
+        assert!(artifact_id > 0);
+
+        // Verify it was truncated to 500 characters
+        let summary: String = db
+            .conn
+            .query_row(
+                "SELECT summary FROM step_artifacts WHERE id = ?",
+                [artifact_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(summary.len(), 500);
+    }
+
+    #[test]
+    fn test_complete_step_strict_mode_success() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark all checklist items as completed
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+
+        // Complete in strict mode
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+        assert!(!result.all_steps_completed); // step-1 and step-2 still pending
+
+        // Verify status is completed
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
+
+    #[test]
+    fn test_complete_step_strict_mode_fails_incomplete_checklist() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Don't complete checklist items - try to complete step in strict mode
+        let result = db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TugError::StateIncompleteChecklist {
+                incomplete_count, ..
+            } => {
+                assert_eq!(incomplete_count, 2); // 1 task + 1 test
+            }
+            other => panic!("Expected StateIncompleteChecklist, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_complete_step_force_mode() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Force complete without completing checklist items
+        let result = db
+            .complete_step(
+                ".tugtool/tugplan-test.md",
+                "step-0",
+                "wt-a",
+                true,
+                Some("testing force mode"),
+            )
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(result.forced);
+
+        // Verify checklist items were auto-completed
+        let completed_count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM checklist_items WHERE step_anchor = 'step-0' AND status = 'completed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(completed_count, 2); // 1 task + 1 test
+
+        // Verify complete_reason was recorded
+        let reason: String = db
+            .conn
+            .query_row(
+                "SELECT complete_reason FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(reason, "testing force mode");
+    }
+
+    #[test]
+    fn test_complete_all_steps_sets_plan_done() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Complete all checklist items for step-0
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+
+        // Complete step-0
+        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        // Force complete step-1 and step-2 (simulating all steps done)
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed' WHERE anchor IN ('step-1', 'step-2')",
+                [],
+            )
+            .unwrap();
+
+        // Claim and complete a final step to trigger plan-done logic
+        // Actually, the plan-done logic only triggers when completing the LAST step
+        // Let's manually verify the intermediate state, then simulate completing the last step
+
+        // First, verify plan status is still active
+        let plan_status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM plans WHERE plan_path = '.tugtool/tugplan-test.md'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(plan_status, "active");
+
+        // Now manually mark all steps as completed except one, then complete that one properly
+        // Reset: mark step-2 as not completed
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'pending' WHERE anchor = 'step-2'",
+                [],
+            )
+            .unwrap();
+
+        // Complete step-0 (already done above)
+        // Manually complete step-1
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-1'",
+                [now_iso8601()],
+            )
+            .unwrap();
+
+        // Claim, start, and complete step-2 (the last step)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-2'",
+                [],
+            )
+            .unwrap();
+
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.all_steps_completed);
+
+        // Verify plan status is now 'done'
+        let plan_status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM plans WHERE plan_path = '.tugtool/tugplan-test.md'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(plan_status, "done");
     }
 }

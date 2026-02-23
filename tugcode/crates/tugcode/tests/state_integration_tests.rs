@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 /// Get the path to the tug binary
 fn tug_binary() -> PathBuf {
@@ -138,6 +140,25 @@ Test context paragraph.
 
 ---
 
+#### Step 1: Implementation {#step-1}
+
+**Depends on:** #step-0
+
+**Commit:** `feat: implement`
+
+**References:** [D01] Test Decision, (#context)
+
+**Tasks:**
+- [ ] Implement feature
+
+**Tests:**
+- [ ] Integration test
+
+**Checkpoint:**
+- [ ] Tests pass
+
+---
+
 ### 1.0.6 Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** Working test feature.
@@ -184,7 +205,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
     let init_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse init JSON");
     assert_eq!(init_json["status"], "ok");
-    assert_eq!(init_json["data"]["step_count"], 1);
+    assert_eq!(init_json["data"]["step_count"], 2); // step-0 and step-1
 
     // Step 2: Claim a step
     let output = Command::new(tug_binary())
@@ -236,6 +257,9 @@ fn test_state_claim_start_heartbeat_lifecycle() {
     assert_eq!(start_json["data"]["anchor"], "step-0");
     assert_eq!(start_json["data"]["started"], true);
 
+    // Sleep briefly to ensure timestamp changes (now_iso8601 has millisecond precision)
+    thread::sleep(Duration::from_millis(10));
+
     // Step 4: Send heartbeat
     let output = Command::new(tug_binary())
         .arg("state")
@@ -268,4 +292,207 @@ fn test_state_claim_start_heartbeat_lifecycle() {
         claim_lease, heartbeat_lease,
         "heartbeat should extend the lease"
     );
+}
+
+#[test]
+fn test_state_update_artifact_complete_lifecycle() {
+    let temp = setup_test_git_repo();
+    create_test_plan(&temp, "test-state-full", MINIMAL_PLAN);
+
+    // Commit the plan file
+    Command::new("git")
+        .args(["add", ".tugtool/tugplan-test-state-full.md"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to stage plan");
+
+    Command::new("git")
+        .args(["commit", "-m", "Add test plan"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to commit plan");
+
+    // Step 1: Initialize state
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("init")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state init");
+
+    assert!(
+        output.status.success(),
+        "state init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Step 2: Claim and start a step
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("claim")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim");
+
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("start")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start");
+
+    // Step 3: Update checklist items
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("update")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--task")
+        .arg("1:completed")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state update");
+
+    assert!(
+        output.status.success(),
+        "state update failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let update_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse update JSON");
+    assert_eq!(update_json["status"], "ok");
+    assert_eq!(update_json["data"]["items_updated"], 1);
+
+    // Step 4: Record an artifact
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("artifact")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--kind")
+        .arg("architect_strategy")
+        .arg("--summary")
+        .arg("Test artifact summary")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state artifact");
+
+    assert!(
+        output.status.success(),
+        "state artifact failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let artifact_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse artifact JSON");
+    assert_eq!(artifact_json["status"], "ok");
+    assert_eq!(artifact_json["data"]["kind"], "architect_strategy");
+    assert!(artifact_json["data"]["artifact_id"].is_number());
+
+    // Step 5: Complete all remaining checklist items
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("update")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--all")
+        .arg("completed")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to complete all items");
+
+    assert!(output.status.success());
+
+    // Step 6: Complete the step
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("complete")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state complete");
+
+    assert!(
+        output.status.success(),
+        "state complete failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let complete_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
+    assert_eq!(complete_json["status"], "ok");
+    assert_eq!(complete_json["data"]["completed"], true);
+    assert_eq!(complete_json["data"]["forced"], false);
+
+    // Step 7: Test force complete on another step
+    // Claim step-1 (depends on step-0 which is now complete)
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("claim")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-1");
+
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("start")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-1")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-1");
+
+    // Force complete without completing checklist items
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("complete")
+        .arg(".tugtool/tugplan-test-state-full.md")
+        .arg("step-1")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--force")
+        .arg("--reason")
+        .arg("testing force mode")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to force complete");
+
+    assert!(
+        output.status.success(),
+        "force complete failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let force_complete_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse force complete JSON");
+    assert_eq!(force_complete_json["status"], "ok");
+    assert_eq!(force_complete_json["data"]["forced"], true);
 }
