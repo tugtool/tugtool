@@ -200,6 +200,28 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
             })
     }
 
+    /// List all plan paths in the database.
+    ///
+    /// Used by the doctor health check to detect orphaned plans.
+    pub fn list_plan_paths(&self) -> Result<Vec<String>, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT plan_path FROM plans ORDER BY plan_path")
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare plan path query: {}", e),
+            })?;
+
+        let paths = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query plan paths: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(paths)
+    }
+
     /// Initialize a plan in the database.
     ///
     /// Populates plans, steps, step_deps, and checklist_items tables in a single
