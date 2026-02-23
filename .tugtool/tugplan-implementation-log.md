@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-23T02:37:58Z
+bead: dev-mode-notifications-73p.1
+---
+
+## step-0: Removed auto-restart binary watcher mechanism across tugcast dev.rs, control.rs, main.rs, tugtool main.rs, and ProcessManager.swift. Deleted spawn_binary_watcher function, 4 binary watcher tests, shutdown_tx parameter, exit code 44 mapping, and binary_updated case handling.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-22T17:50:59Z
 ---

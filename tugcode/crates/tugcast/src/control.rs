@@ -155,7 +155,6 @@ impl ControlReader {
                                     source_path,
                                     &shared_dev_state,
                                     client_action_tx.clone(),
-                                    shutdown_tx.clone(),
                                 )
                                 .await
                                 {
