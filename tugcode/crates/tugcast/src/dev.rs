@@ -72,21 +72,18 @@ impl DevChangeTracker {
     }
 
     /// Mark a frontend (compiled JS) change. Increments the shared code_count.
-    #[allow(dead_code)]
     pub fn mark_frontend(&mut self) {
         self.frontend_dirty = true;
         self.code_count += 1;
     }
 
     /// Mark a backend (tugcast binary) change. Increments the shared code_count.
-    #[allow(dead_code)]
     pub fn mark_backend(&mut self) {
         self.backend_dirty = true;
         self.code_count += 1;
     }
 
     /// Mark an app source (.swift) change.
-    #[allow(dead_code)]
     pub fn mark_app(&mut self) {
         self.app_dirty = true;
         self.app_count += 1;
@@ -131,6 +128,8 @@ impl DevChangeTracker {
 /// Dev runtime: holds file watcher and change tracker for RAII cleanup
 pub(crate) struct DevRuntime {
     pub(crate) _watcher: RecommendedWatcher,
+    pub(crate) _compiled_watcher: tokio::task::JoinHandle<()>,
+    pub(crate) _app_watcher: RecommendedWatcher,
     #[allow(dead_code)]
     pub(crate) change_tracker: SharedChangeTracker,
 }
@@ -171,13 +170,27 @@ pub(crate) async fn enable_dev_mode(
     // Create change tracker
     let change_tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
 
-    // Create file watcher (passing shared_state clone for debounce gating and tracker)
+    // Create Category 1 watcher: HTML/CSS file watcher for live reload
     let watcher = dev_file_watcher(
         &watch_dirs,
-        client_action_tx,
+        client_action_tx.clone(),
         shared_state.clone(),
         change_tracker.clone(),
     )?;
+
+    // Create Category 2 watcher: compiled code (frontend + backend) mtime poller
+    let frontend_path = source_tree.join("tugdeck/dist/app.js");
+    let backend_path = source_tree.join("tugcode/target/debug/tugcast");
+    let compiled_watcher = dev_compiled_watcher(
+        frontend_path,
+        backend_path,
+        change_tracker.clone(),
+        client_action_tx.clone(),
+    );
+
+    // Create Category 3 watcher: app sources (.swift files) notify watcher
+    let app_sources_dir = source_tree.join("tugapp/Sources");
+    let app_watcher = dev_app_watcher(app_sources_dir, change_tracker.clone(), client_action_tx)?;
 
     // Store loaded DevState into shared state
     shared_state.store(Arc::new(Some(state)));
@@ -186,16 +199,21 @@ pub(crate) async fn enable_dev_mode(
 
     Ok(DevRuntime {
         _watcher: watcher,
+        _compiled_watcher: compiled_watcher,
+        _app_watcher: app_watcher,
         change_tracker,
     })
 }
 
-/// Disable dev mode: clear shared state, drop file watcher
+/// Disable dev mode: clear shared state, drop file watchers
 pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevState) {
     // Clear shared state
     shared_state.store(Arc::new(None));
 
-    // Drop runtime (stops file watcher)
+    // Abort the compiled watcher polling task (drop alone does not abort spawned tokio tasks)
+    runtime._compiled_watcher.abort();
+
+    // Drop runtime (stops file watchers for Category 1 and 3)
     drop(runtime);
 
     info!("dev mode disabled");
@@ -577,12 +595,60 @@ pub(crate) fn send_dev_notification(
     let _ = client_action_tx.send(frame);
 }
 
+/// Read mtime for a file path. Returns None if file does not exist or is unreadable.
+fn read_mtime(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+/// Check if mtime has changed and stabilize. Returns Some(new_mtime) if change confirmed.
+async fn check_and_stabilize(
+    path: &Path,
+    last_mtime: &Option<std::time::SystemTime>,
+) -> Option<std::time::SystemTime> {
+    let current_mtime = read_mtime(path);
+
+    // No change if mtime is the same
+    if current_mtime == *last_mtime {
+        return None;
+    }
+
+    // Mtime changed (or file appeared/disappeared). Enter stabilization.
+    let mut stabilizing_mtime = current_mtime;
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let new_mtime = read_mtime(path);
+
+        // If mtime changed during stabilization, restart the wait
+        if new_mtime != stabilizing_mtime {
+            stabilizing_mtime = new_mtime;
+            continue;
+        }
+
+        // Mtime stable for 500ms
+        // Return the stabilized mtime if it's different from the last known value
+        if new_mtime != *last_mtime {
+            return new_mtime;
+        } else {
+            // Stabilized back to the original value (should not happen, but handle it)
+            return None;
+        }
+    }
+}
+
 /// Check whether a notify event contains paths with reload-worthy extensions
 fn has_reload_extension(event: &notify::Event) -> bool {
     event.paths.iter().any(|p| {
         p.extension()
-            .is_some_and(|ext| ext == "html" || ext == "css" || ext == "js")
+            .is_some_and(|ext| ext == "html" || ext == "css")
     })
+}
+
+/// Check whether a notify event contains paths with .swift extension
+fn has_swift_extension(event: &notify::Event) -> bool {
+    event
+        .paths
+        .iter()
+        .any(|p| p.extension().is_some_and(|ext| ext == "swift"))
 }
 
 /// Start file watcher for dev mode live reload
@@ -649,6 +715,116 @@ pub(crate) fn dev_file_watcher(
             // Send dev_notification with type "reloaded"
             send_dev_notification("reloaded", &debounce_tracker, &client_action_tx);
             info!("dev: sent dev_notification type=reloaded");
+        }
+    });
+
+    Ok(watcher)
+}
+
+/// Start compiled code watcher (Category 2) using mtime polling
+///
+/// Polls two exact file paths every 2 seconds: frontend (dist/app.js) and backend (tugcast binary).
+/// On stable mtime change (after 500ms stabilization), marks the appropriate tracker category
+/// and sends a restart_available notification.
+pub(crate) fn dev_compiled_watcher(
+    frontend_path: PathBuf,
+    backend_path: PathBuf,
+    tracker: SharedChangeTracker,
+    client_action_tx: broadcast::Sender<Frame>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        // Read initial mtimes (None if file does not exist)
+        let mut frontend_mtime = read_mtime(&frontend_path);
+        let mut backend_mtime = read_mtime(&backend_path);
+
+        info!(
+            "dev: compiled watcher monitoring frontend={} backend={}",
+            frontend_path.display(),
+            backend_path.display()
+        );
+
+        loop {
+            interval.tick().await;
+
+            // Check frontend path
+            if let Some(new_mtime) = check_and_stabilize(&frontend_path, &frontend_mtime).await {
+                frontend_mtime = Some(new_mtime);
+                tracker.lock().unwrap().mark_frontend();
+                send_dev_notification("restart_available", &tracker, &client_action_tx);
+                info!("dev: compiled watcher detected frontend change");
+            }
+
+            // Check backend path
+            if let Some(new_mtime) = check_and_stabilize(&backend_path, &backend_mtime).await {
+                backend_mtime = Some(new_mtime);
+                tracker.lock().unwrap().mark_backend();
+                send_dev_notification("restart_available", &tracker, &client_action_tx);
+                info!("dev: compiled watcher detected backend change");
+            }
+        }
+    })
+}
+
+/// Start app sources watcher (Category 3) using notify events
+///
+/// Watches tugapp/Sources/ recursively for .swift file changes. Uses the same
+/// quiet-period debounce as Category 1 (100ms silence window). On change, marks
+/// the app tracker category and sends a relaunch_available notification.
+pub(crate) fn dev_app_watcher(
+    app_sources_dir: PathBuf,
+    tracker: SharedChangeTracker,
+    client_action_tx: broadcast::Sender<Frame>,
+) -> Result<RecommendedWatcher, String> {
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            let _ = event_tx.send(res);
+        })
+        .map_err(|e| format!("failed to create dev app watcher: {}", e))?;
+
+    // Watch app sources directory if it exists
+    if app_sources_dir.exists() {
+        watcher
+            .watch(&app_sources_dir, RecursiveMode::Recursive)
+            .map_err(|e| format!("failed to watch {}: {}", app_sources_dir.display(), e))?;
+        info!("dev: watching app sources {}", app_sources_dir.display());
+    } else {
+        warn!(
+            "dev: app sources directory {} does not exist, skipping Category 3 watcher",
+            app_sources_dir.display()
+        );
+    }
+
+    // Quiet-period debounce task
+    tokio::spawn(async move {
+        let quiet_period = Duration::from_millis(100);
+        loop {
+            // Phase 1: Wait for a .swift file event
+            loop {
+                match event_rx.recv().await {
+                    Some(Ok(event)) if has_swift_extension(&event) => break,
+                    Some(_) => continue,
+                    None => return,
+                }
+            }
+
+            // Phase 2: Consume events until quiet
+            loop {
+                match tokio::time::timeout(quiet_period, event_rx.recv()).await {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => return,
+                    Err(_) => break,
+                }
+            }
+
+            // Phase 3: Mark and notify
+            tracker.lock().unwrap().mark_app();
+            send_dev_notification("relaunch_available", &tracker, &client_action_tx);
+            info!("dev: sent dev_notification type=relaunch_available");
         }
     });
 
@@ -1448,5 +1624,244 @@ fallback = "dist"
         assert_eq!(json["type"], "relaunch_available");
         assert_eq!(json["changes"], serde_json::json!(["app"]));
         assert_eq!(json["count"], 1);
+    }
+
+    #[test]
+    fn test_has_reload_extension_excludes_js() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.js")],
+            attrs: Default::default(),
+        };
+
+        assert!(!has_reload_extension(&event));
+    }
+
+    #[test]
+    fn test_has_reload_extension_includes_css_html() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let css_event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.css")],
+            attrs: Default::default(),
+        };
+        assert!(has_reload_extension(&css_event));
+
+        let html_event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.html")],
+            attrs: Default::default(),
+        };
+        assert!(has_reload_extension(&html_event));
+    }
+
+    #[test]
+    fn test_has_swift_extension() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let swift_event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.swift")],
+            attrs: Default::default(),
+        };
+        assert!(has_swift_extension(&swift_event));
+
+        let other_event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.rs")],
+            attrs: Default::default(),
+        };
+        assert!(!has_swift_extension(&other_event));
+    }
+
+    #[tokio::test]
+    async fn test_compiled_watcher_detects_mtime_change() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let frontend_path = temp_dir.path().join("app.js");
+        let backend_path = temp_dir.path().join("tugcast");
+
+        // Create the frontend file
+        fs::write(&frontend_path, b"initial content").unwrap();
+        // Backend does not exist initially
+
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _handle = dev_compiled_watcher(
+            frontend_path.clone(),
+            backend_path,
+            tracker.clone(),
+            client_action_tx,
+        );
+
+        // Wait for initial scan
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Modify the frontend file
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        fs::write(&frontend_path, b"modified content").unwrap();
+
+        // Wait for detection (2s poll + 500ms stabilization + buffer)
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Ok(frame)) => {
+                assert_eq!(frame.feed_id, FeedId::Control);
+                let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+                assert_eq!(json["action"], "dev_notification");
+                assert_eq!(json["type"], "restart_available");
+
+                // Verify tracker was marked
+                let guard = tracker.lock().unwrap();
+                assert!(guard.frontend_dirty);
+                assert_eq!(guard.code_count, 1);
+            }
+            Ok(Err(e)) => panic!("broadcast recv error: {}", e),
+            Err(_) => panic!("Timeout waiting for compiled watcher notification"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compiled_watcher_missing_at_start() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let frontend_path = temp_dir.path().join("app.js");
+        let backend_path = temp_dir.path().join("tugcast");
+
+        // Both files do not exist initially
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _handle = dev_compiled_watcher(
+            frontend_path.clone(),
+            backend_path,
+            tracker.clone(),
+            client_action_tx,
+        );
+
+        // Wait a bit - should not panic, no notification
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "Expected no notification while files missing"
+        );
+
+        // Create the frontend file
+        fs::write(&frontend_path, b"new content").unwrap();
+
+        // Wait for detection
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Ok(frame)) => {
+                assert_eq!(frame.feed_id, FeedId::Control);
+                let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+                assert_eq!(json["type"], "restart_available");
+            }
+            Ok(Err(e)) => panic!("broadcast recv error: {}", e),
+            Err(_) => panic!("Timeout waiting for notification after file appears"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compiled_watcher_stabilization() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let frontend_path = temp_dir.path().join("app.js");
+        let backend_path = temp_dir.path().join("tugcast");
+
+        // Create the frontend file
+        fs::write(&frontend_path, b"initial").unwrap();
+
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _handle = dev_compiled_watcher(
+            frontend_path.clone(),
+            backend_path,
+            tracker.clone(),
+            client_action_tx,
+        );
+
+        // Wait for initial scan
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Modify the file
+        fs::write(&frontend_path, b"modified1").unwrap();
+
+        // Quickly modify again (within stabilization window)
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        fs::write(&frontend_path, b"modified2").unwrap();
+
+        // Should receive only one notification after stabilization
+        match tokio::time::timeout(Duration::from_secs(6), rx.recv()).await {
+            Ok(Ok(frame)) => {
+                assert_eq!(frame.feed_id, FeedId::Control);
+                // Verify only one notification (try_recv should fail)
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                assert!(
+                    rx.try_recv().is_err(),
+                    "Expected only one notification after stabilization"
+                );
+            }
+            Ok(Err(e)) => panic!("broadcast recv error: {}", e),
+            Err(_) => panic!("Timeout waiting for stabilized notification"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_app_watcher_detects_swift_change() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let app_sources_dir = temp_dir.path().join("Sources");
+        fs::create_dir_all(&app_sources_dir).unwrap();
+
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _watcher =
+            dev_app_watcher(app_sources_dir.clone(), tracker.clone(), client_action_tx).unwrap();
+
+        // Create a .swift file
+        let swift_file = app_sources_dir.join("Test.swift");
+        fs::write(&swift_file, "struct Test {}").unwrap();
+
+        // Wait for notification (100ms debounce + buffer)
+        match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
+            Ok(Ok(frame)) => {
+                assert_eq!(frame.feed_id, FeedId::Control);
+                let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+                assert_eq!(json["action"], "dev_notification");
+                assert_eq!(json["type"], "relaunch_available");
+
+                // Verify tracker was marked
+                let guard = tracker.lock().unwrap();
+                assert!(guard.app_dirty);
+                assert_eq!(guard.app_count, 1);
+            }
+            Ok(Err(e)) => panic!("broadcast recv error: {}", e),
+            Err(_) => panic!("Timeout waiting for app watcher notification"),
+        }
     }
 }

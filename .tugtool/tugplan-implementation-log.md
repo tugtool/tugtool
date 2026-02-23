@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-23T02:57:12Z
+bead: dev-mode-notifications-73p.3
+---
+
+## step-2: Added dev_compiled_watcher (Category 2: mtime polling for dist/app.js and tugcast binary, 2s interval, 500ms stabilization) and dev_app_watcher (Category 3: notify recursive for tugapp/Sources .swift files, 100ms debounce). Fixed has_reload_extension to exclude .js. Updated DevRuntime, enable_dev_mode, disable_dev_mode. Added 7 tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-1
 date: 2025-02-23T02:47:00Z
 bead: dev-mode-notifications-73p.2
