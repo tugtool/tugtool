@@ -660,6 +660,268 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
 
         Ok(lease_expires)
     }
+
+    /// Update checklist item(s) for a step.
+    pub fn update_checklist(
+        &self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: &str,
+        updates: &[ChecklistUpdate],
+    ) -> Result<UpdateResult, TugError> {
+        // Check ownership first
+        self.check_ownership(plan_path, anchor, worktree)?;
+
+        let now = now_iso8601();
+        let mut total_updated = 0;
+
+        for update in updates {
+            let rows_affected = match update {
+                ChecklistUpdate::Individual {
+                    kind,
+                    ordinal,
+                    status,
+                } => self.conn.execute(
+                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
+                         WHERE plan_path = ?3 AND step_anchor = ?4 AND kind = ?5 AND ordinal = ?6",
+                    rusqlite::params![status, &now, plan_path, anchor, kind, ordinal],
+                ),
+                ChecklistUpdate::BulkByKind { kind, status } => self.conn.execute(
+                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
+                         WHERE plan_path = ?3 AND step_anchor = ?4 AND kind = ?5",
+                    rusqlite::params![status, &now, plan_path, anchor, kind],
+                ),
+                ChecklistUpdate::AllItems { status } => self.conn.execute(
+                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
+                         WHERE plan_path = ?3 AND step_anchor = ?4",
+                    rusqlite::params![status, &now, plan_path, anchor],
+                ),
+            }
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to update checklist: {}", e),
+            })?;
+
+            total_updated += rows_affected;
+        }
+
+        Ok(UpdateResult {
+            items_updated: total_updated,
+        })
+    }
+
+    /// Record an artifact breadcrumb for a step.
+    pub fn record_artifact(
+        &self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: &str,
+        kind: &str,
+        summary: &str,
+    ) -> Result<i64, TugError> {
+        // Check ownership first
+        self.check_ownership(plan_path, anchor, worktree)?;
+
+        let now = now_iso8601();
+        let truncated_summary = if summary.len() > 500 {
+            &summary[..500]
+        } else {
+            summary
+        };
+
+        self.conn
+            .execute(
+                "INSERT INTO step_artifacts (plan_path, step_anchor, kind, summary, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![plan_path, anchor, kind, truncated_summary, &now],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to record artifact: {}", e),
+            })?;
+
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Complete a step, optionally forcing completion despite incomplete items/substeps.
+    pub fn complete_step(
+        &mut self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: &str,
+        force: bool,
+        force_reason: Option<&str>,
+    ) -> Result<CompleteResult, TugError> {
+        // Begin exclusive transaction
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        let now = now_iso8601();
+
+        // Check if this is a top-level step or substep
+        let is_substep: bool = tx
+            .query_row(
+                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| row.get(0),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query step: {}", e),
+            })?;
+
+        if !force {
+            // Strict mode: check all checklist items are completed
+            let incomplete_items: usize = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM checklist_items
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status != 'completed'",
+                    rusqlite::params![plan_path, anchor],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            if incomplete_items > 0 {
+                return Err(TugError::StateIncompleteChecklist {
+                    anchor: anchor.to_string(),
+                    incomplete_count: incomplete_items,
+                });
+            }
+
+            // If top-level step, check all substeps are completed
+            if !is_substep {
+                let incomplete_substeps: usize = tx
+                    .query_row(
+                        "SELECT COUNT(*) FROM steps
+                         WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
+                        rusqlite::params![plan_path, anchor],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+
+                if incomplete_substeps > 0 {
+                    return Err(TugError::StateIncompleteSubsteps {
+                        anchor: anchor.to_string(),
+                        incomplete_count: incomplete_substeps,
+                    });
+                }
+            }
+        } else {
+            // Force mode: auto-complete remaining checklist items
+            tx.execute(
+                "UPDATE checklist_items SET status = 'completed', updated_at = ?1
+                 WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
+                rusqlite::params![&now, plan_path, anchor],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to force-complete checklist items: {}", e),
+            })?;
+
+            // Force mode: auto-complete remaining substeps (if top-level step)
+            if !is_substep {
+                tx.execute(
+                    "UPDATE steps SET status = 'completed', completed_at = ?1
+                     WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'",
+                    rusqlite::params![&now, plan_path, anchor],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to force-complete substeps: {}", e),
+                })?;
+            }
+        }
+
+        // Update the step to completed
+        let reason = if force {
+            force_reason.unwrap_or("forced completion")
+        } else {
+            ""
+        };
+
+        let rows_affected = tx
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = ?1, complete_reason = ?2
+                 WHERE plan_path = ?3 AND anchor = ?4 AND claimed_by = ?5 AND status IN ('claimed', 'in_progress')",
+                rusqlite::params![&now, reason, plan_path, anchor, worktree],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to complete step: {}", e),
+            })?;
+
+        if rows_affected == 0 {
+            // No rows updated means either not claimed by this worktree or already completed
+            return Err(TugError::StateStepNotClaimed {
+                anchor: anchor.to_string(),
+                current_status: "not claimed by this worktree or already completed".to_string(),
+            });
+        }
+
+        // If this is a top-level step, check if all top-level steps are now completed
+        let mut all_completed = false;
+        if !is_substep {
+            let remaining: i32 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM steps
+                     WHERE plan_path = ?1 AND parent_anchor IS NULL AND status != 'completed'",
+                    rusqlite::params![plan_path],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            if remaining == 0 {
+                // Mark plan as done
+                tx.execute(
+                    "UPDATE plans SET status = 'done', updated_at = ?1 WHERE plan_path = ?2",
+                    rusqlite::params![&now, plan_path],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to update plan status: {}", e),
+                })?;
+                all_completed = true;
+            }
+        }
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit completion transaction: {}", e),
+        })?;
+
+        Ok(CompleteResult {
+            completed: true,
+            forced: force,
+            all_steps_completed: all_completed,
+        })
+    }
+}
+
+/// Checklist update operation
+#[derive(Debug)]
+pub enum ChecklistUpdate {
+    /// Update a single item by kind and ordinal
+    Individual {
+        kind: String,
+        ordinal: i32,
+        status: String,
+    },
+    /// Update all items of a specific kind
+    BulkByKind { kind: String, status: String },
+    /// Update all items for the step
+    AllItems { status: String },
+}
+
+/// Result from update_checklist operation
+pub struct UpdateResult {
+    /// Number of checklist items updated
+    pub items_updated: usize,
+}
+
+/// Result from complete_step operation
+pub struct CompleteResult {
+    /// True if step was completed
+    pub completed: bool,
+    /// True if completion was forced
+    pub forced: bool,
+    /// True if all steps in the plan are now completed
+    pub all_steps_completed: bool,
 }
 
 /// Result from claim_step operation

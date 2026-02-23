@@ -29,7 +29,8 @@ pub use merge::run_merge;
 pub use open_pr::run_open_pr;
 pub use resolve::run_resolve;
 pub use state::{
-    StateCommands, run_state_claim, run_state_heartbeat, run_state_init, run_state_start,
+    StateCommands, run_state_artifact, run_state_claim, run_state_complete, run_state_heartbeat,
+    run_state_init, run_state_start, run_state_update,
 };
 pub use status::run_status;
 pub use tell::run_tell;

@@ -224,6 +224,22 @@ pub enum TugError {
         current_status: String,
     },
 
+    /// E051: Cannot complete step with incomplete checklist items
+    #[error(
+        "E051: Cannot complete step {anchor}: {incomplete_count} checklist items not completed"
+    )]
+    StateIncompleteChecklist {
+        anchor: String,
+        incomplete_count: usize,
+    },
+
+    /// E052: Cannot complete step with incomplete substeps
+    #[error("E052: Cannot complete step {anchor}: {incomplete_count} substeps not completed")]
+    StateIncompleteSubsteps {
+        anchor: String,
+        incomplete_count: usize,
+    },
+
     /// E053: No steps ready for claiming
     #[error("E053: No steps ready for claiming")]
     StateNoReadySteps,
@@ -278,6 +294,8 @@ impl TugError {
             TugError::StatePlanHashMismatch { .. } => "E048",
             TugError::StateOwnershipViolation { .. } => "E049",
             TugError::StateStepNotClaimed { .. } => "E050",
+            TugError::StateIncompleteChecklist { .. } => "E051",
+            TugError::StateIncompleteSubsteps { .. } => "E052",
             TugError::StateNoReadySteps => "E053",
         }
     }
@@ -362,6 +380,8 @@ impl TugError {
             TugError::StatePlanHashMismatch { .. } => 14, // Plan hash mismatch
             TugError::StateOwnershipViolation { .. } => 14, // Ownership violation
             TugError::StateStepNotClaimed { .. } => 14, // Step not claimed
+            TugError::StateIncompleteChecklist { .. } => 14, // Incomplete checklist
+            TugError::StateIncompleteSubsteps { .. } => 14, // Incomplete substeps
             TugError::StateNoReadySteps => 14,    // No ready steps
         }
     }

@@ -49,7 +49,10 @@ pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, P
 pub use parser::parse_tugplan;
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use session::now_iso8601;
-pub use state::{ClaimResult, InitResult, StateDb, compute_plan_hash};
+pub use state::{
+    ChecklistUpdate, ClaimResult, CompleteResult, InitResult, StateDb, UpdateResult,
+    compute_plan_hash,
+};
 pub use types::{
     Anchor, BeadsHints, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step,
     Substep, TugPlan, TugPlanMetadata, TugPlanStatus,

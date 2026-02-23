@@ -44,6 +44,69 @@ pub enum StateCommands {
         #[arg(long, default_value = "7200")]
         lease_duration: u64,
     },
+    /// Update checklist item(s) for a step
+    Update {
+        /// Plan file path
+        plan: String,
+        /// Step anchor
+        step: String,
+        /// Worktree path (must match claimer)
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+        /// Update a specific task (1-indexed ordinal)
+        #[arg(long, value_name = "ORDINAL:STATUS")]
+        task: Option<String>,
+        /// Update a specific test (1-indexed ordinal)
+        #[arg(long, value_name = "ORDINAL:STATUS")]
+        test: Option<String>,
+        /// Update a specific checkpoint (1-indexed ordinal)
+        #[arg(long, value_name = "ORDINAL:STATUS")]
+        checkpoint: Option<String>,
+        /// Update all tasks
+        #[arg(long, value_name = "STATUS")]
+        all_tasks: Option<String>,
+        /// Update all tests
+        #[arg(long, value_name = "STATUS")]
+        all_tests: Option<String>,
+        /// Update all checkpoints
+        #[arg(long, value_name = "STATUS")]
+        all_checkpoints: Option<String>,
+        /// Update all checklist items
+        #[arg(long, value_name = "STATUS")]
+        all: Option<String>,
+    },
+    /// Record an artifact breadcrumb for a step
+    Artifact {
+        /// Plan file path
+        plan: String,
+        /// Step anchor
+        step: String,
+        /// Worktree path (must match claimer)
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+        /// Artifact kind (architect_strategy, reviewer_verdict, auditor_summary)
+        #[arg(long)]
+        kind: String,
+        /// Summary text (truncated to 500 chars)
+        #[arg(long)]
+        summary: String,
+    },
+    /// Complete a step
+    Complete {
+        /// Plan file path
+        plan: String,
+        /// Step anchor
+        step: String,
+        /// Worktree path (must match claimer)
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+        /// Force completion despite incomplete items/substeps
+        #[arg(long)]
+        force: bool,
+        /// Reason for forcing completion
+        #[arg(long, value_name = "TEXT")]
+        reason: Option<String>,
+    },
 }
 
 pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
@@ -389,6 +452,299 @@ pub fn run_state_heartbeat(
     } else if !quiet {
         println!("Heartbeat sent for step: {}", step);
         println!("  Lease expires: {}", lease_expires);
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_update(
+    plan: String,
+    step: String,
+    worktree: String,
+    task: Option<String>,
+    test: Option<String>,
+    checkpoint: Option<String>,
+    all_tasks: Option<String>,
+    all_tests: Option<String>,
+    all_checkpoints: Option<String>,
+    all: Option<String>,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let (_plan_abs, plan_rel) = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
+            (path, relative_path)
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Parse update arguments into ChecklistUpdate variants
+    let mut updates = Vec::new();
+
+    // Parse individual updates (format: "1:completed")
+    if let Some(t) = task {
+        let parts: Vec<&str> = t.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid task format. Use --task ORDINAL:STATUS".to_string());
+        }
+        let ordinal: i32 = parts[0]
+            .parse::<i32>()
+            .map_err(|_| "Invalid task ordinal")?
+            - 1; // Convert 1-indexed to 0-indexed
+        updates.push(tugtool_core::ChecklistUpdate::Individual {
+            kind: "task".to_string(),
+            ordinal,
+            status: parts[1].to_string(),
+        });
+    }
+
+    if let Some(t) = test {
+        let parts: Vec<&str> = t.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid test format. Use --test ORDINAL:STATUS".to_string());
+        }
+        let ordinal: i32 = parts[0]
+            .parse::<i32>()
+            .map_err(|_| "Invalid test ordinal")?
+            - 1; // Convert 1-indexed to 0-indexed
+        updates.push(tugtool_core::ChecklistUpdate::Individual {
+            kind: "test".to_string(),
+            ordinal,
+            status: parts[1].to_string(),
+        });
+    }
+
+    if let Some(c) = checkpoint {
+        let parts: Vec<&str> = c.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid checkpoint format. Use --checkpoint ORDINAL:STATUS".to_string());
+        }
+        let ordinal: i32 = parts[0]
+            .parse::<i32>()
+            .map_err(|_| "Invalid checkpoint ordinal")?
+            - 1; // Convert 1-indexed to 0-indexed
+        updates.push(tugtool_core::ChecklistUpdate::Individual {
+            kind: "checkpoint".to_string(),
+            ordinal,
+            status: parts[1].to_string(),
+        });
+    }
+
+    // Parse bulk updates
+    if let Some(status) = all_tasks {
+        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+            kind: "task".to_string(),
+            status,
+        });
+    }
+
+    if let Some(status) = all_tests {
+        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+            kind: "test".to_string(),
+            status,
+        });
+    }
+
+    if let Some(status) = all_checkpoints {
+        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+            kind: "checkpoint".to_string(),
+            status,
+        });
+    }
+
+    if let Some(status) = all {
+        updates.push(tugtool_core::ChecklistUpdate::AllItems { status });
+    }
+
+    if updates.is_empty() {
+        return Err("No updates specified. Use --task, --test, --checkpoint, --all-tasks, --all-tests, --all-checkpoints, or --all".to_string());
+    }
+
+    // 4. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 5. Update checklist
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    let result = db
+        .update_checklist(&plan_rel_str, &step, &worktree, &updates)
+        .map_err(|e| e.to_string())?;
+
+    // 6. Output
+    if json {
+        use crate::output::{JsonResponse, StateUpdateData};
+        let data = StateUpdateData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            items_updated: result.items_updated,
+        };
+        let response = JsonResponse::ok("state update", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!(
+            "Updated {} checklist item(s) for step: {}",
+            result.items_updated, step
+        );
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_artifact(
+    plan: String,
+    step: String,
+    worktree: String,
+    kind: String,
+    summary: String,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let (_plan_abs, plan_rel) = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
+            (path, relative_path)
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 4. Record artifact
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    let artifact_id = db
+        .record_artifact(&plan_rel_str, &step, &worktree, &kind, &summary)
+        .map_err(|e| e.to_string())?;
+
+    // 5. Output
+    if json {
+        use crate::output::{JsonResponse, StateArtifactData};
+        let data = StateArtifactData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            artifact_id,
+            kind: kind.clone(),
+        };
+        let response = JsonResponse::ok("state artifact", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!("Recorded {} artifact for step: {}", kind, step);
+        println!("  Artifact ID: {}", artifact_id);
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_complete(
+    plan: String,
+    step: String,
+    worktree: String,
+    force: bool,
+    reason: Option<String>,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let (_plan_abs, plan_rel) = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
+            (path, relative_path)
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 4. Complete step
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    let result = db
+        .complete_step(&plan_rel_str, &step, &worktree, force, reason.as_deref())
+        .map_err(|e| e.to_string())?;
+
+    // 5. Output
+    if json {
+        use crate::output::{JsonResponse, StateCompleteData};
+        let data = StateCompleteData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            completed: result.completed,
+            forced: result.forced,
+            all_steps_completed: result.all_steps_completed,
+        };
+        let response = JsonResponse::ok("state complete", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        if result.forced {
+            println!("Force-completed step: {}", step);
+        } else {
+            println!("Completed step: {}", step);
+        }
+        if result.all_steps_completed {
+            println!("All steps completed!");
+        }
     }
 
     Ok(0)

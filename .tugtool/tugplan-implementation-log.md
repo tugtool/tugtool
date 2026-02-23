@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-23T19:27:15Z
+bead: add-tugstate-7x8.7
+---
+
+## #step-5: Added update/artifact/complete commands with checklist tracking, strict completion, and force mode
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-4-summary
 date: 2025-02-23T19:16:15Z
 bead: add-tugstate-7x8.6

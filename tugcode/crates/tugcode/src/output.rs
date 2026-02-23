@@ -739,3 +739,30 @@ pub struct StateHeartbeatData {
     pub anchor: String,
     pub lease_expires: String,
 }
+
+/// Data payload for state update command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateUpdateData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub items_updated: usize,
+}
+
+/// Data payload for state artifact command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateArtifactData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub artifact_id: i64,
+    pub kind: String,
+}
+
+/// Data payload for state complete command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateCompleteData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub completed: bool,
+    pub forced: bool,
+    pub all_steps_completed: bool,
+}
