@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-23T20:23:05Z
+bead: add-tugstate-7x8.12
+---
+
+## #step-8: Added git trailers and non-fatal state complete to commit command
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-23T20:12:43Z
 bead: add-tugstate-7x8.11

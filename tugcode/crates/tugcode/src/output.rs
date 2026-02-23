@@ -455,6 +455,8 @@ pub struct CommitData {
     /// True if commit succeeded but bead close failed
     #[serde(alias = "needs_reconcile")] // v1 compat
     pub bead_close_failed: bool,
+    /// True if commit succeeded but state complete failed
+    pub state_update_failed: bool,
     /// Any non-fatal warnings encountered
     pub warnings: Vec<String>,
 }
@@ -519,6 +521,7 @@ mod tests {
             archived_path: None,
             files_staged: vec!["a.rs".to_string(), "b.rs".to_string()],
             bead_close_failed: false,
+            state_update_failed: false,
             warnings: vec![],
         };
 
@@ -549,6 +552,7 @@ mod tests {
             archived_path: Some(".tugtool/archive/log-2026-02-11.md".to_string()),
             files_staged: vec!["x.rs".to_string()],
             bead_close_failed: true,
+            state_update_failed: false,
             warnings: vec!["Bead close failed".to_string()],
         };
 
