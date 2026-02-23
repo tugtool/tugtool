@@ -48,9 +48,91 @@ pub(crate) struct DevState {
 /// Shared dev state type for lock-free runtime swapping
 pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
 
-/// Dev runtime: holds file watcher for RAII cleanup
+/// Tracks file change state across three watcher categories.
+///
+/// Per-category dirty flags indicate which categories have pending changes.
+/// `code_count` is a single combined counter for Category 2 (frontend + backend),
+/// incremented by both `mark_frontend()` and `mark_backend()`.
+/// `app_count` is a separate counter for Category 3 (app sources).
+#[derive(Debug, Default)]
+pub(crate) struct DevChangeTracker {
+    pub frontend_dirty: bool,
+    pub backend_dirty: bool,
+    pub app_dirty: bool,
+    pub code_count: u32,
+    pub app_count: u32,
+}
+
+/// Shared change tracker type for thread-safe access from watcher tasks
+pub(crate) type SharedChangeTracker = Arc<std::sync::Mutex<DevChangeTracker>>;
+
+impl DevChangeTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Mark a frontend (compiled JS) change. Increments the shared code_count.
+    #[allow(dead_code)]
+    pub fn mark_frontend(&mut self) {
+        self.frontend_dirty = true;
+        self.code_count += 1;
+    }
+
+    /// Mark a backend (tugcast binary) change. Increments the shared code_count.
+    #[allow(dead_code)]
+    pub fn mark_backend(&mut self) {
+        self.backend_dirty = true;
+        self.code_count += 1;
+    }
+
+    /// Mark an app source (.swift) change.
+    #[allow(dead_code)]
+    pub fn mark_app(&mut self) {
+        self.app_dirty = true;
+        self.app_count += 1;
+    }
+
+    /// Take a snapshot of the current dirty state for notification payloads.
+    /// Returns (changes_vec, code_count, app_count).
+    pub fn snapshot(&self) -> (Vec<&'static str>, u32, u32) {
+        let mut changes = Vec::new();
+        if self.frontend_dirty {
+            changes.push("frontend");
+        }
+        if self.backend_dirty {
+            changes.push("backend");
+        }
+        if self.app_dirty {
+            changes.push("app");
+        }
+        (changes, self.code_count, self.app_count)
+    }
+
+    /// Clear Category 1+2 state after a restart operation.
+    /// Preserves app (Category 3) state.
+    #[allow(dead_code)]
+    pub fn clear_restart(&mut self) {
+        self.frontend_dirty = false;
+        self.backend_dirty = false;
+        self.code_count = 0;
+    }
+
+    /// Clear all state after a relaunch or full reset.
+    #[allow(dead_code)]
+    pub fn clear_all(&mut self) {
+        self.frontend_dirty = false;
+        self.backend_dirty = false;
+        self.app_dirty = false;
+        self.code_count = 0;
+        self.app_count = 0;
+    }
+}
+
+/// Dev runtime: holds file watcher and change tracker for RAII cleanup
 pub(crate) struct DevRuntime {
     pub(crate) _watcher: RecommendedWatcher,
+    #[allow(dead_code)]
+    pub(crate) change_tracker: SharedChangeTracker,
 }
 
 /// Create a new shared dev state initialized to None
@@ -86,15 +168,26 @@ pub(crate) async fn enable_dev_mode(
     // Derive watch directories
     let watch_dirs = watch_dirs_from_manifest(&state);
 
-    // Create file watcher (passing shared_state clone for debounce gating)
-    let watcher = dev_file_watcher(&watch_dirs, client_action_tx, shared_state.clone())?;
+    // Create change tracker
+    let change_tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+
+    // Create file watcher (passing shared_state clone for debounce gating and tracker)
+    let watcher = dev_file_watcher(
+        &watch_dirs,
+        client_action_tx,
+        shared_state.clone(),
+        change_tracker.clone(),
+    )?;
 
     // Store loaded DevState into shared state
     shared_state.store(Arc::new(Some(state)));
 
     info!(source_tree = ?source_tree, "dev mode enabled");
 
-    Ok(DevRuntime { _watcher: watcher })
+    Ok(DevRuntime {
+        _watcher: watcher,
+        change_tracker,
+    })
 }
 
 /// Disable dev mode: clear shared state, drop file watcher
@@ -448,6 +541,42 @@ pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Build and send a dev_notification Control frame.
+///
+/// For `"reloaded"` type: sends `{"action":"dev_notification","type":"reloaded"}`
+/// For `"restart_available"` type: includes `changes` array and `count` from tracker snapshot
+/// For `"relaunch_available"` type: includes `changes` array and `count` from tracker snapshot
+pub(crate) fn send_dev_notification(
+    notification_type: &str,
+    tracker: &SharedChangeTracker,
+    client_action_tx: &broadcast::Sender<Frame>,
+) {
+    let payload = if notification_type == "reloaded" {
+        // Category 1: no changes array or count
+        br#"{"action":"dev_notification","type":"reloaded"}"#.to_vec()
+    } else {
+        // Category 2 or 3: include changes and count from tracker snapshot
+        let guard = tracker.lock().unwrap();
+        let (changes, code_count, app_count) = guard.snapshot();
+        let count = if notification_type == "restart_available" {
+            code_count
+        } else {
+            app_count
+        };
+        // Build JSON using serde_json for safety
+        let json = serde_json::json!({
+            "action": "dev_notification",
+            "type": notification_type,
+            "changes": changes,
+            "count": count,
+        });
+        serde_json::to_vec(&json).unwrap_or_default()
+    };
+
+    let frame = Frame::new(FeedId::Control, payload);
+    let _ = client_action_tx.send(frame);
+}
+
 /// Check whether a notify event contains paths with reload-worthy extensions
 fn has_reload_extension(event: &notify::Event) -> bool {
     event.paths.iter().any(|p| {
@@ -465,6 +594,7 @@ pub(crate) fn dev_file_watcher(
     watch_dirs: &[PathBuf],
     client_action_tx: broadcast::Sender<Frame>,
     shared_state: SharedDevState,
+    tracker: SharedChangeTracker,
 ) -> Result<RecommendedWatcher, String> {
     // Bridge notify's sync callback into the tokio world.
     // UnboundedSender::send() is non-async, safe to call from notify's thread.
@@ -485,6 +615,7 @@ pub(crate) fn dev_file_watcher(
 
     // Quiet-period debounce task with dev state gating
     let debounce_state = shared_state;
+    let debounce_tracker = tracker;
     tokio::spawn(async move {
         let quiet_period = Duration::from_millis(100);
         loop {
@@ -514,6 +645,10 @@ pub(crate) fn dev_file_watcher(
             let frame = Frame::new(FeedId::Control, payload.to_vec());
             let _ = client_action_tx.send(frame);
             info!("dev: triggered reload");
+
+            // Send dev_notification with type "reloaded"
+            send_dev_notification("reloaded", &debounce_tracker, &client_action_tx);
+            info!("dev: sent dev_notification type=reloaded");
         }
     });
 
@@ -1145,5 +1280,173 @@ fallback = "dist"
             client_action_rx.try_recv().is_err(),
             "Expected no reload after disable during debounce"
         );
+    }
+
+    #[test]
+    fn test_change_tracker_new_is_clean() {
+        let tracker = DevChangeTracker::new();
+        assert!(!tracker.frontend_dirty);
+        assert!(!tracker.backend_dirty);
+        assert!(!tracker.app_dirty);
+        assert_eq!(tracker.code_count, 0);
+        assert_eq!(tracker.app_count, 0);
+    }
+
+    #[test]
+    fn test_change_tracker_mark_frontend() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_frontend();
+        assert!(tracker.frontend_dirty);
+        assert!(!tracker.backend_dirty);
+        assert!(!tracker.app_dirty);
+        assert_eq!(tracker.code_count, 1);
+        assert_eq!(tracker.app_count, 0);
+    }
+
+    #[test]
+    fn test_change_tracker_mark_backend() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_backend();
+        assert!(!tracker.frontend_dirty);
+        assert!(tracker.backend_dirty);
+        assert!(!tracker.app_dirty);
+        assert_eq!(tracker.code_count, 1);
+        assert_eq!(tracker.app_count, 0);
+    }
+
+    #[test]
+    fn test_change_tracker_combined_count() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_frontend();
+        tracker.mark_frontend();
+        tracker.mark_backend();
+        assert!(tracker.frontend_dirty);
+        assert!(tracker.backend_dirty);
+        assert!(!tracker.app_dirty);
+        assert_eq!(tracker.code_count, 3);
+        assert_eq!(tracker.app_count, 0);
+    }
+
+    #[test]
+    fn test_change_tracker_mark_app() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_app();
+        assert!(!tracker.frontend_dirty);
+        assert!(!tracker.backend_dirty);
+        assert!(tracker.app_dirty);
+        assert_eq!(tracker.code_count, 0);
+        assert_eq!(tracker.app_count, 1);
+    }
+
+    #[test]
+    fn test_change_tracker_clear_restart() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_frontend();
+        tracker.mark_backend();
+        tracker.mark_app();
+        assert_eq!(tracker.code_count, 2);
+        assert_eq!(tracker.app_count, 1);
+
+        tracker.clear_restart();
+        assert!(!tracker.frontend_dirty);
+        assert!(!tracker.backend_dirty);
+        assert!(tracker.app_dirty); // app state preserved
+        assert_eq!(tracker.code_count, 0);
+        assert_eq!(tracker.app_count, 1); // app count preserved
+    }
+
+    #[test]
+    fn test_change_tracker_clear_all() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_frontend();
+        tracker.mark_backend();
+        tracker.mark_app();
+
+        tracker.clear_all();
+        assert!(!tracker.frontend_dirty);
+        assert!(!tracker.backend_dirty);
+        assert!(!tracker.app_dirty);
+        assert_eq!(tracker.code_count, 0);
+        assert_eq!(tracker.app_count, 0);
+    }
+
+    #[test]
+    fn test_change_tracker_snapshot() {
+        let mut tracker = DevChangeTracker::new();
+        tracker.mark_frontend();
+        tracker.mark_backend();
+        assert_eq!(tracker.code_count, 2);
+
+        let (changes, code_count, app_count) = tracker.snapshot();
+        assert_eq!(changes, vec!["frontend", "backend"]);
+        assert_eq!(code_count, 2);
+        assert_eq!(app_count, 0);
+
+        // Add app change
+        tracker.mark_app();
+        let (changes, code_count, app_count) = tracker.snapshot();
+        assert_eq!(changes, vec!["frontend", "backend", "app"]);
+        assert_eq!(code_count, 2);
+        assert_eq!(app_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_send_dev_notification_reloaded() {
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        send_dev_notification("reloaded", &tracker, &client_action_tx);
+
+        let frame = rx.recv().await.unwrap();
+        assert_eq!(frame.feed_id, FeedId::Control);
+
+        let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(json["action"], "dev_notification");
+        assert_eq!(json["type"], "reloaded");
+        assert!(json.get("changes").is_none());
+        assert!(json.get("count").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_send_dev_notification_restart_available() {
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        {
+            let mut guard = tracker.lock().unwrap();
+            guard.mark_frontend();
+            guard.mark_backend();
+        }
+
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+        send_dev_notification("restart_available", &tracker, &client_action_tx);
+
+        let frame = rx.recv().await.unwrap();
+        assert_eq!(frame.feed_id, FeedId::Control);
+
+        let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(json["action"], "dev_notification");
+        assert_eq!(json["type"], "restart_available");
+        assert_eq!(json["changes"], serde_json::json!(["frontend", "backend"]));
+        assert_eq!(json["count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_send_dev_notification_relaunch_available() {
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        {
+            let mut guard = tracker.lock().unwrap();
+            guard.mark_app();
+        }
+
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+        send_dev_notification("relaunch_available", &tracker, &client_action_tx);
+
+        let frame = rx.recv().await.unwrap();
+        assert_eq!(frame.feed_id, FeedId::Control);
+
+        let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(json["action"], "dev_notification");
+        assert_eq!(json["type"], "relaunch_available");
+        assert_eq!(json["changes"], serde_json::json!(["app"]));
+        assert_eq!(json["count"], 1);
     }
 }

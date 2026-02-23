@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-23T02:47:00Z
+bead: dev-mode-notifications-73p.2
+---
+
+## step-1: Added DevChangeTracker struct (frontend_dirty, backend_dirty, app_dirty, code_count, app_count) with SharedChangeTracker wrapper. Added send_dev_notification() for building JSON Control frames per Spec S01. Updated DevRuntime and dev_file_watcher to use tracker. Added 11 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-0
 date: 2025-02-23T02:37:58Z
 bead: dev-mode-notifications-73p.1
