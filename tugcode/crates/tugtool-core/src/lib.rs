@@ -60,3 +60,29 @@ pub use worktree::{
     find_worktree_by_tugplan, generate_branch_name, is_valid_worktree_path, list_tugtool_branches,
     list_worktrees, remove_worktree, resolve_worktree, sanitize_branch_name,
 };
+
+#[cfg(test)]
+mod dependency_smoke_tests {
+    #[test]
+    fn rusqlite_smoke_test() {
+        // Verify rusqlite dependency is wired by opening an in-memory DB
+        let conn = rusqlite::Connection::open_in_memory()
+            .expect("rusqlite should open in-memory connection");
+        conn.execute_batch("SELECT 1")
+            .expect("rusqlite should execute basic query");
+    }
+
+    #[test]
+    fn sha2_smoke_test() {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"hello world");
+        let result = hasher.finalize();
+        let hex = format!("{:x}", result);
+        // Known SHA-256 of "hello world"
+        assert_eq!(
+            hex,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+    }
+}

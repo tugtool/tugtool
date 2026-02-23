@@ -36,6 +36,10 @@ dirs = "5"
 # Testing
 tempfile = "3"
 
+# State management
+rusqlite = { version = "0.33", features = ["bundled"] }
+sha2 = "0.10"
+
 # Internal crates
 tugtool-core = { path = "crates/tugtool-core" }
 

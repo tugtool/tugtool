@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-23T18:29:30Z
+bead: add-tugstate-7x8.1
+---
+
+## #step-0: Added rusqlite and sha2 dependencies, gitignore patterns, and smoke tests
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: step-7
 date: 2025-02-23T04:13:13Z
 bead: dev-mode-notifications-73p.8

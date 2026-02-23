@@ -39,6 +39,9 @@ aside
 
 # Tug step artifacts (optional local debug)
 .tugtool/step-artifacts/
+.tugtool/state.db
+.tugtool/state.db-wal
+.tugtool/state.db-shm
 
 # Unwanted file dropped by bd init
 AGENTS.md
