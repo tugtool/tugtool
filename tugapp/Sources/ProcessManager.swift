@@ -178,11 +178,18 @@ class ProcessManager {
             switch reason {
             case "restart", "reset":
                 NSLog("ProcessManager: shutdown reason=%@, will restart", reason)
-                restartDecision = .restart
-            case "binary_updated":
-                NSLog("ProcessManager: shutdown reason=binary_updated, copying new binary and restarting")
                 copyBinaryFromSourceTree()
                 restartDecision = .restart
+            case "relaunch":
+                NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
+                // Stop bun build --watch before app exit
+                if let proc = bunProcess, proc.isRunning {
+                    NSLog("ProcessManager: terminating bun process before relaunch")
+                    proc.terminate()
+                    proc.waitUntilExit()
+                }
+                bunProcess = nil
+                restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)
@@ -278,7 +285,7 @@ class ProcessManager {
     }
 
     /// Copy the new tugcast binary from the source tree into the app bundle.
-    /// Called when receiving a binary_updated shutdown signal from tugcast.
+    /// Called during restart to copy the latest built binary into the app bundle.
     /// On failure, logs error and continues (restart proceeds with existing binary).
     private func copyBinaryFromSourceTree() {
         // Read source tree path from UserDefaults
@@ -364,7 +371,7 @@ class ProcessManager {
 
             // Start bun build --watch if in dev mode (guard against duplication on restarts)
             if devEnabled, let bunSourceTree = freshSourceTree {
-                // Bun duplication guard: skip if already running (prevents duplicate watchers on binary_updated restarts)
+                // Bun duplication guard: skip if already running (prevents duplicate watchers on restarts)
                 if bunProcess?.isRunning == true {
                     NSLog("ProcessManager: bun build --watch already running, skipping spawn")
                 } else if let bunPath = ProcessManager.which("bun") {

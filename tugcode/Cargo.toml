@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tugcode", "crates/tugtool-core", "crates/tugcast", "crates/tugcast-core", "crates/tugtool"]
+members = ["crates/tugcode", "crates/tugtool-core", "crates/tugcast", "crates/tugcast-core", "crates/tugtool", "crates/tugrelaunch"]
 
 [workspace.package]
 version = "0.6.9"

@@ -71,6 +71,7 @@ function titleForComponent(componentId: string): string {
     stats: "Stats",
     about: "About",
     settings: "Settings",
+    developer: "Developer",
   };
   return titles[componentId] ?? componentId;
 }

@@ -7,6 +7,7 @@ import { GitCard } from "./cards/git-card";
 import { StatsCard } from "./cards/stats-card";
 import { AboutCard } from "./cards/about-card";
 import { SettingsCard } from "./cards/settings-card";
+import { DeveloperCard } from "./cards/developer-card";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
 
@@ -43,6 +44,7 @@ deck.registerCardFactory("files", () => new FilesCard());
 deck.registerCardFactory("stats", () => new StatsCard());
 deck.registerCardFactory("about", () => new AboutCard());
 deck.registerCardFactory("settings", () => new SettingsCard(connection));
+deck.registerCardFactory("developer", () => new DeveloperCard(connection));
 
 // Create and register cards by componentId
 // DeckManager.addCard matches cards to layout tree TabItems by componentId

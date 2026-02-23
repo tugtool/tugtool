@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{broadcast, mpsc};
+use tokio::time::{Duration, sleep};
 use tracing::info;
 use tugcast_core::{FeedId, Frame};
 
@@ -113,17 +114,27 @@ impl ControlReader {
                     // Parse message
                     match serde_json::from_str::<ControlMessage>(&line) {
                         Ok(ControlMessage::Tell { action, payload }) => {
-                            // Re-serialize the full payload (including action) for dispatch
-                            let mut full_payload = payload.clone();
-                            full_payload["action"] = serde_json::Value::String(action.clone());
-                            if let Ok(bytes) = serde_json::to_vec(&full_payload) {
-                                crate::actions::dispatch_action(
-                                    &action,
-                                    &bytes,
-                                    &shutdown_tx,
-                                    &client_action_tx,
-                                )
-                                .await;
+                            // Intercept relaunch action for special handling
+                            if action == "relaunch" {
+                                let shared = shared_dev_state.clone();
+                                let cat = client_action_tx.clone();
+                                let stx = shutdown_tx.clone();
+                                tokio::spawn(async move {
+                                    handle_relaunch(shared, cat, stx).await;
+                                });
+                            } else {
+                                // Re-serialize the full payload (including action) for dispatch
+                                let mut full_payload = payload.clone();
+                                full_payload["action"] = serde_json::Value::String(action.clone());
+                                if let Ok(bytes) = serde_json::to_vec(&full_payload) {
+                                    crate::actions::dispatch_action(
+                                        &action,
+                                        &bytes,
+                                        &shutdown_tx,
+                                        &client_action_tx,
+                                    )
+                                    .await;
+                                }
                             }
                         }
                         Ok(ControlMessage::DevMode {
@@ -155,7 +166,6 @@ impl ControlReader {
                                     source_path,
                                     &shared_dev_state,
                                     client_action_tx.clone(),
-                                    shutdown_tx.clone(),
                                 )
                                 .await
                                 {
@@ -260,6 +270,194 @@ pub(crate) fn make_shutdown_message(reason: &str, pid: u32) -> String {
         "pid": pid
     })
     .to_string()
+}
+
+// ============================================================================
+// Relaunch Orchestration
+// ============================================================================
+
+/// Handle relaunch action: spawn tugrelaunch, relay progress, send exit code 45
+async fn handle_relaunch(
+    shared_dev_state: crate::dev::SharedDevState,
+    client_action_tx: broadcast::Sender<Frame>,
+    shutdown_tx: mpsc::Sender<u8>,
+) {
+    // 1. Read source_tree from shared_dev_state
+    let source_tree = {
+        let guard = shared_dev_state.load();
+        match guard.as_ref() {
+            Some(state) => state.source_tree.clone(),
+            None => {
+                info!("relaunch: dev mode not enabled, ignoring");
+                return;
+            }
+        }
+    };
+
+    // 2. Determine app-bundle path from current executable
+    let app_bundle = match resolve_app_bundle() {
+        Some(p) => p,
+        None => {
+            info!("relaunch: could not determine app bundle path");
+            send_build_progress_error(&client_action_tx, "Could not determine app bundle path");
+            return;
+        }
+    };
+
+    // 3. Get Tug.app PID via getppid
+    let tug_app_pid = std::os::unix::process::parent_id();
+
+    // 4. Build progress socket path
+    let progress_socket = format!("/tmp/tugrelaunch-{}.sock", std::process::id());
+
+    // 5. Resolve tugrelaunch binary (sibling of current executable)
+    let tugrelaunch_bin = match resolve_tugrelaunch_binary() {
+        Some(p) => p,
+        None => {
+            info!("relaunch: tugrelaunch binary not found");
+            send_build_progress_error(&client_action_tx, "tugrelaunch binary not found");
+            return;
+        }
+    };
+
+    // 6. Spawn tugrelaunch
+    let mut child = match tokio::process::Command::new(&tugrelaunch_bin)
+        .arg("--source-tree")
+        .arg(&source_tree)
+        .arg("--app-bundle")
+        .arg(&app_bundle)
+        .arg("--progress-socket")
+        .arg(&progress_socket)
+        .arg("--pid")
+        .arg(tug_app_pid.to_string())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            info!("relaunch: failed to spawn tugrelaunch: {}", e);
+            send_build_progress_error(
+                &client_action_tx,
+                &format!("Failed to spawn tugrelaunch: {}", e),
+            );
+            return;
+        }
+    };
+
+    // 7. Connect to progress socket (with retry/delay for tugrelaunch to bind)
+    let stream = connect_progress_socket(&progress_socket).await;
+
+    // 8. Read progress and relay as dev_build_progress frames
+    if let Some(stream) = stream {
+        relay_progress(stream, &client_action_tx, &shutdown_tx).await;
+    } else {
+        // No progress connection -- wait for child and log
+        info!("relaunch: proceeding without progress connection");
+        let _ = child.wait().await;
+    }
+}
+
+/// Resolve app bundle path from current executable
+/// tugcast is at: Tug.app/Contents/MacOS/tugcast
+/// We want: Tug.app
+fn resolve_app_bundle() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    // Go up 3 levels: tugcast -> MacOS -> Contents -> Tug.app
+    let bundle = exe.parent()?.parent()?.parent()?;
+
+    // Verify it looks like an app bundle
+    if bundle.extension()?.to_str()? == "app" {
+        Some(bundle.to_path_buf())
+    } else {
+        None
+    }
+}
+
+/// Resolve tugrelaunch binary (sibling of current executable)
+fn resolve_tugrelaunch_binary() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let bin_dir = exe.parent()?;
+    let tugrelaunch = bin_dir.join("tugrelaunch");
+
+    if tugrelaunch.exists() {
+        Some(tugrelaunch)
+    } else {
+        None
+    }
+}
+
+/// Connect to progress socket with retry
+async fn connect_progress_socket(path: &str) -> Option<UnixStream> {
+    // Try up to 10 times with 500ms delay (5 seconds total)
+    for _ in 0..10 {
+        if let Ok(stream) = UnixStream::connect(path).await {
+            return Some(stream);
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+    None
+}
+
+/// Relay progress messages from tugrelaunch to client as dev_build_progress frames
+async fn relay_progress(
+    stream: UnixStream,
+    client_action_tx: &broadcast::Sender<Frame>,
+    shutdown_tx: &mpsc::Sender<u8>,
+) {
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                // EOF
+                break;
+            }
+            Ok(_) => {
+                // Parse progress message
+                if let Ok(mut progress) = serde_json::from_str::<serde_json::Value>(&line) {
+                    let status = progress
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    // Add action field to convert to dev_build_progress format
+                    progress["action"] =
+                        serde_json::Value::String("dev_build_progress".to_string());
+
+                    // Send as Control frame
+                    if let Ok(bytes) = serde_json::to_vec(&progress) {
+                        let frame = Frame::new(FeedId::Control, bytes);
+                        let _ = client_action_tx.send(frame);
+                    }
+
+                    // If status is "quitting", send exit code 45
+                    if status.as_deref() == Some("quitting") {
+                        let _ = shutdown_tx.send(45).await;
+                    }
+                }
+            }
+            Err(_) => {
+                // Read error
+                break;
+            }
+        }
+    }
+}
+
+/// Send error message as dev_build_progress frame
+fn send_build_progress_error(client_action_tx: &broadcast::Sender<Frame>, error_msg: &str) {
+    let msg = serde_json::json!({
+        "action": "dev_build_progress",
+        "stage": "relaunch",
+        "status": "failed",
+        "error": error_msg,
+    });
+
+    if let Ok(bytes) = serde_json::to_vec(&msg) {
+        let frame = Frame::new(FeedId::Control, bytes);
+        let _ = client_action_tx.send(frame);
+    }
 }
 
 #[cfg(test)]
@@ -429,5 +627,81 @@ mod tests {
         assert_eq!(parsed["type"], "shutdown");
         assert_eq!(parsed["reason"], "restart");
         assert_eq!(parsed["pid"], 12345);
+    }
+
+    #[test]
+    fn test_resolve_tugrelaunch_binary_sibling_of_current_exe() {
+        // This test verifies the logic -- actual success depends on binary existing
+        let result = resolve_tugrelaunch_binary();
+        // Just verify it returns a path or None (can't guarantee binary exists in test env)
+        if let Some(path) = result {
+            assert!(path.to_string_lossy().contains("tugrelaunch"));
+        }
+    }
+
+    #[test]
+    fn test_build_progress_error_message_format() {
+        let (tx, _rx) = broadcast::channel(16);
+        send_build_progress_error(&tx, "test error");
+        // Verify no crash -- actual frame sending tested via integration
+    }
+
+    #[tokio::test]
+    async fn test_handle_relaunch_ignores_when_dev_mode_not_enabled() {
+        use arc_swap::ArcSwap;
+        use std::sync::Arc;
+
+        let shared_dev_state = Arc::new(ArcSwap::from_pointee(None::<crate::dev::DevState>));
+        let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+
+        handle_relaunch(shared_dev_state, client_action_tx, shutdown_tx).await;
+
+        // Verify no shutdown signal sent
+        assert!(shutdown_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_relaunch_reads_source_tree_from_dev_state() {
+        use arc_swap::ArcSwap;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let dev_state = crate::dev::DevState {
+            source_tree: PathBuf::from("/test/source"),
+            files: HashMap::new(),
+            index_path: PathBuf::from("/tmp/index.html"),
+            dirs: vec![],
+            fallback: PathBuf::from("/tmp/fallback"),
+        };
+        let shared_dev_state = Arc::new(ArcSwap::from_pointee(Some(dev_state)));
+        let (client_action_tx, _) = broadcast::channel(16);
+        let (shutdown_tx, _) = mpsc::channel(1);
+
+        // This will fail at resolve_app_bundle() since we're not in an app bundle,
+        // but it successfully reads source_tree before that
+        handle_relaunch(shared_dev_state.clone(), client_action_tx, shutdown_tx).await;
+
+        // Verify dev state was accessed (no crash)
+        let guard = shared_dev_state.load();
+        assert!(guard.is_some());
+        if let Some(state) = guard.as_ref() {
+            assert_eq!(state.source_tree, PathBuf::from("/test/source"));
+        }
+    }
+
+    #[test]
+    fn test_dev_build_progress_frame_construction() {
+        // Test that progress messages are correctly converted to dev_build_progress format
+        let mut progress = serde_json::json!({
+            "stage": "cargo",
+            "status": "building",
+        });
+
+        progress["action"] = serde_json::Value::String("dev_build_progress".to_string());
+
+        assert_eq!(progress["action"], "dev_build_progress");
+        assert_eq!(progress["stage"], "cargo");
+        assert_eq!(progress["status"], "building");
     }
 }

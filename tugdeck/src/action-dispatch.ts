@@ -175,4 +175,67 @@ export function initActionDispatch(
       console.info("choose-source-tree: WKScriptMessageHandler bridge not available");
     }
   });
+
+  // dev_notification: Route to Developer card, set badge if card closed
+  registerAction("dev_notification", (payload) => {
+    const type = payload.type as string | undefined;
+    const count = payload.count as number | undefined;
+
+    // Find Developer card via panel lookup + card registry
+    const panel = deckManager.findPanelByComponent("developer");
+    let developerCard: any = null;
+
+    if (panel) {
+      // Find the tab with componentId === "developer"
+      const cardState = deckManager.getDeckState().cards.find((cs) => cs.id === panel.id);
+      if (cardState) {
+        for (const tabItem of cardState.tabItems) {
+          if ((tabItem as any).componentId === "developer") {
+            developerCard = deckManager.getCardRegistry().get(tabItem.id);
+            break;
+          }
+        }
+      }
+    }
+
+    if (developerCard && typeof developerCard.update === "function") {
+      // Card is open, route to it
+      developerCard.update(payload);
+    } else {
+      // Card is closed
+      if (type === "restart_available" || type === "relaunch_available") {
+        // Set dock badge for dirty notifications
+        document.dispatchEvent(
+          new CustomEvent("td-dev-badge", {
+            detail: { componentId: "developer", count: count ?? 0 },
+          })
+        );
+      }
+      // For "reloaded" type, no badge (clean state)
+    }
+  });
+
+  // dev_build_progress: Route to Developer card
+  registerAction("dev_build_progress", (payload) => {
+    // Find Developer card same way
+    const panel = deckManager.findPanelByComponent("developer");
+    let developerCard: any = null;
+
+    if (panel) {
+      const cardState = deckManager.getDeckState().cards.find((cs) => cs.id === panel.id);
+      if (cardState) {
+        for (const tabItem of cardState.tabItems) {
+          if ((tabItem as any).componentId === "developer") {
+            developerCard = deckManager.getCardRegistry().get(tabItem.id);
+            break;
+          }
+        }
+      }
+    }
+
+    if (developerCard && typeof developerCard.updateBuildProgress === "function") {
+      developerCard.updateBuildProgress(payload);
+    }
+    // If card closed, no-op
+  });
 }

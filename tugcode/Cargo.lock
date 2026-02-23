@@ -2182,6 +2182,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugrelaunch"
+version = "0.6.9"
+dependencies = [
+ "clap",
+ "libc",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "tugtool"
 version = "0.6.9"
 dependencies = [

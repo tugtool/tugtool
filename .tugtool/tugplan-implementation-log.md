@@ -9,6 +9,110 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-02-23T04:13:13Z
+bead: dev-mode-notifications-73p.8
+---
+
+## step-7: Documented Q01 resolution in plan file. Validated full CI suite passes. Confirmed all removed items are gone via grep. All 1,129 tests pass (646 Rust + 483 TypeScript). Implementation complete.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-6
+date: 2025-02-23T03:57:16Z
+bead: dev-mode-notifications-73p.7
+---
+
+## step-6: Added handle_relaunch() and helpers in control.rs for async tugrelaunch orchestration with UDS progress relay. Updated Justfile to build and copy tugrelaunch binary. Updated ProcessManager.swift relaunch case to terminate bun process. Added 5 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-5
+date: 2025-02-23T03:45:07Z
+bead: dev-mode-notifications-73p.6
+---
+
+## step-5: Created tugcode/crates/tugrelaunch/ binary crate implementing build-replace-relaunch lifecycle. CLI with clap (--source-tree, --app-bundle, --progress-socket, --pid). UDS progress socket with Spec S04 JSON protocol. Sequential cargo/bun/xcode builds. kqueue-based process wait with SIGKILL fallback. Atomic binary copy with cross-device fallback. App relaunch via open -a. 9 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-4
+date: 2025-02-23T03:34:07Z
+bead: dev-mode-notifications-73p.5
+---
+
+## step-4: Extracted shutdown_reason_for_exit_code() function in tugcast main.rs with exit code 45 → 'relaunch' mapping. Added explicit 'relaunch' case to ProcessManager.swift shutdown handler (DoNotRestart). Added 5 unit tests for exit code mapping.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-3
+date: 2025-02-23T03:26:27Z
+bead: dev-mode-notifications-73p.4
+---
+
+## step-3: Created DeveloperCard class implementing TugCard interface with Styles/Code/App indicator rows, notification handlers, and Restart/Relaunch/Reset buttons. Added Developer icon button to Dock with badge overlay via CustomEvent. Registered dev_notification and dev_build_progress handlers in action-dispatch. Created developer-card.test.ts and extended action-dispatch.test.ts and dock.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-2
+date: 2025-02-23T02:57:12Z
+bead: dev-mode-notifications-73p.3
+---
+
+## step-2: Added dev_compiled_watcher (Category 2: mtime polling for dist/app.js and tugcast binary, 2s interval, 500ms stabilization) and dev_app_watcher (Category 3: notify recursive for tugapp/Sources .swift files, 100ms debounce). Fixed has_reload_extension to exclude .js. Updated DevRuntime, enable_dev_mode, disable_dev_mode. Added 7 tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-1
+date: 2025-02-23T02:47:00Z
+bead: dev-mode-notifications-73p.2
+---
+
+## step-1: Added DevChangeTracker struct (frontend_dirty, backend_dirty, app_dirty, code_count, app_count) with SharedChangeTracker wrapper. Added send_dev_notification() for building JSON Control frames per Spec S01. Updated DevRuntime and dev_file_watcher to use tracker. Added 11 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
+step: step-0
+date: 2025-02-23T02:37:58Z
+bead: dev-mode-notifications-73p.1
+---
+
+## step-0: Removed auto-restart binary watcher mechanism across tugcast dev.rs, control.rs, main.rs, tugtool main.rs, and ProcessManager.swift. Deleted spawn_binary_watcher function, 4 binary watcher tests, shutdown_tx parameter, exit code 44 mapping, and binary_updated case handling.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-22T17:50:59Z
 ---

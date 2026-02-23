@@ -306,13 +306,7 @@ async fn main() {
 
     // Send shutdown message via response channel (draining task writes to socket)
     if let Some(tx) = response_tx {
-        let reason = match exit_code {
-            42 => "restart",
-            43 => "reset",
-            44 => "binary_updated",
-            0 => "normal",
-            _ => "error",
-        };
+        let reason = shutdown_reason_for_exit_code(exit_code);
         let shutdown_json = control::make_shutdown_message(reason, std::process::id());
         let _ = tx.send(shutdown_json).await;
         drop(tx); // Close channel -- draining task exits after writing
@@ -322,4 +316,47 @@ async fn main() {
     cancel.cancel();
     info!("tugcast shut down");
     std::process::exit(exit_code);
+}
+
+/// Map exit code to shutdown reason string
+fn shutdown_reason_for_exit_code(code: i32) -> &'static str {
+    match code {
+        0 => "normal",
+        42 => "restart",
+        43 => "reset",
+        45 => "relaunch",
+        _ => "error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shutdown_reason_for_exit_code_normal() {
+        assert_eq!(shutdown_reason_for_exit_code(0), "normal");
+    }
+
+    #[test]
+    fn test_shutdown_reason_for_exit_code_restart() {
+        assert_eq!(shutdown_reason_for_exit_code(42), "restart");
+    }
+
+    #[test]
+    fn test_shutdown_reason_for_exit_code_reset() {
+        assert_eq!(shutdown_reason_for_exit_code(43), "reset");
+    }
+
+    #[test]
+    fn test_shutdown_reason_for_exit_code_relaunch() {
+        assert_eq!(shutdown_reason_for_exit_code(45), "relaunch");
+    }
+
+    #[test]
+    fn test_shutdown_reason_for_exit_code_error() {
+        assert_eq!(shutdown_reason_for_exit_code(1), "error");
+        assert_eq!(shutdown_reason_for_exit_code(-1), "error");
+        assert_eq!(shutdown_reason_for_exit_code(99), "error");
+    }
 }
