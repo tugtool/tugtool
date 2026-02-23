@@ -7,10 +7,10 @@ use clap::Subcommand;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tugtool_core::{
-    ResolveResult, TugError, ValidationLevel, resolve_plan,
+    ResolveResult, TugError, ValidationLevel, derive_tugplan_slug, resolve_plan,
     worktree::{
         CleanupMode, DiscoveredWorktree, WorktreeConfig, cleanup_worktrees, create_worktree,
-        list_worktrees, remove_worktree,
+        list_worktrees, remove_worktree, resolve_worktree,
     },
 };
 
@@ -76,7 +76,7 @@ pub enum WorktreeCommands {
     ///
     /// Removes a worktree identified by plan path, branch name, or worktree path.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by:\n  - Plan path (e.g., .tugtool/tugplan-14.md)\n  - Branch name (e.g., tugtool/14-20250209-172637)\n  - Worktree path (e.g., .tugtree/tugtool__14-...)\n\nIf multiple worktrees match a plan path, an error is returned\nlisting all candidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugtool/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugtool__14-...)\n  3. Directory name (e.g., tugtool__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
     )]
     Remove {
         /// Target identifier (plan path, branch name, or worktree path)
@@ -1166,57 +1166,49 @@ pub fn run_worktree_remove_with_root(
     // List all worktrees
     let worktrees = list_worktrees(&repo_root).map_err(|e| e.to_string())?;
 
-    // Try to identify the worktree by:
-    // 1. Plan path (can match multiple - error if so)
-    // 2. Branch name (exact match)
-    // 3. Worktree path (exact match)
+    // Resolve target via the 5-stage cascade
+    let mut matches = resolve_worktree(&target, &worktrees);
 
-    let mut matching_worktrees: Vec<&DiscoveredWorktree> = Vec::new();
-
-    // Check if target is a plan path (derive slug and match)
-    let target_path = PathBuf::from(&target);
-    if target_path.extension().and_then(|s| s.to_str()) == Some("md") {
-        // Target looks like a plan file - derive slug and match
-        let target_slug = tugtool_core::derive_tugplan_slug(&target_path);
-        for wt in &worktrees {
-            if wt.plan_slug == target_slug {
-                matching_worktrees.push(wt);
-            }
+    // If no matches, try resolve_plan fallback (prefix matching, etc.)
+    if matches.is_empty() {
+        if let Ok(ResolveResult::Found { path, .. }) = resolve_plan(&target, &repo_root) {
+            let slug = derive_tugplan_slug(&path);
+            matches = worktrees
+                .iter()
+                .filter(|wt| wt.plan_slug == slug)
+                .collect();
         }
     }
 
-    // If multiple matches by plan path, error with candidate list (D10)
-    if matching_worktrees.len() > 1 {
+    // Handle match count
+    if matches.len() > 1 {
         if json_output {
             eprintln!(r#"{{"error": "Multiple worktrees found for {}"}}"#, target);
         } else if !quiet {
             eprintln!("Error: Multiple worktrees found for {}\n", target);
-            for wt in &matching_worktrees {
+            for wt in &matches {
                 eprintln!("  {}  {}", wt.branch, wt.path.display());
             }
             eprintln!("\nUse branch name or worktree path to disambiguate:");
-            if let Some(first) = matching_worktrees.first() {
+            if let Some(first) = matches.first() {
                 eprintln!("  tug worktree remove {}", first.branch);
             }
         }
         return Ok(1);
     }
 
-    // If exactly one match by plan path, use it
-    let worktree = if matching_worktrees.len() == 1 {
-        matching_worktrees[0]
+    let worktree = if matches.len() == 1 {
+        matches[0]
     } else {
-        // Try to match by branch name or worktree path
-        worktrees
-            .iter()
-            .find(|wt| wt.branch == target || wt.path.to_string_lossy() == target)
-            .ok_or_else(|| {
-                if json_output {
-                    format!(r#"{{"error": "No worktree found matching: {}"}}"#, target)
-                } else {
-                    format!("error: No worktree found matching: {}", target)
-                }
-            })?
+        if json_output {
+            eprintln!(
+                r#"{{"error": "No worktree found matching: {}"}}"#,
+                target
+            );
+        } else if !quiet {
+            eprintln!("error: No worktree found matching: {}", target);
+        }
+        return Ok(1);
     };
 
     // Check if worktree has uncommitted changes (unless --force)

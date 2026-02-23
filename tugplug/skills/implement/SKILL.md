@@ -350,20 +350,20 @@ Parse the JSON output from stdout. The output is a CreateData object with these 
 
 **If zero exit code:**
 
-Derive session state inline:
-- `completed_steps = all_steps - ready_steps` (steps already closed)
-- `remaining_steps = ready_steps` (if present) or `all_steps` (if ready_steps is null)
-- `resolved_steps = remaining_steps` (implement all remaining steps, no interactive selection)
-- `completed_count = total_steps - len(resolved_steps)`
-- `remaining_count = len(resolved_steps)`
+The CLI output tells you everything — do not derive or compute additional state. Just read the fields:
 
-If `resolved_steps` is empty: output "All steps already complete." and HALT.
+- If `ready_steps` is empty: output "All steps already complete." and HALT.
+- If `ready_steps` is null (legacy fallback): treat all steps as needing implementation — set `steps_to_implement = all_steps`, `completed_count = 0`.
+- Otherwise: find the first `ready_steps` entry in `all_steps` order. Everything before it is already complete; everything from it onward needs implementation.
+  - `completed_count` = index of first ready step in `all_steps`
+  - `steps_to_implement` = `all_steps[completed_count ..]`
+  - `remaining_count` = `len(steps_to_implement)`
 
-Otherwise: output the Setup complete progress message and proceed to the step loop.
+Output the Setup complete progress message and immediately proceed to the step loop. No further analysis.
 
-Store in memory: `worktree_path`, `branch_name`, `base_branch`, `resolved_steps`, `bead_mapping`, `root_bead_id`
+Store in memory: `worktree_path`, `branch_name`, `base_branch`, `steps_to_implement`, `bead_mapping`, `root_bead_id`
 
-### 3. For Each Step in `resolved_steps`
+### 3. For Each Step in `steps_to_implement`
 
 Initialize once (persists across all steps):
 - `architect_id = null`

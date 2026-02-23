@@ -662,6 +662,67 @@ pub fn list_worktrees(repo_root: &Path) -> Result<Vec<DiscoveredWorktree>, TugEr
     Ok(worktrees)
 }
 
+/// Resolve a user-provided target string to matching worktrees.
+///
+/// Resolution cascade (returns on first hit for stages 1-3, collects for 4-5):
+///
+/// 1. **Exact branch name** — `wt.branch == target`
+/// 2. **Exact worktree path** — `wt.path.to_string_lossy() == target`
+/// 3. **Directory name** — `wt.path.file_name() == Some(target)`
+/// 4. **Plan path** (target ends in `.md`) — `derive_tugplan_slug(target) == wt.plan_slug`
+/// 5. **Plan slug** — `wt.plan_slug == target`
+///
+/// Stages 1-3 are unambiguous identifiers (return immediately on first hit).
+/// Stages 4-5 can match multiple worktrees for the same plan (different timestamps).
+pub fn resolve_worktree<'a>(
+    target: &str,
+    worktrees: &'a [DiscoveredWorktree],
+) -> Vec<&'a DiscoveredWorktree> {
+    // Stage 1: Exact branch name
+    for wt in worktrees {
+        if wt.branch == target {
+            return vec![wt];
+        }
+    }
+
+    // Stage 2: Exact worktree path
+    for wt in worktrees {
+        if wt.path.to_string_lossy() == target {
+            return vec![wt];
+        }
+    }
+
+    // Stage 3: Directory name
+    for wt in worktrees {
+        if wt.path.file_name().and_then(|f| f.to_str()) == Some(target) {
+            return vec![wt];
+        }
+    }
+
+    // Stage 4: Plan path (target ends in .md) — derive slug and match
+    if target.ends_with(".md") {
+        let target_slug = derive_tugplan_slug(Path::new(target));
+        let matches: Vec<&DiscoveredWorktree> = worktrees
+            .iter()
+            .filter(|wt| wt.plan_slug == target_slug)
+            .collect();
+        if !matches.is_empty() {
+            return matches;
+        }
+    }
+
+    // Stage 5: Plan slug
+    let matches: Vec<&DiscoveredWorktree> = worktrees
+        .iter()
+        .filter(|wt| wt.plan_slug == target)
+        .collect();
+    if !matches.is_empty() {
+        return matches;
+    }
+
+    Vec::new()
+}
+
 /// A worktree discovered via `git worktree list`, independent of session files.
 ///
 /// The `plan_slug` is derived from the branch name by stripping the branch prefix
@@ -1765,5 +1826,149 @@ mod tests {
                 skipped[0].1
             );
         }
+    }
+
+    /// Helper to build synthetic DiscoveredWorktree values for resolve_worktree tests
+    fn make_wt(path: &str, branch: &str, plan_slug: &str) -> DiscoveredWorktree {
+        DiscoveredWorktree {
+            path: PathBuf::from(path),
+            branch: branch.to_string(),
+            plan_slug: plan_slug.to_string(),
+            base_branch: "main".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_resolve_worktree_by_exact_branch() {
+        let worktrees = vec![
+            make_wt(
+                "/repo/.tugtree/tugtool__auth-20260208-120000",
+                "tugtool/auth-20260208-120000",
+                "auth",
+            ),
+            make_wt(
+                "/repo/.tugtree/tugtool__db-20260209-130000",
+                "tugtool/db-20260209-130000",
+                "db",
+            ),
+        ];
+
+        let matches = resolve_worktree("tugtool/auth-20260208-120000", &worktrees);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].branch, "tugtool/auth-20260208-120000");
+    }
+
+    #[test]
+    fn test_resolve_worktree_by_exact_path() {
+        let worktrees = vec![make_wt(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            "tugtool/auth-20260208-120000",
+            "auth",
+        )];
+
+        let matches = resolve_worktree(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            &worktrees,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].plan_slug, "auth");
+    }
+
+    #[test]
+    fn test_resolve_worktree_by_directory_name() {
+        let worktrees = vec![make_wt(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            "tugtool/auth-20260208-120000",
+            "auth",
+        )];
+
+        let matches = resolve_worktree("tugtool__auth-20260208-120000", &worktrees);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].plan_slug, "auth");
+    }
+
+    #[test]
+    fn test_resolve_worktree_by_plan_path() {
+        let worktrees = vec![make_wt(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            "tugtool/auth-20260208-120000",
+            "auth",
+        )];
+
+        let matches = resolve_worktree(".tugtool/tugplan-auth.md", &worktrees);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].plan_slug, "auth");
+    }
+
+    #[test]
+    fn test_resolve_worktree_by_plan_slug() {
+        let worktrees = vec![make_wt(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            "tugtool/auth-20260208-120000",
+            "auth",
+        )];
+
+        let matches = resolve_worktree("auth", &worktrees);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].plan_slug, "auth");
+    }
+
+    #[test]
+    fn test_resolve_worktree_multiple_matches_same_slug() {
+        let worktrees = vec![
+            make_wt(
+                "/repo/.tugtree/tugtool__auth-20260208-120000",
+                "tugtool/auth-20260208-120000",
+                "auth",
+            ),
+            make_wt(
+                "/repo/.tugtree/tugtool__auth-20260209-130000",
+                "tugtool/auth-20260209-130000",
+                "auth",
+            ),
+        ];
+
+        // By slug: should match both
+        let matches = resolve_worktree("auth", &worktrees);
+        assert_eq!(matches.len(), 2);
+
+        // By plan path: should also match both
+        let matches = resolve_worktree("tugplan-auth.md", &worktrees);
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_worktree_no_match() {
+        let worktrees = vec![make_wt(
+            "/repo/.tugtree/tugtool__auth-20260208-120000",
+            "tugtool/auth-20260208-120000",
+            "auth",
+        )];
+
+        let matches = resolve_worktree("nonexistent", &worktrees);
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_worktree_branch_takes_priority_over_slug() {
+        // Edge case: if a branch name happens to be a valid slug for another worktree,
+        // stage 1 (exact branch) should match first
+        let worktrees = vec![
+            make_wt(
+                "/repo/.tugtree/tugtool__foo-20260208-120000",
+                "tugtool/foo-20260208-120000",
+                "foo",
+            ),
+            make_wt(
+                "/repo/.tugtree/tugtool__bar-20260209-130000",
+                "tugtool/bar-20260209-130000",
+                "bar",
+            ),
+        ];
+
+        // Exact branch match should return only that one
+        let matches = resolve_worktree("tugtool/foo-20260208-120000", &worktrees);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].plan_slug, "foo");
     }
 }
