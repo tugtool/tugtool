@@ -1173,10 +1173,7 @@ pub fn run_worktree_remove_with_root(
     if matches.is_empty() {
         if let Ok(ResolveResult::Found { path, .. }) = resolve_plan(&target, &repo_root) {
             let slug = derive_tugplan_slug(&path);
-            matches = worktrees
-                .iter()
-                .filter(|wt| wt.plan_slug == slug)
-                .collect();
+            matches = worktrees.iter().filter(|wt| wt.plan_slug == slug).collect();
         }
     }
 
@@ -1201,10 +1198,7 @@ pub fn run_worktree_remove_with_root(
         matches[0]
     } else {
         if json_output {
-            eprintln!(
-                r#"{{"error": "No worktree found matching: {}"}}"#,
-                target
-            );
+            eprintln!(r#"{{"error": "No worktree found matching: {}"}}"#, target);
         } else if !quiet {
             eprintln!("error: No worktree found matching: {}", target);
         }

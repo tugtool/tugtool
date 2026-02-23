@@ -1866,10 +1866,7 @@ mod tests {
             "auth",
         )];
 
-        let matches = resolve_worktree(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            &worktrees,
-        );
+        let matches = resolve_worktree("/repo/.tugtree/tugtool__auth-20260208-120000", &worktrees);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].plan_slug, "auth");
     }

@@ -35,6 +35,10 @@ test-rust:
 test-ts:
     cd tugdeck && bun test
 
+# Format Rust code
+fmt:
+    cd tugcode && cargo fmt --all
+
 # Run clippy + fmt check
 lint:
     cd tugcode && cargo clippy --workspace --all-targets -- -D warnings
