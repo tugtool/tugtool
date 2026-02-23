@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-23T03:45:07Z
+bead: dev-mode-notifications-73p.6
+---
+
+## step-5: Created tugcode/crates/tugrelaunch/ binary crate implementing build-replace-relaunch lifecycle. CLI with clap (--source-tree, --app-bundle, --progress-socket, --pid). UDS progress socket with Spec S04 JSON protocol. Sequential cargo/bun/xcode builds. kqueue-based process wait with SIGKILL fallback. Atomic binary copy with cross-device fallback. App relaunch via open -a. 9 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-4
 date: 2025-02-23T03:34:07Z
 bead: dev-mode-notifications-73p.5
