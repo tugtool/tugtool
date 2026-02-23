@@ -9,6 +9,200 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-23T20:53:03Z
+---
+
+## audit-fix: Audit fix: resolved 3 clippy warnings in state.rs
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-10
+date: 2025-02-23T20:49:04Z
+bead: add-tugstate-7x8.14
+---
+
+## #step-10: Added 9 comprehensive integration tests covering all tugstate features
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-9
+date: 2025-02-23T20:33:03Z
+bead: add-tugstate-7x8.13
+---
+
+## #step-9: Added state.db health check to doctor command with orphaned plan detection
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-8
+date: 2025-02-23T20:23:05Z
+bead: add-tugstate-7x8.12
+---
+
+## #step-8: Added git trailers and non-fatal state complete to commit command
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-7
+date: 2025-02-23T20:12:43Z
+bead: add-tugstate-7x8.11
+---
+
+## #step-7: Integrated state init into worktree create with non-fatal error handling and warnings
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-6-summary
+date: 2025-02-23T19:59:35Z
+bead: add-tugstate-7x8.10
+---
+
+## #step-6-summary: Added integration test verifying show/ready/reset/reconcile lifecycle
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-23T19:53:23Z
+bead: add-tugstate-7x8.9
+---
+
+## #step-6: Added show/ready/reset/reconcile commands with progress bars, dependency graph, and git trailer recovery
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-5-summary
+date: 2025-02-23T19:38:52Z
+bead: add-tugstate-7x8.8
+---
+
+## #step-5-summary: Added tests for update/artifact/complete, fixed heartbeat timing issues
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-23T19:27:15Z
+bead: add-tugstate-7x8.7
+---
+
+## #step-5: Added update/artifact/complete commands with checklist tracking, strict completion, and force mode
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-4-summary
+date: 2025-02-23T19:16:15Z
+bead: add-tugstate-7x8.6
+---
+
+## #step-4-summary: Added integration test verifying claim/start/heartbeat lifecycle via subprocess
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-23T19:10:41Z
+bead: add-tugstate-7x8.5
+---
+
+## #step-4: Added claim/start/heartbeat commands with lease-based claiming and ownership enforcement
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-23T18:53:36Z
+bead: add-tugstate-7x8.4
+---
+
+## #step-3: Added init_plan with transactional population and state init CLI command
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-23T18:43:26Z
+bead: add-tugstate-7x8.3
+---
+
+## #step-2: Created core state module with StateDb, schema creation, and plan hash computation
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-23T18:36:49Z
+bead: add-tugstate-7x8.2
+---
+
+## #step-1: Refactored find_repo_root into tugtool-core with testable find_repo_root_from variant
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-23T18:29:30Z
+bead: add-tugstate-7x8.1
+---
+
+## #step-0: Added rusqlite and sha2 dependencies, gitignore patterns, and smoke tests
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: step-7
 date: 2025-02-23T04:13:13Z
 bead: dev-mode-notifications-73p.8

@@ -5,7 +5,7 @@
 
 use clap::Subcommand;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tugtool_core::{
     ResolveResult, TugError, ValidationLevel, derive_tugplan_slug, resolve_plan,
     worktree::{
@@ -107,6 +107,11 @@ pub struct CreateData {
     pub all_steps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ready_steps: Option<Vec<String>>,
+    // Tugstate fields
+    #[serde(skip_serializing_if = "is_false")]
+    pub state_initialized: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -135,44 +140,6 @@ pub struct RemoveData {
     pub worktree_path: String,
     pub branch_name: String,
     pub plan_path: String,
-}
-
-/// Resolve the main repository root, even when CWD is inside a linked worktree.
-///
-/// If CWD is a linked worktree (`.git` is a file, not a directory), this resolves
-/// to the main repository root by querying git for the common directory. This prevents
-/// nested worktree creation when the shell's CWD drifts into an existing worktree.
-fn resolve_main_repo_root() -> Result<PathBuf, String> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let git_path = cwd.join(".git");
-
-    // If .git is a directory, we're in the main repo — use CWD directly
-    if git_path.is_dir() {
-        return Ok(cwd);
-    }
-
-    // If .git is a file, we're in a linked worktree — resolve to main repo
-    if git_path.is_file() {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&cwd)
-            .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-            .output()
-            .map_err(|e| format!("failed to resolve main repo root: {}", e))?;
-
-        if output.status.success() {
-            let common_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // common_dir is the shared .git directory (e.g., /repo/.git)
-            // Its parent is the main repo root
-            let common_path = PathBuf::from(&common_dir);
-            if let Some(parent) = common_path.parent() {
-                return Ok(parent.to_path_buf());
-            }
-        }
-    }
-
-    // Fallback: use CWD as-is (no .git found at all — will fail downstream)
-    Ok(cwd)
 }
 
 /// Sync beads within the worktree and return bead mapping
@@ -479,7 +446,7 @@ pub fn run_worktree_create_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // Resolve plan path and strip repo_root to get relative path
@@ -723,6 +690,8 @@ pub fn run_worktree_create_with_root(
                         reused: false,
                         all_steps: None,
                         ready_steps: None,
+                        state_initialized: false,
+                        warnings: vec![],
                     };
                     eprintln!(
                         "{}",
@@ -794,6 +763,8 @@ pub fn run_worktree_create_with_root(
                                     reused: false,
                                     all_steps: None,
                                     ready_steps: None,
+                                    state_initialized: false,
+                                    warnings: vec![],
                                 };
                                 eprintln!(
                                     "{}",
@@ -824,6 +795,8 @@ pub fn run_worktree_create_with_root(
                             reused: false,
                             all_steps: None,
                             ready_steps: None,
+                            state_initialized: false,
+                            warnings: vec![],
                         };
                         eprintln!(
                             "{}",
@@ -877,6 +850,39 @@ pub fn run_worktree_create_with_root(
                 None
             };
 
+            // Initialize tugstate (non-fatal -- beads is source of truth in Phase 1)
+            let (state_initialized, state_warnings) = {
+                let db_path = repo_root.join(".tugtool").join("state.db");
+                match tugtool_core::compute_plan_hash(&synced_plan_path) {
+                    Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path) {
+                        Ok(mut db) => match db.init_plan(&plan, &synced_plan, &plan_hash) {
+                            Ok(_) => (true, vec![]),
+                            Err(e) => {
+                                let msg = format!("state init failed: {}", e);
+                                if !quiet {
+                                    eprintln!("warning: {}", msg);
+                                }
+                                (false, vec![msg])
+                            }
+                        },
+                        Err(e) => {
+                            let msg = format!("state init failed: {}", e);
+                            if !quiet {
+                                eprintln!("warning: {}", msg);
+                            }
+                            (false, vec![msg])
+                        }
+                    },
+                    Err(e) => {
+                        let msg = format!("state init failed: {}", e);
+                        if !quiet {
+                            eprintln!("warning: {}", msg);
+                        }
+                        (false, vec![msg])
+                    }
+                }
+            };
+
             // Create artifact directories inside worktree
             let artifacts_base = worktree_path.join(".tugtool/artifacts");
             if let Err(e) = std::fs::create_dir_all(&artifacts_base) {
@@ -906,6 +912,8 @@ pub fn run_worktree_create_with_root(
                     reused,
                     all_steps: Some(all_steps),
                     ready_steps,
+                    state_initialized,
+                    warnings: state_warnings.clone(),
                 };
                 println!(
                     "{}",
@@ -922,6 +930,12 @@ pub fn run_worktree_create_with_root(
                 println!("  Steps: {}", total_steps);
                 if bead_mapping.is_some() {
                     println!("  Beads synced and committed");
+                }
+                if state_initialized {
+                    println!("  State initialized");
+                }
+                for w in &state_warnings {
+                    println!("  Warning: {}", w);
                 }
             }
             Ok(0)
@@ -960,7 +974,7 @@ pub fn run_worktree_list_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     match list_worktrees(&repo_root) {
@@ -1034,7 +1048,7 @@ pub fn run_worktree_cleanup_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // Determine cleanup mode
@@ -1160,7 +1174,7 @@ pub fn run_worktree_remove_with_root(
 
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => resolve_main_repo_root()?,
+        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
     };
 
     // List all worktrees
@@ -1336,6 +1350,8 @@ mod tests {
             reused: false,
             all_steps: None,
             ready_steps: None,
+            state_initialized: false,
+            warnings: vec![],
         };
 
         let json = serde_json::to_string(&data).expect("serialization should succeed");
@@ -1343,10 +1359,58 @@ mod tests {
         assert!(json.contains("branch_name"));
         // reused should be skipped when false
         assert!(!json.contains("reused"));
+        // state_initialized should be skipped when false
+        assert!(!json.contains("state_initialized"));
+        // warnings should be skipped when empty
+        assert!(!json.contains("warnings"));
         // session fields should not be present
         assert!(!json.contains("session_id"));
         assert!(!json.contains("session_file"));
         assert!(!json.contains("artifacts_base"));
+    }
+
+    #[test]
+    fn test_create_data_state_initialized_serialization() {
+        let data = CreateData {
+            worktree_path: "/path/to/worktree".to_string(),
+            branch_name: "tug/test-20260208-120000".to_string(),
+            base_branch: "main".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            total_steps: 5,
+            bead_mapping: None,
+            root_bead_id: None,
+            reused: false,
+            all_steps: None,
+            ready_steps: None,
+            state_initialized: true,
+            warnings: vec![],
+        };
+        let json = serde_json::to_string(&data).expect("serialization should succeed");
+        assert!(json.contains("state_initialized"));
+        assert!(json.contains("true"));
+        // warnings should be skipped when empty
+        assert!(!json.contains("warnings"));
+    }
+
+    #[test]
+    fn test_create_data_warnings_serialization() {
+        let data = CreateData {
+            worktree_path: "/path/to/worktree".to_string(),
+            branch_name: "tug/test-20260208-120000".to_string(),
+            base_branch: "main".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            total_steps: 5,
+            bead_mapping: None,
+            root_bead_id: None,
+            reused: false,
+            all_steps: None,
+            ready_steps: None,
+            state_initialized: false,
+            warnings: vec!["state init failed: forced".to_string()],
+        };
+        let json = serde_json::to_string(&data).expect("serialization should succeed");
+        assert!(json.contains("warnings"));
+        assert!(json.contains("state init failed: forced"));
     }
 
     #[test]
@@ -1478,6 +1542,7 @@ mod tests {
 mod integration_tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::TempDir;
 

@@ -77,6 +77,9 @@ pub fn run_commit(
         .map(|l| l.to_string())
         .collect();
 
+    // Step 3c: Append Tug-Step and Tug-Plan trailers to commit message
+    let message = add_or_replace_trailers(&message, &step, &plan);
+
     // Step 4: Commit
     let output = Command::new("git")
         .arg("-C")
@@ -114,6 +117,40 @@ pub fn run_commit(
     // If bead close failed after commit, record in output
     let bead_close_failed = !bead_closed;
 
+    // Step 7: Complete step in state.db (non-fatal)
+    let (state_update_failed, state_warnings) = {
+        match tugtool_core::find_repo_root_from(worktree_path) {
+            Ok(repo_root) => {
+                let db_path = repo_root.join(".tugtool").join("state.db");
+                match tugtool_core::StateDb::open(&db_path) {
+                    Ok(mut db) => {
+                        match db.complete_step(
+                            &plan,
+                            &step,
+                            &worktree,
+                            true, // force: commit already happened
+                            Some("committed via tugcode commit"),
+                        ) {
+                            Ok(_) => (false, vec![]),
+                            Err(e) => {
+                                let msg = format!("state complete failed: {}", e);
+                                (true, vec![msg])
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("state complete failed: {}", e);
+                        (true, vec![msg])
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = format!("state complete failed: {}", e);
+                (true, vec![msg])
+            }
+        }
+    };
+
     // Build response
     let data = CommitData {
         committed: true,
@@ -129,7 +166,12 @@ pub fn run_commit(
         archived_path: rotate_result.archived_path.clone(),
         files_staged,
         bead_close_failed,
-        warnings,
+        state_update_failed,
+        warnings: {
+            let mut w = warnings; // bead close warnings
+            w.extend(state_warnings);
+            w
+        },
     };
 
     if json {
@@ -153,9 +195,14 @@ pub fn run_commit(
                 rotate_result.archived_path.unwrap_or_default()
             );
         }
+        if state_update_failed {
+            println!("  State: FAILED - needs reconcile");
+        } else {
+            println!("  State: completed");
+        }
     }
 
-    // Exit 0 even if bead_close_failed (commit succeeded)
+    // Exit 0 even if bead_close_failed or state_update_failed (commit succeeded)
     Ok(0)
 }
 
@@ -201,6 +248,7 @@ fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String>
         archived_path: None,
         files_staged: vec![],
         bead_close_failed: false,
+        state_update_failed: false,
         warnings: vec![],
     };
 
@@ -212,4 +260,93 @@ fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String>
     }
 
     Err(message.to_string())
+}
+
+/// Append or replace Tug-Step and Tug-Plan trailers in a commit message.
+/// If trailers already exist, their values are replaced (idempotent).
+/// If not, they are appended after a blank line separator.
+fn add_or_replace_trailers(message: &str, step: &str, plan: &str) -> String {
+    let mut lines: Vec<String> = message.lines().map(|l| l.to_string()).collect();
+    let mut found_step = false;
+    let mut found_plan = false;
+
+    for line in lines.iter_mut() {
+        if line.starts_with("Tug-Step:") {
+            *line = format!("Tug-Step: {}", step);
+            found_step = true;
+        } else if line.starts_with("Tug-Plan:") {
+            *line = format!("Tug-Plan: {}", plan);
+            found_plan = true;
+        }
+    }
+
+    let mut result = lines.join("\n");
+
+    if !found_step || !found_plan {
+        // Ensure blank line separator before trailer block
+        if !result.ends_with("\n\n") {
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push('\n');
+        }
+        if !found_step {
+            result.push_str(&format!("Tug-Step: {}", step));
+            result.push('\n');
+        }
+        if !found_plan {
+            result.push_str(&format!("Tug-Plan: {}", plan));
+            result.push('\n');
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_trailers_to_simple_message() {
+        let msg = "feat: add feature";
+        let result = add_or_replace_trailers(msg, "step-0", ".tugtool/tugplan-foo.md");
+        assert!(result.contains("Tug-Step: step-0"));
+        assert!(result.contains("Tug-Plan: .tugtool/tugplan-foo.md"));
+        // Should have blank line separator
+        assert!(result.contains("\n\nTug-"));
+    }
+
+    #[test]
+    fn test_add_trailers_to_multiline_message() {
+        let msg = "feat: add feature\n\nDetailed description here.";
+        let result = add_or_replace_trailers(msg, "step-1", ".tugtool/tugplan-bar.md");
+        assert!(result.contains("Tug-Step: step-1"));
+        assert!(result.contains("Tug-Plan: .tugtool/tugplan-bar.md"));
+        assert!(result.contains("Detailed description here."));
+    }
+
+    #[test]
+    fn test_replace_existing_trailers() {
+        let msg = "feat: update\n\nTug-Step: step-0\nTug-Plan: .tugtool/old.md";
+        let result = add_or_replace_trailers(msg, "step-1", ".tugtool/new.md");
+        assert!(result.contains("Tug-Step: step-1"));
+        assert!(result.contains("Tug-Plan: .tugtool/new.md"));
+        // Old values should NOT be present
+        assert!(!result.contains("step-0"));
+        assert!(!result.contains("old.md"));
+        // Should not duplicate trailer keys
+        assert_eq!(result.matches("Tug-Step:").count(), 1);
+        assert_eq!(result.matches("Tug-Plan:").count(), 1);
+    }
+
+    #[test]
+    fn test_replace_partial_trailers() {
+        let msg = "feat: update\n\nTug-Step: step-0";
+        let result = add_or_replace_trailers(msg, "step-1", ".tugtool/new.md");
+        assert!(result.contains("Tug-Step: step-1"));
+        assert!(result.contains("Tug-Plan: .tugtool/new.md"));
+        assert_eq!(result.matches("Tug-Step:").count(), 1);
+        assert_eq!(result.matches("Tug-Plan:").count(), 1);
+    }
 }

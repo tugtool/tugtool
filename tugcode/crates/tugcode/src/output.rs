@@ -455,6 +455,8 @@ pub struct CommitData {
     /// True if commit succeeded but bead close failed
     #[serde(alias = "needs_reconcile")] // v1 compat
     pub bead_close_failed: bool,
+    /// True if commit succeeded but state complete failed
+    pub state_update_failed: bool,
     /// Any non-fatal warnings encountered
     pub warnings: Vec<String>,
 }
@@ -519,6 +521,7 @@ mod tests {
             archived_path: None,
             files_staged: vec!["a.rs".to_string(), "b.rs".to_string()],
             bead_close_failed: false,
+            state_update_failed: false,
             warnings: vec![],
         };
 
@@ -549,6 +552,7 @@ mod tests {
             archived_path: Some(".tugtool/archive/log-2026-02-11.md".to_string()),
             files_staged: vec!["x.rs".to_string()],
             bead_close_failed: true,
+            state_update_failed: false,
             warnings: vec!["Bead close failed".to_string()],
         };
 
@@ -684,4 +688,118 @@ mod tests {
         assert!(json.contains("\"title\""));
         assert!(json.contains("\"number\""));
     }
+}
+
+/// Data payload for state init command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateInitData {
+    /// Plan file path (relative to repo root)
+    pub plan_path: String,
+    /// SHA-256 hash of the plan file
+    pub plan_hash: String,
+    /// True if the plan was already initialized
+    pub already_initialized: bool,
+    /// Number of top-level steps created
+    pub step_count: usize,
+    /// Number of substeps created
+    pub substep_count: usize,
+    /// Number of dependency edges created
+    pub dep_count: usize,
+    /// Number of checklist items created
+    pub checklist_count: usize,
+}
+
+/// Data payload for state claim command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateClaimData {
+    pub plan_path: String,
+    pub claimed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lease_expires: Option<String>,
+    pub reclaimed: bool,
+    pub remaining_ready: usize,
+    pub total_remaining: usize,
+    pub all_completed: bool,
+}
+
+/// Data payload for state start command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateStartData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub started: bool,
+}
+
+/// Data payload for state heartbeat command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateHeartbeatData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub lease_expires: String,
+}
+
+/// Data payload for state update command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateUpdateData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub items_updated: usize,
+}
+
+/// Data payload for state artifact command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateArtifactData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub artifact_id: i64,
+    pub kind: String,
+}
+
+/// Data payload for state complete command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateCompleteData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub completed: bool,
+    pub forced: bool,
+    pub all_steps_completed: bool,
+}
+
+/// Data payload for state show command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateShowData {
+    pub plan: tugtool_core::PlanState,
+}
+
+/// Data payload for state ready command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateReadyData {
+    pub plan_path: String,
+    pub ready: Vec<tugtool_core::StepInfo>,
+    pub blocked: Vec<tugtool_core::StepInfo>,
+    pub completed: Vec<tugtool_core::StepInfo>,
+    pub expired_claim: Vec<tugtool_core::StepInfo>,
+}
+
+/// Data payload for state reset command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateResetData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub reset: bool,
+}
+
+/// Data payload for state reconcile command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateReconcileData {
+    pub plan_path: String,
+    pub reconciled_count: usize,
+    pub skipped_count: usize,
+    pub skipped_mismatches: Vec<tugtool_core::SkippedMismatch>,
 }

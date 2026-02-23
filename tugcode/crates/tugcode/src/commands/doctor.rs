@@ -99,6 +99,7 @@ pub fn run_doctor(json_output: bool, quiet: bool) -> Result<i32, String> {
         check_orphaned_sessions(),
         check_closed_pr_worktrees(),
         check_broken_refs(),
+        check_state_health(),
     ];
 
     // Calculate summary
@@ -680,5 +681,174 @@ fn check_broken_refs() -> HealthCheck {
             message: format!("{} broken anchor reference(s) found", broken_refs.len()),
             details: Some(details),
         }
+    }
+}
+
+/// Check state.db health (inner implementation for testability)
+fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
+    // Phase 1: state.db is optional -- absence is OK
+    if !db_path.exists() {
+        return HealthCheck {
+            name: "state_health".to_string(),
+            status: "pass".to_string(),
+            message: "No state.db found (optional in Phase 1)".to_string(),
+            details: None,
+        };
+    }
+
+    // Open the database
+    let db = match tugtool_core::StateDb::open(db_path) {
+        Ok(db) => db,
+        Err(e) => {
+            return HealthCheck {
+                name: "state_health".to_string(),
+                status: "fail".to_string(),
+                message: format!("Failed to open state.db: {}", e),
+                details: None,
+            };
+        }
+    };
+
+    // Check schema version
+    match db.schema_version() {
+        Ok(version) => {
+            if version != 1 {
+                return HealthCheck {
+                    name: "state_health".to_string(),
+                    status: "fail".to_string(),
+                    message: format!(
+                        "state.db schema version mismatch: expected 1, got {}",
+                        version
+                    ),
+                    details: None,
+                };
+            }
+        }
+        Err(e) => {
+            return HealthCheck {
+                name: "state_health".to_string(),
+                status: "fail".to_string(),
+                message: format!("Failed to read schema version: {}", e),
+                details: None,
+            };
+        }
+    }
+
+    // Check for orphaned plans (plan_path in DB but file missing on disk)
+    match db.list_plan_paths() {
+        Ok(plan_paths) => {
+            let orphaned: Vec<String> = plan_paths
+                .iter()
+                .filter(|p| !plan_root.join(p).exists())
+                .cloned()
+                .collect();
+
+            if orphaned.is_empty() {
+                if plan_paths.is_empty() {
+                    HealthCheck {
+                        name: "state_health".to_string(),
+                        status: "pass".to_string(),
+                        message: "state.db healthy (no plans initialized)".to_string(),
+                        details: None,
+                    }
+                } else {
+                    HealthCheck {
+                        name: "state_health".to_string(),
+                        status: "pass".to_string(),
+                        message: format!("state.db healthy ({} plan(s) tracked)", plan_paths.len()),
+                        details: None,
+                    }
+                }
+            } else {
+                let details = serde_json::json!({
+                    "orphaned_plans": orphaned,
+                    "recommendation": "These plans are tracked in state.db but their files no longer exist. Consider re-initializing state or cleaning up."
+                });
+                HealthCheck {
+                    name: "state_health".to_string(),
+                    status: "warn".to_string(),
+                    message: format!(
+                        "{} orphaned plan(s) in state.db (file not found on disk)",
+                        orphaned.len()
+                    ),
+                    details: Some(details),
+                }
+            }
+        }
+        Err(e) => HealthCheck {
+            name: "state_health".to_string(),
+            status: "fail".to_string(),
+            message: format!("Failed to query plans from state.db: {}", e),
+            details: None,
+        },
+    }
+}
+
+/// Check state.db health
+fn check_state_health() -> HealthCheck {
+    check_state_health_at(Path::new(".tugtool/state.db"), Path::new("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_state_health_absent_is_pass() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let result = check_state_health_at(&db_path, temp.path());
+        assert_eq!(result.status, "pass");
+        assert!(result.message.contains("No state.db"));
+    }
+
+    #[test]
+    fn test_state_health_healthy_db_is_pass() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a state.db with a plan whose file exists
+        let plan_dir = temp.path().join(".tugtool");
+        std::fs::create_dir_all(&plan_dir).unwrap();
+        let plan_path = plan_dir.join("tugplan-test.md");
+        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 0: Test Step {#step-0}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
+
+        let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
+        let plan_content = std::fs::read_to_string(&plan_path).unwrap();
+        let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
+        let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &parsed, &hash)
+            .unwrap();
+
+        let result = check_state_health_at(&db_path, temp.path());
+        assert_eq!(result.status, "pass");
+        assert!(result.message.contains("healthy"));
+    }
+
+    #[test]
+    fn test_state_health_orphaned_plan_is_warn() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a state.db, init a plan, then delete the plan file
+        let plan_dir = temp.path().join(".tugtool");
+        std::fs::create_dir_all(&plan_dir).unwrap();
+        let plan_path = plan_dir.join("tugplan-test.md");
+        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 0: Test Step {#step-0}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
+
+        let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
+        let plan_content = std::fs::read_to_string(&plan_path).unwrap();
+        let parsed = tugtool_core::parse_tugplan(&plan_content).unwrap();
+        let hash = tugtool_core::compute_plan_hash(&plan_path).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &parsed, &hash)
+            .unwrap();
+
+        // Delete the plan file to create orphan
+        std::fs::remove_file(&plan_path).unwrap();
+
+        let result = check_state_health_at(&db_path, temp.path());
+        assert_eq!(result.status, "warn");
+        assert!(result.message.contains("orphaned"));
     }
 }

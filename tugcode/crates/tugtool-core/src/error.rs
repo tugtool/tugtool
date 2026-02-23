@@ -193,6 +193,56 @@ pub enum TugError {
     /// E037: Init failed during worktree creation
     #[error("E037: Init failed: {reason}")]
     InitFailed { reason: String },
+
+    // === State errors (E046-E053) ===
+    /// E046: Failed to open state.db
+    #[error("E046: Failed to open state database: {reason}")]
+    StateDbOpen { reason: String },
+
+    /// E047: SQL query failed
+    #[error("E047: State database query failed: {reason}")]
+    StateDbQuery { reason: String },
+
+    /// E048: Plan file changed since init
+    #[error("E048: Plan hash mismatch: plan file has changed since state init")]
+    StatePlanHashMismatch { plan_path: String },
+
+    /// E049: Worktree does not match claimed_by
+    #[error("E049: Ownership violation: step {anchor} is claimed by {claimed_by}, not {worktree}")]
+    StateOwnershipViolation {
+        anchor: String,
+        claimed_by: String,
+        worktree: String,
+    },
+
+    /// E050: Step not in expected status for operation
+    #[error(
+        "E050: Step {anchor} is not in expected status for this operation (current: {current_status})"
+    )]
+    StateStepNotClaimed {
+        anchor: String,
+        current_status: String,
+    },
+
+    /// E051: Cannot complete step with incomplete checklist items
+    #[error(
+        "E051: Cannot complete step {anchor}: {incomplete_count} checklist items not completed"
+    )]
+    StateIncompleteChecklist {
+        anchor: String,
+        incomplete_count: usize,
+    },
+
+    /// E052: Cannot complete step with incomplete substeps
+    #[error("E052: Cannot complete step {anchor}: {incomplete_count} substeps not completed")]
+    StateIncompleteSubsteps {
+        anchor: String,
+        incomplete_count: usize,
+    },
+
+    /// E053: No steps ready for claiming
+    #[error("E053: No steps ready for claiming")]
+    StateNoReadySteps,
 }
 
 impl TugError {
@@ -239,6 +289,14 @@ impl TugError {
             TugError::BeadsSyncFailed { .. } => "E035",
             TugError::BeadCommitFailed { .. } => "E036",
             TugError::InitFailed { .. } => "E037",
+            TugError::StateDbOpen { .. } => "E046",
+            TugError::StateDbQuery { .. } => "E047",
+            TugError::StatePlanHashMismatch { .. } => "E048",
+            TugError::StateOwnershipViolation { .. } => "E049",
+            TugError::StateStepNotClaimed { .. } => "E050",
+            TugError::StateIncompleteChecklist { .. } => "E051",
+            TugError::StateIncompleteSubsteps { .. } => "E052",
+            TugError::StateNoReadySteps => "E053",
         }
     }
 
@@ -317,6 +375,14 @@ impl TugError {
             TugError::BeadsSyncFailed { .. } => 10, // Beads sync failed (exit code 10 per S02)
             TugError::BeadCommitFailed { .. } => 11, // Bead commit failed (exit code 11 per S02)
             TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
+            TugError::StateDbOpen { .. } => 14,   // State DB open failed
+            TugError::StateDbQuery { .. } => 14,  // State DB query failed
+            TugError::StatePlanHashMismatch { .. } => 14, // Plan hash mismatch
+            TugError::StateOwnershipViolation { .. } => 14, // Ownership violation
+            TugError::StateStepNotClaimed { .. } => 14, // Step not claimed
+            TugError::StateIncompleteChecklist { .. } => 14, // Incomplete checklist
+            TugError::StateIncompleteSubsteps { .. } => 14, // Incomplete substeps
+            TugError::StateNoReadySteps => 14,    // No ready steps
         }
     }
 }

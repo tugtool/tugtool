@@ -8,7 +8,7 @@ mod splash;
 use std::process::ExitCode;
 
 use cli::Commands;
-use commands::{BeadsCommands, LogCommands, WorktreeCommands};
+use commands::{BeadsCommands, LogCommands, StateCommands, WorktreeCommands};
 
 fn main() -> ExitCode {
     let cli = cli::parse();
@@ -108,6 +108,83 @@ fn main() -> ExitCode {
             ),
             WorktreeCommands::Remove { target, force } => {
                 commands::run_worktree_remove(target, force, cli.json, cli.quiet)
+            }
+        },
+        Some(Commands::State(state_cmd)) => match state_cmd {
+            StateCommands::Init { plan } => commands::run_state_init(plan, cli.json, cli.quiet),
+            StateCommands::Claim {
+                plan,
+                worktree,
+                lease_duration,
+            } => commands::run_state_claim(plan, worktree, lease_duration, cli.json, cli.quiet),
+            StateCommands::Start {
+                plan,
+                step,
+                worktree,
+            } => commands::run_state_start(plan, step, worktree, cli.json, cli.quiet),
+            StateCommands::Heartbeat {
+                plan,
+                step,
+                worktree,
+                lease_duration,
+            } => commands::run_state_heartbeat(
+                plan,
+                step,
+                worktree,
+                lease_duration,
+                cli.json,
+                cli.quiet,
+            ),
+            StateCommands::Update {
+                plan,
+                step,
+                worktree,
+                task,
+                test,
+                checkpoint,
+                all_tasks,
+                all_tests,
+                all_checkpoints,
+                all,
+            } => commands::run_state_update(
+                plan,
+                step,
+                worktree,
+                task,
+                test,
+                checkpoint,
+                all_tasks,
+                all_tests,
+                all_checkpoints,
+                all,
+                cli.json,
+                cli.quiet,
+            ),
+            StateCommands::Artifact {
+                plan,
+                step,
+                worktree,
+                kind,
+                summary,
+            } => commands::run_state_artifact(
+                plan, step, worktree, kind, summary, cli.json, cli.quiet,
+            ),
+            StateCommands::Complete {
+                plan,
+                step,
+                worktree,
+                force,
+                reason,
+            } => commands::run_state_complete(
+                plan, step, worktree, force, reason, cli.json, cli.quiet,
+            ),
+            StateCommands::Show { plan } => commands::run_state_show(plan, cli.json, cli.quiet),
+            StateCommands::Ready { plan } => commands::run_state_ready(plan, cli.json, cli.quiet),
+            StateCommands::Reset { plan, step } => {
+                commands::run_state_reset(plan, step, cli.json, cli.quiet)
+            }
+            StateCommands::Reconcile { plan, force } => {
+                commands::run_state_reconcile(plan, force, cli.json, cli.quiet)
             }
         },
         Some(Commands::Merge {
