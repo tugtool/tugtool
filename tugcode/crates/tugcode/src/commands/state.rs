@@ -482,6 +482,7 @@ pub fn run_state_heartbeat(
     Ok(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_state_update(
     plan: String,
     step: String,
@@ -1186,10 +1187,10 @@ fn scan_git_trailers(
         {
             // This looks like a commit hash
             current_hash = Some(line.to_string());
-        } else if line.starts_with("Tug-Step:") {
-            current_step = Some(line["Tug-Step:".len()..].trim().to_string());
-        } else if line.starts_with("Tug-Plan:") {
-            current_plan = Some(line["Tug-Plan:".len()..].trim().to_string());
+        } else if let Some(stripped) = line.strip_prefix("Tug-Step: ") {
+            current_step = Some(stripped.trim().to_string());
+        } else if let Some(stripped) = line.strip_prefix("Tug-Plan: ") {
+            current_plan = Some(stripped.trim().to_string());
         }
     }
 
