@@ -180,6 +180,9 @@ class ProcessManager {
                 NSLog("ProcessManager: shutdown reason=%@, will restart", reason)
                 copyBinaryFromSourceTree()
                 restartDecision = .restart
+            case "relaunch":
+                NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
+                restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
                 NSLog("ProcessManager: shutdown reason=error, message=%@, will not restart", message)

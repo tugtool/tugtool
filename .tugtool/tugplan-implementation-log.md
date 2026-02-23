@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-23T03:34:07Z
+bead: dev-mode-notifications-73p.5
+---
+
+## step-4: Extracted shutdown_reason_for_exit_code() function in tugcast main.rs with exit code 45 → 'relaunch' mapping. Added explicit 'relaunch' case to ProcessManager.swift shutdown handler (DoNotRestart). Added 5 unit tests for exit code mapping.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-3
 date: 2025-02-23T03:26:27Z
 bead: dev-mode-notifications-73p.4
