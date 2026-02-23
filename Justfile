@@ -3,9 +3,9 @@
 default:
     @just --list
 
-# Build all Rust binaries (tugcast, tugtool, tugcode)
+# Build all Rust binaries (tugcast, tugtool, tugcode, tugrelaunch)
 build:
-    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode
+    cd tugcode && cargo build -p tugcast -p tugtool -p tugcode -p tugrelaunch
 
 # Build all binaries, then run tugtool (auto-detects source tree, activates dev mode via control socket)
 dev: build
@@ -58,6 +58,7 @@ app: build
     cp tugcode/target/debug/tugcast "$MACOS_DIR/"
     cp tugcode/target/debug/tugcode "$MACOS_DIR/"
     cp tugcode/target/debug/tugtool "$MACOS_DIR/"
+    cp tugcode/target/debug/tugrelaunch "$MACOS_DIR/"
     echo "==> Launching Tug.app"
     pkill -x Tug 2>/dev/null || true
     pkill -x tugcast 2>/dev/null || true

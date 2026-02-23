@@ -182,6 +182,13 @@ class ProcessManager {
                 restartDecision = .restart
             case "relaunch":
                 NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
+                // Stop bun build --watch before app exit
+                if let proc = bunProcess, proc.isRunning {
+                    NSLog("ProcessManager: terminating bun process before relaunch")
+                    proc.terminate()
+                    proc.waitUntilExit()
+                }
+                bunProcess = nil
                 restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""

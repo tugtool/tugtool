@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-23T03:57:16Z
+bead: dev-mode-notifications-73p.7
+---
+
+## step-6: Added handle_relaunch() and helpers in control.rs for async tugrelaunch orchestration with UDS progress relay. Updated Justfile to build and copy tugrelaunch binary. Updated ProcessManager.swift relaunch case to terminate bun process. Added 5 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-5
 date: 2025-02-23T03:45:07Z
 bead: dev-mode-notifications-73p.6
