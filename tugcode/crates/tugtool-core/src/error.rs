@@ -202,6 +202,31 @@ pub enum TugError {
     /// E047: SQL query failed
     #[error("E047: State database query failed: {reason}")]
     StateDbQuery { reason: String },
+
+    /// E048: Plan file changed since init
+    #[error("E048: Plan hash mismatch: plan file has changed since state init")]
+    StatePlanHashMismatch { plan_path: String },
+
+    /// E049: Worktree does not match claimed_by
+    #[error("E049: Ownership violation: step {anchor} is claimed by {claimed_by}, not {worktree}")]
+    StateOwnershipViolation {
+        anchor: String,
+        claimed_by: String,
+        worktree: String,
+    },
+
+    /// E050: Step not in expected status for operation
+    #[error(
+        "E050: Step {anchor} is not in expected status for this operation (current: {current_status})"
+    )]
+    StateStepNotClaimed {
+        anchor: String,
+        current_status: String,
+    },
+
+    /// E053: No steps ready for claiming
+    #[error("E053: No steps ready for claiming")]
+    StateNoReadySteps,
 }
 
 impl TugError {
@@ -250,6 +275,10 @@ impl TugError {
             TugError::InitFailed { .. } => "E037",
             TugError::StateDbOpen { .. } => "E046",
             TugError::StateDbQuery { .. } => "E047",
+            TugError::StatePlanHashMismatch { .. } => "E048",
+            TugError::StateOwnershipViolation { .. } => "E049",
+            TugError::StateStepNotClaimed { .. } => "E050",
+            TugError::StateNoReadySteps => "E053",
         }
     }
 
@@ -330,6 +359,10 @@ impl TugError {
             TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
             TugError::StateDbOpen { .. } => 14,   // State DB open failed
             TugError::StateDbQuery { .. } => 14,  // State DB query failed
+            TugError::StatePlanHashMismatch { .. } => 14, // Plan hash mismatch
+            TugError::StateOwnershipViolation { .. } => 14, // Ownership violation
+            TugError::StateStepNotClaimed { .. } => 14, // Step not claimed
+            TugError::StateNoReadySteps => 14,    // No ready steps
         }
     }
 }

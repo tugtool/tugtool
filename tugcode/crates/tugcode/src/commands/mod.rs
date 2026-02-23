@@ -28,7 +28,9 @@ pub use log::{LogCommands, run_log_prepend, run_log_rotate};
 pub use merge::run_merge;
 pub use open_pr::run_open_pr;
 pub use resolve::run_resolve;
-pub use state::{StateCommands, run_state_init};
+pub use state::{
+    StateCommands, run_state_claim, run_state_heartbeat, run_state_init, run_state_start,
+};
 pub use status::run_status;
 pub use tell::run_tell;
 pub use validate::run_validate;

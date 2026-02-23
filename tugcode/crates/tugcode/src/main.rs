@@ -112,6 +112,29 @@ fn main() -> ExitCode {
         },
         Some(Commands::State(state_cmd)) => match state_cmd {
             StateCommands::Init { plan } => commands::run_state_init(plan, cli.json, cli.quiet),
+            StateCommands::Claim {
+                plan,
+                worktree,
+                lease_duration,
+            } => commands::run_state_claim(plan, worktree, lease_duration, cli.json, cli.quiet),
+            StateCommands::Start {
+                plan,
+                step,
+                worktree,
+            } => commands::run_state_start(plan, step, worktree, cli.json, cli.quiet),
+            StateCommands::Heartbeat {
+                plan,
+                step,
+                worktree,
+                lease_duration,
+            } => commands::run_state_heartbeat(
+                plan,
+                step,
+                worktree,
+                lease_duration,
+                cli.json,
+                cli.quiet,
+            ),
         },
         Some(Commands::Merge {
             plan,

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-23T19:10:41Z
+bead: add-tugstate-7x8.5
+---
+
+## #step-4: Added claim/start/heartbeat commands with lease-based claiming and ownership enforcement
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-23T18:53:36Z
 bead: add-tugstate-7x8.4

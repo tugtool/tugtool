@@ -704,3 +704,38 @@ pub struct StateInitData {
     /// Number of checklist items created
     pub checklist_count: usize,
 }
+
+/// Data payload for state claim command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateClaimData {
+    pub plan_path: String,
+    pub claimed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lease_expires: Option<String>,
+    pub reclaimed: bool,
+    pub remaining_ready: usize,
+    pub total_remaining: usize,
+    pub all_completed: bool,
+}
+
+/// Data payload for state start command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateStartData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub started: bool,
+}
+
+/// Data payload for state heartbeat command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateHeartbeatData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub lease_expires: String,
+}
