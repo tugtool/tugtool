@@ -76,11 +76,11 @@ Subagents need to communicate with each other, as follows:
 
 ### Beads and Skill <=> Subagent Communication
 
-Beads URL: https://github.com/steveyegge/beads
+- Beads URL: https://github.com/steveyegge/beads
 
-Beads strongly prefers to keep a central database on the `git` main branch, which raises persistent problems when attempting to work to do work on during the IMPLEMENT phase on a `git worktree`. The MERGE phase struggles mightily trying to messy conflicts since both the main branch and the git worktree will have changed. We should be able to avoid these conflicts since the TUG WORKFLOW is known upfront. PROPOSED SOLUTION: We should *keep the main branch free of changes* from any IMPLEMENT phase.
+- Beads strongly prefers to keep a central database on the `git` main branch, which raises persistent problems when attempting to work to do work on during the IMPLEMENT phase on a `git worktree`. The MERGE phase struggles mightily trying to messy conflicts since both the main branch and the git worktree will have changed. We should be able to avoid these conflicts since the TUG WORKFLOW is known upfront. PROPOSED SOLUTION: We should *keep the main branch free of changes* from any IMPLEMENT phase.
 
-Operationally, the Skill <=> Subagent Communication is orchestrator-mediated rather than direct agent-to-agent messaging: skills pass structured JSON between agents, persist step artifacts for downstream reads, and enforce handoff gates through each agent's `recommendation` output. All of this information is passed through Beads. Beads has design and notes fields that have been pressed into service to hold this information (with awkward impedence mismatches). Just getting this information written into beads resulted in a ridiculously long series of changes, which resulted in using the file system to write all the information we're storing in beads anyway, which defeats much of the purpose of using beads at all.
+- Operationally, the Skill <=> Subagent Communication is orchestrator-mediated rather than direct agent-to-agent messaging: skills pass structured JSON between agents, persist step artifacts for downstream reads, and enforce handoff gates through each agent's `recommendation` output. All of this information is passed through Beads. Beads has design and notes fields that have been pressed into service to hold this information (with awkward impedence mismatches). Just getting this information written into beads resulted in a ridiculously long series of changes, which resulted in using the file system to write all the information we're storing in beads anyway, which defeats much of the purpose of using beads at all.
     - 2ba6c10 Reduce orchestrator overthinking in implement
     - 07b048d Move bead-write from agents to orchestrator
     - 372c249 Remove positional content args from bead CLIs
@@ -94,9 +94,9 @@ Operationally, the Skill <=> Subagent Communication is orchestrator-mediated rat
     - 4d7ec4f Beads Improvements (#43)
     - dad5ab5 Add beads improvements plan and proposal
 
-The IMPLEMENT phase must conform to [I-08], which mostly works, since bead opening and closing is simple and straightforward. However, the attempt to use beads for [I-09] as a single source of truth to store the progress of PLAN STEPs has failed. While it is being used as an essential part of the the Skill <=> Subagent Communication flow, this information is not sufficient enough to track the full richness of the PLAN and its STEPs. The result is that we have no way to offer the user [R-08], i.e. there is no way to visualize the open/in-progress/completed state of the CHECKLISTS for any PLAN STEP.
+- The IMPLEMENT phase must conform to [I-08], which mostly works, since bead opening and closing is simple and straightforward. However, the attempt to use beads for [I-09] as a single source of truth to store the progress of PLAN STEPs has failed. While it is being used as an essential part of the the Skill <=> Subagent Communication flow, this information is not sufficient enough to track the full richness of the PLAN and its STEPs. The result is that we have no way to offer the user [R-08], i.e. there is no way to visualize the open/in-progress/completed state of the CHECKLISTS for any PLAN STEP.
 
-It has proven to be surprisingly difficult to get information from subagent to subagent. As described above, the thought was to use beads for this, allowing each subagent to interact with the beads system, but... to do so requires the use of the `bd` program, which Tug *always* mediates through `tugcode beads ...` (since I have been doubting beads for some time, I acted to isolate its use). Unfortunately, this involves the shell, or heredocs, or the filesystem. Again, refer back to that long list of git commits above.
+- It has proven to be surprisingly difficult to get information from subagent to subagent. As described above, the thought was to use beads for this, allowing each subagent to interact with the beads system, but... to do so requires the use of the `bd` program, which Tug *always* mediates through `tugcode beads ...` (since I have been doubting beads for some time, I acted to isolate its use). Unfortunately, this involves the shell, or heredocs, or the filesystem. Again, refer back to that long list of git commits above.
 
 ## NEXT STEPS
 
