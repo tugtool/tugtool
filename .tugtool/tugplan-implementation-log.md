@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4-summary
+date: 2025-02-23T19:16:15Z
+bead: add-tugstate-7x8.6
+---
+
+## #step-4-summary: Added integration test verifying claim/start/heartbeat lifecycle via subprocess
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-23T19:10:41Z
 bead: add-tugstate-7x8.5
