@@ -923,6 +923,10 @@ From coder output, evaluate `drift_assessment`:
 - **Plan files are never modified** by beads sync
 - Beads sync errors during worktree create remain **fatal** (fail fast)
 
+**Data persistence** (handled by orchestrator via Bead Write Protocol):
+
+After each agent call (architect, coder, reviewer), the orchestrator runs the appropriate `tugcode beads` CLI command to persist the agent's temp file to the bead, then deletes the temp file. See the Bead Write Protocol section for the exact commands. **Agents never run bead write commands** — they only use `beads inspect` for reading.
+
 **Close after commit** (handled by committer-agent via `tugcode commit`):
 
 The committer-agent is a thin CLI wrapper that delegates to `tugcode commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.

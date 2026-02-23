@@ -1,6 +1,6 @@
 ---
 name: integrator-agent
-description: Push branch, create PR, verify CI status via gh pr checks. Takes over PR creation from committer per Phase D.
+description: Push branch, create PR, verify CI status via gh pr checks.
 model: sonnet
 permissionMode: dontAsk
 tools: Bash

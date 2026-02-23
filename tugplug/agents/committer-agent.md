@@ -32,34 +32,6 @@ If a CLI command fails, report the error in your JSON output with `"aborted": tr
 
 ---
 
-## Bead-Mediated Communication
-
-### No Self-Fetch
-
-**Committer does NOT fetch bead data.** The orchestrator provides all necessary information inline:
-- `bead_id` for closing the bead
-- `close_reason` for the completion message
-- `log_entry.summary` for the implementation log
-
-### Field Ownership (What You Read)
-
-Per Table T01: **NONE**. Committer receives all data from the orchestrator, not from beads.
-
-### Field Ownership (What You Write)
-
-Per Table T02, you WRITE to:
-- **close_reason**: Via `tugcode beads close` (done by `tugcode commit` CLI)
-
-The `tugcode commit` command handles closing the bead with the provided close reason.
-
-### Artifact Files
-
-Committer does not produce artifact files. The CLI commands handle all persistence:
-- `tugcode commit`: Commits code, closes bead, updates log (commit mode)
-- `git commit`: Commits code directly (fixup mode)
-
----
-
 ## Input Contract
 
 **Commit mode**: `operation`, `worktree_path`, `plan_path`, `step_anchor`, `proposed_message`, `bead_id`, `close_reason`, `log_entry.summary`

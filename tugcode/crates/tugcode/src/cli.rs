@@ -105,7 +105,7 @@ pub enum Commands {
     /// Sync steps to beads, link beads, show status, pull completion.
     #[command(
         subcommand,
-        long_about = "Beads integration for two-way sync between plans and work tracking.\n\nRequires:\n  - Beads CLI (bd) installed and in PATH\n  - Beads initialized (bd init creates .beads/)\n  - Network connectivity\n\nSubcommands:\n  sync   Create beads from plan steps, write IDs back\n  link   Manually link a step to an existing bead\n  status Show execution status (complete/ready/blocked)\n  pull   Update plan checkboxes from bead completion\n\nTypical workflow:\n  1. tugtool beads sync tugplan-1.md    # Create beads\n  2. bd close <bead-id>          # Complete work\n  3. tugtool beads pull tugplan-1.md    # Update checkboxes"
+        long_about = "Beads integration for two-way sync between plans and work tracking.\n\nRequires:\n  - Beads CLI (bd) installed and in PATH\n  - Beads initialized (bd init creates .beads/)\n\nSubcommands:\n  sync           Create beads from plan steps\n  link           Manually link a step to an existing bead\n  status         Show execution status (complete/ready/blocked)\n  pull           Update plan checkboxes from bead completion\n  close          Close a bead to mark work complete\n  inspect        Inspect a bead showing all fields\n  update-notes   Update the notes field of a bead\n  append-notes   Append content to the notes field\n  append-design  Append content to the design field"
     )]
     Beads(BeadsCommands),
 
