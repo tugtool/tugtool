@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6-summary
+date: 2025-02-23T19:59:35Z
+bead: add-tugstate-7x8.10
+---
+
+## #step-6-summary: Added integration test verifying show/ready/reset/reconcile lifecycle
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-23T19:53:23Z
 bead: add-tugstate-7x8.9

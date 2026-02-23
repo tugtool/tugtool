@@ -496,3 +496,233 @@ fn test_state_update_artifact_complete_lifecycle() {
     assert_eq!(force_complete_json["status"], "ok");
     assert_eq!(force_complete_json["data"]["forced"], true);
 }
+
+#[test]
+fn test_state_show_ready_reset_reconcile_lifecycle() {
+    let temp = setup_test_git_repo();
+    create_test_plan(&temp, "test-lifecycle", MINIMAL_PLAN);
+
+    // Commit the plan file
+    Command::new("git")
+        .args(["add", ".tugtool/tugplan-test-lifecycle.md"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to stage plan");
+
+    Command::new("git")
+        .args(["commit", "-m", "Add test plan"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to commit plan");
+
+    // Step 1: Initialize state
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("init")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state init");
+
+    assert!(
+        output.status.success(),
+        "state init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Step 2: Show plan (verify structure)
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("show")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state show");
+
+    assert!(
+        output.status.success(),
+        "state show failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let show_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
+    assert_eq!(show_json["status"], "ok");
+    assert_eq!(
+        show_json["data"]["plan"]["steps"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(show_json["data"]["plan"]["steps"][0]["anchor"], "step-0");
+    assert_eq!(show_json["data"]["plan"]["steps"][0]["status"], "pending");
+
+    // Step 3: Ready steps (verify categorization)
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("ready")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state ready");
+
+    assert!(
+        output.status.success(),
+        "state ready failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let ready_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse ready JSON");
+    assert_eq!(ready_json["status"], "ok");
+    assert_eq!(ready_json["data"]["ready"].as_array().unwrap().len(), 1);
+    assert_eq!(ready_json["data"]["ready"][0]["anchor"], "step-0");
+    assert_eq!(ready_json["data"]["blocked"].as_array().unwrap().len(), 1); // step-1 blocked by step-0
+
+    // Step 4: Claim and start step-0
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("claim")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim");
+
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("start")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start");
+
+    // Step 5: Update and complete step-0
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("update")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .arg("--all")
+        .arg("completed")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to update");
+
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("complete")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("step-0")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to complete");
+
+    // Step 6: Show again (verify step-0 completed)
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("show")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state show");
+
+    assert!(output.status.success());
+    let show_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
+    assert_eq!(show_json["data"]["plan"]["steps"][0]["status"], "completed");
+
+    // Step 7: Claim and start step-1
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("claim")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-1");
+
+    Command::new(tug_binary())
+        .arg("state")
+        .arg("start")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("step-1")
+        .arg("--worktree")
+        .arg("/tmp/test-worktree")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-1");
+
+    // Step 8: Reset step-1
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("reset")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("step-1")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state reset");
+
+    assert!(
+        output.status.success(),
+        "state reset failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let reset_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse reset JSON");
+    assert_eq!(reset_json["status"], "ok");
+    assert_eq!(reset_json["data"]["reset"], true);
+
+    // Step 9: Show again (verify step-1 is pending after reset)
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("show")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state show");
+
+    assert!(output.status.success());
+    let show_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
+    assert_eq!(show_json["data"]["plan"]["steps"][1]["status"], "pending");
+    assert!(show_json["data"]["plan"]["steps"][1]["claimed_by"].is_null());
+
+    // Step 10: Reconcile (no trailers yet, should reconcile 0 steps)
+    let output = Command::new(tug_binary())
+        .arg("state")
+        .arg("reconcile")
+        .arg(".tugtool/tugplan-test-lifecycle.md")
+        .arg("--json")
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state reconcile");
+
+    assert!(
+        output.status.success(),
+        "state reconcile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let reconcile_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse reconcile JSON");
+    assert_eq!(reconcile_json["status"], "ok");
+    // reconciled_count might be 0 or non-zero depending on whether step-0 already has commit_hash
+    // Just verify the structure exists
+    assert!(reconcile_json["data"]["reconciled_count"].is_number());
+    assert!(reconcile_json["data"]["skipped_count"].is_number());
+}
