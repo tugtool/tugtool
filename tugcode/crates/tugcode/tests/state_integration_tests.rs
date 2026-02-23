@@ -1732,7 +1732,7 @@ fn test_ownership_enforcement() {
 fn test_concurrent_claim_race() {
     let temp = setup_test_git_repo();
     init_plan_in_repo(&temp, "concurrent", TWO_INDEPENDENT_STEPS_PLAN);
-    let plan_path = format!(".tugtool/tugplan-concurrent.md");
+    let plan_path = ".tugtool/tugplan-concurrent.md".to_string();
 
     // Spawn two threads to claim concurrently
     let temp_path = temp.path().to_path_buf();
