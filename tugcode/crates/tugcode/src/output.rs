@@ -766,3 +766,36 @@ pub struct StateCompleteData {
     pub forced: bool,
     pub all_steps_completed: bool,
 }
+
+/// Data payload for state show command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateShowData {
+    pub plan: tugtool_core::PlanState,
+}
+
+/// Data payload for state ready command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateReadyData {
+    pub plan_path: String,
+    pub ready: Vec<tugtool_core::StepInfo>,
+    pub blocked: Vec<tugtool_core::StepInfo>,
+    pub completed: Vec<tugtool_core::StepInfo>,
+    pub expired_claim: Vec<tugtool_core::StepInfo>,
+}
+
+/// Data payload for state reset command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateResetData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub reset: bool,
+}
+
+/// Data payload for state reconcile command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateReconcileData {
+    pub plan_path: String,
+    pub reconciled_count: usize,
+    pub skipped_count: usize,
+    pub skipped_mismatches: Vec<tugtool_core::SkippedMismatch>,
+}

@@ -107,6 +107,31 @@ pub enum StateCommands {
         #[arg(long, value_name = "TEXT")]
         reason: Option<String>,
     },
+    /// Show plan progress and status
+    Show {
+        /// Plan file path (optional - shows all plans if not specified)
+        plan: Option<String>,
+    },
+    /// List ready steps for claiming
+    Ready {
+        /// Plan file path
+        plan: String,
+    },
+    /// Reset a step to pending status
+    Reset {
+        /// Plan file path
+        plan: String,
+        /// Step anchor to reset
+        step: String,
+    },
+    /// Reconcile state from git commit trailers
+    Reconcile {
+        /// Plan file path
+        plan: String,
+        /// Force overwrite of existing commit hashes
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
@@ -748,4 +773,431 @@ pub fn run_state_complete(
     }
 
     Ok(0)
+}
+
+pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    if let Some(plan) = plan {
+        // Show specific plan
+        let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+        let plan_rel = match resolved {
+            tugtool_core::ResolveResult::Found { path, .. } => {
+                path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
+            }
+            tugtool_core::ResolveResult::NotFound => {
+                return Err(format!("Plan not found: {}", plan));
+            }
+            tugtool_core::ResolveResult::Ambiguous(candidates) => {
+                let candidate_strs: Vec<String> =
+                    candidates.iter().map(|p| p.display().to_string()).collect();
+                return Err(format!(
+                    "Ambiguous plan reference '{}'. Matches: {}",
+                    plan,
+                    candidate_strs.join(", ")
+                ));
+            }
+        };
+
+        let plan_rel_str = plan_rel.to_string_lossy().to_string();
+        let plan_state = db.show_plan(&plan_rel_str).map_err(|e| e.to_string())?;
+
+        if json {
+            use crate::output::{JsonResponse, StateShowData};
+            let data = StateShowData { plan: plan_state };
+            let response = JsonResponse::ok("state show", data);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+            );
+        } else if !quiet {
+            print_plan_state(&plan_state);
+        }
+    } else {
+        // TODO: show all plans (future enhancement)
+        return Err("Showing all plans not yet implemented. Specify a plan path.".to_string());
+    }
+
+    Ok(0)
+}
+
+/// Helper function to print plan state in text format
+fn print_plan_state(plan: &tugtool_core::PlanState) {
+    println!("Plan: {}", plan.plan_path);
+    if let Some(title) = &plan.phase_title {
+        println!("Title: {}", title);
+    }
+    println!("Status: {}", plan.status);
+    println!();
+
+    for step in &plan.steps {
+        print_step_state(step, 0);
+    }
+}
+
+/// Helper function to print step state with indentation
+fn print_step_state(step: &tugtool_core::StepState, indent: usize) {
+    let prefix = "  ".repeat(indent);
+
+    // Status indicator
+    let status_icon = match step.status.as_str() {
+        "completed" => "✓",
+        "in_progress" => "→",
+        "claimed" => "◆",
+        _ => "○",
+    };
+
+    println!("{}{} {} - {}", prefix, status_icon, step.anchor, step.title);
+
+    // Show checklist progress
+    let cl = &step.checklist;
+    if cl.tasks_total > 0 {
+        print_progress_bar(
+            &format!("{}  Tasks", prefix),
+            cl.tasks_completed,
+            cl.tasks_total,
+        );
+    }
+    if cl.tests_total > 0 {
+        print_progress_bar(
+            &format!("{}  Tests", prefix),
+            cl.tests_completed,
+            cl.tests_total,
+        );
+    }
+    if cl.checkpoints_total > 0 {
+        print_progress_bar(
+            &format!("{}  Checkpoints", prefix),
+            cl.checkpoints_completed,
+            cl.checkpoints_total,
+        );
+    }
+
+    // Show claim/lease info
+    if let Some(claimed_by) = &step.claimed_by {
+        println!("{}  Claimed by: {}", prefix, claimed_by);
+        if let Some(expires) = &step.lease_expires_at {
+            println!("{}  Lease expires: {}", prefix, expires);
+        }
+    }
+
+    // Show force-completion reason
+    if let Some(reason) = &step.complete_reason {
+        println!("{}  Force-completed: {}", prefix, reason);
+    }
+
+    // Show substeps
+    for substep in &step.substeps {
+        print_step_state(substep, indent + 1);
+    }
+
+    println!();
+}
+
+/// Helper function to print ASCII progress bar
+fn print_progress_bar(label: &str, completed: usize, total: usize) {
+    let percent = if total > 0 {
+        (completed as f64 / total as f64 * 100.0) as usize
+    } else {
+        0
+    };
+
+    let bar_width = 12;
+    let filled = (completed as f64 / total as f64 * bar_width as f64) as usize;
+    let empty = bar_width - filled;
+
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+
+    println!("{}: {}/{}  {}  {}%", label, completed, total, bar, percent);
+}
+
+pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let plan_rel = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 4. Query ready steps
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    let result = db.ready_steps(&plan_rel_str).map_err(|e| e.to_string())?;
+
+    // 5. Output
+    if json {
+        use crate::output::{JsonResponse, StateReadyData};
+        let data = StateReadyData {
+            plan_path: plan_rel_str,
+            ready: result.ready,
+            blocked: result.blocked,
+            completed: result.completed,
+            expired_claim: result.expired_claim,
+        };
+        let response = JsonResponse::ok("state ready", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!("Ready steps ({}):", result.ready.len());
+        for step in &result.ready {
+            println!("  {} - {}", step.anchor, step.title);
+        }
+
+        if !result.expired_claim.is_empty() {
+            println!("\nExpired claims ({}):", result.expired_claim.len());
+            for step in &result.expired_claim {
+                println!("  {} - {}", step.anchor, step.title);
+            }
+        }
+
+        if !result.blocked.is_empty() {
+            println!("\nBlocked steps ({}):", result.blocked.len());
+            for step in &result.blocked {
+                println!("  {} - {}", step.anchor, step.title);
+            }
+        }
+
+        println!("\nCompleted steps: {}", result.completed.len());
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_reset(plan: String, step: String, json: bool, quiet: bool) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let plan_rel = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 4. Reset step
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    db.reset_step(&plan_rel_str, &step)
+        .map_err(|e| e.to_string())?;
+
+    // 5. Output
+    if json {
+        use crate::output::{JsonResponse, StateResetData};
+        let data = StateResetData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            reset: true,
+        };
+        let response = JsonResponse::ok("state reset", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!("Reset step to pending: {}", step);
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_reconcile(
+    plan: String,
+    force: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let plan_rel = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+
+    // 3. Scan git log for trailers
+    let entries = scan_git_trailers(&repo_root, &plan_rel_str)?;
+
+    // 4. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 5. Reconcile
+    let result = db
+        .reconcile(&plan_rel_str, &entries, force)
+        .map_err(|e| e.to_string())?;
+
+    // 6. Output warnings for mismatches
+    if !result.skipped_mismatches.is_empty() && !quiet {
+        eprintln!(
+            "Warning: {} step(s) skipped due to commit hash mismatch:",
+            result.skipped_mismatches.len()
+        );
+        for mismatch in &result.skipped_mismatches {
+            eprintln!(
+                "  {} (DB: {}, Git: {})",
+                mismatch.step_anchor, mismatch.db_hash, mismatch.git_hash
+            );
+        }
+        eprintln!("Use --force to overwrite DB hashes with git trailer hashes.");
+    }
+
+    // 7. Output
+    if json {
+        use crate::output::{JsonResponse, StateReconcileData};
+        let data = StateReconcileData {
+            plan_path: plan_rel_str,
+            reconciled_count: result.reconciled_count,
+            skipped_count: result.skipped_count,
+            skipped_mismatches: result.skipped_mismatches,
+        };
+        let response = JsonResponse::ok("state reconcile", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!(
+            "Reconciled {} step(s) from git trailers",
+            result.reconciled_count
+        );
+        if result.skipped_count > 0 {
+            println!(
+                "Skipped {} step(s) with hash mismatches",
+                result.skipped_count
+            );
+        }
+    }
+
+    Ok(0)
+}
+
+/// Scan git log for Tug-Step and Tug-Plan trailers
+fn scan_git_trailers(
+    repo_root: &std::path::Path,
+    plan_path: &str,
+) -> Result<Vec<tugtool_core::ReconcileEntry>, String> {
+    use std::process::Command;
+
+    // Run: git log --all --format="%H%n%B%n---END---" to get all commits with trailers
+    let output = Command::new("git")
+        .args(["log", "--all", "--format=%H%n%B%n---END---"])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|e| format!("failed to run git log: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git log failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let log_output = String::from_utf8_lossy(&output.stdout);
+    let mut entries = Vec::new();
+
+    // Parse commits
+    let mut current_hash: Option<String> = None;
+    let mut current_step: Option<String> = None;
+    let mut current_plan: Option<String> = None;
+
+    for line in log_output.lines() {
+        if line == "---END---" {
+            // End of commit - record entry if we have both step and plan
+            if let (Some(hash), Some(step), Some(plan)) = (
+                current_hash.take(),
+                current_step.take(),
+                current_plan.take(),
+            ) {
+                entries.push(tugtool_core::ReconcileEntry {
+                    step_anchor: step,
+                    plan_path: plan,
+                    commit_hash: hash,
+                });
+            }
+            current_hash = None;
+            current_step = None;
+            current_plan = None;
+        } else if current_hash.is_none()
+            && line.len() == 40
+            && line.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            // This looks like a commit hash
+            current_hash = Some(line.to_string());
+        } else if line.starts_with("Tug-Step:") {
+            current_step = Some(line["Tug-Step:".len()..].trim().to_string());
+        } else if line.starts_with("Tug-Plan:") {
+            current_plan = Some(line["Tug-Plan:".len()..].trim().to_string());
+        }
+    }
+
+    // Filter to only entries for the requested plan
+    let filtered: Vec<_> = entries
+        .into_iter()
+        .filter(|e| e.plan_path == plan_path)
+        .collect();
+
+    Ok(filtered)
 }

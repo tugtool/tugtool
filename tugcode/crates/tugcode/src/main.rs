@@ -178,6 +178,14 @@ fn main() -> ExitCode {
             } => commands::run_state_complete(
                 plan, step, worktree, force, reason, cli.json, cli.quiet,
             ),
+            StateCommands::Show { plan } => commands::run_state_show(plan, cli.json, cli.quiet),
+            StateCommands::Ready { plan } => commands::run_state_ready(plan, cli.json, cli.quiet),
+            StateCommands::Reset { plan, step } => {
+                commands::run_state_reset(plan, step, cli.json, cli.quiet)
+            }
+            StateCommands::Reconcile { plan, force } => {
+                commands::run_state_reconcile(plan, force, cli.json, cli.quiet)
+            }
         },
         Some(Commands::Merge {
             plan,

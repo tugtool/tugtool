@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-23T19:53:23Z
+bead: add-tugstate-7x8.9
+---
+
+## #step-6: Added show/ready/reset/reconcile commands with progress bars, dependency graph, and git trailer recovery
+
+**Files changed:**
+- .tugtool/tugplan-add-tugstate.md
+
+---
+
+---
 step: #step-5-summary
 date: 2025-02-23T19:38:52Z
 bead: add-tugstate-7x8.8

@@ -8,6 +8,7 @@ use crate::error::TugError;
 use crate::session::now_iso8601;
 use crate::types::{Checkpoint, TugPlan};
 use rusqlite::{Connection, TransactionBehavior};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -891,6 +892,577 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
             all_steps_completed: all_completed,
         })
     }
+
+    /// Query plan state for show command
+    pub fn show_plan(&self, plan_path: &str) -> Result<PlanState, TugError> {
+        // Query plan metadata
+        let (plan_hash, phase_title, status, created_at, updated_at): (
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ) = self
+            .conn
+            .query_row(
+                "SELECT plan_hash, phase_title, status, created_at, updated_at
+                 FROM plans WHERE plan_path = ?1",
+                rusqlite::params![plan_path],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query plan: {}", e),
+            })?;
+
+        // Query all top-level steps (those with parent_anchor = NULL)
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT anchor, title, step_index, status, claimed_by, lease_expires_at,
+                        completed_at, commit_hash, complete_reason
+                 FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL
+                 ORDER BY step_index",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare step query: {}", e),
+            })?;
+
+        let mut steps = Vec::new();
+        let step_rows = stmt
+            .query_map(rusqlite::params![plan_path], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,         // anchor
+                    row.get::<_, String>(1)?,         // title
+                    row.get::<_, i32>(2)?,            // step_index
+                    row.get::<_, String>(3)?,         // status
+                    row.get::<_, Option<String>>(4)?, // claimed_by
+                    row.get::<_, Option<String>>(5)?, // lease_expires_at
+                    row.get::<_, Option<String>>(6)?, // completed_at
+                    row.get::<_, Option<String>>(7)?, // commit_hash
+                    row.get::<_, Option<String>>(8)?, // complete_reason
+                ))
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query steps: {}", e),
+            })?;
+
+        for row in step_rows {
+            let (
+                anchor,
+                title,
+                step_index,
+                status,
+                claimed_by,
+                lease_expires_at,
+                completed_at,
+                commit_hash,
+                complete_reason,
+            ) = row.map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to read step row: {}", e),
+            })?;
+
+            let checklist = self.query_checklist_summary(plan_path, &anchor)?;
+            let substeps = self.query_substeps(plan_path, &anchor)?;
+            let artifacts = self.query_artifacts(plan_path, &anchor)?;
+
+            steps.push(StepState {
+                anchor,
+                title,
+                step_index,
+                parent_anchor: None,
+                status,
+                claimed_by,
+                lease_expires_at,
+                completed_at,
+                commit_hash,
+                complete_reason,
+                checklist,
+                substeps,
+                artifacts,
+            });
+        }
+
+        Ok(PlanState {
+            plan_path: plan_path.to_string(),
+            plan_hash,
+            phase_title,
+            status,
+            steps,
+            created_at,
+            updated_at,
+        })
+    }
+
+    /// Helper: query checklist summary for a step
+    fn query_checklist_summary(
+        &self,
+        plan_path: &str,
+        anchor: &str,
+    ) -> Result<ChecklistSummary, TugError> {
+        let (tasks_total, tasks_completed): (i32, i32) = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'task'",
+                rusqlite::params![plan_path, anchor],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+
+        let (tests_total, tests_completed): (i32, i32) = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'test'",
+                rusqlite::params![plan_path, anchor],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+
+        let (checkpoints_total, checkpoints_completed): (i32, i32) = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*), SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                 FROM checklist_items WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = 'checkpoint'",
+                rusqlite::params![plan_path, anchor],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+
+        Ok(ChecklistSummary {
+            tasks_total: tasks_total as usize,
+            tasks_completed: tasks_completed as usize,
+            tests_total: tests_total as usize,
+            tests_completed: tests_completed as usize,
+            checkpoints_total: checkpoints_total as usize,
+            checkpoints_completed: checkpoints_completed as usize,
+        })
+    }
+
+    /// Helper: query substeps for a parent step
+    fn query_substeps(
+        &self,
+        plan_path: &str,
+        parent_anchor: &str,
+    ) -> Result<Vec<StepState>, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT anchor, title, step_index, status, claimed_by, lease_expires_at,
+                        completed_at, commit_hash, complete_reason
+                 FROM steps WHERE plan_path = ?1 AND parent_anchor = ?2
+                 ORDER BY step_index",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare substep query: {}", e),
+            })?;
+
+        let mut substeps = Vec::new();
+        let rows = stmt
+            .query_map(rusqlite::params![plan_path, parent_anchor], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,         // anchor
+                    row.get::<_, String>(1)?,         // title
+                    row.get::<_, i32>(2)?,            // step_index
+                    row.get::<_, String>(3)?,         // status
+                    row.get::<_, Option<String>>(4)?, // claimed_by
+                    row.get::<_, Option<String>>(5)?, // lease_expires_at
+                    row.get::<_, Option<String>>(6)?, // completed_at
+                    row.get::<_, Option<String>>(7)?, // commit_hash
+                    row.get::<_, Option<String>>(8)?, // complete_reason
+                ))
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query substeps: {}", e),
+            })?;
+
+        for row in rows {
+            let (
+                anchor,
+                title,
+                step_index,
+                status,
+                claimed_by,
+                lease_expires_at,
+                completed_at,
+                commit_hash,
+                complete_reason,
+            ) = row.map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to read substep row: {}", e),
+            })?;
+
+            let checklist = self.query_checklist_summary(plan_path, &anchor)?;
+            let artifacts = self.query_artifacts(plan_path, &anchor)?;
+
+            substeps.push(StepState {
+                anchor,
+                title,
+                step_index,
+                parent_anchor: Some(parent_anchor.to_string()),
+                status,
+                claimed_by,
+                lease_expires_at,
+                completed_at,
+                commit_hash,
+                complete_reason,
+                checklist,
+                substeps: vec![], // substeps don't have sub-substeps
+                artifacts,
+            });
+        }
+
+        Ok(substeps)
+    }
+
+    /// Helper: query artifacts for a step
+    fn query_artifacts(
+        &self,
+        plan_path: &str,
+        anchor: &str,
+    ) -> Result<Vec<ArtifactSummary>, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT kind, summary, recorded_at
+                 FROM step_artifacts WHERE plan_path = ?1 AND step_anchor = ?2
+                 ORDER BY recorded_at",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare artifact query: {}", e),
+            })?;
+
+        let mut artifacts = Vec::new();
+        let rows = stmt
+            .query_map(rusqlite::params![plan_path, anchor], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query artifacts: {}", e),
+            })?;
+
+        for row in rows {
+            let (kind, summary, recorded_at) = row.map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to read artifact row: {}", e),
+            })?;
+            artifacts.push(ArtifactSummary {
+                kind,
+                summary,
+                recorded_at,
+            });
+        }
+
+        Ok(artifacts)
+    }
+
+    /// List ready steps for claiming
+    pub fn ready_steps(&self, plan_path: &str) -> Result<ReadyResult, TugError> {
+        let now = now_iso8601();
+
+        // Query all top-level steps with their dependency status
+        let mut ready = Vec::new();
+        let mut blocked = Vec::new();
+        let mut completed = Vec::new();
+        let mut expired_claim = Vec::new();
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT anchor, title, step_index, status, lease_expires_at
+                 FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL
+                 ORDER BY step_index",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare ready query: {}", e),
+            })?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![plan_path], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query ready steps: {}", e),
+            })?;
+
+        for row in rows {
+            let (anchor, title, step_index, status, lease_expires_at) =
+                row.map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to read ready row: {}", e),
+                })?;
+
+            let info = StepInfo {
+                anchor: anchor.clone(),
+                title,
+                step_index,
+            };
+
+            if status == "completed" {
+                completed.push(info);
+            } else if let Some(lease_expiry) = lease_expires_at {
+                if status == "claimed" || status == "in_progress" {
+                    if lease_expiry < now {
+                        expired_claim.push(info);
+                    } else {
+                        // Active claim
+                        blocked.push(info);
+                    }
+                }
+            } else if status == "pending" {
+                // Check if all dependencies are completed
+                let deps_completed: bool = self
+                    .conn
+                    .query_row(
+                        "SELECT COUNT(*) = 0 FROM step_deps d
+                         JOIN steps s ON d.plan_path = s.plan_path AND d.depends_on = s.anchor
+                         WHERE d.plan_path = ?1 AND d.step_anchor = ?2 AND s.status != 'completed'",
+                        rusqlite::params![plan_path, &anchor],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .unwrap_or(true);
+
+                if deps_completed {
+                    ready.push(info);
+                } else {
+                    blocked.push(info);
+                }
+            }
+        }
+
+        Ok(ReadyResult {
+            ready,
+            blocked,
+            completed,
+            expired_claim,
+        })
+    }
+
+    /// Reset a step to pending status
+    pub fn reset_step(&mut self, plan_path: &str, anchor: &str) -> Result<(), TugError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        // Check if step is completed
+        let status: String = tx
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| row.get(0),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query step status: {}", e),
+            })?;
+
+        if status == "completed" {
+            return Err(TugError::StateStepNotClaimed {
+                anchor: anchor.to_string(),
+                current_status: "cannot reset completed step".to_string(),
+            });
+        }
+
+        // Check if this is a top-level step
+        let is_substep: bool = tx
+            .query_row(
+                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| row.get(0),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query step type: {}", e),
+            })?;
+
+        let now = now_iso8601();
+
+        // Reset the step
+        tx.execute(
+            "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
+                              lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
+             WHERE plan_path = ?1 AND anchor = ?2",
+            rusqlite::params![plan_path, anchor],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to reset step: {}", e),
+        })?;
+
+        // Reset non-completed checklist items
+        tx.execute(
+            "UPDATE checklist_items SET status = 'open', updated_at = ?1
+             WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
+            rusqlite::params![&now, plan_path, anchor],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to reset checklist items: {}", e),
+        })?;
+
+        // If top-level step, cascade to non-completed substeps
+        if !is_substep {
+            // Reset non-completed substeps
+            tx.execute(
+                "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
+                                  lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
+                 WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
+                rusqlite::params![plan_path, anchor],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to reset substeps: {}", e),
+            })?;
+
+            // Reset checklist items for those substeps
+            tx.execute(
+                "UPDATE checklist_items SET status = 'open', updated_at = ?1
+                 WHERE plan_path = ?2 AND step_anchor IN (
+                     SELECT anchor FROM steps WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'
+                 ) AND status != 'completed'",
+                rusqlite::params![&now, plan_path, anchor],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to reset substep checklist items: {}", e),
+            })?;
+        }
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit reset transaction: {}", e),
+        })?;
+
+        Ok(())
+    }
+
+    /// Reconcile state from git trailers
+    pub fn reconcile(
+        &mut self,
+        plan_path: &str,
+        entries: &[ReconcileEntry],
+        force: bool,
+    ) -> Result<ReconcileResult, TugError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        let now = now_iso8601();
+        let mut reconciled_count = 0;
+        let mut skipped_count = 0;
+        let mut skipped_mismatches = Vec::new();
+
+        for entry in entries {
+            if entry.plan_path != plan_path {
+                continue; // Skip entries for other plans
+            }
+
+            // Check if step exists and its current status
+            let existing: Option<(String, Option<String>)> = tx
+                .query_row(
+                    "SELECT status, commit_hash FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                    rusqlite::params![plan_path, &entry.step_anchor],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
+
+            match existing {
+                Some((status, Some(db_hash))) if status == "completed" => {
+                    // Step already completed
+                    if db_hash != entry.commit_hash {
+                        // Hash mismatch
+                        if force {
+                            // Force mode: overwrite
+                            tx.execute(
+                                "UPDATE steps SET commit_hash = ?1
+                                 WHERE plan_path = ?2 AND anchor = ?3",
+                                rusqlite::params![
+                                    &entry.commit_hash,
+                                    plan_path,
+                                    &entry.step_anchor
+                                ],
+                            )
+                            .map_err(|e| TugError::StateDbQuery {
+                                reason: format!("failed to update commit hash: {}", e),
+                            })?;
+                            reconciled_count += 1;
+                        } else {
+                            // Default mode: skip and record mismatch
+                            skipped_count += 1;
+                            skipped_mismatches.push(SkippedMismatch {
+                                step_anchor: entry.step_anchor.clone(),
+                                db_hash: db_hash.clone(),
+                                git_hash: entry.commit_hash.clone(),
+                            });
+                        }
+                    }
+                    // else: hashes match, nothing to do
+                }
+                Some((status, _)) if status != "completed" => {
+                    // Step not completed yet - mark it as completed
+                    tx.execute(
+                        "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = ?2
+                         WHERE plan_path = ?3 AND anchor = ?4",
+                        rusqlite::params![&now, &entry.commit_hash, plan_path, &entry.step_anchor],
+                    )
+                    .map_err(|e| TugError::StateDbQuery {
+                        reason: format!("failed to reconcile step: {}", e),
+                    })?;
+
+                    // Auto-complete all checklist items
+                    tx.execute(
+                        "UPDATE checklist_items SET status = 'completed', updated_at = ?1
+                         WHERE plan_path = ?2 AND step_anchor = ?3",
+                        rusqlite::params![&now, plan_path, &entry.step_anchor],
+                    )
+                    .map_err(|e| TugError::StateDbQuery {
+                        reason: format!("failed to complete checklist items: {}", e),
+                    })?;
+
+                    reconciled_count += 1;
+                }
+                None => {
+                    // Step doesn't exist - skip silently (may be from old plan version)
+                }
+                _ => {
+                    // Completed but no commit hash - set it
+                    tx.execute(
+                        "UPDATE steps SET commit_hash = ?1
+                         WHERE plan_path = ?2 AND anchor = ?3",
+                        rusqlite::params![&entry.commit_hash, plan_path, &entry.step_anchor],
+                    )
+                    .map_err(|e| TugError::StateDbQuery {
+                        reason: format!("failed to set commit hash: {}", e),
+                    })?;
+                    reconciled_count += 1;
+                }
+            }
+        }
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit reconcile transaction: {}", e),
+        })?;
+
+        Ok(ReconcileResult {
+            reconciled_count,
+            skipped_count,
+            skipped_mismatches,
+        })
+    }
 }
 
 /// Checklist update operation
@@ -992,6 +1564,96 @@ pub fn compute_plan_hash(path: &Path) -> Result<String, TugError> {
     hasher.update(&content);
     let digest = hasher.finalize();
     Ok(format!("{:x}", digest))
+}
+
+/// Checklist summary counts by kind and status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChecklistSummary {
+    pub tasks_total: usize,
+    pub tasks_completed: usize,
+    pub tests_total: usize,
+    pub tests_completed: usize,
+    pub checkpoints_total: usize,
+    pub checkpoints_completed: usize,
+}
+
+/// Artifact summary for display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactSummary {
+    pub kind: String,
+    pub summary: String,
+    pub recorded_at: String,
+}
+
+/// Step state for show command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepState {
+    pub anchor: String,
+    pub title: String,
+    pub step_index: i32,
+    pub parent_anchor: Option<String>,
+    pub status: String,
+    pub claimed_by: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub commit_hash: Option<String>,
+    pub complete_reason: Option<String>,
+    pub checklist: ChecklistSummary,
+    pub substeps: Vec<StepState>,
+    pub artifacts: Vec<ArtifactSummary>,
+}
+
+/// Plan state for show command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanState {
+    pub plan_path: String,
+    pub plan_hash: String,
+    pub phase_title: Option<String>,
+    pub status: String,
+    pub steps: Vec<StepState>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Result from ready_steps operation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReadyResult {
+    pub ready: Vec<StepInfo>,
+    pub blocked: Vec<StepInfo>,
+    pub completed: Vec<StepInfo>,
+    pub expired_claim: Vec<StepInfo>,
+}
+
+/// Basic step information for ready command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StepInfo {
+    pub anchor: String,
+    pub title: String,
+    pub step_index: i32,
+}
+
+/// Entry parsed from git trailers for reconcile
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReconcileEntry {
+    pub step_anchor: String,
+    pub plan_path: String,
+    pub commit_hash: String,
+}
+
+/// A skipped mismatch during reconcile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkippedMismatch {
+    pub step_anchor: String,
+    pub db_hash: String,
+    pub git_hash: String,
+}
+
+/// Result from reconcile operation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReconcileResult {
+    pub reconciled_count: usize,
+    pub skipped_count: usize,
+    pub skipped_mismatches: Vec<SkippedMismatch>,
 }
 
 #[cfg(test)]
@@ -1958,5 +2620,365 @@ mod tests {
             )
             .unwrap();
         assert_eq!(plan_status, "done");
+    }
+
+    // Step 6 tests: show, ready, reset, reconcile
+
+    #[test]
+    fn test_show_returns_correct_checklist_counts() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
+
+        assert_eq!(plan_state.steps.len(), 3); // step-0, step-1, step-2
+
+        // step-0 has 1 task and 1 test
+        let step0 = &plan_state.steps[0];
+        assert_eq!(step0.anchor, "step-0");
+        assert_eq!(step0.checklist.tasks_total, 1);
+        assert_eq!(step0.checklist.tests_total, 1);
+        assert_eq!(step0.checklist.checkpoints_total, 0);
+    }
+
+    #[test]
+    fn test_show_includes_substeps() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
+
+        // step-1 has 2 substeps
+        let step1 = &plan_state.steps[1];
+        assert_eq!(step1.anchor, "step-1");
+        assert_eq!(step1.substeps.len(), 2);
+        assert_eq!(step1.substeps[0].anchor, "step-1-1");
+        assert_eq!(step1.substeps[1].anchor, "step-1-2");
+    }
+
+    #[test]
+    fn test_show_annotates_force_completed() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim, start, and force-complete step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+            .unwrap();
+        db.complete_step(
+            ".tugtool/tugplan-test.md",
+            "step-0",
+            "wt-a",
+            true,
+            Some("testing force mode"),
+        )
+        .unwrap();
+
+        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
+
+        let step0 = &plan_state.steps[0];
+        assert_eq!(
+            step0.complete_reason,
+            Some("testing force mode".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ready_returns_correct_categorization() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
+
+        // Only step-0 should be ready (no dependencies)
+        assert_eq!(ready.ready.len(), 1);
+        assert_eq!(ready.ready[0].anchor, "step-0");
+
+        // step-1 and step-2 are blocked by dependencies
+        assert_eq!(ready.blocked.len(), 2);
+
+        assert_eq!(ready.completed.len(), 0);
+        assert_eq!(ready.expired_claim.len(), 0);
+    }
+
+    #[test]
+    fn test_ready_expired_lease_appears_in_ready() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+
+        // Manually expire the lease
+        db.conn
+            .execute(
+                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+
+        let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
+
+        // step-0 should appear in expired_claim
+        assert_eq!(ready.expired_claim.len(), 1);
+        assert_eq!(ready.expired_claim[0].anchor, "step-0");
+    }
+
+    #[test]
+    fn test_reset_clears_claim_fields() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim and start step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+            .unwrap();
+
+        // Reset step-0
+        db.reset_step(".tugtool/tugplan-test.md", "step-0").unwrap();
+
+        // Verify status is pending and claim fields are cleared
+        let (status, claimed_by): (String, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT status, claimed_by FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(status, "pending");
+        assert_eq!(claimed_by, None);
+    }
+
+    #[test]
+    fn test_reset_cascades_to_substeps() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Complete step-0 so step-1 can be claimed
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+
+        // Claim and start step-1 (which has substeps)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+            .unwrap();
+
+        // Reset step-1
+        db.reset_step(".tugtool/tugplan-test.md", "step-1").unwrap();
+
+        // Verify step-1 is pending
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE anchor = 'step-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+
+        // Verify substeps were also reset
+        let substep_statuses: Vec<String> = db
+            .conn
+            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-1' ORDER BY step_index")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert_eq!(substep_statuses, vec!["pending", "pending"]);
+    }
+
+    #[test]
+    fn test_reset_does_not_affect_completed_steps() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Complete step-0
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-0'",
+                [now_iso8601()],
+            )
+            .unwrap();
+
+        // Try to reset step-0 - should fail
+        let result = db.reset_step(".tugtool/tugplan-test.md", "step-0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reconcile_marks_uncompleted_steps() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Create reconcile entries for step-0 and step-1
+        let entries = vec![
+            ReconcileEntry {
+                step_anchor: "step-0".to_string(),
+                plan_path: ".tugtool/tugplan-test.md".to_string(),
+                commit_hash: "abc123".to_string(),
+            },
+            ReconcileEntry {
+                step_anchor: "step-1".to_string(),
+                plan_path: ".tugtool/tugplan-test.md".to_string(),
+                commit_hash: "def456".to_string(),
+            },
+        ];
+
+        let result = db
+            .reconcile(".tugtool/tugplan-test.md", &entries, false)
+            .unwrap();
+
+        assert_eq!(result.reconciled_count, 2);
+        assert_eq!(result.skipped_count, 0);
+
+        // Verify steps are marked as completed
+        let count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE anchor IN ('step-0', 'step-1') AND status = 'completed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_reconcile_skips_hash_mismatch_in_default_mode() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Mark step-0 as completed with a commit hash
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-0'",
+                [now_iso8601()],
+            )
+            .unwrap();
+
+        // Try to reconcile with a different hash
+        let entries = vec![ReconcileEntry {
+            step_anchor: "step-0".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            commit_hash: "new_hash".to_string(),
+        }];
+
+        let result = db
+            .reconcile(".tugtool/tugplan-test.md", &entries, false)
+            .unwrap();
+
+        assert_eq!(result.reconciled_count, 0);
+        assert_eq!(result.skipped_count, 1);
+        assert_eq!(result.skipped_mismatches.len(), 1);
+        assert_eq!(result.skipped_mismatches[0].step_anchor, "step-0");
+        assert_eq!(result.skipped_mismatches[0].db_hash, "original_hash");
+        assert_eq!(result.skipped_mismatches[0].git_hash, "new_hash");
+    }
+
+    #[test]
+    fn test_reconcile_force_mode_overwrites_hashes() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Mark step-0 as completed with a commit hash
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-0'",
+                [now_iso8601()],
+            )
+            .unwrap();
+
+        // Reconcile with force mode
+        let entries = vec![ReconcileEntry {
+            step_anchor: "step-0".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            commit_hash: "new_hash".to_string(),
+        }];
+
+        let result = db
+            .reconcile(".tugtool/tugplan-test.md", &entries, true)
+            .unwrap();
+
+        assert_eq!(result.reconciled_count, 1);
+        assert_eq!(result.skipped_count, 0);
+
+        // Verify hash was updated
+        let hash: String = db
+            .conn
+            .query_row(
+                "SELECT commit_hash FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hash, "new_hash");
     }
 }
