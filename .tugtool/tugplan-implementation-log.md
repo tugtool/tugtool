@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-23T03:26:27Z
+bead: dev-mode-notifications-73p.4
+---
+
+## step-3: Created DeveloperCard class implementing TugCard interface with Styles/Code/App indicator rows, notification handlers, and Restart/Relaunch/Reset buttons. Added Developer icon button to Dock with badge overlay via CustomEvent. Registered dev_notification and dev_build_progress handlers in action-dispatch. Created developer-card.test.ts and extended action-dispatch.test.ts and dock.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-notifications.md
+
+---
+
+---
 step: step-2
 date: 2025-02-23T02:57:12Z
 bead: dev-mode-notifications-73p.3

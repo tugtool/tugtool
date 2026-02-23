@@ -8,7 +8,7 @@
 import type { DeckManager } from "./deck-manager";
 import { DropdownMenu } from "./card-menu";
 import type { CardMenuItem } from "./cards/card";
-import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Settings } from "lucide";
+import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Code, Settings } from "lucide";
 import { dispatchAction } from "./action-dispatch";
 
 /** Tug logo SVG (24x24 rounded square with "T" text) */
@@ -23,6 +23,9 @@ export class Dock {
   private currentMenu: DropdownMenu | null = null;
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
+  private btnEls: Map<string, HTMLElement> = new Map();
+  private badgeEls: Map<string, HTMLElement> = new Map();
+  private badgeEventHandler: ((e: Event) => void) | null = null;
 
   constructor(deckManager: DeckManager) {
     this.deckManager = deckManager;
@@ -41,6 +44,7 @@ export class Dock {
     this.addIconButton(GitBranch, "git");
     this.addIconButton(FolderOpen, "files");
     this.addIconButton(Activity, "stats");
+    this.addIconButton(Code, "developer");
 
     // Spacer
     const spacer = document.createElement("div");
@@ -79,6 +83,16 @@ export class Dock {
       }
     });
     this.observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    // Listen for badge update events (from action-dispatch)
+    this.badgeEventHandler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { componentId, count } = customEvent.detail as { componentId?: string; count?: number };
+      if (componentId && typeof count === "number") {
+        this.setBadge(componentId, count);
+      }
+    };
+    document.addEventListener("td-dev-badge", this.badgeEventHandler);
   }
 
   destroy(): void {
@@ -90,7 +104,44 @@ export class Dock {
       this.observer.disconnect();
       this.observer = null;
     }
+    if (this.badgeEventHandler) {
+      document.removeEventListener("td-dev-badge", this.badgeEventHandler);
+      this.badgeEventHandler = null;
+    }
+    // Clean up badges
+    for (const badge of this.badgeEls.values()) {
+      badge.remove();
+    }
+    this.badgeEls.clear();
+    this.btnEls.clear();
     this.dockEl.remove();
+  }
+
+  /**
+   * Set badge count for a dock button. Shows badge when count > 0, hides when count === 0.
+   */
+  setBadge(componentId: string, count: number): void {
+    const btn = this.btnEls.get(componentId);
+    if (!btn) return;
+
+    let badge = this.badgeEls.get(componentId);
+
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement("div");
+        badge.className = "dock-badge";
+        badge.textContent = String(count);
+        btn.appendChild(badge);
+        this.badgeEls.set(componentId, badge);
+      } else {
+        badge.textContent = String(count);
+      }
+    } else {
+      if (badge) {
+        badge.remove();
+        this.badgeEls.delete(componentId);
+      }
+    }
   }
 
   // ---- Private ----
@@ -103,9 +154,10 @@ export class Dock {
     const icon = createElement(iconConstructor);
     btn.appendChild(icon);
     btn.addEventListener("click", () => {
-      this.deckManager.addNewCard(cardType);
+      dispatchAction({ action: "show-card", component: cardType });
     });
     this.dockEl.appendChild(btn);
+    this.btnEls.set(cardType, btn);
   }
 
   private toggleSettingsMenu(): void {

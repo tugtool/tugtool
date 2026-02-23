@@ -88,6 +88,7 @@ import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
 import { serialize } from "../serialization";
+import { initActionDispatch, _resetForTest } from "../action-dispatch";
 
 // ---- Mock TugConnection ----
 
@@ -148,6 +149,7 @@ describe("DeckManager – addNewCard", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
+    _resetForTest(); // Reset action-dispatch registry
     container = makeContainer();
     connection = new MockConnection();
   });
@@ -207,6 +209,7 @@ describe("DeckManager – fan-out frame dispatch", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
+    _resetForTest(); // Reset action-dispatch registry
     container = makeContainer();
     connection = new MockConnection();
   });
@@ -249,6 +252,7 @@ describe("DeckManager – resetLayout", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
+    _resetForTest(); // Reset action-dispatch registry
     container = makeContainer();
     connection = new MockConnection();
   });
@@ -315,6 +319,7 @@ describe("DeckManager – v4 layout persistence", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
+    _resetForTest(); // Reset action-dispatch registry
     container = makeContainer();
     connection = new MockConnection();
   });
@@ -374,6 +379,7 @@ describe("Dock – component and theme switching", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
+    _resetForTest(); // Reset action-dispatch registry
     container = makeContainer();
     connection = new MockConnection();
   });
@@ -410,8 +416,8 @@ describe("Dock – component and theme switching", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
-    // Click settings gear
-    const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[5] as HTMLElement;
+    // Click settings gear (now at index 6 because we have 6 card type buttons)
+    const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[6] as HTMLElement;
     settingsBtn?.click();
 
     const menuItems = document.querySelectorAll(".card-dropdown-item");
@@ -430,7 +436,7 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Dock renders with 5 card-type icon buttons + settings gear + logo", () => {
+  test("Dock renders with 6 card-type icon buttons + settings gear + logo", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
@@ -438,23 +444,25 @@ describe("Dock – component and theme switching", () => {
     const iconBtns = dockEl?.querySelectorAll(".dock-icon-btn");
     const logo = dockEl?.querySelector(".dock-logo");
 
-    expect(iconBtns?.length).toBe(6); // 5 card types + 1 settings gear
+    expect(iconBtns?.length).toBe(7); // 6 card types (code, terminal, git, files, stats, developer) + 1 settings gear
     expect(logo).not.toBeNull();
 
     dock.destroy();
     manager.destroy();
   });
 
-  test("Clicking card icon calls DeckManager.addNewCard with correct type", () => {
+  test("Clicking card icon calls show-card action which creates panel", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
+    manager.registerCardFactory("developer", () => makeMockCard([], "developer"));
+    initActionDispatch(connection as any, manager);
 
     const dock = new Dock(manager);
-    const before = manager.getDeckState().cards.length;
 
-    // Click terminal icon (second button)
-    const terminalBtn = document.body.querySelectorAll(".dock-icon-btn")[1] as HTMLElement;
-    terminalBtn?.click();
+    // Default layout has 5 cards (code, terminal, git, files, stats)
+    // Click developer icon (not in default layout) to test card creation
+    const before = manager.getDeckState().cards.length;
+    const developerBtn = document.body.querySelectorAll(".dock-icon-btn")[5] as HTMLElement;
+    developerBtn?.click();
 
     expect(manager.getDeckState().cards.length).toBe(before + 1);
 
@@ -522,18 +530,25 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Clicking each of the 5 card type icons creates correct panel type", () => {
+  test("Clicking each of the 6 card type icons creates correct panel type", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
     manager.registerCardFactory("files", () => makeMockCard([FeedId.FILES], "files"));
     manager.registerCardFactory("stats", () => makeMockCard([FeedId.STATS], "stats"));
+    manager.registerCardFactory("developer", () => makeMockCard([], "developer"));
+    initActionDispatch(connection as any, manager);
 
     const dock = new Dock(manager);
+
+    // Default layout creates 5 cards (code, terminal, git, files, stats)
+    // Clear them first so we can test card creation cleanly
+    manager.applyLayout({ cards: [] });
+
     const iconBtns = document.body.querySelectorAll(".dock-icon-btn");
 
-    // Click each of the 5 card type icons (0-4, icon 5 is settings gear)
+    // Click each of the 6 card type icons (0-5, icon 6 is settings gear)
     const before = manager.getDeckState().cards.length;
 
     // Icon 0: code
@@ -560,6 +575,11 @@ describe("Dock – component and theme switching", () => {
     (iconBtns[4] as HTMLElement)?.click();
     expect(manager.getDeckState().cards.length).toBe(before + 5);
     expect(manager.getDeckState().cards[before + 4].tabs[0].componentId).toBe("stats");
+
+    // Icon 5: developer
+    (iconBtns[5] as HTMLElement)?.click();
+    expect(manager.getDeckState().cards.length).toBe(before + 6);
+    expect(manager.getDeckState().cards[before + 5].tabs[0].componentId).toBe("developer");
 
     dock.destroy();
     manager.destroy();
