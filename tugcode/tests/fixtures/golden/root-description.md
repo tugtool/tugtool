@@ -1,5 +1,5 @@
 ## Purpose
-Test plan for validating bead enrichment content rendering.
+Test plan for validating content rendering.
 
 ## Strategy
 This is the strategy section:
