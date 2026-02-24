@@ -20,6 +20,9 @@ pub enum StateCommands {
         /// Lease duration in seconds
         #[arg(long, default_value = "7200")]
         lease_duration: u64,
+        /// Force claim, bypassing lease expiry checks (still respects dependencies)
+        #[arg(long)]
+        force: bool,
     },
     /// Start a claimed step
     Start {
@@ -228,6 +231,7 @@ pub fn run_state_claim(
     plan: String,
     worktree: String,
     lease_duration: u64,
+    force: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -266,7 +270,7 @@ pub fn run_state_claim(
     // 5. Claim step
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let result = db
-        .claim_step(&plan_rel_str, &worktree, lease_duration, &plan_hash)
+        .claim_step(&plan_rel_str, &worktree, lease_duration, &plan_hash, force)
         .map_err(|e| e.to_string())?;
 
     // 6. Output

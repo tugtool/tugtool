@@ -437,6 +437,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
         worktree: &str,
         lease_duration_secs: u64,
         current_hash: &str,
+        force: bool,
     ) -> Result<ClaimResult, TugError> {
         // Verify plan hash
         self.verify_plan_hash(plan_path, current_hash)?;
@@ -453,8 +454,35 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
         let lease_expires = iso8601_after_secs(lease_duration_secs);
 
         // Find next claimable top-level step
-        let claimable = tx
-            .query_row(
+        let claimable = if force {
+            // Force: claim any non-completed step regardless of lease or owner
+            tx.query_row(
+                "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
+                 FROM steps s
+                 WHERE s.plan_path = ?1
+                   AND s.parent_anchor IS NULL
+                   AND (s.status = 'pending' OR s.status IN ('claimed', 'in_progress'))
+                   AND NOT EXISTS (
+                       SELECT 1 FROM step_deps d
+                       JOIN steps dep ON d.plan_path = dep.plan_path AND d.depends_on = dep.anchor
+                       WHERE d.plan_path = ?1 AND d.step_anchor = s.anchor AND dep.status != 'completed'
+                   )
+                 ORDER BY s.step_index
+                 LIMIT 1",
+                rusqlite::params![plan_path],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i32>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                    ))
+                },
+            )
+        } else {
+            // Normal: claim pending, expired lease, or same-worktree owned steps
+            tx.query_row(
                 "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
                  FROM steps s
                  WHERE s.plan_path = ?1
@@ -479,7 +507,8 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
                         row.get::<_, Option<String>>(4)?,
                     ))
                 },
-            );
+            )
+        };
 
         match claimable {
             Ok((anchor, title, index, status, _old_lease)) => {
@@ -2076,7 +2105,13 @@ mod tests {
             .unwrap();
 
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-a",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
 
         match result {
@@ -2100,14 +2135,26 @@ mod tests {
 
         // Claim step-0
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-a",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
         assert!(matches!(result, ClaimResult::Claimed { .. }));
 
         // Try to claim again - step-1 depends on step-0 which is still claimed
         // step-2 depends on step-1, so neither should be available
         let result2 = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-b",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
 
         match result2 {
@@ -2131,8 +2178,14 @@ mod tests {
             .unwrap();
 
         // Claim step-0 as wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
 
         // Manually set lease to expired (past timestamp)
         db.conn
@@ -2144,7 +2197,13 @@ mod tests {
 
         // Reclaim as wt-b
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-b",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
 
         match result {
@@ -2189,7 +2248,13 @@ mod tests {
 
         // Claim step-1 (which has substeps)
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-a",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
         // Verify we got step-1
         match result {
@@ -2226,8 +2291,14 @@ mod tests {
             .unwrap();
 
         // Reclaim step-1 as wt-b
-        db.claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-b",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
 
         // Verify completed substep is still completed
         let substep_status: String = db
@@ -2283,7 +2354,13 @@ mod tests {
 
         // Try to claim - should return AllCompleted
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
+            .claim_step(
+                ".tugtool/tugplan-test.md",
+                "wt-a",
+                7200,
+                "abc123hash",
+                false,
+            )
             .unwrap();
 
         assert!(matches!(result, ClaimResult::AllCompleted));
@@ -2300,7 +2377,13 @@ mod tests {
             .unwrap();
 
         // Try to claim with wrong hash
-        let result = db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "wrong-hash");
+        let result = db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "wrong-hash",
+            false,
+        );
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2320,8 +2403,14 @@ mod tests {
             .unwrap();
 
         // Claim step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
 
         // Start it
         let result = db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a");
@@ -2350,8 +2439,14 @@ mod tests {
             .unwrap();
 
         // Claim step-0 as wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
 
         // Try to start as wt-b
         let result = db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-b");
@@ -2394,8 +2489,14 @@ mod tests {
             .unwrap();
 
         // Claim and start step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
             .unwrap();
 
@@ -2443,8 +2544,14 @@ mod tests {
             .unwrap();
 
         // Claim and start step-0 as wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
             .unwrap();
 
@@ -2469,8 +2576,14 @@ mod tests {
             .unwrap();
 
         // Claim and start step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
             .unwrap();
 
@@ -2768,8 +2881,14 @@ mod tests {
             .unwrap();
 
         // Claim, start, and complete step-2 (the last step)
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
             .unwrap();
         db.conn
@@ -2852,8 +2971,14 @@ mod tests {
             .unwrap();
 
         // Claim, start, and force-complete step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
             .unwrap();
         db.complete_step(
@@ -2908,8 +3033,14 @@ mod tests {
             .unwrap();
 
         // Claim step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
 
         // Manually expire the lease
         db.conn
@@ -2937,8 +3068,14 @@ mod tests {
             .unwrap();
 
         // Claim and start step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
             .unwrap();
 
@@ -2978,8 +3115,14 @@ mod tests {
             .unwrap();
 
         // Claim and start step-1 (which has substeps)
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, "abc123hash")
-            .unwrap();
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
         db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
@@ -3174,7 +3317,7 @@ mod tests {
 
         // Claim step-0 with worktree wt-a
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -3188,7 +3331,7 @@ mod tests {
 
         // Re-claim from the same worktree without waiting for lease expiry
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::Claimed {
@@ -3217,12 +3360,12 @@ mod tests {
             .unwrap();
 
         // Claim step-0 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to claim from a different worktree before lease expiry
         let result = db
-            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash)
+            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, false)
             .unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
@@ -3253,7 +3396,7 @@ mod tests {
             .unwrap();
 
         // Claim step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Mark a checklist item as completed (simulate partial progress)
@@ -3275,7 +3418,7 @@ mod tests {
             .unwrap();
 
         // Auto-reclaim from same worktree
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Verify that non-completed checklist items for claimed substeps are reset
@@ -3312,7 +3455,7 @@ mod tests {
             .unwrap();
 
         // Claim step-0 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with correct worktree
@@ -3350,7 +3493,7 @@ mod tests {
             .unwrap();
 
         // Claim step-0 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to release with wrong worktree
@@ -3377,7 +3520,7 @@ mod tests {
             .unwrap();
 
         // Claim step-0 with worktree wt-a
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with force (wrong worktree should be ignored)
@@ -3415,7 +3558,7 @@ mod tests {
             .unwrap();
 
         // Claim and complete step-0
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
         db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", true, None)
             .unwrap();
@@ -3513,7 +3656,7 @@ mod tests {
             .unwrap();
 
         // Claim step-0 (which claims substeps too)
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release step-0
@@ -3533,5 +3676,187 @@ mod tests {
         assert_eq!(substep_status.len(), 2);
         assert_eq!(substep_status[0], "pending");
         assert_eq!(substep_status[1], "pending");
+    }
+
+    #[test]
+    fn test_force_claim_with_active_lease() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim step-0 with worktree wt-a
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+            .unwrap();
+
+        // Force-claim from a different worktree (bypasses lease check)
+        let result = db
+            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, true)
+            .unwrap();
+        match result {
+            ClaimResult::Claimed {
+                anchor, reclaimed, ..
+            } => {
+                assert_eq!(anchor, "step-0");
+                assert!(
+                    reclaimed,
+                    "force-claiming a claimed step should set reclaimed to true"
+                );
+            }
+            _ => panic!("expected Claimed with reclaimed=true, got {:?}", result),
+        }
+
+        // Verify step is now claimed by wt-b
+        let claimed_by: String = db
+            .conn
+            .query_row(
+                "SELECT claimed_by FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(claimed_by, "wt-b");
+    }
+
+    #[test]
+    fn test_force_claim_respects_dependencies() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with dependencies (step-1 depends on step-0)
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Attempt to force-claim step-1 (depends on step-0 which is pending)
+        let result = db
+            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, true)
+            .unwrap();
+        match result {
+            ClaimResult::Claimed { anchor, .. } => {
+                // Should claim step-0, not step-1
+                assert_eq!(anchor, "step-0");
+            }
+            ClaimResult::NoReadySteps { .. } => {
+                panic!("expected to claim step-0, got NoReadySteps");
+            }
+            _ => panic!("unexpected result: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_force_claim_pending_step() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Force-claim a pending step (should work same as normal claim)
+        let result = db
+            .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, true)
+            .unwrap();
+        match result {
+            ClaimResult::Claimed {
+                anchor, reclaimed, ..
+            } => {
+                assert_eq!(anchor, "step-0");
+                assert!(
+                    !reclaimed,
+                    "claiming a pending step should not be reclaimed"
+                );
+            }
+            _ => panic!("expected Claimed, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_force_claim_does_not_claim_completed() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with multiple steps
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim and complete step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+            .unwrap();
+        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", true, None)
+            .unwrap();
+
+        // Force-claim should get step-1, not step-0
+        let result = db
+            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, true)
+            .unwrap();
+        match result {
+            ClaimResult::Claimed { anchor, .. } => {
+                assert_eq!(
+                    anchor, "step-1",
+                    "should claim step-1, not completed step-0"
+                );
+            }
+            _ => panic!("expected Claimed, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_non_force_claim_blocked_by_active_lease() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim step-0 with worktree wt-a (non-force)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
+            .unwrap();
+
+        // Attempt to claim from different worktree (non-force) - should be blocked
+        let result = db
+            .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, false)
+            .unwrap();
+        match result {
+            ClaimResult::NoReadySteps { blocked, .. } => {
+                assert!(
+                    blocked >= 1,
+                    "should have at least one blocked step (claimed by different worktree)"
+                );
+            }
+            _ => panic!("expected NoReadySteps, got {:?}", result),
+        }
     }
 }

@@ -54,7 +54,15 @@ fn main() -> ExitCode {
                 plan,
                 worktree,
                 lease_duration,
-            } => commands::run_state_claim(plan, worktree, lease_duration, cli.json, cli.quiet),
+                force,
+            } => commands::run_state_claim(
+                plan,
+                worktree,
+                lease_duration,
+                force,
+                cli.json,
+                cli.quiet,
+            ),
             StateCommands::Start {
                 plan,
                 step,
