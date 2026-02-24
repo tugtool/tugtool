@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-24T16:04:34Z
+---
+
+## step-2: Added force: bool parameter to claim_step() with conditional SQL queries. Force bypasses lease expiry and worktree checks but respects dependency ordering. Updated all 30 test call sites, added 5 new force-claim tests.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
 step: step-1
 date: 2025-02-24T15:54:07Z
 ---
