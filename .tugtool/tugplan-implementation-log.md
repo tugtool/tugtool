@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-24T19:43:04Z
+---
+
+## audit-fix: CI fix: Changed git init to git init -b main in init_git_repo test helper to ensure consistent default branch naming across CI environments. Linux CI may default to master, causing test_dash_join_wrong_branch_fails assertion to fail when checking for 'main' in error message.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-24T19:34:25Z
 ---
 

@@ -1083,6 +1083,8 @@ mod tests {
             .arg("-C")
             .arg(path)
             .arg("init")
+            .arg("-b")
+            .arg("main")
             .output()
             .unwrap();
         Command::new("git")
