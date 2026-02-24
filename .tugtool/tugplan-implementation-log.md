@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-24T18:57:38Z
+---
+
+## step-4: Created tugplug/agents/dash-agent.md with YAML frontmatter (name dash-agent, model sonnet, permissionMode dontAsk) and complete agent prompt covering: Your Role, Persistent Agent Pattern (D09), Input Contract (S08), Output Contract (S09), File Path Handling, Build and Test Strategy (D08), Behavioral Rules (D07 independent, D11 one session), JSON Validation, Error Handling. Updated agent count test from 9 to 10. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-3
 date: 2025-02-24T18:49:19Z
 ---
