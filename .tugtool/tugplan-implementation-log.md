@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-24T18:28:56Z
+---
+
+## step-1: Created dash.rs in commands/ with DashCommands enum, run_dash_create (with branch/worktree creation, idempotency, rollback), run_dash_list (active filtering, worktree existence check), run_dash_show (rounds, uncommitted changes). Added Dash variant to cli.rs, mod.rs, main.rs. JSON output uses JsonResponse envelope. 9 integration tests. 683 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-0
 date: 2025-02-24T18:11:18Z
 ---
