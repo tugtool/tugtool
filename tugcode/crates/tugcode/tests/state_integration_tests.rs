@@ -80,6 +80,33 @@ fn create_test_plan(temp_dir: &tempfile::TempDir, name: &str, content: &str) {
     fs::write(&plan_path, content).expect("failed to write test plan");
 }
 
+/// Helper function to claim and start a step
+fn claim_and_start_step(
+    temp: &tempfile::TempDir,
+    plan_path: &str,
+    step_anchor: &str,
+    worktree: &str,
+) {
+    Command::new(tug_binary())
+        .args(["state", "claim", plan_path, "--worktree", worktree])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            plan_path,
+            step_anchor,
+            "--worktree",
+            worktree,
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start");
+}
+
 /// Helper function to initialize a plan in a git repo (create, commit, and state init)
 fn init_plan_in_repo(temp: &tempfile::TempDir, plan_name: &str, plan_content: &str) {
     create_test_plan(temp, plan_name, plan_content);
@@ -1857,4 +1884,691 @@ fn test_reconcile_from_git_trailers() {
         serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
     assert_eq!(show_json["data"]["plan"]["steps"][0]["status"], "completed");
     assert!(show_json["data"]["plan"]["steps"][0]["commit_hash"].is_string());
+}
+
+#[test]
+fn test_batch_update_success() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+- [ ] Task two
+
+**Tests:**
+- [ ] Test one
+
+**Checkpoint:**
+- [ ] Checkpoint one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    // Claim and start the step
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // Batch update via stdin
+    let batch_json = r#"[
+  {"kind": "task", "ordinal": 0, "status": "completed"},
+  {"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"},
+  {"kind": "test", "ordinal": 0, "status": "completed"}
+]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(
+        output.status.success(),
+        "batch update failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify by checking show output includes the completed items
+    let show_output = Command::new(tug_binary())
+        .args(["state", "show", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to show state");
+
+    assert!(show_output.status.success());
+    // DB verification is handled by unit tests in state.rs
+}
+
+#[test]
+fn test_batch_update_invalid_kind() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    let batch_json = r#"[{"kind": "invalid_kind", "ordinal": 0, "status": "completed"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid kind"));
+}
+
+#[test]
+fn test_batch_update_out_of_range_ordinal() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    let batch_json = r#"[{"kind": "task", "ordinal": 99, "status": "completed"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("out of range") || stderr.contains("valid range"));
+}
+
+#[test]
+fn test_batch_update_duplicate_entries() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}, {"kind": "task", "ordinal": 0, "status": "completed"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Duplicate"));
+}
+
+#[test]
+fn test_batch_update_open_status_rejected() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "open"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("only accept 'completed' or 'deferred'"));
+}
+
+#[test]
+fn test_batch_update_idempotent() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // First update to completed
+    let batch_json1 = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json1.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(output.status.success());
+
+    // Second update to same status (idempotent)
+    let batch_json2 = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json2.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(output.status.success());
+    // Idempotency verified - no error on second update to same status
+}
+
+#[test]
+fn test_batch_update_deferred_requires_reason() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // Deferred without reason
+    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "deferred"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires a non-empty reason"));
+}
+
+#[test]
+fn test_batch_update_conflict_with_individual_flags() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // Try to use both --batch and --task
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--batch",
+            "--task",
+            "1:completed",
+        ])
+        .current_dir(temp.path())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("failed to run");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot be used") || stderr.contains("conflict"));
+}
+
+#[test]
+fn test_per_item_deferred_requires_reason() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // Try per-item deferred update (should fail)
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--task",
+            "1:deferred",
+        ])
+        .current_dir(temp.path())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("failed to run");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("deferred") && stderr.contains("batch"));
+}
+
+#[test]
+fn test_per_item_open_requires_allow_reopen() {
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-02-24 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+
+    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+
+    // First mark as completed
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--task",
+            "1:completed",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run");
+    assert!(output.status.success());
+
+    // Try to reopen without --allow-reopen (should fail)
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--task",
+            "1:open",
+        ])
+        .current_dir(temp.path())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("failed to run");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("allow-reopen") || stderr.contains("allow_reopen"));
+
+    // Try with --allow-reopen (should succeed)
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            "/tmp/wt",
+            "--task",
+            "1:open",
+            "--allow-reopen",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run");
+
+    assert!(
+        output.status.success(),
+        "reopen with --allow-reopen failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Item successfully reopened with --allow-reopen flag
 }

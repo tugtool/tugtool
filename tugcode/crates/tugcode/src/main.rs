@@ -92,6 +92,8 @@ fn main() -> ExitCode {
                 all_tests,
                 all_checkpoints,
                 all,
+                batch,
+                allow_reopen,
             } => commands::run_state_update(
                 plan,
                 step,
@@ -103,6 +105,8 @@ fn main() -> ExitCode {
                 all_tests,
                 all_checkpoints,
                 all,
+                batch,
+                allow_reopen,
                 cli.json,
                 cli.quiet,
             ),

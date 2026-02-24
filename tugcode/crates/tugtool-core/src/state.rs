@@ -826,6 +826,180 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         })
     }
 
+    /// Batch update checklist items in a single transaction.
+    ///
+    /// Accepts a slice of batch entries (each with kind, ordinal, status, and optional reason).
+    /// All updates are executed in a single transaction for atomicity.
+    pub fn batch_update_checklist<T>(
+        &mut self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: &str,
+        entries: &[T],
+    ) -> Result<UpdateResult, TugError>
+    where
+        T: BatchEntry,
+    {
+        // Check ownership first
+        self.check_ownership(plan_path, anchor, worktree)?;
+
+        // Begin transaction
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        let now = now_iso8601();
+
+        // Validate entries first
+        if entries.is_empty() {
+            return Err(TugError::StateDbQuery {
+                reason: "Batch update array must contain at least one entry".to_string(),
+            });
+        }
+
+        // Check for duplicates
+        let mut seen = std::collections::HashSet::new();
+        let mut duplicates = Vec::new();
+        for entry in entries {
+            let key = (entry.kind(), entry.ordinal());
+            if !seen.insert(key.clone()) {
+                duplicates.push(format!("({}, {})", key.0, key.1));
+            }
+        }
+        if !duplicates.is_empty() {
+            return Err(TugError::StateDbQuery {
+                reason: format!(
+                    "Duplicate (kind, ordinal) entries: {}",
+                    duplicates.join(", ")
+                ),
+            });
+        }
+
+        // Validate each entry
+        for entry in entries {
+            let kind = entry.kind();
+            let ordinal = entry.ordinal();
+            let status = entry.status();
+            let reason = entry.reason();
+
+            // Validate kind
+            if kind != "task" && kind != "test" && kind != "checkpoint" {
+                return Err(TugError::StateDbQuery {
+                    reason: format!("Invalid kind: {}. Must be task, test, or checkpoint", kind),
+                });
+            }
+
+            // Validate status
+            if status != "completed" && status != "deferred" {
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Invalid status: {}. Batch updates only accept 'completed' or 'deferred'",
+                        status
+                    ),
+                });
+            }
+
+            // Validate reason requirement
+            if status == "deferred" && (reason.is_none() || reason.unwrap().is_empty()) {
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Status 'deferred' requires a non-empty reason for {} ordinal {}",
+                        kind, ordinal
+                    ),
+                });
+            }
+
+            // Check if item exists and is in valid ordinal range
+            let exists: bool = tx
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM checklist_items
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                    |row| row.get(0),
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to check item existence: {}", e),
+                })?;
+
+            if !exists {
+                // Get valid range for this kind
+                let max_ordinal: Option<i32> = tx
+                    .query_row(
+                        "SELECT MAX(ordinal) FROM checklist_items
+                         WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3",
+                        rusqlite::params![plan_path, anchor, kind],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                    .flatten();
+
+                let range_msg = if let Some(max) = max_ordinal {
+                    format!("valid range: 0-{}", max)
+                } else {
+                    "no items of this kind exist for this step".to_string()
+                };
+
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Ordinal {} out of range for {} ({})",
+                        ordinal, kind, range_msg
+                    ),
+                });
+            }
+        }
+
+        // Execute all updates
+        let mut total_updated = 0;
+        for entry in entries {
+            let kind = entry.kind();
+            let ordinal = entry.ordinal();
+            let status = entry.status();
+            let reason = entry.reason();
+
+            // Check if item is already in the target status (idempotency)
+            let current_status: String = tx
+                .query_row(
+                    "SELECT status FROM checklist_items
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                    |row| row.get(0),
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to query current status: {}", e),
+                })?;
+
+            if current_status == status {
+                // Already in target status, skip (idempotent)
+                continue;
+            }
+
+            // Update the item
+            let rows_affected = tx
+                .execute(
+                    "UPDATE checklist_items SET status = ?1, reason = ?2, updated_at = ?3
+                     WHERE plan_path = ?4 AND step_anchor = ?5 AND kind = ?6 AND ordinal = ?7",
+                    rusqlite::params![status, reason, &now, plan_path, anchor, kind, ordinal],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to update checklist item: {}", e),
+                })?;
+
+            total_updated += rows_affected;
+        }
+
+        // Commit transaction
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit transaction: {}", e),
+        })?;
+
+        Ok(UpdateResult {
+            items_updated: total_updated,
+        })
+    }
+
     /// Record an artifact breadcrumb for a step.
     pub fn record_artifact(
         &self,
@@ -1710,6 +1884,14 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             skipped_mismatches,
         })
     }
+}
+
+/// Trait for batch update entries
+pub trait BatchEntry {
+    fn kind(&self) -> &str;
+    fn ordinal(&self) -> usize;
+    fn status(&self) -> &str;
+    fn reason(&self) -> Option<&str>;
 }
 
 /// Checklist update operation

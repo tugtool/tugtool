@@ -1,6 +1,34 @@
 //! State management CLI commands
 
 use clap::Subcommand;
+use serde::Deserialize;
+
+/// Batch update entry for stdin JSON input
+#[derive(Debug, Deserialize)]
+struct BatchUpdateEntry {
+    kind: String,
+    ordinal: usize,
+    status: String,
+    reason: Option<String>,
+}
+
+impl tugtool_core::BatchEntry for BatchUpdateEntry {
+    fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    fn ordinal(&self) -> usize {
+        self.ordinal
+    }
+
+    fn status(&self) -> &str {
+        &self.status
+    }
+
+    fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
+    }
+}
 
 /// State subcommands
 #[derive(Subcommand, Debug)]
@@ -57,26 +85,32 @@ pub enum StateCommands {
         #[arg(long, value_name = "PATH")]
         worktree: String,
         /// Update a specific task (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         task: Option<String>,
         /// Update a specific test (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         test: Option<String>,
         /// Update a specific checkpoint (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         checkpoint: Option<String>,
         /// Update all tasks
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_tasks: Option<String>,
         /// Update all tests
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_tests: Option<String>,
         /// Update all checkpoints
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_checkpoints: Option<String>,
         /// Update all checklist items
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all: Option<String>,
+        /// Read batch update JSON from stdin. Mutually exclusive with individual item flags.
+        #[arg(long, conflicts_with_all = ["task", "test", "checkpoint", "all_tasks", "all_tests", "all_checkpoints", "all"])]
+        batch: bool,
+        /// Allow setting item status back to open (manual recovery only)
+        #[arg(long)]
+        allow_reopen: bool,
     },
     /// Record an artifact breadcrumb for a step
     Artifact {
@@ -511,6 +545,8 @@ pub fn run_state_update(
     all_tests: Option<String>,
     all_checkpoints: Option<String>,
     all: Option<String>,
+    batch: bool,
+    allow_reopen: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -539,97 +575,151 @@ pub fn run_state_update(
         }
     };
 
-    // 3. Parse update arguments into ChecklistUpdate variants
-    let mut updates = Vec::new();
-
-    // Parse individual updates (format: "1:completed")
-    if let Some(t) = task {
-        let parts: Vec<&str> = t.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid task format. Use --task ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid task ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "task".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    if let Some(t) = test {
-        let parts: Vec<&str> = t.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid test format. Use --test ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid test ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "test".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    if let Some(c) = checkpoint {
-        let parts: Vec<&str> = c.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid checkpoint format. Use --checkpoint ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid checkpoint ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "checkpoint".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    // Parse bulk updates
-    if let Some(status) = all_tasks {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "task".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all_tests {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "test".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all_checkpoints {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "checkpoint".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all {
-        updates.push(tugtool_core::ChecklistUpdate::AllItems { status });
-    }
-
-    if updates.is_empty() {
-        return Err("No updates specified. Use --task, --test, --checkpoint, --all-tasks, --all-tests, --all-checkpoints, or --all".to_string());
-    }
-
-    // 4. Open state.db
+    // 3. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
 
-    // 5. Update checklist
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
-    let result = db
-        .update_checklist(&plan_rel_str, &step, &worktree, &updates)
-        .map_err(|e| e.to_string())?;
+
+    // 4. Handle batch mode or individual updates
+    let result = if batch {
+        // Read batch JSON from stdin
+        let stdin = std::io::stdin();
+        let entries: Vec<BatchUpdateEntry> =
+            serde_json::from_reader(stdin).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+        if entries.is_empty() {
+            return Err("Batch update array must contain at least one entry".to_string());
+        }
+
+        // Call batch_update_checklist
+        db.batch_update_checklist(&plan_rel_str, &step, &worktree, &entries)
+            .map_err(|e| e.to_string())?
+    } else {
+        // 3a. Parse update arguments into ChecklistUpdate variants
+        let mut updates = Vec::new();
+
+        // Parse individual updates (format: "1:completed")
+        if let Some(t) = task {
+            let parts: Vec<&str> = t.split(':').collect();
+            if parts.len() != 2 {
+                return Err("Invalid task format. Use --task ORDINAL:STATUS".to_string());
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid task ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "task".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        if let Some(t) = test {
+            let parts: Vec<&str> = t.split(':').collect();
+            if parts.len() != 2 {
+                return Err("Invalid test format. Use --test ORDINAL:STATUS".to_string());
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid test ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "test".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        if let Some(c) = checkpoint {
+            let parts: Vec<&str> = c.split(':').collect();
+            if parts.len() != 2 {
+                return Err(
+                    "Invalid checkpoint format. Use --checkpoint ORDINAL:STATUS".to_string()
+                );
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid checkpoint ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "checkpoint".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        // Parse bulk updates
+        if let Some(status) = all_tasks {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "task".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all_tests {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "test".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all_checkpoints {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "checkpoint".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all {
+            updates.push(tugtool_core::ChecklistUpdate::AllItems { status });
+        }
+
+        if updates.is_empty() {
+            return Err("No updates specified. Use --task, --test, --checkpoint, --all-tasks, --all-tests, --all-checkpoints, --all, or --batch".to_string());
+        }
+
+        // 5. Update checklist using old API
+        db.update_checklist(&plan_rel_str, &step, &worktree, &updates)
+            .map_err(|e| e.to_string())?
+    };
 
     // 6. Output
     if json {

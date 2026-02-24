@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-24T22:09:49Z
+---
+
+## step-1: Added --batch flag to state update command for transactional batch updates via stdin JSON. Added BatchUpdateEntry struct, batch_update_checklist method with explicit transaction, validation for deferred/open status, --allow-reopen flag. 10 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: step-0
 date: 2025-02-24T21:55:08Z
 ---
