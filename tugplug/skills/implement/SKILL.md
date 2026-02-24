@@ -267,7 +267,7 @@ For `state_update_failed` (fatal halt):
              │    auditor    │                            │
              │recommendation?│                            │
              └──┬─────────┬──┘                            │
-           PASS │         │ REVISE (max 3)                │
+        APPROVE │         │ REVISE (max 3)                │
                 │         └─► coder fix → committer ──────┘
                 ▼
 
@@ -283,7 +283,7 @@ For `state_update_failed` (fatal halt):
              │  integrator   │                            │
              │recommendation?│                            │
              └──┬─────────┬──┘                            │
-           PASS │         │ REVISE (max 3)                │
+        APPROVE │         │ REVISE (max 3)                │
                 │         └─► coder fix → committer ──────┘
                 ▼
 
@@ -702,7 +702,7 @@ Parse the auditor's JSON output per Spec S02:
 - `cross_step_issues`: Integration issues spanning multiple steps
 - `spot_check_findings`: Issues from spot-checking individual steps
 - `issues`: All issues consolidated, graded P0-P3
-- `recommendation`: PASS, REVISE, or ESCALATE
+- `recommendation`: APPROVE, REVISE, or ESCALATE
 
 Output the Auditor post-call message.
 
@@ -710,7 +710,7 @@ Output the Auditor post-call message.
 
 | Recommendation | Action |
 |----------------|--------|
-| `PASS` | Proceed to Integrator Phase (section 5) |
+| `APPROVE` | Proceed to Integrator Phase (section 5) |
 | `REVISE` | Fix issues and re-audit (4a-retry) |
 | `ESCALATE` | AskUserQuestion with issues, get user decision |
 
@@ -800,7 +800,7 @@ Parse the integrator's JSON output per Spec S04:
 - `branch_pushed`: Whether branch was pushed successfully
 - `ci_status`: pass, fail, pending, or timeout
 - `ci_details`: Individual check results
-- `recommendation`: PASS, REVISE, or ESCALATE
+- `recommendation`: APPROVE, REVISE, or ESCALATE
 
 Output the Integrator post-call message.
 
@@ -808,7 +808,7 @@ Output the Integrator post-call message.
 
 | Recommendation | Action |
 |----------------|--------|
-| `PASS` | Proceed to Implementation Completion (section 6) |
+| `APPROVE` | Proceed to Implementation Completion (section 6) |
 | `REVISE` | Fix CI failures and re-check (5a-retry) |
 | `ESCALATE` | AskUserQuestion with CI details, get user decision |
 
@@ -1009,7 +1009,7 @@ When you receive an agent response:
   "cross_step_issues": array (required — each item has description, files, priority),
   "spot_check_findings": array (required — each item has step_anchor, description, priority),
   "issues": array (required — each item has description, priority, file),
-  "recommendation": enum (required: PASS, REVISE, ESCALATE)
+  "recommendation": enum (required: APPROVE, REVISE, ESCALATE)
 }
 ```
 
@@ -1021,7 +1021,7 @@ When you receive an agent response:
   "branch_pushed": boolean (required),
   "ci_status": enum (required: pass, fail, pending, timeout),
   "ci_details": array (required — each item has check_name, status, url),
-  "recommendation": enum (required: PASS, REVISE, ESCALATE)
+  "recommendation": enum (required: APPROVE, REVISE, ESCALATE)
 }
 ```
 

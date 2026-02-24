@@ -340,8 +340,8 @@ fn test_critic_documents_recommendations() {
 
     // Critic must document all recommendation types
     assert!(
-        content.contains("APPROVE") && content.contains("REVISE") && content.contains("REJECT"),
-        "Critic must document APPROVE, REVISE, REJECT recommendations"
+        content.contains("APPROVE") && content.contains("REVISE") && content.contains("ESCALATE"),
+        "Critic must document APPROVE, REVISE, ESCALATE recommendations"
     );
 }
 
@@ -371,10 +371,10 @@ fn test_critic_documents_validation_workflow() {
         "Critic must document tugcode validate command"
     );
 
-    // Critic must document immediate REJECT on validation failure
+    // Critic must document immediate ESCALATE on validation failure
     assert!(
-        content.contains("REJECT") && content.contains("validate"),
-        "Critic must document REJECT on validation failure"
+        content.contains("ESCALATE") && content.contains("validate"),
+        "Critic must document ESCALATE on validation failure"
     );
 }
 

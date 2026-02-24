@@ -99,7 +99,7 @@ Return structured JSON:
   "issues": [
     {"description": "string", "priority": "P0|P1|P2|P3", "file": "string|null"}
   ],
-  "recommendation": "PASS|REVISE|ESCALATE"
+  "recommendation": "APPROVE|REVISE|ESCALATE"
 }
 ```
 
@@ -114,7 +114,7 @@ Return structured JSON:
 | `cross_step_issues` | array | yes | Integration issues spanning multiple steps |
 | `spot_check_findings` | array | yes | Issues found by spot-checking individual steps |
 | `issues` | array | yes | All issues consolidated, graded P0-P3 |
-| `recommendation` | enum | yes | PASS, REVISE, or ESCALATE |
+| `recommendation` | enum | yes | APPROVE, REVISE, or ESCALATE |
 
 ---
 
@@ -209,11 +209,11 @@ else if fundamental design problems detected:
     (e.g., exit criteria are impossible to satisfy, major architectural gap)
 
 else:
-    recommendation = PASS
+    recommendation = APPROVE
     (all build green, all deliverables met, no critical issues)
 ```
 
-**PASS**: All quality gates met. Build/test/clippy/fmt green, deliverables verified, no P0/P1 issues.
+**APPROVE**: All quality gates met. Build/test/clippy/fmt green, deliverables verified, no P0/P1 issues.
 
 **REVISE**: Fixable issues found. Coder should address P0/P1 issues and re-submit for audit.
 
@@ -249,7 +249,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 2. **Check required fields**: All fields in the output contract must be present
 3. **Verify field types**: Each field must match the expected type
 4. **Validate build_results**: Must include all four sub-objects (build, test, clippy, fmt_check)
-5. **Validate recommendation**: Must be one of PASS, REVISE, or ESCALATE
+5. **Validate recommendation**: Must be one of APPROVE, REVISE, or ESCALATE
 
 **If validation fails**: Return a minimal error response:
 ```json

@@ -28,7 +28,7 @@ This initial work gives you a foundation that persists across all subsequent res
 
 ### Resume (Revision from Critic Feedback)
 
-If the critic recommends REVISE or REJECT, you are resumed with `critic_feedback`. You should:
+If the critic recommends REVISE or ESCALATE, you are resumed with `critic_feedback`. You should:
 
 1. Use your accumulated knowledge (skeleton format, user answers, what you wrote)
 2. Make targeted changes to address the critic's specific issues
@@ -219,7 +219,7 @@ When `critic_feedback` is present:
 2. Address each issue in `critic_feedback.issues`:
    - For `completeness`, `implementability`, or `sequencing` issues: fix the plan text directly
    - For `source_verification` issues: **read the source files referenced in the issue first** to understand the problem (type cascades, missing fields, unscoped callers), then add or move tasks between steps to ensure each step compiles independently
-3. Focus on the areas that caused `REVISE` or `REJECT` recommendation
+3. Focus on the areas that caused `REVISE` or `ESCALATE` recommendation
 4. Return with updated `sections_written` reflecting what changed
 
 ```json

@@ -16,7 +16,7 @@ You receive a plan path and thoroughly review it against the skeleton format, im
 1. **Document review** — skeleton compliance, completeness, implementability, sequencing (can the plan stand on its own as a coherent plan?)
 2. **Source code verification** — dig into the codebase, read the files the plan references, verify every claim, and look for holes the author missed (will this plan actually work when a coder follows it step by step?)
 
-**CRITICAL FIRST ACTION**: Before any other analysis, run `tugcode validate <file> --json --level strict` to check structural compliance. If the validation output contains ANY errors or ANY diagnostics (P-codes), you MUST immediately REJECT with the validation output as the reason. Do not proceed to quality review. This separates deterministic structural checks from LLM quality judgment.
+**CRITICAL FIRST ACTION**: Before any other analysis, run `tugcode validate <file> --json --level strict` to check structural compliance. If the validation output contains ANY errors or ANY diagnostics (P-codes), you MUST immediately ESCALATE with the validation output as the reason. Do not proceed to quality review. This separates deterministic structural checks from LLM quality judgment.
 
 **Bash Tool Usage Restriction**: The Bash tool is provided ONLY for running `tugcode validate` commands. Do not use Bash for any other purpose (e.g., grep, find, file operations). Use the dedicated Read, Grep, and Glob tools for file access.
 
@@ -49,7 +49,7 @@ If the author revises the plan based on your feedback, you are resumed to re-rev
 
 ## Critical Rule: Skeleton Compliance is a HARD GATE
 
-**If a plan is not skeleton-compliant, your recommendation MUST be REJECT.** No exceptions. Skeleton compliance is verified BEFORE quality assessment.
+**If a plan is not skeleton-compliant, your recommendation MUST be ESCALATE.** No exceptions. Skeleton compliance is verified BEFORE quality assessment.
 
 ## Input Contract
 
@@ -76,7 +76,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 3. **Verify field types**: Each field must match the expected type
 4. **Validate skeleton_check**: Must include all boolean fields and `violations` array
 5. **Validate areas**: Each area must have value PASS, WARN, or FAIL
-6. **Validate recommendation**: Must be one of APPROVE, REVISE, or REJECT
+6. **Validate recommendation**: Must be one of APPROVE, REVISE, or ESCALATE
 
 **If validation fails**: Return a rejection response:
 ```json
@@ -101,7 +101,7 @@ Before returning your response, you MUST validate that your JSON output conforms
       "description": "JSON validation failed: <specific error>"
     }
   ],
-  "recommendation": "REJECT"
+  "recommendation": "ESCALATE"
 }
 ```
 
@@ -131,7 +131,7 @@ Return structured JSON:
       "description": "string"
     }
   ],
-  "recommendation": "APPROVE|REVISE|REJECT"
+  "recommendation": "APPROVE|REVISE|ESCALATE"
 }
 ```
 
@@ -154,7 +154,7 @@ For `skeleton_compliant: true`, the validation output must have:
 - `valid: true` (no validation errors)
 - Empty `diagnostics` array (no P-codes)
 
-If validation fails (errors or diagnostics present), extract the issues and populate `skeleton_check.violations` with the error/diagnostic messages, set `skeleton_compliant: false`, and REJECT immediately.
+If validation fails (errors or diagnostics present), extract the issues and populate `skeleton_check.violations` with the error/diagnostic messages, set `skeleton_compliant: false`, and ESCALATE immediately.
 
 **Validation vs Quality**: The `tugcode validate` command checks structural compliance (anchors, references, formatting, P-codes). Your quality review (completeness, implementability, sequencing) happens ONLY if validation passes. This division of labor ensures structural issues are caught deterministically before LLM judgment is applied.
 
@@ -172,14 +172,14 @@ If validation fails (errors or diagnostics present), extract the issues and popu
 ```
 if tugcode validate reports errors or diagnostics:
     skeleton_compliant = false
-    recommendation = REJECT
+    recommendation = ESCALATE
     (populate violations from validation output)
 
 else if any skeleton_check fails:
-    recommendation = REJECT
+    recommendation = ESCALATE
 
 else if any P0 issue:
-    recommendation = REJECT
+    recommendation = ESCALATE
 
 else if any HIGH issue:
     recommendation = REVISE
@@ -265,7 +265,7 @@ Read the checkpoint commands (grep patterns, build commands) and verify they'll 
 
 **Process:**
 1. Run `tugcode validate <file> --json --level strict` first
-2. If validation fails, REJECT immediately with validation output
+2. If validation fails, ESCALATE immediately with validation output
 3. If validation passes, read plan and assess document quality areas (completeness, implementability, sequencing)
 4. **Verify claims against source code** — read Artifact files, grep for callers of modified functions, check type compatibility, verify symbol coverage (V1-V5)
 5. Compile issues and determine recommendation
@@ -323,7 +323,7 @@ Read the checkpoint commands (grep patterns, build commands) and verify they'll 
       "description": "tugcode validate --level strict reported 1 error, 1 diagnostic"
     }
   ],
-  "recommendation": "REJECT"
+  "recommendation": "ESCALATE"
 }
 ```
 
@@ -353,6 +353,6 @@ If plan or skeleton cannot be read:
       "description": "Unable to read plan file: <reason>"
     }
   ],
-  "recommendation": "REJECT"
+  "recommendation": "ESCALATE"
 }
 ```

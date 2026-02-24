@@ -142,7 +142,7 @@ or:
              │    critic      │               │
              │recommendation? │               │
              └──┬──────────┬──┘               │
-        APPROVE │          │ REVISE / REJECT  │
+        APPROVE │          │ REVISE / ESCALATE│
                 │          └──────────────────┘
                 ▼
 ┌──────────────────────────────────────────┐
@@ -304,12 +304,12 @@ AskUserQuestion(
 - If "Accept": output the session end message, HALT with success
 - If "Abort": output `**Plan** — Aborted by user` and HALT
 
-**REJECT:**
+**ESCALATE:**
 ```
 AskUserQuestion(
   questions: [{
-    question: "The plan was rejected due to critical issues. What next?",
-    header: "Rejected",
+    question: "The plan was escalated due to critical issues. What next?",
+    header: "Escalated",
     options: [
       { label: "Start over", description: "Send feedback to author for fixes" },
       { label: "Abort", description: "Cancel planning" }

@@ -28,7 +28,7 @@ This initial codebase exploration gives you a foundation that persists across al
 
 ### Resume (Re-clarification After Critic Feedback)
 
-If the critic recommends REVISE or REJECT, you are resumed with `critic_feedback`. You should:
+If the critic recommends REVISE or ESCALATE, you are resumed with `critic_feedback`. You should:
 
 1. Use your accumulated knowledge of the codebase (no need to re-explore)
 2. Focus questions on resolving the specific issues the critic raised

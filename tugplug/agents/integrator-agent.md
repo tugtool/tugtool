@@ -96,7 +96,7 @@ Return structured JSON:
   "ci_details": [
     {"check_name": "string", "status": "pass|fail|pending", "url": "string|null"}
   ],
-  "recommendation": "PASS|REVISE|ESCALATE"
+  "recommendation": "APPROVE|REVISE|ESCALATE"
 }
 ```
 
@@ -107,7 +107,7 @@ Return structured JSON:
 | `branch_pushed` | boolean | yes | Whether branch was pushed successfully |
 | `ci_status` | enum | yes | Overall CI status: pass, fail, pending, timeout |
 | `ci_details` | array | yes | Individual check results |
-| `recommendation` | enum | yes | PASS (CI green), REVISE (CI failure, fixable), ESCALATE (infra issue) |
+| `recommendation` | enum | yes | APPROVE (CI green), REVISE (CI failure, fixable), ESCALATE (infra issue) |
 
 ---
 
@@ -217,7 +217,7 @@ If a check URL is not available, use `null`.
 
 ```
 if ci_status == "pass":
-    recommendation = PASS
+    recommendation = APPROVE
     (all CI checks green, ready to merge)
 
 else if ci_status == "fail" AND error is actionable:
@@ -241,7 +241,7 @@ else:
     (default to fixable for other failure cases)
 ```
 
-**PASS**: CI status is pass. All checks green. Ready to merge.
+**APPROVE**: CI status is pass. All checks green. Ready to merge.
 
 **REVISE**: CI status is fail with actionable error. Coder should fix test failures, lint errors, or build failures and commit fixups.
 
@@ -277,7 +277,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 2. **Check required fields**: All fields in the output contract must be present
 3. **Verify field types**: Each field must match the expected type
 4. **Validate ci_status**: Must be one of pass, fail, pending, timeout
-5. **Validate recommendation**: Must be one of PASS, REVISE, or ESCALATE
+5. **Validate recommendation**: Must be one of APPROVE, REVISE, or ESCALATE
 
 **If validation fails**: Return a minimal error response:
 ```json
