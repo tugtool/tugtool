@@ -190,7 +190,7 @@ pub fn run_commit(
                                     &plan,
                                     &step,
                                     &worktree,
-                                    true, // force: commit already happened
+                                    false, // strict mode: deferred items allowed, open items block
                                     Some("committed via tugcode commit"),
                                 ) {
                                     Ok(_) => (false, vec![]),

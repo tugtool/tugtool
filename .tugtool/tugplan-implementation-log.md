@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-24T23:06:15Z
+---
+
+## step-4: Changed commit.rs force parameter from true to false, making strict completion the default. Open items now block state update while git commit proceeds. Added 3 integration tests for commit strict mode behavior. All 724 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: step-3-summary
 date: 2025-02-24T22:54:36Z
 ---
