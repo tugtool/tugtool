@@ -51,8 +51,7 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-N.md",
-  "step_anchor": "#step-0",
-  "bead_id": "bd-abc123.0"
+  "step_anchor": "#step-0"
 }
 ```
 
@@ -61,18 +60,17 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 | `worktree_path` | Absolute path to the worktree directory |
 | `plan_path` | Path to the plan file relative to repo root |
 | `step_anchor` | Anchor of the step being implemented |
-| `bead_id` | Bead ID for this step (e.g., "bd-abc123.0") |
 
 ### Resume (Next Step)
 
 ```
-Implement step #step-1. Bead ID: bd-abc123.1.
+Implement step #step-1.
 ```
 
 ### Resume (Revision Feedback)
 
 ```
-Reviewer found issues. Fix these: <failed tasks> <issues array>. Bead ID: bd-abc123.N. Then return updated output.
+Reviewer found issues. Fix these: <failed tasks> <issues array>. Then return updated output.
 ```
 
 **IMPORTANT: File Path Handling**
@@ -149,28 +147,7 @@ Return structured JSON:
 
 ### Reading Step Data
 
-**As your FIRST action**, fetch the step data:
-
-```bash
-cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
-```
-
-This retrieves:
-- **description**: The step's task description and implementation requirements
-- **design**: The architect's strategy — look for the strategy after the last `---` separator
-
-The architect's strategy in the design field contains your implementation plan.
-
-### Writing Your Results
-
-After completing implementation and running tests, write your results to a temp file:
-
-```
-Write(
-  file_path: "{worktree_path}/.tugtool/_tmp_{bead_id}_notes.md"
-  content: <your results markdown — build status, test counts, files created/modified, drift>
-)
-```
+**As your FIRST action**, read the plan file to understand the step requirements. The architect's strategy will be passed to you via context from previous agent calls.
 
 ---
 

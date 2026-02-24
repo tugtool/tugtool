@@ -55,7 +55,6 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-N.md",
   "step_anchor": "#step-0",
-  "bead_id": "bd-abc123.0",
   "all_steps": ["#step-0", "#step-1", "#step-2"]
 }
 ```
@@ -65,19 +64,18 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 | `worktree_path` | Absolute path to the worktree directory |
 | `plan_path` | Path to the plan file relative to repo root |
 | `step_anchor` | Anchor of the step to plan strategy for |
-| `bead_id` | Bead ID for this step (e.g., "bd-abc123.0") |
 | `all_steps` | List of all steps to be implemented this session (for context) |
 
 ### Resume (Next Step)
 
 ```
-Plan strategy for step #step-1. Bead ID: bd-abc123.1. Previous step accomplished: <summary>.
+Plan strategy for step #step-1. Previous step accomplished: <summary>.
 ```
 
 ### Resume (Revision Feedback)
 
 ```
-Revision needed for step #step-N. Bead ID: bd-abc123.N. Feedback: <issues>. Adjust your strategy.
+Revision needed for step #step-N. Feedback: <issues>. Adjust your strategy.
 ```
 
 **IMPORTANT: File Path Handling**
@@ -139,27 +137,7 @@ If drift exceeds thresholds, implementation halts. Therefore:
 
 ### Reading Step Data
 
-**As your FIRST action**, fetch the step data:
-
-```bash
-cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
-```
-
-This retrieves:
-- **description**: The step's task description and implementation requirements
-- **acceptance_criteria**: Success criteria for this step
-- **design**: Previously written strategy (if resuming) — your prior work is after the `---` separator
-
-### Writing Your Strategy
-
-After producing your strategy, write it to a temp file:
-
-```
-Write(
-  file_path: "{worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md"
-  content: <your strategy markdown>
-)
-```
+**As your FIRST action**, read the plan file to understand the step requirements. The step data (tasks, tests, checkpoints, artifacts, dependencies) is in the plan file at the specified step_anchor.
 
 ---
 

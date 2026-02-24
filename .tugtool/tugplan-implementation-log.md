@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-24T00:50:15Z
+bead: remove-beads-pbb.4
+---
+
+## step-3: Removed bead references from architect, coder, reviewer, committer, and auditor agent definitions. Updated input contracts, prompts, step data reading, and temp file paths. Renamed test_committer_documents_beads_integration.
+
+**Files changed:**
+- .tugtool/tugplan-remove-beads.md
+
+---
+
+---
 step: step-2
 date: 2025-02-24T00:40:49Z
 bead: remove-beads-pbb.3

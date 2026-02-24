@@ -410,14 +410,14 @@ fn test_committer_has_bash_tool() {
 }
 
 #[test]
-fn test_committer_documents_beads_integration() {
+fn test_committer_documents_tugcode_commit() {
     let path = agents_dir().join("committer-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read committer-agent");
 
-    // Committer must document bead closing
+    // Committer must document tugcode commit integration
     assert!(
-        content.contains("bead") || content.contains("Bead"),
-        "Committer must document beads integration"
+        content.contains("tugcode commit"),
+        "Committer must document tugcode commit integration"
     );
 }
 
