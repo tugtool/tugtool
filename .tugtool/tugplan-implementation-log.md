@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-24T15:45:01Z
+---
+
+## step-0: Modified claim_step() SQL query to add third OR branch allowing re-claim when requesting worktree matches claimed_by. Added three unit tests for auto-reclaim behavior.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-24T01:49:36Z
 ---
