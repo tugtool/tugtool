@@ -32,10 +32,16 @@ pub mod resolve;
 /// Embedded SQLite state management
 pub mod state;
 
+/// Dash state management
+pub mod dash;
+
 // Re-exports for convenience
 pub use config::{
     Config, NamingConfig, RESERVED_FILES, TugConfig, find_project_root, find_project_root_from,
     find_tugplans, is_reserved_file, tugplan_name_from_path,
+};
+pub use dash::{
+    DashInfo, DashRound, DashRoundMeta, DashStatus, detect_default_branch, validate_dash_name,
 };
 pub use error::TugError;
 pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, ProgressHandle};

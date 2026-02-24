@@ -171,6 +171,31 @@ CREATE INDEX IF NOT EXISTS idx_steps_parent ON steps(plan_path, parent_anchor) W
 CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_path, status, lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_path, step_anchor);
 CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_anchor);
+
+CREATE TABLE IF NOT EXISTS dashes (
+    name        TEXT PRIMARY KEY,
+    description TEXT,
+    branch      TEXT NOT NULL,
+    worktree    TEXT NOT NULL,
+    base_branch TEXT NOT NULL DEFAULT 'main',
+    status      TEXT NOT NULL DEFAULT 'active',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dash_rounds (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    dash_name      TEXT NOT NULL REFERENCES dashes(name),
+    instruction    TEXT,
+    summary        TEXT,
+    files_created  TEXT,
+    files_modified TEXT,
+    commit_hash    TEXT,
+    started_at     TEXT NOT NULL,
+    completed_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             "#,
         )
         .map_err(|e| TugError::StateDbOpen {
@@ -179,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
 
         // Insert schema version (idempotent via NOT EXISTS check)
         conn.execute(
-            "INSERT INTO schema_version SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 2 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
@@ -1867,12 +1892,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_1() {
+    fn test_open_creates_db_and_schema_version_is_2() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 1);
+        assert_eq!(db.schema_version().unwrap(), 2);
     }
 
     #[test]
@@ -1881,7 +1906,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let _db1 = StateDb::open(&db_path).expect("first open should succeed");
         let db2 = StateDb::open(&db_path).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 1);
+        assert_eq!(db2.schema_version().unwrap(), 2);
     }
 
     #[test]

@@ -8,7 +8,7 @@ mod splash;
 use std::process::ExitCode;
 
 use cli::Commands;
-use commands::{LogCommands, StateCommands, WorktreeCommands};
+use commands::{DashCommands, LogCommands, StateCommands, WorktreeCommands};
 
 fn main() -> ExitCode {
     let cli = cli::parse();
@@ -181,6 +181,22 @@ fn main() -> ExitCode {
             port,
             param,
         }) => commands::run_tell(action, port, param, cli.json),
+        Some(Commands::Dash(dash_cmd)) => match dash_cmd {
+            DashCommands::Create { name, description } => {
+                commands::run_dash_create(name, description, cli.json, cli.quiet)
+            }
+            DashCommands::Commit { name, message } => {
+                commands::run_dash_commit(name, message, cli.json, cli.quiet)
+            }
+            DashCommands::Join { name, message } => {
+                commands::run_dash_join(name, message, cli.json, cli.quiet)
+            }
+            DashCommands::Release { name } => commands::run_dash_release(name, cli.json, cli.quiet),
+            DashCommands::List { all } => commands::run_dash_list(all, cli.json, cli.quiet),
+            DashCommands::Show { name, all_rounds } => {
+                commands::run_dash_show(name, all_rounds, cli.json, cli.quiet)
+            }
+        },
         None => {
             // No subcommand - show splash screen
             if !cli.quiet {

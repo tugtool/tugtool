@@ -9,6 +9,138 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-24T19:43:04Z
+---
+
+## audit-fix: CI fix: Changed git init to git init -b main in init_git_repo test helper to ensure consistent default branch naming across CI environments. Linux CI may default to master, causing test_dash_join_wrong_branch_fails assertion to fail when checking for 'main' in error message.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-24T19:34:25Z
+---
+
+## audit-fix: CI fix: Added #[serial] attribute from serial_test crate to all 22 dash test functions to prevent race conditions from parallel set_current_dir calls. CI cargo test --all-targets runs tests in parallel unlike nextest which isolates per-process.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-24T19:29:46Z
+---
+
+## audit-fix: CI fix: Fixed useless vec! allocations in tugtool-core dash tests (use slice references). Added #[allow(clippy::disallowed_methods)] to commands/dash.rs test module for set_current_dir calls (each test uses isolated TempDir). Clippy now passes with --all-targets --all-features.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-24T19:24:27Z
+---
+
+## audit-fix: Audit fix: Renamed DashStatus::from_str to parse_status to avoid FromStr trait conflict. Replaced .map().flatten() with .and_then() in two places. Fixed 4 useless format!() calls. Clippy now passes with -D warnings.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-6
+date: 2025-02-24T19:19:46Z
+---
+
+## step-6: End-to-end validation step. All 696 tests pass. Full lifecycle (create->commit->join), release lifecycle, idempotent create, name reuse, no-change rounds, list/show, JSON envelope conformance, and base_branch detection all verified through existing test suite. No new code files added.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-5
+date: 2025-02-24T19:10:37Z
+---
+
+## step-5: Created tugplug/skills/dash/SKILL.md with YAML frontmatter (Bash restriction hook for tugcode-only), input parsing per S10, orchestration flows for new/continue/join/release/status, persistent dash-agent spawn/resume, stdin JSON construction for round metadata via heredoc per D13, cross-session continuity per D09, progress reporting, error handling. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-4
+date: 2025-02-24T18:57:38Z
+---
+
+## step-4: Created tugplug/agents/dash-agent.md with YAML frontmatter (name dash-agent, model sonnet, permissionMode dontAsk) and complete agent prompt covering: Your Role, Persistent Agent Pattern (D09), Input Contract (S08), Output Contract (S09), File Path Handling, Build and Test Strategy (D08), Behavioral Rules (D07 independent, D11 one session), JSON Validation, Error Handling. Updated agent count test from 9 to 10. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-3
+date: 2025-02-24T18:49:19Z
+---
+
+## step-3: Replaced join and release stubs with full implementations. Join follows 10-step sequence: preflight checks (clean repo, correct branch, not inside worktree), auto-commit outstanding changes with synthetic round, squash-merge with tugdash prefix, state update, worktree/branch cleanup with warnings. Release: force-remove worktree, delete branch, mark released. Added JoinResponse and ReleaseResponse structs. 8 new integration tests. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-2
+date: 2025-02-24T18:37:26Z
+---
+
+## step-2: Replaced run_dash_commit stub with full implementation: stdin DashRoundMeta JSON parsing, git add -A, staged change detection, conditional commit with 72-char subject truncation, always-record round in state.db per D06. Added CommitResponse struct with JsonResponse envelope. 5 new integration tests. 688 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-1
+date: 2025-02-24T18:28:56Z
+---
+
+## step-1: Created dash.rs in commands/ with DashCommands enum, run_dash_create (with branch/worktree creation, idempotency, rollback), run_dash_list (active filtering, worktree existence check), run_dash_show (rounds, uncommitted changes). Added Dash variant to cli.rs, mod.rs, main.rs. JSON output uses JsonResponse envelope. 9 integration tests. 683 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: step-0
+date: 2025-02-24T18:11:18Z
+---
+
+## step-0: Added dash table DDL to StateDb::open(), created dash.rs module with DashInfo/DashRound/DashStatus types, validate_dash_name(), detect_default_branch(), and all StateDb CRUD methods. Added 5 error variants (E054-E058). Bumped schema version to 2. All 674 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-2
 date: 2025-02-24T16:04:34Z
 ---

@@ -2,7 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{LogCommands, StateCommands, WorktreeCommands};
+use crate::commands::{DashCommands, LogCommands, StateCommands, WorktreeCommands};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -249,6 +249,15 @@ pub enum Commands {
         #[arg(short = 'p', long = "param", value_name = "KEY=VALUE")]
         param: Vec<String>,
     },
+
+    /// Dash commands for lightweight worktree-isolated work
+    ///
+    /// Create, work on, and complete dashes without the full plan/implement pipeline.
+    #[command(
+        subcommand,
+        long_about = "Dash commands for lightweight worktree-isolated work.\n\nProvides quick project workflows for:\n  - Bug fixes\n  - Spikes and experiments\n  - Small features\n  - Prototyping\n\nSubcommands:\n  create   Create dash worktree and branch\n  commit   Record round and commit changes\n  join     Squash-merge to base branch\n  release  Discard without merging\n  list     Show all dashes\n  show     Show dash details and rounds"
+    )]
+    Dash(DashCommands),
 }
 
 /// Get the command args for use in the application

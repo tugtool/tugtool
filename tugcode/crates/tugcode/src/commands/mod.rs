@@ -1,6 +1,7 @@
 //! CLI command implementations
 
 pub mod commit;
+pub mod dash;
 pub mod doctor;
 pub mod init;
 pub mod list;
@@ -16,6 +17,10 @@ pub mod version;
 pub mod worktree;
 
 pub use commit::run_commit;
+pub use dash::{
+    DashCommands, run_dash_commit, run_dash_create, run_dash_join, run_dash_list, run_dash_release,
+    run_dash_show,
+};
 pub use doctor::run_doctor;
 pub use init::run_init;
 pub use list::run_list;

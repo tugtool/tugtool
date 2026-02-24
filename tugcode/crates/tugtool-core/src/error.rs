@@ -210,6 +210,33 @@ pub enum TugError {
     /// E053: No steps ready for claiming
     #[error("E053: No steps ready for claiming")]
     StateNoReadySteps,
+
+    // === Dash errors (E054-E058) ===
+    /// E054: Dash name not found
+    #[error("E054: Dash not found: {name}")]
+    DashNotFound { name: String },
+
+    /// E055: Dash name invalid
+    #[error("E055: Invalid dash name '{name}': {reason}")]
+    DashNameInvalid { name: String, reason: String },
+
+    /// E056: Dash not active
+    #[error("E056: Dash '{name}' is not active (current status: {status})")]
+    DashNotActive { name: String, status: String },
+
+    /// E057: Dash join failed
+    #[error("E057: Failed to join dash '{name}': {reason}")]
+    DashJoinFailed { name: String, reason: String },
+
+    /// E058: Dash wrong branch
+    #[error(
+        "E058: Cannot join dash '{name}': repo root worktree is on branch '{current_branch}' but dash targets '{base_branch}'. Check out '{base_branch}' first."
+    )]
+    DashWrongBranch {
+        name: String,
+        current_branch: String,
+        base_branch: String,
+    },
 }
 
 impl TugError {
@@ -256,6 +283,11 @@ impl TugError {
             TugError::StateIncompleteChecklist { .. } => "E051",
             TugError::StateIncompleteSubsteps { .. } => "E052",
             TugError::StateNoReadySteps => "E053",
+            TugError::DashNotFound { .. } => "E054",
+            TugError::DashNameInvalid { .. } => "E055",
+            TugError::DashNotActive { .. } => "E056",
+            TugError::DashJoinFailed { .. } => "E057",
+            TugError::DashWrongBranch { .. } => "E058",
         }
     }
 
@@ -330,6 +362,11 @@ impl TugError {
             TugError::StateIncompleteChecklist { .. } => 14, // Incomplete checklist
             TugError::StateIncompleteSubsteps { .. } => 14, // Incomplete substeps
             TugError::StateNoReadySteps => 14,    // No ready steps
+            TugError::DashNotFound { .. } => 15,  // Dash not found
+            TugError::DashNameInvalid { .. } => 15, // Dash name invalid
+            TugError::DashNotActive { .. } => 15, // Dash not active
+            TugError::DashJoinFailed { .. } => 15, // Dash join failed
+            TugError::DashWrongBranch { .. } => 15, // Dash wrong branch
         }
     }
 }
