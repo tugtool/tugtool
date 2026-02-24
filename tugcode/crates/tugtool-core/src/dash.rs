@@ -29,7 +29,7 @@ impl DashStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, TugError> {
+    pub fn parse_status(s: &str) -> Result<Self, TugError> {
         match s {
             "active" => Ok(DashStatus::Active),
             "joined" => Ok(DashStatus::Joined),
@@ -230,7 +230,7 @@ impl crate::state::StateDb {
             params![name],
             |row| {
                 let status_str: String = row.get(5)?;
-                let status = DashStatus::from_str(&status_str).map_err(|_| {
+                let status = DashStatus::parse_status(&status_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
                         5,
                         rusqlite::types::Type::Text,
@@ -318,7 +318,7 @@ impl crate::state::StateDb {
                 params![name],
                 |row| {
                     let status_str: String = row.get(5)?;
-                    let status = DashStatus::from_str(&status_str).map_err(|_| {
+                    let status = DashStatus::parse_status(&status_str).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             5,
                             rusqlite::types::Type::Text,
@@ -380,7 +380,7 @@ ORDER BY d.created_at DESC
         let rows = stmt
             .query_map([], |row| {
                 let status_str: String = row.get(5)?;
-                let status = DashStatus::from_str(&status_str).map_err(|_| {
+                let status = DashStatus::parse_status(&status_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
                         5,
                         rusqlite::types::Type::Text,
@@ -455,12 +455,8 @@ ORDER BY d.created_at DESC
     ) -> Result<i64, TugError> {
         let now = now_iso8601();
 
-        let files_created_json = files_created
-            .map(|f| serde_json::to_string(f).ok())
-            .flatten();
-        let files_modified_json = files_modified
-            .map(|f| serde_json::to_string(f).ok())
-            .flatten();
+        let files_created_json = files_created.and_then(|f| serde_json::to_string(f).ok());
+        let files_modified_json = files_modified.and_then(|f| serde_json::to_string(f).ok());
 
         self.conn.execute(
             "INSERT INTO dash_rounds (dash_name, instruction, summary, files_created, files_modified, commit_hash, started_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",

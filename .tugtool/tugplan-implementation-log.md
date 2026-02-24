@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-24T19:24:27Z
+---
+
+## audit-fix: Audit fix: Renamed DashStatus::from_str to parse_status to avoid FromStr trait conflict. Replaced .map().flatten() with .and_then() in two places. Fixed 4 useless format!() calls. Clippy now passes with -D warnings.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-6
 date: 2025-02-24T19:19:46Z
 ---

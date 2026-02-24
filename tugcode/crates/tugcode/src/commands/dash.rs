@@ -754,9 +754,10 @@ pub fn run_dash_join(
         .trim()
         .is_empty()
     {
-        return Err(format!(
+        return Err(
             "Cannot join: repo root worktree has uncommitted changes. Commit or stash them first."
-        ));
+                .to_string(),
+        );
     }
 
     // Step 3: Verify we're running from repo root worktree (not inside dash worktree)
@@ -764,9 +765,9 @@ pub fn run_dash_join(
         std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?;
     let dash_worktree = Path::new(&dash.worktree);
     if current_dir.starts_with(dash_worktree) {
-        return Err(format!(
-            "Cannot join from inside the dash worktree. Run from repo root instead."
-        ));
+        return Err(
+            "Cannot join from inside the dash worktree. Run from repo root instead.".to_string(),
+        );
     }
 
     // Step 4: Verify current branch matches base_branch
@@ -829,7 +830,7 @@ pub fn run_dash_join(
             .join(", ");
 
         // Commit
-        let commit_msg = format!("join: commit outstanding changes");
+        let commit_msg = "join: commit outstanding changes".to_string();
         let _ = Command::new("git")
             .arg("-C")
             .arg(&dash.worktree)
@@ -874,7 +875,7 @@ pub fn run_dash_join(
     let commit_message = message
         .clone()
         .or_else(|| dash.description.clone())
-        .unwrap_or_else(|| format!("Dash work"));
+        .unwrap_or_else(|| "Dash work".to_string());
 
     let final_commit_msg = format!("tugdash({}): {}", name, commit_message);
 
