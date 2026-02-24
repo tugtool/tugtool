@@ -1,11 +1,8 @@
 # Tugplug Plugin Guidelines
 
-## Beads Policy
+## Tugstate Policy
 
-Beads tracks per-step data in SQLite. Each agent's and skill's own instructions define its beads interactions — do not run beads commands beyond what your specific instructions say.
-
-- Plan files are never modified by beads sync.
-- `tugcode init` removes git hooks containing beads references.
+Tugstate tracks per-step state in an embedded SQLite database. Agents do not call `tugcode state` commands directly -- all state management is handled by the orchestrator (implement skill). Agents receive step context from the orchestrator and return structured JSON output; the orchestrator is responsible for heartbeats, checklist updates, artifact recording, and step completion.
 
 ## Plan Mode Policy
 

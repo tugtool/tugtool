@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-24T00:56:25Z
+bead: remove-beads-pbb.5
+---
+
+## step-4: Replaced Beads Policy section with Tugstate Policy in tugplug/CLAUDE.md. Removed .beads/ and AGENTS.md entries from .gitignore while preserving state.db patterns.
+
+**Files changed:**
+- .tugtool/tugplan-remove-beads.md
+
+---
+
+---
 step: step-3
 date: 2025-02-24T00:50:15Z
 bead: remove-beads-pbb.4
