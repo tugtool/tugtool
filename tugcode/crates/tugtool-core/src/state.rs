@@ -1280,15 +1280,56 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             });
         }
 
+        // Get all checklist items for JSON output
+        let checklist_items = self.get_checklist_items(plan_path)?;
+
         Ok(PlanState {
             plan_path: plan_path.to_string(),
             plan_hash,
             phase_title,
             status,
             steps,
+            checklist_items,
             created_at,
             updated_at,
         })
+    }
+
+    /// Get all checklist items for a plan with full details
+    pub fn get_checklist_items(
+        &self,
+        plan_path: &str,
+    ) -> Result<Vec<ChecklistItemDetail>, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT step_anchor, kind, ordinal, text, status, reason
+                 FROM checklist_items
+                 WHERE plan_path = ?1
+                 ORDER BY step_anchor, kind, ordinal",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare checklist query: {}", e),
+            })?;
+
+        let items = stmt
+            .query_map(rusqlite::params![plan_path], |row| {
+                Ok(ChecklistItemDetail {
+                    step_anchor: row.get(0)?,
+                    kind: row.get(1)?,
+                    ordinal: row.get::<_, i32>(2)? as usize,
+                    text: row.get(3)?,
+                    status: row.get(4)?,
+                    reason: row.get(5)?,
+                })
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query checklist items: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(items)
     }
 
     /// Helper: query checklist summary for a step
@@ -1916,6 +1957,17 @@ pub struct UpdateResult {
     pub items_updated: usize,
 }
 
+/// Detailed checklist item information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChecklistItemDetail {
+    pub step_anchor: String,
+    pub kind: String,
+    pub ordinal: usize,
+    pub text: String,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
 /// Result from complete_step operation
 #[derive(Debug)]
 pub struct CompleteResult {
@@ -2049,6 +2101,7 @@ pub struct PlanState {
     pub phase_title: Option<String>,
     pub status: String,
     pub steps: Vec<StepState>,
+    pub checklist_items: Vec<ChecklistItemDetail>,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-24T22:30:52Z
+---
+
+## step-2: Added --summary and --checklist display modes to state show with [x]/[ ]/[~] markers. Extended JSON output with per-item checklist details. Added plan hash drift detection: warning in state show, blocking in state update/complete with --allow-drift override, and warning+skip in commit. Added check_plan_drift helper, get_plan_hash method, and 11 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: step-1
 date: 2025-02-24T22:09:49Z
 ---

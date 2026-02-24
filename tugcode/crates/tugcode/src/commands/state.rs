@@ -30,6 +30,47 @@ impl tugtool_core::BatchEntry for BatchUpdateEntry {
     }
 }
 
+/// Drift information for plan hash comparison
+struct DriftInfo {
+    stored_hash: String,
+    current_hash: String,
+}
+
+/// Check if plan file has drifted from stored hash
+fn check_plan_drift(
+    repo_root: &std::path::Path,
+    plan_rel: &std::path::Path,
+    db: &tugtool_core::StateDb,
+    plan_path_str: &str,
+) -> Result<Option<DriftInfo>, String> {
+    // Get stored plan state to retrieve hash
+    let plan_state = db.show_plan(plan_path_str).map_err(|e| e.to_string())?;
+    let stored_hash = plan_state.plan_hash;
+
+    // Compute current hash
+    let plan_abs = repo_root.join(plan_rel);
+    let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
+
+    if stored_hash != current_hash {
+        Ok(Some(DriftInfo {
+            stored_hash,
+            current_hash,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Format drift warning message with truncated hashes
+fn format_drift_message(drift: &DriftInfo) -> String {
+    let stored_short = &drift.stored_hash[..8];
+    let current_short = &drift.current_hash[..8];
+    format!(
+        "Plan file has been modified since state was initialized (stored: {}..., current: {}...)",
+        stored_short, current_short
+    )
+}
+
 /// State subcommands
 #[derive(Subcommand, Debug)]
 pub enum StateCommands {
@@ -111,6 +152,9 @@ pub enum StateCommands {
         /// Allow setting item status back to open (manual recovery only)
         #[arg(long)]
         allow_reopen: bool,
+        /// Allow operation even if plan file has been modified since state was initialized
+        #[arg(long)]
+        allow_drift: bool,
     },
     /// Record an artifact breadcrumb for a step
     Artifact {
@@ -143,11 +187,20 @@ pub enum StateCommands {
         /// Reason for forcing completion
         #[arg(long, value_name = "TEXT")]
         reason: Option<String>,
+        /// Allow operation even if plan file has been modified since state was initialized
+        #[arg(long)]
+        allow_drift: bool,
     },
     /// Show plan progress and status
     Show {
         /// Plan file path (optional - shows all plans if not specified)
         plan: Option<String>,
+        /// Show aggregate counts per step (default)
+        #[arg(long, conflicts_with = "checklist")]
+        summary: bool,
+        /// Show every checklist item with its status
+        #[arg(long, conflicts_with = "summary")]
+        checklist: bool,
     },
     /// List ready steps for claiming
     Ready {
@@ -547,6 +600,7 @@ pub fn run_state_update(
     all: Option<String>,
     batch: bool,
     allow_reopen: bool,
+    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -581,7 +635,17 @@ pub fn run_state_update(
 
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
 
-    // 4. Handle batch mode or individual updates
+    // 4. Check for plan drift
+    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if !allow_drift {
+            return Err(format!(
+                "{}. Use --allow-drift to proceed.",
+                format_drift_message(&drift)
+            ));
+        }
+    }
+
+    // 5. Handle batch mode or individual updates
     let result = if batch {
         // Read batch JSON from stdin
         let stdin = std::io::stdin();
@@ -816,6 +880,7 @@ pub fn run_state_complete(
     worktree: String,
     force: bool,
     reason: Option<String>,
+    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -848,8 +913,19 @@ pub fn run_state_complete(
     let db_path = repo_root.join(".tugtool").join("state.db");
     let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
 
-    // 4. Complete step
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
+
+    // 4. Check for plan drift
+    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if !allow_drift {
+            return Err(format!(
+                "{}. Use --allow-drift to proceed.",
+                format_drift_message(&drift)
+            ));
+        }
+    }
+
+    // 5. Complete step
     let result = db
         .complete_step(&plan_rel_str, &step, &worktree, force, reason.as_deref())
         .map_err(|e| e.to_string())?;
@@ -883,7 +959,13 @@ pub fn run_state_complete(
     Ok(0)
 }
 
-pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_state_show(
+    plan: Option<String>,
+    _summary: bool,
+    checklist: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
@@ -916,6 +998,11 @@ pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i
         let plan_rel_str = plan_rel.to_string_lossy().to_string();
         let plan_state = db.show_plan(&plan_rel_str).map_err(|e| e.to_string())?;
 
+        // Check for plan drift and warn (non-blocking)
+        if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+            eprintln!("Warning: {}", format_drift_message(&drift));
+        }
+
         if json {
             use crate::output::{JsonResponse, StateShowData};
             let data = StateShowData { plan: plan_state };
@@ -925,7 +1012,17 @@ pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i
                 serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
             );
         } else if !quiet {
-            print_plan_state(&plan_state);
+            // Dispatch based on display mode
+            if checklist {
+                // Checklist mode: show all items with status markers
+                let items = db
+                    .get_checklist_items(&plan_rel_str)
+                    .map_err(|e| e.to_string())?;
+                print_checklist_view(&plan_state, &items);
+            } else {
+                // Summary mode (default)
+                print_plan_state(&plan_state);
+            }
         }
     } else {
         // TODO: show all plans (future enhancement)
@@ -1023,6 +1120,119 @@ fn print_progress_bar(label: &str, completed: usize, total: usize) {
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
     println!("{}: {}/{}  {}  {}%", label, completed, total, bar, percent);
+}
+
+/// Print checklist view with per-item status markers
+fn print_checklist_view(
+    plan_state: &tugtool_core::PlanState,
+    items: &[tugtool_core::ChecklistItemDetail],
+) {
+    println!("Plan: {}", plan_state.plan_path);
+    if let Some(title) = &plan_state.phase_title {
+        println!("Title: {}", title);
+    }
+    println!("Status: {}", plan_state.status);
+    println!();
+
+    // Group items by step_anchor
+    let mut items_by_step: std::collections::HashMap<
+        String,
+        Vec<&tugtool_core::ChecklistItemDetail>,
+    > = std::collections::HashMap::new();
+    for item in items {
+        items_by_step
+            .entry(item.step_anchor.clone())
+            .or_insert_with(Vec::new)
+            .push(item);
+    }
+
+    // Iterate through steps in order
+    for step in &plan_state.steps {
+        print_step_checklist(&step, &items_by_step, 0);
+    }
+}
+
+/// Print checklist items for a step
+fn print_step_checklist(
+    step: &tugtool_core::StepState,
+    items_by_step: &std::collections::HashMap<String, Vec<&tugtool_core::ChecklistItemDetail>>,
+    indent: usize,
+) {
+    let prefix = "  ".repeat(indent);
+
+    // Status indicator
+    let status_icon = match step.status.as_str() {
+        "completed" => "✓",
+        "in_progress" => "→",
+        "claimed" => "◆",
+        _ => "○",
+    };
+
+    println!("{}{} {} - {}", prefix, status_icon, step.anchor, step.title);
+
+    // Print checklist items for this step
+    if let Some(step_items) = items_by_step.get(&step.anchor) {
+        // Group by kind
+        let mut tasks: Vec<_> = step_items.iter().filter(|i| i.kind == "task").collect();
+        let mut tests: Vec<_> = step_items.iter().filter(|i| i.kind == "test").collect();
+        let mut checkpoints: Vec<_> = step_items
+            .iter()
+            .filter(|i| i.kind == "checkpoint")
+            .collect();
+
+        // Sort by ordinal
+        tasks.sort_by_key(|i| i.ordinal);
+        tests.sort_by_key(|i| i.ordinal);
+        checkpoints.sort_by_key(|i| i.ordinal);
+
+        if !tasks.is_empty() {
+            println!("{}  Tasks:", prefix);
+            for item in tasks {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+
+        if !tests.is_empty() {
+            println!("{}  Tests:", prefix);
+            for item in tests {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+
+        if !checkpoints.is_empty() {
+            println!("{}  Checkpoints:", prefix);
+            for item in checkpoints {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+    }
+
+    // Show substeps
+    for substep in &step.substeps {
+        print_step_checklist(substep, items_by_step, indent + 1);
+    }
+
+    println!();
+}
+
+/// Print a single checklist item with status marker
+fn print_checklist_item(item: &tugtool_core::ChecklistItemDetail, indent: usize) {
+    let prefix = "  ".repeat(indent);
+    let marker = match item.status.as_str() {
+        "completed" => "[x]",
+        "deferred" => "[~]",
+        _ => "[ ]",
+    };
+
+    if item.status == "deferred" {
+        if let Some(reason) = &item.reason {
+            println!("{}{} {}  (deferred: {})", prefix, marker, item.text, reason);
+        } else {
+            println!("{}{} {}", prefix, marker, item.text);
+        }
+    } else {
+        println!("{}{} {}", prefix, marker, item.text);
+    }
 }
 
 pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, String> {

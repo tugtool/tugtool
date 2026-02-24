@@ -94,6 +94,7 @@ fn main() -> ExitCode {
                 all,
                 batch,
                 allow_reopen,
+                allow_drift,
             } => commands::run_state_update(
                 plan,
                 step,
@@ -107,6 +108,7 @@ fn main() -> ExitCode {
                 all,
                 batch,
                 allow_reopen,
+                allow_drift,
                 cli.json,
                 cli.quiet,
             ),
@@ -125,10 +127,22 @@ fn main() -> ExitCode {
                 worktree,
                 force,
                 reason,
+                allow_drift,
             } => commands::run_state_complete(
-                plan, step, worktree, force, reason, cli.json, cli.quiet,
+                plan,
+                step,
+                worktree,
+                force,
+                reason,
+                allow_drift,
+                cli.json,
+                cli.quiet,
             ),
-            StateCommands::Show { plan } => commands::run_state_show(plan, cli.json, cli.quiet),
+            StateCommands::Show {
+                plan,
+                summary,
+                checklist,
+            } => commands::run_state_show(plan, summary, checklist, cli.json, cli.quiet),
             StateCommands::Ready { plan } => commands::run_state_ready(plan, cli.json, cli.quiet),
             StateCommands::Reset { plan, step } => {
                 commands::run_state_reset(plan, step, cli.json, cli.quiet)
