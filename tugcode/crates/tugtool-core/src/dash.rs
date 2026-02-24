@@ -726,8 +726,8 @@ mod tests {
                 "test-dash",
                 Some("add login"),
                 Some("Added login page"),
-                Some(&vec!["src/login.rs".to_string()]),
-                Some(&vec!["src/main.rs".to_string()]),
+                Some(&["src/login.rs".to_string()]),
+                Some(&["src/main.rs".to_string()]),
                 Some("abc123"),
             )
             .unwrap();

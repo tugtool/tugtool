@@ -1070,6 +1070,7 @@ pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, St
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // set_current_dir is needed for tests with isolated temp dirs
 mod tests {
     use super::*;
     use std::fs;
