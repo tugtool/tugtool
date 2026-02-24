@@ -257,13 +257,15 @@ Record each checkpoint in `build_and_test_report.checkpoints` with command, pass
 
 7. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files for persisting your output (see Step Data and Output).
 
-8. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
+8. **Never commit**: Do NOT run `git commit`. The committer-agent handles all commits. You may use `git add` and `git status` but never `git commit`.
 
-9. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
+9. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
 
-10. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+10. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
 
-11. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
+11. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+
+12. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
 
 ---
 
