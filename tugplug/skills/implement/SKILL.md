@@ -90,7 +90,7 @@ Output once per step, before the architect call:
     - {file2}
   Modified files ({files_modified.length}):
     - {file3}
-  Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tests: {pass_count}/{total_count} {tests_passed ? "pass" : "FAIL"} | Lint: {lint ? (lint.exit_code == 0 ? "pass" : "FAIL") : "n/a"}
+  Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tasks: {tasks_completed}/{tasks_total} | Tests: {tests_completed}/{tests_total} | Lint: {lint ? (lint.exit_code == 0 ? "pass" : "FAIL") : "n/a"}
   Drift: {drift_severity} | {drift_budget.yellow_used}/{drift_budget.yellow_max} yellow | {drift_budget.red_used}/{drift_budget.red_max} red
 ```
 
@@ -554,11 +554,32 @@ Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict -
 | `REVISE` | Resume coder with feedback, then resume reviewer (3e-retry) |
 | `ESCALATE` | AskUserQuestion showing issues, get user decision |
 
-**After APPROVE — mark all checkboxes complete:**
+**After APPROVE — update state with batch JSON:**
 
+Construct a batch update JSON array combining:
+1. Coder's task/test status from `checklist_status.tasks` and `checklist_status.tests`
+2. Reviewer's checkpoint verdicts from `plan_conformance.checkpoints[]`
+
+**Reviewer verdict mapping:**
+- `PASS` → `{"kind": "checkpoint", "ordinal": N, "status": "completed"}`
+- Non-pass (`FAIL`, `BLOCKED`, `UNVERIFIED`) → `{"kind": "checkpoint", "ordinal": N, "status": "deferred", "reason": "<from reviewer output>"}`
+
+**Example batch JSON:**
+```json
+[
+  {"kind": "task", "ordinal": 0, "status": "completed"},
+  {"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"},
+  {"kind": "test", "ordinal": 0, "status": "completed"},
+  {"kind": "checkpoint", "ordinal": 0, "status": "completed"}
+]
 ```
-Bash: tugcode state update {plan_path} {step_anchor} --all completed --worktree {worktree_path}
+
+**Send batch update:**
 ```
+echo '<batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch
+```
+
+**Note:** The implement skill does NOT pass `--allow-drift`. If the plan has drifted since state init, the batch update will fail and surface the drift for orchestrator resolution.
 
 **3e-retry (REVISE loop):**
 
@@ -921,7 +942,7 @@ Tugstate tracks per-step execution state in an embedded SQLite database. The orc
 2. `tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}` — transition to in_progress
 3. `tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}` — after each agent call
 4. `tugcode state artifact {plan_path} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
-5. `tugcode state update {plan_path} {step_anchor} --all completed --worktree {worktree_path}` — after reviewer approval
+5. `echo '<batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch` — after reviewer approval (batch JSON combines coder's task/test status with reviewer's checkpoint verdicts)
 6. `tugcode commit` — internally calls `state complete` (no separate orchestrator call needed)
 
 **Error handling:**
@@ -962,8 +983,7 @@ When you receive an agent response:
   "halted_for_drift": boolean (required),
   "files_created": array (required),
   "files_modified": array (required),
-  "tests_run": boolean (required),
-  "tests_passed": boolean (required),
+  "checklist_status": object (required: tasks, tests),
   "build_and_test_report": object (required: build, test, lint, checkpoints),
   "drift_assessment": object (required: drift_severity, expected_files, actual_changes, unexpected_changes, drift_budget, qualitative_assessment)
 }

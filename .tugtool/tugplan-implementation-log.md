@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-24T22:48:36Z
+---
+
+## step-3: Updated coder-agent.md to replace tests_passed/tests_run with checklist_status (tasks+tests arrays). Updated reviewer-agent.md to add ordinal to checkpoints and document sole checkpoint authority. Updated implement SKILL.md to replace --all completed with batch update construction combining coder task/test status with reviewer checkpoint verdicts.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: step-2-summary
 date: 2025-02-24T22:35:03Z
 ---

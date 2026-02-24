@@ -98,8 +98,17 @@ Return structured JSON:
   "halted_for_drift": false,
   "files_created": ["path/to/new.rs"],
   "files_modified": ["path/to/existing.rs"],
-  "tests_run": true,
-  "tests_passed": true,
+  "checklist_status": {
+    "tasks": [
+      {"ordinal": 0, "status": "completed"},
+      {"ordinal": 1, "status": "completed"},
+      {"ordinal": 2, "status": "deferred", "reason": "manual verification required"}
+    ],
+    "tests": [
+      {"ordinal": 0, "status": "completed"},
+      {"ordinal": 1, "status": "completed"}
+    ]
+  },
   "build_and_test_report": {
     "build": {"command": "<build command>", "exit_code": 0, "output_tail": "<last ~20 lines>"},
     "test": {"command": "<test command>", "exit_code": 0, "output_tail": "<last ~20 lines>"},
@@ -132,9 +141,13 @@ Return structured JSON:
 | `halted_for_drift` | True if implementation was halted due to drift |
 | `files_created` | List of new files created (relative paths) |
 | `files_modified` | List of existing files modified (relative paths) |
-| `tests_run` | True if tests were executed |
-| `tests_passed` | True if all tests passed |
-| `build_and_test_report` | **REQUIRED**: Build, test, lint, and checkpoint results (see below) |
+| `checklist_status` | **REQUIRED**: Per-item checklist reporting for tasks and tests only (see below) |
+| `checklist_status.tasks` | Array of task status entries with ordinal (0-indexed) and status |
+| `checklist_status.tests` | Array of test status entries with ordinal (0-indexed) and status |
+| `checklist_status.[].ordinal` | 0-indexed position of the item in the plan step |
+| `checklist_status.[].status` | One of: `completed`, `deferred` |
+| `checklist_status.[].reason` | Required when status is `deferred`; explanation for deferral |
+| `build_and_test_report` | **REQUIRED**: Build, test, lint, and checkpoint results for detailed output (see below) |
 | `build_and_test_report.build` | Build command, exit code, and tail of output |
 | `build_and_test_report.test` | Test command, exit code, and tail of output |
 | `build_and_test_report.lint` | Lint command, exit code, and tail of output (null if no linter configured) |
@@ -193,7 +206,7 @@ Record command, exit code, and last ~20 lines of output in `build_and_test_repor
 cd {worktree_path} && <project_test_command>
 ```
 
-Record command, exit code, and last ~20 lines of output in `build_and_test_report.test`. Set `tests_run: true` and `tests_passed` based on exit code. If no test command is available, set `tests_run: false`.
+Record command, exit code, and last ~20 lines of output in `build_and_test_report.test`.
 
 **5c. Lint (optional):**
 
@@ -208,6 +221,15 @@ cd {worktree_path} && <checkpoint_command>
 ```
 
 Record each checkpoint in `build_and_test_report.checkpoints` with command, passed (true/false), and output. If no checkpoints are defined in the step, use an empty array.
+
+**5e. Populate checklist_status:**
+
+After running build, tests, lint, and checkpoints, map each plan task and test to its ordinal (0-indexed position) and determine its status:
+
+- For each task in the plan step: create an entry `{"ordinal": N, "status": "completed"}` if you completed it, or `{"ordinal": N, "status": "deferred", "reason": "..."}` if it requires manual verification
+- For each test in the plan step: create an entry `{"ordinal": N, "status": "completed"}` if the test passed, or `{"ordinal": N, "status": "deferred", "reason": "..."}` if it needs manual review
+
+**IMPORTANT:** Do NOT report checkpoint status in `checklist_status`. Checkpoints are verified by the reviewer and are not part of the coder's output contract.
 
 ---
 
@@ -285,8 +307,16 @@ Before returning your response, you MUST validate that your JSON output conforms
   "halted_for_drift": false,
   "files_created": [],
   "files_modified": [],
-  "tests_run": false,
-  "tests_passed": false,
+  "checklist_status": {
+    "tasks": [],
+    "tests": []
+  },
+  "build_and_test_report": {
+    "build": null,
+    "test": null,
+    "lint": null,
+    "checkpoints": []
+  },
   "drift_assessment": {
     "drift_severity": "none",
     "expected_files": [],
@@ -308,8 +338,16 @@ If implementation fails for non-drift reasons:
   "halted_for_drift": false,
   "files_created": [],
   "files_modified": [],
-  "tests_run": false,
-  "tests_passed": false,
+  "checklist_status": {
+    "tasks": [],
+    "tests": []
+  },
+  "build_and_test_report": {
+    "build": null,
+    "test": null,
+    "lint": null,
+    "checkpoints": []
+  },
   "drift_assessment": {
     "drift_severity": "none",
     "expected_files": [],

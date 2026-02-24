@@ -127,7 +127,7 @@ Return structured JSON:
       {"task": "string", "status": "PASS|FAIL", "verified_by": "string"}
     ],
     "checkpoints": [
-      {"command": "string", "status": "PASS|FAIL", "output": "string"}
+      {"ordinal": 0, "command": "string", "status": "PASS|FAIL", "output": "string"}
     ],
     "decisions": [
       {"decision": "string", "status": "PASS|FAIL", "verified_by": "string"}
@@ -154,6 +154,7 @@ Return structured JSON:
 | `plan_conformance.tasks[].status` | PASS if correctly implemented, FAIL otherwise |
 | `plan_conformance.tasks[].verified_by` | How verification was done (e.g., "Found TTL=300 in cache.rs:42") |
 | `plan_conformance.checkpoints[]` | Each checkpoint command that was run |
+| `plan_conformance.checkpoints[].ordinal` | 0-indexed position of the checkpoint in the plan step |
 | `plan_conformance.checkpoints[].command` | The checkpoint command from the plan |
 | `plan_conformance.checkpoints[].status` | PASS if command succeeded, FAIL otherwise |
 | `plan_conformance.checkpoints[].output` | Actual output from running the command |
@@ -233,11 +234,15 @@ For each task, don't just check that a file was touched — verify the task was 
 
 ### 3. Verify Checkpoint Results
 
+**The reviewer is the sole authority for checkpoint verification. The coder does not report checkpoint status.**
+
 Read the coder's `build_and_test_report.checkpoints` array. For each checkpoint:
 
-1. Verify the command matches what the plan step specifies under `**Checkpoint:**`
-2. Check that `passed` is true
-3. If a checkpoint failed or is missing, report as an issue with type `"checkpoint_failed"`
+1. Number checkpoints in the order they appear in the plan step, starting from ordinal 0
+2. Verify the command matches what the plan step specifies under `**Checkpoint:**`
+3. Check that `passed` is true
+4. If a checkpoint failed or is missing, report as an issue with type `"checkpoint_failed"`
+5. Include the `ordinal` field in each checkpoint entry in your output
 
 ### 4. Verify Design Decisions
 
@@ -349,7 +354,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
       {"task": "Add tests for retry logic", "status": "PASS", "verified_by": "Found 3 test functions in client.rs"}
     ],
     "checkpoints": [
-      {"command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "PASS", "output": "1"}
+      {"ordinal": 0, "command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "PASS", "output": "1"}
     ],
     "decisions": [
       {"decision": "[D01] Use exponential backoff", "status": "PASS", "verified_by": "Found multiplier pattern in retry loop"}
@@ -378,7 +383,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
       {"task": "Add tests for retry logic", "status": "FAIL", "verified_by": "No test functions found for retry"}
     ],
     "checkpoints": [
-      {"command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "FAIL", "output": "0"}
+      {"ordinal": 0, "command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "FAIL", "output": "0"}
     ],
     "decisions": []
   },
@@ -409,7 +414,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
       {"task": "Add tests for retry logic", "status": "PASS", "verified_by": "Found 2 test functions"}
     ],
     "checkpoints": [
-      {"command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "PASS", "output": "1"}
+      {"ordinal": 0, "command": "grep -c 'struct RetryConfig' src/api/config.rs", "status": "PASS", "output": "1"}
     ],
     "decisions": [
       {"decision": "[D01] Use synchronous retry", "status": "FAIL", "verified_by": "Implementation uses async/await instead of sync"}
