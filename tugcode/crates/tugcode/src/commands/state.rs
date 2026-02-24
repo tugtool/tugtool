@@ -20,6 +20,9 @@ pub enum StateCommands {
         /// Lease duration in seconds
         #[arg(long, default_value = "7200")]
         lease_duration: u64,
+        /// Force claim, bypassing lease expiry checks (still respects dependencies)
+        #[arg(long)]
+        force: bool,
     },
     /// Start a claimed step
     Start {
@@ -124,6 +127,19 @@ pub enum StateCommands {
         /// Step anchor to reset
         step: String,
     },
+    /// Release a step's claim, returning it to pending status
+    Release {
+        /// Plan file path
+        plan: String,
+        /// Step anchor to release
+        step: String,
+        /// Worktree path for ownership check (mutually exclusive with --force)
+        #[arg(long, value_name = "PATH", conflicts_with = "force")]
+        worktree: Option<String>,
+        /// Skip ownership check (mutually exclusive with --worktree)
+        #[arg(long, conflicts_with = "worktree")]
+        force: bool,
+    },
     /// Reconcile state from git commit trailers
     Reconcile {
         /// Plan file path
@@ -215,6 +231,7 @@ pub fn run_state_claim(
     plan: String,
     worktree: String,
     lease_duration: u64,
+    force: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -253,7 +270,7 @@ pub fn run_state_claim(
     // 5. Claim step
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
     let result = db
-        .claim_step(&plan_rel_str, &worktree, lease_duration, &plan_hash)
+        .claim_step(&plan_rel_str, &worktree, lease_duration, &plan_hash, force)
         .map_err(|e| e.to_string())?;
 
     // 6. Output
@@ -1041,6 +1058,72 @@ pub fn run_state_reset(plan: String, step: String, json: bool, quiet: bool) -> R
         );
     } else if !quiet {
         println!("Reset step to pending: {}", step);
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_release(
+    plan: String,
+    step: String,
+    worktree: Option<String>,
+    force: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let plan_rel = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    // 4. Release step
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+    let result = db
+        .release_step(&plan_rel_str, &step, worktree.as_deref(), force)
+        .map_err(|e| e.to_string())?;
+
+    // 5. Output
+    if json {
+        use crate::output::{JsonResponse, StateReleaseData};
+        let data = StateReleaseData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            released: result.released,
+            was_claimed_by: result.was_claimed_by,
+        };
+        let response = JsonResponse::ok("state release", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!("Released step to pending: {}", step);
+        if let Some(previous_owner) = result.was_claimed_by {
+            println!("  Previously claimed by: {}", previous_owner);
+        }
     }
 
     Ok(0)

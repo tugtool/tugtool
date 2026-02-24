@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-24T16:04:34Z
+---
+
+## step-2: Added force: bool parameter to claim_step() with conditional SQL queries. Force bypasses lease expiry and worktree checks but respects dependency ordering. Updated all 30 test call sites, added 5 new force-claim tests.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
+step: step-1
+date: 2025-02-24T15:54:07Z
+---
+
+## step-1: Added release_step() function to core library and wired it up as state release CLI command with --worktree ownership verification and --force flag. Six unit tests cover all release scenarios.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
+step: step-0
+date: 2025-02-24T15:45:01Z
+---
+
+## step-0: Modified claim_step() SQL query to add third OR branch allowing re-claim when requesting worktree matches claimed_by. Added three unit tests for auto-reclaim behavior.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-24T01:49:36Z
 ---
