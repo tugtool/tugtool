@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-24T23:10:33Z
+---
+
+## audit-fix: Audit fix: removed .clone() on Copy type, added #[allow(clippy::too_many_arguments)], changed .or_insert_with(Vec::new) to .or_default(), removed needless borrow. Cargo clippy now passes with -D warnings.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: step-4
 date: 2025-02-24T23:06:15Z
 ---

@@ -874,6 +874,7 @@ pub fn run_state_artifact(
     Ok(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_state_complete(
     plan: String,
     step: String,
@@ -1142,13 +1143,13 @@ fn print_checklist_view(
     for item in items {
         items_by_step
             .entry(item.step_anchor.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(item);
     }
 
     // Iterate through steps in order
     for step in &plan_state.steps {
-        print_step_checklist(&step, &items_by_step, 0);
+        print_step_checklist(step, &items_by_step, 0);
     }
 }
 

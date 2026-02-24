@@ -865,7 +865,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         let mut duplicates = Vec::new();
         for entry in entries {
             let key = (entry.kind(), entry.ordinal());
-            if !seen.insert(key.clone()) {
+            if !seen.insert(key) {
                 duplicates.push(format!("({}, {})", key.0, key.1));
             }
         }
