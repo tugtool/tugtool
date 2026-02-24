@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-24T21:55:08Z
+---
+
+## step-0: Added schema migration from v2 to v3, adding reason TEXT column to checklist_items. Updated complete_step to treat deferred items as non-blocking. Updated doctor health check for schema v3. Added 4 new tests and updated 2 existing tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-24T19:43:04Z
 ---

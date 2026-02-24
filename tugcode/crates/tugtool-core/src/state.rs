@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS checklist_items (
     text         TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'open',
     updated_at   TEXT,
+    reason       TEXT,
     FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
 );
 
@@ -204,14 +205,18 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         // Insert schema version (idempotent via NOT EXISTS check)
         conn.execute(
-            "INSERT INTO schema_version SELECT 2 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 3 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
             reason: format!("failed to insert schema version: {}", e),
         })?;
 
-        Ok(StateDb { conn })
+        // Run migrations if needed
+        let mut db = StateDb { conn };
+        db.migrate_schema()?;
+
+        Ok(db)
     }
 
     /// Query the schema version from the database.
@@ -223,6 +228,28 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to query schema version: {}", e),
             })
+    }
+
+    /// Run schema migrations if needed.
+    fn migrate_schema(&mut self) -> Result<(), TugError> {
+        let version = self.schema_version()?;
+
+        // Migrate from v2 to v3: add reason column to checklist_items
+        if version == 2 {
+            self.conn
+                .execute("ALTER TABLE checklist_items ADD COLUMN reason TEXT", [])
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to add reason column: {}", e),
+                })?;
+
+            self.conn
+                .execute("UPDATE schema_version SET version = 3", [])
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to update schema version: {}", e),
+                })?;
+        }
+
+        Ok(())
     }
 
     /// List all plan paths in the database.
@@ -862,11 +889,11 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             })?;
 
         if !force {
-            // Strict mode: check all checklist items are completed
+            // Strict mode: check all checklist items are completed or deferred
             let incomplete_items: usize = tx
                 .query_row(
                     "SELECT COUNT(*) FROM checklist_items
-                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status != 'completed'",
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status NOT IN ('completed', 'deferred')",
                     rusqlite::params![plan_path, anchor],
                     |row| row.get(0),
                 )
@@ -1892,12 +1919,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_2() {
+    fn test_open_creates_db_and_schema_version_is_3() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 2);
+        assert_eq!(db.schema_version().unwrap(), 3);
     }
 
     #[test]
@@ -1906,7 +1933,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let _db1 = StateDb::open(&db_path).expect("first open should succeed");
         let db2 = StateDb::open(&db_path).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 2);
+        assert_eq!(db2.schema_version().unwrap(), 3);
     }
 
     #[test]
@@ -1950,6 +1977,157 @@ mod tests {
                 .chars()
                 .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
         );
+    }
+
+    #[test]
+    fn test_schema_migration_v2_to_v3() {
+        use rusqlite::Connection;
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a v2 database manually
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+            // Create v2 schema (without reason column)
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (2);
+
+                CREATE TABLE plans (
+                    plan_path    TEXT PRIMARY KEY,
+                    plan_hash    TEXT NOT NULL,
+                    phase_title  TEXT,
+                    status       TEXT NOT NULL DEFAULT 'active',
+                    created_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE steps (
+                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                    anchor           TEXT NOT NULL,
+                    parent_anchor    TEXT,
+                    step_index       INTEGER NOT NULL,
+                    title            TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by       TEXT,
+                    claimed_at       TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at     TEXT,
+                    started_at       TEXT,
+                    completed_at     TEXT,
+                    commit_hash      TEXT,
+                    complete_reason  TEXT,
+                    PRIMARY KEY (plan_path, anchor)
+                );
+
+                CREATE TABLE checklist_items (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    ordinal      INTEGER NOT NULL,
+                    text         TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'open',
+                    updated_at   TEXT
+                );
+                "#,
+            )
+            .unwrap();
+        }
+
+        // Open with StateDb, which should trigger migration
+        let db = StateDb::open(&db_path).unwrap();
+
+        // Verify schema version is now 3
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // Verify reason column exists by querying schema
+        let has_reason: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(has_reason, "reason column should exist after migration");
+    }
+
+    #[test]
+    fn test_new_db_has_schema_v3() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let db = StateDb::open(&db_path).unwrap();
+
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // Verify reason column exists
+        let has_reason: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(has_reason, "reason column should exist in new database");
+    }
+
+    #[test]
+    fn test_complete_step_strict_with_deferred() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark one item completed, one deferred
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE kind = 'task' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'deferred', reason = 'manual verification required' WHERE kind = 'test' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+
+        // Complete in strict mode should succeed
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+    }
+
+    #[test]
+    fn test_complete_step_strict_fails_with_open_and_deferred() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark one deferred, leave one open
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'deferred', reason = 'needs review' WHERE kind = 'task' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+        // Leave test item as 'open'
+
+        // Strict mode should fail because one item is still open
+        let result = db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TugError::StateIncompleteChecklist {
+                incomplete_count, ..
+            } => {
+                assert_eq!(incomplete_count, 1); // 1 test still open
+            }
+            other => panic!("Expected StateIncompleteChecklist, got: {:?}", other),
+        }
     }
 
     // Helper to create a test plan with substeps
