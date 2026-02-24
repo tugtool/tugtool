@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-24T19:19:46Z
+---
+
+## step-6: End-to-end validation step. All 696 tests pass. Full lifecycle (create->commit->join), release lifecycle, idempotent create, name reuse, no-change rounds, list/show, JSON envelope conformance, and base_branch detection all verified through existing test suite. No new code files added.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-5
 date: 2025-02-24T19:10:37Z
 ---
