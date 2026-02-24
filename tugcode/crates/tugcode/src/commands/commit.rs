@@ -7,6 +7,33 @@ use crate::output::{CommitData, JsonResponse};
 use std::path::Path;
 use std::process::Command;
 
+/// Check if plan file has drifted from stored hash (for commit command)
+/// Returns Ok(Some(warning_msg)) if drift detected, Ok(None) if no drift
+fn check_commit_drift(
+    repo_root: &Path,
+    plan_path_str: &str,
+    db: &tugtool_core::StateDb,
+) -> Result<Option<String>, String> {
+    // Get stored plan state to retrieve hash
+    let plan_state = db.show_plan(plan_path_str).map_err(|e| e.to_string())?;
+    let stored_hash = plan_state.plan_hash;
+
+    // Compute current hash
+    let plan_abs = repo_root.join(plan_path_str);
+    let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
+
+    if stored_hash != current_hash {
+        let stored_short = &stored_hash[..8];
+        let current_short = &current_hash[..8];
+        Ok(Some(format!(
+            "Plan file has been modified since state was initialized (stored: {}..., current: {}...). State update skipped.",
+            stored_short, current_short
+        )))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Run the commit command
 #[allow(clippy::too_many_arguments)]
 pub fn run_commit(
@@ -151,16 +178,30 @@ pub fn run_commit(
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::StateDb::open(&db_path) {
                     Ok(mut db) => {
-                        match db.complete_step(
-                            &plan,
-                            &step,
-                            &worktree,
-                            true, // force: commit already happened
-                            Some("committed via tugcode commit"),
-                        ) {
-                            Ok(_) => (false, vec![]),
+                        // Check for plan drift
+                        match check_commit_drift(&repo_root, &plan, &db) {
+                            Ok(Some(drift_msg)) => {
+                                // Drift detected: warn and skip state update
+                                (true, vec![drift_msg])
+                            }
+                            Ok(None) => {
+                                // No drift: proceed with complete_step
+                                match db.complete_step(
+                                    &plan,
+                                    &step,
+                                    &worktree,
+                                    false, // strict mode: deferred items allowed, open items block
+                                    Some("committed via tugcode commit"),
+                                ) {
+                                    Ok(_) => (false, vec![]),
+                                    Err(e) => {
+                                        let msg = format!("state complete failed: {}", e);
+                                        (true, vec![msg])
+                                    }
+                                }
+                            }
                             Err(e) => {
-                                let msg = format!("state complete failed: {}", e);
+                                let msg = format!("drift check failed: {}", e);
                                 (true, vec![msg])
                             }
                         }

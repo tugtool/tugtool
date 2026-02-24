@@ -712,12 +712,12 @@ fn check_state_health_at(db_path: &Path, plan_root: &Path) -> HealthCheck {
     // Check schema version
     match db.schema_version() {
         Ok(version) => {
-            if version != 2 {
+            if version != 3 {
                 return HealthCheck {
                     name: "state_health".to_string(),
                     status: "fail".to_string(),
                     message: format!(
-                        "state.db schema version mismatch: expected 2, got {}",
+                        "state.db schema version mismatch: expected 3, got {}",
                         version
                     ),
                     details: None,

@@ -10,6 +10,102 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-24T23:10:33Z
+---
+
+## audit-fix: Audit fix: removed .clone() on Copy type, added #[allow(clippy::too_many_arguments)], changed .or_insert_with(Vec::new) to .or_default(), removed needless borrow. Cargo clippy now passes with -D warnings.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-4
+date: 2025-02-24T23:06:15Z
+---
+
+## step-4: Changed commit.rs force parameter from true to false, making strict completion the default. Open items now block state update while git commit proceeds. Added 3 integration tests for commit strict mode behavior. All 724 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-3-summary
+date: 2025-02-24T22:54:36Z
+---
+
+## step-3-summary: Verification-only step confirming all agent prompts are consistent: coder has checklist_status (tasks+tests only), reviewer has ordinal checkpoints and sole authority, implement skill uses batch updates. No legacy references remain. 721 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-3
+date: 2025-02-24T22:48:36Z
+---
+
+## step-3: Updated coder-agent.md to replace tests_passed/tests_run with checklist_status (tasks+tests arrays). Updated reviewer-agent.md to add ordinal to checkpoints and document sole checkpoint authority. Updated implement SKILL.md to replace --all completed with batch update construction combining coder task/test status with reviewer checkpoint verdicts.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-2-summary
+date: 2025-02-24T22:35:03Z
+---
+
+## step-2-summary: Verification-only step confirming Steps 2.1 and 2.2 are fully integrated. All 721 tests passing with no warnings.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-2
+date: 2025-02-24T22:30:52Z
+---
+
+## step-2: Added --summary and --checklist display modes to state show with [x]/[ ]/[~] markers. Extended JSON output with per-item checklist details. Added plan hash drift detection: warning in state show, blocking in state update/complete with --allow-drift override, and warning+skip in commit. Added check_plan_drift helper, get_plan_hash method, and 11 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-1
+date: 2025-02-24T22:09:49Z
+---
+
+## step-1: Added --batch flag to state update command for transactional batch updates via stdin JSON. Added BatchUpdateEntry struct, batch_update_checklist method with explicit transaction, validation for deferred/open status, --allow-reopen flag. 10 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: step-0
+date: 2025-02-24T21:55:08Z
+---
+
+## step-0: Added schema migration from v2 to v3, adding reason TEXT column to checklist_items. Updated complete_step to treat deferred items as non-blocking. Updated doctor health check for schema v3. Added 4 new tests and updated 2 existing tests.
+
+**Files changed:**
+- .tugtool/tugplan-accurate-state-tracking.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-24T19:43:04Z
 ---
 

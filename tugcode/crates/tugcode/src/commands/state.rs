@@ -1,6 +1,75 @@
 //! State management CLI commands
 
 use clap::Subcommand;
+use serde::Deserialize;
+
+/// Batch update entry for stdin JSON input
+#[derive(Debug, Deserialize)]
+struct BatchUpdateEntry {
+    kind: String,
+    ordinal: usize,
+    status: String,
+    reason: Option<String>,
+}
+
+impl tugtool_core::BatchEntry for BatchUpdateEntry {
+    fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    fn ordinal(&self) -> usize {
+        self.ordinal
+    }
+
+    fn status(&self) -> &str {
+        &self.status
+    }
+
+    fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
+    }
+}
+
+/// Drift information for plan hash comparison
+struct DriftInfo {
+    stored_hash: String,
+    current_hash: String,
+}
+
+/// Check if plan file has drifted from stored hash
+fn check_plan_drift(
+    repo_root: &std::path::Path,
+    plan_rel: &std::path::Path,
+    db: &tugtool_core::StateDb,
+    plan_path_str: &str,
+) -> Result<Option<DriftInfo>, String> {
+    // Get stored plan state to retrieve hash
+    let plan_state = db.show_plan(plan_path_str).map_err(|e| e.to_string())?;
+    let stored_hash = plan_state.plan_hash;
+
+    // Compute current hash
+    let plan_abs = repo_root.join(plan_rel);
+    let current_hash = tugtool_core::compute_plan_hash(&plan_abs).map_err(|e| e.to_string())?;
+
+    if stored_hash != current_hash {
+        Ok(Some(DriftInfo {
+            stored_hash,
+            current_hash,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Format drift warning message with truncated hashes
+fn format_drift_message(drift: &DriftInfo) -> String {
+    let stored_short = &drift.stored_hash[..8];
+    let current_short = &drift.current_hash[..8];
+    format!(
+        "Plan file has been modified since state was initialized (stored: {}..., current: {}...)",
+        stored_short, current_short
+    )
+}
 
 /// State subcommands
 #[derive(Subcommand, Debug)]
@@ -57,26 +126,35 @@ pub enum StateCommands {
         #[arg(long, value_name = "PATH")]
         worktree: String,
         /// Update a specific task (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         task: Option<String>,
         /// Update a specific test (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         test: Option<String>,
         /// Update a specific checkpoint (1-indexed ordinal)
-        #[arg(long, value_name = "ORDINAL:STATUS")]
+        #[arg(long, value_name = "ORDINAL:STATUS", conflicts_with = "batch")]
         checkpoint: Option<String>,
         /// Update all tasks
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_tasks: Option<String>,
         /// Update all tests
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_tests: Option<String>,
         /// Update all checkpoints
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all_checkpoints: Option<String>,
         /// Update all checklist items
-        #[arg(long, value_name = "STATUS")]
+        #[arg(long, value_name = "STATUS", conflicts_with = "batch")]
         all: Option<String>,
+        /// Read batch update JSON from stdin. Mutually exclusive with individual item flags.
+        #[arg(long, conflicts_with_all = ["task", "test", "checkpoint", "all_tasks", "all_tests", "all_checkpoints", "all"])]
+        batch: bool,
+        /// Allow setting item status back to open (manual recovery only)
+        #[arg(long)]
+        allow_reopen: bool,
+        /// Allow operation even if plan file has been modified since state was initialized
+        #[arg(long)]
+        allow_drift: bool,
     },
     /// Record an artifact breadcrumb for a step
     Artifact {
@@ -109,11 +187,20 @@ pub enum StateCommands {
         /// Reason for forcing completion
         #[arg(long, value_name = "TEXT")]
         reason: Option<String>,
+        /// Allow operation even if plan file has been modified since state was initialized
+        #[arg(long)]
+        allow_drift: bool,
     },
     /// Show plan progress and status
     Show {
         /// Plan file path (optional - shows all plans if not specified)
         plan: Option<String>,
+        /// Show aggregate counts per step (default)
+        #[arg(long, conflicts_with = "checklist")]
+        summary: bool,
+        /// Show every checklist item with its status
+        #[arg(long, conflicts_with = "summary")]
+        checklist: bool,
     },
     /// List ready steps for claiming
     Ready {
@@ -511,6 +598,9 @@ pub fn run_state_update(
     all_tests: Option<String>,
     all_checkpoints: Option<String>,
     all: Option<String>,
+    batch: bool,
+    allow_reopen: bool,
+    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -539,97 +629,161 @@ pub fn run_state_update(
         }
     };
 
-    // 3. Parse update arguments into ChecklistUpdate variants
-    let mut updates = Vec::new();
-
-    // Parse individual updates (format: "1:completed")
-    if let Some(t) = task {
-        let parts: Vec<&str> = t.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid task format. Use --task ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid task ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "task".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    if let Some(t) = test {
-        let parts: Vec<&str> = t.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid test format. Use --test ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid test ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "test".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    if let Some(c) = checkpoint {
-        let parts: Vec<&str> = c.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid checkpoint format. Use --checkpoint ORDINAL:STATUS".to_string());
-        }
-        let ordinal: i32 = parts[0]
-            .parse::<i32>()
-            .map_err(|_| "Invalid checkpoint ordinal")?
-            - 1; // Convert 1-indexed to 0-indexed
-        updates.push(tugtool_core::ChecklistUpdate::Individual {
-            kind: "checkpoint".to_string(),
-            ordinal,
-            status: parts[1].to_string(),
-        });
-    }
-
-    // Parse bulk updates
-    if let Some(status) = all_tasks {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "task".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all_tests {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "test".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all_checkpoints {
-        updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
-            kind: "checkpoint".to_string(),
-            status,
-        });
-    }
-
-    if let Some(status) = all {
-        updates.push(tugtool_core::ChecklistUpdate::AllItems { status });
-    }
-
-    if updates.is_empty() {
-        return Err("No updates specified. Use --task, --test, --checkpoint, --all-tasks, --all-tests, --all-checkpoints, or --all".to_string());
-    }
-
-    // 4. Open state.db
+    // 3. Open state.db
     let db_path = repo_root.join(".tugtool").join("state.db");
-    let db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
 
-    // 5. Update checklist
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
-    let result = db
-        .update_checklist(&plan_rel_str, &step, &worktree, &updates)
-        .map_err(|e| e.to_string())?;
+
+    // 4. Check for plan drift
+    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if !allow_drift {
+            return Err(format!(
+                "{}. Use --allow-drift to proceed.",
+                format_drift_message(&drift)
+            ));
+        }
+    }
+
+    // 5. Handle batch mode or individual updates
+    let result = if batch {
+        // Read batch JSON from stdin
+        let stdin = std::io::stdin();
+        let entries: Vec<BatchUpdateEntry> =
+            serde_json::from_reader(stdin).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+        if entries.is_empty() {
+            return Err("Batch update array must contain at least one entry".to_string());
+        }
+
+        // Call batch_update_checklist
+        db.batch_update_checklist(&plan_rel_str, &step, &worktree, &entries)
+            .map_err(|e| e.to_string())?
+    } else {
+        // 3a. Parse update arguments into ChecklistUpdate variants
+        let mut updates = Vec::new();
+
+        // Parse individual updates (format: "1:completed")
+        if let Some(t) = task {
+            let parts: Vec<&str> = t.split(':').collect();
+            if parts.len() != 2 {
+                return Err("Invalid task format. Use --task ORDINAL:STATUS".to_string());
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid task ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "task".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        if let Some(t) = test {
+            let parts: Vec<&str> = t.split(':').collect();
+            if parts.len() != 2 {
+                return Err("Invalid test format. Use --test ORDINAL:STATUS".to_string());
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid test ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "test".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        if let Some(c) = checkpoint {
+            let parts: Vec<&str> = c.split(':').collect();
+            if parts.len() != 2 {
+                return Err(
+                    "Invalid checkpoint format. Use --checkpoint ORDINAL:STATUS".to_string()
+                );
+            }
+            let ordinal: i32 = parts[0]
+                .parse::<i32>()
+                .map_err(|_| "Invalid checkpoint ordinal")?
+                - 1; // Convert 1-indexed to 0-indexed
+            let status = parts[1].to_string();
+
+            // Validate status for per-item updates
+            if status == "deferred" {
+                return Err(
+                    "Per-item deferred status requires --batch mode with reason field".to_string(),
+                );
+            }
+            if status == "open" && !allow_reopen {
+                return Err("Setting status to 'open' requires --allow-reopen flag".to_string());
+            }
+
+            updates.push(tugtool_core::ChecklistUpdate::Individual {
+                kind: "checkpoint".to_string(),
+                ordinal,
+                status,
+            });
+        }
+
+        // Parse bulk updates
+        if let Some(status) = all_tasks {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "task".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all_tests {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "test".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all_checkpoints {
+            updates.push(tugtool_core::ChecklistUpdate::BulkByKind {
+                kind: "checkpoint".to_string(),
+                status,
+            });
+        }
+
+        if let Some(status) = all {
+            updates.push(tugtool_core::ChecklistUpdate::AllItems { status });
+        }
+
+        if updates.is_empty() {
+            return Err("No updates specified. Use --task, --test, --checkpoint, --all-tasks, --all-tests, --all-checkpoints, --all, or --batch".to_string());
+        }
+
+        // 5. Update checklist using old API
+        db.update_checklist(&plan_rel_str, &step, &worktree, &updates)
+            .map_err(|e| e.to_string())?
+    };
 
     // 6. Output
     if json {
@@ -720,12 +874,14 @@ pub fn run_state_artifact(
     Ok(0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_state_complete(
     plan: String,
     step: String,
     worktree: String,
     force: bool,
     reason: Option<String>,
+    allow_drift: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -758,8 +914,19 @@ pub fn run_state_complete(
     let db_path = repo_root.join(".tugtool").join("state.db");
     let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
 
-    // 4. Complete step
     let plan_rel_str = plan_rel.to_string_lossy().to_string();
+
+    // 4. Check for plan drift
+    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if !allow_drift {
+            return Err(format!(
+                "{}. Use --allow-drift to proceed.",
+                format_drift_message(&drift)
+            ));
+        }
+    }
+
+    // 5. Complete step
     let result = db
         .complete_step(&plan_rel_str, &step, &worktree, force, reason.as_deref())
         .map_err(|e| e.to_string())?;
@@ -793,7 +960,13 @@ pub fn run_state_complete(
     Ok(0)
 }
 
-pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_state_show(
+    plan: Option<String>,
+    _summary: bool,
+    checklist: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
     // 1. Resolve repo root
     let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
 
@@ -826,6 +999,11 @@ pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i
         let plan_rel_str = plan_rel.to_string_lossy().to_string();
         let plan_state = db.show_plan(&plan_rel_str).map_err(|e| e.to_string())?;
 
+        // Check for plan drift and warn (non-blocking)
+        if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+            eprintln!("Warning: {}", format_drift_message(&drift));
+        }
+
         if json {
             use crate::output::{JsonResponse, StateShowData};
             let data = StateShowData { plan: plan_state };
@@ -835,7 +1013,17 @@ pub fn run_state_show(plan: Option<String>, json: bool, quiet: bool) -> Result<i
                 serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
             );
         } else if !quiet {
-            print_plan_state(&plan_state);
+            // Dispatch based on display mode
+            if checklist {
+                // Checklist mode: show all items with status markers
+                let items = db
+                    .get_checklist_items(&plan_rel_str)
+                    .map_err(|e| e.to_string())?;
+                print_checklist_view(&plan_state, &items);
+            } else {
+                // Summary mode (default)
+                print_plan_state(&plan_state);
+            }
         }
     } else {
         // TODO: show all plans (future enhancement)
@@ -933,6 +1121,119 @@ fn print_progress_bar(label: &str, completed: usize, total: usize) {
     let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
     println!("{}: {}/{}  {}  {}%", label, completed, total, bar, percent);
+}
+
+/// Print checklist view with per-item status markers
+fn print_checklist_view(
+    plan_state: &tugtool_core::PlanState,
+    items: &[tugtool_core::ChecklistItemDetail],
+) {
+    println!("Plan: {}", plan_state.plan_path);
+    if let Some(title) = &plan_state.phase_title {
+        println!("Title: {}", title);
+    }
+    println!("Status: {}", plan_state.status);
+    println!();
+
+    // Group items by step_anchor
+    let mut items_by_step: std::collections::HashMap<
+        String,
+        Vec<&tugtool_core::ChecklistItemDetail>,
+    > = std::collections::HashMap::new();
+    for item in items {
+        items_by_step
+            .entry(item.step_anchor.clone())
+            .or_default()
+            .push(item);
+    }
+
+    // Iterate through steps in order
+    for step in &plan_state.steps {
+        print_step_checklist(step, &items_by_step, 0);
+    }
+}
+
+/// Print checklist items for a step
+fn print_step_checklist(
+    step: &tugtool_core::StepState,
+    items_by_step: &std::collections::HashMap<String, Vec<&tugtool_core::ChecklistItemDetail>>,
+    indent: usize,
+) {
+    let prefix = "  ".repeat(indent);
+
+    // Status indicator
+    let status_icon = match step.status.as_str() {
+        "completed" => "✓",
+        "in_progress" => "→",
+        "claimed" => "◆",
+        _ => "○",
+    };
+
+    println!("{}{} {} - {}", prefix, status_icon, step.anchor, step.title);
+
+    // Print checklist items for this step
+    if let Some(step_items) = items_by_step.get(&step.anchor) {
+        // Group by kind
+        let mut tasks: Vec<_> = step_items.iter().filter(|i| i.kind == "task").collect();
+        let mut tests: Vec<_> = step_items.iter().filter(|i| i.kind == "test").collect();
+        let mut checkpoints: Vec<_> = step_items
+            .iter()
+            .filter(|i| i.kind == "checkpoint")
+            .collect();
+
+        // Sort by ordinal
+        tasks.sort_by_key(|i| i.ordinal);
+        tests.sort_by_key(|i| i.ordinal);
+        checkpoints.sort_by_key(|i| i.ordinal);
+
+        if !tasks.is_empty() {
+            println!("{}  Tasks:", prefix);
+            for item in tasks {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+
+        if !tests.is_empty() {
+            println!("{}  Tests:", prefix);
+            for item in tests {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+
+        if !checkpoints.is_empty() {
+            println!("{}  Checkpoints:", prefix);
+            for item in checkpoints {
+                print_checklist_item(item, indent + 1);
+            }
+        }
+    }
+
+    // Show substeps
+    for substep in &step.substeps {
+        print_step_checklist(substep, items_by_step, indent + 1);
+    }
+
+    println!();
+}
+
+/// Print a single checklist item with status marker
+fn print_checklist_item(item: &tugtool_core::ChecklistItemDetail, indent: usize) {
+    let prefix = "  ".repeat(indent);
+    let marker = match item.status.as_str() {
+        "completed" => "[x]",
+        "deferred" => "[~]",
+        _ => "[ ]",
+    };
+
+    if item.status == "deferred" {
+        if let Some(reason) = &item.reason {
+            println!("{}{} {}  (deferred: {})", prefix, marker, item.text, reason);
+        } else {
+            println!("{}{} {}", prefix, marker, item.text);
+        }
+    } else {
+        println!("{}{} {}", prefix, marker, item.text);
+    }
 }
 
 pub fn run_state_ready(plan: String, json: bool, quiet: bool) -> Result<i32, String> {

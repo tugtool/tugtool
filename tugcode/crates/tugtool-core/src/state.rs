@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS checklist_items (
     text         TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'open',
     updated_at   TEXT,
+    reason       TEXT,
     FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
 );
 
@@ -204,14 +205,18 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         // Insert schema version (idempotent via NOT EXISTS check)
         conn.execute(
-            "INSERT INTO schema_version SELECT 2 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 3 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
             reason: format!("failed to insert schema version: {}", e),
         })?;
 
-        Ok(StateDb { conn })
+        // Run migrations if needed
+        let mut db = StateDb { conn };
+        db.migrate_schema()?;
+
+        Ok(db)
     }
 
     /// Query the schema version from the database.
@@ -223,6 +228,28 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .map_err(|e| TugError::StateDbQuery {
                 reason: format!("failed to query schema version: {}", e),
             })
+    }
+
+    /// Run schema migrations if needed.
+    fn migrate_schema(&mut self) -> Result<(), TugError> {
+        let version = self.schema_version()?;
+
+        // Migrate from v2 to v3: add reason column to checklist_items
+        if version == 2 {
+            self.conn
+                .execute("ALTER TABLE checklist_items ADD COLUMN reason TEXT", [])
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to add reason column: {}", e),
+                })?;
+
+            self.conn
+                .execute("UPDATE schema_version SET version = 3", [])
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to update schema version: {}", e),
+                })?;
+        }
+
+        Ok(())
     }
 
     /// List all plan paths in the database.
@@ -799,6 +826,180 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         })
     }
 
+    /// Batch update checklist items in a single transaction.
+    ///
+    /// Accepts a slice of batch entries (each with kind, ordinal, status, and optional reason).
+    /// All updates are executed in a single transaction for atomicity.
+    pub fn batch_update_checklist<T>(
+        &mut self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: &str,
+        entries: &[T],
+    ) -> Result<UpdateResult, TugError>
+    where
+        T: BatchEntry,
+    {
+        // Check ownership first
+        self.check_ownership(plan_path, anchor, worktree)?;
+
+        // Begin transaction
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        let now = now_iso8601();
+
+        // Validate entries first
+        if entries.is_empty() {
+            return Err(TugError::StateDbQuery {
+                reason: "Batch update array must contain at least one entry".to_string(),
+            });
+        }
+
+        // Check for duplicates
+        let mut seen = std::collections::HashSet::new();
+        let mut duplicates = Vec::new();
+        for entry in entries {
+            let key = (entry.kind(), entry.ordinal());
+            if !seen.insert(key) {
+                duplicates.push(format!("({}, {})", key.0, key.1));
+            }
+        }
+        if !duplicates.is_empty() {
+            return Err(TugError::StateDbQuery {
+                reason: format!(
+                    "Duplicate (kind, ordinal) entries: {}",
+                    duplicates.join(", ")
+                ),
+            });
+        }
+
+        // Validate each entry
+        for entry in entries {
+            let kind = entry.kind();
+            let ordinal = entry.ordinal();
+            let status = entry.status();
+            let reason = entry.reason();
+
+            // Validate kind
+            if kind != "task" && kind != "test" && kind != "checkpoint" {
+                return Err(TugError::StateDbQuery {
+                    reason: format!("Invalid kind: {}. Must be task, test, or checkpoint", kind),
+                });
+            }
+
+            // Validate status
+            if status != "completed" && status != "deferred" {
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Invalid status: {}. Batch updates only accept 'completed' or 'deferred'",
+                        status
+                    ),
+                });
+            }
+
+            // Validate reason requirement
+            if status == "deferred" && (reason.is_none() || reason.unwrap().is_empty()) {
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Status 'deferred' requires a non-empty reason for {} ordinal {}",
+                        kind, ordinal
+                    ),
+                });
+            }
+
+            // Check if item exists and is in valid ordinal range
+            let exists: bool = tx
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM checklist_items
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                    |row| row.get(0),
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to check item existence: {}", e),
+                })?;
+
+            if !exists {
+                // Get valid range for this kind
+                let max_ordinal: Option<i32> = tx
+                    .query_row(
+                        "SELECT MAX(ordinal) FROM checklist_items
+                         WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3",
+                        rusqlite::params![plan_path, anchor, kind],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                    .flatten();
+
+                let range_msg = if let Some(max) = max_ordinal {
+                    format!("valid range: 0-{}", max)
+                } else {
+                    "no items of this kind exist for this step".to_string()
+                };
+
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "Ordinal {} out of range for {} ({})",
+                        ordinal, kind, range_msg
+                    ),
+                });
+            }
+        }
+
+        // Execute all updates
+        let mut total_updated = 0;
+        for entry in entries {
+            let kind = entry.kind();
+            let ordinal = entry.ordinal();
+            let status = entry.status();
+            let reason = entry.reason();
+
+            // Check if item is already in the target status (idempotency)
+            let current_status: String = tx
+                .query_row(
+                    "SELECT status FROM checklist_items
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND kind = ?3 AND ordinal = ?4",
+                    rusqlite::params![plan_path, anchor, kind, ordinal],
+                    |row| row.get(0),
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to query current status: {}", e),
+                })?;
+
+            if current_status == status {
+                // Already in target status, skip (idempotent)
+                continue;
+            }
+
+            // Update the item
+            let rows_affected = tx
+                .execute(
+                    "UPDATE checklist_items SET status = ?1, reason = ?2, updated_at = ?3
+                     WHERE plan_path = ?4 AND step_anchor = ?5 AND kind = ?6 AND ordinal = ?7",
+                    rusqlite::params![status, reason, &now, plan_path, anchor, kind, ordinal],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to update checklist item: {}", e),
+                })?;
+
+            total_updated += rows_affected;
+        }
+
+        // Commit transaction
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit transaction: {}", e),
+        })?;
+
+        Ok(UpdateResult {
+            items_updated: total_updated,
+        })
+    }
+
     /// Record an artifact breadcrumb for a step.
     pub fn record_artifact(
         &self,
@@ -862,11 +1063,11 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             })?;
 
         if !force {
-            // Strict mode: check all checklist items are completed
+            // Strict mode: check all checklist items are completed or deferred
             let incomplete_items: usize = tx
                 .query_row(
                     "SELECT COUNT(*) FROM checklist_items
-                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status != 'completed'",
+                     WHERE plan_path = ?1 AND step_anchor = ?2 AND status NOT IN ('completed', 'deferred')",
                     rusqlite::params![plan_path, anchor],
                     |row| row.get(0),
                 )
@@ -1079,15 +1280,56 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             });
         }
 
+        // Get all checklist items for JSON output
+        let checklist_items = self.get_checklist_items(plan_path)?;
+
         Ok(PlanState {
             plan_path: plan_path.to_string(),
             plan_hash,
             phase_title,
             status,
             steps,
+            checklist_items,
             created_at,
             updated_at,
         })
+    }
+
+    /// Get all checklist items for a plan with full details
+    pub fn get_checklist_items(
+        &self,
+        plan_path: &str,
+    ) -> Result<Vec<ChecklistItemDetail>, TugError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT step_anchor, kind, ordinal, text, status, reason
+                 FROM checklist_items
+                 WHERE plan_path = ?1
+                 ORDER BY step_anchor, kind, ordinal",
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to prepare checklist query: {}", e),
+            })?;
+
+        let items = stmt
+            .query_map(rusqlite::params![plan_path], |row| {
+                Ok(ChecklistItemDetail {
+                    step_anchor: row.get(0)?,
+                    kind: row.get(1)?,
+                    ordinal: row.get::<_, i32>(2)? as usize,
+                    text: row.get(3)?,
+                    status: row.get(4)?,
+                    reason: row.get(5)?,
+                })
+            })
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query checklist items: {}", e),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(items)
     }
 
     /// Helper: query checklist summary for a step
@@ -1685,6 +1927,14 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
     }
 }
 
+/// Trait for batch update entries
+pub trait BatchEntry {
+    fn kind(&self) -> &str;
+    fn ordinal(&self) -> usize;
+    fn status(&self) -> &str;
+    fn reason(&self) -> Option<&str>;
+}
+
 /// Checklist update operation
 #[derive(Debug)]
 pub enum ChecklistUpdate {
@@ -1705,6 +1955,17 @@ pub enum ChecklistUpdate {
 pub struct UpdateResult {
     /// Number of checklist items updated
     pub items_updated: usize,
+}
+
+/// Detailed checklist item information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChecklistItemDetail {
+    pub step_anchor: String,
+    pub kind: String,
+    pub ordinal: usize,
+    pub text: String,
+    pub status: String,
+    pub reason: Option<String>,
 }
 
 /// Result from complete_step operation
@@ -1840,6 +2101,7 @@ pub struct PlanState {
     pub phase_title: Option<String>,
     pub status: String,
     pub steps: Vec<StepState>,
+    pub checklist_items: Vec<ChecklistItemDetail>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1892,12 +2154,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_2() {
+    fn test_open_creates_db_and_schema_version_is_3() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 2);
+        assert_eq!(db.schema_version().unwrap(), 3);
     }
 
     #[test]
@@ -1906,7 +2168,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let _db1 = StateDb::open(&db_path).expect("first open should succeed");
         let db2 = StateDb::open(&db_path).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 2);
+        assert_eq!(db2.schema_version().unwrap(), 3);
     }
 
     #[test]
@@ -1950,6 +2212,157 @@ mod tests {
                 .chars()
                 .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
         );
+    }
+
+    #[test]
+    fn test_schema_migration_v2_to_v3() {
+        use rusqlite::Connection;
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a v2 database manually
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+            // Create v2 schema (without reason column)
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (2);
+
+                CREATE TABLE plans (
+                    plan_path    TEXT PRIMARY KEY,
+                    plan_hash    TEXT NOT NULL,
+                    phase_title  TEXT,
+                    status       TEXT NOT NULL DEFAULT 'active',
+                    created_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE steps (
+                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                    anchor           TEXT NOT NULL,
+                    parent_anchor    TEXT,
+                    step_index       INTEGER NOT NULL,
+                    title            TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by       TEXT,
+                    claimed_at       TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at     TEXT,
+                    started_at       TEXT,
+                    completed_at     TEXT,
+                    commit_hash      TEXT,
+                    complete_reason  TEXT,
+                    PRIMARY KEY (plan_path, anchor)
+                );
+
+                CREATE TABLE checklist_items (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    ordinal      INTEGER NOT NULL,
+                    text         TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'open',
+                    updated_at   TEXT
+                );
+                "#,
+            )
+            .unwrap();
+        }
+
+        // Open with StateDb, which should trigger migration
+        let db = StateDb::open(&db_path).unwrap();
+
+        // Verify schema version is now 3
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // Verify reason column exists by querying schema
+        let has_reason: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(has_reason, "reason column should exist after migration");
+    }
+
+    #[test]
+    fn test_new_db_has_schema_v3() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let db = StateDb::open(&db_path).unwrap();
+
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // Verify reason column exists
+        let has_reason: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(has_reason, "reason column should exist in new database");
+    }
+
+    #[test]
+    fn test_complete_step_strict_with_deferred() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark one item completed, one deferred
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE kind = 'task' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'deferred', reason = 'manual verification required' WHERE kind = 'test' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+
+        // Complete in strict mode should succeed
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+    }
+
+    #[test]
+    fn test_complete_step_strict_fails_with_open_and_deferred() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark one deferred, leave one open
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'deferred', reason = 'needs review' WHERE kind = 'task' AND ordinal = 0",
+                [],
+            )
+            .unwrap();
+        // Leave test item as 'open'
+
+        // Strict mode should fail because one item is still open
+        let result = db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TugError::StateIncompleteChecklist {
+                incomplete_count, ..
+            } => {
+                assert_eq!(incomplete_count, 1); // 1 test still open
+            }
+            other => panic!("Expected StateIncompleteChecklist, got: {:?}", other),
+        }
     }
 
     // Helper to create a test plan with substeps
