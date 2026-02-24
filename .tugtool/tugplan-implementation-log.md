@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-24T15:54:07Z
+---
+
+## step-1: Added release_step() function to core library and wired it up as state release CLI command with --worktree ownership verification and --force flag. Six unit tests cover all release scenarios.
+
+**Files changed:**
+- .tugtool/tugplan-session-recovery.md
+
+---
+
+---
 step: step-0
 date: 2025-02-24T15:45:01Z
 ---
