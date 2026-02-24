@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-24T01:34:20Z
+bead: remove-beads-pbb.6
+---
+
+## step-5: Final verification step: no code changes needed, all fixes applied in prior steps. Build, tests, clippy, fmt all clean. Canonical grep confirms only parser.rs backward-compatibility test matches.
+
+**Files changed:**
+- .tugtool/tugplan-remove-beads.md
+
+---
+
+---
 step: step-4
 date: 2025-02-24T00:56:25Z
 bead: remove-beads-pbb.5

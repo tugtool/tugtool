@@ -96,7 +96,7 @@ pub struct CreateData {
     pub total_steps: usize,
     #[serde(skip_serializing_if = "is_false")]
     pub reused: bool,
-    // Bead-derived fields
+    // Plan-derived fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub all_steps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -572,10 +572,10 @@ pub fn run_worktree_create_with_root(
                 synced_plan.steps.iter().map(|s| s.anchor.clone()).collect();
             let total_steps = synced_plan.steps.len();
 
-            // Query bd ready to get ready_steps (only if root_bead_id is available)
+            // ready_steps is computed from tugstate claim operation (orchestrator responsibility)
             let ready_steps: Option<Vec<String>> = None;
 
-            // Initialize tugstate (non-fatal -- beads is source of truth in Phase 1)
+            // Initialize tugstate for this worktree
             let (state_initialized, state_warnings) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::compute_plan_hash(&synced_plan_path) {

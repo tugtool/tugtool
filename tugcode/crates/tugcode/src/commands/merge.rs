@@ -1955,7 +1955,7 @@ mod tests {
             dry_run: true,
             untracked_files: None,
             warnings: Some(vec![
-                "2 of 5 steps incomplete. Run 'tug beads status .tugtool/tugplan-1.md' to review."
+                "2 of 5 steps incomplete. Run 'tugcode state show .tugtool/tugplan-1.md' to review."
                     .to_string(),
                 "Remote detected but gh CLI unavailable -- falling back to local mode".to_string(),
                 "Multiple worktrees found for this plan (2 total). Using most recent: tugtool/1-20260210-140000"
