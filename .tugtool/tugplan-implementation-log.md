@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-24T01:49:36Z
+---
+
+## audit-fix: CI fix: removed 3 unnecessary ..Default::default() in ValidationConfig test initializations
+
+**Files changed:**
+- .tugtool/tugplan-remove-beads.md
+
+---
+
+---
 step: step-5
 date: 2025-02-24T01:34:20Z
 bead: remove-beads-pbb.6

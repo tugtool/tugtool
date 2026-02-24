@@ -1526,7 +1526,6 @@ Question without resolution.
         let plan = parse_tugplan(&content).unwrap();
         let config = ValidationConfig {
             level: ValidationLevel::Strict,
-            ..Default::default()
         };
         let result = validate_tugplan_with_config(&plan, &config);
 
@@ -1559,7 +1558,6 @@ Question without resolution.
         // Lenient: Only errors
         let lenient_config = ValidationConfig {
             level: ValidationLevel::Lenient,
-            ..Default::default()
         };
         let lenient_result = validate_tugplan_with_config(&plan, &lenient_config);
         let lenient_warnings: Vec<_> = lenient_result
@@ -1575,7 +1573,6 @@ Question without resolution.
         // Normal: Errors + warnings
         let normal_config = ValidationConfig {
             level: ValidationLevel::Normal,
-            ..Default::default()
         };
         let normal_result = validate_tugplan_with_config(&plan, &normal_config);
         let normal_warnings: Vec<_> = normal_result
