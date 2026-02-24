@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-24T18:49:19Z
+---
+
+## step-3: Replaced join and release stubs with full implementations. Join follows 10-step sequence: preflight checks (clean repo, correct branch, not inside worktree), auto-commit outstanding changes with synthetic round, squash-merge with tugdash prefix, state update, worktree/branch cleanup with warnings. Release: force-remove worktree, delete branch, mark released. Added JoinResponse and ReleaseResponse structs. 8 new integration tests. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-2
 date: 2025-02-24T18:37:26Z
 ---

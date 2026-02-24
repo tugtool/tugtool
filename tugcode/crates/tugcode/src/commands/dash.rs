@@ -160,6 +160,20 @@ struct CommitResponse {
     commit_hash: Option<String>,
 }
 
+#[derive(Serialize)]
+struct JoinResponse {
+    name: String,
+    base_branch: String,
+    commit_hash: String,
+    warnings: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ReleaseResponse {
+    name: String,
+    warnings: Vec<String>,
+}
+
 /// Run dash create subcommand
 pub fn run_dash_create(
     name: String,
@@ -696,19 +710,362 @@ pub fn run_dash_commit(
     Ok(0)
 }
 
-/// Run dash join subcommand (stub for now)
+/// Run dash join subcommand
 pub fn run_dash_join(
-    _name: String,
-    _message: Option<String>,
-    _json: bool,
-    _quiet: bool,
+    name: String,
+    message: Option<String>,
+    json: bool,
+    quiet: bool,
 ) -> Result<i32, String> {
-    Err("dash join not yet implemented".to_string())
+    let mut warnings = Vec::new();
+
+    // Find repo root
+    let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+
+    // Open state.db
+    let state_db_path = repo_root.join(".tugtool/state.db");
+    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+
+    // Step 1: Look up dash by name (must be active)
+    let dash = db
+        .get_dash(&name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Dash not found: {}", name))?;
+
+    if dash.status != DashStatus::Active {
+        return Err(format!(
+            "Dash '{}' is not active (status: {})",
+            name,
+            dash.status.as_str()
+        ));
+    }
+
+    // Step 2: Preflight - check repo root worktree is clean (excluding ignored files)
+    let status_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("status")
+        .arg("--porcelain")
+        .arg("--untracked-files=no") // Only check tracked files
+        .output()
+        .map_err(|e| format!("failed to check git status: {}", e))?;
+
+    if !String::from_utf8_lossy(&status_output.stdout)
+        .trim()
+        .is_empty()
+    {
+        return Err(format!(
+            "Cannot join: repo root worktree has uncommitted changes. Commit or stash them first."
+        ));
+    }
+
+    // Step 3: Verify we're running from repo root worktree (not inside dash worktree)
+    let current_dir =
+        std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?;
+    let dash_worktree = Path::new(&dash.worktree);
+    if current_dir.starts_with(dash_worktree) {
+        return Err(format!(
+            "Cannot join from inside the dash worktree. Run from repo root instead."
+        ));
+    }
+
+    // Step 4: Verify current branch matches base_branch
+    let current_branch_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("rev-parse")
+        .arg("--abbrev-ref")
+        .arg("HEAD")
+        .output()
+        .map_err(|e| format!("failed to get current branch: {}", e))?;
+
+    let current_branch = String::from_utf8_lossy(&current_branch_output.stdout)
+        .trim()
+        .to_string();
+
+    if current_branch != dash.base_branch {
+        return Err(format!(
+            "Cannot join: repo root worktree is on branch '{}' but dash targets '{}'. Check out '{}' first.",
+            current_branch, dash.base_branch, dash.base_branch
+        ));
+    }
+
+    // Step 5: Commit any outstanding changes in dash worktree
+    let dash_status_output = Command::new("git")
+        .arg("-C")
+        .arg(&dash.worktree)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .map_err(|e| format!("failed to check dash worktree status: {}", e))?;
+
+    let has_outstanding_changes = !String::from_utf8_lossy(&dash_status_output.stdout)
+        .trim()
+        .is_empty();
+
+    if has_outstanding_changes {
+        // Stage changes
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&dash.worktree)
+            .arg("add")
+            .arg("-A")
+            .output();
+
+        // Get diff summary for commit message
+        let diff_output = Command::new("git")
+            .arg("-C")
+            .arg(&dash.worktree)
+            .arg("diff")
+            .arg("--cached")
+            .arg("--stat")
+            .output()
+            .map_err(|e| format!("failed to get diff: {}", e))?;
+
+        let diff_summary = String::from_utf8_lossy(&diff_output.stdout)
+            .lines()
+            .take(5)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // Commit
+        let commit_msg = format!("join: commit outstanding changes");
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&dash.worktree)
+            .arg("commit")
+            .arg("-m")
+            .arg(&commit_msg)
+            .output();
+
+        // Record synthetic round
+        let _ = db.record_round(
+            &name,
+            Some("join: commit outstanding changes"),
+            Some(&diff_summary),
+            None,
+            None,
+            None, // We'll get the actual commit hash from the branch
+        );
+    }
+
+    // Step 6: Squash-merge from repo root
+    let merge_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("merge")
+        .arg("--squash")
+        .arg(&dash.branch)
+        .output()
+        .map_err(|e| format!("failed to squash-merge: {}", e))?;
+
+    if !merge_output.status.success() {
+        let stderr = String::from_utf8_lossy(&merge_output.stderr);
+        if stderr.contains("CONFLICT") || stderr.contains("conflict") {
+            return Err(format!(
+                "Merge conflict occurred. Resolve manually with:\n  git merge --abort\nThen fix conflicts or use: tugcode dash release {}",
+                name
+            ));
+        }
+        return Err(format!("git merge --squash failed: {}", stderr));
+    }
+
+    // Step 7: Commit on base branch with tugdash prefix
+    let commit_message = message
+        .clone()
+        .or_else(|| dash.description.clone())
+        .unwrap_or_else(|| format!("Dash work"));
+
+    let final_commit_msg = format!("tugdash({}): {}", name, commit_message);
+
+    let commit_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("commit")
+        .arg("-m")
+        .arg(&final_commit_msg)
+        .output()
+        .map_err(|e| format!("failed to commit squash: {}", e))?;
+
+    if !commit_output.status.success() {
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&commit_output.stderr)
+        ));
+    }
+
+    // Get commit hash
+    let hash_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .map_err(|e| format!("failed to get commit hash: {}", e))?;
+
+    let commit_hash = String::from_utf8_lossy(&hash_output.stdout)
+        .trim()
+        .to_string();
+
+    // Step 8: Update state to joined immediately
+    db.update_dash_status(&name, DashStatus::Joined)
+        .map_err(|e| e.to_string())?;
+
+    // Step 9: Remove worktree (warn on failure)
+    let worktree_remove_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("worktree")
+        .arg("remove")
+        .arg(&dash.worktree)
+        .output();
+
+    match worktree_remove_output {
+        Ok(output) if !output.status.success() => {
+            warnings.push(format!(
+                "Failed to remove worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            warnings.push(format!("Failed to remove worktree: {}", e));
+        }
+        _ => {}
+    }
+
+    // Step 10: Delete branch (warn on failure)
+    let branch_delete_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("branch")
+        .arg("-D")
+        .arg(&dash.branch)
+        .output();
+
+    match branch_delete_output {
+        Ok(output) if !output.status.success() => {
+            warnings.push(format!(
+                "Failed to delete branch: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            warnings.push(format!("Failed to delete branch: {}", e));
+        }
+        _ => {}
+    }
+
+    // Step 11: Return output
+    if json {
+        let data = JoinResponse {
+            name: name.clone(),
+            base_branch: dash.base_branch.clone(),
+            commit_hash: commit_hash.clone(),
+            warnings: warnings.clone(),
+        };
+        let response = JsonResponse::ok("dash join", data);
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    } else if !quiet {
+        println!("Joined dash '{}' to branch '{}'", name, dash.base_branch);
+        println!("  Commit: {}", commit_hash);
+        for warning in &warnings {
+            println!("  Warning: {}", warning);
+        }
+    }
+
+    Ok(0)
 }
 
-/// Run dash release subcommand (stub for now)
-pub fn run_dash_release(_name: String, _json: bool, _quiet: bool) -> Result<i32, String> {
-    Err("dash release not yet implemented".to_string())
+/// Run dash release subcommand
+pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, String> {
+    let mut warnings = Vec::new();
+
+    // Find repo root
+    let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+
+    // Open state.db
+    let state_db_path = repo_root.join(".tugtool/state.db");
+    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+
+    // Step 1: Look up dash by name (must be active)
+    let dash = db
+        .get_dash(&name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Dash not found: {}", name))?;
+
+    if dash.status != DashStatus::Active {
+        return Err(format!(
+            "Dash '{}' is not active (status: {})",
+            name,
+            dash.status.as_str()
+        ));
+    }
+
+    // Step 2: Remove worktree with --force
+    let worktree_remove_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("worktree")
+        .arg("remove")
+        .arg(&dash.worktree)
+        .arg("--force")
+        .output();
+
+    match worktree_remove_output {
+        Ok(output) if !output.status.success() => {
+            warnings.push(format!(
+                "Failed to remove worktree: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            warnings.push(format!("Failed to remove worktree: {}", e));
+        }
+        _ => {}
+    }
+
+    // Step 3: Delete branch (warn on failure, mark as released regardless)
+    let branch_delete_output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("branch")
+        .arg("-D")
+        .arg(&dash.branch)
+        .output();
+
+    match branch_delete_output {
+        Ok(output) if !output.status.success() => {
+            warnings.push(format!(
+                "Failed to delete branch: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            warnings.push(format!("Failed to delete branch: {}", e));
+        }
+        _ => {}
+    }
+
+    // Step 4: Update state to released
+    db.update_dash_status(&name, DashStatus::Released)
+        .map_err(|e| e.to_string())?;
+
+    // Step 5: Return output
+    if json {
+        let data = ReleaseResponse {
+            name: name.clone(),
+            warnings: warnings.clone(),
+        };
+        let response = JsonResponse::ok("dash release", data);
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    } else if !quiet {
+        println!("Released dash '{}'", name);
+        for warning in &warnings {
+            println!("  Warning: {}", warning);
+        }
+    }
+
+    Ok(0)
 }
 
 #[cfg(test)]
@@ -741,13 +1098,21 @@ mod tests {
             .arg("test@example.com")
             .output()
             .unwrap();
+
+        // Create .gitignore to ignore state.db and worktrees
+        fs::write(path.join(".gitignore"), ".tugtool/state.db\n.tugtree/\n").unwrap();
+
+        // Create .tugtool directory with a placeholder file
+        fs::create_dir_all(path.join(".tugtool")).unwrap();
+        fs::write(path.join(".tugtool/.keep"), "").unwrap();
+
         // Create initial commit on main
         fs::write(path.join("README.md"), "# Test\n").unwrap();
         Command::new("git")
             .arg("-C")
             .arg(path)
             .arg("add")
-            .arg("README.md")
+            .arg("-A")
             .output()
             .unwrap();
         Command::new("git")
@@ -1340,5 +1705,341 @@ mod tests {
         let rounds = db.get_dash_rounds("test-dash", true).unwrap();
         assert_eq!(rounds.len(), 1);
         assert!(rounds[0].commit_hash.is_some());
+    }
+
+    #[test]
+    fn test_dash_join_full_lifecycle() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test dash".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add a file to the dash worktree
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("feature.txt"), "new feature\n").unwrap();
+
+        // Commit changes
+        run_dash_commit(
+            "test-dash".to_string(),
+            "Add feature".to_string(),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Join the dash
+        let result = run_dash_join(
+            "test-dash".to_string(),
+            Some("Add new feature".to_string()),
+            false,
+            true,
+        );
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify squash commit on base branch
+        let log_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("log")
+            .arg("--oneline")
+            .arg("-1")
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&log_output.stdout);
+        assert!(log.contains("tugdash(test-dash):"));
+
+        // Verify worktree removed
+        assert!(!worktree_path.exists());
+
+        // Verify branch deleted
+        let branch_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("branch")
+            .arg("--list")
+            .arg("tugdash/test-dash")
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&branch_output.stdout)
+                .trim()
+                .is_empty()
+        );
+
+        // Verify state is joined
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let dash = db.get_dash("test-dash").unwrap().unwrap();
+        assert_eq!(dash.status, DashStatus::Joined);
+    }
+
+    #[test]
+    fn test_dash_join_dirty_repo_root_fails() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add and track a file, then modify it without committing
+        fs::write(repo_path.join("dirty.txt"), "initial\n").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("add")
+            .arg("dirty.txt")
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("commit")
+            .arg("-m")
+            .arg("Add dirty.txt")
+            .output()
+            .unwrap();
+        // Now modify it
+        fs::write(repo_path.join("dirty.txt"), "modified\n").unwrap();
+
+        // Try to join - should fail
+        let result = run_dash_join("test-dash".to_string(), None, false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("uncommitted changes"));
+
+        // Verify dash is still active
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let dash = db.get_dash("test-dash").unwrap().unwrap();
+        assert_eq!(dash.status, DashStatus::Active);
+    }
+
+    #[test]
+    fn test_dash_join_wrong_branch_fails() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Create and switch to a different branch
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("checkout")
+            .arg("-b")
+            .arg("feature")
+            .output()
+            .unwrap();
+
+        // Try to join - should fail
+        let result = run_dash_join("test-dash".to_string(), None, false, true);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("on branch 'feature'"));
+        assert!(err.contains("Check out 'main' first"));
+
+        // Verify dash is still active
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("checkout")
+            .arg("main")
+            .output()
+            .unwrap();
+
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let dash = db.get_dash("test-dash").unwrap().unwrap();
+        assert_eq!(dash.status, DashStatus::Active);
+    }
+
+    #[test]
+    fn test_dash_join_outstanding_changes_auto_commit() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add uncommitted file to dash worktree
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("uncommitted.txt"), "not committed\n").unwrap();
+
+        // Join should auto-commit the changes
+        let result = run_dash_join("test-dash".to_string(), None, false, true);
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify synthetic round was recorded
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        // Should have one round from auto-commit
+        assert!(rounds.iter().any(|r| {
+            r.instruction
+                .as_ref()
+                .map(|i| i.contains("join: commit outstanding"))
+                .unwrap_or(false)
+        }));
+    }
+
+    #[test]
+    fn test_dash_release_full_lifecycle() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash and add file
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
+
+        // Release the dash
+        let result = run_dash_release("test-dash".to_string(), false, true);
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify worktree removed
+        assert!(!worktree_path.exists());
+
+        // Verify branch deleted
+        let branch_output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("branch")
+            .arg("--list")
+            .arg("tugdash/test-dash")
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&branch_output.stdout)
+                .trim()
+                .is_empty()
+        );
+
+        // Verify state is released
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let dash = db.get_dash("test-dash").unwrap().unwrap();
+        assert_eq!(dash.status, DashStatus::Released);
+    }
+
+    #[test]
+    fn test_dash_release_nonexistent_fails() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Try to release nonexistent dash
+        let result = run_dash_release("nonexistent".to_string(), false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_dash_join_already_joined_fails() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create and join dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add a file so there's something to merge
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
+        run_dash_commit("test-dash".to_string(), "Add test".to_string(), false, true).unwrap();
+
+        run_dash_join("test-dash".to_string(), None, false, true).unwrap();
+
+        // Try to join again - should fail
+        let result = run_dash_join("test-dash".to_string(), None, false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not active"));
+    }
+
+    #[test]
+    fn test_dash_release_already_released_fails() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create and release dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+        run_dash_release("test-dash".to_string(), false, true).unwrap();
+
+        // Try to release again - should fail
+        let result = run_dash_release("test-dash".to_string(), false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not active"));
     }
 }
