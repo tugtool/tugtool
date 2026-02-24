@@ -365,6 +365,20 @@ Initialize for post-loop phases:
 - `auditor_attempts = 0`
 - `integrator_attempts = 0`
 
+#### Claim and Start Step
+
+```
+Bash: tugcode state claim {plan_path} --worktree {worktree_path} --json
+```
+
+Parse the JSON response. Extract `data.anchor` as `step_anchor` and `data.title` as `step_title`. If `data.claimed` is false or the command fails (non-zero exit), HALT.
+
+```
+Bash: tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}
+```
+
+If the command fails (non-zero exit), HALT.
+
 Output the step header.
 
 #### 3a. Architect: Plan Strategy
