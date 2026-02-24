@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-24T19:10:37Z
+---
+
+## step-5: Created tugplug/skills/dash/SKILL.md with YAML frontmatter (Bash restriction hook for tugcode-only), input parsing per S10, orchestration flows for new/continue/join/release/status, persistent dash-agent spawn/resume, stdin JSON construction for round metadata via heredoc per D13, cross-session continuity per D09, progress reporting, error handling. 696 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-4
 date: 2025-02-24T18:57:38Z
 ---
