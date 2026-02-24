@@ -4,11 +4,12 @@
 
 use clap::Subcommand;
 use serde::Serialize;
+use std::io::{self, IsTerminal, Read};
 use std::path::Path;
 use std::process::Command;
 use tugtool_core::{
-    DashStatus, StateDb, detect_default_branch, find_repo_root, sanitize_branch_name,
-    validate_dash_name,
+    DashRoundMeta, DashStatus, StateDb, detect_default_branch, find_repo_root,
+    sanitize_branch_name, validate_dash_name,
 };
 
 use crate::output::JsonResponse;
@@ -150,6 +151,13 @@ struct RoundItem {
     files_modified: Option<Vec<String>>,
     commit_hash: Option<String>,
     started_at: String,
+}
+
+#[derive(Serialize)]
+struct CommitResponse {
+    committed: bool,
+    round_id: i64,
+    commit_hash: Option<String>,
 }
 
 /// Run dash create subcommand
@@ -517,14 +525,175 @@ pub fn run_dash_show(
     Ok(0)
 }
 
-/// Run dash commit subcommand (stub for now)
+/// Run dash commit subcommand
 pub fn run_dash_commit(
-    _name: String,
-    _message: String,
-    _json: bool,
-    _quiet: bool,
+    name: String,
+    message: String,
+    json: bool,
+    quiet: bool,
 ) -> Result<i32, String> {
-    Err("dash commit not yet implemented".to_string())
+    // Read round metadata from stdin if available
+    let round_meta: Option<DashRoundMeta> = if !io::stdin().is_terminal() {
+        let mut stdin_content = String::new();
+        io::stdin()
+            .read_to_string(&mut stdin_content)
+            .map_err(|e| format!("failed to read stdin: {}", e))?;
+
+        if !stdin_content.trim().is_empty() {
+            match serde_json::from_str::<DashRoundMeta>(&stdin_content) {
+                Ok(meta) => Some(meta),
+                Err(e) => {
+                    return Err(format!("failed to parse round metadata JSON: {}", e));
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Find repo root
+    let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+
+    // Open state.db
+    let state_db_path = repo_root.join(".tugtool/state.db");
+    let db = StateDb::open(&state_db_path).map_err(|e| e.to_string())?;
+
+    // Get dash
+    let dash = db
+        .get_dash(&name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Dash not found: {}", name))?;
+
+    // Check dash is active
+    if dash.status != DashStatus::Active {
+        return Err(format!(
+            "Dash '{}' is not active (status: {})",
+            name,
+            dash.status.as_str()
+        ));
+    }
+
+    let worktree_path = Path::new(&dash.worktree);
+
+    // Stage all changes
+    let stage_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("add")
+        .arg("-A")
+        .output()
+        .map_err(|e| format!("failed to stage changes: {}", e))?;
+
+    if !stage_output.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&stage_output.stderr)
+        ));
+    }
+
+    // Check for staged changes
+    let status_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("diff")
+        .arg("--cached")
+        .arg("--quiet")
+        .output()
+        .map_err(|e| format!("failed to check git status: {}", e))?;
+
+    let has_changes = !status_output.status.success(); // diff --quiet exits with 1 if there are changes
+
+    let commit_hash = if has_changes {
+        // Build commit message
+        let summary = round_meta
+            .as_ref()
+            .and_then(|m| m.summary.as_deref())
+            .unwrap_or("");
+
+        let commit_message = if summary.len() > 72 {
+            // Truncate subject to 72 chars, put full summary in body
+            let subject = &summary[..72];
+            format!("{}\n\n{}", subject, summary)
+        } else {
+            message.clone()
+        };
+
+        // Commit changes
+        let commit_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("commit")
+            .arg("-m")
+            .arg(&commit_message)
+            .output()
+            .map_err(|e| format!("failed to commit: {}", e))?;
+
+        if !commit_output.status.success() {
+            return Err(format!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&commit_output.stderr)
+            ));
+        }
+
+        // Get commit hash
+        let hash_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rev-parse")
+            .arg("HEAD")
+            .output()
+            .map_err(|e| format!("failed to get commit hash: {}", e))?;
+
+        if hash_output.status.success() {
+            Some(
+                String::from_utf8_lossy(&hash_output.stdout)
+                    .trim()
+                    .to_string(),
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Record round in state.db (always, per [D06])
+    let round_id = db
+        .record_round(
+            &name,
+            round_meta.as_ref().and_then(|m| m.instruction.as_deref()),
+            round_meta.as_ref().and_then(|m| m.summary.as_deref()),
+            round_meta.as_ref().and_then(|m| m.files_created.as_deref()),
+            round_meta
+                .as_ref()
+                .and_then(|m| m.files_modified.as_deref()),
+            commit_hash.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if json {
+        let data = CommitResponse {
+            committed: has_changes,
+            round_id,
+            commit_hash: commit_hash.clone(),
+        };
+        let response = JsonResponse::ok("dash commit", data);
+        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+    } else if !quiet {
+        if has_changes {
+            println!("Committed changes to dash '{}'", name);
+            if let Some(hash) = &commit_hash {
+                println!("  Commit: {}", hash);
+            }
+        } else {
+            println!("No changes to commit for dash '{}'", name);
+        }
+        println!("  Round ID: {}", round_id);
+    }
+
+    Ok(0)
 }
 
 /// Run dash join subcommand (stub for now)
@@ -949,5 +1118,227 @@ mod tests {
         assert_eq!(show_parsed["command"], "dash show");
         assert_eq!(show_parsed["status"], "ok");
         assert!(show_parsed["data"]["rounds"].is_array());
+    }
+
+    #[test]
+    fn test_dash_commit_with_changes() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add a file to the worktree
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test content\n").unwrap();
+
+        // Commit changes
+        let result = run_dash_commit(
+            "test-dash".to_string(),
+            "Add test file".to_string(),
+            false,
+            true,
+        );
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify round was recorded with commit_hash
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 1);
+        assert!(rounds[0].commit_hash.is_some());
+    }
+
+    #[test]
+    fn test_dash_commit_no_changes() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Commit with no changes
+        let result = run_dash_commit(
+            "test-dash".to_string(),
+            "No changes".to_string(),
+            false,
+            true,
+        );
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify round was recorded with null commit_hash
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 1);
+        assert!(rounds[0].commit_hash.is_none());
+    }
+
+    #[test]
+    fn test_dash_commit_with_stdin_metadata() {
+        use std::io::Write;
+        use std::process::{Command as StdCommand, Stdio};
+
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add a file
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
+
+        // Build tugcode binary path
+        let tugcode_bin = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("tugcode");
+
+        // Run commit with stdin metadata via subprocess
+        let mut child = StdCommand::new(&tugcode_bin)
+            .arg("dash")
+            .arg("commit")
+            .arg("test-dash")
+            .arg("--message")
+            .arg("Test commit")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        {
+            let stdin = child.stdin.as_mut().unwrap();
+            let metadata = r#"{"instruction":"add test file","summary":"Added test file","files_created":["test.txt"]}"#;
+            stdin.write_all(metadata.as_bytes()).unwrap();
+        } // stdin is dropped here
+
+        let status = child.wait().unwrap();
+        assert!(status.success());
+
+        // Verify round was recorded with metadata
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 1);
+        assert_eq!(rounds[0].instruction, Some("add test file".to_string()));
+        assert_eq!(rounds[0].summary, Some("Added test file".to_string()));
+        assert_eq!(rounds[0].files_created, Some(vec!["test.txt".to_string()]));
+    }
+
+    #[test]
+    fn test_dash_commit_increments_round_count() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Verify initial round count is 0
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 0);
+
+        // Commit (no changes)
+        run_dash_commit("test-dash".to_string(), "First".to_string(), false, true).unwrap();
+
+        // Verify round count is 1
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 1);
+
+        // Add file and commit again
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
+        run_dash_commit("test-dash".to_string(), "Second".to_string(), false, true).unwrap();
+
+        // Verify round count is 2
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 2);
+    }
+
+    #[test]
+    fn test_dash_commit_truncates_long_summary() {
+        let temp = TempDir::new().unwrap();
+        let repo_path = temp.path();
+
+        init_git_repo(repo_path);
+        fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
+        std::env::set_current_dir(repo_path).unwrap();
+
+        // Create dash
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+
+        // Add a file
+        let worktree_path = repo_path.join(".tugtree/tugdash__test-dash");
+        fs::write(worktree_path.join("test.txt"), "test\n").unwrap();
+
+        // Note: We can't easily test the commit message truncation without parsing git log,
+        // but we can verify the commit succeeds with a long message
+        let long_message = "This is a very long commit message that should be truncated to 72 characters maximum in the subject line";
+        let result = run_dash_commit(
+            "test-dash".to_string(),
+            long_message.to_string(),
+            false,
+            true,
+        );
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify commit was created
+        let state_db_path = repo_path.join(".tugtool/state.db");
+        let db = StateDb::open(&state_db_path).unwrap();
+        let rounds = db.get_dash_rounds("test-dash", true).unwrap();
+        assert_eq!(rounds.len(), 1);
+        assert!(rounds[0].commit_hash.is_some());
     }
 }

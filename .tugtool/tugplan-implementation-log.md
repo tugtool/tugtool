@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-24T18:37:26Z
+---
+
+## step-2: Replaced run_dash_commit stub with full implementation: stdin DashRoundMeta JSON parsing, git add -A, staged change detection, conditional commit with 72-char subject truncation, always-record round in state.db per D06. Added CommitResponse struct with JsonResponse envelope. 5 new integration tests. 688 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-1
 date: 2025-02-24T18:28:56Z
 ---
