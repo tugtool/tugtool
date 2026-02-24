@@ -1382,6 +1382,137 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_
         Ok(())
     }
 
+    /// Release a step's claim, returning it to pending status
+    ///
+    /// This allows explicitly dropping a claim before lease expiry. When `worktree` is
+    /// provided, ownership is verified. When `force` is true, ownership check is skipped.
+    /// Completed steps cannot be released.
+    pub fn release_step(
+        &mut self,
+        plan_path: &str,
+        anchor: &str,
+        worktree: Option<&str>,
+        force: bool,
+    ) -> Result<ReleaseResult, TugError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin transaction: {}", e),
+            })?;
+
+        // Query step status and claimed_by
+        let (status, claimed_by): (String, Option<String>) = tx
+            .query_row(
+                "SELECT status, claimed_by FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query step status: {}", e),
+            })?;
+
+        // Cannot release completed step
+        if status == "completed" {
+            return Err(TugError::StateStepNotClaimed {
+                anchor: anchor.to_string(),
+                current_status: "cannot release completed step".to_string(),
+            });
+        }
+
+        // Cannot release pending step
+        if status == "pending" {
+            return Err(TugError::StateStepNotClaimed {
+                anchor: anchor.to_string(),
+                current_status: "not claimed".to_string(),
+            });
+        }
+
+        // Verify ownership if worktree provided and not forcing
+        if let Some(wt) = worktree {
+            if !force {
+                if let Some(ref owner) = claimed_by {
+                    if owner != wt {
+                        return Err(TugError::StateOwnershipViolation {
+                            anchor: anchor.to_string(),
+                            claimed_by: owner.clone(),
+                            worktree: wt.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        let now = now_iso8601();
+
+        // Check if this is a top-level step
+        let is_substep: bool = tx
+            .query_row(
+                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| row.get(0),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to query step type: {}", e),
+            })?;
+
+        // Reset the step to pending
+        tx.execute(
+            "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
+                              lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
+             WHERE plan_path = ?1 AND anchor = ?2",
+            rusqlite::params![plan_path, anchor],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to release step: {}", e),
+        })?;
+
+        // Reset non-completed checklist items for the parent step itself
+        tx.execute(
+            "UPDATE checklist_items SET status = 'open', updated_at = ?1
+             WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
+            rusqlite::params![&now, plan_path, anchor],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to reset checklist items: {}", e),
+        })?;
+
+        // If top-level step, cascade to non-completed substeps
+        if !is_substep {
+            // Reset non-completed substeps
+            tx.execute(
+                "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
+                                  lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
+                 WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
+                rusqlite::params![plan_path, anchor],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to release substeps: {}", e),
+            })?;
+
+            // Reset checklist items for those substeps
+            tx.execute(
+                "UPDATE checklist_items SET status = 'open', updated_at = ?1
+                 WHERE plan_path = ?2 AND step_anchor IN (
+                     SELECT anchor FROM steps WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'
+                 ) AND status != 'completed'",
+                rusqlite::params![&now, plan_path, anchor],
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to reset substep checklist items: {}", e),
+            })?;
+        }
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit release transaction: {}", e),
+        })?;
+
+        Ok(ReleaseResult {
+            released: true,
+            was_claimed_by: claimed_by,
+        })
+    }
+
     /// Reconcile state from git trailers
     pub fn reconcile(
         &mut self,
@@ -1564,6 +1695,15 @@ pub struct InitResult {
     pub dep_count: usize,
     /// Number of checklist items created
     pub checklist_count: usize,
+}
+
+/// Result from release_step operation
+#[derive(Debug)]
+pub struct ReleaseResult {
+    /// True if the step was released
+    pub released: bool,
+    /// The worktree that previously claimed the step (if any)
+    pub was_claimed_by: Option<String>,
 }
 
 /// Helper to insert checklist items for a step
@@ -3154,5 +3294,244 @@ mod tests {
         // Since step-0 has no substeps in the test plan, the reclaim logic won't reset anything.
         // The completed item should remain completed. This test documents current behavior.
         assert!(count >= 0, "checklist reset logic should not error");
+    }
+
+    #[test]
+    fn test_release_with_correct_worktree() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim step-0 with worktree wt-a
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .unwrap();
+
+        // Release with correct worktree
+        let result = db
+            .release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false)
+            .unwrap();
+        assert!(result.released);
+        assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
+
+        // Verify step is now pending
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn test_release_with_wrong_worktree() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim step-0 with worktree wt-a
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .unwrap();
+
+        // Attempt to release with wrong worktree
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-b"), false);
+        match result {
+            Err(TugError::StateOwnershipViolation { .. }) => {}
+            _ => panic!("expected StateOwnershipViolation"),
+        }
+    }
+
+    #[test]
+    fn test_release_with_force() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim step-0 with worktree wt-a
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .unwrap();
+
+        // Release with force (wrong worktree should be ignored)
+        let result = db
+            .release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-b"), true)
+            .unwrap();
+        assert!(result.released);
+        assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
+
+        // Verify step is now pending
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn test_release_completed_step() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Claim and complete step-0
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .unwrap();
+        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", true, None)
+            .unwrap();
+
+        // Attempt to release completed step
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false);
+        match result {
+            Err(TugError::StateStepNotClaimed { current_status, .. }) => {
+                assert_eq!(current_status, "cannot release completed step");
+            }
+            _ => panic!("expected StateStepNotClaimed error"),
+        }
+    }
+
+    #[test]
+    fn test_release_pending_step() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with one step
+        let plan = make_test_plan();
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
+            .unwrap();
+
+        // Attempt to release pending (unclaimed) step
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false);
+        match result {
+            Err(TugError::StateStepNotClaimed { current_status, .. }) => {
+                assert_eq!(current_status, "not claimed");
+            }
+            _ => panic!("expected StateStepNotClaimed error"),
+        }
+    }
+
+    #[test]
+    fn test_release_cascades_to_substeps() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+
+        // Initialize a plan with substeps
+        use crate::types::*;
+        let plan_with_substeps = TugPlan {
+            phase_title: Some("Test Phase".to_string()),
+            steps: vec![Step {
+                anchor: "step-0".to_string(),
+                title: "Step Zero".to_string(),
+                substeps: vec![
+                    Substep {
+                        number: "0.0".to_string(),
+                        anchor: "step-0-sub-0".to_string(),
+                        title: "Substep 0".to_string(),
+                        line: 1,
+                        depends_on: vec![],
+                        commit_message: None,
+                        references: None,
+                        tasks: vec![],
+                        tests: vec![],
+                        checkpoints: vec![],
+                        artifacts: vec![],
+                    },
+                    Substep {
+                        number: "0.1".to_string(),
+                        anchor: "step-0-sub-1".to_string(),
+                        title: "Substep 1".to_string(),
+                        line: 2,
+                        depends_on: vec![],
+                        commit_message: None,
+                        references: None,
+                        tasks: vec![],
+                        tests: vec![],
+                        checkpoints: vec![],
+                        artifacts: vec![],
+                    },
+                ],
+                tasks: vec![],
+                tests: vec![],
+                checkpoints: vec![],
+                depends_on: vec![],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
+        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
+        fs::write(&plan_file, "# Test plan\n").unwrap();
+        let hash = compute_plan_hash(&plan_file).unwrap();
+        db.init_plan(".tugtool/tugplan-test.md", &plan_with_substeps, &hash)
+            .unwrap();
+
+        // Claim step-0 (which claims substeps too)
+        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash)
+            .unwrap();
+
+        // Release step-0
+        db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false)
+            .unwrap();
+
+        // Verify substeps are also pending
+        let substep_status: Vec<String> = db
+            .conn
+            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-0' ORDER BY anchor")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert_eq!(substep_status.len(), 2);
+        assert_eq!(substep_status[0], "pending");
+        assert_eq!(substep_status[1], "pending");
     }
 }

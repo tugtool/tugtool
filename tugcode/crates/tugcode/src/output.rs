@@ -634,6 +634,15 @@ pub struct StateResetData {
     pub reset: bool,
 }
 
+/// Data payload for state release command
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateReleaseData {
+    pub plan_path: String,
+    pub anchor: String,
+    pub released: bool,
+    pub was_claimed_by: Option<String>,
+}
+
 /// Data payload for state reconcile command
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StateReconcileData {

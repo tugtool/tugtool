@@ -121,6 +121,12 @@ fn main() -> ExitCode {
             StateCommands::Reset { plan, step } => {
                 commands::run_state_reset(plan, step, cli.json, cli.quiet)
             }
+            StateCommands::Release {
+                plan,
+                step,
+                worktree,
+                force,
+            } => commands::run_state_release(plan, step, worktree, force, cli.json, cli.quiet),
             StateCommands::Reconcile { plan, force } => {
                 commands::run_state_reconcile(plan, force, cli.json, cli.quiet)
             }
