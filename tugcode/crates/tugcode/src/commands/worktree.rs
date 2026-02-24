@@ -308,7 +308,14 @@ pub fn run_worktree_create_with_root(
 ) -> Result<i32, String> {
     let repo_root = match override_root {
         Some(root) => root.to_path_buf(),
-        None => tugtool_core::find_repo_root().map_err(|e| e.to_string())?,
+        None => match tugtool_core::find_repo_root() {
+            Ok(root) => root,
+            Err(tugtool_core::TugError::NotAGitRepository) => {
+                // Fresh directory — ensure_git_repo() below will initialize git
+                std::env::current_dir().map_err(|e| e.to_string())?
+            }
+            Err(e) => return Err(e.to_string()),
+        },
     };
 
     // Resolve plan path and strip repo_root to get relative path
