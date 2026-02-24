@@ -234,8 +234,8 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
     fn migrate_schema(&mut self) -> Result<(), TugError> {
         let version = self.schema_version()?;
 
-        // Migrate from v2 to v3: add reason column to checklist_items
-        if version == 2 {
+        // Migrate from v1 or v2 to v3: add reason column to checklist_items
+        if version < 3 {
             self.conn
                 .execute("ALTER TABLE checklist_items ADD COLUMN reason TEXT", [])
                 .map_err(|e| TugError::StateDbOpen {
@@ -2289,6 +2289,254 @@ mod tests {
             )
             .unwrap();
         assert!(has_reason, "reason column should exist after migration");
+    }
+
+    #[test]
+    fn test_schema_migration_v1_to_v3() {
+        use rusqlite::Connection;
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a v1 database manually
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+            // Create v1 schema (without reason column)
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (1);
+
+                CREATE TABLE plans (
+                    plan_path    TEXT PRIMARY KEY,
+                    plan_hash    TEXT NOT NULL,
+                    phase_title  TEXT,
+                    status       TEXT NOT NULL DEFAULT 'active',
+                    created_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE steps (
+                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                    anchor           TEXT NOT NULL,
+                    parent_anchor    TEXT,
+                    step_index       INTEGER NOT NULL,
+                    title            TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by       TEXT,
+                    claimed_at       TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at     TEXT,
+                    started_at       TEXT,
+                    completed_at     TEXT,
+                    commit_hash      TEXT,
+                    complete_reason  TEXT,
+                    PRIMARY KEY (plan_path, anchor)
+                );
+
+                CREATE TABLE checklist_items (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    ordinal      INTEGER NOT NULL,
+                    text         TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'open',
+                    updated_at   TEXT
+                );
+                "#,
+            )
+            .unwrap();
+        }
+
+        // Open with StateDb, which should trigger migration
+        let db = StateDb::open(&db_path).unwrap();
+
+        // Verify schema version is now 3
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // Verify reason column exists by querying schema
+        let has_reason: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('checklist_items') WHERE name = 'reason'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            has_reason,
+            "reason column should exist after migration from v1"
+        );
+    }
+
+    #[test]
+    fn test_v1_migration_end_to_end_with_show_plan() {
+        // This test simulates the actual failure scenario: a v1 database with
+        // checklist items (no reason column) that fails when state show queries
+        // for the reason column. This ensures the migration works and the actual
+        // codepaths that were failing (show_plan and get_checklist_items) work
+        // correctly after migration from v1.
+        use rusqlite::Connection;
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a v1 database with actual plan and checklist data
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+            // Create v1 schema (without reason column)
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (1);
+
+                CREATE TABLE plans (
+                    plan_path    TEXT PRIMARY KEY,
+                    plan_hash    TEXT NOT NULL,
+                    phase_title  TEXT,
+                    status       TEXT NOT NULL DEFAULT 'active',
+                    created_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE steps (
+                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                    anchor           TEXT NOT NULL,
+                    parent_anchor    TEXT,
+                    step_index       INTEGER NOT NULL,
+                    title            TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by       TEXT,
+                    claimed_at       TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at     TEXT,
+                    started_at       TEXT,
+                    completed_at     TEXT,
+                    commit_hash      TEXT,
+                    complete_reason  TEXT,
+                    PRIMARY KEY (plan_path, anchor)
+                );
+
+                CREATE TABLE step_deps (
+                    plan_path         TEXT NOT NULL,
+                    step_anchor       TEXT NOT NULL,
+                    depends_on_anchor TEXT NOT NULL,
+                    PRIMARY KEY (plan_path, step_anchor, depends_on_anchor),
+                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+                );
+
+                CREATE TABLE checklist_items (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    ordinal      INTEGER NOT NULL,
+                    text         TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'open',
+                    updated_at   TEXT
+                );
+
+                CREATE TABLE step_artifacts (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    summary      TEXT NOT NULL,
+                    recorded_at  TEXT NOT NULL,
+                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+                );
+                "#,
+            )
+            .unwrap();
+
+            // Insert test plan data
+            conn.execute(
+                "INSERT INTO plans (plan_path, plan_hash, phase_title, status, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 'active', ?4, ?5)",
+                rusqlite::params![
+                    "test-plan.md",
+                    "testhash123",
+                    "Test Phase",
+                    "2024-01-01T00:00:00Z",
+                    "2024-01-01T00:00:00Z"
+                ],
+            )
+            .unwrap();
+
+            // Insert a test step
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params![
+                    "test-plan.md",
+                    "step-1",
+                    Option::<String>::None,
+                    0,
+                    "Test Step"
+                ],
+            )
+            .unwrap();
+
+            // Insert checklist items WITHOUT reason column (v1 schema)
+            conn.execute(
+                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
+                rusqlite::params!["test-plan.md", "step-1", "checklist", 0, "Test item 1"],
+            )
+            .unwrap();
+
+            conn.execute(
+                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'completed')",
+                rusqlite::params!["test-plan.md", "step-1", "checklist", 1, "Test item 2"],
+            )
+            .unwrap();
+        }
+
+        // Open with StateDb, which should trigger migration
+        let db = StateDb::open(&db_path).unwrap();
+
+        // Verify schema version is now 3
+        assert_eq!(db.schema_version().unwrap(), 3);
+
+        // THIS IS THE KEY TEST: Call show_plan which queries checklist_items
+        // including the reason column. This was the actual failure scenario.
+        let plan_state = db.show_plan("test-plan.md").unwrap();
+        assert_eq!(plan_state.plan_path, "test-plan.md");
+        assert_eq!(plan_state.plan_hash, "testhash123");
+        assert_eq!(plan_state.phase_title, Some("Test Phase".to_string()));
+
+        // Verify the plan has steps
+        assert_eq!(plan_state.steps.len(), 1);
+        let step = &plan_state.steps[0];
+        assert_eq!(step.anchor, "step-1");
+
+        // Verify checklist items are present in the plan state (this proves
+        // show_plan's checklist query worked after migration)
+        assert_eq!(plan_state.checklist_items.len(), 2);
+
+        // THIS IS ALSO KEY: Call get_checklist_items directly which also
+        // queries the reason column
+        let checklist_items = db.get_checklist_items("test-plan.md").unwrap();
+        assert_eq!(checklist_items.len(), 2);
+
+        // Verify the reason column defaults to NULL for existing rows
+        assert_eq!(checklist_items[0].text, "Test item 1");
+        assert_eq!(checklist_items[0].status, "open");
+        assert_eq!(
+            checklist_items[0].reason, None,
+            "reason should default to NULL for pre-migration data"
+        );
+
+        assert_eq!(checklist_items[1].text, "Test item 2");
+        assert_eq!(checklist_items[1].status, "completed");
+        assert_eq!(
+            checklist_items[1].reason, None,
+            "reason should default to NULL for pre-migration data"
+        );
     }
 
     #[test]
