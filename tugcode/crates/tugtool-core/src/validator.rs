@@ -15,11 +15,6 @@ use crate::types::{ParseDiagnostic, TugPlan};
 static VALID_ANCHOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]*$").unwrap());
 
-/// Regex for bead ID format (fallback validation)
-/// Pattern: ^[a-z0-9][a-z0-9-]*-[a-z0-9]+(\.[0-9]+)*$
-static VALID_BEAD_ID: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]*-[a-z0-9]+(\.[0-9]+)*$").unwrap());
-
 /// Regex for unfilled placeholder pattern (<...>)
 static PLACEHOLDER_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^<[^>]+>$").unwrap());
 
@@ -198,10 +193,6 @@ impl ValidationLevel {
 pub struct ValidationConfig {
     /// Validation strictness level
     pub level: ValidationLevel,
-    /// Whether beads integration is enabled
-    pub beads_enabled: bool,
-    /// Whether to validate bead IDs (requires beads CLI)
-    pub validate_bead_ids: bool,
 }
 
 /// Validate a parsed plan
@@ -256,18 +247,6 @@ pub fn validate_tugplan_with_config(
     // E018: Check **References:** format (must have [DNN] decision citations)
     check_references_format(tugplan, &mut result);
 
-    // E012: Check bead ID format (when beads enabled)
-    if config.beads_enabled && config.validate_bead_ids {
-        check_bead_id_format(tugplan, &mut result);
-    }
-
-    // E014: Check Beads Root exists (when beads enabled and set)
-    // Note: Actual bead existence check requires beads CLI, so we just validate format here
-    // The CLI layer can do the actual existence check
-
-    // E015: Check step bead exists (when beads enabled)
-    // Note: Same as above - format validation only, CLI does existence check
-
     // === WARNING CHECKS ===
     if config.level.include_warnings() {
         // W001: Decisions without DECIDED/OPEN status
@@ -290,11 +269,6 @@ pub fn validate_tugplan_with_config(
 
         // W007: Step (other than Step 0) has no dependencies
         check_step_dependencies(tugplan, &mut result);
-
-        // W008: Bead ID present but beads integration not enabled
-        if !config.beads_enabled {
-            check_bead_without_integration(tugplan, &mut result);
-        }
 
         // W009: Step missing Commit line
         check_commit_lines(tugplan, &mut result);
@@ -746,53 +720,6 @@ fn check_references_format(tugplan: &TugPlan, result: &mut ValidationResult) {
     }
 }
 
-/// E012: Check bead ID format
-fn check_bead_id_format(tugplan: &TugPlan, result: &mut ValidationResult) {
-    // Check beads root ID
-    if let Some(root_id) = &tugplan.metadata.beads_root_id {
-        if !VALID_BEAD_ID.is_match(root_id) {
-            result.add_issue(ValidationIssue::new(
-                "E012",
-                Severity::Error,
-                format!("Invalid bead ID format: {}", root_id),
-            ));
-        }
-    }
-
-    // Check step bead IDs
-    for step in &tugplan.steps {
-        if let Some(bead_id) = &step.bead_id {
-            if !VALID_BEAD_ID.is_match(bead_id) {
-                result.add_issue(
-                    ValidationIssue::new(
-                        "E012",
-                        Severity::Error,
-                        format!("Invalid bead ID format: {}", bead_id),
-                    )
-                    .at_line(step.line)
-                    .with_anchor(&step.anchor),
-                );
-            }
-        }
-
-        for substep in &step.substeps {
-            if let Some(bead_id) = &substep.bead_id {
-                if !VALID_BEAD_ID.is_match(bead_id) {
-                    result.add_issue(
-                        ValidationIssue::new(
-                            "E012",
-                            Severity::Error,
-                            format!("Invalid bead ID format: {}", bead_id),
-                        )
-                        .at_line(substep.line)
-                        .with_anchor(&substep.anchor),
-                    );
-                }
-            }
-        }
-    }
-}
-
 // === WARNING CHECK IMPLEMENTATIONS ===
 
 /// W001: Decisions without DECIDED/OPEN status
@@ -930,51 +857,6 @@ fn check_step_dependencies(tugplan: &TugPlan, result: &mut ValidationResult) {
                 .at_line(step.line)
                 .with_anchor(&step.anchor),
             );
-        }
-    }
-}
-
-/// W008: Bead ID present but beads integration not enabled
-fn check_bead_without_integration(tugplan: &TugPlan, result: &mut ValidationResult) {
-    if tugplan.metadata.beads_root_id.is_some() {
-        result.add_issue(ValidationIssue::new(
-            "W008",
-            Severity::Warning,
-            "Beads Root ID present but beads integration not enabled".to_string(),
-        ));
-    }
-
-    for step in &tugplan.steps {
-        if step.bead_id.is_some() {
-            result.add_issue(
-                ValidationIssue::new(
-                    "W008",
-                    Severity::Warning,
-                    format!(
-                        "Step {} has bead ID but beads integration not enabled",
-                        step.number
-                    ),
-                )
-                .at_line(step.line)
-                .with_anchor(&step.anchor),
-            );
-        }
-
-        for substep in &step.substeps {
-            if substep.bead_id.is_some() {
-                result.add_issue(
-                    ValidationIssue::new(
-                        "W008",
-                        Severity::Warning,
-                        format!(
-                            "Step {} has bead ID but beads integration not enabled",
-                            substep.number
-                        ),
-                    )
-                    .at_line(substep.line)
-                    .with_anchor(&substep.anchor),
-                );
-            }
         }
     }
 }
@@ -1459,32 +1341,6 @@ Deliverable text.
     }
 
     #[test]
-    fn test_e012_invalid_bead_id() {
-        let content = r#"## Phase 1.0: Test {#phase-1}
-
-### TugPlan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | draft |
-| Last updated | 2026-02-03 |
-| Beads Root | `invalid bead id` |
-"#;
-
-        let plan = parse_tugplan(content).unwrap();
-        let config = ValidationConfig {
-            beads_enabled: true,
-            validate_bead_ids: true,
-            ..Default::default()
-        };
-        let result = validate_tugplan_with_config(&plan, &config);
-
-        let e012_issues: Vec<_> = result.issues.iter().filter(|i| i.code == "E012").collect();
-        assert_eq!(e012_issues.len(), 1);
-    }
-
-    #[test]
     fn test_w001_decision_missing_status() {
         let content = r#"## Phase 1.0: Test {#phase-1}
 
@@ -1647,36 +1503,6 @@ Question without resolution.
     }
 
     #[test]
-    fn test_w008_bead_without_integration() {
-        let content = r#"## Phase 1.0: Test {#phase-1}
-
-### TugPlan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | draft |
-| Last updated | 2026-02-03 |
-
-#### Step 0: Test {#step-0}
-
-**Bead:** `bd-test123`
-
-**References:** Test
-
-**Tasks:**
-- [ ] Task
-"#;
-
-        let plan = parse_tugplan(content).unwrap();
-        // Default config has beads_enabled = false
-        let result = validate_tugplan(&plan);
-
-        let w008_issues: Vec<_> = result.issues.iter().filter(|i| i.code == "W008").collect();
-        assert_eq!(w008_issues.len(), 1);
-    }
-
-    #[test]
     fn test_i001_document_size() {
         // Create a plan with 2000+ lines
         let mut content = String::from(
@@ -1700,7 +1526,6 @@ Question without resolution.
         let plan = parse_tugplan(&content).unwrap();
         let config = ValidationConfig {
             level: ValidationLevel::Strict,
-            ..Default::default()
         };
         let result = validate_tugplan_with_config(&plan, &config);
 
@@ -1733,7 +1558,6 @@ Question without resolution.
         // Lenient: Only errors
         let lenient_config = ValidationConfig {
             level: ValidationLevel::Lenient,
-            ..Default::default()
         };
         let lenient_result = validate_tugplan_with_config(&plan, &lenient_config);
         let lenient_warnings: Vec<_> = lenient_result
@@ -1749,7 +1573,6 @@ Question without resolution.
         // Normal: Errors + warnings
         let normal_config = ValidationConfig {
             level: ValidationLevel::Normal,
-            ..Default::default()
         };
         let normal_result = validate_tugplan_with_config(&plan, &normal_config);
         let normal_warnings: Vec<_> = normal_result
@@ -1761,22 +1584,6 @@ Question without resolution.
             !normal_warnings.is_empty(),
             "Normal should include warnings"
         );
-    }
-
-    #[test]
-    fn test_valid_bead_id_format() {
-        // Test valid bead IDs
-        assert!(VALID_BEAD_ID.is_match("bd-abc123"));
-        assert!(VALID_BEAD_ID.is_match("bd-root-1"));
-        assert!(VALID_BEAD_ID.is_match("bd-test-1.2"));
-        assert!(VALID_BEAD_ID.is_match("bd-test-1.2.3"));
-        assert!(VALID_BEAD_ID.is_match("proj-feature-a1"));
-
-        // Test invalid bead IDs
-        assert!(!VALID_BEAD_ID.is_match("invalid"));
-        assert!(!VALID_BEAD_ID.is_match("Invalid-ID"));
-        assert!(!VALID_BEAD_ID.is_match("bd_underscore_1"));
-        assert!(!VALID_BEAD_ID.is_match(""));
     }
 
     #[test]

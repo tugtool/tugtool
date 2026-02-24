@@ -148,7 +148,7 @@ Test context paragraph.
 "#;
 
 #[test]
-#[ignore = "requires beads service (beads sync is always-on)"]
+#[ignore = "requires worktree create (slow integration test)"]
 fn test_worktree_lifecycle() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-worktree", MINIMAL_PLAN);
@@ -388,7 +388,7 @@ fn test_worktree_lifecycle() {
 }
 
 #[test]
-#[ignore = "requires beads service (beads sync is always-on)"]
+#[ignore = "requires worktree create (slow integration test)"]
 fn test_worktree_list_json_output() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-json", MINIMAL_PLAN);
@@ -444,7 +444,7 @@ fn test_worktree_list_json_output() {
 }
 
 #[test]
-#[ignore = "requires beads service (beads sync is always-on)"]
+#[ignore = "requires worktree create (slow integration test)"]
 fn test_worktree_cleanup_dry_run() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-cleanup", MINIMAL_PLAN);
@@ -566,7 +566,7 @@ fn test_worktree_cleanup_dry_run() {
 
 #[test]
 #[serial_test::serial]
-#[ignore = "requires beads service (beads sync is always-on)"]
+#[ignore = "requires worktree create (slow integration test)"]
 fn test_worktree_create_with_valid_plan_succeeds() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "valid", MINIMAL_PLAN);
@@ -796,7 +796,7 @@ Test context paragraph.
 
 #[test]
 #[serial_test::serial]
-#[ignore = "requires beads service (beads sync is always-on)"]
+#[ignore = "requires worktree create (slow integration test)"]
 fn test_worktree_create_skip_validation_bypasses_check() {
     let temp = setup_test_git_repo();
 

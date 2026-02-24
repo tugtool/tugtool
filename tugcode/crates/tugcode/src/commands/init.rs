@@ -23,33 +23,6 @@ prefix = "tugplan-"
 
 # Allowed name pattern (regex)
 name_pattern = "^[a-z][a-z0-9-]{1,49}$"
-
-[tugtool.beads]
-# Enable beads integration
-enabled = true
-
-# Validate bead IDs when present
-validate_bead_ids = true
-
-# Path to beads CLI binary (default: "bd" on PATH)
-bd_path = "bd"
-
-# Sync behavior defaults (safe, non-destructive)
-prune_deps = false
-
-# Root bead type (epic recommended for bd ready --parent)
-root_issue_type = "epic"
-
-# Substep mapping: "none" (default) or "children"
-substeps = "none"
-
-# Pull behavior: which checkboxes to update when a bead is complete
-# - "checkpoints": update only **Checkpoint:** items (default)
-# - "all": update Tasks/Tests/Checkpoints
-pull_checkbox_mode = "checkpoints"
-
-# Warn when checkboxes and bead status disagree
-pull_warn_on_conflict = true
 "#;
 
 /// Empty implementation log template
@@ -128,27 +101,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         // Handle .gitignore even in idempotent mode
         ensure_gitignore(quiet)?;
 
-        // Remove beads git hooks
-        let hooks_removed = remove_beads_hooks(Path::new("."));
-        for hook in &hooks_removed {
-            files_created.push(format!("removed .git/hooks/{}", hook));
-        }
-
-        // Remove AGENTS.md dropped by bd init
-        if remove_agents_md(Path::new(".")) {
-            files_created.push("removed AGENTS.md".to_string());
-        }
-
-        // Remove stale beads merge driver from git config
-        for key in remove_beads_merge_driver(Path::new(".")) {
-            files_created.push(format!("removed git config {}", key));
-        }
-
-        // Remove stale beads entries from .gitattributes
-        if clean_beads_gitattributes(Path::new(".")) {
-            files_created.push("cleaned .gitattributes".to_string());
-        }
-
         if json_output {
             let response = JsonResponse::ok(
                 "init",
@@ -202,32 +154,11 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
 
     ensure_gitignore(quiet)?;
 
-    // Remove beads git hooks
-    let hooks_removed = remove_beads_hooks(Path::new("."));
-
-    let mut files_created = vec![
+    let files_created = vec![
         "tugplan-skeleton.md".to_string(),
         "config.toml".to_string(),
         "tugplan-implementation-log.md".to_string(),
     ];
-    for hook in &hooks_removed {
-        files_created.push(format!("removed .git/hooks/{}", hook));
-    }
-
-    // Remove AGENTS.md dropped by bd init
-    if remove_agents_md(Path::new(".")) {
-        files_created.push("removed AGENTS.md".to_string());
-    }
-
-    // Remove stale beads merge driver from git config
-    for key in remove_beads_merge_driver(Path::new(".")) {
-        files_created.push(format!("removed git config {}", key));
-    }
-
-    // Remove stale beads entries from .gitattributes
-    if clean_beads_gitattributes(Path::new(".")) {
-        files_created.push("cleaned .gitattributes".to_string());
-    }
 
     if json_output {
         let response = JsonResponse::ok(
@@ -243,149 +174,9 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         println!("  Created: tugplan-skeleton.md");
         println!("  Created: config.toml");
         println!("  Created: tugplan-implementation-log.md");
-        for hook in &hooks_removed {
-            println!("  Removed .git/hooks/{}", hook);
-        }
     }
 
     Ok(0)
-}
-
-/// Remove beads-related git hooks from .git/hooks/
-///
-/// Scans .git/hooks/ for pre-commit and post-merge files that contain beads/bd references.
-/// Returns a list of removed hook filenames.
-fn remove_beads_hooks(root: &Path) -> Vec<String> {
-    let hooks_dir = root.join(".git/hooks");
-
-    // If .git/hooks doesn't exist, nothing to do
-    if !hooks_dir.exists() {
-        return vec![];
-    }
-
-    let mut removed_hooks = vec![];
-    let hook_names = ["pre-commit", "post-merge"];
-
-    for hook_name in &hook_names {
-        let hook_path = hooks_dir.join(hook_name);
-
-        // Skip if hook file doesn't exist
-        if !hook_path.exists() {
-            continue;
-        }
-
-        // Read hook content
-        let content = match fs::read_to_string(&hook_path) {
-            Ok(c) => c,
-            Err(_) => continue, // Skip files we can't read
-        };
-
-        // Check if content contains beads/bd references
-        // Look for "bd " (with space), "bd\n" (at line end), "bd\t" (with tab), or "beads"
-        if content.contains("bd ")
-            || content.contains("bd\n")
-            || content.contains("bd\t")
-            || content.contains("beads")
-        {
-            // Remove the hook file
-            if fs::remove_file(&hook_path).is_ok() {
-                removed_hooks.push(hook_name.to_string());
-            }
-        }
-    }
-
-    removed_hooks
-}
-
-/// Remove AGENTS.md file dropped by `bd init`.
-///
-/// Returns true if the file existed and was removed.
-fn remove_agents_md(root: &Path) -> bool {
-    let agents_md = root.join("AGENTS.md");
-    fs::remove_file(agents_md).is_ok()
-}
-
-/// Remove stale beads merge driver from `.git/config`.
-///
-/// The old beads-at-root setup configured `merge.beads.driver` and `merge.beads.name`
-/// in the local git config. These are no longer needed since `.beads/` files are not
-/// tracked in the repo.
-/// Returns a list of removed config keys.
-fn remove_beads_merge_driver(root: &Path) -> Vec<String> {
-    let mut removed = vec![];
-    let keys = ["merge.beads.driver", "merge.beads.name"];
-
-    for key in &keys {
-        let check = std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["config", "--local", "--get", key])
-            .output();
-
-        if let Ok(output) = check {
-            if output.status.success() {
-                let unset = std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(root)
-                    .args(["config", "--local", "--unset", key])
-                    .output();
-                if let Ok(o) = unset {
-                    if o.status.success() {
-                        removed.push(key.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    removed
-}
-
-/// Remove stale beads merge driver entry from `.gitattributes`.
-///
-/// The old beads-at-root setup added `.beads/issues.jsonl merge=beads` to
-/// `.gitattributes`. This is no longer needed. If the file becomes empty
-/// (or only whitespace/comments) after removal, delete it entirely.
-/// Returns true if the file was modified or removed.
-fn clean_beads_gitattributes(root: &Path) -> bool {
-    let path = root.join(".gitattributes");
-    if !path.exists() {
-        return false;
-    }
-
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    // Filter out lines related to beads merge driver
-    let filtered: Vec<&str> = content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            // Remove the merge=beads attribute line and its comment
-            !(trimmed.contains("merge=beads")
-                || trimmed.starts_with('#') && trimmed.to_lowercase().contains("bd merge"))
-        })
-        .collect();
-
-    // Check if anything meaningful remains
-    let has_content = filtered
-        .iter()
-        .any(|line| !line.trim().is_empty() && !line.trim().starts_with('#'));
-
-    if has_content {
-        // Rewrite with beads lines removed
-        let new_content = filtered.join("\n");
-        if new_content != content {
-            let _ = fs::write(&path, new_content);
-            return true;
-        }
-        false
-    } else {
-        // File is empty or only comments — remove it
-        fs::remove_file(&path).is_ok()
-    }
 }
 
 /// Ensure .tugtree/ is listed in .gitignore
@@ -469,64 +260,5 @@ mod tests {
         let result = run_init_check(Some(temp_path), true).expect("init check should not error");
         assert_eq!(result, 9, "should return exit code 9");
         // TempDir auto-cleans on drop - no manual cleanup needed
-    }
-
-    #[test]
-    fn test_remove_beads_hooks_removes_bd_hook() {
-        let temp = TempDir::new().expect("failed to create temp dir");
-        let temp_path = temp.path();
-
-        // Create .git/hooks directory
-        let hooks_dir = temp_path.join(".git/hooks");
-        fs::create_dir_all(&hooks_dir).expect("failed to create hooks dir");
-
-        // Create pre-commit hook with bd reference
-        let hook_path = hooks_dir.join("pre-commit");
-        fs::write(&hook_path, "#!/bin/sh\nbd sync --flush-only\n").expect("failed to write hook");
-
-        // Call remove_beads_hooks
-        let removed = remove_beads_hooks(temp_path);
-
-        // Verify hook was removed
-        assert_eq!(removed, vec!["pre-commit"], "should remove pre-commit hook");
-        assert!(!hook_path.exists(), "hook file should be deleted");
-    }
-
-    #[test]
-    fn test_remove_beads_hooks_preserves_non_bd_hook() {
-        let temp = TempDir::new().expect("failed to create temp dir");
-        let temp_path = temp.path();
-
-        // Create .git/hooks directory
-        let hooks_dir = temp_path.join(".git/hooks");
-        fs::create_dir_all(&hooks_dir).expect("failed to create hooks dir");
-
-        // Create pre-commit hook with unrelated content
-        let hook_path = hooks_dir.join("pre-commit");
-        fs::write(&hook_path, "#!/bin/sh\nrustfmt\n").expect("failed to write hook");
-
-        // Call remove_beads_hooks
-        let removed = remove_beads_hooks(temp_path);
-
-        // Verify hook was NOT removed
-        assert!(removed.is_empty(), "should not remove non-bd hook");
-        assert!(hook_path.exists(), "hook file should still exist");
-    }
-
-    #[test]
-    fn test_remove_beads_hooks_no_git_dir() {
-        let temp = TempDir::new().expect("failed to create temp dir");
-        let temp_path = temp.path();
-
-        // Don't create .git/hooks directory
-
-        // Call remove_beads_hooks
-        let removed = remove_beads_hooks(temp_path);
-
-        // Verify no error and no hooks removed
-        assert!(
-            removed.is_empty(),
-            "should return empty vec when no .git/hooks"
-        );
     }
 }

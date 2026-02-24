@@ -32,7 +32,7 @@ pub enum LogCommands {
     ///
     /// Atomically adds a new entry to the log.
     #[command(
-        long_about = "Prepend entry to implementation log.\n\nAdds a YAML frontmatter entry with:\n  - Step anchor\n  - Plan path\n  - Summary text\n  - Optional bead ID\n  - Timestamp\n\nEntry is inserted after the header section."
+        long_about = "Prepend entry to implementation log.\n\nAdds a YAML frontmatter entry with:\n  - Step anchor\n  - Plan path\n  - Summary text\n  - Timestamp\n\nEntry is inserted after the header section."
     )]
     Prepend {
         /// Step anchor (e.g., #step-0)
@@ -46,10 +46,6 @@ pub enum LogCommands {
         /// One-line summary of completed work
         #[arg(long)]
         summary: String,
-
-        /// Optional bead ID to record
-        #[arg(long)]
-        bead: Option<String>,
     },
 }
 
@@ -356,20 +352,11 @@ fn generate_iso8601_timestamp() -> Result<String, String> {
 }
 
 /// Generate YAML frontmatter entry for the implementation log
-fn generate_yaml_entry(
-    step: &str,
-    plan_path: &str,
-    summary: &str,
-    bead: Option<&str>,
-    timestamp: &str,
-) -> String {
+fn generate_yaml_entry(step: &str, plan_path: &str, summary: &str, timestamp: &str) -> String {
     let mut entry = String::new();
     entry.push_str("---\n");
     entry.push_str(&format!("step: {}\n", step));
     entry.push_str(&format!("date: {}\n", timestamp));
-    if let Some(bead_id) = bead {
-        entry.push_str(&format!("bead: {}\n", bead_id));
-    }
     entry.push_str("---\n");
     entry.push('\n');
     entry.push_str(&format!("## {}: {}\n", step, summary));
@@ -412,7 +399,6 @@ pub fn log_prepend_inner(
     step: &str,
     plan_path: &str,
     summary: &str,
-    bead: Option<&str>,
 ) -> Result<PrependResult, String> {
     use std::fs;
 
@@ -431,7 +417,7 @@ pub fn log_prepend_inner(
     let timestamp = generate_iso8601_timestamp()?;
 
     // Generate YAML entry
-    let entry = generate_yaml_entry(step, plan_path, summary, bead, &timestamp);
+    let entry = generate_yaml_entry(step, plan_path, summary, &timestamp);
 
     // Find insertion point
     let insertion_point = find_insertion_point(&content);
@@ -463,7 +449,6 @@ pub fn log_prepend_inner(
 /// * `step` - Step anchor (e.g., #step-0)
 /// * `plan` - Plan file path
 /// * `summary` - One-line summary of completed work
-/// * `bead` - Optional bead ID to record
 /// * `json_output` - Output in JSON format
 /// * `quiet` - Suppress non-error output
 pub fn run_log_prepend(
@@ -471,7 +456,6 @@ pub fn run_log_prepend(
     step: String,
     plan: String,
     summary: String,
-    bead: Option<String>,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
@@ -483,7 +467,7 @@ pub fn run_log_prepend(
         .unwrap_or_else(|| PathBuf::from("."));
 
     // Call internal helper
-    let result = log_prepend_inner(&base, &step, &plan, &summary, bead.as_deref())?;
+    let result = log_prepend_inner(&base, &step, &plan, &summary)?;
 
     // Convert to PrependData for output
     let data = PrependData {
@@ -501,9 +485,6 @@ pub fn run_log_prepend(
         println!("  Step: {}", result.step);
         println!("  Plan: {}", result.plan);
         println!("  Timestamp: {}", result.timestamp);
-        if let Some(bead_id) = bead {
-            println!("  Bead: {}", bead_id);
-        }
     }
 
     Ok(0)
@@ -721,31 +702,13 @@ mod tests {
             "#step-0",
             ".tugtool/tugplan-13.md",
             "Test summary",
-            Some("bd-123"),
             "2026-02-09T14:30:00Z",
         );
 
         assert!(entry.contains("step: #step-0"));
         assert!(entry.contains("date: 2026-02-09T14:30:00Z"));
-        assert!(entry.contains("bead: bd-123"));
         assert!(entry.contains("## #step-0: Test summary"));
         assert!(entry.contains("- .tugtool/tugplan-13.md"));
-    }
-
-    #[test]
-    fn test_yaml_entry_generation_no_bead() {
-        let entry = generate_yaml_entry(
-            "#step-1",
-            ".tugtool/tugplan-13.md",
-            "Test summary",
-            None,
-            "2026-02-09T14:30:00Z",
-        );
-
-        assert!(entry.contains("step: #step-1"));
-        assert!(entry.contains("date: 2026-02-09T14:30:00Z"));
-        assert!(!entry.contains("bead:"));
-        assert!(entry.contains("## #step-1: Test summary"));
     }
 
     #[test]
@@ -796,7 +759,6 @@ Entries are sorted newest-first.
             "#step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Test implementation".to_string(),
-            Some("bd-123".to_string()),
             false,
             true,
         );
@@ -805,7 +767,6 @@ Entries are sorted newest-first.
         // Verify entry was added
         let new_content = fs::read_to_string(&log_path).unwrap();
         assert!(new_content.contains("step: #step-0"));
-        assert!(new_content.contains("bead: bd-123"));
         assert!(new_content.contains("## #step-0: Test implementation"));
         assert!(new_content.contains("- .tugtool/tugplan-13.md"));
 
@@ -833,7 +794,6 @@ Entries are sorted newest-first.
             "#step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "First entry".to_string(),
-            None,
             false,
             true,
         )
@@ -845,7 +805,6 @@ Entries are sorted newest-first.
             "#step-1".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Second entry".to_string(),
-            None,
             false,
             true,
         )
@@ -871,7 +830,6 @@ Entries are sorted newest-first.
             "#step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Test".to_string(),
-            None,
             false,
             true,
         );

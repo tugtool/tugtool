@@ -1,6 +1,5 @@
 //! CLI command implementations
 
-pub mod beads;
 pub mod commit;
 pub mod doctor;
 pub mod init;
@@ -16,10 +15,6 @@ pub mod validate;
 pub mod version;
 pub mod worktree;
 
-pub use beads::{
-    BeadsCommands, run_append_design, run_append_notes, run_beads_status, run_close, run_inspect,
-    run_link, run_pull, run_sync, run_update_notes,
-};
 pub use commit::run_commit;
 pub use doctor::run_doctor;
 pub use init::run_init;

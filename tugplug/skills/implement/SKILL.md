@@ -63,7 +63,7 @@ Implementation complete
   Worktree: {worktree_path}
   Branch: {branch_name} (from {base_branch})
   Steps to implement: {remaining_count} of {total_count} ({completed_count} already complete)
-  Beads: synced | Root: {root_bead_id}
+  State: initialized
 ```
 
 ### Step header
@@ -124,7 +124,6 @@ If REVISE, append:
 ```
 **tugplug:committer-agent**(Complete)
   Commit: {commit_hash} {commit_message}
-  Bead: {bead_id} closed
   Files: {files_staged.length} staged and committed
   Log: updated{log_rotated ? ", rotated to " + archived_path : ""}
 ```
@@ -181,12 +180,12 @@ All failures use:
   Halting: {reason}
 ```
 
-For `bead_close_failed` (warn and continue):
+For `state_update_failed` (fatal halt):
 ```
-**tugplug:committer-agent**(WARNING: bead close failed)
+**tugplug:committer-agent**(FAILED: state update failed)
   Commit: {commit_hash} succeeded
-  Bead: {bead_id} close FAILED
-  Continuing: worktree state is clean, bead can be closed manually if needed
+  State: complete FAILED
+  Halting: tugstate failure is fatal (manual recovery: tugcode state reconcile)
 ```
 
 ---
@@ -247,7 +246,7 @@ For `bead_close_failed` (warn and continue):
                 ▼
 ┌──────────────────────────────────────────┐
 │ committer-agent                          │
-│ SPAWN/RESUME → commit + close bead       │
+│ SPAWN/RESUME → commit + state complete   │
 └────────────────────┬─────────────────────┘
                      │
              ┌───────────────┐
@@ -305,22 +304,6 @@ For `bead_close_failed` (warn and continue):
 
 ---
 
-## Bead Write Protocol
-
-After each agent call that produces a bead temp file, run the corresponding CLI command to persist it. The agent writes the temp file; you run the CLI call and clean up.
-
-| After agent | Temp file | CLI command |
-|-------------|-----------|-------------|
-| architect | `.../_tmp_{bead_id}_strategy.md` | `tugcode beads append-design {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path}` |
-| coder | `.../_tmp_{bead_id}_notes.md` | `tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path}` |
-| reviewer | `.../_tmp_{bead_id}_review.md` | `tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path}` |
-
-After the CLI call, delete the temp file: append `&& rm {worktree_path}/.tugtool/_tmp_{bead_id}_{suffix}.md` to the command.
-
-**Error handling:** If the CLI call fails (non-zero exit — e.g., temp file missing), output a warning and continue. Do NOT halt. The agent's JSON output already contains all data needed by downstream agents.
-
----
-
 ## Execute This Sequence
 
 ### 1. Create Worktree
@@ -342,9 +325,8 @@ Parse the JSON output from stdout. The output is a CreateData object with these 
 - `plan_path`: Relative path to the plan file
 - `total_steps`: Total number of execution steps
 - `all_steps`: Array of all step anchors (e.g., ["#step-0", "#step-1"])
-- `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet closed)
-- `bead_mapping`: Map from step anchors to bead IDs (e.g., {"#step-0": "bd-abc.1"})
-- `root_bead_id`: Root bead ID for the plan
+- `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet complete)
+- `state_initialized`: Boolean indicating tugstate was initialized
 
 ### 2. Handle Worktree Result
 
@@ -363,7 +345,9 @@ Use the JSON fields directly. Do not compute or derive anything beyond what is s
 
 Output the Setup complete progress message. Immediately proceed to the step loop.
 
-Store: `worktree_path`, `branch_name`, `base_branch`, `steps_to_implement`, `bead_mapping`, `root_bead_id`
+Store: `worktree_path`, `branch_name`, `base_branch`, `plan_path`, `steps_to_implement`
+
+Note: Step identity now comes from `tugcode state claim` response, not from a pre-built mapping.
 
 ### 3. For Each Step in `steps_to_implement`
 
@@ -394,7 +378,6 @@ Task(
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
     "step_anchor": "#step-0",
-    "bead_id": "<bead_id from bead_mapping>",
     "all_steps": ["#step-0", "#step-1", ...]
   }',
   description: "Plan strategy for step 0"
@@ -409,7 +392,7 @@ Task(
 Task(
   subagent_type: "tugplug:architect-agent",
   resume: "<architect_id>",
-  prompt: 'Plan strategy for step #step-N. Bead: <bead_id from bead_mapping>. Previous step accomplished: <step_summary>.',
+  prompt: 'Plan strategy for step {step_anchor}. Previous step accomplished: <step_summary>.',
   description: "Plan strategy for step N"
 )
 ```
@@ -418,13 +401,15 @@ Parse the architect's JSON output. Extract `approach`, `expected_touch_set`, `im
 
 Output the Architect post-call message.
 
-**Bead write** (see Bead Write Protocol): persist architect's temp file.
+**Tugstate calls:**
 
 ```
-Bash: tugcode beads append-design {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_strategy.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
 
-If this fails, output a warning and continue.
+```
+Bash: tugcode state artifact {plan_path} {step_anchor} --kind architect_strategy --summary "{first 500 chars of approach}" --worktree {worktree_path}
+```
 
 #### 3b. Coder: Implement Strategy
 
@@ -436,8 +421,7 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-0",
-    "bead_id": "<bead_id from bead_mapping>"
+    "step_anchor": "#step-0"
   }',
   description: "Implement step 0"
 )
@@ -451,7 +435,7 @@ Task(
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Implement step #step-N. Bead: <bead_id from bead_mapping>.',
+  prompt: 'Implement step {step_anchor}.',
   description: "Implement step N"
 )
 ```
@@ -459,7 +443,7 @@ Task(
 Parse the coder's JSON output. If `success == false` and `halted_for_drift == false`, output failure message and HALT.
 
 **Context exhaustion recovery:** If the coder resume fails with "Prompt is too long", the coder's context is full. Spawn a FRESH coder with an explicit list of files already modified (from the last successful coder output). The fresh coder prompt must include:
-- Full initial spawn JSON (worktree_path, plan_path, step_anchor, bead_id)
+- Full initial spawn JSON (worktree_path, plan_path, step_anchor)
 - `"continuation": true`
 - `"files_already_modified": [<files from previous coder output>]`
 - Instruction: "A previous coder modified these files but did not complete the step. Verify ALL files in expected_touch_set are addressed. Do NOT re-modify files that are already correct."
@@ -468,13 +452,11 @@ Save the NEW agent ID as `coder_id` (replacing the exhausted one). The old coder
 
 Output the Coder post-call message.
 
-**Bead write** (see Bead Write Protocol): persist coder's temp file.
+**Tugstate call:**
 
 ```
-Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
-
-If this fails, output a warning and continue.
 
 #### 3c. Drift Check
 
@@ -496,20 +478,18 @@ Evaluate `drift_assessment.drift_severity` from coder output:
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Revision needed. Bead: <bead_id>. Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope.',
+  prompt: 'Revision needed. Feedback: <drift_assessment details>. Adjust your implementation to stay within expected scope.',
   description: "Revise implementation for step N"
 )
 ```
 
 Output the Coder post-call message.
 
-**Bead write** (see Bead Write Protocol): persist coder's temp file.
+**Tugstate call:**
 
 ```
-Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
-
-If this fails, output a warning and continue.
 
 #### 3d. Reviewer: Verify Implementation
 
@@ -521,8 +501,7 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-0",
-    "bead_id": "<bead_id from bead_mapping>"
+    "step_anchor": "#step-0"
   }',
   description: "Verify step 0 completion"
 )
@@ -536,28 +515,36 @@ Task(
 Task(
   subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
-  prompt: 'Review step #step-N. Bead: <bead_id from bead_mapping>.',
+  prompt: 'Review step {step_anchor}.',
   description: "Verify step N completion"
 )
 ```
 
 Output the Reviewer post-call message.
 
-**Bead write** (see Bead Write Protocol): persist reviewer's temp file.
+**Tugstate calls:**
 
 ```
-Bash: tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_review.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
 
-If this fails, output a warning and continue.
+```
+Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
+```
 
 #### 3e. Handle Reviewer Recommendation
 
 | Recommendation | Action |
 |----------------|--------|
-| `APPROVE` | Proceed to commit (3f) |
+| `APPROVE` | Mark all checkboxes complete, then proceed to commit (3f) |
 | `REVISE` | Resume coder with feedback, then resume reviewer (3e-retry) |
 | `ESCALATE` | AskUserQuestion showing issues, get user decision |
+
+**After APPROVE — mark all checkboxes complete:**
+
+```
+Bash: tugcode state update {plan_path} {step_anchor} --all completed --worktree {worktree_path}
+```
 
 **3e-retry (REVISE loop):**
 
@@ -569,20 +556,18 @@ Increment `reviewer_attempts`. If `reviewer_attempts >= 3`, ESCALATE to user.
 Task(
   subagent_type: "tugplug:coder-agent",
   resume: "<coder_id>",
-  prompt: 'Reviewer found issues. Bead: <bead_id>. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output.',
+  prompt: 'Reviewer found issues. Fix these: <failed tasks from plan_conformance> <issues array>. Then return updated output.',
   description: "Fix reviewer issues for step N"
 )
 ```
 
 Output the Coder post-call message.
 
-**Bead write** (see Bead Write Protocol): persist coder's temp file.
+**Tugstate call:**
 
 ```
-Bash: tugcode beads update-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_notes.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
-
-If this fails, output a warning and continue.
 
 2. **Resume reviewer** for re-review:
 
@@ -590,20 +575,22 @@ If this fails, output a warning and continue.
 Task(
   subagent_type: "tugplug:reviewer-agent",
   resume: "<reviewer_id>",
-  prompt: 'Coder has addressed the issues. Bead: <bead_id>. Re-review.',
+  prompt: 'Coder has addressed the issues. Re-review.',
   description: "Re-review step N"
 )
 ```
 
 Output the Reviewer post-call message.
 
-**Bead write** (see Bead Write Protocol): persist reviewer's temp file.
+**Tugstate calls:**
 
 ```
-Bash: tugcode beads append-notes {bead_id} --content-file {worktree_path}/.tugtool/_tmp_{bead_id}_review.md --working-dir {worktree_path} && rm {worktree_path}/.tugtool/_tmp_{bead_id}_review.md
+Bash: tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}
 ```
 
-If this fails, output a warning and continue.
+```
+Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict --summary "{first 500 chars of verdict}" --worktree {worktree_path}
+```
 
 Go back to 3e to check the new recommendation.
 
@@ -623,8 +610,6 @@ Task(
     "plan_path": "<path>",
     "step_anchor": "#step-N",
     "proposed_message": "feat(<scope>): <description>",
-    "bead_id": "<bead_id from bead_mapping>",
-    "close_reason": "Step N complete: <summary>",
     "log_entry": {
       "summary": "<brief description of what was done>"
     }
@@ -649,7 +634,7 @@ Task(
 
 Parse the committer's JSON output. Record `commit_hash` for step summary.
 
-If `bead_close_failed == true`: output the bead_close_failed warning message and continue (worktree is clean).
+If `state_update_failed == true`: output failure message and HALT immediately (tugstate failure is fatal per [D07]).
 If `aborted == true`: output failure message with reason and HALT.
 
 Output the Committer post-call message.
@@ -913,27 +898,23 @@ From coder output, evaluate `drift_assessment`:
 
 ---
 
-## Reference: Beads Integration
+## Reference: Tugstate Protocol
 
-**Beads are synced during setup**, which populates:
-- `root_bead_id`: The root bead ID for the entire plan
-- `bead_mapping`: A map from step anchors to bead IDs
+Tugstate tracks per-step execution state in an embedded SQLite database. The orchestrator manages all state transitions — agents never call tugstate commands directly.
 
-**Key implementation details**:
-- Beads uses **direct SQLite mode** (BEADS_NO_DAEMON=1, BEADS_NO_AUTO_FLUSH=1) — no daemon, no auto-flush
-- `bead_mapping` comes from the beads sync **JSON output** (not from plan file annotations)
-- **Plan files are never modified** by beads sync
-- Beads sync errors during worktree create remain **fatal** (fail fast)
+**Step lifecycle:**
+1. `tugcode state claim {plan_path} --worktree {worktree_path} --json` — get next ready step
+2. `tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}` — transition to in_progress
+3. `tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}` — after each agent call
+4. `tugcode state artifact {plan_path} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
+5. `tugcode state update {plan_path} {step_anchor} --all completed --worktree {worktree_path}` — after reviewer approval
+6. `tugcode commit` — internally calls `state complete` (no separate orchestrator call needed)
 
-**Data persistence** (handled by orchestrator via Bead Write Protocol):
-
-After each agent call (architect, coder, reviewer), the orchestrator runs the appropriate `tugcode beads` CLI command to persist the agent's temp file to the bead, then deletes the temp file. See the Bead Write Protocol section for the exact commands. **Agents never run bead write commands** — they only use `beads inspect` for reading.
-
-**Close after commit** (handled by committer-agent via `tugcode commit`):
-
-The committer-agent is a thin CLI wrapper that delegates to `tugcode commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
-
-**Fixup commits** (audit and integration fixes) are outside the bead system. They use `tugcode log prepend` for tracking and direct git commands for commits, but do not close beads. Only step commits close beads.
+**Error handling:**
+- All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately
+- If `state_update_failed == true` in commit JSON response — halt immediately
+- Manual recovery: `tugcode state reconcile {plan_path}`
+- The orchestrator never calls `tugcode state reconcile` — it is a manual recovery tool only
 
 ---
 

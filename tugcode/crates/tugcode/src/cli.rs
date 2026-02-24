@@ -2,7 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{BeadsCommands, LogCommands, StateCommands, WorktreeCommands};
+use crate::commands::{LogCommands, StateCommands, WorktreeCommands};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -12,7 +12,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(version = VERSION)]
 #[command(about = "From ideas to implementation via multi-agent orchestration")]
 #[command(
-    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugplug:plan, /tugplug:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
+    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugplug:plan, /tugplug:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and manage state for execution tracking."
 )]
 pub struct Cli {
     /// Increase output verbosity
@@ -85,7 +85,7 @@ pub enum Commands {
     ///
     /// Displays step-by-step progress with task and checkpoint counts.
     #[command(
-        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n  - Substep progress if present\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse --full to include bead-enriched status (bead IDs, commit info, block status)."
+        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n  - Substep progress if present\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse 'tugcode state show' for detailed execution state."
     )]
     Status {
         /// Plan file to show status for
@@ -94,27 +94,14 @@ pub enum Commands {
         /// Show individual task and checkpoint details
         #[arg(short, long)]
         verbose: bool,
-
-        /// Include bead-enriched status (requires beads integration)
-        #[arg(long)]
-        full: bool,
     },
-
-    /// Beads integration commands
-    ///
-    /// Sync steps to beads, link beads, show status, pull completion.
-    #[command(
-        subcommand,
-        long_about = "Beads integration for two-way sync between plans and work tracking.\n\nRequires:\n  - Beads CLI (bd) installed and in PATH\n  - Beads initialized (bd init creates .beads/)\n\nSubcommands:\n  sync           Create beads from plan steps\n  link           Manually link a step to an existing bead\n  status         Show execution status (complete/ready/blocked)\n  pull           Update plan checkboxes from bead completion\n  close          Close a bead to mark work complete\n  inspect        Inspect a bead showing all fields\n  update-notes   Update the notes field of a bead\n  append-notes   Append content to the notes field\n  append-design  Append content to the design field"
-    )]
-    Beads(BeadsCommands),
 
     /// Worktree commands for isolated implementation environments
     ///
     /// Create, list, and clean up git worktrees for plan implementations.
     #[command(
         subcommand,
-        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  create  Create worktree and branch for a plan (optionally sync beads)\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree create .tugtool/tugplan-auth.md --sync-beads\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
+        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  create  Create worktree and branch for a plan\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree create .tugtool/tugplan-auth.md\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
     )]
     Worktree(WorktreeCommands),
 
@@ -130,7 +117,7 @@ pub enum Commands {
     /// Rotate and prepend entries to the implementation log.
     #[command(
         subcommand,
-        long_about = "Log management commands.\n\nProvides log rotation and prepend functionality:\n  - Rotate: Archive logs exceeding size thresholds\n  - Prepend: Add new entries atomically\n\nSubcommands:\n  rotate  Archive log when over 500 lines or 100KB\n  prepend Add entry to log atomically\n\nTypical workflow:\n  1. tug log rotate  # Manual rotation\n  2. (automatic rotation happens via beads close and committer)"
+        long_about = "Log management commands.\n\nProvides log rotation and prepend functionality:\n  - Rotate: Archive logs exceeding size thresholds\n  - Prepend: Add new entries atomically\n\nSubcommands:\n  rotate  Archive log when over 500 lines or 100KB\n  prepend Add entry to log atomically\n\nTypical workflow:\n  1. tug log rotate  # Manual rotation\n  2. (automatic rotation happens via commit)"
     )]
     Log(LogCommands),
 
@@ -146,7 +133,7 @@ pub enum Commands {
     ///
     /// Automates the post-implementation merge workflow with auto mode detection.
     #[command(
-        long_about = "Merge a plan's implementation and clean up worktree.\n\nMode auto-detection:\n  Remote mode: Repository has 'origin' remote\n  Local mode:  No remote configured\n\nRemote mode workflow:\n  1. Find worktree for plan\n  2. Check main is synced with origin\n  3. Find PR for worktree branch\n  4. Verify PR checks have passed\n  5. Auto-commit infrastructure files\n  6. Push main to origin\n  7. Merge PR via squash\n  8. Pull main to get squashed commit\n  9. Clean up worktree and branch\n\nLocal mode workflow:\n  1. Find worktree for plan\n  2. Check branch has commits to merge\n  3. Auto-commit infrastructure files\n  4. Squash merge branch into main\n  5. Clean up worktree and branch\n\nInfrastructure files (auto-committed):\n  - agents/*.md, skills/**, .claude/skills/**\n  - .tugtool/tugplan-skeleton.md, .tugtool/config.toml\n  - .tugtool/tugplan-implementation-log.md\n  - .beads/*, CLAUDE.md\n\nUse --dry-run to preview operations.\nUse --force to proceed with non-infrastructure uncommitted files (not recommended)."
+        long_about = "Merge a plan's implementation and clean up worktree.\n\nMode auto-detection:\n  Remote mode: Repository has 'origin' remote\n  Local mode:  No remote configured\n\nRemote mode workflow:\n  1. Find worktree for plan\n  2. Check main is synced with origin\n  3. Find PR for worktree branch\n  4. Verify PR checks have passed\n  5. Auto-commit infrastructure files\n  6. Push main to origin\n  7. Merge PR via squash\n  8. Pull main to get squashed commit\n  9. Clean up worktree and branch\n\nLocal mode workflow:\n  1. Find worktree for plan\n  2. Check branch has commits to merge\n  3. Auto-commit infrastructure files\n  4. Squash merge branch into main\n  5. Clean up worktree and branch\n\nInfrastructure files (auto-committed):\n  - agents/*.md, skills/**, .claude/skills/**\n  - .tugtool/tugplan-skeleton.md, .tugtool/config.toml\n  - .tugtool/tugplan-implementation-log.md\n  - CLAUDE.md\n\nUse --dry-run to preview operations.\nUse --force to proceed with non-infrastructure uncommitted files (not recommended)."
     )]
     Merge {
         /// Plan file path (e.g., .tugtool/tugplan-12.md)
@@ -186,9 +173,9 @@ pub enum Commands {
 
     /// Commit a single implementation step
     ///
-    /// Atomically performs log rotation, prepend, git commit, and bead close.
+    /// Atomically performs log rotation, prepend, and git commit.
     #[command(
-        long_about = "Commit a single implementation step.\n\nAtomic sequence:\n  1. Rotate log if over threshold\n  2. Prepend log entry\n  3. Stage files\n  4. Git commit\n  5. Close bead\n\nAll file paths are relative to worktree root.\n\nPartial success: If commit succeeds but bead close fails, exits 0 with bead_close_failed=true."
+        long_about = "Commit a single implementation step.\n\nAtomic sequence:\n  1. Rotate log if over threshold\n  2. Prepend log entry\n  3. Stage files\n  4. Git commit\n\nAll file paths are relative to worktree root.\n\nPartial success: If commit succeeds but state complete fails, exits 0 with state_update_failed=true."
     )]
     Commit {
         /// Absolute path to the worktree directory
@@ -207,17 +194,9 @@ pub enum Commands {
         #[arg(long, value_name = "MESSAGE")]
         message: String,
 
-        /// Bead ID to close (e.g., bd-abc123)
-        #[arg(long, value_name = "BEAD_ID")]
-        bead: String,
-
         /// One-line summary for log entry
         #[arg(long, value_name = "TEXT")]
         summary: String,
-
-        /// Reason for closing the bead (optional)
-        #[arg(long, value_name = "TEXT")]
-        close_reason: Option<String>,
     },
 
     /// Push branch and open a pull request
@@ -468,32 +447,9 @@ mod tests {
         let cli = Cli::try_parse_from(["tugcode", "status", "tugplan-1.md"]).unwrap();
 
         match cli.command {
-            Some(Commands::Status {
-                file,
-                verbose,
-                full,
-            }) => {
+            Some(Commands::Status { file, verbose }) => {
                 assert_eq!(file, "tugplan-1.md");
                 assert!(!verbose);
-                assert!(!full);
-            }
-            _ => panic!("Expected Status command"),
-        }
-    }
-
-    #[test]
-    fn test_status_command_with_full() {
-        let cli = Cli::try_parse_from(["tugcode", "status", "tugplan-1.md", "--full"]).unwrap();
-
-        match cli.command {
-            Some(Commands::Status {
-                file,
-                verbose,
-                full,
-            }) => {
-                assert_eq!(file, "tugplan-1.md");
-                assert!(!verbose);
-                assert!(full);
             }
             _ => panic!("Expected Status command"),
         }
@@ -675,48 +631,10 @@ mod tests {
                     step,
                     plan,
                     summary,
-                    bead,
                 } => {
                     assert_eq!(step, "#step-0");
                     assert_eq!(plan, ".tugtool/tugplan-13.md");
                     assert_eq!(summary, "Completed step 0");
-                    assert!(bead.is_none());
-                }
-                _ => panic!("Expected Log Prepend command"),
-            },
-            _ => panic!("Expected Log command"),
-        }
-    }
-
-    #[test]
-    fn test_log_prepend_command_with_bead() {
-        let cli = Cli::try_parse_from([
-            "tug",
-            "log",
-            "prepend",
-            "--step",
-            "#step-0",
-            "--plan",
-            ".tugtool/tugplan-13.md",
-            "--summary",
-            "Completed step 0",
-            "--bead",
-            "bd-abc123",
-        ])
-        .unwrap();
-
-        match cli.command {
-            Some(Commands::Log(log_cmd)) => match log_cmd {
-                LogCommands::Prepend {
-                    step,
-                    plan,
-                    summary,
-                    bead,
-                } => {
-                    assert_eq!(step, "#step-0");
-                    assert_eq!(plan, ".tugtool/tugplan-13.md");
-                    assert_eq!(summary, "Completed step 0");
-                    assert_eq!(bead, Some("bd-abc123".to_string()));
                 }
                 _ => panic!("Expected Log Prepend command"),
             },
@@ -811,8 +729,6 @@ mod tests {
             ".tugtool/tugplan-1.md",
             "--message",
             "feat: add feature",
-            "--bead",
-            "bd-123",
             "--summary",
             "Completed step 0",
         ])
@@ -824,50 +740,13 @@ mod tests {
                 step,
                 plan,
                 message,
-                bead,
                 summary,
-                close_reason,
             }) => {
                 assert_eq!(worktree, "/path/to/worktree");
                 assert_eq!(step, "#step-0");
                 assert_eq!(plan, ".tugtool/tugplan-1.md");
                 assert_eq!(message, "feat: add feature");
-                assert_eq!(bead, "bd-123");
                 assert_eq!(summary, "Completed step 0");
-                assert!(close_reason.is_none());
-            }
-            _ => panic!("Expected Commit command"),
-        }
-    }
-
-    #[test]
-    fn test_commit_with_close_reason() {
-        let cli = Cli::try_parse_from([
-            "tug",
-            "commit",
-            "--worktree",
-            "/path",
-            "--step",
-            "#step-1",
-            "--plan",
-            ".tugtool/tugplan-2.md",
-            "--message",
-            "fix: something",
-            "--bead",
-            "bd-456",
-            "--summary",
-            "Done",
-            "--close-reason",
-            "Step completed successfully",
-        ])
-        .unwrap();
-
-        match cli.command {
-            Some(Commands::Commit { close_reason, .. }) => {
-                assert_eq!(
-                    close_reason,
-                    Some("Step completed successfully".to_string())
-                );
             }
             _ => panic!("Expected Commit command"),
         }

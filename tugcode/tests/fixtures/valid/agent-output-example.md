@@ -1,6 +1,6 @@
 ## Phase 1.0: Example Agent Output {#phase-1}
 
-**Purpose:** Demonstrates what a plan looks like after agent execution, including bead IDs and completed checkpoints.
+**Purpose:** Demonstrates what a plan looks like after agent execution, including completed checkpoints.
 
 ---
 
@@ -13,7 +13,6 @@
 | Target branch | feature/example |
 | Tracking issue/PR | #42 |
 | Last updated | 2026-02-04 |
-| Beads Root | `bd-abc123` |
 
 ---
 
@@ -23,35 +22,33 @@
 
 This plan demonstrates the output format after agents have processed it.
 Key features shown:
-- Bead IDs written by `tug beads sync`
 - Checked checkboxes from completed work
 - Agent-generated references
 
 #### Strategy {#strategy}
 
-- Show bead ID placement (Beads Root in metadata, Bead per step)
-- Demonstrate checkpoint completion markers
+- Show checkpoint completion markers
 - Include realistic references
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - All steps have valid structure
-- Bead IDs appear in correct positions
+- All fields are well-structured
 
 ---
 
 ### 1.0.0 Design Decisions {#design-decisions}
 
-#### [D01] Use Standard Bead Format (DECIDED) {#d01-bead-format}
+#### [D01] Use Conventional Commits (DECIDED) {#d01-conventional-commits}
 
-**Decision:** Bead IDs follow the pattern `bd-<hash>` with optional `.N` suffix for substeps.
+**Decision:** Commit messages follow Conventional Commits format with `feat:`, `fix:`, `docs:` prefixes.
 
 **Rationale:**
-- Consistent with Beads CLI output
-- Supports hierarchical relationships
+- Consistent with industry standard
+- Supports automated changelog generation
 
 **Implications:**
-- Validation can check bead ID format
+- Validation can check commit message format
 
 ---
 
@@ -59,11 +56,9 @@ Key features shown:
 
 #### Step 0: Bootstrap {#step-0}
 
-**Bead:** `bd-def456`
-
 **Commit:** `feat: initial project setup`
 
-**References:** [D01] Use standard bead format, (#context, #strategy)
+**References:** [D01] Use conventional commits, (#context, #strategy)
 
 **Artifacts:**
 - Project structure
@@ -93,11 +88,9 @@ Key features shown:
 
 **Depends on:** #step-0
 
-**Bead:** `bd-ghi789`
-
 **Commit:** `feat: implement core functionality`
 
-**References:** [D01] Use standard bead format
+**References:** [D01] Use conventional commits
 
 **Artifacts:**
 - Core module
@@ -127,11 +120,9 @@ Key features shown:
 
 **Depends on:** #step-1
 
-**Bead:** `bd-jkl012`
-
 **Commit:** `docs: add documentation`
 
-**References:** [D01] Use standard bead format
+**References:** [D01] Use conventional commits
 
 **Artifacts:**
 - README.md
@@ -162,11 +153,11 @@ Key features shown:
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [x] Steps have bead IDs
+- [x] Steps have valid structure
 - [x] Some checkboxes are checked (showing progress)
 - [ ] All checkboxes checked (phase complete)
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Bead format | IDs match `bd-*` pattern |
+| Step format | Steps match expected structure |
 | Progress tracking | Checkboxes reflect actual state |

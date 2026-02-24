@@ -231,15 +231,9 @@ pub struct StatusData {
     /// First remaining step, or None if all done
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_step: Option<StepInfo>,
-    /// Map of step anchor (with #) to bead ID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_mapping: Option<std::collections::HashMap<String, String>>,
     /// Map of step anchor (with #) to dependency anchors (with #)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<std::collections::HashMap<String, Vec<String>>>,
-    /// Mode: "full" or null (for --full flag)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
     /// Plan file path
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
@@ -258,9 +252,6 @@ pub struct StatusData {
     /// Number of blocked steps
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_step_count: Option<usize>,
-    /// Bead-enriched step status (for --full)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_steps: Option<Vec<BeadStepStatus>>,
 }
 
 /// Status of a single step
@@ -301,47 +292,6 @@ pub struct StepInfo {
     pub title: String,
     /// Step number (e.g., "0", "1", "2-1")
     pub number: String,
-    /// Bead ID if assigned
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_id: Option<String>,
-}
-
-/// Bead-enriched step status for --full view (Table T01)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BeadStepStatus {
-    /// Step anchor (with #)
-    pub anchor: String,
-    /// Step title
-    pub title: String,
-    /// Step number (e.g., "0", "1", "2-1")
-    pub number: String,
-    /// Bead status: "complete", "ready", "blocked", or null if no bead
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_status: Option<String>,
-    /// Bead ID if assigned
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_id: Option<String>,
-    /// Commit hash from close_reason (if "Committed: <hash> -- <summary>")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit_hash: Option<String>,
-    /// Commit summary from close_reason
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit_summary: Option<String>,
-    /// Raw close_reason string
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub close_reason: Option<String>,
-    /// Number of task checkboxes in step
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_count: Option<usize>,
-    /// Number of test checkboxes in step
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub test_count: Option<usize>,
-    /// Number of checkpoints in step
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkpoint_count: Option<usize>,
-    /// List of step anchors this step is blocked by
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blocked_by: Option<Vec<String>>,
 }
 
 /// Data payload for log rotate command (Spec S01)
@@ -413,36 +363,14 @@ pub struct HealthCheck {
     pub details: Option<serde_json::Value>,
 }
 
-/// Data payload for beads close command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BeadsCloseData {
-    /// Bead ID that was closed
-    pub bead_id: String,
-    /// Whether the bead was closed successfully
-    pub closed: bool,
-    /// Optional reason for closing
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-    /// Whether log rotation was triggered
-    pub log_rotated: bool,
-    /// Path to archived log if rotation occurred
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub archived_path: Option<String>,
-}
-
 /// Data payload for commit command (Spec S01)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommitData {
     /// Whether the git commit was created
     pub committed: bool,
     /// Full git commit hash, null if not committed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit_hash: Option<String>,
-    /// Whether the bead was closed successfully
-    pub bead_closed: bool,
-    /// Bead ID that was closed, null if not closed
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_id: Option<String>,
     /// Whether the implementation log was updated
     pub log_updated: bool,
     /// Whether log rotation occurred before prepend
@@ -452,9 +380,6 @@ pub struct CommitData {
     pub archived_path: Option<String>,
     /// List of files that were staged
     pub files_staged: Vec<String>,
-    /// True if commit succeeded but bead close failed
-    #[serde(alias = "needs_reconcile")] // v1 compat
-    pub bead_close_failed: bool,
     /// True if commit succeeded but state complete failed
     pub state_update_failed: bool,
     /// Any non-fatal warnings encountered
@@ -514,13 +439,10 @@ mod tests {
         let data = CommitData {
             committed: true,
             commit_hash: Some("abc1234".to_string()),
-            bead_closed: true,
-            bead_id: Some("bd-123".to_string()),
             log_updated: true,
             log_rotated: false,
             archived_path: None,
             files_staged: vec!["a.rs".to_string(), "b.rs".to_string()],
-            bead_close_failed: false,
             state_update_failed: false,
             warnings: vec![],
         };
@@ -530,13 +452,10 @@ mod tests {
 
         assert!(deserialized.committed);
         assert_eq!(deserialized.commit_hash, Some("abc1234".to_string()));
-        assert!(deserialized.bead_closed);
-        assert_eq!(deserialized.bead_id, Some("bd-123".to_string()));
         assert!(deserialized.log_updated);
         assert!(!deserialized.log_rotated);
         assert_eq!(deserialized.archived_path, None);
         assert_eq!(deserialized.files_staged, vec!["a.rs", "b.rs"]);
-        assert!(!deserialized.bead_close_failed);
         assert_eq!(deserialized.warnings.len(), 0);
     }
 
@@ -545,22 +464,18 @@ mod tests {
         let data = CommitData {
             committed: true,
             commit_hash: Some("def5678".to_string()),
-            bead_closed: false,
-            bead_id: None,
             log_updated: true,
             log_rotated: true,
             archived_path: Some(".tugtool/archive/log-2026-02-11.md".to_string()),
             files_staged: vec!["x.rs".to_string()],
-            bead_close_failed: true,
             state_update_failed: false,
-            warnings: vec!["Bead close failed".to_string()],
+            warnings: vec!["State update failed".to_string()],
         };
 
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: CommitData = serde_json::from_str(&json).unwrap();
 
-        assert!(deserialized.bead_close_failed);
-        assert_eq!(deserialized.warnings, vec!["Bead close failed"]);
+        assert_eq!(deserialized.warnings, vec!["State update failed"]);
         assert_eq!(
             deserialized.archived_path,
             Some(".tugtool/archive/log-2026-02-11.md".to_string())
@@ -611,82 +526,6 @@ mod tests {
         assert!(!deserialized.pr_created);
         assert_eq!(deserialized.pr_url, None);
         assert_eq!(deserialized.pr_number, None);
-    }
-
-    #[test]
-    fn test_bead_step_status_serialization_full() {
-        let status = BeadStepStatus {
-            anchor: "#step-0".to_string(),
-            title: "Add authentication".to_string(),
-            number: "0".to_string(),
-            bead_status: Some("complete".to_string()),
-            bead_id: Some("bd-abc123".to_string()),
-            commit_hash: Some("abc123d".to_string()),
-            commit_summary: Some("feat(auth): add login".to_string()),
-            close_reason: Some("Committed: abc123d -- feat(auth): add login".to_string()),
-            task_count: Some(5),
-            test_count: Some(3),
-            checkpoint_count: Some(2),
-            blocked_by: Some(vec!["#step-1".to_string()]),
-        };
-
-        let json = serde_json::to_string(&status).unwrap();
-        let deserialized: BeadStepStatus = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(deserialized.anchor, "#step-0");
-        assert_eq!(deserialized.title, "Add authentication");
-        assert_eq!(deserialized.number, "0");
-        assert_eq!(deserialized.bead_status, Some("complete".to_string()));
-        assert_eq!(deserialized.bead_id, Some("bd-abc123".to_string()));
-        assert_eq!(deserialized.commit_hash, Some("abc123d".to_string()));
-        assert_eq!(
-            deserialized.commit_summary,
-            Some("feat(auth): add login".to_string())
-        );
-        assert_eq!(
-            deserialized.close_reason,
-            Some("Committed: abc123d -- feat(auth): add login".to_string())
-        );
-        assert_eq!(deserialized.task_count, Some(5));
-        assert_eq!(deserialized.test_count, Some(3));
-        assert_eq!(deserialized.checkpoint_count, Some(2));
-        assert_eq!(deserialized.blocked_by, Some(vec!["#step-1".to_string()]));
-    }
-
-    #[test]
-    fn test_bead_step_status_serialization_optional_omitted() {
-        let status = BeadStepStatus {
-            anchor: "#step-1".to_string(),
-            title: "Add password reset".to_string(),
-            number: "1".to_string(),
-            bead_status: None,
-            bead_id: None,
-            commit_hash: None,
-            commit_summary: None,
-            close_reason: None,
-            task_count: None,
-            test_count: None,
-            checkpoint_count: None,
-            blocked_by: None,
-        };
-
-        let json = serde_json::to_string(&status).unwrap();
-
-        // Verify optional fields are omitted from JSON
-        assert!(!json.contains("bead_status"));
-        assert!(!json.contains("bead_id"));
-        assert!(!json.contains("commit_hash"));
-        assert!(!json.contains("commit_summary"));
-        assert!(!json.contains("close_reason"));
-        assert!(!json.contains("task_count"));
-        assert!(!json.contains("test_count"));
-        assert!(!json.contains("checkpoint_count"));
-        assert!(!json.contains("blocked_by"));
-
-        // Verify required fields are present
-        assert!(json.contains("\"anchor\""));
-        assert!(json.contains("\"title\""));
-        assert!(json.contains("\"number\""));
     }
 }
 

@@ -38,11 +38,9 @@
       "title": "Bootstrap",
       "number": "0"
     },
-    "bead_mapping": {},
     "dependencies": {
       "#step-0": []
-    },
-    "mode": "checkbox"
+    }
   },
   "issues": []
 }

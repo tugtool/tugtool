@@ -133,7 +133,7 @@ cd {worktree_path} && cargo fmt --check
 
 Capture each command's exit code and the last ~20 lines of output. Store in `build_results`.
 
-**Critical:** Do NOT trust per-step bead notes or coder build reports. This is a fresh verification after all steps are complete.
+**Critical:** Do NOT trust per-step data or coder build reports. This is a fresh verification after all steps are complete.
 
 ### Phase 2: Verify Deliverables Against #exit-criteria
 
@@ -231,7 +231,7 @@ else:
 
 4. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT access files or run commands outside the worktree.
 
-5. **Fresh verification**: Do NOT trust per-step build reports or bead notes. Run your own fresh build/test/clippy/fmt suite.
+5. **Fresh verification**: Do NOT trust per-step build reports or coder notes. Run your own fresh build/test/clippy/fmt suite.
 
 6. **Grade all issues**: Every issue in the `issues` array must have a priority P0-P3.
 

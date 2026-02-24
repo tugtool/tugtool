@@ -1782,14 +1782,11 @@ mod tests {
         make_initial_commit(temp_path);
 
         fs::write(temp_path.join("new_file.txt"), "new").unwrap();
-        fs::create_dir_all(temp_path.join(".beads")).unwrap();
-        fs::write(temp_path.join(".beads/beads.jsonl"), "{}").unwrap();
 
         let files = get_dirty_files(temp_path).unwrap();
-        // Both files are untracked (never git-added)
+        // new_file.txt is untracked (never git-added)
         assert!(files.tracked_modified.is_empty());
-        assert_eq!(files.untracked.len(), 2);
-        assert!(files.untracked.contains(&".beads/beads.jsonl".to_string()));
+        assert_eq!(files.untracked.len(), 1);
         assert!(files.untracked.contains(&"new_file.txt".to_string()));
     }
 
@@ -1958,7 +1955,7 @@ mod tests {
             dry_run: true,
             untracked_files: None,
             warnings: Some(vec![
-                "2 of 5 steps incomplete. Run 'tug beads status .tugtool/tugplan-1.md' to review."
+                "2 of 5 steps incomplete. Run 'tugcode state show .tugtool/tugplan-1.md' to review."
                     .to_string(),
                 "Remote detected but gh CLI unavailable -- falling back to local mode".to_string(),
                 "Multiple worktrees found for this plan (2 total). Using most recent: tugtool/1-20260210-140000"

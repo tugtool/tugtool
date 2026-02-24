@@ -20,9 +20,7 @@ pub enum WorktreeCommands {
     /// Create worktree for implementation
     ///
     /// Creates a git worktree and branch for implementing a plan in isolation.
-    #[command(
-        long_about = "Create worktree for plan implementation.\n\nCreates:\n  - Branch: tugtool/<slug>-<timestamp>\n  - Worktree: .tugtree/<sanitized-branch-name>/\n\nBeads sync is always-on:\n  - Atomically syncs beads and commits annotations in worktree\n  - Full rollback if sync or commit fails\n\nWorktree creation is idempotent:\n  - Returns existing worktree if one exists for this plan\n  - Creates new worktree if none exists\n\nValidates that the plan has at least one execution step."
-    )]
+    #[command()]
     Create {
         /// Plan file to implement
         plan: String,
@@ -96,13 +94,9 @@ pub struct CreateData {
     pub base_branch: String,
     pub plan_path: String,
     pub total_steps: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bead_mapping: Option<std::collections::HashMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub root_bead_id: Option<String>,
     #[serde(skip_serializing_if = "is_false")]
     pub reused: bool,
-    // Bead-derived fields
+    // Plan-derived fields
     #[serde(skip_serializing_if = "Option::is_none")]
     pub all_steps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,138 +134,6 @@ pub struct RemoveData {
     pub worktree_path: String,
     pub branch_name: String,
     pub plan_path: String,
-}
-
-/// Sync beads within the worktree and return bead mapping
-fn sync_beads_in_worktree(
-    worktree_path: &Path,
-    plan_path: &str,
-) -> Result<
-    (std::collections::HashMap<String, String>, Option<String>),
-    tugtool_core::error::TugError,
-> {
-    use crate::commands::beads::sync::SyncData;
-    use crate::output::JsonResponse;
-    use std::process::Command;
-
-    // Run tug beads sync in the worktree
-    let output = Command::new(std::env::current_exe().map_err(|e| {
-        tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: format!("failed to get current exe: {}", e),
-        }
-    })?)
-    .args(["beads", "sync", plan_path, "--json"])
-    .current_dir(worktree_path)
-    .output()
-    .map_err(|e| tugtool_core::error::TugError::BeadsSyncFailed {
-        reason: format!("failed to execute beads sync: {}", e),
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: format!("beads sync failed: {}", stderr),
-        });
-    }
-
-    // Parse JSON output
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let response: JsonResponse<SyncData> = serde_json::from_str(&stdout).map_err(|e| {
-        tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: format!("failed to parse sync output: {}", e),
-        }
-    })?;
-
-    if response.status != "ok" {
-        return Err(tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: "beads sync returned error status".to_string(),
-        });
-    }
-
-    // Extract bead mapping from sync response
-    let bead_mapping = response.data.bead_mapping.unwrap_or_default();
-
-    Ok((bead_mapping, response.data.root_bead_id))
-}
-
-/// Commit bead annotations in the worktree
-fn commit_bead_annotations(
-    worktree_path: &Path,
-    plan_path: &str,
-    plan_name: &str,
-) -> Result<(), tugtool_core::error::TugError> {
-    use std::process::Command;
-
-    // Stage the .tugtool/ directory (includes init files: config, log, skeleton)
-    let status = Command::new("git")
-        .args(["-C", &worktree_path.to_string_lossy(), "add", ".tugtool/"])
-        .status()
-        .map_err(|e| tugtool_core::error::TugError::BeadCommitFailed {
-            reason: format!("failed to stage .tugtool/ directory: {}", e),
-        })?;
-
-    if !status.success() {
-        return Err(tugtool_core::error::TugError::BeadCommitFailed {
-            reason: "git add .tugtool/ failed".to_string(),
-        });
-    }
-
-    // Stage the plan file (includes bead annotations)
-    let status = Command::new("git")
-        .args(["-C", &worktree_path.to_string_lossy(), "add", plan_path])
-        .status()
-        .map_err(|e| tugtool_core::error::TugError::BeadCommitFailed {
-            reason: format!("failed to stage plan: {}", e),
-        })?;
-
-    if !status.success() {
-        return Err(tugtool_core::error::TugError::BeadCommitFailed {
-            reason: "git add plan failed".to_string(),
-        });
-    }
-
-    // Check if anything was actually staged (beads may already be committed)
-    let diff_status = Command::new("git")
-        .args([
-            "-C",
-            &worktree_path.to_string_lossy(),
-            "diff",
-            "--cached",
-            "--quiet",
-        ])
-        .status()
-        .map_err(|e| tugtool_core::error::TugError::BeadCommitFailed {
-            reason: format!("failed to check staged changes: {}", e),
-        })?;
-
-    // git diff --cached --quiet exits 0 if no staged changes, 1 if there are changes
-    if diff_status.success() {
-        // Nothing staged — beads and init files are already committed
-        return Ok(());
-    }
-
-    // Commit the changes (both init files and bead annotations)
-    let commit_msg = format!("chore: init worktree and sync beads for {}", plan_name);
-    let status = Command::new("git")
-        .args([
-            "-C",
-            &worktree_path.to_string_lossy(),
-            "commit",
-            "-m",
-            &commit_msg,
-        ])
-        .status()
-        .map_err(|e| tugtool_core::error::TugError::BeadCommitFailed {
-            reason: format!("failed to commit: {}", e),
-        })?;
-
-    if !status.success() {
-        return Err(tugtool_core::error::TugError::BeadCommitFailed {
-            reason: "git commit failed".to_string(),
-        });
-    }
-
-    Ok(())
 }
 
 /// Ensure the working directory is a git repo with at least one commit on the base branch.
@@ -508,8 +370,6 @@ pub fn run_worktree_create_with_root(
         // Validate with normal level
         let validation_config = tugtool_core::validator::ValidationConfig {
             level: ValidationLevel::Normal,
-            beads_enabled: false,
-            validate_bead_ids: false,
         };
         let validation_result =
             tugtool_core::validate_tugplan_with_config(&parsed_plan, &validation_config);
@@ -612,8 +472,8 @@ pub fn run_worktree_create_with_root(
     };
 
     match create_worktree(&config) {
-        Ok((worktree_path, branch_name, plan_slug)) => {
-            let plan_name = plan_path
+        Ok((worktree_path, branch_name, _plan_slug)) => {
+            let _plan_name = plan_path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
@@ -685,8 +545,6 @@ pub fn run_worktree_create_with_root(
                         base_branch: config.base_branch.clone(),
                         plan_path: plan.clone(),
                         total_steps: 0,
-                        bead_mapping: None,
-                        root_bead_id: None,
                         reused: false,
                         all_steps: None,
                         ready_steps: None,
@@ -704,113 +562,6 @@ pub fn run_worktree_create_with_root(
                 return Ok(e.exit_code());
             }
 
-            // Initialize beads in the worktree
-            {
-                use tugtool_core::beads::BeadsCli;
-                let beads = BeadsCli::default();
-                if !beads.is_installed(None) {
-                    let err = tugtool_core::error::TugError::BeadsNotInstalled;
-                    let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
-                    if json_output {
-                        let error_json = serde_json::json!({
-                            "status": "error",
-                            "error": err.to_string(),
-                            "exit_code": err.exit_code()
-                        });
-                        eprintln!("{}", error_json);
-                    } else if !quiet {
-                        eprintln!("error: {}", err);
-                        eprintln!("Rolled back worktree creation");
-                    }
-                    return Ok(err.exit_code());
-                }
-                if let Err(e) = beads.init_with_prefix(&worktree_path, Some(&plan_slug)) {
-                    let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
-                    if json_output {
-                        eprintln!(r#"{{"error": "{}"}}"#, e);
-                    } else if !quiet {
-                        eprintln!("error: {}", e);
-                        eprintln!("Rolled back worktree creation");
-                    }
-                    return Ok(e.exit_code());
-                }
-            }
-
-            // Sync beads and commit (always-on)
-            // Beads database lives in the worktree now.
-            let (bead_mapping, root_bead_id) = match sync_beads_in_worktree(&worktree_path, &plan) {
-                Ok((mapping, root_id)) => {
-                    // Try to commit the changes
-                    match commit_bead_annotations(&worktree_path, &plan, plan_name) {
-                        Ok(()) => (Some(mapping), root_id),
-                        Err(e) => {
-                            // Commit failed - rollback
-                            let _ = rollback_worktree_creation(
-                                &worktree_path,
-                                &branch_name,
-                                &repo_root,
-                            );
-
-                            if json_output {
-                                let data = CreateData {
-                                    worktree_path: String::new(),
-                                    branch_name: String::new(),
-                                    base_branch: config.base_branch.clone(),
-                                    plan_path: plan.clone(),
-                                    total_steps: 0,
-                                    bead_mapping: None,
-                                    root_bead_id: None,
-                                    reused: false,
-                                    all_steps: None,
-                                    ready_steps: None,
-                                    state_initialized: false,
-                                    warnings: vec![],
-                                };
-                                eprintln!(
-                                    "{}",
-                                    serde_json::to_string_pretty(&data)
-                                        .map_err(|e| e.to_string())?
-                                );
-                            } else if !quiet {
-                                eprintln!("error: {}", e);
-                                eprintln!("Rolled back worktree creation");
-                            }
-                            return Ok(e.exit_code());
-                        }
-                    }
-                }
-                Err(e) => {
-                    // Sync failed - rollback
-                    let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
-
-                    if json_output {
-                        let data = CreateData {
-                            worktree_path: String::new(),
-                            branch_name: String::new(),
-                            base_branch: config.base_branch.clone(),
-                            plan_path: plan.clone(),
-                            total_steps: 0,
-                            bead_mapping: None,
-                            root_bead_id: None,
-                            reused: false,
-                            all_steps: None,
-                            ready_steps: None,
-                            state_initialized: false,
-                            warnings: vec![],
-                        };
-                        eprintln!(
-                            "{}",
-                            serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?
-                        );
-                    } else if !quiet {
-                        eprintln!("error: {}", e);
-                        eprintln!("Rolled back worktree creation");
-                    }
-                    return Ok(e.exit_code());
-                }
-            };
-
-            // Parse the synced plan to extract all_steps (already have bead_mapping from sync_beads_in_worktree)
             let synced_plan_path = worktree_path.join(&plan);
             let synced_plan_content = std::fs::read_to_string(&synced_plan_path)
                 .map_err(|e| format!("failed to read synced plan: {}", e))?;
@@ -821,36 +572,10 @@ pub fn run_worktree_create_with_root(
                 synced_plan.steps.iter().map(|s| s.anchor.clone()).collect();
             let total_steps = synced_plan.steps.len();
 
-            // Query bd ready to get ready_steps (only if root_bead_id is available)
-            let ready_steps: Option<Vec<String>> = if let Some(ref root_id) = root_bead_id {
-                use tugtool_core::beads::BeadsCli;
-                let bd = BeadsCli::default();
-                match bd.ready(Some(root_id), Some(&worktree_path)) {
-                    Ok(ready_beads) => {
-                        // Map bead IDs to step anchors using bead_mapping
-                        if let Some(ref mapping) = bead_mapping {
-                            let ready_anchors: Vec<String> = ready_beads
-                                .iter()
-                                .filter_map(|bead| {
-                                    // Find step anchor for this bead ID
-                                    mapping
-                                        .iter()
-                                        .find(|(_, bid)| *bid == &bead.id)
-                                        .map(|(anchor, _)| anchor.clone())
-                                })
-                                .collect();
-                            Some(ready_anchors)
-                        } else {
-                            None
-                        }
-                    }
-                    Err(_) => None, // bd not available or failed - continue without ready_steps
-                }
-            } else {
-                None
-            };
+            // ready_steps is computed from tugstate claim operation (orchestrator responsibility)
+            let ready_steps: Option<Vec<String>> = None;
 
-            // Initialize tugstate (non-fatal -- beads is source of truth in Phase 1)
+            // Initialize tugstate for this worktree
             let (state_initialized, state_warnings) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::compute_plan_hash(&synced_plan_path) {
@@ -907,8 +632,6 @@ pub fn run_worktree_create_with_root(
                     base_branch: config.base_branch.clone(),
                     plan_path: plan.clone(),
                     total_steps,
-                    bead_mapping,
-                    root_bead_id,
                     reused,
                     all_steps: Some(all_steps),
                     ready_steps,
@@ -928,9 +651,6 @@ pub fn run_worktree_create_with_root(
                 println!("  Branch: {}", branch_name);
                 println!("  Worktree: {}", worktree_path.display());
                 println!("  Steps: {}", total_steps);
-                if bead_mapping.is_some() {
-                    println!("  Beads synced and committed");
-                }
                 if state_initialized {
                     println!("  State initialized");
                 }
@@ -1345,8 +1065,6 @@ mod tests {
             base_branch: "main".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             total_steps: 5,
-            bead_mapping: None,
-            root_bead_id: None,
             reused: false,
             all_steps: None,
             ready_steps: None,
@@ -1377,8 +1095,6 @@ mod tests {
             base_branch: "main".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             total_steps: 5,
-            bead_mapping: None,
-            root_bead_id: None,
             reused: false,
             all_steps: None,
             ready_steps: None,
@@ -1400,8 +1116,6 @@ mod tests {
             base_branch: "main".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             total_steps: 5,
-            bead_mapping: None,
-            root_bead_id: None,
             reused: false,
             all_steps: None,
             ready_steps: None,
@@ -1451,90 +1165,6 @@ mod tests {
         assert!(json.contains("worktree_path"));
         assert!(json.contains("branch_name"));
         assert!(json.contains("plan_path"));
-    }
-
-    #[test]
-    fn test_worktree_create_help_documents_always_on_beads() {
-        use crate::cli::Cli;
-        use clap::CommandFactory;
-
-        let app = Cli::command();
-        let worktree_subcommand = app
-            .find_subcommand("worktree")
-            .expect("worktree subcommand should exist");
-
-        // Find the create subcommand
-        let create_subcommand = worktree_subcommand
-            .get_subcommands()
-            .find(|cmd| cmd.get_name() == "create")
-            .expect("create subcommand should exist");
-
-        // Get the long_about text
-        let long_about = create_subcommand
-            .get_long_about()
-            .expect("create should have long_about");
-
-        // Verify beads sync is documented as always-on
-        assert!(
-            long_about.to_string().contains("always-on"),
-            "create help should document always-on beads sync"
-        );
-        assert!(
-            long_about.to_string().contains("atomically")
-                || long_about.to_string().contains("rollback"),
-            "create help should explain atomic behavior"
-        );
-    }
-
-    #[test]
-    fn test_beads_not_installed_exit_code() {
-        use tugtool_core::error::TugError;
-
-        let err = TugError::BeadsNotInstalled;
-        assert_eq!(
-            err.exit_code(),
-            5,
-            "BeadsNotInstalled should return exit code 5"
-        );
-    }
-
-    #[test]
-    fn test_beads_not_installed_json_error_format() {
-        use tugtool_core::error::TugError;
-
-        let err = TugError::BeadsNotInstalled;
-        let error_json = serde_json::json!({
-            "status": "error",
-            "error": err.to_string(),
-            "exit_code": err.exit_code()
-        });
-
-        // Verify structure
-        assert!(error_json.is_object(), "error_json should be an object");
-        let obj = error_json.as_object().expect("should be an object");
-
-        // Check required fields
-        assert_eq!(
-            obj.get("status").and_then(|v| v.as_str()),
-            Some("error"),
-            "status should be 'error'"
-        );
-        assert_eq!(
-            obj.get("exit_code").and_then(|v| v.as_i64()),
-            Some(5),
-            "exit_code should be 5"
-        );
-        assert!(
-            obj.get("error").and_then(|v| v.as_str()).is_some(),
-            "error field should be present and non-empty"
-        );
-        assert!(
-            !obj.get("error")
-                .and_then(|v| v.as_str())
-                .unwrap()
-                .is_empty(),
-            "error message should not be empty"
-        );
     }
 }
 

@@ -51,8 +51,7 @@ If resumed with updated coder output after a REVISE recommendation, re-check the
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": "string",
-  "step_anchor": "string",
-  "bead_id": "bd-abc123.0"
+  "step_anchor": "string"
 }
 ```
 
@@ -61,18 +60,17 @@ If resumed with updated coder output after a REVISE recommendation, re-check the
 | `worktree_path` | Absolute path to the worktree directory where implementation happened |
 | `plan_path` | Path to the plan file relative to repo root |
 | `step_anchor` | Anchor of the step that was implemented |
-| `bead_id` | Bead ID for this step (e.g., "bd-abc123.0") |
 
 ### Resume (Next Step)
 
 ```
-Review step #step-1. Bead ID: bd-abc123.1.
+Review step #step-1.
 ```
 
 ### Resume (Re-review After Revision)
 
 ```
-Coder has addressed the issues. Bead ID: bd-abc123.N. Re-review.
+Coder has addressed the issues. Re-review.
 ```
 
 **IMPORTANT: File Path Handling**
@@ -114,28 +112,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 
 **As your FIRST action**, fetch the step data:
 
-```bash
-cd {worktree_path} && tugcode beads inspect {bead_id} --working-dir {worktree_path} --json
-```
-
-This retrieves:
-- **description**: Step requirements
-- **acceptance_criteria**: Success criteria
-- **design**: Architect's strategy (after last `---` separator)
-- **notes**: Coder's implementation results (build/test output)
-
-The coder's `notes` field contains the build and test results that you need to verify.
-
-### Writing Your Review
-
-After completing your review, write your findings to a temp file:
-
-```
-Write(
-  file_path: "{worktree_path}/.tugtool/_tmp_{bead_id}_review.md"
-  content: <your review markdown — recommendation, conformance, quality, issues>
-)
-```
+Read the plan file to understand the step requirements. The coder's implementation results are passed to you via context from previous agent calls.
 
 ---
 
@@ -349,22 +326,18 @@ After verifying plan conformance, review the code and the coder's build/test rep
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-5.md",
-  "step_anchor": "#step-2",
-  "bead_id": "bd-abc123.2"
+  "step_anchor": "#step-2"
 }
 ```
 
 **Process:**
-1. Fetch step data: `cd {worktree_path} && tugcode beads inspect bd-abc123.2 --working-dir {worktree_path} --json`
-2. Parse response to extract:
-   - `design`: Architect's strategy (expected_touch_set, implementation_steps, test_plan, risks)
-   - `notes`: Coder's implementation results (files created/modified, build/test report, drift assessment)
-3. Read `{worktree_path}/.tugtool/tugplan-5.md` and locate `#step-2`
-4. List all tasks: "Create RetryConfig", "Add retry wrapper", "Add tests"
-5. Verify RetryConfig exists: `Grep "struct RetryConfig" {worktree_path}/src/api/config.rs`
-6. Verify tests exist: `Grep "#[test]" {worktree_path}/src/api/client.rs`
-7. Check drift from coder's notes: none
-8. All complete, recommend APPROVE
+1. Read `{worktree_path}/.tugtool/tugplan-5.md` and locate `#step-2`
+2. Extract step requirements: tasks, tests, checkpoints, artifacts
+3. List all tasks: "Create RetryConfig", "Add retry wrapper", "Add tests"
+4. Verify RetryConfig exists: `Grep "struct RetryConfig" {worktree_path}/src/api/config.rs`
+5. Verify tests exist: `Grep "#[test]" {worktree_path}/src/api/client.rs`
+6. Check drift from coder's output (passed via context): none
+7. All complete, recommend APPROVE
 
 **Output (approval):**
 ```json

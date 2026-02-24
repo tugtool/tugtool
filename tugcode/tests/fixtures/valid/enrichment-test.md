@@ -1,6 +1,6 @@
 ## Phase 1.0: Enrichment Test Phase {#phase-1}
 
-**Purpose:** Test plan for validating bead enrichment content rendering.
+**Purpose:** Test plan for validating content rendering.
 
 ---
 

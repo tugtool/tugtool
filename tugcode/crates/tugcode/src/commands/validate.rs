@@ -86,10 +86,7 @@ pub fn run_validate(
         ValidationLevel::parse(&config.tugtool.validation_level)
     };
 
-    let validation_config = ValidationConfig {
-        level,
-        ..Default::default()
-    };
+    let validation_config = ValidationConfig { level };
 
     // Get files to validate
     let files_to_validate = match file {
