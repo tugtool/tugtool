@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-24T00:40:49Z
+bead: remove-beads-pbb.3
+---
+
+## step-2: Replaced all beads orchestration in implement SKILL.md with tugstate commands: 7 heartbeats, 4 artifacts, state claim/start/complete lifecycle. Zero bead references remain.
+
+**Files changed:**
+- .tugtool/tugplan-remove-beads.md
+
+---
+
+---
 step: step-1
 date: 2025-02-24T00:30:22Z
 bead: remove-beads-pbb.2
