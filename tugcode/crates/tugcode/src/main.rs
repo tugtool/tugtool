@@ -8,7 +8,7 @@ mod splash;
 use std::process::ExitCode;
 
 use cli::Commands;
-use commands::{BeadsCommands, LogCommands, StateCommands, WorktreeCommands};
+use commands::{LogCommands, StateCommands, WorktreeCommands};
 
 fn main() -> ExitCode {
     let cli = cli::parse();
@@ -23,73 +23,11 @@ fn main() -> ExitCode {
             level,
         }) => commands::run_validate(file, strict, level, cli.json, cli.quiet),
         Some(Commands::List { status }) => commands::run_list(status, cli.json, cli.quiet),
-        Some(Commands::Status {
-            file,
-            verbose,
-            full,
-        }) => {
+        Some(Commands::Status { file, verbose }) => {
             // Use verbose flag from subcommand, or global verbose
             let verbose = verbose || cli.verbose;
-            commands::run_status(file, verbose, full, cli.json, cli.quiet)
+            commands::run_status(file, verbose, cli.json, cli.quiet)
         }
-        Some(Commands::Beads(beads_cmd)) => match beads_cmd {
-            BeadsCommands::Sync {
-                file,
-                dry_run,
-                enrich,
-                prune_deps,
-                substeps,
-            } => commands::run_sync(commands::beads::sync::SyncOptions {
-                file,
-                dry_run,
-                enrich,
-                prune_deps,
-                substeps_mode: substeps,
-                json_output: cli.json,
-                quiet: cli.quiet,
-            }),
-            BeadsCommands::Link {
-                file,
-                step_anchor,
-                bead_id,
-            } => commands::run_link(file, step_anchor, bead_id, cli.json, cli.quiet),
-            BeadsCommands::Status { file, pull } => {
-                commands::run_beads_status(file, pull, cli.json, cli.quiet)
-            }
-            BeadsCommands::Pull { file, no_overwrite } => {
-                commands::run_pull(file, no_overwrite, cli.json, cli.quiet)
-            }
-            BeadsCommands::Close {
-                bead_id,
-                reason,
-                working_dir,
-            } => commands::run_close(bead_id, reason, working_dir, cli.json, cli.quiet),
-            BeadsCommands::Inspect {
-                bead_id,
-                working_dir,
-            } => commands::run_inspect(bead_id, working_dir, cli.json, cli.quiet),
-            BeadsCommands::UpdateNotes {
-                bead_id,
-                content_file,
-                working_dir,
-            } => {
-                commands::run_update_notes(bead_id, content_file, working_dir, cli.json, cli.quiet)
-            }
-            BeadsCommands::AppendNotes {
-                bead_id,
-                content_file,
-                working_dir,
-            } => {
-                commands::run_append_notes(bead_id, content_file, working_dir, cli.json, cli.quiet)
-            }
-            BeadsCommands::AppendDesign {
-                bead_id,
-                content_file,
-                working_dir,
-            } => {
-                commands::run_append_design(bead_id, content_file, working_dir, cli.json, cli.quiet)
-            }
-        },
         Some(Commands::Worktree(worktree_cmd)) => match worktree_cmd {
             WorktreeCommands::Create {
                 plan,
@@ -200,8 +138,7 @@ fn main() -> ExitCode {
                 step,
                 plan,
                 summary,
-                bead,
-            } => commands::run_log_prepend(None, step, plan, summary, bead, cli.json, cli.quiet),
+            } => commands::run_log_prepend(None, step, plan, summary, cli.json, cli.quiet),
         },
         Some(Commands::Doctor) => commands::run_doctor(cli.json, cli.quiet),
         Some(Commands::Resolve { identifier }) => {
@@ -213,20 +150,8 @@ fn main() -> ExitCode {
             step,
             plan,
             message,
-            bead,
             summary,
-            close_reason,
-        }) => commands::run_commit(
-            worktree,
-            step,
-            plan,
-            message,
-            bead,
-            summary,
-            close_reason,
-            cli.json,
-            cli.quiet,
-        ),
+        }) => commands::run_commit(worktree, step, plan, message, summary, cli.json, cli.quiet),
         Some(Commands::OpenPr {
             worktree,
             branch,

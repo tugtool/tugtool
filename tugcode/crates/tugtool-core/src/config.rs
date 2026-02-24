@@ -28,10 +28,6 @@ pub struct TugConfig {
     /// Naming settings
     #[serde(default)]
     pub naming: NamingConfig,
-
-    /// Beads integration settings
-    #[serde(default)]
-    pub beads: BeadsConfig,
 }
 
 /// Naming configuration
@@ -46,50 +42,6 @@ pub struct NamingConfig {
     pub name_pattern: String,
 }
 
-/// Beads integration configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BeadsConfig {
-    /// Enable beads integration
-    #[serde(default = "default_beads_enabled")]
-    pub enabled: bool,
-
-    /// Validate bead IDs when present
-    #[serde(default = "default_validate_bead_ids")]
-    pub validate_bead_ids: bool,
-
-    /// Path to beads CLI binary
-    #[serde(default = "default_bd_path")]
-    pub bd_path: String,
-
-    /// Update titles on sync
-    #[serde(default)]
-    pub update_title: bool,
-
-    /// Update body on sync
-    #[serde(default)]
-    pub update_body: bool,
-
-    /// Prune deps on sync
-    #[serde(default)]
-    pub prune_deps: bool,
-
-    /// Root issue type
-    #[serde(default = "default_root_issue_type")]
-    pub root_issue_type: String,
-
-    /// Substep mapping mode
-    #[serde(default = "default_substeps")]
-    pub substeps: String,
-
-    /// Pull checkbox mode
-    #[serde(default = "default_pull_checkbox_mode")]
-    pub pull_checkbox_mode: String,
-
-    /// Warn on conflict during pull
-    #[serde(default = "default_pull_warn")]
-    pub pull_warn_on_conflict: bool,
-}
-
 fn default_validation_level() -> String {
     "normal".to_string()
 }
@@ -102,41 +54,12 @@ fn default_name_pattern() -> String {
     "^[a-z][a-z0-9-]{1,49}$".to_string()
 }
 
-fn default_beads_enabled() -> bool {
-    true
-}
-
-fn default_validate_bead_ids() -> bool {
-    true
-}
-
-fn default_bd_path() -> String {
-    "bd".to_string()
-}
-
-fn default_root_issue_type() -> String {
-    "epic".to_string()
-}
-
-fn default_substeps() -> String {
-    "none".to_string()
-}
-
-fn default_pull_checkbox_mode() -> String {
-    "checkpoints".to_string()
-}
-
-fn default_pull_warn() -> bool {
-    true
-}
-
 impl Default for TugConfig {
     fn default() -> Self {
         Self {
             validation_level: default_validation_level(),
             show_info: false,
             naming: NamingConfig::default(),
-            beads: BeadsConfig::default(),
         }
     }
 }
@@ -146,23 +69,6 @@ impl Default for NamingConfig {
         Self {
             prefix: default_prefix(),
             name_pattern: default_name_pattern(),
-        }
-    }
-}
-
-impl Default for BeadsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_beads_enabled(),
-            validate_bead_ids: default_validate_bead_ids(),
-            bd_path: default_bd_path(),
-            update_title: false,
-            update_body: false,
-            prune_deps: false,
-            root_issue_type: default_root_issue_type(),
-            substeps: default_substeps(),
-            pull_checkbox_mode: default_pull_checkbox_mode(),
-            pull_warn_on_conflict: default_pull_warn(),
         }
     }
 }
@@ -305,6 +211,5 @@ mod tests {
         assert_eq!(config.tugtool.validation_level, "normal");
         assert!(!config.tugtool.show_info);
         assert_eq!(config.tugtool.naming.prefix, "tugplan-");
-        assert!(config.tugtool.beads.enabled);
     }
 }

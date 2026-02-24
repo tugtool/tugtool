@@ -196,7 +196,7 @@ fn test_valid_agent_output_example_fixture() {
     let plan = parse_tugplan(&content).expect("Failed to parse agent-output-example plan");
     let result = validate_tugplan(&plan);
 
-    // Check no errors (warnings are OK for bead IDs when beads not enabled)
+    // Check no errors
     let errors: Vec<_> = result
         .issues
         .iter()
@@ -206,18 +206,6 @@ fn test_valid_agent_output_example_fixture() {
         errors.is_empty(),
         "Valid agent-output-example plan should have no errors, got: {:?}",
         errors
-    );
-
-    // Verify bead IDs were parsed
-    assert!(
-        plan.metadata.beads_root_id.is_some(),
-        "Should have beads root ID"
-    );
-
-    let step_with_bead = plan.steps.iter().find(|s| s.bead_id.is_some());
-    assert!(
-        step_with_bead.is_some(),
-        "Should have at least one step with bead ID"
     );
 
     // Verify some checkboxes are checked (showing progress)

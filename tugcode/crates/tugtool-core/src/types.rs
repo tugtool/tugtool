@@ -56,8 +56,6 @@ pub struct TugPlanMetadata {
     pub tracking: Option<String>,
     /// Last updated date
     pub last_updated: Option<String>,
-    /// Beads root ID (optional, set after beads sync)
-    pub beads_root_id: Option<String>,
 }
 
 impl TugPlanMetadata {
@@ -125,10 +123,6 @@ pub struct Step {
     pub line: usize,
     /// Dependencies (step anchors this step depends on)
     pub depends_on: Vec<String>,
-    /// Associated bead ID (if synced)
-    pub bead_id: Option<String>,
-    /// Beads hints (type, priority, labels, estimate_minutes)
-    pub beads_hints: Option<BeadsHints>,
     /// Commit message
     pub commit_message: Option<String>,
     /// References line content
@@ -218,19 +212,6 @@ impl Step {
     }
 }
 
-/// Beads hints for a step (optional metadata for bead creation)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BeadsHints {
-    /// Issue type (task, feature, bug, epic, chore)
-    pub issue_type: Option<String>,
-    /// Priority (1-4)
-    pub priority: Option<u8>,
-    /// Labels (comma-separated)
-    pub labels: Vec<String>,
-    /// Time estimate in minutes
-    pub estimate_minutes: Option<u32>,
-}
-
 /// A nested substep within a step
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Substep {
@@ -244,10 +225,6 @@ pub struct Substep {
     pub line: usize,
     /// Dependencies (step anchors this substep depends on)
     pub depends_on: Vec<String>,
-    /// Associated bead ID (optional, only with --substeps children)
-    pub bead_id: Option<String>,
-    /// Beads hints
-    pub beads_hints: Option<BeadsHints>,
     /// Commit message
     pub commit_message: Option<String>,
     /// References line content
@@ -469,7 +446,7 @@ impl TugPlan {
         }
     }
 
-    /// Render the root bead description (Purpose + Strategy + Success Criteria)
+    /// Render the plan root description (Purpose + Strategy + Success Criteria)
     pub fn render_root_description(&self) -> String {
         let mut sections = Vec::new();
 
@@ -491,7 +468,7 @@ impl TugPlan {
         sections.join("\n\n")
     }
 
-    /// Render the root bead design (summary of design decisions)
+    /// Render the plan root design (summary of design decisions)
     pub fn render_root_design(&self) -> String {
         if self.decisions.is_empty() {
             return String::new();
@@ -505,7 +482,7 @@ impl TugPlan {
         lines.join("\n")
     }
 
-    /// Render the root bead acceptance criteria (phase exit criteria)
+    /// Render the plan root acceptance criteria (phase exit criteria)
     pub fn render_root_acceptance(&self) -> String {
         // Try "exit-criteria" first, then "deliverables"
         if let Some(criteria) = self.extract_section_by_anchor("exit-criteria") {

@@ -17,9 +17,6 @@ pub mod parser;
 /// Validation logic and rules
 pub mod validator;
 
-/// Beads integration utilities
-pub mod beads;
-
 /// Interaction adapter for mode-agnostic user interaction
 pub mod interaction;
 
@@ -36,13 +33,9 @@ pub mod resolve;
 pub mod state;
 
 // Re-exports for convenience
-pub use beads::{
-    BeadStatus, BeadsCli, CloseReasonParsed, Issue, IssueDetails, is_valid_bead_id,
-    parse_close_reason,
-};
 pub use config::{
-    BeadsConfig, Config, NamingConfig, RESERVED_FILES, TugConfig, find_project_root,
-    find_project_root_from, find_tugplans, is_reserved_file, tugplan_name_from_path,
+    Config, NamingConfig, RESERVED_FILES, TugConfig, find_project_root, find_project_root_from,
+    find_tugplans, is_reserved_file, tugplan_name_from_path,
 };
 pub use error::TugError;
 pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, ProgressHandle};
@@ -55,8 +48,8 @@ pub use state::{
     StepState, UpdateResult, compute_plan_hash,
 };
 pub use types::{
-    Anchor, BeadsHints, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step,
-    Substep, TugPlan, TugPlanMetadata, TugPlanStatus,
+    Anchor, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step, Substep,
+    TugPlan, TugPlanMetadata, TugPlanStatus,
 };
 pub use validator::{
     Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,

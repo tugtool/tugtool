@@ -55,23 +55,6 @@ pub enum TugError {
     #[error("E011: Circular dependency detected: {cycle}")]
     CircularDependency { cycle: String },
 
-    // === Beads errors (E012-E015) ===
-    /// E012: Invalid bead ID format
-    #[error("E012: Invalid bead ID format: {id}")]
-    InvalidBeadId { id: String, line: Option<usize> },
-
-    /// E013: Beads not initialized in project
-    #[error("E013: Beads not initialized. Run: tugcode worktree create <plan>")]
-    BeadsNotInitialized,
-
-    /// E014: Beads Root bead does not exist
-    #[error("E014: Beads Root bead does not exist: {id}")]
-    BeadsRootNotFound { id: String },
-
-    /// E015: Step bead does not exist
-    #[error("E015: Step bead does not exist: {id} (step anchor: {anchor})")]
-    StepBeadNotFound { id: String, anchor: String },
-
     // === IO and system errors ===
     /// File not found or unreadable
     #[error("file not found or unreadable: {0}")]
@@ -95,14 +78,6 @@ pub enum TugError {
     /// Feature not implemented
     #[error("feature not implemented: {0}")]
     NotImplemented(String),
-
-    /// Beads CLI not installed (exit code 5)
-    #[error("beads CLI not installed or not found")]
-    BeadsNotInstalled,
-
-    /// Beads command failed
-    #[error("beads command failed: {0}")]
-    BeadsCommand(String),
 
     /// Step anchor not found
     #[error("step anchor not found: {0}")]
@@ -182,14 +157,6 @@ pub enum TugError {
     #[error("E034: Worktree cleanup failed: {reason}")]
     WorktreeCleanupFailed { reason: String },
 
-    /// E035: Beads sync failed during worktree creation
-    #[error("E035: Beads sync failed: {reason}")]
-    BeadsSyncFailed { reason: String },
-
-    /// E036: Bead commit failed during worktree creation
-    #[error("E036: Bead commit failed: {reason}")]
-    BeadCommitFailed { reason: String },
-
     /// E037: Init failed during worktree creation
     #[error("E037: Init failed: {reason}")]
     InitFailed { reason: String },
@@ -258,17 +225,11 @@ impl TugError {
             TugError::NotInitialized => "E009",
             TugError::InvalidDependency { .. } => "E010",
             TugError::CircularDependency { .. } => "E011",
-            TugError::InvalidBeadId { .. } => "E012",
-            TugError::BeadsNotInitialized => "E013",
-            TugError::BeadsRootNotFound { .. } => "E014",
-            TugError::StepBeadNotFound { .. } => "E015",
             TugError::FileNotFound(_) => "E002", // Reuse for file errors
             TugError::Io(_) => "E002",
             TugError::Config(_) => "E004", // Config errors
             TugError::Parse { .. } => "E001",
             TugError::NotImplemented(_) => "E003", // Feature not implemented
-            TugError::BeadsNotInstalled => "E005", // Beads CLI error
-            TugError::BeadsCommand(_) => "E016",   // Beads command error
             TugError::StepAnchorNotFound(_) => "E017", // Step anchor not found
             TugError::ClaudeCliNotInstalled => "E019",
             TugError::AgentInvocationFailed { .. } => "E020",
@@ -286,8 +247,6 @@ impl TugError {
             TugError::PlanHasNoSteps => "E032",
             TugError::WorktreeCreationFailed { .. } => "E033",
             TugError::WorktreeCleanupFailed { .. } => "E034",
-            TugError::BeadsSyncFailed { .. } => "E035",
-            TugError::BeadCommitFailed { .. } => "E036",
             TugError::InitFailed { .. } => "E037",
             TugError::StateDbOpen { .. } => "E046",
             TugError::StateDbQuery { .. } => "E047",
@@ -310,7 +269,6 @@ impl TugError {
             TugError::InvalidAnchor { line, .. } => *line,
             TugError::DuplicateAnchor { second_line, .. } => Some(*second_line),
             TugError::InvalidDependency { line, .. } => *line,
-            TugError::InvalidBeadId { line, .. } => *line,
             TugError::Parse { line, .. } => *line,
             _ => None,
         }
@@ -326,8 +284,7 @@ impl TugError {
             | TugError::InvalidAnchor { .. }
             | TugError::DuplicateAnchor { .. }
             | TugError::InvalidDependency { .. }
-            | TugError::CircularDependency { .. }
-            | TugError::InvalidBeadId { .. } => 1, // Validation errors
+            | TugError::CircularDependency { .. } => 1, // Validation errors
 
             TugError::FileNotFound(_) | TugError::Io(_) => 2, // File errors
 
@@ -335,17 +292,9 @@ impl TugError {
 
             TugError::Config(_) => 4, // Configuration error
 
-            TugError::BeadsNotInstalled => 5, // Beads CLI not installed
-
-            TugError::BeadsCommand(_) => 1, // Beads command error
-
             TugError::StepAnchorNotFound(_) => 2, // Step anchor not found
 
             TugError::NotInitialized => 9, // .tug not initialized
-
-            TugError::BeadsNotInitialized
-            | TugError::BeadsRootNotFound { .. }
-            | TugError::StepBeadNotFound { .. } => 13, // Beads not initialized
 
             TugError::Parse { .. } => 1, // Parse errors are validation errors
 
@@ -372,8 +321,6 @@ impl TugError {
             TugError::PlanHasNoSteps => 8,        // Plan has no steps (exit code 8 per T02)
             TugError::WorktreeCreationFailed { .. } => 1, // Worktree creation failed
             TugError::WorktreeCleanupFailed { .. } => 1, // Worktree cleanup failed
-            TugError::BeadsSyncFailed { .. } => 10, // Beads sync failed (exit code 10 per S02)
-            TugError::BeadCommitFailed { .. } => 11, // Bead commit failed (exit code 11 per S02)
             TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
             TugError::StateDbOpen { .. } => 14,   // State DB open failed
             TugError::StateDbQuery { .. } => 14,  // State DB query failed
@@ -404,10 +351,6 @@ mod tests {
         let err = TugError::NotInitialized;
         assert_eq!(err.code(), "E009");
         assert_eq!(err.exit_code(), 9);
-
-        let err = TugError::BeadsNotInitialized;
-        assert_eq!(err.code(), "E013");
-        assert_eq!(err.exit_code(), 13);
     }
 
     #[test]

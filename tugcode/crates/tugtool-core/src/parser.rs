@@ -9,7 +9,7 @@
 
 use crate::error::TugError;
 use crate::types::{
-    Anchor, BeadsHints, Checkpoint, CheckpointKind, Decision, Question, Step, Substep, TugPlan,
+    Anchor, Checkpoint, CheckpointKind, Decision, Question, Step, Substep, TugPlan,
 };
 use std::collections::HashMap;
 
@@ -47,12 +47,6 @@ mod patterns {
     pub static DEPENDS_ON: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"^\*\*Depends on:\*\*\s*(.+)$").unwrap());
 
-    pub static BEAD_LINE: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"^\*\*Bead:\*\*\s*`([^`]+)`").unwrap());
-
-    pub static BEADS_HINTS: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"^\*\*Beads:\*\*\s*(.+)$").unwrap());
-
     pub static COMMIT_LINE: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"^\*\*Commit:\*\*\s*`([^`]+)`").unwrap());
 
@@ -61,9 +55,6 @@ mod patterns {
 
     pub static PURPOSE_LINE: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"^\*\*Purpose:\*\*\s*(.+)$").unwrap());
-
-    pub static BEADS_ROOT_ROW: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"^\|\s*Beads\s+Root\s*\|\s*`([^`]+)`").unwrap());
 
     pub static ANCHOR_REF: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"#([a-z0-9-]+)").unwrap());
@@ -103,7 +94,6 @@ const KNOWN_METADATA_FIELDS: &[&str] = &[
     "tracking issue",
     "tracking",
     "last updated",
-    "beads root",
 ];
 
 /// Parse a plan file from its contents
@@ -275,7 +265,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                         message: format!("Unrecognized metadata field: {}", field),
                         line: line_number,
                         suggestion: Some(
-                            "Known fields: Owner, Status, Target branch, Tracking issue/PR, Last updated, Beads Root".to_string()
+                            "Known fields: Owner, Status, Target branch, Tracking issue/PR, Last updated".to_string()
                         ),
                     });
                 }
@@ -291,11 +281,6 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                     _ => {}
                 }
 
-                // Check for Beads Root in metadata
-                if let Some(caps) = patterns::BEADS_ROOT_ROW.captures(line) {
-                    tugplan.metadata.beads_root_id =
-                        Some(caps.get(1).unwrap().as_str().to_string());
-                }
                 continue;
             }
         }
@@ -410,37 +395,6 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                     }
                 } else if let Some(step_idx) = in_step {
                     tugplan.steps[step_idx].depends_on = deps;
-                }
-                continue;
-            }
-
-            // Parse **Bead:** line
-            if let Some(caps) = patterns::BEAD_LINE.captures(line) {
-                matched = true;
-                let bead_id = caps.get(1).unwrap().as_str().to_string();
-
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx].bead_id = Some(bead_id);
-                    }
-                } else if let Some(step_idx) = in_step {
-                    tugplan.steps[step_idx].bead_id = Some(bead_id);
-                }
-                continue;
-            }
-
-            // Parse **Beads:** hints line
-            if let Some(caps) = patterns::BEADS_HINTS.captures(line) {
-                matched = true;
-                let hints_str = caps.get(1).unwrap().as_str();
-                let hints = parse_beads_hints(hints_str);
-
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx].beads_hints = Some(hints);
-                    }
-                } else if let Some(step_idx) = in_step {
-                    tugplan.steps[step_idx].beads_hints = Some(hints);
                 }
                 continue;
             }
@@ -634,84 +588,6 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
     Ok(tugplan)
 }
 
-/// Parse beads hints from a hints string like "type=task, priority=1, labels=backend,api"
-fn parse_beads_hints(hints_str: &str) -> BeadsHints {
-    let mut hints = BeadsHints::default();
-
-    // Split by comma followed by space and key= pattern to handle labels with commas
-    // We need to find key=value pairs more carefully
-    let mut remaining = hints_str.trim();
-
-    while !remaining.is_empty() {
-        // Find the next key=value pair
-        if let Some(eq_pos) = remaining.find('=') {
-            let key = remaining[..eq_pos].trim().to_lowercase();
-
-            // Find the end of this value (next ", key=" pattern or end of string)
-            let value_start = eq_pos + 1;
-            let rest = &remaining[value_start..];
-
-            // Look for next key= pattern (space + word + =)
-            let value_end = find_next_key_start(rest);
-            let value = rest[..value_end].trim().trim_end_matches(',').trim();
-
-            match key.as_str() {
-                "type" => hints.issue_type = Some(value.to_string()),
-                "priority" => {
-                    if let Ok(p) = value.parse::<u8>() {
-                        hints.priority = Some(p);
-                    }
-                }
-                "labels" => {
-                    hints.labels = value.split(',').map(|s| s.trim().to_string()).collect();
-                }
-                "estimate_minutes" | "estimate" => {
-                    if let Ok(e) = value.parse::<u32>() {
-                        hints.estimate_minutes = Some(e);
-                    }
-                }
-                _ => {}
-            }
-
-            remaining = rest[value_end..].trim().trim_start_matches(',').trim();
-        } else {
-            break;
-        }
-    }
-
-    hints
-}
-
-/// Find the start of the next key=value pair in a hints string
-fn find_next_key_start(s: &str) -> usize {
-    // Look for patterns like ", key=" where key is a word
-    let bytes = s.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        // Look for comma
-        if bytes[i] == b',' {
-            // Skip whitespace
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j] == b' ' {
-                j += 1;
-            }
-            // Check if this looks like a key (word followed by =)
-            let mut k = j;
-            while k < bytes.len() && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_') {
-                k += 1;
-            }
-            if k < bytes.len() && bytes[k] == b'=' && k > j {
-                // This is a new key
-                return i;
-            }
-        }
-        i += 1;
-    }
-
-    s.len()
-}
-
 /// Track which section we're currently parsing within a step
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CurrentSection {
@@ -857,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_bead_line() {
+    fn test_historical_bead_lines_parse_without_error() {
         let content = r#"## Phase 1.0: Test {#phase-1}
 
 ### Plan Metadata {#plan-metadata}
@@ -867,34 +743,56 @@ mod tests {
 | Owner | Test |
 | Status | active |
 | Last updated | 2026-02-03 |
-| Beads Root | `bd-root123` |
+| Beads Root | `bd-root1` |
 
-#### Step 0: First {#step-0}
+#### Step 0: Test Step {#step-0}
 
 **Bead:** `bd-step0`
 
-**Tasks:**
-- [ ] Task
-"#;
+**Beads:** type=task, priority=1
 
+**References:** (#plan-metadata)
+
+**Tasks:**
+- [ ] Task one
+"#;
         let tugplan = parse_tugplan(content).unwrap();
 
-        assert_eq!(
-            tugplan.metadata.beads_root_id,
-            Some("bd-root123".to_string())
+        // (a) Parsing succeeds (proven by unwrap above)
+
+        // (b) Bead/Beads lines inside steps produce no diagnostics
+        // They are silently unmatched -- not near-miss patterns
+        let step_diagnostics: Vec<_> = tugplan
+            .diagnostics
+            .iter()
+            .filter(|d| d.code != "P004")
+            .collect();
+        assert!(
+            step_diagnostics.is_empty(),
+            "Bead/Beads lines should produce no diagnostics, got: {:?}",
+            step_diagnostics
         );
-        assert_eq!(tugplan.steps[0].bead_id, Some("bd-step0".to_string()));
-    }
 
-    #[test]
-    fn test_parse_beads_hints() {
-        let hints =
-            parse_beads_hints("type=task, priority=2, labels=backend,api, estimate_minutes=60");
+        // (c) Beads Root metadata row produces exactly one P004
+        let p004s: Vec<_> = tugplan
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "P004")
+            .collect();
+        assert_eq!(
+            p004s.len(),
+            1,
+            "Should have exactly one P004 for Beads Root"
+        );
+        assert!(
+            p004s[0].message.contains("Beads Root"),
+            "P004 should mention Beads Root"
+        );
 
-        assert_eq!(hints.issue_type, Some("task".to_string()));
-        assert_eq!(hints.priority, Some(2));
-        assert_eq!(hints.labels, vec!["backend", "api"]);
-        assert_eq!(hints.estimate_minutes, Some(60));
+        // (d) Plan steps are parsed correctly
+        assert_eq!(tugplan.steps.len(), 1);
+        assert_eq!(tugplan.steps[0].title, "Test Step");
+        assert_eq!(tugplan.steps[0].anchor, "step-0");
     }
 
     #[test]
