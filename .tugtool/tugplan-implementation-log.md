@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-24T19:34:25Z
+---
+
+## audit-fix: CI fix: Added #[serial] attribute from serial_test crate to all 22 dash test functions to prevent race conditions from parallel set_current_dir calls. CI cargo test --all-targets runs tests in parallel unlike nextest which isolates per-process.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-24T19:29:46Z
 ---
 

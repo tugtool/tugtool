@@ -1073,6 +1073,7 @@ pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, St
 #[allow(clippy::disallowed_methods)] // set_current_dir is needed for tests with isolated temp dirs
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use std::process::Command;
     use tempfile::TempDir;
@@ -1127,6 +1128,7 @@ mod tests {
             .unwrap();
     }
 
+    #[serial]
     #[test]
     fn test_dash_create_basic() {
         let temp = TempDir::new().unwrap();
@@ -1166,6 +1168,7 @@ mod tests {
         assert!(!String::from_utf8_lossy(&output.stdout).trim().is_empty());
     }
 
+    #[serial]
     #[test]
     fn test_dash_create_idempotent() {
         let temp = TempDir::new().unwrap();
@@ -1194,6 +1197,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[serial]
     #[test]
     fn test_dash_create_reactivate_joined() {
         let temp = TempDir::new().unwrap();
@@ -1233,6 +1237,7 @@ mod tests {
         assert_eq!(dash.description, Some("desc2".to_string()));
     }
 
+    #[serial]
     #[test]
     fn test_dash_list_active_only() {
         let temp = TempDir::new().unwrap();
@@ -1256,6 +1261,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[serial]
     #[test]
     fn test_dash_list_all() {
         let temp = TempDir::new().unwrap();
@@ -1279,6 +1285,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[serial]
     #[test]
     fn test_dash_show() {
         let temp = TempDir::new().unwrap();
@@ -1302,6 +1309,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[serial]
     #[test]
     fn test_dash_show_nonexistent() {
         let temp = TempDir::new().unwrap();
@@ -1316,6 +1324,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[serial]
     #[test]
     fn test_dash_show_all_rounds() {
         let temp = TempDir::new().unwrap();
@@ -1378,6 +1387,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
     }
 
+    #[serial]
     #[test]
     fn test_json_output_uses_envelope() {
         use crate::output::JsonResponse;
@@ -1487,6 +1497,7 @@ mod tests {
         assert!(show_parsed["data"]["rounds"].is_array());
     }
 
+    #[serial]
     #[test]
     fn test_dash_commit_with_changes() {
         let temp = TempDir::new().unwrap();
@@ -1526,6 +1537,7 @@ mod tests {
         assert!(rounds[0].commit_hash.is_some());
     }
 
+    #[serial]
     #[test]
     fn test_dash_commit_no_changes() {
         let temp = TempDir::new().unwrap();
@@ -1561,6 +1573,7 @@ mod tests {
         assert!(rounds[0].commit_hash.is_none());
     }
 
+    #[serial]
     #[test]
     fn test_dash_commit_with_stdin_metadata() {
         use std::io::Write;
@@ -1627,6 +1640,7 @@ mod tests {
         assert_eq!(rounds[0].files_created, Some(vec!["test.txt".to_string()]));
     }
 
+    #[serial]
     #[test]
     fn test_dash_commit_increments_round_count() {
         let temp = TempDir::new().unwrap();
@@ -1668,6 +1682,7 @@ mod tests {
         assert_eq!(rounds.len(), 2);
     }
 
+    #[serial]
     #[test]
     fn test_dash_commit_truncates_long_summary() {
         let temp = TempDir::new().unwrap();
@@ -1709,6 +1724,7 @@ mod tests {
         assert!(rounds[0].commit_hash.is_some());
     }
 
+    #[serial]
     #[test]
     fn test_dash_join_full_lifecycle() {
         let temp = TempDir::new().unwrap();
@@ -1786,6 +1802,7 @@ mod tests {
         assert_eq!(dash.status, DashStatus::Joined);
     }
 
+    #[serial]
     #[test]
     fn test_dash_join_dirty_repo_root_fails() {
         let temp = TempDir::new().unwrap();
@@ -1836,6 +1853,7 @@ mod tests {
         assert_eq!(dash.status, DashStatus::Active);
     }
 
+    #[serial]
     #[test]
     fn test_dash_join_wrong_branch_fails() {
         let temp = TempDir::new().unwrap();
@@ -1886,6 +1904,7 @@ mod tests {
         assert_eq!(dash.status, DashStatus::Active);
     }
 
+    #[serial]
     #[test]
     fn test_dash_join_outstanding_changes_auto_commit() {
         let temp = TempDir::new().unwrap();
@@ -1925,6 +1944,7 @@ mod tests {
         }));
     }
 
+    #[serial]
     #[test]
     fn test_dash_release_full_lifecycle() {
         let temp = TempDir::new().unwrap();
@@ -1974,6 +1994,7 @@ mod tests {
         assert_eq!(dash.status, DashStatus::Released);
     }
 
+    #[serial]
     #[test]
     fn test_dash_release_nonexistent_fails() {
         let temp = TempDir::new().unwrap();
@@ -1989,6 +2010,7 @@ mod tests {
         assert!(result.unwrap_err().contains("not found"));
     }
 
+    #[serial]
     #[test]
     fn test_dash_join_already_joined_fails() {
         let temp = TempDir::new().unwrap();
@@ -2020,6 +2042,7 @@ mod tests {
         assert!(result.unwrap_err().contains("not active"));
     }
 
+    #[serial]
     #[test]
     fn test_dash_release_already_released_fails() {
         let temp = TempDir::new().unwrap();
