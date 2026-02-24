@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-24T18:11:18Z
+---
+
+## step-0: Added dash table DDL to StateDb::open(), created dash.rs module with DashInfo/DashRound/DashStatus types, validate_dash_name(), detect_default_branch(), and all StateDb CRUD methods. Added 5 error variants (E054-E058). Bumped schema version to 2. All 674 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dash-workflow.md
+
+---
+
+---
 step: step-2
 date: 2025-02-24T16:04:34Z
 ---
