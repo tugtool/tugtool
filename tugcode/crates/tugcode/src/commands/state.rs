@@ -1026,8 +1026,55 @@ pub fn run_state_show(
             }
         }
     } else {
-        // TODO: show all plans (future enhancement)
-        return Err("Showing all plans not yet implemented. Specify a plan path.".to_string());
+        // Show all plans
+        let plan_paths = db.list_plan_paths().map_err(|e| e.to_string())?;
+
+        if plan_paths.is_empty() {
+            if !quiet && !json {
+                println!("No plans initialized in state database.");
+            }
+            return Ok(0);
+        }
+
+        // Collect plan states
+        let mut plan_states = Vec::new();
+        for plan_path in &plan_paths {
+            let plan_state = db.show_plan(plan_path).map_err(|e| e.to_string())?;
+            plan_states.push(plan_state);
+        }
+
+        if json {
+            use crate::output::JsonResponse;
+            #[derive(serde::Serialize)]
+            struct StateShowAllData {
+                plans: Vec<tugtool_core::PlanState>,
+            }
+            let data = StateShowAllData { plans: plan_states };
+            let response = JsonResponse::ok("state show", data);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+            );
+        } else if !quiet {
+            // Display each plan based on mode
+            for (idx, plan_state) in plan_states.iter().enumerate() {
+                if idx > 0 {
+                    println!("\n{}", "=".repeat(80));
+                    println!();
+                }
+
+                if checklist {
+                    // Checklist mode: show all items with status markers
+                    let items = db
+                        .get_checklist_items(&plan_state.plan_path)
+                        .map_err(|e| e.to_string())?;
+                    print_checklist_view(plan_state, &items);
+                } else {
+                    // Summary mode (default)
+                    print_plan_state(plan_state);
+                }
+            }
+        }
     }
 
     Ok(0)
