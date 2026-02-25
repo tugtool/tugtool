@@ -1,0 +1,55 @@
+# Rename plan worktree prefix from `tugtool/` to `tugplan/`
+
+## Context
+
+Plan worktrees currently use `tugtool/` as their branch prefix (e.g., `tugtool/auth-20260208-143022`), producing directory names like `.tugtree/tugtool__auth-20260208-143022`. The more-recently-added dash feature uses `tugdash/` (e.g., `tugdash/my-task` → `.tugtree/tugdash__my-task`). Worktrees should be named with *either* `tugplan/` or `tugdash/` prefixes — no `tugtool` in the name.
+
+## Changes
+
+### 1. Production code in `tugcode/crates/tugtool-core/src/worktree.rs`
+
+All string literal replacements:
+
+| Line | Old | New |
+|------|-----|-----|
+| 132 | `strip_prefix("tugtool/")` | `strip_prefix("tugplan/")` |
+| 208 | `format!("tugtool/{}-{}", ...)` | `format!("tugplan/{}-{}", ...)` |
+| 688 | `starts_with("tugtool/")` | `starts_with("tugplan/")` |
+| 822 | `format!("tugtool/{}-", slug)` | `format!("tugplan/{}-", slug)` |
+| 910 | `starts_with(".tugtree/tugtool__")` | `starts_with(".tugtree/tugplan__")` |
+| 921 | `["branch", "--list", "tugtool/*"]` | `["branch", "--list", "tugplan/*"]` |
+
+Update doc comments/examples referencing `tugtool/` branch names (lines 124-130, 205, 687, 779-785, 810, 900-903, 913-915).
+
+Rename `list_tugtool_branches` → `list_tugplan_branches` (line 917).
+
+### 2. Export in `tugcode/crates/tugtool-core/src/lib.rs`
+
+Line 69: rename `list_tugtool_branches` → `list_tugplan_branches` in the re-export.
+
+### 3. Callers of `list_tugtool_branches`
+
+- `tugcode/crates/tugcode/src/commands/merge.rs` line 14 (import) and line 984 (call): rename to `list_tugplan_branches`
+- `tugcode/crates/tugcode/src/commands/doctor.rs` line 311: change `"tugtool__"` to `"tugplan__"`, line 356: rename call to `list_tugplan_branches`
+
+### 4. Tests in `worktree.rs` (~52 occurrences)
+
+Mechanical replacement of `"tugtool/` → `"tugplan/` and `tugtool__` → `tugplan__` in all test string literals and assertions.
+
+### 5. Tests in `merge.rs` (~8 occurrences) and `worktree.rs` commands (~2 occurrences)
+
+Same mechanical replacement in test fixtures that reference `"tugtool/` branch names.
+
+## Verification
+
+```bash
+cd tugcode && cargo build
+cd tugcode && cargo nextest run
+cd tugcode && cargo fmt --all --check
+```
+
+Grep to confirm no stale references remain:
+```bash
+grep -rn '"tugtool/' tugcode/crates/ --include='*.rs'
+```
+(Should return zero matches.)
