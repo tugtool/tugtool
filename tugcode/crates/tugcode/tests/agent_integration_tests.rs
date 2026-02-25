@@ -395,14 +395,22 @@ fn test_conformance_has_no_quality_review_content() {
 // =============================================================================
 
 #[test]
-fn test_critic_documents_skeleton_compliance() {
+fn test_critic_focuses_on_quality_not_conformance() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document skeleton compliance as hard gate
+    // Critic must focus on quality review areas, not skeleton conformance (conformance-agent handles that)
     assert!(
-        content.contains("skeleton") && content.contains("HARD GATE"),
-        "Critic must document skeleton compliance as hard gate"
+        content.contains("internal_consistency")
+            && content.contains("technical_soundness")
+            && content.contains("implementability"),
+        "Critic must document quality review areas"
+    );
+
+    // Critic must not contain skeleton compliance as a hard gate (that moved to conformance-agent)
+    assert!(
+        !content.contains("HARD GATE"),
+        "Critic must not contain skeleton compliance HARD GATE (moved to conformance-agent)"
     );
 }
 
@@ -434,20 +442,20 @@ fn test_critic_has_bash_tool_for_validation() {
 }
 
 #[test]
-fn test_critic_documents_validation_workflow() {
+fn test_critic_documents_quality_review_workflow() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document tugcode validate as first action
+    // Critic must document source code verification as key workflow step
     assert!(
-        content.contains("tugcode validate"),
-        "Critic must document tugcode validate command"
+        content.contains("Source Code Verification"),
+        "Critic must document Source Code Verification as part of quality review"
     );
 
-    // Critic must document immediate ESCALATE on validation failure
+    // Critic must document ESCALATE on critical findings
     assert!(
-        content.contains("ESCALATE") && content.contains("validate"),
-        "Critic must document ESCALATE on validation failure"
+        content.contains("ESCALATE") && content.contains("CRITICAL"),
+        "Critic must document ESCALATE on CRITICAL findings"
     );
 }
 
@@ -456,13 +464,60 @@ fn test_critic_documents_bash_restriction() {
     let path = agents_dir().join("critic-agent.md");
     let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
 
-    // Critic must document Bash restriction to only tugcode validate
-    // Use case-insensitive check for "ONLY" or "only"
+    // Critic must document Bash restriction to build/test feasibility checks only
+    // Use case-insensitive check for "ONLY" or "restriction"
     let lowercase_content = content.to_lowercase();
     assert!(
-        (lowercase_content.contains("only") || lowercase_content.contains("restriction"))
-            && lowercase_content.contains("tugcode validate"),
-        "Critic must document Bash tool restriction to tugcode validate only"
+        lowercase_content.contains("only") || lowercase_content.contains("restriction"),
+        "Critic must document Bash tool restriction"
+    );
+
+    // Critic must NOT reference tugcode validate (that is conformance-agent's job)
+    assert!(
+        !content.contains("tugcode validate"),
+        "Critic must not reference tugcode validate (that is conformance-agent's job)"
+    );
+}
+
+#[test]
+fn test_critic_documents_new_output_contract() {
+    let path = agents_dir().join("critic-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
+
+    // Critic must document all new output contract fields (Spec S07)
+    assert!(
+        content.contains("findings"),
+        "Critic must document findings field in output contract"
+    );
+    assert!(
+        content.contains("assessment"),
+        "Critic must document assessment field in output contract"
+    );
+    assert!(
+        content.contains("clarifying_questions"),
+        "Critic must document clarifying_questions field in output contract"
+    );
+    assert!(
+        content.contains("area_ratings"),
+        "Critic must document area_ratings field in output contract"
+    );
+}
+
+#[test]
+fn test_critic_documents_stable_ids() {
+    let path = agents_dir().join("critic-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read critic-agent");
+
+    // Critic must document stable finding IDs (used for stagnation detection)
+    assert!(
+        content.contains("stagnation"),
+        "Critic must document stable finding IDs used for stagnation detection"
+    );
+
+    // Critic must document stable question IDs (used for keying answers)
+    assert!(
+        content.contains("CQ1") || content.contains("stable question ID"),
+        "Critic must document stable clarifying question IDs"
     );
 }
 

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-25T02:00:56Z
+---
+
+## step-1: Rewrote critic-agent.md removing all skeleton/conformance logic. New quality-only focus with five review areas, Spec S07 output contract (findings/assessment/clarifying_questions/area_ratings), stable IDs for stagnation detection, clarifying questions with options, severity levels, and Spec S08 recommendation logic. Updated integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
 step: step-0
 date: 2025-02-25T01:49:32Z
 ---
