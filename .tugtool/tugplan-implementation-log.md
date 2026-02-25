@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-25T14:52:05Z
+---
+
+## step-0: Added --complete-remaining flag to state update --batch command that marks remaining open checklist items as completed. Added StateFailureReason enum to commit JSON output classifying state errors into open_items, drift, ownership, and db_error categories. Includes 7 integration tests and unit tests for all error classification paths.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
 step: step-4
 date: 2025-02-25T02:45:27Z
 ---

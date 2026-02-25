@@ -830,12 +830,17 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
     ///
     /// Accepts a slice of batch entries (each with kind, ordinal, status, and optional reason).
     /// All updates are executed in a single transaction for atomicity.
+    ///
+    /// When `complete_remaining` is true, after processing explicit entries, an additional SQL
+    /// UPDATE marks all remaining open items as completed. The empty-array guard is also skipped
+    /// when `complete_remaining` is true, allowing an empty batch to mean "complete everything."
     pub fn batch_update_checklist<T>(
         &mut self,
         plan_path: &str,
         anchor: &str,
         worktree: &str,
         entries: &[T],
+        complete_remaining: bool,
     ) -> Result<UpdateResult, TugError>
     where
         T: BatchEntry,
@@ -853,8 +858,8 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         let now = now_iso8601();
 
-        // Validate entries first
-        if entries.is_empty() {
+        // Validate entries first: only enforce non-empty when complete_remaining is false
+        if !complete_remaining && entries.is_empty() {
             return Err(TugError::StateDbQuery {
                 reason: "Batch update array must contain at least one entry".to_string(),
             });
@@ -988,6 +993,22 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 })?;
 
             total_updated += rows_affected;
+        }
+
+        // If complete_remaining, mark all still-open items as completed within the same
+        // transaction. This runs AFTER explicit entries so that items set to 'deferred' above
+        // are no longer 'open' and will not be overwritten here.
+        if complete_remaining {
+            let remaining_updated = tx
+                .execute(
+                    "UPDATE checklist_items SET status = 'completed', updated_at = ?1
+                     WHERE plan_path = ?2 AND step_anchor = ?3 AND status = 'open'",
+                    rusqlite::params![&now, plan_path, anchor],
+                )
+                .map_err(|e| TugError::StateDbQuery {
+                    reason: format!("failed to complete remaining items: {}", e),
+                })?;
+            total_updated += remaining_updated;
         }
 
         // Commit transaction

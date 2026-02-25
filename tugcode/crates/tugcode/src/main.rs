@@ -93,6 +93,7 @@ fn main() -> ExitCode {
                 all_checkpoints,
                 all,
                 batch,
+                complete_remaining,
                 allow_reopen,
                 allow_drift,
             } => commands::run_state_update(
@@ -107,6 +108,7 @@ fn main() -> ExitCode {
                 all_checkpoints,
                 all,
                 batch,
+                complete_remaining,
                 allow_reopen,
                 allow_drift,
                 cli.json,

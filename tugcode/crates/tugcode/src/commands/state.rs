@@ -149,6 +149,9 @@ pub enum StateCommands {
         /// Read batch update JSON from stdin. Mutually exclusive with individual item flags.
         #[arg(long, conflicts_with_all = ["task", "test", "checkpoint", "all_tasks", "all_tests", "all_checkpoints", "all"])]
         batch: bool,
+        /// Mark all non-specified open items as completed (use with --batch)
+        #[arg(long, requires = "batch")]
+        complete_remaining: bool,
         /// Allow setting item status back to open (manual recovery only)
         #[arg(long)]
         allow_reopen: bool,
@@ -599,6 +602,7 @@ pub fn run_state_update(
     all_checkpoints: Option<String>,
     all: Option<String>,
     batch: bool,
+    complete_remaining: bool,
     allow_reopen: bool,
     allow_drift: bool,
     json: bool,
@@ -652,13 +656,20 @@ pub fn run_state_update(
         let entries: Vec<BatchUpdateEntry> =
             serde_json::from_reader(stdin).map_err(|e| format!("Invalid JSON: {}", e))?;
 
-        if entries.is_empty() {
+        // Empty-array guard: only error when complete_remaining is false
+        if !complete_remaining && entries.is_empty() {
             return Err("Batch update array must contain at least one entry".to_string());
         }
 
-        // Call batch_update_checklist
-        db.batch_update_checklist(&plan_rel_str, &step, &worktree, &entries)
-            .map_err(|e| e.to_string())?
+        // Call batch_update_checklist with complete_remaining flag
+        db.batch_update_checklist(
+            &plan_rel_str,
+            &step,
+            &worktree,
+            &entries,
+            complete_remaining,
+        )
+        .map_err(|e| e.to_string())?
     } else {
         // 3a. Parse update arguments into ChecklistUpdate variants
         let mut updates = Vec::new();

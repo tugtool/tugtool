@@ -3412,3 +3412,388 @@ fn test_commit_strict_allows_deferred_items() {
     // Those tests comprehensively verify that deferred items are non-blocking for strict completion
     // while open items cause failure. This integration test stub documents that the behavior exists.
 }
+
+// === --complete-remaining integration tests ===
+
+/// Minimal plan with multiple checklist items for complete-remaining tests
+const COMPLETE_REMAINING_PLAN: &str = r#"## Phase 1.0: Complete Remaining Test {#phase-1}
+
+**Purpose:** Test plan for --complete-remaining integration tests.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Target branch | main |
+| Last updated | 2026-02-25 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 0: Test Step {#step-0}
+
+**Tasks:**
+- [ ] Task zero
+- [ ] Task one
+- [ ] Task two
+
+**Tests:**
+- [ ] Test zero
+- [ ] Test one
+
+**Checkpoint:**
+- [ ] Checkpoint zero
+- [ ] Checkpoint one
+
+---
+
+### 1.0.1 Deliverables {#deliverables}
+
+**Deliverable:** All items completed.
+
+#### Phase Exit Criteria {#exit-criteria}
+
+- [ ] All tests pass
+"#;
+
+/// Helper: run batch update via stdin, returning (success, stdout, stderr)
+fn run_batch_update(
+    temp: &tempfile::TempDir,
+    plan_path: &str,
+    step: &str,
+    worktree: &str,
+    batch_json: &str,
+    extra_args: &[&str],
+) -> (bool, String, String) {
+    let mut args = vec!["state", "update", plan_path, step, "--worktree", worktree];
+    args.extend_from_slice(extra_args);
+
+    let mut child = Command::new(tug_binary())
+        .args(&args)
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(batch_json.as_bytes())
+        .expect("failed to write to stdin");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    (output.status.success(), stdout, stderr)
+}
+
+/// Helper: get checklist items for a step from state show JSON.
+/// step_anchor should be the bare anchor without leading '#' (e.g. "step-0").
+fn get_checklist_items(
+    temp: &tempfile::TempDir,
+    plan_path: &str,
+    step_anchor: &str,
+) -> Vec<serde_json::Value> {
+    let output = Command::new(tug_binary())
+        .args(["state", "show", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state show");
+    assert!(
+        output.status.success(),
+        "state show failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("invalid JSON from state show");
+    let checklist_items = json["data"]["plan"]["checklist_items"]
+        .as_array()
+        .expect("no checklist_items array");
+
+    checklist_items
+        .iter()
+        .filter(|item| item["step_anchor"].as_str() == Some(step_anchor))
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn test_complete_remaining_empty_array_marks_all_open_completed() {
+    // Spec S01 scenario 1: empty array + --complete-remaining marks all open items completed
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining.md";
+    let worktree = "/tmp/wt-cr-1";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    // Send empty batch with --complete-remaining
+    let (success, _stdout, stderr) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        worktree,
+        "[]",
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        success,
+        "empty batch + --complete-remaining should succeed: {}",
+        stderr
+    );
+
+    // Verify all items are now completed
+    let items = get_checklist_items(&temp, plan_path, "step-0");
+    for item in &items {
+        assert_eq!(
+            item["status"].as_str(),
+            Some("completed"),
+            "item {:?} should be completed",
+            item
+        );
+    }
+    assert!(!items.is_empty(), "should have checklist items");
+}
+
+#[test]
+fn test_complete_remaining_deferred_items_preserved() {
+    // Spec S01 scenario 2: non-empty deferred items + --complete-remaining
+    // specified deferred items get deferred status, remaining open items get completed
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-2", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-2.md";
+    let worktree = "/tmp/wt-cr-2";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    // Defer task ordinal 1, complete remaining
+    let batch_json = r#"[{"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"}]"#;
+    let (success, _stdout, stderr) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        worktree,
+        batch_json,
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        success,
+        "deferred items + --complete-remaining should succeed: {}",
+        stderr
+    );
+
+    // Verify: task ordinal 1 is deferred, all others are completed
+    let items = get_checklist_items(&temp, plan_path, "step-0");
+    for item in &items {
+        let kind = item["kind"].as_str().unwrap_or("");
+        let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
+        let status = item["status"].as_str().unwrap_or("");
+        if kind == "task" && ordinal == 1 {
+            assert_eq!(
+                status, "deferred",
+                "task ordinal 1 should be deferred, got: {}",
+                status
+            );
+        } else {
+            assert_eq!(
+                status, "completed",
+                "item (kind={}, ordinal={}) should be completed, got: {}",
+                kind, ordinal, status
+            );
+        }
+    }
+}
+
+#[test]
+fn test_complete_remaining_deferred_only_batch_orchestrator_path() {
+    // Spec S01 scenario 3: deferred-only batch + --complete-remaining
+    // This is the orchestrator's primary path when reviewer has non-PASS checkpoints
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-3", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-3.md";
+    let worktree = "/tmp/wt-cr-3";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    // Reviewer marked checkpoint 0 as deferred (non-PASS), orchestrator sends only that
+    let batch_json = r#"[{"kind": "checkpoint", "ordinal": 0, "status": "deferred", "reason": "checkpoint FAIL: tests did not pass"}]"#;
+    let (success, _stdout, stderr) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        worktree,
+        batch_json,
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        success,
+        "deferred-only batch + --complete-remaining should succeed: {}",
+        stderr
+    );
+
+    // Verify: checkpoint 0 is deferred, all tasks and tests and checkpoint 1 are completed
+    let items = get_checklist_items(&temp, plan_path, "step-0");
+    for item in &items {
+        let kind = item["kind"].as_str().unwrap_or("");
+        let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
+        let status = item["status"].as_str().unwrap_or("");
+        if kind == "checkpoint" && ordinal == 0 {
+            assert_eq!(
+                status, "deferred",
+                "checkpoint 0 should be deferred, got: {}",
+                status
+            );
+        } else {
+            assert_eq!(
+                status, "completed",
+                "item (kind={}, ordinal={}) should be completed, got: {}",
+                kind, ordinal, status
+            );
+        }
+    }
+}
+
+#[test]
+fn test_empty_array_without_complete_remaining_still_errors() {
+    // Spec S01 scenario 4 (regression): empty array WITHOUT --complete-remaining still errors
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-4", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-4.md";
+    let worktree = "/tmp/wt-cr-4";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    let (success, _stdout, stderr) =
+        run_batch_update(&temp, plan_path, "step-0", worktree, "[]", &["--batch"]);
+    assert!(
+        !success,
+        "empty array without --complete-remaining should fail"
+    );
+    assert!(
+        stderr.contains("at least one entry") || stderr.contains("must contain"),
+        "error should mention at least one entry: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_complete_remaining_without_batch_rejected_by_clap() {
+    // Spec S01 scenario 5: --complete-remaining without --batch is rejected
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-5", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-5.md";
+    let worktree = "/tmp/wt-cr-5";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    // Try --complete-remaining without --batch (using --all-tasks to satisfy "at least one update" requirement)
+    // Note: clap's `requires = "batch"` means --complete-remaining requires --batch to be present
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-0",
+            "--worktree",
+            worktree,
+            "--complete-remaining",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to spawn");
+
+    assert!(
+        !output.status.success(),
+        "--complete-remaining without --batch should be rejected by clap"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // clap reports: "error: the following required arguments were not provided: --batch"
+    // or similar phrasing
+    assert!(
+        !stderr.is_empty(),
+        "clap should produce an error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_complete_remaining_with_no_open_items_is_idempotent() {
+    // Spec S01 scenario 6: --complete-remaining when no open items remain succeeds with 0 updated
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-6", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-6.md";
+    let worktree = "/tmp/wt-cr-6";
+
+    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+
+    // First: complete all items
+    let (success, _stdout, stderr) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        worktree,
+        "[]",
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        success,
+        "first complete-remaining should succeed: {}",
+        stderr
+    );
+
+    // Second: complete-remaining again (no open items left) should still succeed
+    let (success2, _stdout2, stderr2) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        worktree,
+        "[]",
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        success2,
+        "--complete-remaining with no open items should succeed idempotently: {}",
+        stderr2
+    );
+}
+
+#[test]
+fn test_complete_remaining_respects_ownership_check() {
+    // Spec S01 scenario 7: ownership check still enforced with --complete-remaining
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "complete-remaining-7", COMPLETE_REMAINING_PLAN);
+    let plan_path = ".tugtool/tugplan-complete-remaining-7.md";
+    let correct_worktree = "/tmp/wt-cr-7-correct";
+    let wrong_worktree = "/tmp/wt-cr-7-wrong";
+
+    claim_and_start_step(&temp, plan_path, "step-0", correct_worktree);
+
+    // Try --complete-remaining with wrong worktree
+    let (success, _stdout, stderr) = run_batch_update(
+        &temp,
+        plan_path,
+        "step-0",
+        wrong_worktree,
+        "[]",
+        &["--batch", "--complete-remaining"],
+    );
+    assert!(
+        !success,
+        "--complete-remaining with wrong worktree should be rejected: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("wnership") || stderr.contains("claimed") || stderr.contains("E049"),
+        "error should mention ownership: {}",
+        stderr
+    );
+}
