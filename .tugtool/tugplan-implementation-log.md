@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-25T16:04:07Z
+---
+
+## step-0: Baseline verification: cargo build, cargo nextest run, and cargo fmt --all --check all pass with zero issues
+
+**Files changed:**
+- .tugtool/tugplan-worktree-prefix-rename.md
+
+---
+
+---
 step: step-2
 date: 2025-02-25T15:03:43Z
 ---
