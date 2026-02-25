@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-25T14:59:21Z
+---
+
+## step-1: Rewrote SKILL.md to replace fragile ordinal-counting batch construction with simplified --complete-remaining flow. Replaced hard halt on state_update_failed with structured recovery loop that switches on state_failure_reason. Updated Tugstate Protocol reference section.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
 step: step-0
 date: 2025-02-25T14:52:05Z
 ---
