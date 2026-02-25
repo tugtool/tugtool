@@ -10,12 +10,6 @@ const EXIT_PASS: u8 = 0;
 const EXIT_WARN: u8 = 1;
 const EXIT_FAIL: u8 = 2;
 
-/// Log size thresholds per Table T02
-const LOG_LINE_WARN: usize = 400;
-const LOG_LINE_FAIL: usize = 500;
-const LOG_BYTE_WARN: usize = 80 * 1024; // 80KB
-const LOG_BYTE_FAIL: usize = 100 * 1024; // 100KB
-
 /// PR state from gh pr view
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrState {
@@ -205,71 +199,44 @@ fn check_initialized() -> HealthCheck {
     }
 }
 
-/// Check implementation log size
+/// Check implementation log size, rotating if needed
 fn check_log_size() -> HealthCheck {
-    let log_path = Path::new(".tugtool/tugplan-implementation-log.md");
+    use super::log::log_rotate_inner;
 
-    if !log_path.exists() {
-        return HealthCheck {
-            name: "log_size".to_string(),
-            status: "pass".to_string(),
-            message: "Implementation log not found (no history yet)".to_string(),
-            details: None,
-        };
-    }
-
-    // Read the file to get line count and byte size
-    let content = match std::fs::read_to_string(log_path) {
-        Ok(c) => c,
-        Err(e) => {
-            return HealthCheck {
-                name: "log_size".to_string(),
-                status: "fail".to_string(),
-                message: format!("Failed to read implementation log: {}", e),
-                details: None,
-            };
+    let root = Path::new(".");
+    match log_rotate_inner(root, false) {
+        Ok(result) => {
+            if result.rotated {
+                let details = serde_json::json!({
+                    "original_lines": result.original_lines,
+                    "original_bytes": result.original_bytes,
+                    "archived_path": result.archived_path,
+                });
+                HealthCheck {
+                    name: "log_size".to_string(),
+                    status: "pass".to_string(),
+                    message: format!(
+                        "Implementation log rotated ({} lines, {} bytes archived)",
+                        result.original_lines.unwrap_or(0),
+                        result.original_bytes.unwrap_or(0),
+                    ),
+                    details: Some(details),
+                }
+            } else {
+                HealthCheck {
+                    name: "log_size".to_string(),
+                    status: "pass".to_string(),
+                    message: "Implementation log size OK".to_string(),
+                    details: None,
+                }
+            }
         }
-    };
-
-    let lines = content.lines().count();
-    let bytes = content.len();
-
-    let details = serde_json::json!({
-        "lines": lines,
-        "bytes": bytes
-    });
-
-    // Determine status based on thresholds
-    if lines > LOG_LINE_FAIL || bytes > LOG_BYTE_FAIL {
-        HealthCheck {
+        Err(e) => HealthCheck {
             name: "log_size".to_string(),
             status: "fail".to_string(),
-            message: format!(
-                "Implementation log exceeds limits ({} lines, {} bytes)",
-                lines, bytes
-            ),
-            details: Some(details),
-        }
-    } else if lines > LOG_LINE_WARN || bytes > LOG_BYTE_WARN {
-        HealthCheck {
-            name: "log_size".to_string(),
-            status: "warn".to_string(),
-            message: format!(
-                "Implementation log approaching limits ({} lines, {} bytes)",
-                lines, bytes
-            ),
-            details: Some(details),
-        }
-    } else {
-        HealthCheck {
-            name: "log_size".to_string(),
-            status: "pass".to_string(),
-            message: format!(
-                "Implementation log size OK ({} lines, {} bytes)",
-                lines, bytes
-            ),
-            details: Some(details),
-        }
+            message: format!("Failed to check/rotate implementation log: {}", e),
+            details: None,
+        },
     }
 }
 
