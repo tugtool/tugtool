@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-25T16:24:16Z
+---
+
+## step-2: Updated all test string literals: tugtool/ -> tugplan/ branch prefix, tugtool__ -> tugplan__ directory prefix, renamed test_list_tugtool_branches, added tugdash__ assertions. All 750 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-worktree-prefix-rename.md
+
+---
+
+---
 step: step-1
 date: 2025-02-25T16:13:24Z
 ---

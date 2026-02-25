@@ -1163,8 +1163,8 @@ mod tests {
     #[test]
     fn test_remove_data_serialization() {
         let data = RemoveData {
-            worktree_path: ".tugtree/tugtool__test-20260210-120000".to_string(),
-            branch_name: "tugtool/test-20260210-120000".to_string(),
+            worktree_path: ".tugtree/tugplan__test-20260210-120000".to_string(),
+            branch_name: "tugplan/test-20260210-120000".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
         };
 
@@ -1273,7 +1273,7 @@ mod integration_tests {
 
         let (worktree_path, branch_name, plan_slug) = result.unwrap();
         assert_eq!(plan_slug, "test");
-        assert!(branch_name.starts_with("tugtool/test-"));
+        assert!(branch_name.starts_with("tugplan/test-"));
 
         // Verify worktree directory exists
         assert!(worktree_path.exists(), "worktree directory should exist");

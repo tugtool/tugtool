@@ -1298,8 +1298,8 @@ mod tests {
     #[test]
     fn test_sanitize_branch_name() {
         assert_eq!(
-            sanitize_branch_name("tugtool/auth-20260208-143022"),
-            "tugtool__auth-20260208-143022"
+            sanitize_branch_name("tugplan/auth-20260208-143022"),
+            "tugplan__auth-20260208-143022"
         );
         assert_eq!(
             sanitize_branch_name("tug\\windows\\path"),
@@ -1313,12 +1313,12 @@ mod tests {
     #[test]
     fn test_generate_branch_name() {
         let branch = generate_branch_name("auth").expect("timestamp generation should succeed");
-        assert!(branch.starts_with("tugtool/auth-"));
-        assert!(branch.len() > "tugtool/auth-".len());
+        assert!(branch.starts_with("tugplan/auth-"));
+        assert!(branch.len() > "tugplan/auth-".len());
 
         // Check timestamp format (YYYYMMDD-HHMMSS)
         let parts: Vec<&str> = branch.split('-').collect();
-        assert!(parts.len() >= 3); // tugtool/auth, YYYYMMDD, HHMMSS
+        assert!(parts.len() >= 3); // tugplan/auth, YYYYMMDD, HHMMSS
     }
 
     #[test]
@@ -1343,55 +1343,61 @@ mod tests {
     #[test]
     fn test_is_valid_worktree_path_valid() {
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtree/tugtool__auth-20260208-143022"
+            ".tugtree/tugplan__auth-20260208-143022"
         )));
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtree/tugtool__13-20250209-152734"
+            ".tugtree/tugplan__13-20250209-152734"
         )));
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtree/tugtool__feature-name"
+            ".tugtree/tugplan__feature-name"
+        )));
+        assert!(is_valid_worktree_path(Path::new(
+            ".tugtree/tugdash__my-task"
+        )));
+        assert!(is_valid_worktree_path(Path::new(
+            ".tugtree/tugdash__feature-name"
         )));
     }
 
     #[test]
     fn test_is_valid_worktree_path_invalid() {
-        // Wrong prefix
+        // Wrong prefix -- bare .tugtree/foo (no tugplan__ or tugdash__ prefix)
         assert!(!is_valid_worktree_path(Path::new(".tugtree/foo")));
         assert!(!is_valid_worktree_path(Path::new(
-            "worktrees/tugtool__auth"
+            "worktrees/tugplan__auth"
         )));
 
         // Absolute paths
         assert!(!is_valid_worktree_path(Path::new(
-            "/abs/path/tugtool__auth"
+            "/abs/path/tugplan__auth"
         )));
 
         // Relative but wrong location
         assert!(!is_valid_worktree_path(Path::new(
-            "../worktrees/tugtool__auth"
+            "../worktrees/tugplan__auth"
         )));
 
-        // Missing tugtool__ prefix
+        // Missing tugplan__ or tugdash__ prefix
         assert!(!is_valid_worktree_path(Path::new(".tugtree/auth-20260208")));
     }
 
     #[test]
     fn test_slug_from_branch() {
         // Basic case
-        assert_eq!(slug_from_branch("tugtool/auth-20260208-143022"), "auth");
+        assert_eq!(slug_from_branch("tugplan/auth-20260208-143022"), "auth");
 
         // Multi-hyphen slug
         assert_eq!(
-            slug_from_branch("tugtool/auth-v2-20260208-143022"),
+            slug_from_branch("tugplan/auth-v2-20260208-143022"),
             "auth-v2"
         );
 
         // Single digit slug
-        assert_eq!(slug_from_branch("tugtool/1-20260208-143022"), "1");
+        assert_eq!(slug_from_branch("tugplan/1-20260208-143022"), "1");
 
         // Long slug
         assert_eq!(
-            slug_from_branch("tugtool/feature-name-with-many-parts-20260208-143022"),
+            slug_from_branch("tugplan/feature-name-with-many-parts-20260208-143022"),
             "feature-name-with-many-parts"
         );
     }
@@ -1444,18 +1450,18 @@ mod tests {
         // Create branch and worktree
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/test-20260208-120000"])
+            .args(["branch", "tugplan/test-20260208-120000"])
             .output()
             .expect("Failed to create branch");
 
-        let worktree_path = worktrees_dir.join("tugtool__test-20260208-120000");
+        let worktree_path = worktrees_dir.join("tugplan__test-20260208-120000");
         Command::new("git")
             .current_dir(temp_dir)
             .args([
                 "worktree",
                 "add",
                 worktree_path.to_str().unwrap(),
-                "tugtool/test-20260208-120000",
+                "tugplan/test-20260208-120000",
             ])
             .output()
             .expect("Failed to add worktree");
@@ -1463,7 +1469,7 @@ mod tests {
         // Test list_worktrees
         let worktrees = list_worktrees(temp_dir).unwrap();
         assert_eq!(worktrees.len(), 1);
-        assert_eq!(worktrees[0].branch, "tugtool/test-20260208-120000");
+        assert_eq!(worktrees[0].branch, "tugplan/test-20260208-120000");
         assert_eq!(worktrees[0].plan_slug, "test");
         assert_eq!(worktrees[0].base_branch, "main");
     }
@@ -1514,18 +1520,18 @@ mod tests {
 
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/auth-20260208-120000"])
+            .args(["branch", "tugplan/auth-20260208-120000"])
             .output()
             .expect("Failed to create branch");
 
-        let worktree_path = worktrees_dir.join("tugtool__auth-20260208-120000");
+        let worktree_path = worktrees_dir.join("tugplan__auth-20260208-120000");
         Command::new("git")
             .current_dir(temp_dir)
             .args([
                 "worktree",
                 "add",
                 worktree_path.to_str().unwrap(),
-                "tugtool/auth-20260208-120000",
+                "tugplan/auth-20260208-120000",
             ])
             .output()
             .expect("Failed to add worktree");
@@ -1537,7 +1543,7 @@ mod tests {
         assert!(discovery.selected.is_some());
         assert_eq!(discovery.match_count, 1);
         let wt = discovery.selected.unwrap();
-        assert_eq!(wt.branch, "tugtool/auth-20260208-120000");
+        assert_eq!(wt.branch, "tugplan/auth-20260208-120000");
         assert_eq!(wt.plan_slug, "auth");
     }
 
@@ -1565,7 +1571,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_tugtool_branches() {
+    fn test_list_tugplan_branches() {
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
@@ -1601,15 +1607,15 @@ mod tests {
             .output()
             .unwrap();
 
-        // Create some tugtool/* branches
+        // Create some tugplan/* branches
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/auth-20260208-120000"])
+            .args(["branch", "tugplan/auth-20260208-120000"])
             .output()
             .unwrap();
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/db-20260208-130000"])
+            .args(["branch", "tugplan/db-20260208-130000"])
             .output()
             .unwrap();
 
@@ -1622,10 +1628,10 @@ mod tests {
 
         let branches = list_tugplan_branches(temp_dir).unwrap();
 
-        // Should only return tugtool/* branches
+        // Should only return tugplan/* branches
         assert_eq!(branches.len(), 2);
-        assert!(branches.contains(&"tugtool/auth-20260208-120000".to_string()));
-        assert!(branches.contains(&"tugtool/db-20260208-130000".to_string()));
+        assert!(branches.contains(&"tugplan/auth-20260208-120000".to_string()));
+        assert!(branches.contains(&"tugplan/db-20260208-130000".to_string()));
         assert!(!branches.contains(&"feature/something".to_string()));
     }
 
@@ -1666,10 +1672,10 @@ mod tests {
             .output()
             .unwrap();
 
-        // Create a tugtool/* branch with no worktree
+        // Create a tugplan/* branch with no worktree
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/orphan-20260208-120000"])
+            .args(["branch", "tugplan/orphan-20260208-120000"])
             .output()
             .unwrap();
 
@@ -1679,7 +1685,7 @@ mod tests {
 
         // Should remove the branch via safe delete (it's based on current branch)
         assert_eq!(removed.len(), 1);
-        assert_eq!(removed[0], "tugtool/orphan-20260208-120000");
+        assert_eq!(removed[0], "tugplan/orphan-20260208-120000");
     }
 
     #[test]
@@ -1719,10 +1725,10 @@ mod tests {
             .output()
             .unwrap();
 
-        // Create a tugtool/* branch with commits not in main
+        // Create a tugplan/* branch with commits not in main
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["checkout", "-b", "tugtool/unmerged-20260208-120000"])
+            .args(["checkout", "-b", "tugplan/unmerged-20260208-120000"])
             .output()
             .unwrap();
 
@@ -1767,7 +1773,7 @@ mod tests {
             "Expected 1 skipped branch, got: {:?}",
             skipped
         );
-        assert_eq!(skipped[0].0, "tugtool/unmerged-20260208-120000");
+        assert_eq!(skipped[0].0, "tugplan/unmerged-20260208-120000");
         assert!(
             skipped[0].1.contains("Unmerged"),
             "Expected skip reason to mention unmerged, got: {}",
@@ -1779,7 +1785,7 @@ mod tests {
             cleanup_stale_branches_with_pr_checker(temp_dir, &sessions, false, |_| PrState::Merged)
                 .unwrap();
         assert_eq!(removed.len(), 1);
-        assert_eq!(removed[0], "tugtool/unmerged-20260208-120000");
+        assert_eq!(removed[0], "tugplan/unmerged-20260208-120000");
     }
 
     #[test]
@@ -1819,17 +1825,17 @@ mod tests {
             .output()
             .unwrap();
 
-        // Create a tugtool/* branch that is NOT merged into main
+        // Create a tugplan/* branch that is NOT merged into main
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["branch", "tugtool/unmerged-feature"])
+            .args(["branch", "tugplan/unmerged-feature"])
             .output()
             .unwrap();
 
         // Add a commit to the branch
         Command::new("git")
             .current_dir(temp_dir)
-            .args(["checkout", "tugtool/unmerged-feature"])
+            .args(["checkout", "tugplan/unmerged-feature"])
             .output()
             .unwrap();
         std::fs::write(temp_dir.join("feature.txt"), "new feature").unwrap();
@@ -1869,7 +1875,7 @@ mod tests {
             "branch should be either removed or skipped"
         );
         if !skipped.is_empty() {
-            assert_eq!(skipped[0].0, "tugtool/unmerged-feature");
+            assert_eq!(skipped[0].0, "tugplan/unmerged-feature");
             assert!(
                 skipped[0].1.contains("Unmerged"),
                 "Expected skip reason to mention unmerged, got: {}",
@@ -1892,31 +1898,31 @@ mod tests {
     fn test_resolve_worktree_by_exact_branch() {
         let worktrees = vec![
             make_wt(
-                "/repo/.tugtree/tugtool__auth-20260208-120000",
-                "tugtool/auth-20260208-120000",
+                "/repo/.tugtree/tugplan__auth-20260208-120000",
+                "tugplan/auth-20260208-120000",
                 "auth",
             ),
             make_wt(
-                "/repo/.tugtree/tugtool__db-20260209-130000",
-                "tugtool/db-20260209-130000",
+                "/repo/.tugtree/tugplan__db-20260209-130000",
+                "tugplan/db-20260209-130000",
                 "db",
             ),
         ];
 
-        let matches = resolve_worktree("tugtool/auth-20260208-120000", &worktrees);
+        let matches = resolve_worktree("tugplan/auth-20260208-120000", &worktrees);
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].branch, "tugtool/auth-20260208-120000");
+        assert_eq!(matches[0].branch, "tugplan/auth-20260208-120000");
     }
 
     #[test]
     fn test_resolve_worktree_by_exact_path() {
         let worktrees = vec![make_wt(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            "tugtool/auth-20260208-120000",
+            "/repo/.tugtree/tugplan__auth-20260208-120000",
+            "tugplan/auth-20260208-120000",
             "auth",
         )];
 
-        let matches = resolve_worktree("/repo/.tugtree/tugtool__auth-20260208-120000", &worktrees);
+        let matches = resolve_worktree("/repo/.tugtree/tugplan__auth-20260208-120000", &worktrees);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].plan_slug, "auth");
     }
@@ -1924,12 +1930,12 @@ mod tests {
     #[test]
     fn test_resolve_worktree_by_directory_name() {
         let worktrees = vec![make_wt(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            "tugtool/auth-20260208-120000",
+            "/repo/.tugtree/tugplan__auth-20260208-120000",
+            "tugplan/auth-20260208-120000",
             "auth",
         )];
 
-        let matches = resolve_worktree("tugtool__auth-20260208-120000", &worktrees);
+        let matches = resolve_worktree("tugplan__auth-20260208-120000", &worktrees);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].plan_slug, "auth");
     }
@@ -1937,8 +1943,8 @@ mod tests {
     #[test]
     fn test_resolve_worktree_by_plan_path() {
         let worktrees = vec![make_wt(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            "tugtool/auth-20260208-120000",
+            "/repo/.tugtree/tugplan__auth-20260208-120000",
+            "tugplan/auth-20260208-120000",
             "auth",
         )];
 
@@ -1950,8 +1956,8 @@ mod tests {
     #[test]
     fn test_resolve_worktree_by_plan_slug() {
         let worktrees = vec![make_wt(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            "tugtool/auth-20260208-120000",
+            "/repo/.tugtree/tugplan__auth-20260208-120000",
+            "tugplan/auth-20260208-120000",
             "auth",
         )];
 
@@ -1964,13 +1970,13 @@ mod tests {
     fn test_resolve_worktree_multiple_matches_same_slug() {
         let worktrees = vec![
             make_wt(
-                "/repo/.tugtree/tugtool__auth-20260208-120000",
-                "tugtool/auth-20260208-120000",
+                "/repo/.tugtree/tugplan__auth-20260208-120000",
+                "tugplan/auth-20260208-120000",
                 "auth",
             ),
             make_wt(
-                "/repo/.tugtree/tugtool__auth-20260209-130000",
-                "tugtool/auth-20260209-130000",
+                "/repo/.tugtree/tugplan__auth-20260209-130000",
+                "tugplan/auth-20260209-130000",
                 "auth",
             ),
         ];
@@ -1987,8 +1993,8 @@ mod tests {
     #[test]
     fn test_resolve_worktree_no_match() {
         let worktrees = vec![make_wt(
-            "/repo/.tugtree/tugtool__auth-20260208-120000",
-            "tugtool/auth-20260208-120000",
+            "/repo/.tugtree/tugplan__auth-20260208-120000",
+            "tugplan/auth-20260208-120000",
             "auth",
         )];
 
@@ -2002,19 +2008,19 @@ mod tests {
         // stage 1 (exact branch) should match first
         let worktrees = vec![
             make_wt(
-                "/repo/.tugtree/tugtool__foo-20260208-120000",
-                "tugtool/foo-20260208-120000",
+                "/repo/.tugtree/tugplan__foo-20260208-120000",
+                "tugplan/foo-20260208-120000",
                 "foo",
             ),
             make_wt(
-                "/repo/.tugtree/tugtool__bar-20260209-130000",
-                "tugtool/bar-20260209-130000",
+                "/repo/.tugtree/tugplan__bar-20260209-130000",
+                "tugplan/bar-20260209-130000",
                 "bar",
             ),
         ];
 
         // Exact branch match should return only that one
-        let matches = resolve_worktree("tugtool/foo-20260208-120000", &worktrees);
+        let matches = resolve_worktree("tugplan/foo-20260208-120000", &worktrees);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].plan_slug, "foo");
     }
