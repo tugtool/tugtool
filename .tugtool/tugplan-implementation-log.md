@@ -9,6 +9,54 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-25T21:38:43Z
+---
+
+## #step-3: Added resolve_plan() call in run_commit() to resolve the plan path to a repo-relative path before check_commit_drift and db.complete_step. Added StateStepNotFound arm to classify_state_error().
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-25T21:32:34Z
+---
+
+## #step-2: Enriched all map_err closures and error constructions inside complete_step() with plan_path and anchor for better debugging
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-25T21:27:37Z
+---
+
+## #step-1: Added idempotent early-return to complete_step() that succeeds immediately when a step is already completed, bypassing ownership/checklist/force checks
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-25T21:22:44Z
+---
+
+## #step-0: Added StateStepNotFound variant (E059) to TugError and updated complete_step() to return it when the step anchor is not found via QueryReturnedNoRows
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-25T20:27:05Z
 ---

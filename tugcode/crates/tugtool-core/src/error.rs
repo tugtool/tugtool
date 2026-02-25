@@ -211,6 +211,10 @@ pub enum TugError {
     #[error("E053: No steps ready for claiming")]
     StateNoReadySteps,
 
+    /// E059: Step not found in state database
+    #[error("E059: Step {anchor} not found for plan {plan_path}")]
+    StateStepNotFound { plan_path: String, anchor: String },
+
     // === Dash errors (E054-E058) ===
     /// E054: Dash name not found
     #[error("E054: Dash not found: {name}")]
@@ -283,6 +287,7 @@ impl TugError {
             TugError::StateIncompleteChecklist { .. } => "E051",
             TugError::StateIncompleteSubsteps { .. } => "E052",
             TugError::StateNoReadySteps => "E053",
+            TugError::StateStepNotFound { .. } => "E059",
             TugError::DashNotFound { .. } => "E054",
             TugError::DashNameInvalid { .. } => "E055",
             TugError::DashNotActive { .. } => "E056",
@@ -362,6 +367,7 @@ impl TugError {
             TugError::StateIncompleteChecklist { .. } => 14, // Incomplete checklist
             TugError::StateIncompleteSubsteps { .. } => 14, // Incomplete substeps
             TugError::StateNoReadySteps => 14,    // No ready steps
+            TugError::StateStepNotFound { .. } => 14, // Step not found in DB
             TugError::DashNotFound { .. } => 15,  // Dash not found
             TugError::DashNameInvalid { .. } => 15, // Dash name invalid
             TugError::DashNotActive { .. } => 15, // Dash not active
