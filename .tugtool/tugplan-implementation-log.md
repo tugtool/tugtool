@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-25T22:12:25Z
+---
+
+## #step-0: Renamed tugcode worktree create to tugcode worktree setup across all Rust sources, tests, docs, and agent prompts
+
+**Files changed:**
+- .tugtool/tugplan-worktree-setup-rename.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-25T21:38:43Z
 ---

@@ -184,7 +184,7 @@ tugcode beads close bd-abc123 --reason "Step complete"
 ### Worktree And Merge
 
 ```bash
-tugcode worktree create .tugtool/tugplan-1.md --json
+tugcode worktree setup .tugtool/tugplan-1.md --json
 tugcode worktree list
 tugcode worktree cleanup --merged
 tugcode merge .tugtool/tugplan-1.md --dry-run

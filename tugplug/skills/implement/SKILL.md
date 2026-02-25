@@ -18,7 +18,7 @@ hooks:
 
 **YOUR TOOLS:** `Task`, `AskUserQuestion`, and `Bash` (for `tugcode` CLI commands ONLY). You cannot read files, write files, or edit files. Agent work happens through Task. Worktree setup happens through direct `tugcode` CLI calls via Bash.
 
-**FIRST ACTION:** Your very first action MUST be running `tugcode worktree create` via Bash. No exceptions.
+**FIRST ACTION:** Your very first action MUST be running `tugcode worktree setup` via Bash. No exceptions.
 
 **FORBIDDEN:**
 - Reading, writing, editing, or creating ANY files
@@ -56,7 +56,7 @@ Implementation complete
   PR: {pr_url}
 ```
 
-### Setup complete (after tugcode worktree create)
+### Setup complete (after tugcode worktree setup)
 
 ```
 **Setup**(Complete)
@@ -203,7 +203,7 @@ For `state_update_failed` after exhausting recovery (escalation):
 
 ```
 ┌──────────────────────────────────────────┐
-│  tugcode worktree create <plan> --json   │
+│  tugcode worktree setup <plan> --json    │
 └────────────────────┬─────────────────────┘
                      │
                      ▼
@@ -315,20 +315,20 @@ For `state_update_failed` after exhausting recovery (escalation):
 
 ## Execute This Sequence
 
-### 1. Create Worktree
+### 1. Set Up Worktree
 
 Output the session start message.
 
-Run the worktree creation command via Bash:
+Run the worktree setup command via Bash:
 
 ```
-Bash: tugcode worktree create <plan_path> --json
+Bash: tugcode worktree setup <plan_path> --json
 ```
 
 This runs from the repo root (the current working directory when the skill starts).
 
-Parse the JSON output from stdout. The output is a CreateData object with these fields:
-- `worktree_path`: Absolute path to the created worktree
+Parse the JSON output from stdout. The output is a SetupData object with these fields:
+- `worktree_path`: Absolute path to the worktree
 - `branch_name`: Git branch name (e.g., "tugplan/slug-20260214-120000")
 - `base_branch`: Base branch (e.g., "main")
 - `plan_path`: Relative path to the plan file

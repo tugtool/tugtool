@@ -17,11 +17,11 @@ use tugtool_core::{
 /// Worktree subcommands
 #[derive(Subcommand, Debug)]
 pub enum WorktreeCommands {
-    /// Create worktree for implementation
+    /// Set up worktree for implementation
     ///
-    /// Creates a git worktree and branch for implementing a plan in isolation.
-    #[command()]
-    Create {
+    /// Sets up a git worktree and branch for implementing a plan in isolation.
+    #[command(name = "setup")]
+    Setup {
         /// Plan file to implement
         plan: String,
 
@@ -86,9 +86,9 @@ pub enum WorktreeCommands {
     },
 }
 
-/// JSON output for create command
+/// JSON output for setup command
 #[derive(Serialize)]
-pub struct CreateData {
+pub struct SetupData {
     pub worktree_path: String,
     pub branch_name: String,
     pub base_branch: String,
@@ -283,22 +283,22 @@ fn rollback_worktree_creation(
     Ok(())
 }
 
-/// Run worktree create command
+/// Run worktree setup command
 ///
 /// If `override_root` is provided, use it instead of `current_dir()`.
 /// This avoids the `set_current_dir` anti-pattern in tests.
-pub fn run_worktree_create(
+pub fn run_worktree_setup(
     plan: String,
     base: String,
     skip_validation: bool,
     json_output: bool,
     quiet: bool,
 ) -> Result<i32, String> {
-    run_worktree_create_with_root(plan, base, skip_validation, json_output, quiet, None)
+    run_worktree_setup_with_root(plan, base, skip_validation, json_output, quiet, None)
 }
 
 /// Inner implementation that accepts an explicit repo root.
-pub fn run_worktree_create_with_root(
+pub fn run_worktree_setup_with_root(
     plan: String,
     base: String,
     skip_validation: bool,
@@ -546,7 +546,7 @@ pub fn run_worktree_create_with_root(
                 let _ = rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
 
                 if json_output {
-                    let data = CreateData {
+                    let data = SetupData {
                         worktree_path: String::new(),
                         branch_name: String::new(),
                         base_branch: config.base_branch.clone(),
@@ -633,7 +633,7 @@ pub fn run_worktree_create_with_root(
             }
 
             if json_output {
-                let data = CreateData {
+                let data = SetupData {
                     worktree_path: worktree_path.display().to_string(),
                     branch_name: branch_name.clone(),
                     base_branch: config.base_branch.clone(),
@@ -1066,7 +1066,7 @@ mod tests {
 
     #[test]
     fn test_create_data_serialization() {
-        let data = CreateData {
+        let data = SetupData {
             worktree_path: "/path/to/worktree".to_string(),
             branch_name: "tug/test-20260208-120000".to_string(),
             base_branch: "main".to_string(),
@@ -1096,7 +1096,7 @@ mod tests {
 
     #[test]
     fn test_create_data_state_initialized_serialization() {
-        let data = CreateData {
+        let data = SetupData {
             worktree_path: "/path/to/worktree".to_string(),
             branch_name: "tug/test-20260208-120000".to_string(),
             base_branch: "main".to_string(),
@@ -1117,7 +1117,7 @@ mod tests {
 
     #[test]
     fn test_create_data_warnings_serialization() {
-        let data = CreateData {
+        let data = SetupData {
             worktree_path: "/path/to/worktree".to_string(),
             branch_name: "tug/test-20260208-120000".to_string(),
             base_branch: "main".to_string(),

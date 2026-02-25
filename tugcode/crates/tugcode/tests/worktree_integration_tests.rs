@@ -148,7 +148,7 @@ Test context paragraph.
 "#;
 
 #[test]
-#[ignore = "requires worktree create (slow integration test)"]
+#[ignore = "requires worktree setup (slow integration test)"]
 fn test_worktree_lifecycle() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-worktree", MINIMAL_PLAN);
@@ -166,19 +166,19 @@ fn test_worktree_lifecycle() {
         .output()
         .expect("failed to commit plan");
 
-    // Step 1: Create worktree
+    // Step 1: Set up worktree
     let output = Command::new(tug_binary())
         .arg("worktree")
-        .arg("create")
+        .arg("setup")
         .arg(".tugtool/tugplan-test-worktree.md")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug worktree create");
+        .expect("failed to run tug worktree setup");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "worktree create should succeed: {}",
+        "worktree setup should succeed: {}",
         stderr
     );
 
@@ -388,7 +388,7 @@ fn test_worktree_lifecycle() {
 }
 
 #[test]
-#[ignore = "requires worktree create (slow integration test)"]
+#[ignore = "requires worktree setup (slow integration test)"]
 fn test_worktree_list_json_output() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-json", MINIMAL_PLAN);
@@ -406,16 +406,16 @@ fn test_worktree_list_json_output() {
         .output()
         .expect("failed to commit plan");
 
-    // Create a worktree
+    // Set up a worktree
     let output = Command::new(tug_binary())
         .arg("worktree")
-        .arg("create")
+        .arg("setup")
         .arg(".tugtool/tugplan-test-json.md")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug worktree create");
+        .expect("failed to run tug worktree setup");
 
-    assert!(output.status.success(), "worktree create should succeed");
+    assert!(output.status.success(), "worktree setup should succeed");
 
     // List with JSON output
     let output = Command::new(tug_binary())
@@ -444,7 +444,7 @@ fn test_worktree_list_json_output() {
 }
 
 #[test]
-#[ignore = "requires worktree create (slow integration test)"]
+#[ignore = "requires worktree setup (slow integration test)"]
 fn test_worktree_cleanup_dry_run() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-cleanup", MINIMAL_PLAN);
@@ -462,16 +462,16 @@ fn test_worktree_cleanup_dry_run() {
         .output()
         .expect("failed to commit plan");
 
-    // Create and merge a worktree
+    // Set up and merge a worktree
     let output = Command::new(tug_binary())
         .arg("worktree")
-        .arg("create")
+        .arg("setup")
         .arg(".tugtool/tugplan-test-cleanup.md")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug worktree create");
+        .expect("failed to run tug worktree setup");
 
-    assert!(output.status.success(), "worktree create should succeed");
+    assert!(output.status.success(), "worktree setup should succeed");
 
     // Get the worktree path
     let worktrees_dir = temp.path().join(".tugtree");
@@ -566,20 +566,20 @@ fn test_worktree_cleanup_dry_run() {
 
 #[test]
 #[serial_test::serial]
-#[ignore = "requires worktree create (slow integration test)"]
-fn test_worktree_create_with_valid_plan_succeeds() {
+#[ignore = "requires worktree setup (slow integration test)"]
+fn test_worktree_setup_with_valid_plan_succeeds() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "valid", MINIMAL_PLAN);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tugtool/tugplan-valid.md"])
+        .args(["worktree", "setup", ".tugtool/tugplan-valid.md"])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run worktree create");
+        .expect("failed to run worktree setup");
 
     assert!(
         output.status.success(),
-        "worktree create should succeed with valid plan: {}",
+        "worktree setup should succeed with valid plan: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -594,7 +594,7 @@ fn test_worktree_create_with_valid_plan_succeeds() {
 
 #[test]
 #[serial_test::serial]
-fn test_worktree_create_blocks_plan_with_validation_errors() {
+fn test_worktree_setup_blocks_plan_with_validation_errors() {
     let temp = setup_test_git_repo();
 
     // Create plan with broken reference (E010)
@@ -647,16 +647,16 @@ Test decision.
     create_test_plan(&temp, "invalid", invalid_plan);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tugtool/tugplan-invalid.md"])
+        .args(["worktree", "setup", ".tugtool/tugplan-invalid.md"])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run worktree create");
+        .expect("failed to run worktree setup");
 
     // Should fail with exit code 8
     assert_eq!(
         output.status.code(),
         Some(8),
-        "worktree create should fail with code 8 for validation errors"
+        "worktree setup should fail with code 8 for validation errors"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -683,7 +683,7 @@ Test decision.
 
 #[test]
 #[serial_test::serial]
-fn test_worktree_create_blocks_plan_with_diagnostics() {
+fn test_worktree_setup_blocks_plan_with_diagnostics() {
     let temp = setup_test_git_repo();
 
     // Create plan with P001 near-miss (lowercase "step" in header)
@@ -760,16 +760,16 @@ Test context paragraph.
     create_test_plan(&temp, "diag", plan_with_diagnostics);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tugtool/tugplan-diag.md"])
+        .args(["worktree", "setup", ".tugtool/tugplan-diag.md"])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run worktree create");
+        .expect("failed to run worktree setup");
 
     // Should fail with exit code 8
     assert_eq!(
         output.status.code(),
         Some(8),
-        "worktree create should fail with code 8 for diagnostics"
+        "worktree setup should fail with code 8 for diagnostics"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -796,8 +796,8 @@ Test context paragraph.
 
 #[test]
 #[serial_test::serial]
-#[ignore = "requires worktree create (slow integration test)"]
-fn test_worktree_create_skip_validation_bypasses_check() {
+#[ignore = "requires worktree setup (slow integration test)"]
+fn test_worktree_setup_skip_validation_bypasses_check() {
     let temp = setup_test_git_repo();
 
     // Create plan with P001 near-miss (lowercase "step")
@@ -875,17 +875,17 @@ Test context paragraph.
     let output = Command::new(tug_binary())
         .args([
             "worktree",
-            "create",
+            "setup",
             ".tugtool/tugplan-skip.md",
             "--skip-validation",
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run worktree create");
+        .expect("failed to run worktree setup");
 
     assert!(
         output.status.success(),
-        "worktree create with --skip-validation should succeed despite diagnostics: {}",
+        "worktree setup with --skip-validation should succeed despite diagnostics: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
