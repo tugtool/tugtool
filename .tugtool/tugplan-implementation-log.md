@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-25T15:03:43Z
+---
+
+## step-2: Added Tool Usage section to coder-agent.md with tool preference table (Read over cat, Grep over grep, Glob over find) and single-line Bash rule. Updated checklist_status description to label as non-authoritative progress telemetry.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
 step: step-1
 date: 2025-02-25T14:59:21Z
 ---
