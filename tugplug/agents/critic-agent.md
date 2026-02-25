@@ -158,7 +158,7 @@ Return structured JSON matching Spec S07:
 |-------|---------|--------------------------|
 | **CRITICAL** | Will cause implementation failure or fundamental design flaw | ESCALATE |
 | **HIGH** | Significant gap likely to cause rework or missed requirements | REVISE |
-| **MEDIUM** | Quality concern, suboptimal but workable | Warns; does not block alone |
+| **MEDIUM** | Quality concern, suboptimal but workable | REVISE |
 | **LOW** | Suggestion or minor improvement | Informational only |
 
 ---
@@ -169,7 +169,7 @@ Matching Spec S08:
 
 ```
 if any CRITICAL finding → ESCALATE
-else if any HIGH finding → REVISE
+else if any MEDIUM or HIGH finding → REVISE
 else if any area_rating is FAIL → REVISE
 else if clarifying_questions is non-empty → REVISE
 else → APPROVE
