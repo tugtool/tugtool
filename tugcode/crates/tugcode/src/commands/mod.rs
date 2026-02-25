@@ -38,6 +38,6 @@ pub use tell::run_tell;
 pub use validate::run_validate;
 pub use version::run_version;
 pub use worktree::{
-    WorktreeCommands, run_worktree_cleanup, run_worktree_create, run_worktree_list,
-    run_worktree_remove,
+    WorktreeCommands, run_worktree_cleanup, run_worktree_list, run_worktree_remove,
+    run_worktree_setup,
 };

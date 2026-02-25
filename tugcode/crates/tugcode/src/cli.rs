@@ -101,7 +101,7 @@ pub enum Commands {
     /// Create, list, and clean up git worktrees for plan implementations.
     #[command(
         subcommand,
-        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  create  Create worktree and branch for a plan\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree create .tugtool/tugplan-auth.md\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
+        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  setup   Set up worktree and branch for a plan\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree setup .tugtool/tugplan-auth.md\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
     )]
     Worktree(WorktreeCommands),
 

@@ -29,11 +29,11 @@ fn main() -> ExitCode {
             commands::run_status(file, verbose, cli.json, cli.quiet)
         }
         Some(Commands::Worktree(worktree_cmd)) => match worktree_cmd {
-            WorktreeCommands::Create {
+            WorktreeCommands::Setup {
                 plan,
                 base,
                 skip_validation,
-            } => commands::run_worktree_create(plan, base, skip_validation, cli.json, cli.quiet),
+            } => commands::run_worktree_setup(plan, base, skip_validation, cli.json, cli.quiet),
             WorktreeCommands::List => commands::run_worktree_list(cli.json, cli.quiet),
             WorktreeCommands::Cleanup {
                 merged,

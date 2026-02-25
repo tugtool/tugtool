@@ -9,7 +9,7 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
 **Exceptions:**
-- The `tugcode worktree create` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
+- The `tugcode worktree setup` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
 - The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
 
 ## Repository Structure
