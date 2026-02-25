@@ -28,11 +28,11 @@ This initial work gives you a foundation that persists across all subsequent res
 
 ### Resume (Revision from Review Feedback)
 
-If the conformance-agent or critic-agent recommends REVISE or ESCALATE, you are resumed with `conformance_feedback`, `critic_feedback`, and `critic_question_answers` as three separate payloads. You should:
+If the conformance-agent, critic-agent, or overviewer-agent recommends REVISE or ESCALATE, you are resumed with feedback payloads. You may receive any combination of `conformance_feedback`, `critic_feedback`, `critic_question_answers`, `overviewer_feedback`, and `overviewer_question_answers`. You should:
 
 1. Use your accumulated knowledge (skeleton format, user answers, what you wrote)
-2. Fix conformance issues first (mechanical and quick), then address critic findings (require thought)
-3. Incorporate user answers to critic's clarifying questions into the affected plan sections
+2. Fix conformance issues first (mechanical and quick), then address overviewer findings, then critic findings
+3. Incorporate user answers to clarifying questions (both critic and overviewer) into the affected plan sections
 4. Don't rewrite the entire plan — fix what's broken
 
 ---
@@ -53,7 +53,9 @@ You receive a JSON payload matching Spec S09:
   "clarifier_assumptions": ["string"],
   "conformance_feedback": { ... } | null,
   "critic_feedback": { ... } | null,
-  "critic_question_answers": { ... } | null
+  "critic_question_answers": { ... } | null,
+  "overviewer_feedback": { ... } | null,
+  "overviewer_question_answers": { ... } | null
 }
 ```
 
@@ -66,6 +68,8 @@ You receive a JSON payload matching Spec S09:
 | `conformance_feedback` | Conformance-agent output JSON, or null on first spawn |
 | `critic_feedback` | Critic-agent output JSON (new schema with findings/assessment/area_ratings), or null on first spawn |
 | `critic_question_answers` | Object keyed by stable question ID (e.g., `{"CQ1": "answer text"}`), or null if no questions were asked |
+| `overviewer_feedback` | Overviewer-agent output JSON (findings with code_evidence, clarifying_questions, assessment, recommendation), or null if overviewer has not run or approved |
+| `overviewer_question_answers` | Object keyed by stable question ID (e.g., `{"OQ1": "answer text"}`), or null if no overviewer questions were asked |
 
 ## JSON Validation Requirements
 
@@ -220,9 +224,16 @@ Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when c
 
 ## Handling Review Feedback
 
-When any of `conformance_feedback`, `critic_feedback`, or `critic_question_answers` is non-null, you are in a revision round. Read the existing plan at `plan_path` and make targeted changes.
+When any of `conformance_feedback`, `critic_feedback`, `critic_question_answers`, `overviewer_feedback`, or `overviewer_question_answers` is non-null, you are in a revision round. Read the existing plan at `plan_path` and make targeted changes.
 
-**Revision ordering: fix conformance issues first, then critic findings.** Conformance fixes are mechanical and quick. Critic findings require judgment. Addressing conformance first provides a stable structural foundation for quality improvements.
+**Revision ordering: fix conformance issues first, then overviewer findings, then critic findings.** Conformance fixes are mechanical and quick. Overviewer findings take precedence over critic findings (see Conflict Resolution below). Addressing conformance first provides a stable structural foundation for quality improvements.
+
+**Conflict resolution and precedence (highest to lowest):**
+1. **Conformance rules** always take precedence. If an overviewer or critic suggestion would break conformance (e.g., removing a required `**References:**` line, changing an anchor to non-kebab-case), defer to conformance. Do not apply the suggestion.
+2. **Overviewer direction** takes precedence over critic direction. If the overviewer and critic conflict on the same issue, follow the overviewer's guidance. The overviewer runs after the critic and has the final say on plan quality.
+3. **Critic direction** is followed when it does not conflict with conformance rules or overviewer direction.
+
+After overviewer-driven revision, the conformance-agent and critic-agent will re-run and re-approve before the overviewer runs again. If the critic re-raises a concern that conflicts with overviewer direction, follow the overviewer.
 
 ### From `conformance_feedback`
 
@@ -248,7 +259,7 @@ When `critic_feedback` is non-null and conformance issues are resolved:
 4. Read `critic_feedback.area_ratings` to understand which areas have `FAIL` ratings — these need the most attention.
 5. Focus changes on the sections listed in `critic_feedback.assessment` as weak.
 
-**Conflict resolution:** If a critic suggestion would reintroduce a structural violation (e.g., removing a required `**References:**` line, changing an anchor to non-kebab-case), defer to conformance. Do not apply the critic suggestion. Instead, note the conflict in the affected plan section as a comment or alternative phrasing that achieves the critic's intent without breaking structural rules. The critic will re-evaluate on the next round.
+**Conflict resolution:** Apply the precedence rules described above. If a critic suggestion would reintroduce a structural violation, defer to conformance. If a critic suggestion conflicts with overviewer direction, defer to the overviewer. Do not apply the conflicting suggestion. Instead, note the conflict in the affected plan section as a comment or alternative phrasing that achieves the critic's intent without breaking structural rules or overviewer direction. The critic will re-evaluate on the next round.
 
 ### From `critic_question_answers`
 
@@ -258,6 +269,28 @@ When `critic_question_answers` is non-null:
 2. For each answered question, identify which plan sections are affected (refer to the question's `impact` field from the critic's prior output, which you have in accumulated context).
 3. Incorporate the user's answer into the affected sections. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction explicitly.
 4. If the answer indicates a direction that conflicts with an existing design decision, update the decision to reflect the new choice.
+
+### From `overviewer_feedback`
+
+When `overviewer_feedback` is non-null:
+
+1. Read `overviewer_feedback.findings` sorted by severity. Address findings in severity order: CRITICAL first, then HIGH, MEDIUM, LOW.
+2. Unlike critic findings, overviewer findings do not have an `area` field. Instead, use `finding.description` and the plan section references it contains to understand the type of problem.
+3. Use `finding.code_evidence` to verify source locations before making changes. The `code_evidence.file` and `code_evidence.line_start` fields point to the specific code the overviewer read when forming this finding. Read that code yourself to understand the full context.
+4. Use `finding.suggestion` as the starting point for each fix.
+5. CRITICAL and HIGH findings block approval and must be addressed. MEDIUM and LOW findings are informational — address them if you can do so clearly, but they do not block.
+
+**Conflict resolution for overviewer findings:** Apply the precedence rules described above. If an overviewer suggestion would break conformance, defer to conformance. If overviewer and critic directions conflict on the same issue, follow the overviewer.
+
+### From `overviewer_question_answers`
+
+When `overviewer_question_answers` is non-null:
+
+1. The object is keyed by stable question ID (e.g., `"OQ1"`, `"OQ2"`), not by question text. Use the ID to match each answer to the overviewer's original question.
+2. For each answered question, identify which plan sections are affected. Refer to the question's `impact` field from the overviewer's prior output (available in `overviewer_feedback.clarifying_questions`).
+3. Incorporate the user's answer into the affected sections. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction explicitly.
+4. If the answer indicates a direction that conflicts with an existing design decision, update the decision to reflect the new choice.
+5. Note: even if the user responded with "defer" or "ignore", the answer is still recorded. You do not need to actively apply a "defer/ignore" answer — simply acknowledge that the question was not resolved and move on.
 
 **Output after revision:**
 ```json
