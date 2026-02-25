@@ -363,6 +363,21 @@ pub struct HealthCheck {
     pub details: Option<serde_json::Value>,
 }
 
+/// Structured reason for state update failure in tugcode commit.
+/// Serialized to lowercase snake_case strings for JSON output.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StateFailureReason {
+    /// complete_step failed because open checklist items or substeps remain
+    OpenItems,
+    /// Plan file has been modified since state was initialized
+    Drift,
+    /// Step ownership check failed or step not in expected status
+    Ownership,
+    /// Could not open state.db, query failed, or other infrastructure error
+    DbError,
+}
+
 /// Data payload for commit command (Spec S01)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommitData {
@@ -382,6 +397,9 @@ pub struct CommitData {
     pub files_staged: Vec<String>,
     /// True if commit succeeded but state complete failed
     pub state_update_failed: bool,
+    /// Structured reason for state update failure (null when state_update_failed is false)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_failure_reason: Option<StateFailureReason>,
     /// Any non-fatal warnings encountered
     pub warnings: Vec<String>,
 }
@@ -444,6 +462,7 @@ mod tests {
             archived_path: None,
             files_staged: vec!["a.rs".to_string(), "b.rs".to_string()],
             state_update_failed: false,
+            state_failure_reason: None,
             warnings: vec![],
         };
 
@@ -457,6 +476,9 @@ mod tests {
         assert_eq!(deserialized.archived_path, None);
         assert_eq!(deserialized.files_staged, vec!["a.rs", "b.rs"]);
         assert_eq!(deserialized.warnings.len(), 0);
+        // state_failure_reason: None should not appear in serialized JSON
+        assert!(!json.contains("state_failure_reason"));
+        assert_eq!(deserialized.state_failure_reason, None);
     }
 
     #[test]
@@ -469,6 +491,7 @@ mod tests {
             archived_path: Some(".tugtool/archive/log-2026-02-11.md".to_string()),
             files_staged: vec!["x.rs".to_string()],
             state_update_failed: false,
+            state_failure_reason: None,
             warnings: vec!["State update failed".to_string()],
         };
 
@@ -480,6 +503,80 @@ mod tests {
             deserialized.archived_path,
             Some(".tugtool/archive/log-2026-02-11.md".to_string())
         );
+    }
+
+    #[test]
+    fn test_commit_data_state_failure_reason_open_items() {
+        let data = CommitData {
+            committed: true,
+            commit_hash: Some("abc1234".to_string()),
+            log_updated: true,
+            log_rotated: false,
+            archived_path: None,
+            files_staged: vec![],
+            state_update_failed: true,
+            state_failure_reason: Some(StateFailureReason::OpenItems),
+            warnings: vec!["state complete failed: open items".to_string()],
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(
+            json.contains("\"state_failure_reason\":\"open_items\""),
+            "Expected open_items in JSON, got: {}",
+            json
+        );
+        let deserialized: CommitData = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            deserialized.state_failure_reason,
+            Some(StateFailureReason::OpenItems)
+        );
+    }
+
+    #[test]
+    fn test_commit_data_state_failure_reason_none_omitted() {
+        let data = CommitData {
+            committed: true,
+            commit_hash: Some("abc1234".to_string()),
+            log_updated: true,
+            log_rotated: false,
+            archived_path: None,
+            files_staged: vec![],
+            state_update_failed: false,
+            state_failure_reason: None,
+            warnings: vec![],
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(
+            !json.contains("state_failure_reason"),
+            "Expected state_failure_reason to be omitted when None, got: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn test_state_failure_reason_serde_roundtrip() {
+        let cases = [
+            (StateFailureReason::OpenItems, "\"open_items\""),
+            (StateFailureReason::Drift, "\"drift\""),
+            (StateFailureReason::Ownership, "\"ownership\""),
+            (StateFailureReason::DbError, "\"db_error\""),
+        ];
+
+        for (variant, expected_str) in cases {
+            let serialized = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                serialized, expected_str,
+                "Serialization mismatch for {:?}",
+                variant
+            );
+            let deserialized: StateFailureReason = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(
+                deserialized, variant,
+                "Roundtrip mismatch for {:?}",
+                variant
+            );
+        }
     }
 
     #[test]

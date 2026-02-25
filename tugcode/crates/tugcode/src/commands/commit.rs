@@ -3,9 +3,24 @@
 //! Atomically performs log rotation, prepend, and git commit.
 
 use crate::commands::log::{log_prepend_inner, log_rotate_inner};
-use crate::output::{CommitData, JsonResponse};
+use crate::output::{CommitData, JsonResponse, StateFailureReason};
 use std::path::Path;
 use std::process::Command;
+
+/// Classify a TugError from complete_step into a structured StateFailureReason.
+///
+/// This helper is only applicable on the complete_step error path (Path 2) where
+/// a TugError is available. All other error paths set state_failure_reason directly.
+fn classify_state_error(e: &tugtool_core::TugError) -> StateFailureReason {
+    match e {
+        tugtool_core::TugError::StateIncompleteChecklist { .. }
+        | tugtool_core::TugError::StateIncompleteSubsteps { .. } => StateFailureReason::OpenItems,
+        tugtool_core::TugError::StatePlanHashMismatch { .. } => StateFailureReason::Drift,
+        tugtool_core::TugError::StateOwnershipViolation { .. }
+        | tugtool_core::TugError::StateStepNotClaimed { .. } => StateFailureReason::Ownership,
+        _ => StateFailureReason::DbError,
+    }
+}
 
 /// Check if plan file has drifted from stored hash (for commit command)
 /// Returns Ok(Some(warning_msg)) if drift detected, Ok(None) if no drift
@@ -172,20 +187,20 @@ pub fn run_commit(
     let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     // Step 7: Complete step in state.db (non-fatal)
-    let (state_update_failed, state_warnings) = {
+    let (state_update_failed, state_failure_reason, state_warnings) = {
         match tugtool_core::find_repo_root_from(worktree_path) {
             Ok(repo_root) => {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::StateDb::open(&db_path) {
                     Ok(mut db) => {
-                        // Check for plan drift
+                        // Check for plan drift (Path 1 and Path 3)
                         match check_commit_drift(&repo_root, &plan, &db) {
                             Ok(Some(drift_msg)) => {
-                                // Drift detected: warn and skip state update
-                                (true, vec![drift_msg])
+                                // Path 1: Drift detected before complete_step
+                                (true, Some(StateFailureReason::Drift), vec![drift_msg])
                             }
                             Ok(None) => {
-                                // No drift: proceed with complete_step
+                                // Path 2: No drift, proceed with complete_step
                                 match db.complete_step(
                                     &plan,
                                     &step,
@@ -193,28 +208,32 @@ pub fn run_commit(
                                     false, // strict mode: deferred items allowed, open items block
                                     Some("committed via tugcode commit"),
                                 ) {
-                                    Ok(_) => (false, vec![]),
+                                    Ok(_) => (false, None, vec![]),
                                     Err(e) => {
+                                        let reason = classify_state_error(&e);
                                         let msg = format!("state complete failed: {}", e);
-                                        (true, vec![msg])
+                                        (true, Some(reason), vec![msg])
                                     }
                                 }
                             }
                             Err(e) => {
+                                // Path 3: Drift check itself failed
                                 let msg = format!("drift check failed: {}", e);
-                                (true, vec![msg])
+                                (true, Some(StateFailureReason::DbError), vec![msg])
                             }
                         }
                     }
                     Err(e) => {
+                        // Path 4: StateDb::open() failed
                         let msg = format!("state complete failed: {}", e);
-                        (true, vec![msg])
+                        (true, Some(StateFailureReason::DbError), vec![msg])
                     }
                 }
             }
             Err(e) => {
+                // Path 5: find_repo_root_from() failed
                 let msg = format!("state complete failed: {}", e);
-                (true, vec![msg])
+                (true, Some(StateFailureReason::DbError), vec![msg])
             }
         }
     };
@@ -228,6 +247,7 @@ pub fn run_commit(
         archived_path: rotate_result.archived_path.clone(),
         files_staged,
         state_update_failed,
+        state_failure_reason,
         warnings: {
             let mut w = vec![];
             w.extend(state_warnings);
@@ -343,5 +363,94 @@ mod tests {
         assert!(result.contains("Tug-Plan: .tugtool/new.md"));
         assert_eq!(result.matches("Tug-Step:").count(), 1);
         assert_eq!(result.matches("Tug-Plan:").count(), 1);
+    }
+
+    #[test]
+    fn test_classify_state_error_open_items_incomplete_checklist() {
+        let err = tugtool_core::TugError::StateIncompleteChecklist {
+            anchor: "step-0".to_string(),
+            incomplete_count: 3,
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::OpenItems,
+            "StateIncompleteChecklist should map to OpenItems"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_open_items_incomplete_substeps() {
+        let err = tugtool_core::TugError::StateIncompleteSubsteps {
+            anchor: "step-0".to_string(),
+            incomplete_count: 1,
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::OpenItems,
+            "StateIncompleteSubsteps should map to OpenItems"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_drift() {
+        let err = tugtool_core::TugError::StatePlanHashMismatch {
+            plan_path: ".tugtool/tugplan-foo.md".to_string(),
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::Drift,
+            "StatePlanHashMismatch should map to Drift"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_ownership_violation() {
+        let err = tugtool_core::TugError::StateOwnershipViolation {
+            anchor: "step-0".to_string(),
+            claimed_by: "/tmp/wt1".to_string(),
+            worktree: "/tmp/wt2".to_string(),
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::Ownership,
+            "StateOwnershipViolation should map to Ownership"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_step_not_claimed() {
+        let err = tugtool_core::TugError::StateStepNotClaimed {
+            anchor: "step-0".to_string(),
+            current_status: "pending".to_string(),
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::Ownership,
+            "StateStepNotClaimed should map to Ownership"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_db_open() {
+        let err = tugtool_core::TugError::StateDbOpen {
+            reason: "could not open state.db".to_string(),
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::DbError,
+            "StateDbOpen should map to DbError"
+        );
+    }
+
+    #[test]
+    fn test_classify_state_error_db_query() {
+        let err = tugtool_core::TugError::StateDbQuery {
+            reason: "SQL error".to_string(),
+        };
+        assert_eq!(
+            classify_state_error(&err),
+            StateFailureReason::DbError,
+            "StateDbQuery should map to DbError"
+        );
     }
 }

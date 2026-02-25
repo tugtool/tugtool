@@ -141,7 +141,7 @@ Return structured JSON:
 | `halted_for_drift` | True if implementation was halted due to drift |
 | `files_created` | List of new files created (relative paths) |
 | `files_modified` | List of existing files modified (relative paths) |
-| `checklist_status` | **REQUIRED**: Per-item checklist reporting for tasks and tests only (see below) |
+| `checklist_status` | **REQUIRED**: Per-item checklist reporting for tasks and tests only (see below). Non-authoritative progress telemetry. The orchestrator uses this for progress messages only, never for state updates. Accuracy is best-effort. |
 | `checklist_status.tasks` | Array of task status entries with ordinal (0-indexed) and status |
 | `checklist_status.tests` | Array of test status entries with ordinal (0-indexed) and status |
 | `checklist_status.[].ordinal` | 0-indexed position of the item in the plan step |
@@ -161,6 +161,31 @@ Return structured JSON:
 ### Reading Step Data
 
 **As your FIRST action**, read the plan file to understand the step requirements. The architect's strategy will be passed to you via context from previous agent calls.
+
+---
+
+## Tool Usage
+
+Use the right tool for each job. Prefer specialized tools over Bash equivalents — they have better permissions, cleaner output, and do not trigger interactive prompts.
+
+| Task | Use this tool | Do NOT use |
+|------|--------------|------------|
+| Read a file | `Read` | `cat`, `head`, `tail` via Bash |
+| Search file contents | `Grep` | `grep`, `rg` via Bash |
+| Find files by name pattern | `Glob` | `find`, `ls` via Bash |
+| Build, test, lint, checkpoints | `Bash` | (no alternative) |
+
+**Single-line Bash commands only.** Never use `\` line continuations or heredocs in Bash commands. Each Bash call must be a single logical line. Multi-line commands trigger Claude Code's built-in newline confirmation prompt, which breaks unattended operation.
+
+```
+# Correct: single-line
+cd /path && cargo build 2>&1 | tail -20
+
+# Wrong: multi-line with continuation
+cd /path && \
+  cargo build 2>&1 | \
+  tail -20
+```
 
 ---
 

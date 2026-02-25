@@ -180,12 +180,21 @@ All failures use:
   Halting: {reason}
 ```
 
-For `state_update_failed` (fatal halt):
+For `state_update_failed` (recovery attempted, then escalation if unresolvable):
 ```
 **tugplug:committer-agent**(FAILED: state update failed)
   Commit: {commit_hash} succeeded
-  State: complete FAILED
-  Halting: tugstate failure is fatal (manual recovery: tugcode state reconcile)
+  State: complete FAILED — reason: {state_failure_reason}
+  Recovery: attempting automatic reconciliation (max 3 attempts for open_items; immediate escalation for drift/ownership/db_error)
+```
+
+For `state_update_failed` after exhausting recovery (escalation):
+```
+**tugplug:committer-agent**(FAILED: state reconciliation exhausted)
+  Commit: {commit_hash} succeeded
+  State: could not reconcile after 3 attempts
+  Open items: {list}
+  Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
 ```
 
 ---
@@ -554,32 +563,37 @@ Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict -
 | `REVISE` | Resume coder with feedback, then resume reviewer (3e-retry) |
 | `ESCALATE` | AskUserQuestion showing issues, get user decision |
 
-**After APPROVE — update state with batch JSON:**
+**After APPROVE — progress message and simplified batch update:**
 
-Construct a batch update JSON array combining:
-1. Coder's task/test status from `checklist_status.tasks` and `checklist_status.tests`
-2. Reviewer's checkpoint verdicts from `plan_conformance.checkpoints[]`
+**Step 1: Emit a progress message** (informational only — `checklist_status` is non-authoritative progress telemetry and is never used for state updates):
 
-**Reviewer verdict mapping:**
-- `PASS` → `{"kind": "checkpoint", "ordinal": N, "status": "completed"}`
-- Non-pass (`FAIL`, `BLOCKED`, `UNVERIFIED`) → `{"kind": "checkpoint", "ordinal": N, "status": "deferred", "reason": "<from reviewer output>"}`
-
-**Example batch JSON:**
-```json
-[
-  {"kind": "task", "ordinal": 0, "status": "completed"},
-  {"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"},
-  {"kind": "test", "ordinal": 0, "status": "completed"},
-  {"kind": "checkpoint", "ordinal": 0, "status": "completed"}
-]
+```
+Coder reported: {tasks_completed}/{tasks_total} tasks completed, {tests_completed}/{tests_total} tests completed
 ```
 
-**Send batch update:**
+Compute these counts from `checklist_status.tasks` and `checklist_status.tests` (count entries with `status == "completed"` vs total entries). This message is for human monitoring only.
+
+**Step 2: Collect deferred checkpoint items** from the reviewer's `plan_conformance.checkpoints[]`:
+
+- Iterate `plan_conformance.checkpoints[]`
+- For each entry with verdict NOT equal to `PASS` (i.e., `FAIL`, `BLOCKED`, or `UNVERIFIED`), create: `{"kind": "checkpoint", "ordinal": N, "status": "deferred", "reason": "<reviewer's verdict or description>"}`
+- Ignore entries with verdict `PASS` — they will be auto-completed by `--complete-remaining`
+
+**Step 3: Send batch update with --complete-remaining:**
+
+If there are deferred items:
 ```
-echo '<batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch
+echo '<deferred_items_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
 ```
 
-**Note:** The implement skill does NOT pass `--allow-drift`. If the plan has drifted since state init, the batch update will fail and surface the drift for orchestrator resolution.
+If there are no deferred items (all checkpoints PASS):
+```
+echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
+```
+
+The `--complete-remaining` flag marks all open checklist items (tasks, tests, and unmentioned checkpoints) as completed after applying any explicit deferred entries. This eliminates fragile ordinal counting — the CLI is the single source of truth for item counts.
+
+**Note:** The implement skill does NOT pass `--allow-drift`. If the plan has drifted since state init, the batch update will fail and `state_failure_reason` will be `"drift"`. The recovery loop (section 3f) escalates drift immediately without retrying.
 
 **3e-retry (REVISE loop):**
 
@@ -669,8 +683,83 @@ Task(
 
 Parse the committer's JSON output. Record `commit_hash` for step summary.
 
-If `state_update_failed == true`: output failure message and HALT immediately (tugstate failure is fatal per [D07]).
 If `aborted == true`: output failure message with reason and HALT.
+
+**If `state_update_failed == true`: enter the state recovery loop below.**
+
+**State recovery loop:**
+
+Read `state_failure_reason` from the committer JSON output. Switch on its value:
+
+- `"drift"`: Escalate immediately.
+  ```
+  AskUserQuestion: "State update failed due to plan drift. The git commit succeeded. Manual recovery: re-run tugcode state init for {plan_path}, then: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
+  ```
+  HALT after escalation.
+
+- `"ownership"`: Escalate immediately.
+  ```
+  AskUserQuestion: "State update failed: step ownership mismatch. The git commit succeeded. Check that worktree {worktree_path} matches the claimed worktree for step {step_anchor}."
+  ```
+  HALT after escalation.
+
+- `"db_error"`: Escalate immediately.
+  ```
+  AskUserQuestion: "State update failed: database error. The git commit succeeded. Warning: {warnings[0]}. Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
+  ```
+  HALT after escalation.
+
+- `"open_items"` or null/missing (defensive fallback): Enter retry loop below.
+
+**Retry loop** (`recovery_attempts = 0`, `max_recovery_attempts = 3`):
+
+While `recovery_attempts < max_recovery_attempts`:
+
+  1. Increment `recovery_attempts`.
+
+  2. Query open items:
+     ```
+     Bash: tugcode state show {plan_path} --json
+     ```
+     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` (bare anchor without `#`, e.g., `"step-0"`) AND `status == "open"`. Collect as `open_items`.
+
+  3. If `open_items` is empty:
+     - State is already consistent (another process may have reconciled it).
+     - Break loop and continue to next step (no `state complete` call needed — commit already called it).
+
+  4. If `open_items` is non-empty AND reviewer verdict was APPROVE with no non-PASS checkpoints:
+     ```
+     Bash: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
+     ```
+     If this succeeds: proceed to post-recovery verification (step 6).
+     If this fails: continue loop (retry).
+
+  5. If `open_items` is non-empty AND reviewer had non-PASS checkpoint items:
+     Construct deferred-only batch from reviewer's non-PASS checkpoint verdicts (same format as section 3e step 2).
+     ```
+     Bash: echo '<deferred_batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
+     ```
+     If this succeeds: proceed to post-recovery verification (step 6).
+     If this fails: continue loop (retry).
+
+  6. Post-recovery verification:
+     ```
+     Bash: tugcode state show {plan_path} --json
+     ```
+     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` AND `status == "open"`.
+     - If zero open items remain:
+       ```
+       Bash: tugcode state complete {plan_path} {step_anchor} --worktree {worktree_path}
+       ```
+       If `state complete` succeeds: break loop and continue.
+       If `state complete` fails: continue loop (retry).
+     - If open items remain: continue loop (retry).
+
+If `recovery_attempts >= max_recovery_attempts`:
+```
+AskUserQuestion: "State reconciliation failed after 3 attempts for step {step_anchor}. The git commit succeeded. Open items: {open_items list}. Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
+```
+HALT after escalation.
 
 Output the Committer post-call message.
 
@@ -942,14 +1031,35 @@ Tugstate tracks per-step execution state in an embedded SQLite database. The orc
 2. `tugcode state start {plan_path} {step_anchor} --worktree {worktree_path}` — transition to in_progress
 3. `tugcode state heartbeat {plan_path} {step_anchor} --worktree {worktree_path}` — after each agent call
 4. `tugcode state artifact {plan_path} {step_anchor} --kind {kind} --summary "{summary}" --worktree {worktree_path}` — after architect (architect_strategy) and reviewer (reviewer_verdict)
-5. `echo '<batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch` — after reviewer approval (batch JSON combines coder's task/test status with reviewer's checkpoint verdicts)
+5. `echo '<deferred_items_json_or_empty_array>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining` — after reviewer approval; sends only non-PASS checkpoint items as deferred; `--complete-remaining` auto-completes all other open items (tasks, tests, remaining checkpoints)
 6. `tugcode commit` — internally calls `state complete` (no separate orchestrator call needed)
 
+**Simplified batch construction (`--complete-remaining`):**
+
+The `--complete-remaining` flag eliminates fragile ordinal counting. The orchestrator sends only deferred items (non-PASS checkpoints from the reviewer) and lets the CLI mark everything else completed. The coder's `checklist_status` is used only for progress display — never for state updates.
+
+- Empty array `[]` with `--complete-remaining`: marks all open items completed (use when reviewer had no non-PASS checkpoints)
+- Non-empty deferred array with `--complete-remaining`: applies explicit deferred entries first, then marks remaining open items completed
+- The `WHERE status = 'open'` SQL clause means `--complete-remaining` never overwrites items already set to `deferred` by explicit batch entries
+
+**Structured failure reason (`state_failure_reason`):**
+
+When `state_update_failed == true` in the commit JSON, the `state_failure_reason` field classifies the failure:
+
+| Value | Meaning | Recovery action |
+|-------|---------|-----------------|
+| `"open_items"` | Checklist items still open | Retry loop (max 3 attempts) |
+| `"drift"` | Plan file changed since state init | Escalate immediately |
+| `"ownership"` | Step ownership mismatch | Escalate immediately |
+| `"db_error"` | Database or infrastructure error | Escalate immediately |
+| null/missing | Unclassified (defensive fallback) | Enter retry loop |
+
 **Error handling:**
-- All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately
-- If `state_update_failed == true` in commit JSON response — halt immediately
-- Manual recovery: `tugcode state reconcile {plan_path}`
-- The orchestrator never calls `tugcode state reconcile` — it is a manual recovery tool only
+- All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately (except within the recovery loop where failure triggers retry)
+- If `state_update_failed == true`: read `state_failure_reason` and follow the recovery loop in section 3f
+- The recovery loop uses `--complete-remaining` as the primary mechanism; it does NOT use `state reconcile` (which erases deferred state) or `state complete --force` (which overwrites deferred items)
+- Manual recovery (escalation path only): `echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining`
+- The orchestrator never calls `tugcode state reconcile` automatically — it is a manual recovery tool only
 
 ---
 

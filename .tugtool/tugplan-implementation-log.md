@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-25T15:03:43Z
+---
+
+## step-2: Added Tool Usage section to coder-agent.md with tool preference table (Read over cat, Grep over grep, Glob over find) and single-line Bash rule. Updated checklist_status description to label as non-authoritative progress telemetry.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
+step: step-1
+date: 2025-02-25T14:59:21Z
+---
+
+## step-1: Rewrote SKILL.md to replace fragile ordinal-counting batch construction with simplified --complete-remaining flow. Replaced hard halt on state_update_failed with structured recovery loop that switches on state_failure_reason. Updated Tugstate Protocol reference section.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
+step: step-0
+date: 2025-02-25T14:52:05Z
+---
+
+## step-0: Added --complete-remaining flag to state update --batch command that marks remaining open checklist items as completed. Added StateFailureReason enum to commit JSON output classifying state errors into open_items, drift, ownership, and db_error categories. Includes 7 integration tests and unit tests for all error classification paths.
+
+**Files changed:**
+- .tugtool/tugplan-checklist-reconciliation.md
+
+---
+
+---
 step: step-4
 date: 2025-02-25T02:45:27Z
 ---
