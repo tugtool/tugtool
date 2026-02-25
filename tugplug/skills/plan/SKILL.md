@@ -76,6 +76,15 @@ Output these as text immediately after parsing the agent's JSON result:
   Assessment: {assessment.quality} (first sentence only)
 ```
 
+**overviewer-agent:**
+```
+**tugplug:overviewer-agent**(Complete)
+  Recommendation: {recommendation}
+  Findings: {findings.length} ({count by severity: N CRITICAL, N HIGH, N MEDIUM, N LOW — omit zeros})
+  Clarifying questions: {clarifying_questions.length}
+  Assessment: {assessment} (first sentence only)
+```
+
 On revision loops, use `(Complete, revision {N})` in all post-call messages.
 
 ### Failure messages
@@ -157,9 +166,32 @@ or:
           │  combined      │                      │
           │ recommendation?│                      │
           └──┬──────────┬──┘                      │
-     APPROVE │          │ REVISE / ESCALATE        │
-             │          └─────────────────────────┘
+     APPROVE │          │ REVISE / ESCALATE ───────┘
+             │
              ▼
+┌──────────────────────────────────────────────┐
+│  overviewer-agent (ALWAYS fresh spawn)       │
+│  SPAWN fresh every round (never resumed)     │
+└─────────────────────┬────────────────────────┘
+                      │
+                      ▼
+             ┌────────────────┐
+             │ recommendation?│
+             └──┬──────────┬──┘
+        APPROVE │          │ REVISE
+                │          │
+                │          ▼
+                │   ┌─────────────────────────────┐
+                │   │ collect clarifying questions │
+                │   │ (AskUserQuestion if any)     │
+                │   └────────────┬────────────────┘
+                │                │
+                │                ▼
+                │   resume author → go back to
+                │   conformance + critic review
+                │   (auto-revise loop)
+                │
+                ▼
 ┌──────────────────────────────────────────────┐
 │          PLANNING PHASE COMPLETE             │
 │  Plan ready at {plan_path}                   │
@@ -173,6 +205,7 @@ or:
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` only
 - **Clarifier** runs once on the first pass; it is NOT resumed for revisions
 - **Author, conformance-agent, and critic** are spawned once and RESUMED for all revision loops
+- **Overviewer** is ALWAYS a fresh spawn (never resumed); fresh eyes every time is the entire point
 - **Parallel dispatch**: conformance-agent and critic-agent are dispatched in a single message with two Task calls
 - **Latest-round-only** resume payloads: only the latest round's feedback is passed to agents on resume; agents use their persistent accumulated knowledge for prior rounds
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
@@ -194,10 +227,16 @@ critic_id = null
 conformance_feedback = null
 critic_feedback = null
 critic_question_answers = null
+overviewer_feedback = null
+overviewer_question_answers = null
+overviewer_round = 0
+max_overviewer_rounds = 3
 revision_count = 0
 max_revision_count = 5
 previous_high_findings = []     # IDs of HIGH+ findings from prior round (for stagnation detection)
 ```
+
+Note: there is no `overviewer_id` variable. The overviewer is always a fresh spawn (never resumed), so no agent ID needs to be tracked.
 
 ### 2. Clarifier: Analyze and Question (First Pass Only)
 
@@ -265,12 +304,14 @@ Task(
   prompt: 'Revise the plan. Latest-round feedback only — do not look for prior rounds in this payload.
 conformance_feedback: <conformance_feedback JSON or null>
 critic_feedback: <critic_feedback JSON or null>
-critic_question_answers: <critic_question_answers JSON or null>',
+critic_question_answers: <critic_question_answers JSON or null>
+overviewer_feedback: <overviewer_feedback JSON or null>
+overviewer_question_answers: <overviewer_question_answers JSON or null>',
   description: "Revise plan from review feedback"
 )
 ```
 
-Pass only the latest round's `conformance_feedback`, `critic_feedback`, and `critic_question_answers`. Do not accumulate or combine feedback across rounds. The author uses its persistent memory for prior-round context.
+Pass only the latest round's feedback. Do not accumulate or combine feedback across rounds. The author uses its persistent memory for prior-round context. When revising after overviewer feedback, pass the overviewer's output as `overviewer_feedback` and any collected answers as `overviewer_question_answers`; set `conformance_feedback` and `critic_feedback` to null (the overviewer round does not re-run conformance/critic before sending to author).
 
 Store response in memory.
 
@@ -443,9 +484,9 @@ if critic_feedback.recommendation == "ESCALATE":
     → If "Abort": output "**Plan** — Aborted by user" and HALT
 ```
 
-**REVISE (conformance or critic):**
+**REVISE (conformance or critic) — auto-revise, no user prompt:**
 
-First, collect clarifying questions from the critic before presenting the revise/accept/abort prompt:
+First, collect clarifying questions from the critic (user input required for clarifying questions):
 
 ```
 if critic_feedback is non-null and critic_feedback.clarifying_questions is non-empty:
@@ -461,38 +502,87 @@ if critic_feedback is non-null and critic_feedback.clarifying_questions is non-e
         store answer keyed by question.id → critic_question_answers[question.id] = answer
 ```
 
-Then present the revise/accept/abort choice:
+Then auto-revise without prompting the user:
 
 ```
 if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
-    AskUserQuestion(
-      questions: [{
-        question: "Review found issues. How should we proceed?",
-        header: "Review",
-        options: [
-          { label: "Revise (Recommended)", description: "Send feedback to author for fixes" },
-          { label: "Accept as-is", description: "Proceed despite issues" },
-          { label: "Abort", description: "Cancel planning" }
-        ],
-        multiSelect: false
-      }]
-    )
-    → If "Revise": increment revision_count, GO TO STEP 3 (author)
-    → If "Accept as-is": output session end message, HALT with success
-    → If "Abort": output "**Plan** — Aborted by user" and HALT
+    # Auto-revise: no "Review found issues" prompt. Go directly to author.
+    increment revision_count
+    GO TO STEP 3 (author)
 ```
 
-**Both APPROVE:**
+User is NOT prompted when recommendation is REVISE. The revision loop runs autonomously. User interaction is only required for: ESCALATE recommendations, stagnation detection, max revision rounds reached, and clarifying questions.
+
+**Both APPROVE — run overviewer gate:**
+
 ```
 if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommendation == "APPROVE":
-    → Output session end message and HALT with success
+
+    # Fresh-spawn overviewer (never resumed — fresh eyes every time)
+    Task(
+      subagent_type: "tugplug:overviewer-agent",
+      prompt: '{"plan_path": "<plan_path>"}',
+      description: "Final quality review"
+    )
+    increment overviewer_round
+    store result as overviewer_feedback
+
+    Output the Overviewer post-call message.
+
+    if overviewer_feedback.recommendation == "APPROVE":
+        → Output session end message and HALT with success
+
+    if overviewer_feedback.recommendation == "REVISE":
+
+        # Check round cap before collecting questions or resuming author
+        if overviewer_round >= max_overviewer_rounds:
+            AskUserQuestion(
+              questions: [{
+                question: "Overviewer still has concerns after {max_overviewer_rounds} rounds. How should we proceed?",
+                header: "Overviewer Round Cap Reached",
+                options: [
+                  { label: "Accept as-is", description: "Proceed with the plan despite overviewer concerns" },
+                  { label: "Abort", description: "Cancel planning" }
+                ],
+                multiSelect: false
+              }]
+            )
+            → If "Accept as-is": output session end message, HALT with success
+            → If "Abort": output "**Plan** — Aborted by user" and HALT
+
+        # Collect overviewer clarifying questions (user input required)
+        overviewer_question_answers = null
+        if overviewer_feedback.clarifying_questions is non-empty:
+            for each question in overviewer_feedback.clarifying_questions:
+                AskUserQuestion(
+                  questions: [{
+                    question: question.question,
+                    header: "Overviewer Question",
+                    options: question.options   # Pass overviewer-supplied options directly
+                    # AskUserQuestion auto-appends "Other" for free-text input
+                  }]
+                )
+                store answer keyed by question.id → overviewer_question_answers[question.id] = answer
+
+        # Resume author with overviewer feedback (auto-revise, no user prompt)
+        increment revision_count
+        GO TO STEP 3 (author), passing:
+            conformance_feedback = null
+            critic_feedback = null
+            critic_question_answers = null
+            overviewer_feedback = overviewer_feedback
+            overviewer_question_answers = overviewer_question_answers
+
+        # After author revises, GO TO STEP 4 (conformance + critic).
+        # Auto-revise loop runs until both APPROVE, then returns here (overviewer runs fresh again).
+        # Reset overviewer_question_answers = null before the next overviewer spawn.
 ```
 
 ---
 
 ## Reference: Persistent Agent Pattern
 
-The author, conformance-agent, and critic are **spawned once** and **resumed** for revision loops. The clarifier runs once on the first pass only.
+The author, conformance-agent, and critic are **spawned once** and **resumed** for revision loops. The clarifier runs once on the first pass only. The overviewer is **always a fresh spawn** — it is never resumed.
 
 | Agent | Spawned | Resumed For | Accumulated Knowledge |
 |-------|---------|-------------|----------------------|
@@ -500,11 +590,13 @@ The author, conformance-agent, and critic are **spawned once** and **resumed** f
 | **author** | First pass | Revision loops | Skeleton format, plan structure, what it wrote |
 | **conformance** | First pass | Revision loops | Skeleton rules, prior violations |
 | **critic** | First pass | Revision loops | Codebase state, prior findings, clarifying questions |
+| **overviewer** | Every overviewer round (fresh spawn) | Never resumed | None — fresh eyes by design |
 
 **Why this matters:**
 - **Faster**: Author remembers what it wrote and makes targeted fixes
 - **Smarter**: Conformance remembers prior violations; critic remembers what it already checked
 - **Focused**: Revision loops skip the clarifier — the idea is already understood
+- **Fresh eyes**: Overviewer is always a fresh spawn; it cannot be biased by prior review rounds
 - **Latest-round-only**: Resume payloads carry only the latest round's feedback; agents use persistent memory for prior rounds (avoids context bloat)
 - **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
 
@@ -512,6 +604,7 @@ The author, conformance-agent, and critic are **spawned once** and **resumed** f
 - Store `clarifier_id`, `author_id`, `conformance_id`, `critic_id` after first spawn
 - Pass `author_id`, `conformance_id`, and `critic_id` to `Task(resume: "<id>")` for revision loops
 - The clarifier is not resumed after the first pass
+- The overviewer is never resumed; no overviewer ID is stored
 - IDs persist for the entire plan skill session
 
 ---
