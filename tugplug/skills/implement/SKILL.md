@@ -142,7 +142,7 @@ If REVISE, append:
 ```
 **tugplug:auditor-agent**(Complete)
   Recommendation: {recommendation}
-  Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tests: {test.exit_code == 0 ? "pass" : "FAIL"} | Clippy: {clippy.exit_code == 0 ? "pass" : "FAIL"} | Fmt: {fmt_check.exit_code == 0 ? "pass" : "FAIL"}
+  Build: {build.exit_code == 0 ? "pass" : "FAIL"} | Tests: {test.exit_code == 0 ? "pass" : "FAIL"} | Lint: {lint.exit_code == 0 ? "pass" : "FAIL"} | Format: {format_check.exit_code == 0 ? "pass" : "FAIL"}
   Deliverables: {passed_deliverables}/{total_deliverables} passed
   Issues: {issues.length} ({count by priority: N P0, N P1, N P2, N P3 — omit zeros})
 ```
@@ -786,7 +786,7 @@ Task(
 **Save the `agentId` as `auditor_id`.**
 
 Parse the auditor's JSON output per Spec S02:
-- `build_results`: Fresh build/test/clippy/fmt results
+- `build_results`: Fresh build/test/lint/format results
 - `deliverable_checks`: Verification of exit criteria from #exit-criteria
 - `cross_step_issues`: Integration issues spanning multiple steps
 - `spot_check_findings`: Issues from spot-checking individual steps
@@ -1114,7 +1114,7 @@ When you receive an agent response:
 **Auditor validation:**
 ```json
 {
-  "build_results": object (required: build, test, clippy, fmt_check — each with command, exit_code, output_tail),
+  "build_results": object (required: build, test, lint, format_check — each with command, exit_code, output_tail),
   "deliverable_checks": array (required — each item has criterion, status, evidence),
   "cross_step_issues": array (required — each item has description, files, priority),
   "spot_check_findings": array (required — each item has step_anchor, description, priority),
