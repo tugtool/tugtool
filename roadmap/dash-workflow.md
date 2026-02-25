@@ -242,7 +242,7 @@ The `dashes` table tracks lifecycle. The `dash_rounds` table is an audit trail �
 | CLI namespace | `tugcode dash <subcommand>` | `tugcode dash create login-page` |
 | Commit prefix | `tugdash(<name>):` | `tugdash(login-page): add login form` |
 
-The `tugdash/` branch prefix is distinct from the `tugtool/` prefix used by plan/implement worktrees. Both use `.tugtree/` for worktree directories (already in `.gitignore`).
+The `tugdash/` branch prefix is distinct from the `tugplan/` prefix used by plan/implement worktrees. Both use `.tugtree/` for worktree directories (already in `.gitignore`).
 
 ## Lifecycle Detail
 
@@ -339,7 +339,7 @@ Dash and plan/implement are distinct workflows that share infrastructure:
 | Concern | Plan/Implement | Dash |
 |---------|---------------|------|
 | Worktree creation | `tugcode worktree create` | `tugcode dash create` |
-| Branch prefix | `tugtool/` | `tugdash/` |
+| Branch prefix | `tugplan/` | `tugdash/` |
 | State tracking | `plans`, `steps`, `checklist_items` tables | `dashes`, `dash_rounds` tables |
 | Database | state.db | state.db (same DB) |
 | Agent orchestration | 6 agents (architect → coder → reviewer → committer → auditor → integrator) | 1 agent (dash-agent) |

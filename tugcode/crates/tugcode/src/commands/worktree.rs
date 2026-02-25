@@ -74,7 +74,7 @@ pub enum WorktreeCommands {
     ///
     /// Removes a worktree identified by plan path, branch name, or worktree path.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugtool/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugtool__14-...)\n  3. Directory name (e.g., tugtool__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugplan/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugplan__14-...)\n  3. Directory name (e.g., tugplan__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
     )]
     Remove {
         /// Target identifier (plan path, branch name, or worktree path)
@@ -1163,8 +1163,8 @@ mod tests {
     #[test]
     fn test_remove_data_serialization() {
         let data = RemoveData {
-            worktree_path: ".tugtree/tugtool__test-20260210-120000".to_string(),
-            branch_name: "tugtool/test-20260210-120000".to_string(),
+            worktree_path: ".tugtree/tugplan__test-20260210-120000".to_string(),
+            branch_name: "tugplan/test-20260210-120000".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
         };
 
@@ -1273,7 +1273,7 @@ mod integration_tests {
 
         let (worktree_path, branch_name, plan_slug) = result.unwrap();
         assert_eq!(plan_slug, "test");
-        assert!(branch_name.starts_with("tugtool/test-"));
+        assert!(branch_name.starts_with("tugplan/test-"));
 
         // Verify worktree directory exists
         assert!(worktree_path.exists(), "worktree directory should exist");

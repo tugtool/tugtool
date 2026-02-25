@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::{Command, Output};
 use tugtool_core::{
-    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugtool_branches,
+    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugplan_branches,
     list_worktrees, remove_worktree, resolve_plan,
 };
 
@@ -979,9 +979,9 @@ fn run_merge_in(
         .args(["worktree", "prune"])
         .output();
 
-    // Sweep any other stale tugtool/* branches (no associated worktree)
+    // Sweep any other stale tugplan/* branches (no associated worktree)
     if let (Ok(branches), Ok(worktrees)) = (
-        list_tugtool_branches(&repo_root),
+        list_tugplan_branches(&repo_root),
         list_worktrees(&repo_root),
     ) {
         let active_branches: std::collections::HashSet<_> =
@@ -1196,8 +1196,8 @@ mod tests {
         let data = MergeData {
             status: "ok".to_string(),
             merge_mode: Some("local".to_string()),
-            branch_name: Some("tugtool/1-20260210-120000".to_string()),
-            worktree_path: Some(".tugtree/tugtool__1-20260210-120000".to_string()),
+            branch_name: Some("tugplan/1-20260210-120000".to_string()),
+            worktree_path: Some(".tugtree/tugplan__1-20260210-120000".to_string()),
             pr_url: None,
             pr_number: None,
             squash_commit: None,
@@ -1245,7 +1245,7 @@ mod tests {
         let data = MergeData {
             status: "ok".to_string(),
             merge_mode: Some("local".to_string()),
-            branch_name: Some("tugtool/1-20260210-120000".to_string()),
+            branch_name: Some("tugplan/1-20260210-120000".to_string()),
             worktree_path: None,
             pr_url: None,
             pr_number: None,
@@ -1946,7 +1946,7 @@ mod tests {
         let data = MergeData {
             status: "ok".to_string(),
             merge_mode: Some("local".to_string()),
-            branch_name: Some("tugtool/1-20260210-120000".to_string()),
+            branch_name: Some("tugplan/1-20260210-120000".to_string()),
             worktree_path: None,
             pr_url: None,
             pr_number: None,
@@ -1958,7 +1958,7 @@ mod tests {
                 "2 of 5 steps incomplete. Run 'tugcode state show .tugtool/tugplan-1.md' to review."
                     .to_string(),
                 "Remote detected but gh CLI unavailable -- falling back to local mode".to_string(),
-                "Multiple worktrees found for this plan (2 total). Using most recent: tugtool/1-20260210-140000"
+                "Multiple worktrees found for this plan (2 total). Using most recent: tugplan/1-20260210-140000"
                     .to_string(),
             ]),
             error: None,
@@ -2313,7 +2313,7 @@ mod tests {
 
         // Create worktree outside to avoid directory showing as dirty
         let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
+        let wt_path = wt_dir.path().join("tugplan__1-test");
         Command::new("git")
             .arg("-C")
             .arg(repo_path)
@@ -2322,7 +2322,7 @@ mod tests {
                 "add",
                 wt_path.to_str().unwrap(),
                 "-b",
-                "tugtool/1-test",
+                "tugplan/1-test",
             ])
             .output()
             .unwrap();
@@ -2395,7 +2395,7 @@ mod tests {
             .unwrap();
 
         let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
+        let wt_path = wt_dir.path().join("tugplan__1-test");
         Command::new("git")
             .arg("-C")
             .arg(repo_path)
@@ -2404,7 +2404,7 @@ mod tests {
                 "add",
                 wt_path.to_str().unwrap(),
                 "-b",
-                "tugtool/1-test",
+                "tugplan/1-test",
             ])
             .output()
             .unwrap();
@@ -2460,7 +2460,7 @@ mod tests {
 
         // Create worktree
         let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
+        let wt_path = wt_dir.path().join("tugplan__1-test");
         Command::new("git")
             .arg("-C")
             .arg(repo_path)
@@ -2469,7 +2469,7 @@ mod tests {
                 "add",
                 wt_path.to_str().unwrap(),
                 "-b",
-                "tugtool/1-test",
+                "tugplan/1-test",
             ])
             .output()
             .unwrap();
@@ -2555,7 +2555,7 @@ mod tests {
             .unwrap();
 
         let wt_dir = TempDir::new().unwrap();
-        let wt_path = wt_dir.path().join("tugtool__1-test");
+        let wt_path = wt_dir.path().join("tugplan__1-test");
         Command::new("git")
             .arg("-C")
             .arg(repo_path)
@@ -2564,7 +2564,7 @@ mod tests {
                 "add",
                 wt_path.to_str().unwrap(),
                 "-b",
-                "tugtool/1-test",
+                "tugplan/1-test",
             ])
             .output()
             .unwrap();
@@ -2680,7 +2680,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let wt_path = clone_path.join(".tugtree/tugtool__1-test");
+        let wt_path = clone_path.join(".tugtree/tugplan__1-test");
         Command::new("git")
             .arg("-C")
             .arg(clone_path)
@@ -2689,7 +2689,7 @@ mod tests {
                 "add",
                 wt_path.to_str().unwrap(),
                 "-b",
-                "tugtool/1-test",
+                "tugplan/1-test",
             ])
             .output()
             .unwrap();
