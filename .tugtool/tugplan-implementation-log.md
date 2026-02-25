@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-0
+date: 2025-02-25T01:49:32Z
+---
+
+## step-0: Created conformance-agent.md with structural/format conformance checking, input/output contracts matching plan specs, recommendation logic, and structural checks beyond tugcode validate. Updated agent integration tests to register the new agent.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-24T23:10:33Z
 ---

@@ -56,13 +56,15 @@ fn parse_agent_frontmatter(content: &str) -> Option<(String, String, String)> {
     }
 }
 
-/// List of all sub-agents (7 agents invoked via Task)
+/// List of all sub-agents (8 agents invoked via Task)
 /// Per plan-4.md and plan-5.md, these are the sub-agents.
 /// Note: planner-setup-agent was removed — its work is now a pre-hook.
 /// Note: implement-setup-agent was removed — worktree creation is now a direct CLI call.
+/// Note: conformance-agent added — handles structural plan validation in parallel with critic.
 const ALL_AGENTS: &[&str] = &[
     "clarifier-agent",
     "author-agent",
+    "conformance-agent",
     "critic-agent",
     "architect-agent",
     "coder-agent",
@@ -79,6 +81,7 @@ const READONLY_AGENTS: &[&str] = &[];
 const CORE_AGENTS: &[&str] = &[
     "clarifier-agent",
     "author-agent",
+    "conformance-agent",
     "critic-agent",
     "architect-agent",
     "coder-agent",
@@ -143,8 +146,8 @@ fn test_only_expected_agents_exist() {
 
     assert_eq!(
         entries.len(),
-        10,
-        "Expected exactly 10 agent files, found {}",
+        11,
+        "Expected exactly 11 agent files, found {}",
         entries.len()
     );
 
@@ -314,6 +317,76 @@ fn test_architect_documents_expected_touch_set() {
     assert!(
         content.contains("expected_touch_set"),
         "Architect must document expected_touch_set in output"
+    );
+}
+
+// =============================================================================
+// Conformance Agent Tests
+// =============================================================================
+
+#[test]
+fn test_conformance_uses_sonnet_model() {
+    let path = agents_dir().join("conformance-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
+
+    // Conformance agent must use Sonnet (mechanical work, not deep reasoning)
+    assert!(
+        content.contains("model: sonnet"),
+        "Conformance agent must use sonnet model"
+    );
+}
+
+#[test]
+fn test_conformance_documents_recommendations() {
+    let path = agents_dir().join("conformance-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
+
+    // Conformance agent must document all recommendation types
+    assert!(
+        content.contains("APPROVE") && content.contains("REVISE") && content.contains("ESCALATE"),
+        "Conformance agent must document APPROVE, REVISE, ESCALATE recommendations"
+    );
+}
+
+#[test]
+fn test_conformance_documents_validation_workflow() {
+    let path = agents_dir().join("conformance-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
+
+    // Conformance agent must document tugcode validate as its core tool
+    assert!(
+        content.contains("tugcode validate"),
+        "Conformance agent must document tugcode validate command"
+    );
+}
+
+#[test]
+fn test_conformance_documents_bash_restriction() {
+    let path = agents_dir().join("conformance-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
+
+    // Conformance agent must document Bash restriction to only tugcode validate
+    let lowercase_content = content.to_lowercase();
+    assert!(
+        (lowercase_content.contains("only") || lowercase_content.contains("restriction"))
+            && lowercase_content.contains("tugcode validate"),
+        "Conformance agent must document Bash tool restriction to tugcode validate only"
+    );
+}
+
+#[test]
+fn test_conformance_has_no_quality_review_content() {
+    let path = agents_dir().join("conformance-agent.md");
+    let content = fs::read_to_string(&path).expect("Failed to read conformance-agent");
+
+    // Conformance agent must not contain quality review areas
+    assert!(
+        !content.contains("technical_soundness"),
+        "Conformance agent must not contain quality review areas (technical_soundness)"
+    );
+    assert!(
+        !content.contains("internal_consistency"),
+        "Conformance agent must not contain quality review areas (internal_consistency)"
     );
 }
 
