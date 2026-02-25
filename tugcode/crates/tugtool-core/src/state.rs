@@ -1067,7 +1067,10 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .conn
             .transaction_with_behavior(TransactionBehavior::Exclusive)
             .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to begin transaction: {}", e),
+                reason: format!(
+                    "failed to begin transaction for plan={} anchor={}: {}",
+                    plan_path, anchor, e
+                ),
             })?;
 
         let now = now_iso8601();
@@ -1168,7 +1171,10 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 rusqlite::params![&now, plan_path, anchor],
             )
             .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to force-complete checklist items: {}", e),
+                reason: format!(
+                    "failed to force-complete checklist items for plan={} anchor={}: {}",
+                    plan_path, anchor, e
+                ),
             })?;
 
             // Force mode: auto-complete remaining substeps (if top-level step)
@@ -1179,7 +1185,10 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     rusqlite::params![&now, plan_path, anchor],
                 )
                 .map_err(|e| TugError::StateDbQuery {
-                    reason: format!("failed to force-complete substeps: {}", e),
+                    reason: format!(
+                        "failed to force-complete substeps for plan={} anchor={}: {}",
+                        plan_path, anchor, e
+                    ),
                 })?;
             }
         }
@@ -1198,14 +1207,20 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 rusqlite::params![&now, reason, plan_path, anchor, worktree],
             )
             .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to complete step: {}", e),
+                reason: format!(
+                    "failed to complete step for plan={} anchor={}: {}",
+                    plan_path, anchor, e
+                ),
             })?;
 
         if rows_affected == 0 {
             // No rows updated means either not claimed by this worktree or already completed
             return Err(TugError::StateStepNotClaimed {
                 anchor: anchor.to_string(),
-                current_status: "not claimed by this worktree or already completed".to_string(),
+                current_status: format!(
+                    "not claimed by worktree {} for plan={}",
+                    worktree, plan_path
+                ),
             });
         }
 
@@ -1228,14 +1243,20 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     rusqlite::params![&now, plan_path],
                 )
                 .map_err(|e| TugError::StateDbQuery {
-                    reason: format!("failed to update plan status: {}", e),
+                    reason: format!(
+                        "failed to update plan status for plan={} anchor={}: {}",
+                        plan_path, anchor, e
+                    ),
                 })?;
                 all_completed = true;
             }
         }
 
         tx.commit().map_err(|e| TugError::StateDbQuery {
-            reason: format!("failed to commit completion transaction: {}", e),
+            reason: format!(
+                "failed to commit completion transaction for plan={} anchor={}: {}",
+                plan_path, anchor, e
+            ),
         })?;
 
         Ok(CompleteResult {
@@ -3789,6 +3810,41 @@ mod tests {
         assert!(result.completed);
         assert!(!result.forced);
         assert!(result.all_steps_completed);
+    }
+
+    #[test]
+    fn test_complete_step_error_includes_plan_path() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Attempt to complete step-0 from a different worktree (wt-b) without
+        // completing checklist items -- this triggers StateStepNotClaimed because
+        // the UPDATE matches claimed_by = wt-b but the step is claimed by wt-a.
+        // First, force the step into in_progress status so the update path is reached.
+        // We trigger StateStepNotClaimed by calling complete_step with wrong worktree
+        // after marking all checklist items complete.
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+
+        let result = db.complete_step(
+            ".tugtool/tugplan-test.md",
+            "step-0",
+            "wt-b", // wrong worktree -- step is claimed by wt-a
+            false,
+            None,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(".tugtool/tugplan-test.md"),
+            "error message should contain plan_path, got: {}",
+            msg
+        );
     }
 
     // Step 6 tests: show, ready, reset, reconcile

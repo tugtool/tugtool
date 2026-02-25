@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-25T21:32:34Z
+---
+
+## #step-2: Enriched all map_err closures and error constructions inside complete_step() with plan_path and anchor for better debugging
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-25T21:27:37Z
 ---
