@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-25T02:45:27Z
+---
+
+## step-4: Cross-file validation passed: all output contracts match consuming agents, no old critic shape remnants, clarifying questions flow with stable IDs and options, stagnation detection uses finding IDs, conformance ESCALATE short-circuit verified, conflict resolution policy present, latest-round-only resume payloads confirmed.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
+step: step-3
+date: 2025-02-25T02:32:44Z
+---
+
+## step-3: Rewrote plan skill SKILL.md for parallel conformance+critic dispatch, full Spec S13 recommendation logic (max revisions, conformance ESCALATE short-circuit, stagnation detection, clarifying questions), three-option ESCALATE per D05, critic-supplied options per D09, updated progress formats per Spec S14, and four-row persistent agent table.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
+step: step-2
+date: 2025-02-25T02:22:16Z
+---
+
+## step-2: Updated author-agent.md to handle dual feedback from conformance-agent and rewritten critic-agent. Replaced single critic_feedback with three fields (conformance_feedback, critic_feedback, critic_question_answers) matching Spec S09. Added Handling Review Feedback section with revision ordering and conflict resolution per D07.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
+step: step-1
+date: 2025-02-25T02:00:56Z
+---
+
+## step-1: Rewrote critic-agent.md removing all skeleton/conformance logic. New quality-only focus with five review areas, Spec S07 output contract (findings/assessment/clarifying_questions/area_ratings), stable IDs for stagnation detection, clarifying questions with options, severity levels, and Spec S08 recommendation logic. Updated integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
+step: step-0
+date: 2025-02-25T01:49:32Z
+---
+
+## step-0: Created conformance-agent.md with structural/format conformance checking, input/output contracts matching plan specs, recommendation logic, and structural checks beyond tugcode validate. Updated agent integration tests to register the new agent.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-24T23:10:33Z
 ---
