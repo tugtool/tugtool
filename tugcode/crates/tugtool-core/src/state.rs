@@ -76,6 +76,13 @@ fn is_leap_year(year: u64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+/// Strip the leading '#' from an anchor if present.
+/// StateDb stores anchors without the '#' prefix. This is a defensive
+/// safety net for historical data and any residual '#'-prefixed callers.
+fn normalize_anchor(anchor: &str) -> &str {
+    anchor.strip_prefix('#').unwrap_or(anchor)
+}
+
 /// Embedded SQLite state database manager.
 ///
 /// Wraps a `rusqlite::Connection` and provides methods for all state operations:
@@ -683,6 +690,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
+        let anchor = normalize_anchor(anchor);
         let result: Option<String> = self
             .conn
             .query_row(
@@ -719,6 +727,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         anchor: &str,
         worktree: &str,
     ) -> Result<(), TugError> {
+        let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let rows_affected = self
             .conn
@@ -752,6 +761,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         worktree: &str,
         lease_duration_secs: u64,
     ) -> Result<String, TugError> {
+        let anchor = normalize_anchor(anchor);
         let now = now_iso8601();
         let lease_expires = iso8601_after_secs(lease_duration_secs);
 
@@ -786,6 +796,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         worktree: &str,
         updates: &[ChecklistUpdate],
     ) -> Result<UpdateResult, TugError> {
+        let anchor = normalize_anchor(anchor);
         // Check ownership first
         self.check_ownership(plan_path, anchor, worktree)?;
 
@@ -845,6 +856,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
     where
         T: BatchEntry,
     {
+        let anchor = normalize_anchor(anchor);
         // Check ownership first
         self.check_ownership(plan_path, anchor, worktree)?;
 
@@ -1030,6 +1042,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         kind: &str,
         summary: &str,
     ) -> Result<i64, TugError> {
+        let anchor = normalize_anchor(anchor);
         // Check ownership first
         self.check_ownership(plan_path, anchor, worktree)?;
 
@@ -1062,6 +1075,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         force: bool,
         force_reason: Option<&str>,
     ) -> Result<CompleteResult, TugError> {
+        let anchor = normalize_anchor(anchor);
         // Begin exclusive transaction
         let tx = self
             .conn
@@ -1669,6 +1683,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
     /// Reset a step to pending status
     pub fn reset_step(&mut self, plan_path: &str, anchor: &str) -> Result<(), TugError> {
+        let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Exclusive)
@@ -1773,6 +1788,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         worktree: Option<&str>,
         force: bool,
     ) -> Result<ReleaseResult, TugError> {
+        let anchor = normalize_anchor(anchor);
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Exclusive)
@@ -1916,11 +1932,13 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 continue; // Skip entries for other plans
             }
 
+            let step_anchor = normalize_anchor(&entry.step_anchor);
+
             // Check if step exists and its current status
             let existing: Option<(String, Option<String>)> = tx
                 .query_row(
                     "SELECT status, commit_hash FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                    rusqlite::params![plan_path, &entry.step_anchor],
+                    rusqlite::params![plan_path, &step_anchor],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .ok();
@@ -1935,11 +1953,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                             tx.execute(
                                 "UPDATE steps SET commit_hash = ?1
                                  WHERE plan_path = ?2 AND anchor = ?3",
-                                rusqlite::params![
-                                    &entry.commit_hash,
-                                    plan_path,
-                                    &entry.step_anchor
-                                ],
+                                rusqlite::params![&entry.commit_hash, plan_path, &step_anchor],
                             )
                             .map_err(|e| TugError::StateDbQuery {
                                 reason: format!("failed to update commit hash: {}", e),
@@ -1949,7 +1963,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                             // Default mode: skip and record mismatch
                             skipped_count += 1;
                             skipped_mismatches.push(SkippedMismatch {
-                                step_anchor: entry.step_anchor.clone(),
+                                step_anchor: step_anchor.to_string(),
                                 db_hash: db_hash.clone(),
                                 git_hash: entry.commit_hash.clone(),
                             });
@@ -1962,7 +1976,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     tx.execute(
                         "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = ?2
                          WHERE plan_path = ?3 AND anchor = ?4",
-                        rusqlite::params![&now, &entry.commit_hash, plan_path, &entry.step_anchor],
+                        rusqlite::params![&now, &entry.commit_hash, plan_path, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to reconcile step: {}", e),
@@ -1972,7 +1986,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     tx.execute(
                         "UPDATE checklist_items SET status = 'completed', updated_at = ?1
                          WHERE plan_path = ?2 AND step_anchor = ?3",
-                        rusqlite::params![&now, plan_path, &entry.step_anchor],
+                        rusqlite::params![&now, plan_path, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to complete checklist items: {}", e),
@@ -1988,7 +2002,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     tx.execute(
                         "UPDATE steps SET commit_hash = ?1
                          WHERE plan_path = ?2 AND anchor = ?3",
-                        rusqlite::params![&entry.commit_hash, plan_path, &entry.step_anchor],
+                        rusqlite::params![&entry.commit_hash, plan_path, &step_anchor],
                     )
                     .map_err(|e| TugError::StateDbQuery {
                         reason: format!("failed to set commit hash: {}", e),
@@ -4789,5 +4803,19 @@ mod tests {
             }
             _ => panic!("expected NoReadySteps, got {:?}", result),
         }
+    }
+
+    #[test]
+    fn test_normalize_anchor_strips_hash() {
+        // bare anchor passthrough
+        assert_eq!(normalize_anchor("step-0"), "step-0");
+        // strips leading '#'
+        assert_eq!(normalize_anchor("#step-0"), "step-0");
+        // empty string passthrough
+        assert_eq!(normalize_anchor(""), "");
+        // lone hash produces empty string
+        assert_eq!(normalize_anchor("#"), "");
+        // only strips one leading '#'
+        assert_eq!(normalize_anchor("##step-0"), "#step-0");
     }
 }

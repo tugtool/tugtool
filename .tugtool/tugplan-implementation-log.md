@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: #step-0
+date: 2025-02-25T23:53:13Z
+---
+
+## #step-0: Added normalize_anchor function and wired it into all 10 StateDb methods that accept step anchor parameters
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: #step-0
 date: 2025-02-25T22:12:25Z
 ---
 
