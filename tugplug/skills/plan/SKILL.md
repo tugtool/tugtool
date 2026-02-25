@@ -57,13 +57,23 @@ Output these as text immediately after parsing the agent's JSON result:
   Validation: {validation_status}
 ```
 
+**conformance-agent:**
+```
+**tugplug:conformance-agent**(Complete)
+  Recommendation: {recommendation}
+  Skeleton: {skeleton_compliant ? "compliant" : "non-compliant"}
+  Validation: {validation_result.error_count} errors, {validation_result.diagnostic_count} diagnostics
+  Structural issues: {structural_issues.length}
+```
+
 **critic-agent:**
 ```
 **tugplug:critic-agent**(Complete)
   Recommendation: {recommendation}
-  Skeleton: {skeleton_compliant ? "compliant" : "non-compliant"}
-  Quality: completeness {areas.completeness} | implementability {areas.implementability} | sequencing {areas.sequencing} | source verification {areas.source_verification}
-  Issues: {issues.length} ({count by priority: N P0, N HIGH, N MEDIUM, N LOW — omit zeros})
+  Areas: consistency {area_ratings.internal_consistency} | soundness {area_ratings.technical_soundness} | implementability {area_ratings.implementability} | completeness {area_ratings.completeness} | risk {area_ratings.risk_feasibility}
+  Findings: {findings.length} ({count by severity: N CRITICAL, N HIGH, N MEDIUM, N LOW — omit zeros})
+  Clarifying questions: {clarifying_questions.length}
+  Assessment: {assessment.quality} (first sentence only)
 ```
 
 On revision loops, use `(Complete, revision {N})` in all post-call messages.
@@ -102,54 +112,59 @@ or:
 ## Orchestration Loop
 
 ```
-┌──────────────────────────────────────────┐
-│          PLANNING PHASE BEGINS           │
-│ (produce a tugplan at .tugtool/tugplan)  │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
-│        clarifier-agent (runs once)       │
-│        SPAWN → clarifier_id              │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-               ┌────────────┐
-               │ questions? │
-               └──┬─────┬───┘
-              yes │     │ no
-                  ▼     │
-  ┌──────────────────┐  │
-  │ AskUserQuestion  │  │
-  └────────┬─────────┘  │
-           └──────┬─────┘
-                  │
-┌─────────────────▼────────────────────────┐
-│ author-agent                             │
-│ Pass 0: SPAWN (FRESH) → author_id        │◄─┐
-│ Pass N: RESUME author_id                 │  │
-└────────────────────┬─────────────────────┘  │
-                     │                        │
-                     ▼                        │
-┌──────────────────────────────────────────┐  │
-│ critic-agent                             │  │ revision
-│ Pass 0: SPAWN (FRESH) → critic_id        │  │ loop
-│ Pass N: RESUME critic_id                 │  │
-└────────────────────┬─────────────────────┘  │
-                     │                        │
-                     ▼                        │
-             ┌────────────────┐               │
-             │    critic      │               │
-             │recommendation? │               │
-             └──┬──────────┬──┘               │
-        APPROVE │          │ REVISE / ESCALATE│
-                │          └──────────────────┘
-                ▼
-┌──────────────────────────────────────────┐
-│        PLANNING PHASE COMPLETE           │
-│ Plan ready at {plan_path}                │
-│ Next: /tugplug:implement {plan_path}     │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│           PLANNING PHASE BEGINS              │
+│  (produce a tugplan at .tugtool/tugplan)     │
+└─────────────────────┬────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────┐
+│         clarifier-agent (runs once)          │
+│         SPAWN → clarifier_id                 │
+└─────────────────────┬────────────────────────┘
+                      │
+                      ▼
+                ┌────────────┐
+                │ questions? │
+                └──┬─────┬───┘
+               yes │     │ no
+                   ▼     │
+   ┌──────────────────┐  │
+   │ AskUserQuestion  │  │
+   └────────┬─────────┘  │
+            └──────┬─────┘
+                   │
+┌──────────────────▼───────────────────────────┐
+│ author-agent                                 │
+│ Pass 0: SPAWN (FRESH) → author_id            │◄─┐
+│ Pass N: RESUME author_id (latest-round only) │  │
+└─────────────────────┬────────────────────────┘  │
+                      │                           │
+                      ▼                           │
+     ┌────────────────┴─────────────────┐         │
+     │                                  │         │
+     ▼                                  ▼         │
+┌────────────────┐             ┌────────────────┐ │
+│conformance-    │             │  critic-agent  │ │ revision
+│agent           │             │                │ │ loop
+│SPAWN/RESUME    │             │ SPAWN/RESUME   │ │
+└───────┬────────┘             └───────┬────────┘ │
+        │                             │           │
+        └──────────┬──────────────────┘           │
+                   │                              │
+                   ▼                              │
+          ┌────────────────┐                      │
+          │  combined      │                      │
+          │ recommendation?│                      │
+          └──┬──────────┬──┘                      │
+     APPROVE │          │ REVISE / ESCALATE        │
+             │          └─────────────────────────┘
+             ▼
+┌──────────────────────────────────────────────┐
+│          PLANNING PHASE COMPLETE             │
+│  Plan ready at {plan_path}                   │
+│  Next: /tugplug:implement {plan_path}        │
+└──────────────────────────────────────────────┘
 ```
 
 **The clarifier runs ONCE during the first pass.** Revision loops go directly to the author — the clarifier's job (understanding the idea, asking questions) is already done.
@@ -157,10 +172,11 @@ or:
 **Architecture principles:**
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` only
 - **Clarifier** runs once on the first pass; it is NOT resumed for revisions
-- **Author and critic** are spawned once and RESUMED for all revision loops
+- **Author, conformance-agent, and critic** are spawned once and RESUMED for all revision loops
+- **Parallel dispatch**: conformance-agent and critic-agent are dispatched in a single message with two Task calls
+- **Latest-round-only** resume payloads: only the latest round's feedback is passed to agents on resume; agents use their persistent accumulated knowledge for prior rounds
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
 - Agents accumulate knowledge: codebase patterns, skeleton format, prior findings
-- Task-Resumed means the author remembers what it wrote, and the critic remembers what it checked
 
 ---
 
@@ -173,9 +189,14 @@ Output the session start message.
 ```
 clarifier_id = null
 author_id = null
+conformance_id = null
 critic_id = null
+conformance_feedback = null
 critic_feedback = null
+critic_question_answers = null
 revision_count = 0
+max_revision_count = 5
+previous_high_findings = []     # IDs of HIGH+ findings from prior round (for stagnation detection)
 ```
 
 ### 2. Clarifier: Analyze and Question (First Pass Only)
@@ -226,7 +247,9 @@ Task(
     "plan_path": "<path or null>",
     "user_answers": <answers from step 2>,
     "clarifier_assumptions": <assumptions from clarifier>,
-    "critic_feedback": null
+    "conformance_feedback": null,
+    "critic_feedback": null,
+    "critic_question_answers": null
   }',
   description: "Create plan document"
 )
@@ -234,15 +257,20 @@ Task(
 
 **Save the `agentId` as `author_id`.**
 
-**Revision loop — RESUME:**
+**Revision loop — RESUME (latest-round only):**
 
 ```
 Task(
   resume: "<author_id>",
-  prompt: 'Revise the plan based on critic feedback: <critic_feedback JSON>. User provided new answers: <user_answers>. Clarifier assumptions: <assumptions>.',
-  description: "Revise plan from critic feedback"
+  prompt: 'Revise the plan. Latest-round feedback only — do not look for prior rounds in this payload.
+conformance_feedback: <conformance_feedback JSON or null>
+critic_feedback: <critic_feedback JSON or null>
+critic_question_answers: <critic_question_answers JSON or null>',
+  description: "Revise plan from review feedback"
 )
 ```
+
+Pass only the latest round's `conformance_feedback`, `critic_feedback`, and `critic_question_answers`. Do not accumulate or combine feedback across rounds. The author uses its persistent memory for prior-round context.
 
 Store response in memory.
 
@@ -250,100 +278,241 @@ If `validation_status == "errors"`: output the Author failure message and HALT.
 
 Output the Author post-call message.
 
-### 4. Critic: Review Plan
+### 4. Conformance + Critic: Parallel Review
 
-**First pass (critic_id is null) — FRESH spawn:**
+Dispatch both agents in a single message with two Task calls.
+
+**First pass (conformance_id is null) — FRESH spawn both:**
 
 ```
 Task(
-  subagent_type: "tugplug:critic-agent",
+  subagent_type: "tugplug:conformance-agent",
   prompt: '{"plan_path": "<path from author>", "skeleton_path": ".tugtool/tugplan-skeleton.md"}',
+  description: "Check plan conformance"
+)
+Task(
+  subagent_type: "tugplug:critic-agent",
+  prompt: '{"plan_path": "<path from author>"}',
   description: "Review plan quality"
 )
 ```
 
-**Save the `agentId` as `critic_id`.**
+**Save `agentId` values as `conformance_id` and `critic_id`.**
 
-**Revision loop — RESUME:**
+**Revision loop — normal case (RESUME both in parallel, latest-round only):**
 
 ```
 Task(
+  resume: "<conformance_id>",
+  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
+Re-check conformance focusing on whether prior violations were fixed.',
+  description: "Re-check plan conformance"
+)
+Task(
   resume: "<critic_id>",
-  prompt: 'Author has revised the plan at <path>. Author response: <summary of author JSON output — include plan_path, created/revised, sections_written, validation_status, and any notes about what changed or did not change>. Re-review focusing on whether prior issues were addressed.',
-  description: "Re-review revised plan"
+  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
+User answered your clarifying questions: <critic_question_answers JSON or null>.
+Re-review focusing on whether prior findings were addressed and questions resolved.',
+  description: "Re-review plan quality"
 )
 ```
 
-**IMPORTANT:** Always include the author's response summary so the critic knows what was changed (or if the author found that no changes were needed).
+**Revision loop — after prior conformance ESCALATE (two-phase sequential dispatch):**
 
-Store response in memory.
+When the previous round ended with `conformance_feedback.recommendation == ESCALATE`, use sequential dispatch instead:
 
-Output the Critic post-call message.
-
-### 5. Handle Critic Recommendation
-
-**APPROVE:**
-- Output the session end message and HALT with success.
-
-**REVISE:**
 ```
-AskUserQuestion(
-  questions: [{
-    question: "The critic found issues. How should we proceed?",
-    header: "Review",
-    options: [
-      { label: "Revise (Recommended)", description: "Send feedback to author for fixes" },
-      { label: "Accept as-is", description: "Proceed despite issues" },
-      { label: "Abort", description: "Cancel planning" }
-    ],
-    multiSelect: false
-  }]
+# Phase 1: Resume conformance only
+Task(
+  resume: "<conformance_id>",
+  prompt: 'Author has revised the plan. Author output: <author_output JSON>.
+Re-check conformance focusing on whether prior violations were fixed.',
+  description: "Re-check plan conformance"
 )
-```
-- If "Revise": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
-- If "Accept": output the session end message, HALT with success
-- If "Abort": output `**Plan** — Aborted by user` and HALT
 
-**ESCALATE:**
+# Phase 2: If conformance now passes (recommendation != ESCALATE), resume critic
+if conformance.recommendation != "ESCALATE":
+  Task(
+    resume: "<critic_id>",
+    prompt: 'Author has revised the plan. Author output: <author_output JSON>.
+User answered your clarifying questions: <critic_question_answers JSON or null>.
+Re-review focusing on whether prior findings were addressed and questions resolved.',
+    description: "Re-review plan quality"
+  )
+# If conformance still ESCALATEs, skip critic; critic_feedback remains null
 ```
-AskUserQuestion(
-  questions: [{
-    question: "The plan was escalated due to critical issues. What next?",
-    header: "Escalated",
-    options: [
-      { label: "Start over", description: "Send feedback to author for fixes" },
-      { label: "Abort", description: "Cancel planning" }
-    ],
-    multiSelect: false
-  }]
-)
+
+This two-phase approach ensures that when conformance ESCALATE is resolved, the critic always runs in the same round that conformance passes — so `critic_feedback` is never null when Step 5C runs.
+
+Store both responses in memory. Output the Conformance post-call message and Critic post-call message (if critic ran).
+
+### 5. Handle Combined Recommendation
+
+#### Step A: Check Loop Limits
+
 ```
-- If "Start over": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
-- If "Abort": output `**Plan** — Aborted by user` and HALT
+if revision_count >= max_revision_count:
+    AskUserQuestion(
+      questions: [{
+        question: "Maximum revision rounds ({max_revision_count}) reached without approval. How should we proceed?",
+        header: "Max Revisions Reached",
+        options: [
+          { label: "Start over", description: "Send latest feedback to author for another attempt" },
+          { label: "Accept as-is", description: "Proceed with the plan despite open issues" },
+          { label: "Abort", description: "Cancel planning" }
+        ],
+        multiSelect: false
+      }]
+    )
+    → handle user choice and halt (see ESCALATE handler below for option handling)
+```
+
+#### Step B: Check Conformance ESCALATE
+
+```
+if conformance_feedback.recommendation == "ESCALATE":
+    # Discard critic output — structural problems must be fixed first
+    critic_feedback = null
+    previous_high_findings = []    # reset stagnation tracking (no critic data this round)
+
+    AskUserQuestion(
+      questions: [{
+        question: "Conformance check escalated: the plan has structural issues that could not be automatically fixed. How should we proceed?",
+        header: "Conformance Escalated",
+        options: [
+          { label: "Start over", description: "Send conformance feedback to author for fixes" },
+          { label: "Accept as-is", description: "Proceed with the plan despite structural issues" },
+          { label: "Abort", description: "Cancel planning" }
+        ],
+        multiSelect: false
+      }]
+    )
+    → If "Start over": set conformance_feedback (from this round), critic_feedback = null,
+      increment revision_count, GO TO STEP 3 (author)
+    → If "Accept as-is": output session end message, HALT with success
+    → If "Abort": output "**Plan** — Aborted by user" and HALT
+```
+
+#### Step C: Stagnation Detection
+
+```
+# Safe here: Step B already handled the case where critic_feedback is null.
+current_high_findings = [f.id for f in critic_feedback.findings
+                         if f.severity in ("CRITICAL", "HIGH")]
+
+if revision_count > 0
+   and len(current_high_findings) > 0
+   and set(current_high_findings) == set(previous_high_findings):
+
+    AskUserQuestion(
+      questions: [{
+        question: "The same critical issues persist across two consecutive revision rounds — the plan appears stuck. How should we proceed?",
+        header: "Stagnation Detected",
+        options: [
+          { label: "Start over", description: "Send latest feedback to author for another attempt" },
+          { label: "Accept as-is", description: "Proceed with the plan despite persistent issues" },
+          { label: "Abort", description: "Cancel planning" }
+        ],
+        multiSelect: false
+      }]
+    )
+    → handle user choice and halt (see ESCALATE handler below for option handling)
+
+previous_high_findings = current_high_findings
+```
+
+#### Step D: Evaluate Remaining Recommendations
+
+**Critic ESCALATE:**
+```
+if critic_feedback.recommendation == "ESCALATE":
+    AskUserQuestion(
+      questions: [{
+        question: "The critic escalated: the plan has critical quality issues that need resolution. How should we proceed?",
+        header: "Critic Escalated",
+        options: [
+          { label: "Start over", description: "Send critic feedback to author for fixes" },
+          { label: "Accept as-is", description: "Proceed with the plan despite critical issues" },
+          { label: "Abort", description: "Cancel planning" }
+        ],
+        multiSelect: false
+      }]
+    )
+    → If "Start over": increment revision_count, GO TO STEP 3 (author)
+    → If "Accept as-is": output session end message, HALT with success
+    → If "Abort": output "**Plan** — Aborted by user" and HALT
+```
+
+**REVISE (conformance or critic):**
+
+First, collect clarifying questions from the critic before presenting the revise/accept/abort prompt:
+
+```
+if critic_feedback is non-null and critic_feedback.clarifying_questions is non-empty:
+    for each question in critic_feedback.clarifying_questions:
+        AskUserQuestion(
+          questions: [{
+            question: question.question,
+            header: "Critic Question",
+            options: question.options   # Pass critic-supplied options directly; no skill-derived options
+            # AskUserQuestion auto-appends "Other" for free-text input
+          }]
+        )
+        store answer keyed by question.id → critic_question_answers[question.id] = answer
+```
+
+Then present the revise/accept/abort choice:
+
+```
+if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
+    AskUserQuestion(
+      questions: [{
+        question: "Review found issues. How should we proceed?",
+        header: "Review",
+        options: [
+          { label: "Revise (Recommended)", description: "Send feedback to author for fixes" },
+          { label: "Accept as-is", description: "Proceed despite issues" },
+          { label: "Abort", description: "Cancel planning" }
+        ],
+        multiSelect: false
+      }]
+    )
+    → If "Revise": increment revision_count, GO TO STEP 3 (author)
+    → If "Accept as-is": output session end message, HALT with success
+    → If "Abort": output "**Plan** — Aborted by user" and HALT
+```
+
+**Both APPROVE:**
+```
+if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommendation == "APPROVE":
+    → Output session end message and HALT with success
+```
 
 ---
 
 ## Reference: Persistent Agent Pattern
 
-The author and critic are **spawned once** and **resumed** for revision loops. The clarifier runs once on the first pass only.
+The author, conformance-agent, and critic are **spawned once** and **resumed** for revision loops. The clarifier runs once on the first pass only.
 
 | Agent | Spawned | Resumed For | Accumulated Knowledge |
 |-------|---------|-------------|----------------------|
 | **clarifier** | First pass | Not resumed | Codebase patterns, user answers |
 | **author** | First pass | Revision loops | Skeleton format, plan structure, what it wrote |
-| **critic** | First pass | Revision loops | Skeleton rules, prior findings, quality standards |
+| **conformance** | First pass | Revision loops | Skeleton rules, prior violations |
+| **critic** | First pass | Revision loops | Codebase state, prior findings, clarifying questions |
 
 **Why this matters:**
 - **Faster**: Author remembers what it wrote and makes targeted fixes
-- **Smarter**: Critic remembers what it already checked, focuses on changes
+- **Smarter**: Conformance remembers prior violations; critic remembers what it already checked
 - **Focused**: Revision loops skip the clarifier — the idea is already understood
+- **Latest-round-only**: Resume payloads carry only the latest round's feedback; agents use persistent memory for prior rounds (avoids context bloat)
 - **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
 
 **Agent ID management:**
-- Store `clarifier_id`, `author_id`, `critic_id` after first spawn
-- Pass `author_id` and `critic_id` to `Task(resume: "<id>")` for revision loops
+- Store `clarifier_id`, `author_id`, `conformance_id`, `critic_id` after first spawn
+- Pass `author_id`, `conformance_id`, and `critic_id` to `Task(resume: "<id>")` for revision loops
 - The clarifier is not resumed after the first pass
-- IDs persist for the entire planner session
+- IDs persist for the entire plan skill session
 
 ---
 
