@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-25T21:22:44Z
+---
+
+## #step-0: Added StateStepNotFound variant (E059) to TugError and updated complete_step() to return it when the step anchor is not found via QueryReturnedNoRows
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-25T20:27:05Z
 ---

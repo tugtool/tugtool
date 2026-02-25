@@ -1073,15 +1073,27 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         let now = now_iso8601();
 
         // Check if this is a top-level step or substep
-        let is_substep: bool = tx
-            .query_row(
-                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
-                |row| row.get(0),
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to query step: {}", e),
-            })?;
+        let is_substep: bool = match tx.query_row(
+            "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+            rusqlite::params![plan_path, anchor],
+            |row| row.get(0),
+        ) {
+            Ok(val) => val,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                return Err(TugError::StateStepNotFound {
+                    plan_path: plan_path.to_string(),
+                    anchor: anchor.to_string(),
+                });
+            }
+            Err(e) => {
+                return Err(TugError::StateDbQuery {
+                    reason: format!(
+                        "failed to query step for plan={} anchor={}: {}",
+                        plan_path, anchor, e
+                    ),
+                });
+            }
+        };
 
         if !force {
             // Strict mode: check all checklist items are completed or deferred
@@ -3621,6 +3633,45 @@ mod tests {
             )
             .unwrap();
         assert_eq!(plan_status, "done");
+    }
+
+    #[test]
+    fn test_step_not_found_error_variant() {
+        let err = TugError::StateStepNotFound {
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            anchor: "step-99".to_string(),
+        };
+        assert_eq!(err.code(), "E059");
+        assert_eq!(err.exit_code(), 14);
+        let msg = err.to_string();
+        assert!(msg.contains("step-99"), "display should contain anchor");
+        assert!(
+            msg.contains(".tugtool/tugplan-test.md"),
+            "display should contain plan_path"
+        );
+    }
+
+    #[test]
+    fn test_complete_step_nonexistent_anchor() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Attempt to complete a step anchor that does not exist in the DB
+        let result = db.complete_step(
+            ".tugtool/tugplan-test.md",
+            "step-nonexistent",
+            "wt-a",
+            false,
+            None,
+        );
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TugError::StateStepNotFound { plan_path, anchor } => {
+                assert_eq!(plan_path, ".tugtool/tugplan-test.md");
+                assert_eq!(anchor, "step-nonexistent");
+            }
+            other => panic!("Expected StateStepNotFound, got: {:?}", other),
+        }
     }
 
     // Step 6 tests: show, ready, reset, reconcile
