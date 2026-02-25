@@ -118,7 +118,7 @@ Return structured JSON:
 |-------|---------|--------------------------|
 | **CRITICAL** | Will cause implementation failure or fundamental design flaw | REVISE |
 | **HIGH** | Significant gap likely to cause rework or missed requirements | REVISE |
-| **MEDIUM** | Quality concern, suboptimal but workable | Informational only; does not block alone |
+| **MEDIUM** | Quality concern, suboptimal but workable | REVISE |
 | **LOW** | Suggestion or minor improvement | Informational only |
 
 ---
@@ -126,12 +126,13 @@ Return structured JSON:
 ## Recommendation Logic
 
 ```
-if any HIGH or CRITICAL finding -> REVISE
+if any MEDIUM, HIGH or CRITICAL finding -> REVISE
 else if clarifying_questions is non-empty -> REVISE
 else -> APPROVE
 ```
 
-MEDIUM and LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the overviewer is a final sanity check, not a second systematic review.
+LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the intent of the overviewer is to provide an additional and *skeptical* eye to the plan and its proposed changes.
+
 
 **Clarifying question resolution:** Clarifying questions always require a user response. However, the user may respond with "defer" or "ignore" to acknowledge the question without resolving it. Any user response (including "defer/ignore") counts as resolving the block. On the next overviewer run (which is always a fresh spawn), the overviewer will not have memory of prior questions. The skill passes prior `overviewer_question_answers` to the author so the author can incorporate the answers. If the overviewer independently re-raises a substantively identical question that the user already answered, the skill will present it to the user again — the overviewer has no way to know the question was already asked.
 
