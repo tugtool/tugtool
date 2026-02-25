@@ -305,10 +305,10 @@ fn check_worktrees() -> HealthCheck {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // Only validate directories matching tugtool__* pattern
+            // Only validate directories matching tugplan__* or tugdash__* pattern
             // Exclude infrastructure directories like .sessions
             let dir_name = path.file_name().unwrap_or_default().to_string_lossy();
-            if !dir_name.starts_with("tugtool__") {
+            if !dir_name.starts_with("tugplan__") && !dir_name.starts_with("tugdash__") {
                 continue;
             }
 
@@ -353,7 +353,7 @@ fn check_stale_branches() -> HealthCheck {
     let repo_root = Path::new(".");
 
     // Get list of tug/* branches
-    let branches = match tugtool_core::list_tugtool_branches(repo_root) {
+    let branches = match tugtool_core::list_tugplan_branches(repo_root) {
         Ok(b) => b,
         Err(e) => {
             return HealthCheck {

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::{Command, Output};
 use tugtool_core::{
-    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugtool_branches,
+    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugplan_branches,
     list_worktrees, remove_worktree, resolve_plan,
 };
 
@@ -979,9 +979,9 @@ fn run_merge_in(
         .args(["worktree", "prune"])
         .output();
 
-    // Sweep any other stale tugtool/* branches (no associated worktree)
+    // Sweep any other stale tugplan/* branches (no associated worktree)
     if let (Ok(branches), Ok(worktrees)) = (
-        list_tugtool_branches(&repo_root),
+        list_tugplan_branches(&repo_root),
         list_worktrees(&repo_root),
     ) {
         let active_branches: std::collections::HashSet<_> =

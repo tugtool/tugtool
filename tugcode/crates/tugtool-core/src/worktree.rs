@@ -66,7 +66,7 @@ pub enum CleanupMode {
     Merged,
     /// Clean worktrees with no PR (not InProgress)
     Orphaned,
-    /// Clean tugtool/* branches without worktrees
+    /// Clean tugplan/* branches without worktrees
     Stale,
     /// All of the above
     All,
@@ -121,15 +121,15 @@ pub fn derive_tugplan_slug(tugplan_path: &Path) -> String {
 
 /// Extract plan slug from branch name.
 ///
-/// Branch format: `tugtool/<slug>-<timestamp>` where timestamp is exactly 15 chars (YYYYMMDD-HHMMSS).
-/// This function strips the `tugtool/` prefix and the last 16 chars (hyphen + timestamp).
+/// Branch format: `tugplan/<slug>-<timestamp>` where timestamp is exactly 15 chars (YYYYMMDD-HHMMSS).
+/// This function strips the `tugplan/` prefix and the last 16 chars (hyphen + timestamp).
 ///
 /// Examples:
-/// - "tugtool/auth-20260208-143022" -> "auth"
-/// - "tugtool/auth-v2-20260208-143022" -> "auth-v2"
-/// - "tugtool/1-20260208-143022" -> "1"
+/// - "tugplan/auth-20260208-143022" -> "auth"
+/// - "tugplan/auth-v2-20260208-143022" -> "auth-v2"
+/// - "tugplan/1-20260208-143022" -> "1"
 pub fn slug_from_branch(branch: &str) -> String {
-    let without_prefix = branch.strip_prefix("tugtool/").unwrap_or(branch);
+    let without_prefix = branch.strip_prefix("tugplan/").unwrap_or(branch);
     // Strip last 16 characters (hyphen + 15-char timestamp)
     if without_prefix.len() > 16 {
         without_prefix[..without_prefix.len() - 16].to_string()
@@ -202,10 +202,10 @@ fn generate_timestamp_utc() -> Result<String, TugError> {
     format_compact_timestamp(&iso8601)
 }
 
-/// Generate branch name in format tugtool/<slug>-<timestamp>
+/// Generate branch name in format tugplan/<slug>-<timestamp>
 pub fn generate_branch_name(slug: &str) -> Result<String, TugError> {
     let timestamp = generate_timestamp_utc()?;
-    Ok(format!("tugtool/{}-{}", slug, timestamp))
+    Ok(format!("tugplan/{}-{}", slug, timestamp))
 }
 
 /// Find existing worktree for the given plan, preferring most recent by timestamp
@@ -684,8 +684,8 @@ pub fn list_worktrees(repo_root: &Path) -> Result<Vec<DiscoveredWorktree>, TugEr
         if let Some(path_str) = line.strip_prefix("worktree ") {
             current_path = Some(PathBuf::from(path_str));
         } else if let Some(branch_ref) = line.strip_prefix("branch refs/heads/") {
-            // Only include branches with "tugtool/" prefix
-            if branch_ref.starts_with("tugtool/") {
+            // Only include branches with "tugplan/" prefix
+            if branch_ref.starts_with("tugplan/") {
                 if let Some(wt_path) = current_path.take() {
                     // Skip the main worktree
                     let is_main = canonical_root
@@ -776,13 +776,13 @@ pub fn resolve_worktree<'a>(
 ///
 /// The `plan_slug` is derived from the branch name by stripping the branch prefix
 /// and the timestamp suffix (last 16 characters: hyphen + 15-char YYYYMMDD-HHMMSS).
-/// Example: "tugtool/auth-20260208-143022" -> "auth"
-/// Example: "tugtool/auth-v2-20260208-143022" -> "auth-v2"
+/// Example: "tugplan/auth-20260208-143022" -> "auth"
+/// Example: "tugplan/auth-v2-20260208-143022" -> "auth-v2"
 #[derive(Debug, Clone, Serialize)]
 pub struct DiscoveredWorktree {
     /// Absolute path to the worktree directory
     pub path: PathBuf,
-    /// Branch name (e.g., "tugtool/1-20260208-143022")
+    /// Branch name (e.g., "tugplan/1-20260208-143022")
     pub branch: String,
     /// Plan slug derived from branch name
     pub plan_slug: String,
@@ -807,7 +807,7 @@ pub struct WorktreeDiscovery {
 /// Find worktrees for a plan using git-native discovery.
 ///
 /// Parses `git worktree list --porcelain` and matches worktrees whose branch
-/// starts with `tugtool/<slug>-`. This works even when session files are missing
+/// starts with `tugplan/<slug>-`. This works even when session files are missing
 /// or corrupt, since it relies only on git's own worktree tracking.
 ///
 /// If multiple worktrees match (shouldn't happen normally), returns the most
@@ -819,7 +819,7 @@ pub fn find_worktree_by_tugplan(
     plan_path: &Path,
 ) -> Result<WorktreeDiscovery, TugError> {
     let slug = derive_tugplan_slug(plan_path);
-    let branch_prefix = format!("tugtool/{}-", slug);
+    let branch_prefix = format!("tugplan/{}-", slug);
 
     let output = Command::new("git")
         .arg("-C")
@@ -885,7 +885,7 @@ pub fn find_worktree_by_tugplan(
 /// Validate that a worktree path follows the expected pattern
 ///
 /// Valid worktree paths must:
-/// - Start with `.tugtree/tugtool__`
+/// - Start with `.tugtree/tugplan__` (plan worktrees) or `.tugtree/tugdash__` (dash worktrees)
 /// - Be a relative path (not absolute)
 ///
 /// This function does NOT check if the directory exists on disk.
@@ -897,28 +897,29 @@ pub fn find_worktree_by_tugplan(
 /// use std::path::Path;
 /// use tug_core::is_valid_worktree_path;
 ///
-/// assert!(is_valid_worktree_path(Path::new(".tugtree/tugtool__auth-20260208-143022")));
+/// assert!(is_valid_worktree_path(Path::new(".tugtree/tugplan__auth-20260208-143022")));
+/// assert!(is_valid_worktree_path(Path::new(".tugtree/tugdash__my-task")));
 /// assert!(!is_valid_worktree_path(Path::new(".tugtree/foo")));
-/// assert!(!is_valid_worktree_path(Path::new("../worktrees/tugtool__auth")));
-/// assert!(!is_valid_worktree_path(Path::new("/abs/path/tugtool__auth")));
+/// assert!(!is_valid_worktree_path(Path::new("../worktrees/tugplan__auth")));
+/// assert!(!is_valid_worktree_path(Path::new("/abs/path/tugplan__auth")));
 /// ```
 pub fn is_valid_worktree_path(path: &Path) -> bool {
     // Convert to string for pattern matching
     let path_str = path.to_string_lossy();
 
-    // Must start with .tugtree/tugtool__
-    path_str.starts_with(".tugtree/tugtool__")
+    // Must start with .tugtree/tugplan__ (plan worktrees) or .tugtree/tugdash__ (dash worktrees)
+    path_str.starts_with(".tugtree/tugplan__") || path_str.starts_with(".tugtree/tugdash__")
 }
 
-/// List all local branches matching the tugtool/* pattern
+/// List all local branches matching the tugplan/* pattern
 ///
-/// Returns all branch names that start with "tugtool/".
+/// Returns all branch names that start with "tugplan/".
 /// Only local branches are included (no remote-tracking branches).
-pub fn list_tugtool_branches(repo_root: &Path) -> Result<Vec<String>, TugError> {
+pub fn list_tugplan_branches(repo_root: &Path) -> Result<Vec<String>, TugError> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
-        .args(["branch", "--list", "tugtool/*"])
+        .args(["branch", "--list", "tugplan/*"])
         .output()
         .map_err(|e| TugError::WorktreeCleanupFailed {
             reason: format!("failed to list branches: {}", e),
@@ -952,9 +953,9 @@ pub fn list_tugtool_branches(repo_root: &Path) -> Result<Vec<String>, TugError> 
     Ok(branches)
 }
 
-/// Clean up stale branches (tugtool/* branches without worktrees)
+/// Clean up stale branches (tugplan/* branches without worktrees)
 ///
-/// Finds all tugtool/* branches that don't have corresponding worktrees and attempts
+/// Finds all tugplan/* branches that don't have corresponding worktrees and attempts
 /// to delete them using safe delete first (git branch -d), then force delete (git branch -D)
 /// only if the PR is confirmed merged via gh pr view.
 ///
@@ -990,7 +991,7 @@ pub(crate) fn cleanup_stale_branches_with_pr_checker(
     pr_checker: impl Fn(&str) -> PrState,
 ) -> Result<StaleBranchCleanupResult, TugError> {
     let git = GitCli::new(repo_root);
-    let all_branches = list_tugtool_branches(repo_root)?;
+    let all_branches = list_tugplan_branches(repo_root)?;
 
     // Build set of branch names that have worktrees
     let branches_with_worktrees: std::collections::HashSet<String> =
@@ -1619,7 +1620,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let branches = list_tugtool_branches(temp_dir).unwrap();
+        let branches = list_tugplan_branches(temp_dir).unwrap();
 
         // Should only return tugtool/* branches
         assert_eq!(branches.len(), 2);

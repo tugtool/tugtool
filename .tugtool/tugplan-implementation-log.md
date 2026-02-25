@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-25T16:13:24Z
+---
+
+## step-1: Renamed all production code prefixes: tugtool/ -> tugplan/ branch prefix, tugtool__ -> tugplan__ directory prefix, list_tugtool_branches -> list_tugplan_branches, is_valid_worktree_path accepts both tugplan__ and tugdash__
+
+**Files changed:**
+- .tugtool/tugplan-worktree-prefix-rename.md
+
+---
+
+---
 step: step-0
 date: 2025-02-25T16:04:07Z
 ---

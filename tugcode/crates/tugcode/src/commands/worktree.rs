@@ -74,7 +74,7 @@ pub enum WorktreeCommands {
     ///
     /// Removes a worktree identified by plan path, branch name, or worktree path.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugtool/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugtool__14-...)\n  3. Directory name (e.g., tugtool__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Remove a specific worktree.\n\nIdentifies worktree by (in resolution order):\n  1. Branch name (e.g., tugplan/14-20250209-172637)\n  2. Worktree path (e.g., /abs/path/.tugtree/tugplan__14-...)\n  3. Directory name (e.g., tugplan__14-20250209-172637)\n  4. Plan filename (e.g., .tugtool/tugplan-14.md)\n  5. Plan slug (e.g., dev-mode-notifications)\n  6. Plan prefix via resolve_plan fallback (e.g., dev)\n\nIf multiple worktrees match, an error is returned listing all\ncandidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
     )]
     Remove {
         /// Target identifier (plan path, branch name, or worktree path)
