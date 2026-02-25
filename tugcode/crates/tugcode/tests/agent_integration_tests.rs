@@ -9,6 +9,7 @@
 //! Note: As of Phase 4.0, the architecture changed to:
 //! - 3 orchestrator SKILLS (plan, implement, merge) in skills/
 //! - 9 sub-AGENTS invoked via Task tool in agents/
+//!
 //! Note: overviewer-agent added as a terminal quality gate in the plan skill.
 
 use std::fs;
