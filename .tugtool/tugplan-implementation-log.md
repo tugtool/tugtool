@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-25T02:22:16Z
+---
+
+## step-2: Updated author-agent.md to handle dual feedback from conformance-agent and rewritten critic-agent. Replaced single critic_feedback with three fields (conformance_feedback, critic_feedback, critic_question_answers) matching Spec S09. Added Handling Review Feedback section with revision ordering and conflict resolution per D07.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-split.md
+
+---
+
+---
 step: step-1
 date: 2025-02-25T02:00:56Z
 ---
