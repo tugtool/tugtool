@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-25T20:27:05Z
+---
+
+## audit-fix: Audit fix: updated agent_integration_tests.rs to include overviewer-agent in ALL_AGENTS, CORE_AGENTS, and count (11->12). All 750 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-plan-quality-overviewer.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-25T20:23:12Z
 ---

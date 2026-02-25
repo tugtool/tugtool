@@ -9,6 +9,7 @@
 //! Note: As of Phase 4.0, the architecture changed to:
 //! - 3 orchestrator SKILLS (plan, implement, merge) in skills/
 //! - 9 sub-AGENTS invoked via Task tool in agents/
+//! Note: overviewer-agent added as a terminal quality gate in the plan skill.
 
 use std::fs;
 use std::path::PathBuf;
@@ -56,16 +57,18 @@ fn parse_agent_frontmatter(content: &str) -> Option<(String, String, String)> {
     }
 }
 
-/// List of all sub-agents (8 agents invoked via Task)
+/// List of all sub-agents (9 agents invoked via Task)
 /// Per plan-4.md and plan-5.md, these are the sub-agents.
 /// Note: planner-setup-agent was removed — its work is now a pre-hook.
 /// Note: implement-setup-agent was removed — worktree creation is now a direct CLI call.
 /// Note: conformance-agent added — handles structural plan validation in parallel with critic.
+/// Note: overviewer-agent added — terminal quality gate that runs after conformance + critic approve.
 const ALL_AGENTS: &[&str] = &[
     "clarifier-agent",
     "author-agent",
     "conformance-agent",
     "critic-agent",
+    "overviewer-agent",
     "architect-agent",
     "coder-agent",
     "reviewer-agent",
@@ -83,6 +86,7 @@ const CORE_AGENTS: &[&str] = &[
     "author-agent",
     "conformance-agent",
     "critic-agent",
+    "overviewer-agent",
     "architect-agent",
     "coder-agent",
     "reviewer-agent",
@@ -146,8 +150,8 @@ fn test_only_expected_agents_exist() {
 
     assert_eq!(
         entries.len(),
-        11,
-        "Expected exactly 11 agent files, found {}",
+        12,
+        "Expected exactly 12 agent files, found {}",
         entries.len()
     );
 
