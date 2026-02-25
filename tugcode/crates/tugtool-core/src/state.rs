@@ -1095,6 +1095,35 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             }
         };
 
+        // Idempotency check: if the step is already completed, succeed silently
+        let current_status: String = tx
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+
+        if current_status == "completed" {
+            let all_steps_completed = if !is_substep {
+                let remaining: i32 = tx
+                    .query_row(
+                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL AND status != 'completed'",
+                        rusqlite::params![plan_path],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                remaining == 0
+            } else {
+                false
+            };
+            return Ok(CompleteResult {
+                completed: true,
+                forced: false,
+                all_steps_completed,
+            });
+        }
+
         if !force {
             // Strict mode: check all checklist items are completed or deferred
             let incomplete_items: usize = tx
@@ -3672,6 +3701,94 @@ mod tests {
             }
             other => panic!("Expected StateStepNotFound, got: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_complete_step_idempotent_same_worktree() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark all checklist items as completed and complete step-0 normally
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        // Call complete_step again from the same worktree -- must succeed idempotently
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+    }
+
+    #[test]
+    fn test_complete_step_idempotent_different_worktree() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Mark all checklist items as completed and complete step-0 from wt-a
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                [],
+            )
+            .unwrap();
+        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .unwrap();
+
+        // Call complete_step from a different worktree -- must succeed idempotently
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-b", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+    }
+
+    #[test]
+    fn test_complete_step_idempotent_all_steps_completed() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Force-complete step-0 and step-1 by updating DB directly
+        db.conn
+            .execute(
+                "UPDATE steps SET status = 'completed', completed_at = '2025-01-01T00:00:00Z' WHERE anchor IN ('step-0', 'step-1')",
+                [],
+            )
+            .unwrap();
+
+        // Claim and start step-2 (last step), complete all its checklist items, then complete it
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-2'",
+                [],
+            )
+            .unwrap();
+        db.complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+            .unwrap();
+
+        // Call complete_step on the last step again -- must return all_steps_completed: true
+        let result = db
+            .complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+            .unwrap();
+
+        assert!(result.completed);
+        assert!(!result.forced);
+        assert!(result.all_steps_completed);
     }
 
     // Step 6 tests: show, ready, reset, reconcile

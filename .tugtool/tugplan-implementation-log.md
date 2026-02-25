@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-25T21:27:37Z
+---
+
+## #step-1: Added idempotent early-return to complete_step() that succeeds immediately when a step is already completed, bypassing ownership/checklist/force checks
+
+**Files changed:**
+- .tugtool/tugplan-step-completion-robustness.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-25T21:22:44Z
 ---
