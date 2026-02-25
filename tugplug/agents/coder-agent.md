@@ -275,19 +275,21 @@ After running build, tests, lint, and checkpoints, map each plan task and test t
 
 5. **Run tests after implementation**: Use the project's test command.
 
-6. **Always include drift_assessment**: Even if all files are green.
+6. **Format and lint before reporting completion**: Before returning with `success: true`, you MUST run the project's standard formatting and linting tools and fix all issues. Code must be clean, formatted, and lint-free. This is NOT the reviewer's job — you own the quality of your output. Identify the appropriate tools from project configuration (CLAUDE.md, Makefile, package.json, Cargo.toml, pyproject.toml, etc.). If linting fails, fix the issues and re-run until clean. Only then set `success: true` and return.
 
-7. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files for persisting your output (see Step Data and Output).
+7. **Always include drift_assessment**: Even if all files are green.
 
-8. **Never commit**: Do NOT run `git commit`. The committer-agent handles all commits. You may use `git add` and `git status` but never `git commit`.
+8. **Stay within the worktree**: All commands must run inside `{worktree_path}`. Do NOT create files in `/tmp` or any location outside the worktree. The only temp files allowed are `.tugtool/_tmp_*` files for persisting your output (see Step Data and Output).
 
-9. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
+9. **Never commit**: Do NOT run `git commit`. The committer-agent handles all commits. You may use `git add` and `git status` but never `git commit`.
 
-10. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
+10. **No manual verification outside test suite**: When the test plan mentions "manually test", implement that as a proper integration test instead. Do NOT run ad-hoc verification commands.
 
-11. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+11. **No exploratory testing outside the worktree**: If you need to understand how an external tool behaves, read documentation or write a proper test. NEVER create throwaway scripts in `/tmp`.
 
-12. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
+12. **Use relative paths in output**: `files_created` and `files_modified` use relative paths (e.g., `src/api/client.rs`), not absolute paths.
+
+13. **Never return partial work**: You MUST complete all files in the architect's `expected_touch_set` before returning. If the step is large, trust auto-compaction to manage your context — keep working. Do NOT return early with a summary of "remaining work" or a recommendation to "split the step." If you return, the work must be done: every file in the expected touch set addressed, `cargo build` passing, tests passing. A partial return forces the orchestrator to spawn a fresh agent that lacks your context, which leads to missed files and broken builds.
 
 ---
 
