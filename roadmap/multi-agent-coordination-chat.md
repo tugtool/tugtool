@@ -163,7 +163,7 @@ Core Design
 A single file: .tugtool/state.json in the worktree.
 
 ```text
-.tugtree/tugtool__my-plan-20260223/
+.tugtree/tugplan__my-plan-20260223/
 ├── .tugtool/
 │   ├── state.json          ← NEW: all coordination state
 │   ├── tugplan-my-plan.md
@@ -543,7 +543,7 @@ Cannot be embedded. Unlike SQLite (which compiles into your binary via rusqlite)
 
 Overkill for the data model. Tug's state is small. A plan has maybe 5-15 steps, each with 3-10 checklist items. That's ~100 rows total. Dolt's branching/merging superpowers shine for tables with millions of rows where you need to reconcile divergent edits. For 100 rows managed by a known orchestration pattern, it's bringing a tank to a knife fight.
 
-The branching model doesn't match. Dolt branches data. Git branches code. You'd now have two branching systems to keep in sync. When orchestrator A works on worktree branch tugtool/foo-A, does it also need a Dolt branch foo-A? When do you merge the Dolt branch? Before or after the git merge? This adds coordination complexity rather than removing it.
+The branching model doesn't match. Dolt branches data. Git branches code. You'd now have two branching systems to keep in sync. When orchestrator A works on worktree branch tugplan/foo-A, does it also need a Dolt branch foo-A? When do you merge the Dolt branch? Before or after the git merge? This adds coordination complexity rather than removing it.
 
 SQLite: What It Actually Gives You
 

@@ -25,8 +25,8 @@ repo/
 │   ├── config.toml
 │   └── ...
 ├── .tugtree/
-│   ├── tugtool__foo-20260223/ ← worktree A (can read state.db)
-│   └── tugtool__foo-20260223-2/ ← worktree B (can also read state.db)
+│   ├── tugplan__foo-20260223/ ← worktree A (can read state.db)
+│   └── tugplan__foo-20260223-2/ ← worktree B (can also read state.db)
 └── (source code)
 ```
 
@@ -627,7 +627,7 @@ Does not reset `completed` steps, substeps, or checklist items (that would requi
 
 ### The Problem
 
-When `tugcode state claim` runs inside a worktree at `.tugtree/tugtool__foo-20260223/`, it needs to find `state.db` in the **repo root's** `.tugtool/` directory. But `find_project_root()` finds the *worktree's* `.tugtool/` directory first.
+When `tugcode state claim` runs inside a worktree at `.tugtree/tugplan__foo-20260223/`, it needs to find `state.db` in the **repo root's** `.tugtool/` directory. But `find_project_root()` finds the *worktree's* `.tugtool/` directory first.
 
 ### The Solution
 

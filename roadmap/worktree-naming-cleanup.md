@@ -2,7 +2,7 @@
 
 ## Context
 
-Plan worktrees currently use `tugtool/` as their branch prefix (e.g., `tugtool/auth-20260208-143022`), producing directory names like `.tugtree/tugtool__auth-20260208-143022`. The more-recently-added dash feature uses `tugdash/` (e.g., `tugdash/my-task` → `.tugtree/tugdash__my-task`). Worktrees should be named with *either* `tugplan/` or `tugdash/` prefixes — no `tugtool` in the name.
+Plan worktrees now use `tugplan/` as their branch prefix (e.g., `tugplan/auth-20260208-143022`), producing directory names like `.tugtree/tugplan__auth-20260208-143022`. The dash feature uses `tugdash/` (e.g., `tugdash/my-task` → `.tugtree/tugdash__my-task`). Worktrees are named with *either* `tugplan/` or `tugdash/` prefixes.
 
 ## Changes
 
@@ -16,10 +16,10 @@ All string literal replacements:
 | 208 | `format!("tugtool/{}-{}", ...)` | `format!("tugplan/{}-{}", ...)` |
 | 688 | `starts_with("tugtool/")` | `starts_with("tugplan/")` |
 | 822 | `format!("tugtool/{}-", slug)` | `format!("tugplan/{}-", slug)` |
-| 910 | `starts_with(".tugtree/tugtool__")` | `starts_with(".tugtree/tugplan__")` |
+| 910 | `starts_with(".tugtree/tugtool__")` | accepts `.tugtree/tugplan__` or `.tugtree/tugdash__` |
 | 921 | `["branch", "--list", "tugtool/*"]` | `["branch", "--list", "tugplan/*"]` |
 
-Update doc comments/examples referencing `tugtool/` branch names (lines 124-130, 205, 687, 779-785, 810, 900-903, 913-915).
+Update doc comments/examples referencing `tugplan/` branch names (lines 124-130, 205, 687, 779-785, 810, 900-903, 913-915).
 
 Rename `list_tugtool_branches` → `list_tugplan_branches` (line 917).
 
@@ -27,10 +27,10 @@ Rename `list_tugtool_branches` → `list_tugplan_branches` (line 917).
 
 Line 69: rename `list_tugtool_branches` → `list_tugplan_branches` in the re-export.
 
-### 3. Callers of `list_tugtool_branches`
+### 3. Callers of `list_tugplan_branches`
 
-- `tugcode/crates/tugcode/src/commands/merge.rs` line 14 (import) and line 984 (call): rename to `list_tugplan_branches`
-- `tugcode/crates/tugcode/src/commands/doctor.rs` line 311: change `"tugtool__"` to `"tugplan__"`, line 356: rename call to `list_tugplan_branches`
+- `tugcode/crates/tugcode/src/commands/merge.rs` line 14 (import) and line 984 (call): renamed to `list_tugplan_branches`
+- `tugcode/crates/tugcode/src/commands/doctor.rs` line 311: changed to check for `"tugplan__"` or `"tugdash__"`, line 356: renamed call to `list_tugplan_branches`
 
 ### 4. Tests in `worktree.rs` (~52 occurrences)
 
@@ -38,7 +38,7 @@ Mechanical replacement of `"tugtool/` → `"tugplan/` and `tugtool__` → `tugpl
 
 ### 5. Tests in `merge.rs` (~8 occurrences) and `worktree.rs` commands (~2 occurrences)
 
-Same mechanical replacement in test fixtures that reference `"tugtool/` branch names.
+Same mechanical replacement in test fixtures that reference `"tugplan/` branch names.
 
 ## Verification
 
@@ -50,6 +50,6 @@ cd tugcode && cargo fmt --all --check
 
 Grep to confirm no stale references remain:
 ```bash
-grep -rn '"tugtool/' tugcode/crates/ --include='*.rs'
+grep -rn '"tugplan/' tugcode/crates/ --include='*.rs'
 ```
-(Should return zero matches.)
+(Should return zero matches for old `tugtool/` pattern.)

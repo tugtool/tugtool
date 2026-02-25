@@ -329,7 +329,7 @@ This runs from the repo root (the current working directory when the skill start
 
 Parse the JSON output from stdout. The output is a CreateData object with these fields:
 - `worktree_path`: Absolute path to the created worktree
-- `branch_name`: Git branch name (e.g., "tugtool/slug-20260214-120000")
+- `branch_name`: Git branch name (e.g., "tugplan/slug-20260214-120000")
 - `base_branch`: Base branch (e.g., "main")
 - `plan_path`: Relative path to the plan file
 - `total_steps`: Total number of execution steps
