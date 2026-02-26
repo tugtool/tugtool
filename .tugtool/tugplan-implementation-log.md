@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-26T03:36:14Z
+---
+
+## step-3: Renumbered all step-0 references to step-1 (and cascading step-1→step-2, step-2→step-3, etc.) across 25 files: 10 fixture .md files, golden JSON, mock script, 13 Rust source/test files. 768 tests pass. Only intentional backward-compat step-0 references remain (parser.rs historical bead test, worktree artifact dir negative assertion).
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
 step: step-2
 date: 2025-02-26T03:08:32Z
 ---

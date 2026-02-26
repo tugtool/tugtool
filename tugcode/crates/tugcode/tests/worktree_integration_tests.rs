@@ -120,7 +120,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -632,7 +632,7 @@ Test decision.
 
 ### Execution Steps {#execution-steps}
 
-#### Step 0: Test step {#step-0}
+#### Step 1: Test step {#step-1}
 
 **Commit:** Test commit
 
@@ -687,7 +687,7 @@ fn test_worktree_setup_blocks_plan_with_diagnostics() {
     let temp = setup_test_git_repo();
 
     // Create plan with P001 near-miss (lowercase "step" in header)
-    // Use MINIMAL_PLAN as base but modify Step 0 header to trigger P001
+    // Use MINIMAL_PLAN as base but modify Step 1 header to trigger P001
     let plan_with_diagnostics = r#"## Phase 1.0: Test Feature {#phase-1}
 
 **Purpose:** Test plan with diagnostics.
@@ -730,7 +730,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### step 0: Setup {#step-0}
+#### step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -843,7 +843,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### step 0: Setup {#step-0}
+#### step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 

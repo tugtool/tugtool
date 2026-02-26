@@ -144,7 +144,7 @@ This is a test tugplan created by the mock planner for integration testing.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: initial setup`
 
@@ -171,13 +171,13 @@ This is a test tugplan created by the mock planner for integration testing.
 
 ---
 
-#### Step 1: Implementation {#step-1}
+#### Step 2: Implementation {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat: implement feature`
 
-**References:** [D01] Test decision, (#step-0)
+**References:** [D01] Test decision, (#step-1)
 
 **Artifacts:**
 - Updated `src/feature.rs`

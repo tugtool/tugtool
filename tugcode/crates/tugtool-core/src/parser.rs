@@ -639,7 +639,7 @@ mod tests {
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Bootstrap {#step-0}
+#### Step 1: Bootstrap {#step-1}
 
 **Commit:** `feat: initial setup`
 
@@ -674,9 +674,9 @@ mod tests {
 
         assert_eq!(tugplan.steps.len(), 1);
         let step = &tugplan.steps[0];
-        assert_eq!(step.number, "0");
+        assert_eq!(step.number, "1");
         assert_eq!(step.title, "Bootstrap");
-        assert_eq!(step.anchor, "step-0");
+        assert_eq!(step.anchor, "step-1");
         assert_eq!(step.commit_message, Some("feat: initial setup".to_string()));
         assert_eq!(step.references, Some("[D01] Test decision".to_string()));
 
@@ -704,21 +704,21 @@ mod tests {
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: First {#step-0}
+#### Step 1: First {#step-1}
 
 **Tasks:**
 - [ ] Task
 
-#### Step 1: Second {#step-1}
+#### Step 2: Second {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Tasks:**
 - [ ] Task
 
-#### Step 2: Third {#step-2}
+#### Step 3: Third {#step-3}
 
-**Depends on:** #step-0, #step-1
+**Depends on:** #step-1, #step-2
 
 **Tasks:**
 - [ ] Task
@@ -728,8 +728,8 @@ mod tests {
 
         assert_eq!(tugplan.steps.len(), 3);
         assert!(tugplan.steps[0].depends_on.is_empty());
-        assert_eq!(tugplan.steps[1].depends_on, vec!["step-0"]);
-        assert_eq!(tugplan.steps[2].depends_on, vec!["step-0", "step-1"]);
+        assert_eq!(tugplan.steps[1].depends_on, vec!["step-1"]);
+        assert_eq!(tugplan.steps[2].depends_on, vec!["step-1", "step-2"]);
     }
 
     #[test]
@@ -951,7 +951,7 @@ mod tests {
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Tasks:**
 - [ ] Unchecked lowercase
@@ -991,7 +991,7 @@ mod tests {
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -1025,7 +1025,7 @@ mod tests {
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 ##### Tasks
 
@@ -1062,7 +1062,7 @@ mod tests {
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Artifacts:**
 - [ ] New file: src/main.rs
@@ -1093,7 +1093,7 @@ mod tests {
 Here's an example:
 
 ```
-#### Step 0: Example {#step-0}
+#### Step 1: Example {#step-1}
 ```
 
 #### Step 1: Real Step {#step-1}
@@ -1125,7 +1125,7 @@ Here's an example:
 Example step header:
 
 ```
-#### Step 0: Example {#step-0}
+#### Step 1: Example {#step-1}
 ```
 "#;
 
@@ -1240,7 +1240,7 @@ fn main() {
 Example:
 
 ```
-#### Step 0: Inside block {#step-0}
+#### Step 1: Inside block {#step-1}
 ```
 
 #### Step 1: After block {#step-1}
@@ -1270,7 +1270,7 @@ Example:
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Simple {#step-0}
+#### Step 1: Simple {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -1559,7 +1559,7 @@ This is content.
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Commit:** message without backticks
 "#;
@@ -1583,7 +1583,7 @@ This is content.
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 Commit: message
 "#;
@@ -1606,7 +1606,7 @@ Commit: message
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Correct format {#step-0}
+#### Step 1: Correct format {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -1629,7 +1629,7 @@ Commit: message
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Commit:** `feat: add feature`
 
@@ -1694,7 +1694,7 @@ Example:
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test Step {#Step-0}
+#### Step 1: Test Step {#Step-1}
 
 **Commit:** `feat: test`
 
@@ -1718,8 +1718,8 @@ Example:
             1,
             "P005 should fire for invalid anchor on matched step header"
         );
-        assert!(p005[0].message.contains("Step-0"));
-        assert!(p005[0].suggestion.as_ref().unwrap().contains("step-0"));
+        assert!(p005[0].message.contains("Step-1"));
+        assert!(p005[0].suggestion.as_ref().unwrap().contains("step-1"));
     }
 
     #[test]
@@ -1734,7 +1734,7 @@ Example:
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Commit:** `feat: test`
 

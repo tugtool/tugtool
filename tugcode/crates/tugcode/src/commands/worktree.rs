@@ -1230,7 +1230,7 @@ mod integration_tests {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Test task

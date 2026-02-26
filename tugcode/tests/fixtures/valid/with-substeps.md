@@ -18,7 +18,7 @@
 ### Phase Overview {#phase-overview}
 
 This plan demonstrates the substep pattern where large steps are broken into
-smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
+smaller, independently committable substeps (e.g., Step 3.1, Step 3.2).
 
 ---
 
@@ -39,7 +39,7 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Bootstrap {#step-0}
+#### Step 1: Bootstrap {#step-1}
 
 **Commit:** `feat: initial setup for substep demo`
 
@@ -64,9 +64,9 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ---
 
-#### Step 1: Simple Step {#step-1}
+#### Step 2: Simple Step {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat: add simple feature`
 
@@ -91,9 +91,9 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ---
 
-#### Step 2: Complex Step with Substeps {#step-2}
+#### Step 3: Complex Step with Substeps {#step-3}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **References:** [D01] Use substeps for large work
 
@@ -108,7 +108,7 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 **Checkpoint:**
 - [ ] All substep checkpoints pass
 
-##### Step 2.1: Foundation {#step-2-1}
+##### Step 3.1: Foundation {#step-3-1}
 
 **Commit:** `feat(core): add foundation layer`
 
@@ -135,9 +135,9 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ---
 
-##### Step 2.2: Implementation {#step-2-2}
+##### Step 3.2: Implementation {#step-3-2}
 
-**Depends on:** #step-2-1
+**Depends on:** #step-3-1
 
 **Commit:** `feat(core): implement main logic`
 
@@ -163,9 +163,9 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ---
 
-##### Step 2.3: Polish {#step-2-3}
+##### Step 3.3: Polish {#step-3-3}
 
-**Depends on:** #step-2-2
+**Depends on:** #step-3-2
 
 **Commit:** `feat(core): add error handling and docs`
 
@@ -192,22 +192,22 @@ smaller, independently committable substeps (e.g., Step 2.1, Step 2.2).
 
 ---
 
-### Substeps 2.1–2.3 Summary {#step-2-summary}
+### Substeps 3.1–3.3 Summary {#step-3-summary}
 
-After completing Steps 2.1–2.3, you will have:
+After completing Steps 3.1–3.3, you will have:
 - Core types and traits
 - Main implementation
 - Error handling and documentation
 
-**Final Step 2 Checkpoint:**
+**Final Step 3 Checkpoint:**
 - `cargo test` passes all tests
 - `cargo doc` generates without warnings
 
 ---
 
-#### Step 3: Final Integration {#step-3}
+#### Step 4: Final Integration {#step-4}
 
-**Depends on:** #step-2
+**Depends on:** #step-3
 
 **Commit:** `feat: integrate all components`
 

@@ -779,7 +779,7 @@ mod tests {
         let plan_dir = temp.path().join(".tugtool");
         std::fs::create_dir_all(&plan_dir).unwrap();
         let plan_path = plan_dir.join("tugplan-test.md");
-        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 0: Test Step {#step-0}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
+        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
         let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();
@@ -802,7 +802,7 @@ mod tests {
         let plan_dir = temp.path().join(".tugtool");
         std::fs::create_dir_all(&plan_dir).unwrap();
         let plan_path = plan_dir.join("tugplan-test.md");
-        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 0: Test Step {#step-0}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
+        std::fs::write(&plan_path, "## Phase 1.0: Test {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Owner | test |\n| Status | active |\n| Last updated | 2026-02-23 |\n\n---\n\n### 1.0.0 Execution Steps {#execution-steps}\n\n#### Step 1: Test Step {#step-1}\n\n**Tasks:**\n- [ ] Test task\n").unwrap();
 
         let mut db = tugtool_core::StateDb::open(&db_path).unwrap();
         let plan_content = std::fs::read_to_string(&plan_path).unwrap();

@@ -408,8 +408,8 @@ mod tests {
     #[test]
     fn test_add_trailers_to_simple_message() {
         let msg = "feat: add feature";
-        let result = add_or_replace_trailers(msg, "step-0", ".tugtool/tugplan-foo.md");
-        assert!(result.contains("Tug-Step: step-0"));
+        let result = add_or_replace_trailers(msg, "step-1", ".tugtool/tugplan-foo.md");
+        assert!(result.contains("Tug-Step: step-1"));
         assert!(result.contains("Tug-Plan: .tugtool/tugplan-foo.md"));
         // Should have blank line separator
         assert!(result.contains("\n\nTug-"));
@@ -426,12 +426,12 @@ mod tests {
 
     #[test]
     fn test_replace_existing_trailers() {
-        let msg = "feat: update\n\nTug-Step: step-0\nTug-Plan: .tugtool/old.md";
-        let result = add_or_replace_trailers(msg, "step-1", ".tugtool/new.md");
-        assert!(result.contains("Tug-Step: step-1"));
+        let msg = "feat: update\n\nTug-Step: step-1\nTug-Plan: .tugtool/old.md";
+        let result = add_or_replace_trailers(msg, "step-2", ".tugtool/new.md");
+        assert!(result.contains("Tug-Step: step-2"));
         assert!(result.contains("Tug-Plan: .tugtool/new.md"));
         // Old values should NOT be present
-        assert!(!result.contains("step-0"));
+        assert!(!result.contains("step-1"));
         assert!(!result.contains("old.md"));
         // Should not duplicate trailer keys
         assert_eq!(result.matches("Tug-Step:").count(), 1);
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_replace_partial_trailers() {
-        let msg = "feat: update\n\nTug-Step: step-0";
+        let msg = "feat: update\n\nTug-Step: step-1";
         let result = add_or_replace_trailers(msg, "step-1", ".tugtool/new.md");
         assert!(result.contains("Tug-Step: step-1"));
         assert!(result.contains("Tug-Plan: .tugtool/new.md"));
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_open_items_incomplete_checklist() {
         let err = tugtool_core::TugError::StateIncompleteChecklist {
-            anchor: "step-0".to_string(),
+            anchor: "step-1".to_string(),
             incomplete_count: 3,
         };
         assert_eq!(
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_open_items_incomplete_substeps() {
         let err = tugtool_core::TugError::StateIncompleteSubsteps {
-            anchor: "step-0".to_string(),
+            anchor: "step-1".to_string(),
             incomplete_count: 1,
         };
         assert_eq!(
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_ownership_violation() {
         let err = tugtool_core::TugError::StateOwnershipViolation {
-            anchor: "step-0".to_string(),
+            anchor: "step-1".to_string(),
             claimed_by: "/tmp/wt1".to_string(),
             worktree: "/tmp/wt2".to_string(),
         };
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn test_classify_state_error_step_not_claimed() {
         let err = tugtool_core::TugError::StateStepNotClaimed {
-            anchor: "step-0".to_string(),
+            anchor: "step-1".to_string(),
             current_status: "pending".to_string(),
         };
         assert_eq!(

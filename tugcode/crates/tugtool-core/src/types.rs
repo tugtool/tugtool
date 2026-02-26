@@ -117,7 +117,7 @@ pub struct Step {
     pub number: String,
     /// Step title
     pub title: String,
-    /// Step anchor (e.g., "step-0", "step-2-1")
+    /// Step anchor (e.g., "step-1", "step-2-1")
     pub anchor: String,
     /// Line number where the step starts
     pub line: usize,

@@ -52,7 +52,7 @@ Measurable success criteria:
 
 ### Execution Steps {#execution-steps}
 
-#### Step 0: Bootstrap {#step-0}
+#### Step 1: Bootstrap {#step-1}
 
 **Commit:** `feat: initial setup`
 
@@ -76,9 +76,9 @@ Measurable success criteria:
 - [ ] cargo build succeeds
 - [x] cargo clippy clean
 
-#### Step 1: Implement API {#step-1}
+#### Step 2: Implement API {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat(api): add REST endpoints`
 

@@ -184,7 +184,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -202,9 +202,9 @@ Test context paragraph.
 
 ---
 
-#### Step 1: Implementation {#step-1}
+#### Step 2: Implementation {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat: implement`
 
@@ -272,7 +272,7 @@ Test context for substep tracking.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -281,21 +281,21 @@ Test context for substep tracking.
 
 ---
 
-#### Step 1: Main Work {#step-1}
+#### Step 2: Main Work {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat: main work`
 
 **Tasks:**
 - [ ] Parent task
 
-##### Step 1.1: Part A {#step-1-1}
+##### Step 2.1: Part A {#step-2-1}
 
 **Tasks:**
 - [ ] Part A task
 
-##### Step 1.2: Part B {#step-1-2}
+##### Step 2.2: Part B {#step-2-2}
 
 **Tasks:**
 - [ ] Part B task
@@ -353,7 +353,7 @@ Test context for concurrent claims.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: First {#step-0}
+#### Step 1: First {#step-1}
 
 **Commit:** `feat: first`
 
@@ -362,7 +362,7 @@ Test context for concurrent claims.
 
 ---
 
-#### Step 1: Second {#step-1}
+#### Step 2: Second {#step-2}
 
 **Commit:** `feat: second`
 
@@ -422,7 +422,7 @@ Test context for commit strict mode.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Commit:** `test: commit strict mode`
 
@@ -491,7 +491,7 @@ Test context for strict completion.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Only Step {#step-0}
+#### Step 1: Only Step {#step-1}
 
 **Commit:** `feat: only step`
 
@@ -555,7 +555,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
     let init_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse init JSON");
     assert_eq!(init_json["status"], "ok");
-    assert_eq!(init_json["data"]["step_count"], 2); // step-0 and step-1
+    assert_eq!(init_json["data"]["step_count"], 2); // step-1 and step-2
 
     // Step 2: Claim a step
     let output = Command::new(tug_binary())
@@ -579,7 +579,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
         serde_json::from_slice(&output.stdout).expect("failed to parse claim JSON");
     assert_eq!(claim_json["status"], "ok");
     assert_eq!(claim_json["data"]["claimed"], true);
-    assert_eq!(claim_json["data"]["anchor"], "step-0");
+    assert_eq!(claim_json["data"]["anchor"], "step-1");
     assert!(claim_json["data"]["lease_expires"].is_string());
 
     // Step 3: Start the claimed step
@@ -587,7 +587,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
         .arg("state")
         .arg("start")
         .arg(".tugtool/tugplan-test-state.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--json")
@@ -604,7 +604,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
     let start_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse start JSON");
     assert_eq!(start_json["status"], "ok");
-    assert_eq!(start_json["data"]["anchor"], "step-0");
+    assert_eq!(start_json["data"]["anchor"], "step-1");
     assert_eq!(start_json["data"]["started"], true);
 
     // Sleep briefly to ensure timestamp changes (now_iso8601 has millisecond precision)
@@ -615,7 +615,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
         .arg("state")
         .arg("heartbeat")
         .arg(".tugtool/tugplan-test-state.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--json")
@@ -632,7 +632,7 @@ fn test_state_claim_start_heartbeat_lifecycle() {
     let heartbeat_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse heartbeat JSON");
     assert_eq!(heartbeat_json["status"], "ok");
-    assert_eq!(heartbeat_json["data"]["anchor"], "step-0");
+    assert_eq!(heartbeat_json["data"]["anchor"], "step-1");
     assert!(heartbeat_json["data"]["lease_expires"].is_string());
 
     // Verify the lease was extended (different from claim lease)
@@ -693,7 +693,7 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("state")
         .arg("start")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
@@ -705,7 +705,7 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("state")
         .arg("update")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--task")
@@ -731,7 +731,7 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("state")
         .arg("artifact")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--kind")
@@ -760,7 +760,7 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("state")
         .arg("update")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--all")
@@ -776,7 +776,7 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("state")
         .arg("complete")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--json")
@@ -797,7 +797,7 @@ fn test_state_update_artifact_complete_lifecycle() {
     assert_eq!(complete_json["data"]["forced"], false);
 
     // Step 7: Test force complete on another step
-    // Claim step-1 (depends on step-0 which is now complete)
+    // Claim step-2 (depends on step-1 which is now complete)
     Command::new(tug_binary())
         .arg("state")
         .arg("claim")
@@ -806,25 +806,25 @@ fn test_state_update_artifact_complete_lifecycle() {
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
-        .expect("failed to claim step-1");
+        .expect("failed to claim step-2");
 
     Command::new(tug_binary())
         .arg("state")
         .arg("start")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
+        .arg("step-2")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
-        .expect("failed to start step-1");
+        .expect("failed to start step-2");
 
     // Force complete without completing checklist items
     let output = Command::new(tug_binary())
         .arg("state")
         .arg("complete")
         .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
+        .arg("step-2")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--force")
@@ -904,7 +904,7 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         show_json["data"]["plan"]["steps"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(show_json["data"]["plan"]["steps"][0]["anchor"], "step-0");
+    assert_eq!(show_json["data"]["plan"]["steps"][0]["anchor"], "step-1");
     assert_eq!(show_json["data"]["plan"]["steps"][0]["status"], "pending");
 
     // Step 3: Ready steps (verify categorization)
@@ -927,10 +927,10 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         serde_json::from_slice(&output.stdout).expect("failed to parse ready JSON");
     assert_eq!(ready_json["status"], "ok");
     assert_eq!(ready_json["data"]["ready"].as_array().unwrap().len(), 1);
-    assert_eq!(ready_json["data"]["ready"][0]["anchor"], "step-0");
-    assert_eq!(ready_json["data"]["blocked"].as_array().unwrap().len(), 1); // step-1 blocked by step-0
+    assert_eq!(ready_json["data"]["ready"][0]["anchor"], "step-1");
+    assert_eq!(ready_json["data"]["blocked"].as_array().unwrap().len(), 1); // step-2 blocked by step-1
 
-    // Step 4: Claim and start step-0
+    // Step 4: Claim and start step-1
     Command::new(tug_binary())
         .arg("state")
         .arg("claim")
@@ -945,19 +945,19 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         .arg("state")
         .arg("start")
         .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
         .expect("failed to start");
 
-    // Step 5: Update and complete step-0
+    // Step 5: Update and complete step-1
     Command::new(tug_binary())
         .arg("state")
         .arg("update")
         .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .arg("--all")
@@ -970,14 +970,14 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         .arg("state")
         .arg("complete")
         .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-0")
+        .arg("step-1")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
         .expect("failed to complete");
 
-    // Step 6: Show again (verify step-0 completed)
+    // Step 6: Show again (verify step-1 completed)
     let output = Command::new(tug_binary())
         .arg("state")
         .arg("show")
@@ -992,7 +992,7 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         serde_json::from_slice(&output.stdout).expect("failed to parse show JSON");
     assert_eq!(show_json["data"]["plan"]["steps"][0]["status"], "completed");
 
-    // Step 7: Claim and start step-1
+    // Step 7: Claim and start step-2
     Command::new(tug_binary())
         .arg("state")
         .arg("claim")
@@ -1001,25 +1001,25 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
-        .expect("failed to claim step-1");
+        .expect("failed to claim step-2");
 
     Command::new(tug_binary())
         .arg("state")
         .arg("start")
         .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-1")
+        .arg("step-2")
         .arg("--worktree")
         .arg("/tmp/test-worktree")
         .current_dir(temp.path())
         .output()
-        .expect("failed to start step-1");
+        .expect("failed to start step-2");
 
-    // Step 8: Reset step-1
+    // Step 8: Reset step-2
     let output = Command::new(tug_binary())
         .arg("state")
         .arg("reset")
         .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-1")
+        .arg("step-2")
         .arg("--json")
         .current_dir(temp.path())
         .output()
@@ -1036,7 +1036,7 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
     assert_eq!(reset_json["status"], "ok");
     assert_eq!(reset_json["data"]["reset"], true);
 
-    // Step 9: Show again (verify step-1 is pending after reset)
+    // Step 9: Show again (verify step-2 is pending after reset)
     let output = Command::new(tug_binary())
         .arg("state")
         .arg("show")
@@ -1071,7 +1071,7 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
     let reconcile_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse reconcile JSON");
     assert_eq!(reconcile_json["status"], "ok");
-    // reconciled_count might be 0 or non-zero depending on whether step-0 already has commit_hash
+    // reconciled_count might be 0 or non-zero depending on whether step-1 already has commit_hash
     // Just verify the structure exists
     assert!(reconcile_json["data"]["reconciled_count"].is_number());
     assert!(reconcile_json["data"]["skipped_count"].is_number());
@@ -1082,61 +1082,6 @@ fn test_full_lifecycle_plan_done() {
     let temp = setup_test_git_repo();
     init_plan_in_repo(&temp, "lifecycle-done", MINIMAL_PLAN);
     let plan_path = ".tugtool/tugplan-lifecycle-done.md";
-
-    // Complete step-0
-    Command::new(tug_binary())
-        .args(["state", "claim", plan_path, "--worktree", "/tmp/wt-a"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to claim step-0");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "start",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start step-0");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-            "--all",
-            "completed",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to update step-0");
-
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-            "--json",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to complete step-0");
-
-    assert!(output.status.success());
-    let complete_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
-    assert_eq!(complete_json["data"]["completed"], true);
-    assert_eq!(complete_json["data"]["all_steps_completed"], false);
 
     // Complete step-1
     Command::new(tug_binary())
@@ -1191,6 +1136,61 @@ fn test_full_lifecycle_plan_done() {
     let complete_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
     assert_eq!(complete_json["data"]["completed"], true);
+    assert_eq!(complete_json["data"]["all_steps_completed"], false);
+
+    // Complete step-2
+    Command::new(tug_binary())
+        .args(["state", "claim", plan_path, "--worktree", "/tmp/wt-a"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-2");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-2");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+            "--all",
+            "completed",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to update step-2");
+
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to complete step-2");
+
+    assert!(output.status.success());
+    let complete_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
+    assert_eq!(complete_json["data"]["completed"], true);
     assert_eq!(complete_json["data"]["all_steps_completed"], true);
 
     // Verify plan status is done
@@ -1212,7 +1212,7 @@ fn test_multi_step_dependency_ordering() {
     init_plan_in_repo(&temp, "deps", MINIMAL_PLAN);
     let plan_path = ".tugtool/tugplan-deps.md";
 
-    // Ready should show step-0 ready, step-1 blocked
+    // Ready should show step-1 ready, step-2 blocked
     let output = Command::new(tug_binary())
         .args(["state", "ready", plan_path, "--json"])
         .current_dir(temp.path())
@@ -1225,7 +1225,7 @@ fn test_multi_step_dependency_ordering() {
     assert_eq!(ready_json["data"]["ready"].as_array().unwrap().len(), 1);
     assert_eq!(ready_json["data"]["blocked"].as_array().unwrap().len(), 1);
 
-    // Claim should return step-0 (step-1 is blocked)
+    // Claim should return step-1 (step-2 is blocked)
     let output = Command::new(tug_binary())
         .args([
             "state",
@@ -1238,55 +1238,6 @@ fn test_multi_step_dependency_ordering() {
         .current_dir(temp.path())
         .output()
         .expect("failed to claim");
-
-    assert!(output.status.success());
-    let claim_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse claim JSON");
-    assert_eq!(claim_json["data"]["anchor"], "step-0");
-
-    // Complete step-0
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "start",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start step-0");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-            "--force",
-            "--reason",
-            "test",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to complete step-0");
-
-    // Claim should now return step-1
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "claim",
-            plan_path,
-            "--worktree",
-            "/tmp/wt-a",
-            "--json",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to claim step-1");
 
     assert!(output.status.success());
     let claim_json: serde_json::Value =
@@ -1323,6 +1274,55 @@ fn test_multi_step_dependency_ordering() {
         .output()
         .expect("failed to complete step-1");
 
+    // Claim should now return step-2
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "claim",
+            plan_path,
+            "--worktree",
+            "/tmp/wt-a",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-2");
+
+    assert!(output.status.success());
+    let claim_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse claim JSON");
+    assert_eq!(claim_json["data"]["anchor"], "step-2");
+
+    // Complete step-2
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-2");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+            "--force",
+            "--reason",
+            "test",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to complete step-2");
+
     // Claim should now fail (all steps complete)
     let output = Command::new(tug_binary())
         .args([
@@ -1351,43 +1351,7 @@ fn test_substep_tracking() {
     init_plan_in_repo(&temp, "substeps", PLAN_WITH_SUBSTEPS);
     let plan_path = ".tugtool/tugplan-substeps.md";
 
-    // Complete step-0 first
-    Command::new(tug_binary())
-        .args(["state", "claim", plan_path, "--worktree", "/tmp/wt-a"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to claim step-0");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "start",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start step-0");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            plan_path,
-            "step-0",
-            "--worktree",
-            "/tmp/wt-a",
-            "--force",
-            "--reason",
-            "setup complete",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to complete step-0");
-
-    // Claim step-1 (parent with substeps)
+    // Complete step-1 first
     Command::new(tug_binary())
         .args(["state", "claim", plan_path, "--worktree", "/tmp/wt-a"])
         .current_dir(temp.path())
@@ -1407,50 +1371,7 @@ fn test_substep_tracking() {
         .output()
         .expect("failed to start step-1");
 
-    // Start and complete substep step-1-1
     Command::new(tug_binary())
-        .args([
-            "state",
-            "start",
-            plan_path,
-            "step-1-1",
-            "--worktree",
-            "/tmp/wt-a",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start step-1-1");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1-1",
-            "--worktree",
-            "/tmp/wt-a",
-            "--all",
-            "completed",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to update step-1-1");
-
-    Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            plan_path,
-            "step-1-1",
-            "--worktree",
-            "/tmp/wt-a",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to complete step-1-1");
-
-    // Attempt to complete parent step-1 (should fail - step-1-2 incomplete)
-    let output = Command::new(tug_binary())
         .args([
             "state",
             "complete",
@@ -1458,36 +1379,115 @@ fn test_substep_tracking() {
             "step-1",
             "--worktree",
             "/tmp/wt-a",
+            "--force",
+            "--reason",
+            "setup complete",
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run complete on step-1");
+        .expect("failed to complete step-1");
+
+    // Claim step-2 (parent with substeps)
+    Command::new(tug_binary())
+        .args(["state", "claim", plan_path, "--worktree", "/tmp/wt-a"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-2");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-2");
+
+    // Start and complete substep step-2-1
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            plan_path,
+            "step-2-1",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-2-1");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "update",
+            plan_path,
+            "step-2-1",
+            "--worktree",
+            "/tmp/wt-a",
+            "--all",
+            "completed",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to update step-2-1");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            plan_path,
+            "step-2-1",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to complete step-2-1");
+
+    // Attempt to complete parent step-2 (should fail - step-2-2 incomplete)
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            plan_path,
+            "step-2",
+            "--worktree",
+            "/tmp/wt-a",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run complete on step-2");
 
     assert!(
         !output.status.success(),
         "completing parent with incomplete substeps should fail"
     );
 
-    // Start and complete substep step-1-2
+    // Start and complete substep step-2-2
     Command::new(tug_binary())
         .args([
             "state",
             "start",
             plan_path,
-            "step-1-2",
+            "step-2-2",
             "--worktree",
             "/tmp/wt-a",
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to start step-1-2");
+        .expect("failed to start step-2-2");
 
     Command::new(tug_binary())
         .args([
             "state",
             "update",
             plan_path,
-            "step-1-2",
+            "step-2-2",
             "--worktree",
             "/tmp/wt-a",
             "--all",
@@ -1495,28 +1495,28 @@ fn test_substep_tracking() {
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to update step-1-2");
+        .expect("failed to update step-2-2");
 
     Command::new(tug_binary())
         .args([
             "state",
             "complete",
             plan_path,
-            "step-1-2",
+            "step-2-2",
             "--worktree",
             "/tmp/wt-a",
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to complete step-1-2");
+        .expect("failed to complete step-2-2");
 
-    // Now complete parent step-1 (should succeed)
+    // Now complete parent step-2 (should succeed)
     Command::new(tug_binary())
         .args([
             "state",
             "update",
             plan_path,
-            "step-1",
+            "step-2",
             "--worktree",
             "/tmp/wt-a",
             "--all",
@@ -1524,21 +1524,21 @@ fn test_substep_tracking() {
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to update step-1");
+        .expect("failed to update step-2");
 
     let output = Command::new(tug_binary())
         .args([
             "state",
             "complete",
             plan_path,
-            "step-1",
+            "step-2",
             "--worktree",
             "/tmp/wt-a",
             "--json",
         ])
         .current_dir(temp.path())
         .output()
-        .expect("failed to complete step-1");
+        .expect("failed to complete step-2");
 
     assert!(
         output.status.success(),
@@ -1560,19 +1560,19 @@ fn test_substep_tracking() {
     let steps = show_json["data"]["plan"]["steps"].as_array().unwrap();
     let step_1 = steps
         .iter()
-        .find(|s| s["anchor"] == "step-1")
-        .expect("step-1 not found");
+        .find(|s| s["anchor"] == "step-2")
+        .expect("step-2 not found");
 
     // Substeps are nested inside the parent step
     let substeps = step_1["substeps"].as_array().unwrap();
     let step_1_1 = substeps
         .iter()
-        .find(|s| s["anchor"] == "step-1-1")
-        .expect("step-1-1 not found in substeps");
+        .find(|s| s["anchor"] == "step-2-1")
+        .expect("step-2-1 not found in substeps");
     let step_1_2 = substeps
         .iter()
-        .find(|s| s["anchor"] == "step-1-2")
-        .expect("step-1-2 not found in substeps");
+        .find(|s| s["anchor"] == "step-2-2")
+        .expect("step-2-2 not found in substeps");
 
     assert_eq!(step_1_1["status"], "completed");
     assert_eq!(step_1_2["status"], "completed");
@@ -1603,7 +1603,7 @@ fn test_lease_expiry_and_reclaim() {
     assert!(output.status.success());
     let claim_json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("failed to parse claim JSON");
-    assert_eq!(claim_json["data"]["anchor"], "step-0");
+    assert_eq!(claim_json["data"]["anchor"], "step-1");
     let lease_expires = claim_json["data"]["lease_expires"].as_str().unwrap();
     eprintln!("Original lease expires at: {}", lease_expires);
 
@@ -1662,7 +1662,7 @@ fn test_lease_expiry_and_reclaim() {
     // The claim might not succeed if there's a plan hash mismatch or other issue
     // For now, just verify the test doesn't crash and skip the strict assertion
     if reclaim_json["data"]["claimed"] == true {
-        assert_eq!(reclaim_json["data"]["anchor"], "step-0");
+        assert_eq!(reclaim_json["data"]["anchor"], "step-1");
         assert_eq!(reclaim_json["data"]["reclaimed"], true);
     } else {
         // If claim failed, skip the rest of the test
@@ -1676,7 +1676,7 @@ fn test_lease_expiry_and_reclaim() {
             "state",
             "start",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt-b",
         ])
@@ -1709,7 +1709,7 @@ fn test_strict_completion_rejection() {
             "state",
             "start",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt-a",
         ])
@@ -1723,7 +1723,7 @@ fn test_strict_completion_rejection() {
             "state",
             "complete",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt-a",
         ])
@@ -1804,7 +1804,7 @@ fn test_ownership_enforcement() {
             "state",
             "start",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt-b",
         ])
@@ -1910,7 +1910,7 @@ fn test_reconcile_from_git_trailers() {
     let plan_path = ".tugtool/tugplan-recon.md";
 
     // Create a git commit with trailers
-    let commit_msg = format!("feat: step-0\n\nTug-Step: step-0\nTug-Plan: {}", plan_path);
+    let commit_msg = format!("feat: step-1\n\nTug-Step: step-1\nTug-Plan: {}", plan_path);
 
     let output = Command::new("git")
         .args(["commit", "--allow-empty", "-m", &commit_msg])
@@ -1942,7 +1942,7 @@ fn test_reconcile_from_git_trailers() {
     assert_eq!(reconcile_json["status"], "ok");
     assert_eq!(reconcile_json["data"]["reconciled_count"], 1);
 
-    // Verify step-0 is completed
+    // Verify step-1 is completed
     let output = Command::new(tug_binary())
         .args(["state", "show", plan_path, "--json"])
         .current_dir(temp.path())
@@ -1975,7 +1975,7 @@ fn test_batch_update_success() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -1992,7 +1992,7 @@ fn test_batch_update_success() {
     let plan_path = ".tugtool/tugplan-test.md";
 
     // Claim and start the step
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Batch update via stdin
     let batch_json = r#"[
@@ -2006,7 +2006,7 @@ fn test_batch_update_success() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2062,7 +2062,7 @@ fn test_batch_update_invalid_kind() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2071,7 +2071,7 @@ fn test_batch_update_invalid_kind() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     let batch_json = r#"[{"kind": "invalid_kind", "ordinal": 0, "status": "completed"}]"#;
 
@@ -2080,7 +2080,7 @@ fn test_batch_update_invalid_kind() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2124,7 +2124,7 @@ fn test_batch_update_out_of_range_ordinal() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2133,7 +2133,7 @@ fn test_batch_update_out_of_range_ordinal() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     let batch_json = r#"[{"kind": "task", "ordinal": 99, "status": "completed"}]"#;
 
@@ -2142,7 +2142,7 @@ fn test_batch_update_out_of_range_ordinal() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2186,7 +2186,7 @@ fn test_batch_update_duplicate_entries() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2195,7 +2195,7 @@ fn test_batch_update_duplicate_entries() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}, {"kind": "task", "ordinal": 0, "status": "completed"}]"#;
 
@@ -2204,7 +2204,7 @@ fn test_batch_update_duplicate_entries() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2248,7 +2248,7 @@ fn test_batch_update_open_status_rejected() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2257,7 +2257,7 @@ fn test_batch_update_open_status_rejected() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "open"}]"#;
 
@@ -2266,7 +2266,7 @@ fn test_batch_update_open_status_rejected() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2310,7 +2310,7 @@ fn test_batch_update_idempotent() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2319,7 +2319,7 @@ fn test_batch_update_idempotent() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // First update to completed
     let batch_json1 = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}]"#;
@@ -2329,7 +2329,7 @@ fn test_batch_update_idempotent() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2359,7 +2359,7 @@ fn test_batch_update_idempotent() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2401,7 +2401,7 @@ fn test_batch_update_deferred_requires_reason() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2410,7 +2410,7 @@ fn test_batch_update_deferred_requires_reason() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Deferred without reason
     let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "deferred"}]"#;
@@ -2420,7 +2420,7 @@ fn test_batch_update_deferred_requires_reason() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2464,7 +2464,7 @@ fn test_batch_update_conflict_with_individual_flags() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2473,7 +2473,7 @@ fn test_batch_update_conflict_with_individual_flags() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Try to use both --batch and --task
     let output = Command::new(tug_binary())
@@ -2481,7 +2481,7 @@ fn test_batch_update_conflict_with_individual_flags() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2517,7 +2517,7 @@ fn test_per_item_deferred_requires_reason() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2526,7 +2526,7 @@ fn test_per_item_deferred_requires_reason() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Try per-item deferred update (should fail)
     let output = Command::new(tug_binary())
@@ -2534,7 +2534,7 @@ fn test_per_item_deferred_requires_reason() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -2569,7 +2569,7 @@ fn test_per_item_open_requires_allow_reopen() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2578,7 +2578,7 @@ fn test_per_item_open_requires_allow_reopen() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // First mark as completed
     let output = Command::new(tug_binary())
@@ -2586,7 +2586,7 @@ fn test_per_item_open_requires_allow_reopen() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -2603,7 +2603,7 @@ fn test_per_item_open_requires_allow_reopen() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -2624,7 +2624,7 @@ fn test_per_item_open_requires_allow_reopen() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -2664,7 +2664,7 @@ fn test_state_show_summary_default() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2705,7 +2705,7 @@ fn test_state_show_checklist_mode() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2718,7 +2718,7 @@ fn test_state_show_checklist_mode() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Complete one task
     Command::new(tug_binary())
@@ -2726,7 +2726,7 @@ fn test_state_show_checklist_mode() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -2769,7 +2769,7 @@ fn test_state_show_checklist_deferred_with_reason() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2778,7 +2778,7 @@ fn test_state_show_checklist_deferred_with_reason() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Defer a task with reason
     let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "deferred", "reason": "needs manual review"}]"#;
@@ -2787,7 +2787,7 @@ fn test_state_show_checklist_deferred_with_reason() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--batch",
@@ -2839,7 +2839,7 @@ fn test_state_show_json_includes_items() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2889,7 +2889,7 @@ fn test_display_mode_mutual_exclusivity() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2932,7 +2932,7 @@ fn test_plan_hash_drift_no_warning() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -2973,7 +2973,7 @@ fn test_plan_hash_drift_warning_in_show() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -3019,7 +3019,7 @@ fn test_plan_hash_drift_blocks_update() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -3028,7 +3028,7 @@ fn test_plan_hash_drift_blocks_update() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Modify the plan file after init
     let plan_file = temp.path().join(plan_path);
@@ -3041,7 +3041,7 @@ fn test_plan_hash_drift_blocks_update() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -3076,7 +3076,7 @@ fn test_plan_hash_drift_allow_drift_override() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -3085,7 +3085,7 @@ fn test_plan_hash_drift_allow_drift_override() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Modify the plan file after init
     let plan_file = temp.path().join(plan_path);
@@ -3098,7 +3098,7 @@ fn test_plan_hash_drift_allow_drift_override() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--task",
@@ -3135,7 +3135,7 @@ fn test_plan_hash_drift_blocks_complete() {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task one
@@ -3144,7 +3144,7 @@ fn test_plan_hash_drift_blocks_complete() {
     init_plan_in_repo(&temp, "test", plan_content);
     let plan_path = ".tugtool/tugplan-test.md";
 
-    claim_and_start_step(&temp, plan_path, "step-0", "/tmp/wt");
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
     // Complete all items
     Command::new(tug_binary())
@@ -3152,7 +3152,7 @@ fn test_plan_hash_drift_blocks_complete() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--all",
@@ -3173,7 +3173,7 @@ fn test_plan_hash_drift_blocks_complete() {
             "state",
             "complete",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/wt",
             "--force",
@@ -3228,7 +3228,7 @@ fn test_commit_strict_default_succeeds() {
     claim_and_start_step(
         &temp,
         ".tugtool/tugplan-commit-test.md",
-        "step-0",
+        "step-1",
         "/tmp/test-worktree-commit",
     );
 
@@ -3245,7 +3245,7 @@ fn test_commit_strict_default_succeeds() {
             "state",
             "update",
             ".tugtool/tugplan-commit-test.md",
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/test-worktree-commit",
             "--batch",
@@ -3276,7 +3276,7 @@ fn test_commit_strict_default_succeeds() {
             "state",
             "complete",
             ".tugtool/tugplan-commit-test.md",
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/test-worktree-commit",
             "--force",
@@ -3335,7 +3335,7 @@ fn test_commit_strict_default_warns_on_incomplete() {
     claim_and_start_step(
         &temp,
         ".tugtool/tugplan-commit-incomplete.md",
-        "step-0",
+        "step-1",
         "/tmp/test-worktree-incomplete",
     );
 
@@ -3349,7 +3349,7 @@ fn test_commit_strict_default_warns_on_incomplete() {
             "state",
             "update",
             ".tugtool/tugplan-commit-incomplete.md",
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/test-worktree-incomplete",
             "--batch",
@@ -3379,7 +3379,7 @@ fn test_commit_strict_default_warns_on_incomplete() {
             "state",
             "complete",
             ".tugtool/tugplan-commit-incomplete.md",
-            "step-0",
+            "step-1",
             "--worktree",
             "/tmp/test-worktree-incomplete",
             "--json",
@@ -3435,7 +3435,7 @@ const COMPLETE_REMAINING_PLAN: &str = r#"## Phase 1.0: Complete Remaining Test {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Task zero
@@ -3496,7 +3496,7 @@ fn run_batch_update(
 }
 
 /// Helper: get checklist items for a step from state show JSON.
-/// step_anchor should be the bare anchor without leading '#' (e.g. "step-0").
+/// step_anchor should be the bare anchor without leading '#' (e.g. "step-1").
 fn get_checklist_items(
     temp: &tempfile::TempDir,
     plan_path: &str,
@@ -3534,13 +3534,13 @@ fn test_complete_remaining_empty_array_marks_all_open_completed() {
     let plan_path = ".tugtool/tugplan-complete-remaining.md";
     let worktree = "/tmp/wt-cr-1";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     // Send empty batch with --complete-remaining
     let (success, _stdout, stderr) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         worktree,
         "[]",
         &["--batch", "--complete-remaining"],
@@ -3552,7 +3552,7 @@ fn test_complete_remaining_empty_array_marks_all_open_completed() {
     );
 
     // Verify all items are now completed
-    let items = get_checklist_items(&temp, plan_path, "step-0");
+    let items = get_checklist_items(&temp, plan_path, "step-1");
     for item in &items {
         assert_eq!(
             item["status"].as_str(),
@@ -3573,14 +3573,14 @@ fn test_complete_remaining_deferred_items_preserved() {
     let plan_path = ".tugtool/tugplan-complete-remaining-2.md";
     let worktree = "/tmp/wt-cr-2";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     // Defer task ordinal 1, complete remaining
     let batch_json = r#"[{"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"}]"#;
     let (success, _stdout, stderr) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         worktree,
         batch_json,
         &["--batch", "--complete-remaining"],
@@ -3592,7 +3592,7 @@ fn test_complete_remaining_deferred_items_preserved() {
     );
 
     // Verify: task ordinal 1 is deferred, all others are completed
-    let items = get_checklist_items(&temp, plan_path, "step-0");
+    let items = get_checklist_items(&temp, plan_path, "step-1");
     for item in &items {
         let kind = item["kind"].as_str().unwrap_or("");
         let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
@@ -3622,14 +3622,14 @@ fn test_complete_remaining_deferred_only_batch_orchestrator_path() {
     let plan_path = ".tugtool/tugplan-complete-remaining-3.md";
     let worktree = "/tmp/wt-cr-3";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     // Reviewer marked checkpoint 0 as deferred (non-PASS), orchestrator sends only that
     let batch_json = r#"[{"kind": "checkpoint", "ordinal": 0, "status": "deferred", "reason": "checkpoint FAIL: tests did not pass"}]"#;
     let (success, _stdout, stderr) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         worktree,
         batch_json,
         &["--batch", "--complete-remaining"],
@@ -3641,7 +3641,7 @@ fn test_complete_remaining_deferred_only_batch_orchestrator_path() {
     );
 
     // Verify: checkpoint 0 is deferred, all tasks and tests and checkpoint 1 are completed
-    let items = get_checklist_items(&temp, plan_path, "step-0");
+    let items = get_checklist_items(&temp, plan_path, "step-1");
     for item in &items {
         let kind = item["kind"].as_str().unwrap_or("");
         let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
@@ -3670,10 +3670,10 @@ fn test_empty_array_without_complete_remaining_still_errors() {
     let plan_path = ".tugtool/tugplan-complete-remaining-4.md";
     let worktree = "/tmp/wt-cr-4";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     let (success, _stdout, stderr) =
-        run_batch_update(&temp, plan_path, "step-0", worktree, "[]", &["--batch"]);
+        run_batch_update(&temp, plan_path, "step-1", worktree, "[]", &["--batch"]);
     assert!(
         !success,
         "empty array without --complete-remaining should fail"
@@ -3693,7 +3693,7 @@ fn test_complete_remaining_without_batch_rejected_by_clap() {
     let plan_path = ".tugtool/tugplan-complete-remaining-5.md";
     let worktree = "/tmp/wt-cr-5";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     // Try --complete-remaining without --batch (using --all-tasks to satisfy "at least one update" requirement)
     // Note: clap's `requires = "batch"` means --complete-remaining requires --batch to be present
@@ -3702,7 +3702,7 @@ fn test_complete_remaining_without_batch_rejected_by_clap() {
             "state",
             "update",
             plan_path,
-            "step-0",
+            "step-1",
             "--worktree",
             worktree,
             "--complete-remaining",
@@ -3733,13 +3733,13 @@ fn test_complete_remaining_with_no_open_items_is_idempotent() {
     let plan_path = ".tugtool/tugplan-complete-remaining-6.md";
     let worktree = "/tmp/wt-cr-6";
 
-    claim_and_start_step(&temp, plan_path, "step-0", worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
     // First: complete all items
     let (success, _stdout, stderr) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         worktree,
         "[]",
         &["--batch", "--complete-remaining"],
@@ -3754,7 +3754,7 @@ fn test_complete_remaining_with_no_open_items_is_idempotent() {
     let (success2, _stdout2, stderr2) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         worktree,
         "[]",
         &["--batch", "--complete-remaining"],
@@ -3775,13 +3775,13 @@ fn test_complete_remaining_respects_ownership_check() {
     let correct_worktree = "/tmp/wt-cr-7-correct";
     let wrong_worktree = "/tmp/wt-cr-7-wrong";
 
-    claim_and_start_step(&temp, plan_path, "step-0", correct_worktree);
+    claim_and_start_step(&temp, plan_path, "step-1", correct_worktree);
 
     // Try --complete-remaining with wrong worktree
     let (success, _stdout, stderr) = run_batch_update(
         &temp,
         plan_path,
-        "step-0",
+        "step-1",
         wrong_worktree,
         "[]",
         &["--batch", "--complete-remaining"],

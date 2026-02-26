@@ -2569,7 +2569,7 @@ mod tests {
                  VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
                 rusqlite::params![
                     "test-plan.md",
-                    "step-1",
+                    "step-2",
                     Option::<String>::None,
                     0,
                     "Test Step"
@@ -2581,14 +2581,14 @@ mod tests {
             conn.execute(
                 "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
                  VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
-                rusqlite::params!["test-plan.md", "step-1", "checklist", 0, "Test item 1"],
+                rusqlite::params!["test-plan.md", "step-2", "checklist", 0, "Test item 1"],
             )
             .unwrap();
 
             conn.execute(
                 "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status)
                  VALUES (?1, ?2, ?3, ?4, ?5, 'completed')",
-                rusqlite::params!["test-plan.md", "step-1", "checklist", 1, "Test item 2"],
+                rusqlite::params!["test-plan.md", "step-2", "checklist", 1, "Test item 2"],
             )
             .unwrap();
         }
@@ -2609,7 +2609,7 @@ mod tests {
         // Verify the plan has steps
         assert_eq!(plan_state.steps.len(), 1);
         let step = &plan_state.steps[0];
-        assert_eq!(step.anchor, "step-1");
+        assert_eq!(step.anchor, "step-2");
 
         // Verify checklist items are present in the plan state (this proves
         // show_plan's checklist query worked after migration)
@@ -2676,7 +2676,7 @@ mod tests {
 
         // Complete in strict mode should succeed
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -2697,7 +2697,7 @@ mod tests {
         // Leave test item as 'open'
 
         // Strict mode should fail because one item is still open
-        let result = db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None);
+        let result = db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2717,8 +2717,8 @@ mod tests {
             phase_title: Some("Test Phase".to_string()),
             steps: vec![
                 Step {
-                    anchor: "step-0".to_string(),
-                    title: "Step Zero".to_string(),
+                    anchor: "step-1".to_string(),
+                    title: "Step Three".to_string(),
                     tasks: vec![Checkpoint {
                         checked: false,
                         text: "Task 1".to_string(),
@@ -2737,9 +2737,9 @@ mod tests {
                     ..Default::default()
                 },
                 Step {
-                    anchor: "step-1".to_string(),
-                    title: "Step One".to_string(),
-                    depends_on: vec!["step-0".to_string()],
+                    anchor: "step-2".to_string(),
+                    title: "Step Three".to_string(),
+                    depends_on: vec!["step-1".to_string()],
                     tasks: vec![],
                     tests: vec![],
                     checkpoints: vec![Checkpoint {
@@ -2750,7 +2750,7 @@ mod tests {
                     }],
                     substeps: vec![
                         Substep {
-                            anchor: "step-1-1".to_string(),
+                            anchor: "step-2-1".to_string(),
                             title: "Substep 1.1".to_string(),
                             depends_on: vec![],
                             tasks: vec![
@@ -2772,9 +2772,9 @@ mod tests {
                             ..Default::default()
                         },
                         Substep {
-                            anchor: "step-1-2".to_string(),
+                            anchor: "step-2-2".to_string(),
                             title: "Substep 1.2".to_string(),
-                            depends_on: vec!["step-1-1".to_string()],
+                            depends_on: vec!["step-2-1".to_string()],
                             tasks: vec![],
                             tests: vec![Checkpoint {
                                 checked: false,
@@ -2789,9 +2789,9 @@ mod tests {
                     ..Default::default()
                 },
                 Step {
-                    anchor: "step-2".to_string(),
-                    title: "Step Two".to_string(),
-                    depends_on: vec!["step-1".to_string()],
+                    anchor: "step-3".to_string(),
+                    title: "Step Three".to_string(),
+                    depends_on: vec!["step-2".to_string()],
                     tasks: vec![],
                     tests: vec![],
                     checkpoints: vec![],
@@ -2815,9 +2815,9 @@ mod tests {
             .unwrap();
 
         assert!(!result.already_initialized);
-        assert_eq!(result.step_count, 3); // step-0, step-1, step-2
-        assert_eq!(result.substep_count, 2); // step-1-1, step-1-2
-        assert_eq!(result.dep_count, 3); // step-1->step-0, step-1-2->step-1-1, step-2->step-1
+        assert_eq!(result.step_count, 3); // step-1, step-2, step-3
+        assert_eq!(result.substep_count, 2); // step-2-1, step-2-2
+        assert_eq!(result.dep_count, 3); // step-2->step-1, step-2-2->step-2-1, step-3->step-2
         assert_eq!(result.checklist_count, 6); // task1, test1, check1, sub-task1, sub-task2, sub-test
     }
 
@@ -2868,11 +2868,11 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                ("step-0".to_string(), 0),
-                ("step-1".to_string(), 1),
-                ("step-1-1".to_string(), 2),
-                ("step-1-2".to_string(), 3),
-                ("step-2".to_string(), 4),
+                ("step-1".to_string(), 0),
+                ("step-2".to_string(), 1),
+                ("step-2-1".to_string(), 2),
+                ("step-2-2".to_string(), 3),
+                ("step-3".to_string(), 4),
             ]
         );
     }
@@ -2899,7 +2899,7 @@ mod tests {
 
         match result {
             ClaimResult::Claimed { anchor, index, .. } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert_eq!(index, 0);
             }
             _ => panic!("Expected Claimed, got: {:?}", result),
@@ -2916,7 +2916,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0
+        // Claim step-1
         let result = db
             .claim_step(
                 ".tugtool/tugplan-test.md",
@@ -2928,8 +2928,8 @@ mod tests {
             .unwrap();
         assert!(matches!(result, ClaimResult::Claimed { .. }));
 
-        // Try to claim again - step-1 depends on step-0 which is still claimed
-        // step-2 depends on step-1, so neither should be available
+        // Try to claim again - step-2 depends on step-1 which is still claimed
+        // step-3 depends on step-2, so neither should be available
         let result2 = db
             .claim_step(
                 ".tugtool/tugplan-test.md",
@@ -2942,7 +2942,7 @@ mod tests {
 
         match result2 {
             ClaimResult::NoReadySteps { blocked, .. } => {
-                // step-0 is claimed (not completed), step-1 depends on step-0, step-2 depends on step-1
+                // step-1 is claimed (not completed), step-2 depends on step-1, step-3 depends on step-2
                 // So all 3 remaining steps are blocked
                 assert_eq!(blocked, 3);
             }
@@ -2960,7 +2960,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0 as wt-a
+        // Claim step-1 as wt-a
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -2973,7 +2973,7 @@ mod tests {
         // Manually set lease to expired (past timestamp)
         db.conn
             .execute(
-                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-0'",
+                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-1'",
                 [],
             )
             .unwrap();
@@ -2993,7 +2993,7 @@ mod tests {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
             } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert!(reclaimed);
             }
             _ => panic!("Expected Claimed with reclaimed=true"),
@@ -3003,7 +3003,7 @@ mod tests {
         let claimed_by: String = db
             .conn
             .query_row(
-                "SELECT claimed_by FROM steps WHERE plan_path = '.tugtool/tugplan-test.md' AND anchor = 'step-0'",
+                "SELECT claimed_by FROM steps WHERE plan_path = '.tugtool/tugplan-test.md' AND anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3021,15 +3021,15 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Complete step-0 so step-1 can be claimed
+        // Complete step-1 so step-2 can be claimed
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-0'",
+                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
-        // Claim step-1 (which has substeps)
+        // Claim step-2 (which has substeps)
         let result = db
             .claim_step(
                 ".tugtool/tugplan-test.md",
@@ -3039,41 +3039,41 @@ mod tests {
                 false,
             )
             .unwrap();
-        // Verify we got step-1
+        // Verify we got step-2
         match result {
             ClaimResult::Claimed { anchor, .. } => {
-                assert_eq!(anchor, "step-1");
+                assert_eq!(anchor, "step-2");
             }
-            _ => panic!("Expected to claim step-1"),
+            _ => panic!("Expected to claim step-2"),
         }
 
-        // Mark substep step-1-1 as completed
+        // Mark substep step-2-1 as completed
         db.conn
             .execute(
                 "UPDATE steps SET status = 'completed', completed_at = '2024-01-01T00:00:00.000Z'
-                 WHERE anchor = 'step-1-1'",
+                 WHERE anchor = 'step-2-1'",
                 [],
             )
             .unwrap();
 
-        // Mark one checklist item of step-1-1 as done
+        // Mark one checklist item of step-2-1 as done
         db.conn
             .execute(
                 "UPDATE checklist_items SET status = 'done', updated_at = '2024-01-01T00:00:00.000Z'
-                 WHERE step_anchor = 'step-1-1' AND kind = 'task' AND ordinal = 0",
+                 WHERE step_anchor = 'step-2-1' AND kind = 'task' AND ordinal = 0",
                 [],
             )
             .unwrap();
 
-        // Expire the lease on step-1
+        // Expire the lease on step-2
         db.conn
             .execute(
-                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-1'",
+                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-2'",
                 [],
             )
             .unwrap();
 
-        // Reclaim step-1 as wt-b
+        // Reclaim step-2 as wt-b
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-b",
@@ -3087,7 +3087,7 @@ mod tests {
         let substep_status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-1-1'",
+                "SELECT status FROM steps WHERE anchor = 'step-2-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3098,18 +3098,18 @@ mod tests {
         let item_status: String = db
             .conn
             .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1-1' AND kind = 'task' AND ordinal = 0",
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-2-1' AND kind = 'task' AND ordinal = 0",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
         assert_eq!(item_status, "done");
 
-        // Verify non-completed substep (step-1-2) was reclaimed
+        // Verify non-completed substep (step-2-2) was reclaimed
         let substep2_claimed: String = db
             .conn
             .query_row(
-                "SELECT claimed_by FROM steps WHERE anchor = 'step-1-2'",
+                "SELECT claimed_by FROM steps WHERE anchor = 'step-2-2'",
                 [],
                 |row| row.get(0),
             )
@@ -3185,7 +3185,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0
+        // Claim step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3196,14 +3196,14 @@ mod tests {
         .unwrap();
 
         // Start it
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a");
+        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a");
         assert!(result.is_ok());
 
         // Verify status is now in_progress
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                "SELECT status FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3221,7 +3221,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0 as wt-a
+        // Claim step-1 as wt-a
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3232,7 +3232,7 @@ mod tests {
         .unwrap();
 
         // Try to start as wt-b
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-b");
+        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-b");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3252,7 +3252,7 @@ mod tests {
             .unwrap();
 
         // Try to start without claiming
-        let result = db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a");
+        let result = db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a");
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3271,7 +3271,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0
+        // Claim and start step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3280,14 +3280,14 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
         // Get original lease
         let original_lease: String = db
             .conn
             .query_row(
-                "SELECT lease_expires_at FROM steps WHERE anchor = 'step-0'",
+                "SELECT lease_expires_at FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3298,7 +3298,7 @@ mod tests {
 
         // Send heartbeat
         let new_lease = db
-            .heartbeat_step(".tugtool/tugplan-test.md", "step-0", "wt-a", 7200)
+            .heartbeat_step(".tugtool/tugplan-test.md", "step-1", "wt-a", 7200)
             .unwrap();
 
         // Verify lease was extended (new lease should be different from original)
@@ -3308,7 +3308,7 @@ mod tests {
         let db_lease: String = db
             .conn
             .query_row(
-                "SELECT lease_expires_at FROM steps WHERE anchor = 'step-0'",
+                "SELECT lease_expires_at FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3326,7 +3326,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0 as wt-a
+        // Claim and start step-1 as wt-a
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3335,11 +3335,11 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
         // Try to heartbeat as wt-b
-        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "step-0", "wt-b", 7200);
+        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "step-1", "wt-b", 7200);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -3348,7 +3348,7 @@ mod tests {
         }
     }
 
-    // Helper: setup a test with plan initialized and step-0 claimed and started
+    // Helper: setup a test with plan initialized and step-1 claimed and started
     fn setup_claimed_plan() -> (TempDir, StateDb) {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
@@ -3358,7 +3358,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0
+        // Claim and start step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3367,7 +3367,7 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
         (temp, db)
@@ -3385,7 +3385,7 @@ mod tests {
         }];
 
         let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
             .unwrap();
 
         assert_eq!(result.items_updated, 1);
@@ -3394,7 +3394,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1' AND kind = 'task' AND ordinal = 0",
                 [],
                 |row| row.get(0),
             )
@@ -3413,10 +3413,10 @@ mod tests {
         }];
 
         let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
             .unwrap();
 
-        // step-0 has 1 task
+        // step-1 has 1 task
         assert_eq!(result.items_updated, 1);
     }
 
@@ -3430,10 +3430,10 @@ mod tests {
         }];
 
         let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-a", &updates)
+            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
             .unwrap();
 
-        // step-0 has 1 task + 1 test = 2 items
+        // step-1 has 1 task + 1 test = 2 items
         assert_eq!(result.items_updated, 2);
     }
 
@@ -3446,7 +3446,7 @@ mod tests {
             status: "completed".to_string(),
         }];
 
-        let result = db.update_checklist(".tugtool/tugplan-test.md", "step-0", "wt-b", &updates);
+        let result = db.update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-b", &updates);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -3462,7 +3462,7 @@ mod tests {
         let artifact_id = db
             .record_artifact(
                 ".tugtool/tugplan-test.md",
-                "step-0",
+                "step-1",
                 "wt-a",
                 "architect_strategy",
                 "Test strategy summary",
@@ -3475,7 +3475,7 @@ mod tests {
         let count: i32 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-0' AND kind = 'architect_strategy'",
+                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-1' AND kind = 'architect_strategy'",
                 [],
                 |row| row.get(0),
             )
@@ -3493,7 +3493,7 @@ mod tests {
         let artifact_id = db
             .record_artifact(
                 ".tugtool/tugplan-test.md",
-                "step-0",
+                "step-1",
                 "wt-a",
                 "auditor_summary",
                 &long_summary,
@@ -3521,25 +3521,25 @@ mod tests {
         // Mark all checklist items as completed
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
         // Complete in strict mode
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
         assert!(!result.forced);
-        assert!(!result.all_steps_completed); // step-1 and step-2 still pending
+        assert!(!result.all_steps_completed); // step-2 and step-3 still pending
 
         // Verify status is completed
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                "SELECT status FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3552,7 +3552,7 @@ mod tests {
         let (_temp, mut db) = setup_claimed_plan();
 
         // Don't complete checklist items - try to complete step in strict mode
-        let result = db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None);
+        let result = db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -3573,7 +3573,7 @@ mod tests {
         let result = db
             .complete_step(
                 ".tugtool/tugplan-test.md",
-                "step-0",
+                "step-1",
                 "wt-a",
                 true,
                 Some("testing force mode"),
@@ -3587,7 +3587,7 @@ mod tests {
         let completed_count: i32 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM checklist_items WHERE step_anchor = 'step-0' AND status = 'completed'",
+                "SELECT COUNT(*) FROM checklist_items WHERE step_anchor = 'step-1' AND status = 'completed'",
                 [],
                 |row| row.get(0),
             )
@@ -3598,7 +3598,7 @@ mod tests {
         let reason: String = db
             .conn
             .query_row(
-                "SELECT complete_reason FROM steps WHERE anchor = 'step-0'",
+                "SELECT complete_reason FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -3610,22 +3610,22 @@ mod tests {
     fn test_complete_all_steps_sets_plan_done() {
         let (_temp, mut db) = setup_claimed_plan();
 
-        // Complete all checklist items for step-0
+        // Complete all checklist items for step-1
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
-        // Complete step-0
-        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+        // Complete step-1
+        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
-        // Force complete step-1 and step-2 (simulating all steps done)
+        // Force complete step-2 and step-3 (simulating all steps done)
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed' WHERE anchor IN ('step-1', 'step-2')",
+                "UPDATE steps SET status = 'completed' WHERE anchor IN ('step-2', 'step-3')",
                 [],
             )
             .unwrap();
@@ -3646,24 +3646,24 @@ mod tests {
         assert_eq!(plan_status, "active");
 
         // Now manually mark all steps as completed except one, then complete that one properly
-        // Reset: mark step-2 as not completed
+        // Reset: mark step-3 as not completed
         db.conn
             .execute(
-                "UPDATE steps SET status = 'pending' WHERE anchor = 'step-2'",
+                "UPDATE steps SET status = 'pending' WHERE anchor = 'step-3'",
                 [],
             )
             .unwrap();
 
-        // Complete step-0 (already done above)
-        // Manually complete step-1
+        // Complete step-1 (already done above)
+        // Manually complete step-2
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-1'",
+                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-2'",
                 [now_iso8601()],
             )
             .unwrap();
 
-        // Claim, start, and complete step-2 (the last step)
+        // Claim, start, and complete step-3 (the last step)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3672,17 +3672,17 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-3", "wt-a")
             .unwrap();
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-2'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-3'",
                 [],
             )
             .unwrap();
 
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
             .unwrap();
 
         assert!(result.all_steps_completed);
@@ -3742,19 +3742,19 @@ mod tests {
     fn test_complete_step_idempotent_same_worktree() {
         let (_temp, mut db) = setup_claimed_plan();
 
-        // Mark all checklist items as completed and complete step-0 normally
+        // Mark all checklist items as completed and complete step-1 normally
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-1'",
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step again from the same worktree -- must succeed idempotently
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3765,19 +3765,19 @@ mod tests {
     fn test_complete_step_idempotent_different_worktree() {
         let (_temp, mut db) = setup_claimed_plan();
 
-        // Mark all checklist items as completed and complete step-0 from wt-a
+        // Mark all checklist items as completed and complete step-1 from wt-a
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-1'",
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", false, None)
+        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step from a different worktree -- must succeed idempotently
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-0", "wt-b", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-1", "wt-b", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3788,15 +3788,15 @@ mod tests {
     fn test_complete_step_idempotent_all_steps_completed() {
         let (_temp, mut db) = setup_claimed_plan();
 
-        // Force-complete step-0 and step-1 by updating DB directly
+        // Force-complete step-1 and step-2 by updating DB directly
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed', completed_at = '2025-01-01T00:00:00Z' WHERE anchor IN ('step-0', 'step-1')",
+                "UPDATE steps SET status = 'completed', completed_at = '2025-01-01T00:00:00Z' WHERE anchor IN ('step-1', 'step-2')",
                 [],
             )
             .unwrap();
 
-        // Claim and start step-2 (last step), complete all its checklist items, then complete it
+        // Claim and start step-3 (last step), complete all its checklist items, then complete it
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3805,20 +3805,20 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-3", "wt-a")
             .unwrap();
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-2'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-3'",
                 [],
             )
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+        db.complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
             .unwrap();
 
         // Call complete_step on the last step again -- must return all_steps_completed: true
         let result = db
-            .complete_step(".tugtool/tugplan-test.md", "step-2", "wt-a", false, None)
+            .complete_step(".tugtool/tugplan-test.md", "step-3", "wt-a", false, None)
             .unwrap();
 
         assert!(result.completed);
@@ -3830,7 +3830,7 @@ mod tests {
     fn test_complete_step_error_includes_plan_path() {
         let (_temp, mut db) = setup_claimed_plan();
 
-        // Attempt to complete step-0 from a different worktree (wt-b) without
+        // Attempt to complete step-1 from a different worktree (wt-b) without
         // completing checklist items -- this triggers StateStepNotClaimed because
         // the UPDATE matches claimed_by = wt-b but the step is claimed by wt-a.
         // First, force the step into in_progress status so the update path is reached.
@@ -3838,14 +3838,14 @@ mod tests {
         // after marking all checklist items complete.
         db.conn
             .execute(
-                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-0'",
+                "UPDATE checklist_items SET status = 'completed' WHERE step_anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
         let result = db.complete_step(
             ".tugtool/tugplan-test.md",
-            "step-0",
+            "step-1",
             "wt-b", // wrong worktree -- step is claimed by wt-a
             false,
             None,
@@ -3875,11 +3875,11 @@ mod tests {
 
         let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
 
-        assert_eq!(plan_state.steps.len(), 3); // step-0, step-1, step-2
+        assert_eq!(plan_state.steps.len(), 3); // step-1, step-2, step-3
 
-        // step-0 has 1 task and 1 test
+        // step-1 has 1 task and 1 test
         let step0 = &plan_state.steps[0];
-        assert_eq!(step0.anchor, "step-0");
+        assert_eq!(step0.anchor, "step-1");
         assert_eq!(step0.checklist.tasks_total, 1);
         assert_eq!(step0.checklist.tests_total, 1);
         assert_eq!(step0.checklist.checkpoints_total, 0);
@@ -3897,12 +3897,12 @@ mod tests {
 
         let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
 
-        // step-1 has 2 substeps
+        // step-2 has 2 substeps
         let step1 = &plan_state.steps[1];
-        assert_eq!(step1.anchor, "step-1");
+        assert_eq!(step1.anchor, "step-2");
         assert_eq!(step1.substeps.len(), 2);
-        assert_eq!(step1.substeps[0].anchor, "step-1-1");
-        assert_eq!(step1.substeps[1].anchor, "step-1-2");
+        assert_eq!(step1.substeps[0].anchor, "step-2-1");
+        assert_eq!(step1.substeps[1].anchor, "step-2-2");
     }
 
     #[test]
@@ -3915,7 +3915,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim, start, and force-complete step-0
+        // Claim, start, and force-complete step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3924,11 +3924,11 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
         db.complete_step(
             ".tugtool/tugplan-test.md",
-            "step-0",
+            "step-1",
             "wt-a",
             true,
             Some("testing force mode"),
@@ -3956,11 +3956,11 @@ mod tests {
 
         let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
 
-        // Only step-0 should be ready (no dependencies)
+        // Only step-1 should be ready (no dependencies)
         assert_eq!(ready.ready.len(), 1);
-        assert_eq!(ready.ready[0].anchor, "step-0");
+        assert_eq!(ready.ready[0].anchor, "step-1");
 
-        // step-1 and step-2 are blocked by dependencies
+        // step-2 and step-3 are blocked by dependencies
         assert_eq!(ready.blocked.len(), 2);
 
         assert_eq!(ready.completed.len(), 0);
@@ -3977,7 +3977,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0
+        // Claim step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -3990,16 +3990,16 @@ mod tests {
         // Manually expire the lease
         db.conn
             .execute(
-                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-0'",
+                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
         let ready = db.ready_steps(".tugtool/tugplan-test.md").unwrap();
 
-        // step-0 should appear in expired_claim
+        // step-1 should appear in expired_claim
         assert_eq!(ready.expired_claim.len(), 1);
-        assert_eq!(ready.expired_claim[0].anchor, "step-0");
+        assert_eq!(ready.expired_claim[0].anchor, "step-1");
     }
 
     #[test]
@@ -4012,7 +4012,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0
+        // Claim and start step-1
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4021,17 +4021,17 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
-        // Reset step-0
-        db.reset_step(".tugtool/tugplan-test.md", "step-0").unwrap();
+        // Reset step-1
+        db.reset_step(".tugtool/tugplan-test.md", "step-1").unwrap();
 
         // Verify status is pending and claim fields are cleared
         let (status, claimed_by): (String, Option<String>) = db
             .conn
             .query_row(
-                "SELECT status, claimed_by FROM steps WHERE anchor = 'step-0'",
+                "SELECT status, claimed_by FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -4051,15 +4051,15 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Complete step-0 so step-1 can be claimed
+        // Complete step-1 so step-2 can be claimed
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-0'",
+                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-1'",
                 [],
             )
             .unwrap();
 
-        // Claim and start step-1 (which has substeps)
+        // Claim and start step-2 (which has substeps)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4068,17 +4068,17 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
             .unwrap();
 
-        // Reset step-1
-        db.reset_step(".tugtool/tugplan-test.md", "step-1").unwrap();
+        // Reset step-2
+        db.reset_step(".tugtool/tugplan-test.md", "step-2").unwrap();
 
-        // Verify step-1 is pending
+        // Verify step-2 is pending
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-1'",
+                "SELECT status FROM steps WHERE anchor = 'step-2'",
                 [],
                 |row| row.get(0),
             )
@@ -4088,7 +4088,7 @@ mod tests {
         // Verify substeps were also reset
         let substep_statuses: Vec<String> = db
             .conn
-            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-1' ORDER BY step_index")
+            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-2' ORDER BY step_index")
             .unwrap()
             .query_map([], |row| row.get(0))
             .unwrap()
@@ -4108,16 +4108,16 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Complete step-0
+        // Complete step-1
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-0'",
+                "UPDATE steps SET status = 'completed', completed_at = ?1 WHERE anchor = 'step-1'",
                 [now_iso8601()],
             )
             .unwrap();
 
-        // Try to reset step-0 - should fail
-        let result = db.reset_step(".tugtool/tugplan-test.md", "step-0");
+        // Try to reset step-1 - should fail
+        let result = db.reset_step(".tugtool/tugplan-test.md", "step-1");
         assert!(result.is_err());
     }
 
@@ -4131,15 +4131,15 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Create reconcile entries for step-0 and step-1
+        // Create reconcile entries for step-1 and step-2
         let entries = vec![
             ReconcileEntry {
-                step_anchor: "step-0".to_string(),
+                step_anchor: "step-1".to_string(),
                 plan_path: ".tugtool/tugplan-test.md".to_string(),
                 commit_hash: "abc123".to_string(),
             },
             ReconcileEntry {
-                step_anchor: "step-1".to_string(),
+                step_anchor: "step-2".to_string(),
                 plan_path: ".tugtool/tugplan-test.md".to_string(),
                 commit_hash: "def456".to_string(),
             },
@@ -4156,7 +4156,7 @@ mod tests {
         let count: i32 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM steps WHERE anchor IN ('step-0', 'step-1') AND status = 'completed'",
+                "SELECT COUNT(*) FROM steps WHERE anchor IN ('step-1', 'step-2') AND status = 'completed'",
                 [],
                 |row| row.get(0),
             )
@@ -4174,17 +4174,17 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Mark step-0 as completed with a commit hash
+        // Mark step-1 as completed with a commit hash
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-0'",
+                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-1'",
                 [now_iso8601()],
             )
             .unwrap();
 
         // Try to reconcile with a different hash
         let entries = vec![ReconcileEntry {
-            step_anchor: "step-0".to_string(),
+            step_anchor: "step-1".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             commit_hash: "new_hash".to_string(),
         }];
@@ -4196,7 +4196,7 @@ mod tests {
         assert_eq!(result.reconciled_count, 0);
         assert_eq!(result.skipped_count, 1);
         assert_eq!(result.skipped_mismatches.len(), 1);
-        assert_eq!(result.skipped_mismatches[0].step_anchor, "step-0");
+        assert_eq!(result.skipped_mismatches[0].step_anchor, "step-1");
         assert_eq!(result.skipped_mismatches[0].db_hash, "original_hash");
         assert_eq!(result.skipped_mismatches[0].git_hash, "new_hash");
     }
@@ -4211,17 +4211,17 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Mark step-0 as completed with a commit hash
+        // Mark step-1 as completed with a commit hash
         db.conn
             .execute(
-                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-0'",
+                "UPDATE steps SET status = 'completed', completed_at = ?1, commit_hash = 'original_hash' WHERE anchor = 'step-1'",
                 [now_iso8601()],
             )
             .unwrap();
 
         // Reconcile with force mode
         let entries = vec![ReconcileEntry {
-            step_anchor: "step-0".to_string(),
+            step_anchor: "step-1".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             commit_hash: "new_hash".to_string(),
         }];
@@ -4237,7 +4237,7 @@ mod tests {
         let hash: String = db
             .conn
             .query_row(
-                "SELECT commit_hash FROM steps WHERE anchor = 'step-0'",
+                "SELECT commit_hash FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -4260,7 +4260,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         let result = db
             .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
@@ -4268,7 +4268,7 @@ mod tests {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
             } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert!(!reclaimed, "first claim should not be reclaimed");
             }
             _ => panic!("expected Claimed"),
@@ -4282,7 +4282,7 @@ mod tests {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
             } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert!(reclaimed, "auto-reclaim should set reclaimed to true");
             }
             _ => panic!("expected Claimed with reclaimed=true, got {:?}", result),
@@ -4304,7 +4304,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
@@ -4314,8 +4314,8 @@ mod tests {
             .unwrap();
         match result {
             ClaimResult::NoReadySteps { blocked, .. } => {
-                // The test plan has 3 steps total: step-0, step-1, step-2
-                // step-0 is claimed by wt-a, step-1 and step-2 are pending but blocked by dependencies
+                // The test plan has 3 steps total: step-1, step-2, step-3
+                // step-1 is claimed by wt-a, step-2 and step-3 are pending but blocked by dependencies
                 assert_eq!(
                     blocked, 3,
                     "should have three blocked steps (1 claimed + 2 with unmet deps)"
@@ -4340,7 +4340,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0
+        // Claim step-1
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
@@ -4349,7 +4349,7 @@ mod tests {
         let item_id: i32 = db
             .conn
             .query_row(
-                "SELECT id FROM checklist_items WHERE plan_path = '.tugtool/tugplan-test.md' AND step_anchor = 'step-0' LIMIT 1",
+                "SELECT id FROM checklist_items WHERE plan_path = '.tugtool/tugplan-test.md' AND step_anchor = 'step-1' LIMIT 1",
                 [],
                 |row| row.get(0),
             )
@@ -4378,8 +4378,8 @@ mod tests {
             )
             .unwrap();
 
-        // The test plan has Task 1 and Test 1 for step-0, and a checkpoint for step-1.
-        // Since step-0 has no substeps in the test plan, the reclaim logic won't reset anything.
+        // The test plan has Task 1 and Test 1 for step-1, and a checkpoint for step-2.
+        // Since step-1 has no substeps in the test plan, the reclaim logic won't reset anything.
         // The completed item should remain completed. This test documents current behavior.
         assert!(count >= 0, "checklist reset logic should not error");
     }
@@ -4399,13 +4399,13 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with correct worktree
         let result = db
-            .release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false)
+            .release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false)
             .unwrap();
         assert!(result.released);
         assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
@@ -4414,7 +4414,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                "SELECT status FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -4437,12 +4437,12 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Attempt to release with wrong worktree
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-b"), false);
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-b"), false);
         match result {
             Err(TugError::StateOwnershipViolation { .. }) => {}
             _ => panic!("expected StateOwnershipViolation"),
@@ -4464,13 +4464,13 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
         // Release with force (wrong worktree should be ignored)
         let result = db
-            .release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-b"), true)
+            .release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-b"), true)
             .unwrap();
         assert!(result.released);
         assert_eq!(result.was_claimed_by, Some("wt-a".to_string()));
@@ -4479,7 +4479,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-0'",
+                "SELECT status FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -4502,14 +4502,14 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim and complete step-0
+        // Claim and complete step-1
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", true, None)
+        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", true, None)
             .unwrap();
 
         // Attempt to release completed step
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false);
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false);
         match result {
             Err(TugError::StateStepNotClaimed { current_status, .. }) => {
                 assert_eq!(current_status, "cannot release completed step");
@@ -4534,7 +4534,7 @@ mod tests {
             .unwrap();
 
         // Attempt to release pending (unclaimed) step
-        let result = db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false);
+        let result = db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false);
         match result {
             Err(TugError::StateStepNotClaimed { current_status, .. }) => {
                 assert_eq!(current_status, "not claimed");
@@ -4554,12 +4554,12 @@ mod tests {
         let plan_with_substeps = TugPlan {
             phase_title: Some("Test Phase".to_string()),
             steps: vec![Step {
-                anchor: "step-0".to_string(),
-                title: "Step Zero".to_string(),
+                anchor: "step-1".to_string(),
+                title: "Step Three".to_string(),
                 substeps: vec![
                     Substep {
                         number: "0.0".to_string(),
-                        anchor: "step-0-sub-0".to_string(),
+                        anchor: "step-1-sub-0".to_string(),
                         title: "Substep 0".to_string(),
                         line: 1,
                         depends_on: vec![],
@@ -4572,7 +4572,7 @@ mod tests {
                     },
                     Substep {
                         number: "0.1".to_string(),
-                        anchor: "step-0-sub-1".to_string(),
+                        anchor: "step-1-sub-1".to_string(),
                         title: "Substep 1".to_string(),
                         line: 2,
                         depends_on: vec![],
@@ -4600,18 +4600,18 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan_with_substeps, &hash)
             .unwrap();
 
-        // Claim step-0 (which claims substeps too)
+        // Claim step-1 (which claims substeps too)
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
-        // Release step-0
-        db.release_step(".tugtool/tugplan-test.md", "step-0", Some("wt-a"), false)
+        // Release step-1
+        db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false)
             .unwrap();
 
         // Verify substeps are also pending
         let substep_status: Vec<String> = db
             .conn
-            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-0' ORDER BY anchor")
+            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-1' ORDER BY anchor")
             .unwrap()
             .query_map([], |row| row.get(0))
             .unwrap()
@@ -4638,7 +4638,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a
+        // Claim step-1 with worktree wt-a
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
@@ -4650,7 +4650,7 @@ mod tests {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
             } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert!(
                     reclaimed,
                     "force-claiming a claimed step should set reclaimed to true"
@@ -4663,7 +4663,7 @@ mod tests {
         let claimed_by: String = db
             .conn
             .query_row(
-                "SELECT claimed_by FROM steps WHERE anchor = 'step-0'",
+                "SELECT claimed_by FROM steps WHERE anchor = 'step-1'",
                 [],
                 |row| row.get(0),
             )
@@ -4677,7 +4677,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path).unwrap();
 
-        // Initialize a plan with dependencies (step-1 depends on step-0)
+        // Initialize a plan with dependencies (step-2 depends on step-1)
         let plan = make_test_plan();
         let plan_file = temp.path().join(".tugtool/tugplan-test.md");
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
@@ -4686,17 +4686,17 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Attempt to force-claim step-1 (depends on step-0 which is pending)
+        // Attempt to force-claim step-2 (depends on step-1 which is pending)
         let result = db
             .claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
-                // Should claim step-0, not step-1
-                assert_eq!(anchor, "step-0");
+                // Should claim step-1, not step-2
+                assert_eq!(anchor, "step-1");
             }
             ClaimResult::NoReadySteps { .. } => {
-                panic!("expected to claim step-0, got NoReadySteps");
+                panic!("expected to claim step-1, got NoReadySteps");
             }
             _ => panic!("unexpected result: {:?}", result),
         }
@@ -4725,7 +4725,7 @@ mod tests {
             ClaimResult::Claimed {
                 anchor, reclaimed, ..
             } => {
-                assert_eq!(anchor, "step-0");
+                assert_eq!(anchor, "step-1");
                 assert!(
                     !reclaimed,
                     "claiming a pending step should not be reclaimed"
@@ -4750,21 +4750,21 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim and complete step-0
+        // Claim and complete step-1
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
-        db.complete_step(".tugtool/tugplan-test.md", "step-0", "wt-a", true, None)
+        db.complete_step(".tugtool/tugplan-test.md", "step-1", "wt-a", true, None)
             .unwrap();
 
-        // Force-claim should get step-1, not step-0
+        // Force-claim should get step-2, not step-1
         let result = db
             .claim_step(".tugtool/tugplan-test.md", "wt-b", 7200, &hash, true)
             .unwrap();
         match result {
             ClaimResult::Claimed { anchor, .. } => {
                 assert_eq!(
-                    anchor, "step-1",
-                    "should claim step-1, not completed step-0"
+                    anchor, "step-2",
+                    "should claim step-2, not completed step-1"
                 );
             }
             _ => panic!("expected Claimed, got {:?}", result),
@@ -4786,7 +4786,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, &hash)
             .unwrap();
 
-        // Claim step-0 with worktree wt-a (non-force)
+        // Claim step-1 with worktree wt-a (non-force)
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
@@ -4808,15 +4808,15 @@ mod tests {
     #[test]
     fn test_normalize_anchor_strips_hash() {
         // bare anchor passthrough
-        assert_eq!(normalize_anchor("step-0"), "step-0");
+        assert_eq!(normalize_anchor("step-1"), "step-1");
         // strips leading '#'
-        assert_eq!(normalize_anchor("#step-0"), "step-0");
+        assert_eq!(normalize_anchor("#step-1"), "step-1");
         // empty string passthrough
         assert_eq!(normalize_anchor(""), "");
         // lone hash produces empty string
         assert_eq!(normalize_anchor("#"), "");
         // only strips one leading '#'
-        assert_eq!(normalize_anchor("##step-0"), "#step-0");
+        assert_eq!(normalize_anchor("##step-1"), "#step-1");
     }
 
     #[test]
@@ -4828,7 +4828,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0 (stores bare "step-0" in DB)
+        // Claim step-1 (stores bare "step-1" in DB)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4839,14 +4839,14 @@ mod tests {
         .unwrap();
 
         // start_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.start_step(".tugtool/tugplan-test.md", "#step-0", "wt-a");
-        assert!(result.is_ok(), "start_step with #step-0 should succeed");
+        let result = db.start_step(".tugtool/tugplan-test.md", "#step-1", "wt-a");
+        assert!(result.is_ok(), "start_step with #step-1 should succeed");
 
         // Verify status is now in_progress
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
                 rusqlite::params![".tugtool/tugplan-test.md"],
                 |row| row.get(0),
             )
@@ -4863,7 +4863,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0 (bare anchor)
+        // Claim and start step-1 (bare anchor)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4872,13 +4872,13 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
         // Mark all checklist items complete so strict mode succeeds
         db.update_checklist(
             ".tugtool/tugplan-test.md",
-            "step-0",
+            "step-1",
             "wt-a",
             &[ChecklistUpdate::AllItems {
                 status: "completed".to_string(),
@@ -4887,14 +4887,14 @@ mod tests {
         .unwrap();
 
         // complete_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.complete_step(".tugtool/tugplan-test.md", "#step-0", "wt-a", false, None);
-        assert!(result.is_ok(), "complete_step with #step-0 should succeed");
+        let result = db.complete_step(".tugtool/tugplan-test.md", "#step-1", "wt-a", false, None);
+        assert!(result.is_ok(), "complete_step with #step-1 should succeed");
 
         // Verify status is completed
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
                 rusqlite::params![".tugtool/tugplan-test.md"],
                 |row| row.get(0),
             )
@@ -4911,7 +4911,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim and start step-0 (bare anchor)
+        // Claim and start step-1 (bare anchor)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4920,12 +4920,12 @@ mod tests {
             false,
         )
         .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+        db.start_step(".tugtool/tugplan-test.md", "step-1", "wt-a")
             .unwrap();
 
         // heartbeat_step with hash-prefixed anchor — should return a lease expiry string
-        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "#step-0", "wt-a", 7200);
-        assert!(result.is_ok(), "heartbeat_step with #step-0 should succeed");
+        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "#step-1", "wt-a", 7200);
+        assert!(result.is_ok(), "heartbeat_step with #step-1 should succeed");
         let lease_expiry = result.unwrap();
         assert!(!lease_expiry.is_empty(), "lease expiry should be non-empty");
     }
@@ -4939,7 +4939,7 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Claim step-0 (bare anchor stored in DB)
+        // Claim step-1 (bare anchor stored in DB)
         db.claim_step(
             ".tugtool/tugplan-test.md",
             "wt-a",
@@ -4950,10 +4950,10 @@ mod tests {
         .unwrap();
 
         // check_ownership with hash-prefixed anchor — should succeed via normalization
-        let result = db.check_ownership(".tugtool/tugplan-test.md", "#step-0", "wt-a");
+        let result = db.check_ownership(".tugtool/tugplan-test.md", "#step-1", "wt-a");
         assert!(
             result.is_ok(),
-            "check_ownership with #step-0 should succeed"
+            "check_ownership with #step-1 should succeed"
         );
     }
 
@@ -4968,10 +4968,10 @@ mod tests {
             status: "completed".to_string(),
         }];
 
-        let result = db.update_checklist(".tugtool/tugplan-test.md", "#step-0", "wt-a", &updates);
+        let result = db.update_checklist(".tugtool/tugplan-test.md", "#step-1", "wt-a", &updates);
         assert!(
             result.is_ok(),
-            "update_checklist with #step-0 should succeed"
+            "update_checklist with #step-1 should succeed"
         );
         assert_eq!(result.unwrap().items_updated, 1);
 
@@ -4979,7 +4979,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1' AND kind = 'task' AND ordinal = 0",
                 [],
                 |row| row.get(0),
             )
@@ -4994,14 +4994,14 @@ mod tests {
         // record_artifact with hash-prefixed anchor — should succeed via normalization
         let result = db.record_artifact(
             ".tugtool/tugplan-test.md",
-            "#step-0",
+            "#step-1",
             "wt-a",
             "architect_strategy",
             "Test strategy summary",
         );
         assert!(
             result.is_ok(),
-            "record_artifact with #step-0 should succeed"
+            "record_artifact with #step-1 should succeed"
         );
         assert!(result.unwrap() > 0);
 
@@ -5009,7 +5009,7 @@ mod tests {
         let count: i32 = db
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-0' AND kind = 'architect_strategy'",
+                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-1' AND kind = 'architect_strategy'",
                 [],
                 |row| row.get(0),
             )
@@ -5022,14 +5022,14 @@ mod tests {
         let (_temp, mut db) = setup_claimed_plan();
 
         // reset_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.reset_step(".tugtool/tugplan-test.md", "#step-0");
-        assert!(result.is_ok(), "reset_step with #step-0 should succeed");
+        let result = db.reset_step(".tugtool/tugplan-test.md", "#step-1");
+        assert!(result.is_ok(), "reset_step with #step-1 should succeed");
 
         // Verify step is back to pending (bare anchor in DB)
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
                 rusqlite::params![".tugtool/tugplan-test.md"],
                 |row| row.get(0),
             )
@@ -5042,8 +5042,8 @@ mod tests {
         let (_temp, mut db) = setup_claimed_plan();
 
         // release_step with hash-prefixed anchor — should succeed via normalization
-        let result = db.release_step(".tugtool/tugplan-test.md", "#step-0", Some("wt-a"), false);
-        assert!(result.is_ok(), "release_step with #step-0 should succeed");
+        let result = db.release_step(".tugtool/tugplan-test.md", "#step-1", Some("wt-a"), false);
+        assert!(result.is_ok(), "release_step with #step-1 should succeed");
         let release = result.unwrap();
         assert!(release.released);
         assert_eq!(release.was_claimed_by, Some("wt-a".to_string()));
@@ -5052,7 +5052,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
                 rusqlite::params![".tugtool/tugplan-test.md"],
                 |row| row.get(0),
             )
@@ -5095,14 +5095,14 @@ mod tests {
         // batch_update_checklist with hash-prefixed anchor — should succeed via normalization
         let result = db.batch_update_checklist(
             ".tugtool/tugplan-test.md",
-            "#step-0",
+            "#step-1",
             "wt-a",
             &entries,
             false,
         );
         assert!(
             result.is_ok(),
-            "batch_update_checklist with #step-0 should succeed"
+            "batch_update_checklist with #step-1 should succeed"
         );
         assert_eq!(result.unwrap().items_updated, 1);
 
@@ -5110,7 +5110,7 @@ mod tests {
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1' AND kind = 'task' AND ordinal = 0",
                 [],
                 |row| row.get(0),
             )
@@ -5129,26 +5129,26 @@ mod tests {
 
         // Create a ReconcileEntry with hash-prefixed anchor (simulates historical git trailer)
         let entries = vec![ReconcileEntry {
-            step_anchor: "#step-0".to_string(),
+            step_anchor: "#step-1".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
             commit_hash: "deadbeef".to_string(),
         }];
 
         let result = db.reconcile(".tugtool/tugplan-test.md", &entries, false);
-        assert!(result.is_ok(), "reconcile with #step-0 should succeed");
+        assert!(result.is_ok(), "reconcile with #step-1 should succeed");
 
         let reconcile_result = result.unwrap();
         assert_eq!(
             reconcile_result.reconciled_count, 1,
-            "step-0 should be reconciled"
+            "step-1 should be reconciled"
         );
         assert_eq!(reconcile_result.skipped_count, 0);
 
-        // Verify step-0 is now completed (stored as bare anchor in DB)
+        // Verify step-1 is now completed (stored as bare anchor in DB)
         let status: String = db
             .conn
             .query_row(
-                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-1'",
                 rusqlite::params![".tugtool/tugplan-test.md"],
                 |row| row.get(0),
             )

@@ -33,7 +33,7 @@ This plan has steps that reference non-existent anchors and decisions.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: References Non-Existent Decision {#step-0}
+#### Step 1: References Non-Existent Decision {#step-1}
 
 **Commit:** `test: missing references`
 
@@ -55,9 +55,9 @@ This plan has steps that reference non-existent anchors and decisions.
 
 ---
 
-#### Step 1: References Non-Existent Step {#step-1}
+#### Step 2: References Non-Existent Step {#step-2}
 
-**Depends on:** #step-0, #step-99
+**Depends on:** #step-1, #step-99
 
 **Commit:** `test: bad dependency`
 
