@@ -267,7 +267,7 @@ pub fn validate_tugplan_with_config(
         // W006: Metadata fields with unfilled placeholders
         check_metadata_placeholders(tugplan, &mut result);
 
-        // W007: Step (other than Step 0) has no dependencies
+        // W007: Step (other than Step 1) has no dependencies
         check_step_dependencies(tugplan, &mut result);
 
         // W009: Step missing Commit line
@@ -843,11 +843,11 @@ fn check_metadata_placeholders(tugplan: &TugPlan, result: &mut ValidationResult)
     }
 }
 
-/// W007: Step (other than Step 0) has no dependencies
+/// W007: Step (other than Step 1) has no dependencies
 fn check_step_dependencies(tugplan: &TugPlan, result: &mut ValidationResult) {
     for step in &tugplan.steps {
-        // Step 0 is allowed to have no dependencies
-        if step.number != "0" && step.depends_on.is_empty() {
+        // Step 1 is allowed to have no dependencies
+        if step.number != "1" && step.depends_on.is_empty() {
             result.add_issue(
                 ValidationIssue::new(
                     "W007",
@@ -1469,7 +1469,7 @@ Question without resolution.
 
     #[test]
     fn test_w007_step_no_dependencies() {
-        let content = r#"## Phase 1.0: Test {#phase-1}
+        let content = r#"## Test Plan {#phase-1}
 
 ### TugPlan Metadata {#plan-metadata}
 
@@ -1479,14 +1479,14 @@ Question without resolution.
 | Status | draft |
 | Last updated | 2026-02-03 |
 
-#### Step 0: First {#step-0}
+#### Step 1: First {#step-1}
 
 **References:** Test
 
 **Tasks:**
 - [ ] Task
 
-#### Step 1: Second no deps {#step-1}
+#### Step 2: Second no deps {#step-2}
 
 **References:** Test
 
@@ -1497,9 +1497,11 @@ Question without resolution.
         let plan = parse_tugplan(content).unwrap();
         let result = validate_tugplan(&plan);
 
+        // Step 1 is exempt from W007 (root step needs no dependencies)
+        // Step 2 has no dependencies and should trigger W007
         let w007_issues: Vec<_> = result.issues.iter().filter(|i| i.code == "W007").collect();
         assert_eq!(w007_issues.len(), 1);
-        assert!(w007_issues[0].message.contains("Step 1"));
+        assert!(w007_issues[0].message.contains("Step 2"));
     }
 
     #[test]

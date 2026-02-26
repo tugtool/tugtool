@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-26T03:08:32Z
+---
+
+## step-2: Updated W007 check in validator.rs to exempt step 1 instead of step 0, restructured W007 test. Changed worktree.rs artifact dir loop to use step anchors directly instead of enumerate index. Added integration test verifying artifact dirs are named by step anchor.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
 step: step-1
 date: 2025-02-26T02:51:24Z
 ---
