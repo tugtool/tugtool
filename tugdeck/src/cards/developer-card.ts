@@ -33,6 +33,13 @@ export class DeveloperCard implements TugCard {
   // Timer for "Reloaded" flash
   private reloadedTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Per-row timestamp state
+  private stylesLastCleanTs: number | null = null;
+  private codeLastCleanTs: number | null = null;
+  private codeFirstDirtySinceTs: number | null = null;
+  private appLastCleanTs: number | null = null;
+  private appFirstDirtySinceTs: number | null = null;
+
   constructor(connection: TugConnection) {
     this.connection = connection;
   }
@@ -129,40 +136,49 @@ export class DeveloperCard implements TugCard {
    */
   update(payload: Record<string, unknown>): void {
     const type = payload.type as string;
-    const changes = payload.changes as string[] | undefined;
     const count = payload.count as number | undefined;
+    const timestamp = payload.timestamp as number | undefined;
 
     if (type === "reloaded") {
-      // Flash Styles status to "Reloaded" for 2 seconds
+      // Flash Styles status to "Reloaded" for 2 seconds, then show clean label with timestamp
       if (this.stylesStatus) {
         this.stylesStatus.textContent = "Reloaded";
         if (this.reloadedTimer) clearTimeout(this.reloadedTimer);
         this.reloadedTimer = setTimeout(() => {
           if (this.stylesStatus) {
-            this.stylesStatus.textContent = "Clean";
+            if (timestamp !== undefined) {
+              this.stylesLastCleanTs = timestamp;
+            }
+            this.stylesStatus.textContent = this.cleanLabel(this.stylesLastCleanTs);
           }
         }, 2000);
       }
     } else if (type === "restart_available") {
+      // Capture "since" timestamp on first dirty notification after last clean state
+      if (this.codeFirstDirtySinceTs === null && timestamp !== undefined) {
+        this.codeFirstDirtySinceTs = timestamp;
+      }
       // Set Code row dirty
       if (this.codeDot) {
         this.codeDot.style.backgroundColor = "var(--td-warning)";
       }
       if (this.codeStatus) {
-        const changeText = count === 1 ? "1 change" : `${count ?? 0} changes`;
-        this.codeStatus.textContent = changeText;
+        this.codeStatus.textContent = this.dirtyLabel(count ?? 0, this.codeFirstDirtySinceTs);
       }
       if (this.codeRestartBtn) {
         this.codeRestartBtn.style.display = "block";
       }
     } else if (type === "relaunch_available") {
+      // Capture "since" timestamp on first dirty notification after last clean state
+      if (this.appFirstDirtySinceTs === null && timestamp !== undefined) {
+        this.appFirstDirtySinceTs = timestamp;
+      }
       // Set App row dirty
       if (this.appDot) {
         this.appDot.style.backgroundColor = "var(--td-warning)";
       }
       if (this.appStatus) {
-        const changeText = count === 1 ? "1 change" : `${count ?? 0} changes`;
-        this.appStatus.textContent = changeText;
+        this.appStatus.textContent = this.dirtyLabel(count ?? 0, this.appFirstDirtySinceTs);
       }
       if (this.appRelaunchBtn) {
         this.appRelaunchBtn.style.display = "block";
@@ -221,9 +237,28 @@ export class DeveloperCard implements TugCard {
     this.appStatus = null;
     this.appRelaunchBtn = null;
     this.buildProgressEl = null;
+    // Null timestamp state
+    this.stylesLastCleanTs = null;
+    this.codeLastCleanTs = null;
+    this.codeFirstDirtySinceTs = null;
+    this.appLastCleanTs = null;
+    this.appFirstDirtySinceTs = null;
   }
 
   // ---- Private ----
+
+  private formatTime(ts: number): string {
+    return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  private cleanLabel(ts: number | null): string {
+    return ts !== null ? "Clean -- " + this.formatTime(ts) : "Clean";
+  }
+
+  private dirtyLabel(count: number, sinceTs: number | null): string {
+    const countPart = count === 1 ? "1 change" : `${count} changes`;
+    return sinceTs !== null ? countPart + " -- since " + this.formatTime(sinceTs) : countPart;
+  }
 
   private createRow(label: string, statusText: string): HTMLElement {
     const row = document.createElement("div");
@@ -252,12 +287,14 @@ export class DeveloperCard implements TugCard {
   }
 
   private handleRestart(): void {
-    // Clear Code row state
+    // Set Code row to clean with timestamp
+    this.codeLastCleanTs = Date.now();
+    this.codeFirstDirtySinceTs = null;
     if (this.codeDot) {
       this.codeDot.style.backgroundColor = "var(--td-success)";
     }
     if (this.codeStatus) {
-      this.codeStatus.textContent = "Clean";
+      this.codeStatus.textContent = this.cleanLabel(this.codeLastCleanTs);
     }
     if (this.codeRestartBtn) {
       this.codeRestartBtn.style.display = "none";
@@ -271,12 +308,14 @@ export class DeveloperCard implements TugCard {
   }
 
   private handleRelaunch(): void {
-    // Clear App row state
+    // Set App row to clean with timestamp
+    this.appLastCleanTs = Date.now();
+    this.appFirstDirtySinceTs = null;
     if (this.appDot) {
       this.appDot.style.backgroundColor = "var(--td-success)";
     }
     if (this.appStatus) {
-      this.appStatus.textContent = "Clean";
+      this.appStatus.textContent = this.cleanLabel(this.appLastCleanTs);
     }
     if (this.appRelaunchBtn) {
       this.appRelaunchBtn.style.display = "none";

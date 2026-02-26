@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-26T17:53:48Z
+---
+
+## step-4: Added five timestamp fields and formatTime/cleanLabel/dirtyLabel helpers to DeveloperCard; wired timestamps into update(), handleRestart(), handleRelaunch(); updated tests with toLocaleTimeString mock and two new timestamp-specific tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
 step: step-3
 date: 2025-02-26T17:47:29Z
 ---
