@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-26T02:51:24Z
+---
+
+## step-1: Rewrote tugplan-skeleton.md from 905 lines to 447 lines. Applied all 12 modernization changes: removed Beads, Stakeholders, Document Size Guidance, Audit pattern, fixture subsections; retired X.Y numbering; renumbered steps 1-based; condensed Specification to menu; consolidated commit rule to preamble; removed per-step Rollback; trimmed reference conventions to 8 prefixes; preserved Optional marker on Compatibility/Migration.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-26T00:18:57Z
 ---
