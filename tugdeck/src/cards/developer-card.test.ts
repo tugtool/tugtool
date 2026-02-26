@@ -23,7 +23,7 @@ const localStorageMock = (() => {
 global.localStorage = localStorageMock as any;
 
 // Import after DOM setup
-import { DeveloperCard } from "./developer-card";
+import { DeveloperCard, categorizeFile } from "./developer-card";
 import type { TugConnection } from "../connection";
 
 // Mock TugConnection
@@ -41,6 +41,74 @@ class MockConnection implements Partial<TugConnection> {
 
 // A fixed timestamp to use in tests (arbitrary epoch millis)
 const TEST_TS = 1_740_000_000_000;
+
+describe("categorizeFile", () => {
+  // Styles patterns
+  test("CSS file in tugdeck/ root maps to styles", () => {
+    expect(categorizeFile("tugdeck/styles/tokens.css")).toBe("styles");
+  });
+
+  test("CSS file in tugdeck/ subdirectory maps to styles", () => {
+    expect(categorizeFile("tugdeck/src/components/card.css")).toBe("styles");
+  });
+
+  test("HTML file in tugdeck/ maps to styles", () => {
+    expect(categorizeFile("tugdeck/index.html")).toBe("styles");
+  });
+
+  // Code patterns -- tugdeck/src/
+  test("TS file in tugdeck/src/ maps to code", () => {
+    expect(categorizeFile("tugdeck/src/cards/developer-card.ts")).toBe("code");
+  });
+
+  test("TSX file in tugdeck/src/ maps to code", () => {
+    expect(categorizeFile("tugdeck/src/components/Button.tsx")).toBe("code");
+  });
+
+  // Code patterns -- tugcode/
+  test("Rust file in tugcode/ maps to code", () => {
+    expect(categorizeFile("tugcode/src/main.rs")).toBe("code");
+  });
+
+  test("Cargo.toml in tugcode/ maps to code", () => {
+    expect(categorizeFile("tugcode/Cargo.toml")).toBe("code");
+  });
+
+  test("Cargo.toml in tugcode/ subdirectory maps to code", () => {
+    expect(categorizeFile("tugcode/tugtool-core/Cargo.toml")).toBe("code");
+  });
+
+  // App patterns
+  test("Swift file in tugapp/Sources/ maps to app", () => {
+    expect(categorizeFile("tugapp/Sources/TugApp/AppDelegate.swift")).toBe("app");
+  });
+
+  // Edge cases -- exclusions
+  test("TS file in tugdeck/ root (not tugdeck/src/) returns null", () => {
+    // tugdeck/some-file.ts is not under tugdeck/src/
+    expect(categorizeFile("tugdeck/some-file.ts")).toBeNull();
+  });
+
+  test("Swift file in tugapp/ but not tugapp/Sources/ returns null", () => {
+    expect(categorizeFile("tugapp/Tests/AppTests.swift")).toBeNull();
+  });
+
+  test("unmatched file returns null", () => {
+    expect(categorizeFile("docs/README.md")).toBeNull();
+  });
+
+  test("tugplug TS file (not under tugdeck/src/) returns null", () => {
+    expect(categorizeFile("tugplug/agents/coder-agent.ts")).toBeNull();
+  });
+
+  test("tugdeck/src/ TS file with .tsx extension maps to code", () => {
+    expect(categorizeFile("tugdeck/src/main.tsx")).toBe("code");
+  });
+
+  test("RS file outside tugcode/ returns null", () => {
+    expect(categorizeFile("someother/src/lib.rs")).toBeNull();
+  });
+});
 
 describe("developer-card", () => {
   let connection: MockConnection;

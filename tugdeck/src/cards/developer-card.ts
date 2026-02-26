@@ -6,6 +6,61 @@ import type { TugCard, TugCardMeta } from "./card";
 import type { FeedIdValue } from "../protocol";
 import type { TugConnection } from "../connection";
 
+/**
+ * GitStatus payload received via FeedId.GIT frames.
+ * Duplicated from git-card.ts -- see that file for the canonical definition.
+ * Keep in sync with the GitStatus interface in git-card.ts.
+ */
+interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  staged: FileStatus[];
+  unstaged: FileStatus[];
+  untracked: string[];
+  head_sha: string;
+  head_message: string;
+}
+
+/** A single file entry in a GitStatus staged/unstaged array. */
+interface FileStatus {
+  path: string;
+  status: string;
+}
+
+/** Row categories for file path classification in the Developer card. */
+export type RowCategory = "styles" | "code" | "app";
+
+/**
+ * Categorize a repository-relative file path into a Developer card row.
+ *
+ * Patterns (Table T03 from the plan):
+ *   Styles: tugdeck/ *.css, tugdeck/ *.html
+ *   Code:   tugdeck/src/ *.ts, tugdeck/src/ *.tsx,
+ *           tugcode/ *.rs, tugcode/ Cargo.toml
+ *   App:    tugapp/Sources/ *.swift
+ *
+ * Returns null for paths that do not match any pattern.
+ * Only staged and unstaged (tracked) files should be passed here;
+ * callers are responsible for ignoring untracked files.
+ */
+export function categorizeFile(path: string): RowCategory | null {
+  // Styles patterns (checked before Code to avoid tugdeck/styles/*.css matching Code)
+  if (path.startsWith("tugdeck/") && path.endsWith(".css")) return "styles";
+  if (path.startsWith("tugdeck/") && path.endsWith(".html")) return "styles";
+
+  // Code patterns -- tugdeck/src/ prefix required for TS/TSX to avoid root-level tugdeck files
+  if (path.startsWith("tugdeck/src/") && path.endsWith(".ts")) return "code";
+  if (path.startsWith("tugdeck/src/") && path.endsWith(".tsx")) return "code";
+  if (path.startsWith("tugcode/") && path.endsWith(".rs")) return "code";
+  if (path.startsWith("tugcode/") && path.endsWith("Cargo.toml")) return "code";
+
+  // App patterns
+  if (path.startsWith("tugapp/Sources/") && path.endsWith(".swift")) return "app";
+
+  return null;
+}
+
 export class DeveloperCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [];
 
