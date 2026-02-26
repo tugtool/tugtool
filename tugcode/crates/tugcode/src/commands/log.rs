@@ -35,7 +35,7 @@ pub enum LogCommands {
         long_about = "Prepend entry to implementation log.\n\nAdds a YAML frontmatter entry with:\n  - Step anchor\n  - Plan path\n  - Summary text\n  - Timestamp\n\nEntry is inserted after the header section."
     )]
     Prepend {
-        /// Step anchor (e.g., #step-0)
+        /// Step anchor (e.g., step-0)
         #[arg(long)]
         step: String,
 
@@ -402,6 +402,8 @@ pub fn log_prepend_inner(
 ) -> Result<PrependResult, String> {
     use std::fs;
 
+    let step = step.strip_prefix('#').unwrap_or(step);
+
     let log_path = root.join(".tugtool/tugplan-implementation-log.md");
 
     // Check if log file exists
@@ -446,7 +448,7 @@ pub fn log_prepend_inner(
 ///
 /// # Arguments
 /// * `root` - Optional root directory (uses current directory if None)
-/// * `step` - Step anchor (e.g., #step-0)
+/// * `step` - Step anchor (e.g., step-0)
 /// * `plan` - Plan file path
 /// * `summary` - One-line summary of completed work
 /// * `json_output` - Output in JSON format
@@ -699,15 +701,15 @@ mod tests {
     #[test]
     fn test_yaml_entry_generation() {
         let entry = generate_yaml_entry(
-            "#step-0",
+            "step-0",
             ".tugtool/tugplan-13.md",
             "Test summary",
             "2026-02-09T14:30:00Z",
         );
 
-        assert!(entry.contains("step: #step-0"));
+        assert!(entry.contains("step: step-0"));
         assert!(entry.contains("date: 2026-02-09T14:30:00Z"));
-        assert!(entry.contains("## #step-0: Test summary"));
+        assert!(entry.contains("## step-0: Test summary"));
         assert!(entry.contains("- .tugtool/tugplan-13.md"));
     }
 
@@ -756,7 +758,7 @@ Entries are sorted newest-first.
         // Run prepend
         let result = run_log_prepend(
             Some(temp_path),
-            "#step-0".to_string(),
+            "step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Test implementation".to_string(),
             false,
@@ -766,13 +768,13 @@ Entries are sorted newest-first.
 
         // Verify entry was added
         let new_content = fs::read_to_string(&log_path).unwrap();
-        assert!(new_content.contains("step: #step-0"));
-        assert!(new_content.contains("## #step-0: Test implementation"));
+        assert!(new_content.contains("step: step-0"));
+        assert!(new_content.contains("## step-0: Test implementation"));
         assert!(new_content.contains("- .tugtool/tugplan-13.md"));
 
         // Verify entry is after the separator
         let separator_pos = new_content.find("---\n\n").unwrap();
-        let entry_pos = new_content.find("step: #step-0").unwrap();
+        let entry_pos = new_content.find("step: step-0").unwrap();
         assert!(entry_pos > separator_pos);
     }
 
@@ -791,7 +793,7 @@ Entries are sorted newest-first.
         // Add first entry
         run_log_prepend(
             Some(temp_path),
-            "#step-0".to_string(),
+            "step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "First entry".to_string(),
             false,
@@ -802,7 +804,7 @@ Entries are sorted newest-first.
         // Add second entry
         run_log_prepend(
             Some(temp_path),
-            "#step-1".to_string(),
+            "step-1".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Second entry".to_string(),
             false,
@@ -812,8 +814,8 @@ Entries are sorted newest-first.
 
         // Verify both entries exist and second is first
         let new_content = fs::read_to_string(&log_path).unwrap();
-        let step0_pos = new_content.find("step: #step-0").unwrap();
-        let step1_pos = new_content.find("step: #step-1").unwrap();
+        let step0_pos = new_content.find("step: step-0").unwrap();
+        let step1_pos = new_content.find("step: step-1").unwrap();
         assert!(step1_pos < step0_pos, "Newest entry should be first");
     }
 
@@ -827,7 +829,7 @@ Entries are sorted newest-first.
         // Run prepend without log file
         let result = run_log_prepend(
             Some(temp_path),
-            "#step-0".to_string(),
+            "step-0".to_string(),
             ".tugtool/tugplan-13.md".to_string(),
             "Test".to_string(),
             false,

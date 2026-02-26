@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-26T00:18:57Z
+---
+
+## audit-fix: Audit fix: replaced .iter().cloned().collect() with .to_vec() to resolve clippy::iter_cloned_collect lint
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-26T00:17:13Z
+---
+
+## audit-fix: Audit fix: replaced .map(|dep| dep.clone()) with .cloned() to resolve clippy::map_clone lint
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: step-3
+date: 2025-02-26T00:14:20Z
+---
+
+## step-3: Added 10 integration tests verifying all StateDb methods work correctly with hash-prefixed anchors, covering all methods in Table T01
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: step-2
+date: 2025-02-26T00:06:55Z
+---
+
+## step-2: Updated 4 agent template/skill markdown files to use bare step-N format in all JSON payload examples and text references
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: step-1
+date: 2025-02-26T00:00:49Z
+---
+
+## step-1: Fixed all non-markdown source files to emit bare anchors: log.rs normalization at entry, status.rs format removal, cli.rs doc updates, golden fixture updated
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-25T23:53:13Z
+---
+
+## #step-0: Added normalize_anchor function and wired it into all 10 StateDb methods that accept step anchor parameters
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-25T22:12:25Z
 ---

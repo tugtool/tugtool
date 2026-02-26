@@ -346,7 +346,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
 
                     SubstepStatus {
                         title: substep.title.clone(),
-                        anchor: format!("#{}", substep.anchor),
+                        anchor: substep.anchor.clone(),
                         done: sub_done,
                         total: sub_total,
                     }
@@ -355,7 +355,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
 
             StepStatus {
                 title: step.title.clone(),
-                anchor: format!("#{}", step.anchor),
+                anchor: step.anchor.clone(),
                 done: step_done,
                 total: step_total,
                 substeps,
@@ -374,7 +374,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
         .steps
         .iter()
         .map(|step| StepInfo {
-            anchor: format!("#{}", step.anchor),
+            anchor: step.anchor.clone(),
             title: step.title.clone(),
             number: step.number.clone(),
         })
@@ -390,7 +390,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
             step_total > 0 && step_done == step_total
         })
         .map(|step| StepInfo {
-            anchor: format!("#{}", step.anchor),
+            anchor: step.anchor.clone(),
             title: step.title.clone(),
             number: step.number.clone(),
         })
@@ -414,12 +414,8 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
         .steps
         .iter()
         .map(|step| {
-            let deps = step
-                .depends_on
-                .iter()
-                .map(|dep| format!("#{}", dep))
-                .collect();
-            (format!("#{}", step.anchor), deps)
+            let deps = step.depends_on.to_vec();
+            (step.anchor.clone(), deps)
         })
         .collect();
 

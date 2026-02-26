@@ -333,7 +333,7 @@ Parse the JSON output from stdout. The output is a SetupData object with these f
 - `base_branch`: Base branch (e.g., "main")
 - `plan_path`: Relative path to the plan file
 - `total_steps`: Total number of execution steps
-- `all_steps`: Array of all step anchors (e.g., ["#step-0", "#step-1"])
+- `all_steps`: Array of all step anchors (e.g., ["step-0", "step-1"])
 - `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet complete)
 - `state_initialized`: Boolean indicating tugstate was initialized
 
@@ -400,8 +400,8 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-0",
-    "all_steps": ["#step-0", "#step-1", ...]
+    "step_anchor": "step-0",
+    "all_steps": ["step-0", "step-1", ...]
   }',
   description: "Plan strategy for step 0"
 )
@@ -444,7 +444,7 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-0"
+    "step_anchor": "step-0"
   }',
   description: "Implement step 0"
 )
@@ -524,7 +524,7 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-0"
+    "step_anchor": "step-0"
   }',
   description: "Verify step 0 completion"
 )
@@ -657,7 +657,7 @@ Task(
     "operation": "commit",
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "#step-N",
+    "step_anchor": "step-N",
     "proposed_message": "feat(<scope>): <description>",
     "log_entry": {
       "summary": "<brief description of what was done>"
