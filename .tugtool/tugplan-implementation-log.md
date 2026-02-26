@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-26T23:54:26Z
+---
+
+## step-1: Scaffolded complete React 19 + Vite + Tailwind CSS v4 + shadcn/ui toolchain alongside existing vanilla TS code. Installed all dependencies, created vite.config.ts, components.json, globals.css, cn() utility. Updated tsconfig.json for JSX/paths. Converted index.html to Vite entry point. Renamed main.ts to main.tsx. Moved fonts to public/. Installed all 13 shadcn UI components. Added RTL validation test. Build passes, all 521 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-3
 date: 2025-02-26T19:11:23Z
 ---

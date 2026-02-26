@@ -18,8 +18,12 @@ global.document = window.document as any;
 global.DOMParser = window.DOMParser as any;
 global.KeyboardEvent = window.KeyboardEvent as any;
 
-// Mock navigator.clipboard
+// Mock navigator.clipboard while preserving userAgent for react-dom compatibility.
+// react-dom's development build calls navigator.userAgent.indexOf() during module
+// initialization; if userAgent is absent, subsequent test workers that import
+// @testing-library/react will throw an unhandled TypeError.
 global.navigator = {
+  userAgent: window.navigator.userAgent,
   clipboard: {
     writeText: () => Promise.resolve(),
   },

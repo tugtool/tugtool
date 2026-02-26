@@ -20,8 +20,9 @@ global.document = window.document as any;
 global.DOMParser = window.DOMParser as any;
 global.KeyboardEvent = window.KeyboardEvent as any;
 
-// Mock navigator.clipboard
+// Mock navigator.clipboard while preserving userAgent for react-dom compatibility.
 global.navigator = {
+  userAgent: window.navigator.userAgent,
   clipboard: {
     writeText: () => Promise.resolve(),
   },

@@ -1,3 +1,10 @@
+// CSS imports — globals.css imports tailwindcss and tokens.css (which provides the shadcn variable bridge)
+import "./globals.css";
+import "../styles/cards-chrome.css";
+import "../styles/dock.css";
+// xterm CSS — previously mapped via assets.toml; now imported directly from node_modules
+import "@xterm/xterm/css/xterm.css";
+
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { ConversationCard } from "./cards/conversation-card";
