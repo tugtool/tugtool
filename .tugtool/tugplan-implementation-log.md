@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-26T03:45:07Z
+---
+
+## step-4: Updated 7 documentation files: 6 agent docs (conformance, author, critic, architect, coder, overviewer) and implement SKILL.md. Changed all step-0 references to step-1, removed Rollback from conformance-agent required fields, removed rollback guidance from author-agent and critic-agent.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
 step: step-3
 date: 2025-02-26T03:36:14Z
 ---
