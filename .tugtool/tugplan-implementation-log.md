@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-26T00:18:57Z
+---
+
+## audit-fix: Audit fix: replaced .iter().cloned().collect() with .to_vec() to resolve clippy::iter_cloned_collect lint
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-26T00:17:13Z
 ---
 
