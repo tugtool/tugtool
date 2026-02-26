@@ -599,6 +599,209 @@ describe("developer-card", () => {
     });
   });
 
+  describe("state merging - stale dominates edited", () => {
+    beforeEach(() => {
+      card.mount(container);
+    });
+
+    test("Code row in stale state preserves stale display when onFrame arrives with edited Code files", () => {
+      // First put Code row into stale state
+      card.update({ type: "restart_available", count: 2, timestamp: TEST_TS });
+
+      const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+
+      // Verify stale
+      expect(codeDot.style.backgroundColor).toBe("var(--td-warning)");
+
+      // Now onFrame with edited RS files -- stale should dominate
+      const makePayload = (paths: string[]) => {
+        const unstaged = paths.map((p) => ({ path: p, status: "M" }));
+        const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged, untracked: [], head_sha: "abc", head_message: "msg" };
+        return new TextEncoder().encode(JSON.stringify(obj));
+      };
+
+      card.onFrame(FeedId.GIT, makePayload(["tugcode/src/lib.rs"]));
+
+      // Still shows stale (amber), not edited (blue)
+      expect(codeDot.style.backgroundColor).toBe("var(--td-warning)");
+      expect(codeStatus.textContent).toBe("2 changes -- since 9:42 AM");
+    });
+
+    test("Code row after restart with edited files shows edited (blue dot)", () => {
+      const makePayload = (paths: string[]) => {
+        const unstaged = paths.map((p) => ({ path: p, status: "M" }));
+        const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged, untracked: [], head_sha: "abc", head_message: "msg" };
+        return new TextEncoder().encode(JSON.stringify(obj));
+      };
+
+      // Set stale
+      card.update({ type: "restart_available", count: 2, timestamp: TEST_TS });
+
+      // Send git status with edited RS files
+      card.onFrame(FeedId.GIT, makePayload(["tugcode/src/lib.rs"]));
+
+      // Click Restart
+      const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
+        .find((btn) => btn.textContent === "Restart") as HTMLElement;
+      restartBtn.click();
+
+      const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+
+      // After restart, codeIsStale is false but codeEditedCount is 1 -- show edited
+      expect(codeDot.style.backgroundColor).toBe("var(--td-info)");
+      expect(codeStatus.textContent).toContain("Edited (1 file)");
+    });
+
+    test("Restart button is hidden after restart even when files are still edited", () => {
+      const makePayload = (paths: string[]) => {
+        const unstaged = paths.map((p) => ({ path: p, status: "M" }));
+        const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged, untracked: [], head_sha: "abc", head_message: "msg" };
+        return new TextEncoder().encode(JSON.stringify(obj));
+      };
+
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
+      card.onFrame(FeedId.GIT, makePayload(["tugcode/src/lib.rs"]));
+
+      const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
+        .find((btn) => btn.textContent === "Restart") as HTMLElement;
+      restartBtn.click();
+
+      // Button should be hidden in edited state
+      expect(restartBtn.style.display).toBe("none");
+    });
+  });
+
+  describe("state merging - editedLabel formatting", () => {
+    beforeEach(() => {
+      card.mount(container);
+    });
+
+    test("onFrame shows 'Edited (1 file)' for singular count", () => {
+      const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [{ path: "tugdeck/styles/tokens.css", status: "M" }], untracked: [], head_sha: "abc", head_message: "msg" };
+      const payload = new TextEncoder().encode(JSON.stringify(obj));
+      card.onFrame(FeedId.GIT, payload);
+
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesStatus.textContent).toBe("Edited (1 file)");
+    });
+
+    test("onFrame shows 'Edited (3 files)' for plural count", () => {
+      const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [{ path: "tugdeck/styles/a.css", status: "M" }, { path: "tugdeck/styles/b.css", status: "M" }, { path: "tugdeck/index.html", status: "M" }], untracked: [], head_sha: "abc", head_message: "msg" };
+      const payload = new TextEncoder().encode(JSON.stringify(obj));
+      card.onFrame(FeedId.GIT, payload);
+
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesStatus.textContent).toBe("Edited (3 files)");
+    });
+
+    test("edited label includes timestamp after row was last clean", () => {
+      // First trigger a reloaded event to set stylesLastCleanTs
+      card.update({ type: "reloaded", timestamp: TEST_TS });
+
+      // Then send git status with edited files -- stylesFlashing is true so renderRow returns early
+      // Wait for flash to clear, then send edited files
+      // Instead, manually trigger with no flash by calling destroy + remount
+
+      // Simpler: set an edited file after the flash completes
+      // We test editedLabel with timestamp via a restart scenario for code row
+
+      const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [{ path: "tugcode/src/lib.rs", status: "M" }], untracked: [], head_sha: "abc", head_message: "msg" };
+      const payload = new TextEncoder().encode(JSON.stringify(obj));
+
+      // Set Code row stale, then restart (which sets codeLastCleanTs), then send git status
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
+      const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
+        .find((btn) => btn.textContent === "Restart") as HTMLElement;
+      restartBtn.click();
+
+      // Now send git status with edited files -- codeLastCleanTs is set
+      card.onFrame(FeedId.GIT, payload);
+
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+      // Should show "Edited (1 file) -- 9:42 AM" since codeLastCleanTs is set
+      expect(codeStatus.textContent).toBe("Edited (1 file) -- 9:42 AM");
+    });
+
+    test("onFrame with zero files for a previously edited row returns to clean", () => {
+      const makePayload = (paths: string[]) => {
+        const unstaged = paths.map((p) => ({ path: p, status: "M" }));
+        const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged, untracked: [], head_sha: "abc", head_message: "msg" };
+        return new TextEncoder().encode(JSON.stringify(obj));
+      };
+
+      // First set edited
+      card.onFrame(FeedId.GIT, makePayload(["tugdeck/styles/tokens.css"]));
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-info)");
+
+      // Then clear
+      card.onFrame(FeedId.GIT, makePayload([]));
+
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
+      expect(stylesStatus.textContent).toBe("Clean");
+    });
+  });
+
+  describe("reloaded flash guard (D08) and working state return (D06)", () => {
+    beforeEach(() => {
+      card.mount(container);
+    });
+
+    test("Styles row during 'Reloaded' flash: onFrame with edited CSS files does not overwrite flash", () => {
+      // Start the flash
+      card.update({ type: "reloaded", timestamp: TEST_TS });
+
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesStatus.textContent).toBe("Reloaded");
+
+      // Now onFrame arrives with edited CSS files -- should be blocked by flash guard
+      const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [{ path: "tugdeck/styles/tokens.css", status: "M" }], untracked: [], head_sha: "abc", head_message: "msg" };
+      const payload = new TextEncoder().encode(JSON.stringify(obj));
+      card.onFrame(FeedId.GIT, payload);
+
+      // "Reloaded" should still be shown (flash guard prevented overwrite)
+      expect(stylesStatus.textContent).toBe("Reloaded");
+    });
+
+    test("after 'Reloaded' flash completes with edited style files, returns to 'Edited (N files)'", async () => {
+      // Start the flash
+      card.update({ type: "reloaded", timestamp: TEST_TS });
+
+      // Send git status with edited files during the flash (stored but not rendered)
+      const obj = { branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [{ path: "tugdeck/styles/tokens.css", status: "M" }, { path: "tugdeck/index.html", status: "M" }], untracked: [], head_sha: "abc", head_message: "msg" };
+      const payload = new TextEncoder().encode(JSON.stringify(obj));
+      card.onFrame(FeedId.GIT, payload);
+
+      // Wait for 2s timer to complete
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+
+      // Should return to edited state, not unconditionally clean (per [D06])
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-info)");
+      expect(stylesStatus.textContent).toContain("Edited (2 files)");
+    });
+
+    test("after 'Reloaded' flash completes with zero edited style files, returns to 'Clean'", async () => {
+      // Start the flash with no edited style files
+      card.update({ type: "reloaded", timestamp: TEST_TS });
+
+      // Wait for 2s timer to complete
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
+      expect(stylesStatus.textContent).toBe("Clean -- 9:42 AM");
+    });
+  });
+
   describe("destroy", () => {
     test("destroy clears reloaded timer", async () => {
       card.mount(container);
