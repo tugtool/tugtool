@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-26T17:47:29Z
+---
+
+## step-3: Added millis-since-epoch timestamp to all three dev_notification payload types (reloaded, restart_available, relaunch_available) and updated tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
 step: step-2
 date: 2025-02-26T17:43:36Z
 ---

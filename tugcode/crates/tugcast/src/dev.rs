@@ -8,7 +8,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
@@ -561,17 +561,27 @@ pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
 
 /// Build and send a dev_notification Control frame.
 ///
-/// For `"reloaded"` type: sends `{"action":"dev_notification","type":"reloaded"}`
-/// For `"restart_available"` type: includes `changes` array and `count` from tracker snapshot
-/// For `"relaunch_available"` type: includes `changes` array and `count` from tracker snapshot
+/// For `"reloaded"` type: sends `{"action":"dev_notification","type":"reloaded","timestamp":...}`
+/// For `"restart_available"` type: includes `changes` array, `count`, and `timestamp` from tracker snapshot
+/// For `"relaunch_available"` type: includes `changes` array, `count`, and `timestamp` from tracker snapshot
 pub(crate) fn send_dev_notification(
     notification_type: &str,
     tracker: &SharedChangeTracker,
     client_action_tx: &broadcast::Sender<Frame>,
 ) {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
     let payload = if notification_type == "reloaded" {
         // styles: no changes array or count
-        br#"{"action":"dev_notification","type":"reloaded"}"#.to_vec()
+        let json = serde_json::json!({
+            "action": "dev_notification",
+            "type": "reloaded",
+            "timestamp": timestamp,
+        });
+        serde_json::to_vec(&json).unwrap_or_default()
     } else {
         // code or app: include changes and count from tracker snapshot
         let guard = tracker.lock().unwrap();
@@ -587,6 +597,7 @@ pub(crate) fn send_dev_notification(
             "type": notification_type,
             "changes": changes,
             "count": count,
+            "timestamp": timestamp,
         });
         serde_json::to_vec(&json).unwrap_or_default()
     };
@@ -1581,6 +1592,8 @@ fallback = "dist"
         assert_eq!(json["type"], "reloaded");
         assert!(json.get("changes").is_none());
         assert!(json.get("count").is_none());
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[tokio::test]
@@ -1603,6 +1616,8 @@ fallback = "dist"
         assert_eq!(json["type"], "restart_available");
         assert_eq!(json["changes"], serde_json::json!(["frontend", "backend"]));
         assert_eq!(json["count"], 2);
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[tokio::test]
@@ -1624,6 +1639,8 @@ fallback = "dist"
         assert_eq!(json["type"], "relaunch_available");
         assert_eq!(json["changes"], serde_json::json!(["app"]));
         assert_eq!(json["count"], 1);
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[test]
