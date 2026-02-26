@@ -414,7 +414,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
         .steps
         .iter()
         .map(|step| {
-            let deps = step.depends_on.iter().map(|dep| dep.clone()).collect();
+            let deps = step.depends_on.iter().cloned().collect();
             (step.anchor.clone(), deps)
         })
         .collect();

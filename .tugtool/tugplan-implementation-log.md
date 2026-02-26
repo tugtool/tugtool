@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-26T00:17:13Z
+---
+
+## audit-fix: Audit fix: replaced .map(|dep| dep.clone()) with .cloned() to resolve clippy::map_clone lint
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
 step: step-3
 date: 2025-02-26T00:14:20Z
 ---
