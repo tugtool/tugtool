@@ -11,9 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | <name> |
-| Status | draft / active / done |
 | Target branch | <branch> |
-| Tracking issue/PR | <link or ID> |
 | Last updated | <YYYY-MM-DD> |
 
 ---
