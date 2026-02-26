@@ -134,18 +134,85 @@ tugcode worktree list
 
 If doctor reports issues, present them as warnings (the merge itself succeeded).
 
-### 5. Report Results
+### 5. Post-Merge Dependency Installation
+
+After a successful merge, check whether any dependency files changed and offer to run the appropriate setup commands.
+
+#### Step 5a: Detect Changed Dependency Files
+
+Diff the merge commit against its parent to get the list of changed files:
+
+```bash
+git diff --name-only HEAD~1 HEAD
+```
+
+Match each changed file path against the following lookup table. The directory to run the command in is derived from the path of the changed file (e.g., `tugcode/Cargo.toml` → run in `tugcode/`; a root-level `package.json` → run in the repo root `.`).
+
+**Dependency file lookup table** (extend by adding rows):
+
+| File Pattern | Command |
+|--------------|---------|
+| `Cargo.toml`, `Cargo.lock` | `cargo build` |
+| `package.json`, `package-lock.json` | `npm install` |
+| `Gemfile`, `Gemfile.lock` | `bundle install` |
+| `requirements.txt` | `pip install -r requirements.txt` |
+| `pyproject.toml` | `pip install -e .` |
+| `go.mod`, `go.sum` | `go mod download` |
+
+**Deduplication rules:**
+- If multiple files from the same lookup-table row changed in the same directory, run the command only once for that directory.
+- If files from different rows changed in the same directory, run each distinct command once for that directory.
+
+#### Step 5b: Confirm with User (if any detected)
+
+If no dependency files changed, skip this entire step silently — do not report anything.
+
+If dependency files were detected, present them to the user and ask for confirmation before running anything:
+
+```
+AskUserQuestion(
+  questions: [{
+    question: "Dependency files changed after the merge. Run the setup commands listed below?\n\n  tugcode/Cargo.toml → cargo build (in tugcode/)\n  tugdeck/package.json → npm install (in tugdeck/)",
+    header: "Install Dependencies",
+    options: [
+      { label: "Run (Recommended)", description: "Run all listed setup commands" },
+      { label: "Skip", description: "Skip dependency installation" }
+    ],
+    multiSelect: false
+  }]
+)
+```
+
+Replace the example file/command lines with the actual detected entries.
+
+If the user selects "Skip", continue to step 6 without running any commands.
+
+#### Step 5c: Run Approved Commands
+
+For each (directory, command) pair in the approved list, run:
+
+```bash
+cd <directory> && <command>
+```
+
+Report each command's outcome (success or failure). If a command fails, report the error but continue running the remaining commands — do not halt the entire merge flow. Collect all results and include them in the final report (step 6).
+
+---
+
+### 6. Report Results
 
 **Remote mode success:**
 - PR merged (URL + number)
 - Worktree cleaned up
 - Health check status
+- Dependency installation results (if any commands were run)
 - "Main is clean and ready."
 
 **Local mode success:**
 - Branch squash-merged (commit hash)
 - Worktree cleaned up
 - Health check status
+- Dependency installation results (if any commands were run)
 - "Main is clean and ready."
 
 ---
