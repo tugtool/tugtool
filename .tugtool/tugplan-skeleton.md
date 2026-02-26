@@ -1,3 +1,5 @@
+<!-- tugplan-skeleton v2 -->
+
 ## <Plan Title> {#phase-slug}
 
 **Purpose:** <1–2 sentences. What capability ships at the end of this phase?>
