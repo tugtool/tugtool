@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4-summary
+date: 2025-02-26T17:57:20Z
+---
+
+## step-4-summary: Verification-only step: confirmed full TypeScript and Rust test suites pass, all exit criteria met across steps 1-4
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
+step: step-4
+date: 2025-02-26T17:53:48Z
+---
+
+## step-4: Added five timestamp fields and formatTime/cleanLabel/dirtyLabel helpers to DeveloperCard; wired timestamps into update(), handleRestart(), handleRelaunch(); updated tests with toLocaleTimeString mock and two new timestamp-specific tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
+step: step-3
+date: 2025-02-26T17:47:29Z
+---
+
+## step-3: Added millis-since-epoch timestamp to all three dev_notification payload types (reloaded, restart_available, relaunch_available) and updated tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
+step: step-2
+date: 2025-02-26T17:43:36Z
+---
+
+## step-2: Renamed all Category 1/2/3 references to styles/code/app in dev.rs comments and one warn! log string
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
+step: step-1
+date: 2025-02-26T17:39:16Z
+---
+
+## step-1: Fixed notification routing bug: changed cardState.tabItems to cardState.tabs in dev_notification and dev_build_progress handlers, and updated four mock CardState objects in tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
 step: step-4
 date: 2025-02-26T03:45:07Z
 ---

@@ -2,7 +2,7 @@
  * Tests for developer-card
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Window } from "happy-dom";
 
 // Setup DOM environment
@@ -39,10 +39,14 @@ class MockConnection implements Partial<TugConnection> {
   }
 }
 
+// A fixed timestamp to use in tests (arbitrary epoch millis)
+const TEST_TS = 1_740_000_000_000;
+
 describe("developer-card", () => {
   let connection: MockConnection;
   let card: DeveloperCard;
   let container: HTMLElement;
+  let originalToLocaleTimeString: typeof Date.prototype.toLocaleTimeString;
 
   beforeEach(() => {
     // Reset DOM
@@ -57,6 +61,17 @@ describe("developer-card", () => {
 
     // Create developer card
     card = new DeveloperCard(connection as any);
+
+    // Mock toLocaleTimeString to return a deterministic value
+    originalToLocaleTimeString = Date.prototype.toLocaleTimeString;
+    Date.prototype.toLocaleTimeString = function (_locales?: any, _options?: any): string {
+      return "9:42 AM";
+    };
+  });
+
+  afterEach(() => {
+    // Restore original toLocaleTimeString
+    Date.prototype.toLocaleTimeString = originalToLocaleTimeString;
   });
 
   describe("constructor", () => {
@@ -151,34 +166,43 @@ describe("developer-card", () => {
     });
 
     test("update with type 'reloaded' flashes Styles status to 'Reloaded'", () => {
-      card.update({ type: "reloaded", changes: ["styles.css"] });
+      card.update({ type: "reloaded", timestamp: TEST_TS });
 
       const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
       expect(stylesStatus.textContent).toBe("Reloaded");
     });
 
-    test("update with type 'reloaded' returns to 'Clean' after timer", async () => {
-      card.update({ type: "reloaded", changes: ["styles.css"] });
+    test("update with type 'reloaded' returns to 'Clean -- {time}' after timer", async () => {
+      card.update({ type: "reloaded", timestamp: TEST_TS });
 
       // Wait for 2s timer
+      await new Promise((resolve) => setTimeout(resolve, 2100));
+
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesStatus.textContent).toBe("Clean -- 9:42 AM");
+    });
+
+    test("update with type 'reloaded' and no timestamp returns to plain 'Clean' after timer", async () => {
+      card.update({ type: "reloaded" });
+
       await new Promise((resolve) => setTimeout(resolve, 2100));
 
       const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
       expect(stylesStatus.textContent).toBe("Clean");
     });
 
-    test("update with type 'restart_available' sets Code row to dirty", () => {
-      card.update({ type: "restart_available", count: 3 });
+    test("update with type 'restart_available' sets Code row to dirty with timestamp", () => {
+      card.update({ type: "restart_available", count: 3, timestamp: TEST_TS });
 
       const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
       const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
 
       expect(codeDot.style.backgroundColor).toBe("var(--td-warning)");
-      expect(codeStatus.textContent).toBe("3 changes");
+      expect(codeStatus.textContent).toBe("3 changes -- since 9:42 AM");
     });
 
     test("update with type 'restart_available' shows Restart button", () => {
-      card.update({ type: "restart_available", count: 1 });
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
 
       const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Restart") as HTMLElement;
@@ -186,30 +210,80 @@ describe("developer-card", () => {
       expect(restartBtn.style.display).toBe("block");
     });
 
-    test("update with type 'restart_available' count=1 shows '1 change'", () => {
-      card.update({ type: "restart_available", count: 1 });
+    test("update with type 'restart_available' count=1 shows '1 change -- since {time}'", () => {
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
 
       const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
-      expect(codeStatus.textContent).toBe("1 change");
+      expect(codeStatus.textContent).toBe("1 change -- since 9:42 AM");
     });
 
-    test("update with type 'relaunch_available' sets App row to dirty", () => {
-      card.update({ type: "relaunch_available", count: 2 });
+    test("update with type 'restart_available' and no timestamp shows count only", () => {
+      card.update({ type: "restart_available", count: 2 });
+
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+      expect(codeStatus.textContent).toBe("2 changes");
+    });
+
+    test("update with type 'relaunch_available' sets App row to dirty with timestamp", () => {
+      card.update({ type: "relaunch_available", count: 2, timestamp: TEST_TS });
 
       const appDot = container.querySelectorAll(".dev-dot")[2] as HTMLElement;
       const appStatus = container.querySelectorAll(".dev-status")[2] as HTMLElement;
 
       expect(appDot.style.backgroundColor).toBe("var(--td-warning)");
-      expect(appStatus.textContent).toBe("2 changes");
+      expect(appStatus.textContent).toBe("2 changes -- since 9:42 AM");
     });
 
     test("update with type 'relaunch_available' shows Relaunch button", () => {
-      card.update({ type: "relaunch_available", count: 1 });
+      card.update({ type: "relaunch_available", count: 1, timestamp: TEST_TS });
 
       const relaunchBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Relaunch") as HTMLElement;
 
       expect(relaunchBtn.style.display).toBe("block");
+    });
+
+    test("second dirty notification preserves original 'since' timestamp", () => {
+      const firstTs = 1_740_000_000_000;
+      const secondTs = 1_740_000_060_000; // 1 minute later
+
+      // First dirty notification sets the "since" clock
+      card.update({ type: "restart_available", count: 1, timestamp: firstTs });
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+      const firstLabel = codeStatus.textContent;
+
+      // Second dirty notification must not overwrite firstDirtySinceTs
+      card.update({ type: "restart_available", count: 2, timestamp: secondTs });
+      const secondLabel = codeStatus.textContent;
+
+      // Both labels use the same formatted time (mocked to "9:42 AM") — the count updates
+      expect(firstLabel).toBe("1 change -- since 9:42 AM");
+      expect(secondLabel).toBe("2 changes -- since 9:42 AM");
+
+      // Verify the "since" part did not change by checking that the count part changed
+      // while the "since" part is identical
+      const firstSince = firstLabel!.split("-- since ")[1];
+      const secondSince = secondLabel!.split("-- since ")[1];
+      expect(firstSince).toBe(secondSince);
+    });
+
+    test("restart click resets firstDirtySinceTs; next dirty notification starts fresh 'since' clock", () => {
+      // First dirty notification
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
+
+      const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
+        .find((btn) => btn.textContent === "Restart") as HTMLElement;
+
+      // Click Restart — resets firstDirtySinceTs
+      restartBtn.click();
+
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+      expect(codeStatus.textContent).toBe("Clean -- 9:42 AM");
+
+      // Now a new dirty notification should start a fresh "since" clock
+      const newTs = 1_740_000_120_000;
+      card.update({ type: "restart_available", count: 1, timestamp: newTs });
+      expect(codeStatus.textContent).toBe("1 change -- since 9:42 AM");
     });
   });
 
@@ -221,7 +295,7 @@ describe("developer-card", () => {
 
     test("Restart button click sends 'restart' control frame", () => {
       // Make Restart button visible
-      card.update({ type: "restart_available", count: 1 });
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
 
       const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Restart") as HTMLElement;
@@ -231,9 +305,9 @@ describe("developer-card", () => {
       expect(connection.sentControlFrames).toContain("restart");
     });
 
-    test("Restart button click clears Code row state", () => {
+    test("Restart button click clears Code row to clean with timestamp", () => {
       // Set dirty
-      card.update({ type: "restart_available", count: 1 });
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
 
       const restartBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Restart") as HTMLElement;
@@ -244,12 +318,12 @@ describe("developer-card", () => {
       const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
 
       expect(codeDot.style.backgroundColor).toBe("var(--td-success)");
-      expect(codeStatus.textContent).toBe("Clean");
+      expect(codeStatus.textContent).toBe("Clean -- 9:42 AM");
       expect(restartBtn.style.display).toBe("none");
     });
 
     test("Restart button click clears dock badge", () => {
-      card.update({ type: "restart_available", count: 1 });
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
 
       let badgeCleared = false;
       const listener = (e: Event) => {
@@ -270,7 +344,7 @@ describe("developer-card", () => {
 
     test("Relaunch button click sends 'relaunch' control frame", () => {
       // Make Relaunch button visible
-      card.update({ type: "relaunch_available", count: 1 });
+      card.update({ type: "relaunch_available", count: 1, timestamp: TEST_TS });
 
       const relaunchBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Relaunch") as HTMLElement;
@@ -280,9 +354,9 @@ describe("developer-card", () => {
       expect(connection.sentControlFrames).toContain("relaunch");
     });
 
-    test("Relaunch button click clears App row state", () => {
+    test("Relaunch button click clears App row to clean with timestamp", () => {
       // Set dirty
-      card.update({ type: "relaunch_available", count: 1 });
+      card.update({ type: "relaunch_available", count: 1, timestamp: TEST_TS });
 
       const relaunchBtn = Array.from(container.querySelectorAll(".dev-action-btn"))
         .find((btn) => btn.textContent === "Relaunch") as HTMLElement;
@@ -293,7 +367,7 @@ describe("developer-card", () => {
       const appStatus = container.querySelectorAll(".dev-status")[2] as HTMLElement;
 
       expect(appDot.style.backgroundColor).toBe("var(--td-success)");
-      expect(appStatus.textContent).toBe("Clean");
+      expect(appStatus.textContent).toBe("Clean -- 9:42 AM");
       expect(relaunchBtn.style.display).toBe("none");
     });
 
@@ -372,7 +446,7 @@ describe("developer-card", () => {
       card.mount(container);
 
       // Trigger reloaded with timer
-      card.update({ type: "reloaded", changes: ["styles.css"] });
+      card.update({ type: "reloaded", timestamp: TEST_TS });
 
       // Destroy before timer completes
       card.destroy();
@@ -397,7 +471,7 @@ describe("developer-card", () => {
       card.destroy();
 
       // Verify internal state is cleared (via subsequent update being safe)
-      card.update({ type: "restart_available", count: 1 });
+      card.update({ type: "restart_available", count: 1, timestamp: TEST_TS });
       // Should not crash
     });
   });

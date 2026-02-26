@@ -8,7 +8,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
@@ -51,9 +51,9 @@ pub(crate) type SharedDevState = Arc<ArcSwap<Option<DevState>>>;
 /// Tracks file change state across three watcher categories.
 ///
 /// Per-category dirty flags indicate which categories have pending changes.
-/// `code_count` is a single combined counter for Category 2 (frontend + backend),
+/// `code_count` is a single combined counter for code (frontend + backend),
 /// incremented by both `mark_frontend()` and `mark_backend()`.
-/// `app_count` is a separate counter for Category 3 (app sources).
+/// `app_count` is a separate counter for app (app sources).
 #[derive(Debug, Default)]
 pub(crate) struct DevChangeTracker {
     pub frontend_dirty: bool,
@@ -105,8 +105,8 @@ impl DevChangeTracker {
         (changes, self.code_count, self.app_count)
     }
 
-    /// Clear Category 1+2 state after a restart operation.
-    /// Preserves app (Category 3) state.
+    /// Clear styles+code state after a restart operation.
+    /// Preserves app state.
     #[allow(dead_code)]
     pub fn clear_restart(&mut self) {
         self.frontend_dirty = false;
@@ -170,7 +170,7 @@ pub(crate) async fn enable_dev_mode(
     // Create change tracker
     let change_tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
 
-    // Create Category 1 watcher: HTML/CSS file watcher for live reload
+    // Create styles watcher: HTML/CSS file watcher for live reload
     let watcher = dev_file_watcher(
         &watch_dirs,
         client_action_tx.clone(),
@@ -178,7 +178,7 @@ pub(crate) async fn enable_dev_mode(
         change_tracker.clone(),
     )?;
 
-    // Create Category 2 watcher: compiled code (frontend + backend) mtime poller
+    // Create code watcher: compiled code (frontend + backend) mtime poller
     let frontend_path = source_tree.join("tugdeck/dist/app.js");
     let backend_path = source_tree.join("tugcode/target/debug/tugcast");
     let compiled_watcher = dev_compiled_watcher(
@@ -188,7 +188,7 @@ pub(crate) async fn enable_dev_mode(
         client_action_tx.clone(),
     );
 
-    // Create Category 3 watcher: app sources (.swift files) notify watcher
+    // Create app watcher: app sources (.swift files) notify watcher
     let app_sources_dir = source_tree.join("tugapp/Sources");
     let app_watcher = dev_app_watcher(app_sources_dir, change_tracker.clone(), client_action_tx)?;
 
@@ -213,7 +213,7 @@ pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevStat
     // Abort the compiled watcher polling task (drop alone does not abort spawned tokio tasks)
     runtime._compiled_watcher.abort();
 
-    // Drop runtime (stops file watchers for Category 1 and 3)
+    // Drop runtime (stops file watchers for styles and app)
     drop(runtime);
 
     info!("dev mode disabled");
@@ -561,19 +561,29 @@ pub(crate) fn shorten_synthetic_path(path: &Path) -> PathBuf {
 
 /// Build and send a dev_notification Control frame.
 ///
-/// For `"reloaded"` type: sends `{"action":"dev_notification","type":"reloaded"}`
-/// For `"restart_available"` type: includes `changes` array and `count` from tracker snapshot
-/// For `"relaunch_available"` type: includes `changes` array and `count` from tracker snapshot
+/// For `"reloaded"` type: sends `{"action":"dev_notification","type":"reloaded","timestamp":...}`
+/// For `"restart_available"` type: includes `changes` array, `count`, and `timestamp` from tracker snapshot
+/// For `"relaunch_available"` type: includes `changes` array, `count`, and `timestamp` from tracker snapshot
 pub(crate) fn send_dev_notification(
     notification_type: &str,
     tracker: &SharedChangeTracker,
     client_action_tx: &broadcast::Sender<Frame>,
 ) {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
     let payload = if notification_type == "reloaded" {
-        // Category 1: no changes array or count
-        br#"{"action":"dev_notification","type":"reloaded"}"#.to_vec()
+        // styles: no changes array or count
+        let json = serde_json::json!({
+            "action": "dev_notification",
+            "type": "reloaded",
+            "timestamp": timestamp,
+        });
+        serde_json::to_vec(&json).unwrap_or_default()
     } else {
-        // Category 2 or 3: include changes and count from tracker snapshot
+        // code or app: include changes and count from tracker snapshot
         let guard = tracker.lock().unwrap();
         let (changes, code_count, app_count) = guard.snapshot();
         let count = if notification_type == "restart_available" {
@@ -587,6 +597,7 @@ pub(crate) fn send_dev_notification(
             "type": notification_type,
             "changes": changes,
             "count": count,
+            "timestamp": timestamp,
         });
         serde_json::to_vec(&json).unwrap_or_default()
     };
@@ -721,7 +732,7 @@ pub(crate) fn dev_file_watcher(
     Ok(watcher)
 }
 
-/// Start compiled code watcher (Category 2) using mtime polling
+/// Start compiled code watcher (code) using mtime polling
 ///
 /// Polls two exact file paths every 2 seconds: frontend (dist/app.js) and backend (tugcast binary).
 /// On stable mtime change (after 500ms stabilization), marks the appropriate tracker category
@@ -768,10 +779,10 @@ pub(crate) fn dev_compiled_watcher(
     })
 }
 
-/// Start app sources watcher (Category 3) using notify events
+/// Start app sources watcher (app) using notify events
 ///
 /// Watches tugapp/Sources/ recursively for .swift file changes. Uses the same
-/// quiet-period debounce as Category 1 (100ms silence window). On change, marks
+/// quiet-period debounce as styles (100ms silence window). On change, marks
 /// the app tracker category and sends a relaunch_available notification.
 pub(crate) fn dev_app_watcher(
     app_sources_dir: PathBuf,
@@ -794,7 +805,7 @@ pub(crate) fn dev_app_watcher(
         info!("dev: watching app sources {}", app_sources_dir.display());
     } else {
         warn!(
-            "dev: app sources directory {} does not exist, skipping Category 3 watcher",
+            "dev: app sources directory {} does not exist, skipping app watcher",
             app_sources_dir.display()
         );
     }
@@ -1581,6 +1592,8 @@ fallback = "dist"
         assert_eq!(json["type"], "reloaded");
         assert!(json.get("changes").is_none());
         assert!(json.get("count").is_none());
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[tokio::test]
@@ -1603,6 +1616,8 @@ fallback = "dist"
         assert_eq!(json["type"], "restart_available");
         assert_eq!(json["changes"], serde_json::json!(["frontend", "backend"]));
         assert_eq!(json["count"], 2);
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[tokio::test]
@@ -1624,6 +1639,8 @@ fallback = "dist"
         assert_eq!(json["type"], "relaunch_available");
         assert_eq!(json["changes"], serde_json::json!(["app"]));
         assert_eq!(json["count"], 1);
+        assert!(json.get("timestamp").is_some());
+        assert!(json["timestamp"].as_u64().unwrap() > 0);
     }
 
     #[test]
