@@ -24,6 +24,7 @@ global.localStorage = localStorageMock as any;
 
 // Import after DOM setup
 import { DeveloperCard, categorizeFile } from "./developer-card";
+import { FeedId } from "../protocol";
 import type { TugConnection } from "../connection";
 
 // Mock TugConnection
@@ -145,11 +146,12 @@ describe("developer-card", () => {
   describe("constructor", () => {
     test("constructor accepts TugConnection", () => {
       expect(card).toBeDefined();
-      expect(card.feedIds).toEqual([]);
+      expect(card.feedIds).toContain(FeedId.GIT);
     });
 
-    test("card has no feedIds (receives data via action-dispatch)", () => {
-      expect(card.feedIds.length).toBe(0);
+    test("card subscribes to FeedId.GIT for working state tracking", () => {
+      expect(card.feedIds).toContain(FeedId.GIT);
+      expect(card.feedIds.length).toBe(1);
     });
   });
 
@@ -352,6 +354,94 @@ describe("developer-card", () => {
       const newTs = 1_740_000_120_000;
       card.update({ type: "restart_available", count: 1, timestamp: newTs });
       expect(codeStatus.textContent).toBe("1 change -- since 9:42 AM");
+    });
+  });
+
+  describe("onFrame() - git status working state", () => {
+    // Helper to build a GitStatus payload Uint8Array
+    function makeGitPayload(staged: { path: string; status: string }[], unstaged: { path: string; status: string }[], untracked: string[] = []): Uint8Array {
+      const obj = { branch: "main", ahead: 0, behind: 0, staged, unstaged, untracked, head_sha: "abc123", head_message: "latest" };
+      return new TextEncoder().encode(JSON.stringify(obj));
+    }
+
+    beforeEach(() => {
+      card.mount(container);
+    });
+
+    test("onFrame with CSS files in unstaged sets Styles row to Edited with blue dot", () => {
+      const payload = makeGitPayload([], [{ path: "tugdeck/styles/tokens.css", status: "M" }, { path: "tugdeck/styles/card.css", status: "M" }]);
+      card.onFrame(FeedId.GIT, payload);
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-info)");
+      expect(stylesStatus.textContent).toBe("Edited (2 files)");
+    });
+
+    test("onFrame with RS files in staged sets Code row to Edited with blue dot", () => {
+      const payload = makeGitPayload([{ path: "tugcode/src/main.rs", status: "M" }], []);
+      card.onFrame(FeedId.GIT, payload);
+
+      const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
+      const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
+
+      expect(codeDot.style.backgroundColor).toBe("var(--td-info)");
+      expect(codeStatus.textContent).toBe("Edited (1 file)");
+    });
+
+    test("onFrame with empty staged and unstaged shows Clean state", () => {
+      // First set to edited
+      const editPayload = makeGitPayload([], [{ path: "tugdeck/styles/tokens.css", status: "M" }]);
+      card.onFrame(FeedId.GIT, editPayload);
+
+      // Then send empty status
+      const cleanPayload = makeGitPayload([], []);
+      card.onFrame(FeedId.GIT, cleanPayload);
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
+      expect(stylesStatus.textContent).toBe("Clean");
+    });
+
+    test("onFrame deduplicates paths appearing in both staged and unstaged", () => {
+      // Same path in both staged and unstaged -- should count as 1, not 2
+      const path = "tugdeck/styles/tokens.css";
+      const payload = makeGitPayload([{ path, status: "M" }], [{ path, status: "M" }]);
+      card.onFrame(FeedId.GIT, payload);
+
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+      expect(stylesStatus.textContent).toBe("Edited (1 file)");
+    });
+
+    test("onFrame ignores untracked files", () => {
+      // Only untracked CSS -- should not count toward Styles edited count
+      const payload = makeGitPayload([], [], ["tugdeck/styles/new-file.css"]);
+      card.onFrame(FeedId.GIT, payload);
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      const stylesStatus = container.querySelectorAll(".dev-status")[0] as HTMLElement;
+
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
+      expect(stylesStatus.textContent).toBe("Clean");
+    });
+
+    test("onFrame with wrong feedId is ignored", () => {
+      const payload = makeGitPayload([], [{ path: "tugdeck/styles/tokens.css", status: "M" }]);
+      // Use a different feedId -- should be a no-op
+      card.onFrame(0x10 as any, payload);
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
+    });
+
+    test("onFrame with empty payload is ignored", () => {
+      card.onFrame(FeedId.GIT, new Uint8Array(0));
+
+      const stylesDot = container.querySelectorAll(".dev-dot")[0] as HTMLElement;
+      expect(stylesDot.style.backgroundColor).toBe("var(--td-success)");
     });
   });
 

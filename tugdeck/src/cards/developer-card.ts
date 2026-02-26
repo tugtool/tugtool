@@ -3,7 +3,7 @@
  */
 
 import type { TugCard, TugCardMeta } from "./card";
-import type { FeedIdValue } from "../protocol";
+import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugConnection } from "../connection";
 
 /**
@@ -62,7 +62,7 @@ export function categorizeFile(path: string): RowCategory | null {
 }
 
 export class DeveloperCard implements TugCard {
-  readonly feedIds: readonly FeedIdValue[] = [];
+  readonly feedIds: readonly FeedIdValue[] = [FeedId.GIT];
 
   private container: HTMLElement | null = null;
   private connection: TugConnection;
@@ -94,6 +94,11 @@ export class DeveloperCard implements TugCard {
   private codeFirstDirtySinceTs: number | null = null;
   private appLastCleanTs: number | null = null;
   private appFirstDirtySinceTs: number | null = null;
+
+  // Per-row working state: count of edited (staged/unstaged tracked) files per row
+  private stylesEditedCount = 0;
+  private codeEditedCount = 0;
+  private appEditedCount = 0;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -263,8 +268,42 @@ export class DeveloperCard implements TugCard {
     }
   }
 
-  onFrame(_feedId: FeedIdValue, _payload: Uint8Array): void {
-    // No-op: Developer card receives data via action-dispatch, not frame fan-out
+  onFrame(feedId: FeedIdValue, payload: Uint8Array): void {
+    if (feedId !== FeedId.GIT || payload.length === 0) return;
+
+    const text = new TextDecoder().decode(payload);
+    let status: GitStatus;
+    try {
+      status = JSON.parse(text);
+    } catch {
+      console.error("developer-card: failed to parse GitStatus payload");
+      return;
+    }
+
+    // Collect unique paths from staged and unstaged (ignore untracked per [D03])
+    const paths = new Set<string>();
+    for (const f of status.staged) paths.add(f.path);
+    for (const f of status.unstaged) paths.add(f.path);
+
+    // Count edited files per row
+    let stylesCount = 0;
+    let codeCount = 0;
+    let appCount = 0;
+    for (const path of paths) {
+      const category = categorizeFile(path);
+      if (category === "styles") stylesCount++;
+      else if (category === "code") codeCount++;
+      else if (category === "app") appCount++;
+    }
+
+    this.stylesEditedCount = stylesCount;
+    this.codeEditedCount = codeCount;
+    this.appEditedCount = appCount;
+
+    // Re-render each row to reflect updated working state
+    this.renderWorkingState("styles");
+    this.renderWorkingState("code");
+    this.renderWorkingState("app");
   }
 
   onResize(_w: number, _h: number): void {
@@ -298,6 +337,10 @@ export class DeveloperCard implements TugCard {
     this.codeFirstDirtySinceTs = null;
     this.appLastCleanTs = null;
     this.appFirstDirtySinceTs = null;
+    // Reset working state edited counts
+    this.stylesEditedCount = 0;
+    this.codeEditedCount = 0;
+    this.appEditedCount = 0;
   }
 
   // ---- Private ----
@@ -313,6 +356,48 @@ export class DeveloperCard implements TugCard {
   private dirtyLabel(count: number, sinceTs: number | null): string {
     const countPart = count === 1 ? "1 change" : `${count} changes`;
     return sinceTs !== null ? countPart + " -- since " + this.formatTime(sinceTs) : countPart;
+  }
+
+  /**
+   * Render working state (edited vs. clean) for a single row.
+   * Used by onFrame() after updating edited counts.
+   * Does not handle stale state -- that is managed by update() directly
+   * and will be unified into renderRow() in step 3.
+   */
+  private renderWorkingState(row: "styles" | "code" | "app"): void {
+    let dot: HTMLElement | null;
+    let status: HTMLElement | null;
+    let editedCount: number;
+    let lastCleanTs: number | null;
+
+    if (row === "styles") {
+      dot = this.stylesDot;
+      status = this.stylesStatus;
+      editedCount = this.stylesEditedCount;
+      lastCleanTs = this.stylesLastCleanTs;
+    } else if (row === "code") {
+      dot = this.codeDot;
+      status = this.codeStatus;
+      editedCount = this.codeEditedCount;
+      lastCleanTs = this.codeLastCleanTs;
+    } else {
+      dot = this.appDot;
+      status = this.appStatus;
+      editedCount = this.appEditedCount;
+      lastCleanTs = this.appLastCleanTs;
+    }
+
+    if (!dot || !status) return;
+
+    if (editedCount > 0) {
+      dot.style.backgroundColor = "var(--td-info)";
+      const plural = editedCount === 1 ? "file" : "files";
+      const base = `Edited (${editedCount} ${plural})`;
+      status.textContent = lastCleanTs !== null ? base + " -- " + this.formatTime(lastCleanTs) : base;
+    } else {
+      dot.style.backgroundColor = "var(--td-success)";
+      status.textContent = this.cleanLabel(lastCleanTs);
+    }
   }
 
   private createRow(label: string, statusText: string): HTMLElement {

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-26T19:01:37Z
+---
+
+## step-2: Added FeedId.GIT subscription, onFrame handler with deduplication and categorization, per-row edited counts, and inline working state display updates with 7 new tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-working-state.md
+
+---
+
+---
 step: step-1
 date: 2025-02-26T18:54:52Z
 ---
