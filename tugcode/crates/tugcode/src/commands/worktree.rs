@@ -615,23 +615,6 @@ pub fn run_worktree_setup_with_root(
                 }
             };
 
-            // Create artifact directories inside worktree
-            let artifacts_base = worktree_path.join(".tugtool/artifacts");
-            if let Err(e) = std::fs::create_dir_all(&artifacts_base) {
-                eprintln!("warning: failed to create artifacts base directory: {}", e);
-            }
-
-            // Create per-step artifact directories using step anchors as directory names
-            for step_anchor in &all_steps {
-                let step_dir = artifacts_base.join(step_anchor);
-                if let Err(e) = std::fs::create_dir_all(&step_dir) {
-                    eprintln!(
-                        "warning: failed to create {} artifact directory: {}",
-                        step_anchor, e
-                    );
-                }
-            }
-
             if json_output {
                 let data = SetupData {
                     worktree_path: worktree_path.display().to_string(),

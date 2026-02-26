@@ -1120,18 +1120,6 @@ pub fn remove_worktree(worktree_path: &Path, repo_root: &Path) -> Result<(), Tug
         std::fs::remove_file(&internal_session)?;
     }
 
-    // Delete legacy internal step-artifacts directory (backward compatibility)
-    let internal_artifacts = worktree_path.join(".tugtool").join("step-artifacts");
-    if internal_artifacts.exists() {
-        std::fs::remove_dir_all(&internal_artifacts)?;
-    }
-
-    // Delete current artifacts directory (new location)
-    let artifacts = worktree_path.join(".tugtool").join("artifacts");
-    if artifacts.exists() {
-        std::fs::remove_dir_all(&artifacts)?;
-    }
-
     // Now remove the worktree using git (without --force since files are cleaned)
     let git = GitCli::new(repo_root);
     git.worktree_remove(worktree_path)?;
