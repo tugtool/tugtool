@@ -4818,4 +4818,341 @@ mod tests {
         // only strips one leading '#'
         assert_eq!(normalize_anchor("##step-0"), "#step-0");
     }
+
+    #[test]
+    fn test_start_step_with_hash_prefix() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim step-0 (stores bare "step-0" in DB)
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
+
+        // start_step with hash-prefixed anchor — should succeed via normalization
+        let result = db.start_step(".tugtool/tugplan-test.md", "#step-0", "wt-a");
+        assert!(result.is_ok(), "start_step with #step-0 should succeed");
+
+        // Verify status is now in_progress
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                rusqlite::params![".tugtool/tugplan-test.md"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "in_progress");
+    }
+
+    #[test]
+    fn test_complete_step_with_hash_prefix() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim and start step-0 (bare anchor)
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+            .unwrap();
+
+        // Mark all checklist items complete so strict mode succeeds
+        db.update_checklist(
+            ".tugtool/tugplan-test.md",
+            "step-0",
+            "wt-a",
+            &[ChecklistUpdate::AllItems {
+                status: "completed".to_string(),
+            }],
+        )
+        .unwrap();
+
+        // complete_step with hash-prefixed anchor — should succeed via normalization
+        let result = db.complete_step(".tugtool/tugplan-test.md", "#step-0", "wt-a", false, None);
+        assert!(result.is_ok(), "complete_step with #step-0 should succeed");
+
+        // Verify status is completed
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                rusqlite::params![".tugtool/tugplan-test.md"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
+
+    #[test]
+    fn test_heartbeat_step_with_hash_prefix() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim and start step-0 (bare anchor)
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
+        db.start_step(".tugtool/tugplan-test.md", "step-0", "wt-a")
+            .unwrap();
+
+        // heartbeat_step with hash-prefixed anchor — should return a lease expiry string
+        let result = db.heartbeat_step(".tugtool/tugplan-test.md", "#step-0", "wt-a", 7200);
+        assert!(result.is_ok(), "heartbeat_step with #step-0 should succeed");
+        let lease_expiry = result.unwrap();
+        assert!(!lease_expiry.is_empty(), "lease expiry should be non-empty");
+    }
+
+    #[test]
+    fn test_check_ownership_with_hash_prefix() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Claim step-0 (bare anchor stored in DB)
+        db.claim_step(
+            ".tugtool/tugplan-test.md",
+            "wt-a",
+            7200,
+            "abc123hash",
+            false,
+        )
+        .unwrap();
+
+        // check_ownership with hash-prefixed anchor — should succeed via normalization
+        let result = db.check_ownership(".tugtool/tugplan-test.md", "#step-0", "wt-a");
+        assert!(
+            result.is_ok(),
+            "check_ownership with #step-0 should succeed"
+        );
+    }
+
+    #[test]
+    fn test_update_checklist_with_hash_prefix() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // update_checklist with hash-prefixed anchor — should succeed via normalization
+        let updates = vec![ChecklistUpdate::Individual {
+            kind: "task".to_string(),
+            ordinal: 0,
+            status: "completed".to_string(),
+        }];
+
+        let result = db.update_checklist(".tugtool/tugplan-test.md", "#step-0", "wt-a", &updates);
+        assert!(
+            result.is_ok(),
+            "update_checklist with #step-0 should succeed"
+        );
+        assert_eq!(result.unwrap().items_updated, 1);
+
+        // Verify item was actually updated in DB (stored under bare anchor)
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
+
+    #[test]
+    fn test_record_artifact_with_hash_prefix() {
+        let (_temp, db) = setup_claimed_plan();
+
+        // record_artifact with hash-prefixed anchor — should succeed via normalization
+        let result = db.record_artifact(
+            ".tugtool/tugplan-test.md",
+            "#step-0",
+            "wt-a",
+            "architect_strategy",
+            "Test strategy summary",
+        );
+        assert!(
+            result.is_ok(),
+            "record_artifact with #step-0 should succeed"
+        );
+        assert!(result.unwrap() > 0);
+
+        // Verify artifact recorded under bare anchor
+        let count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM step_artifacts WHERE step_anchor = 'step-0' AND kind = 'architect_strategy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_reset_step_with_hash_prefix() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // reset_step with hash-prefixed anchor — should succeed via normalization
+        let result = db.reset_step(".tugtool/tugplan-test.md", "#step-0");
+        assert!(result.is_ok(), "reset_step with #step-0 should succeed");
+
+        // Verify step is back to pending (bare anchor in DB)
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                rusqlite::params![".tugtool/tugplan-test.md"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn test_release_step_with_hash_prefix() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // release_step with hash-prefixed anchor — should succeed via normalization
+        let result = db.release_step(".tugtool/tugplan-test.md", "#step-0", Some("wt-a"), false);
+        assert!(result.is_ok(), "release_step with #step-0 should succeed");
+        let release = result.unwrap();
+        assert!(release.released);
+        assert_eq!(release.was_claimed_by, Some("wt-a".to_string()));
+
+        // Verify step is pending (bare anchor in DB)
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                rusqlite::params![".tugtool/tugplan-test.md"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn test_batch_update_checklist_with_hash_prefix() {
+        let (_temp, mut db) = setup_claimed_plan();
+
+        // Define a minimal local BatchEntry implementation for the test
+        struct TestEntry {
+            kind: String,
+            ordinal: usize,
+            status: String,
+        }
+
+        impl BatchEntry for TestEntry {
+            fn kind(&self) -> &str {
+                &self.kind
+            }
+            fn ordinal(&self) -> usize {
+                self.ordinal
+            }
+            fn status(&self) -> &str {
+                &self.status
+            }
+            fn reason(&self) -> Option<&str> {
+                None
+            }
+        }
+
+        let entries = vec![TestEntry {
+            kind: "task".to_string(),
+            ordinal: 0,
+            status: "completed".to_string(),
+        }];
+
+        // batch_update_checklist with hash-prefixed anchor — should succeed via normalization
+        let result = db.batch_update_checklist(
+            ".tugtool/tugplan-test.md",
+            "#step-0",
+            "wt-a",
+            &entries,
+            false,
+        );
+        assert!(
+            result.is_ok(),
+            "batch_update_checklist with #step-0 should succeed"
+        );
+        assert_eq!(result.unwrap().items_updated, 1);
+
+        // Verify item updated under bare anchor in DB
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM checklist_items WHERE step_anchor = 'step-0' AND kind = 'task' AND ordinal = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
+
+    #[test]
+    fn test_reconcile_with_hash_prefix() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+        let mut db = StateDb::open(&db_path).unwrap();
+        let plan = make_test_plan();
+        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
+            .unwrap();
+
+        // Create a ReconcileEntry with hash-prefixed anchor (simulates historical git trailer)
+        let entries = vec![ReconcileEntry {
+            step_anchor: "#step-0".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
+            commit_hash: "deadbeef".to_string(),
+        }];
+
+        let result = db.reconcile(".tugtool/tugplan-test.md", &entries, false);
+        assert!(result.is_ok(), "reconcile with #step-0 should succeed");
+
+        let reconcile_result = result.unwrap();
+        assert_eq!(
+            reconcile_result.reconciled_count, 1,
+            "step-0 should be reconciled"
+        );
+        assert_eq!(reconcile_result.skipped_count, 0);
+
+        // Verify step-0 is now completed (stored as bare anchor in DB)
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM steps WHERE plan_path = ?1 AND anchor = 'step-0'",
+                rusqlite::params![".tugtool/tugplan-test.md"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed");
+    }
 }

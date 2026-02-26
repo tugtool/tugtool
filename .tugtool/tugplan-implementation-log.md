@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-26T00:14:20Z
+---
+
+## step-3: Added 10 integration tests verifying all StateDb methods work correctly with hash-prefixed anchors, covering all methods in Table T01
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
 step: step-2
 date: 2025-02-26T00:06:55Z
 ---
