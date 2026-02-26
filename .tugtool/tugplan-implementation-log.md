@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-26T17:43:36Z
+---
+
+## step-2: Renamed all Category 1/2/3 references to styles/code/app in dev.rs comments and one warn! log string
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
 step: step-1
 date: 2025-02-26T17:39:16Z
 ---
