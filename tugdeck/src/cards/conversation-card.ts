@@ -262,8 +262,6 @@ export class ConversationCard implements TugCard {
     // Drag-and-drop listeners
     this.container.addEventListener("dragover", (e) => {
       e.preventDefault();
-      this.dragCounter++;
-      this.container.classList.add("drag-over");
     });
 
     this.container.addEventListener("dragenter", (e) => {
