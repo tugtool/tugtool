@@ -208,7 +208,6 @@ Clarifying questions are informational context for the author. They do not indep
 
 - Are there missing steps that the plan assumes but doesn't specify?
 - Are edge cases and error paths covered?
-- Are rollback procedures realistic?
 - Are non-goals actually non-goals, or are some of them implicit requirements?
 - Does the plan account for existing code patterns and conventions in the codebase?
 
@@ -344,7 +343,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 2. Check internal consistency — do decisions contradict each other? Do steps implement what specs say?
 3. Check technical soundness — are the approaches appropriate? Are there better alternatives?
 4. Check implementability — verify source code claims (V1-V5), check step dependencies
-5. Check completeness — are edge cases covered? Are rollbacks realistic?
+5. Check completeness — are edge cases covered?
 6. Check risk/feasibility — what are the highest-risk steps? Are assumptions sound?
 7. Formulate clarifying questions for genuine ambiguities
 8. Compile findings, assess areas, determine recommendation

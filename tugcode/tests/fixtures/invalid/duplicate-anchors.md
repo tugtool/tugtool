@@ -40,7 +40,7 @@ None.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Test {#step-0}
+#### Step 1: Test {#step-1}
 
 **Commit:** `test: duplicate anchors`
 

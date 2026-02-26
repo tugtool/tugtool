@@ -172,7 +172,7 @@ It serves as a reference implementation for the tug validation system.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `test: add complete fixture`
 
@@ -198,9 +198,9 @@ It serves as a reference implementation for the tug validation system.
 
 ---
 
-#### Step 1: Verify {#step-1}
+#### Step 2: Verify {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `test: verify complete fixture`
 

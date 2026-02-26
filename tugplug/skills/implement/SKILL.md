@@ -305,7 +305,7 @@ For `state_update_failed` after exhausting recovery (escalation):
 **Architecture principles:**
 - Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugcode CLI only)
 - All file I/O, git operations, and code execution happen in subagents (except tugcode CLI calls which the orchestrator runs directly)
-- **Persistent agents**: architect, coder, reviewer, committer are each spawned ONCE (during step 0) and RESUMED for all subsequent steps
+- **Persistent agents**: architect, coder, reviewer, committer are each spawned ONCE (during step 1) and RESUMED for all subsequent steps
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
 - Agents accumulate cross-step knowledge: codebase structure, files created, patterns established
 - Architect does read-only strategy; coder receives strategy and implements
@@ -333,7 +333,7 @@ Parse the JSON output from stdout. The output is a SetupData object with these f
 - `base_branch`: Base branch (e.g., "main")
 - `plan_path`: Relative path to the plan file
 - `total_steps`: Total number of execution steps
-- `all_steps`: Array of all step anchors (e.g., ["step-0", "step-1"])
+- `all_steps`: Array of all step anchors (e.g., ["step-1", "step-2"])
 - `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet complete)
 - `state_initialized`: Boolean indicating tugstate was initialized
 
@@ -400,10 +400,10 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "step-0",
-    "all_steps": ["step-0", "step-1", ...]
+    "step_anchor": "step-1",
+    "all_steps": ["step-1", "step-2", ...]
   }',
-  description: "Plan strategy for step 0"
+  description: "Plan strategy for step 1"
 )
 ```
 
@@ -444,9 +444,9 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "step-0"
+    "step_anchor": "step-1"
   }',
-  description: "Implement step 0"
+  description: "Implement step 1"
 )
 ```
 
@@ -524,9 +524,9 @@ Task(
   prompt: '{
     "worktree_path": "<worktree_path>",
     "plan_path": "<path>",
-    "step_anchor": "step-0"
+    "step_anchor": "step-1"
   }',
-  description: "Verify step 0 completion"
+  description: "Verify step 1 completion"
 )
 ```
 
@@ -663,7 +663,7 @@ Task(
       "summary": "<brief description of what was done>"
     }
   }',
-  description: "Commit step 0"
+  description: "Commit step 1"
 )
 ```
 
@@ -721,7 +721,7 @@ While `recovery_attempts < max_recovery_attempts`:
      ```
      Bash: tugcode state show {plan_path} --json
      ```
-     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` (bare anchor without `#`, e.g., `"step-0"`) AND `status == "open"`. Collect as `open_items`.
+     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` (bare anchor without `#`, e.g., `"step-1"`) AND `status == "open"`. Collect as `open_items`.
 
   3. If `open_items` is empty:
      - State is already consistent (another process may have reconciled it).
@@ -977,21 +977,21 @@ All six implementation agents are **spawned once** and **resumed** for retries o
 
 | Agent | Spawned | Resumed For | Accumulated Knowledge |
 |-------|---------|-------------|----------------------|
-| **architect** | Step 0 | Steps 1..N | Codebase structure, plan contents, patterns |
-| **coder** | Step 0 | Steps 1..N + review retries + audit fixes + CI fixes | Files created/modified, build system, test suite |
-| **reviewer** | Step 0 | Steps 1..N + re-reviews | Plan requirements, audit patterns, prior findings |
-| **committer** | Step 0 | Steps 1..N + audit fixup + CI fixup | Worktree layout, commit history, log format |
+| **architect** | Step 1 | Steps 2..N | Codebase structure, plan contents, patterns |
+| **coder** | Step 1 | Steps 2..N + review retries + audit fixes + CI fixes | Files created/modified, build system, test suite |
+| **reviewer** | Step 1 | Steps 2..N + re-reviews | Plan requirements, audit patterns, prior findings |
+| **committer** | Step 1 | Steps 2..N + audit fixup + CI fixup | Worktree layout, commit history, log format |
 | **auditor** | Post-loop | Audit retries | Deliverables, build state, cross-step issues |
 | **integrator** | Post-loop | CI retries | PR state, CI failures, check patterns |
 
 **Why this matters:**
-- **Faster**: No cold-start exploration on steps 1..N — agents already know the codebase
-- **Smarter**: Coder remembers files created in step 0 when implementing step 1
+- **Faster**: No cold-start exploration on steps 2..N — agents already know the codebase
+- **Smarter**: Coder remembers files created in step 1 when implementing step 2
 - **Consistent**: Reviewer applies the same standards across all steps
 - **Auto-compaction**: Agents compress old context at ~95% capacity, keeping recent work
 
 **Agent ID management:**
-- Store `architect_id`, `coder_id`, `reviewer_id`, `committer_id` after first spawn (step 0)
+- Store `architect_id`, `coder_id`, `reviewer_id`, `committer_id` after first spawn (step 1)
 - Store `auditor_id`, `integrator_id` after post-loop spawn
 - Pass these IDs to `Task(subagent_type: "<type>", resume: "<id>")` for all subsequent invocations
 - IDs persist for the entire implementer session

@@ -54,8 +54,8 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-N.md",
-  "step_anchor": "step-0",
-  "all_steps": ["step-0", "step-1", "step-2"]
+  "step_anchor": "step-1",
+  "all_steps": ["step-1", "step-2", "step-3"]
 }
 ```
 
@@ -129,7 +129,7 @@ If drift exceeds thresholds, implementation halts. Therefore:
 - Be thorough — include ALL files that legitimately need modification
 - Be precise — don't pad the list with files that won't actually change
 - Consider transitive dependencies — if changing A requires changing B, include B
-- **Account for previous steps** — if step 0 created a file that step 1 needs to modify, include it
+- **Account for previous steps** — if step 1 created a file that step 2 needs to modify, include it
 
 ---
 

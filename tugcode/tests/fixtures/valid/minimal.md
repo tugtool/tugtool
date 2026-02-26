@@ -34,7 +34,7 @@ This is a minimal plan that should pass validation with no errors.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Bootstrap {#step-0}
+#### Step 1: Bootstrap {#step-1}
 
 **Commit:** `feat: initial setup`
 

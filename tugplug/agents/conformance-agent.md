@@ -146,12 +146,12 @@ Beyond what `tugcode validate` covers, check these structural rules:
 
 ### Steps Have Depends On Lines
 
-Every execution step EXCEPT Step 0 must have a `**Depends on:**` line. Check every step heading after `#### Step 0`.
+Every execution step EXCEPT Step 1 must have a `**Depends on:**` line. Check every step heading after `#### Step 1`.
 
 ```
 rule: steps-have-depends-on
 location: Step N {#step-N}
-description: Missing **Depends on:** line (required for all steps except Step 0)
+description: Missing **Depends on:** line (required for all steps except Step 1)
 suggestion: Add **Depends on:** #step-N based on artifact dependencies
 ```
 
@@ -215,7 +215,7 @@ If warnings are present (but no errors or diagnostics), note this — warnings w
 Read the skeleton file at `skeleton_path`. Understand:
 - Required sections and their order
 - Required headings with their anchor format
-- Required fields within steps (Depends on, References, Artifacts, Tasks, Tests, Checkpoint, Rollback)
+- Required fields within steps (Depends on, References, Artifacts, Tasks, Tests, Checkpoint)
 
 ### Step 3: Read Plan
 
@@ -323,7 +323,7 @@ If the plan or skeleton cannot be read:
     {
       "rule": "steps-have-depends-on",
       "location": "Step 3 {#step-3}",
-      "description": "Missing **Depends on:** line (required for all steps except Step 0)",
+      "description": "Missing **Depends on:** line (required for all steps except Step 1)",
       "suggestion": "Add **Depends on:** #step-2 based on artifact dependencies"
     }
   ],

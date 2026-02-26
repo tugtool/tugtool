@@ -87,7 +87,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -321,7 +321,7 @@ fn test_status_shows_step_breakdown() {
 
     assert!(output.status.success(), "status should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Step 0"), "output should contain step");
+    assert!(stdout.contains("Step 1"), "output should contain step");
     assert!(stdout.contains("Setup"), "output should contain step title");
     assert!(stdout.contains("Total:"), "output should contain total");
 }
@@ -564,7 +564,7 @@ This should trigger P001 diagnostic.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Real Step {#step-0}
+#### Step 1: Real Step {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -642,7 +642,7 @@ This triggers P003.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Real Step {#step-0}
+#### Step 1: Real Step {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -729,7 +729,7 @@ This triggers P001.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Real Step {#step-0}
+#### Step 1: Real Step {#step-1}
 
 **Commit:** `feat: setup`
 

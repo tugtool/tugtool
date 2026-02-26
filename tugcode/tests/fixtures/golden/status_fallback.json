@@ -12,7 +12,7 @@
     "steps": [
       {
         "title": "Bootstrap",
-        "anchor": "step-0",
+        "anchor": "step-1",
         "done": 2,
         "total": 4,
         "substeps": []
@@ -20,26 +20,26 @@
     ],
     "all_steps": [
       {
-        "anchor": "step-0",
+        "anchor": "step-1",
         "title": "Bootstrap",
-        "number": "0"
+        "number": "1"
       }
     ],
     "completed_steps": [],
     "remaining_steps": [
       {
-        "anchor": "step-0",
+        "anchor": "step-1",
         "title": "Bootstrap",
-        "number": "0"
+        "number": "1"
       }
     ],
     "next_step": {
-      "anchor": "step-0",
+      "anchor": "step-1",
       "title": "Bootstrap",
-      "number": "0"
+      "number": "1"
     },
     "dependencies": {
-      "step-0": []
+      "step-1": []
     }
   },
   "issues": []

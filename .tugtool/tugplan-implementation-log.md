@@ -9,6 +9,54 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-26T03:45:07Z
+---
+
+## step-4: Updated 7 documentation files: 6 agent docs (conformance, author, critic, architect, coder, overviewer) and implement SKILL.md. Changed all step-0 references to step-1, removed Rollback from conformance-agent required fields, removed rollback guidance from author-agent and critic-agent.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
+step: step-3
+date: 2025-02-26T03:36:14Z
+---
+
+## step-3: Renumbered all step-0 references to step-1 (and cascading step-1→step-2, step-2→step-3, etc.) across 25 files: 10 fixture .md files, golden JSON, mock script, 13 Rust source/test files. 768 tests pass. Only intentional backward-compat step-0 references remain (parser.rs historical bead test, worktree artifact dir negative assertion).
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
+step: step-2
+date: 2025-02-26T03:08:32Z
+---
+
+## step-2: Updated W007 check in validator.rs to exempt step 1 instead of step 0, restructured W007 test. Changed worktree.rs artifact dir loop to use step anchors directly instead of enumerate index. Added integration test verifying artifact dirs are named by step anchor.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
+step: step-1
+date: 2025-02-26T02:51:24Z
+---
+
+## step-1: Rewrote tugplan-skeleton.md from 905 lines to 447 lines. Applied all 12 modernization changes: removed Beads, Stakeholders, Document Size Guidance, Audit pattern, fixture subsections; retired X.Y numbering; renumbered steps 1-based; condensed Specification to menu; consolidated commit rule to preamble; removed per-step Rollback; trimmed reference conventions to 8 prefixes; preserved Optional marker on Compatibility/Migration.
+
+**Files changed:**
+- .tugtool/tugplan-skeleton-modernization.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-26T00:18:57Z
 ---

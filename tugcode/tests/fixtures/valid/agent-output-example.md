@@ -54,7 +54,7 @@ Key features shown:
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Bootstrap {#step-0}
+#### Step 1: Bootstrap {#step-1}
 
 **Commit:** `feat: initial project setup`
 
@@ -84,9 +84,9 @@ Key features shown:
 
 ---
 
-#### Step 1: Core Implementation {#step-1}
+#### Step 2: Core Implementation {#step-2}
 
-**Depends on:** #step-0
+**Depends on:** #step-1
 
 **Commit:** `feat: implement core functionality`
 
@@ -110,15 +110,15 @@ Key features shown:
 - [ ] All tests pass
 
 **Rollback:**
-- Revert to Step 0 commit
+- Revert to Step 1 commit
 
 **Commit after all checkpoints pass.**
 
 ---
 
-#### Step 2: Documentation {#step-2}
+#### Step 3: Documentation {#step-3}
 
-**Depends on:** #step-1
+**Depends on:** #step-2
 
 **Commit:** `docs: add documentation`
 

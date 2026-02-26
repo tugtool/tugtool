@@ -621,13 +621,13 @@ pub fn run_worktree_setup_with_root(
                 eprintln!("warning: failed to create artifacts base directory: {}", e);
             }
 
-            // Create per-step artifact directories
-            for (idx, _step_anchor) in all_steps.iter().enumerate() {
-                let step_dir = artifacts_base.join(format!("step-{}", idx));
+            // Create per-step artifact directories using step anchors as directory names
+            for step_anchor in &all_steps {
+                let step_dir = artifacts_base.join(step_anchor);
                 if let Err(e) = std::fs::create_dir_all(&step_dir) {
                     eprintln!(
-                        "warning: failed to create step-{} artifact directory: {}",
-                        idx, e
+                        "warning: failed to create {} artifact directory: {}",
+                        step_anchor, e
                     );
                 }
             }
@@ -1230,7 +1230,7 @@ mod integration_tests {
 
 ### 1.0.0 Execution Steps {#execution-steps}
 
-#### Step 0: Test Step {#step-0}
+#### Step 1: Test Step {#step-1}
 
 **Tasks:**
 - [ ] Test task

@@ -54,7 +54,7 @@ pub enum Commands {
     ///
     /// Checks anchors, references, metadata, and step dependencies.
     #[command(
-        long_about = "Validate plan structure against format conventions.\n\nChecks:\n  - Required metadata fields (Owner, Status, Last updated)\n  - Anchor format and uniqueness\n  - Reference validity ([D01], #step-0, etc.)\n  - Step dependency cycles\n  - Cross-reference consistency"
+        long_about = "Validate plan structure against format conventions.\n\nChecks:\n  - Required metadata fields (Owner, Status, Last updated)\n  - Anchor format and uniqueness\n  - Reference validity ([D01], #step-1, etc.)\n  - Step dependency cycles\n  - Cross-reference consistency"
     )]
     Validate {
         /// Plan file to validate (validates all if not specified)
@@ -182,7 +182,7 @@ pub enum Commands {
         #[arg(long, value_name = "PATH")]
         worktree: String,
 
-        /// Step anchor (e.g., step-0)
+        /// Step anchor (e.g., step-1)
         #[arg(long, value_name = "ANCHOR")]
         step: String,
 
@@ -626,7 +626,7 @@ mod tests {
             "log",
             "prepend",
             "--step",
-            "step-0",
+            "step-1",
             "--plan",
             ".tugtool/tugplan-13.md",
             "--summary",
@@ -641,7 +641,7 @@ mod tests {
                     plan,
                     summary,
                 } => {
-                    assert_eq!(step, "step-0");
+                    assert_eq!(step, "step-1");
                     assert_eq!(plan, ".tugtool/tugplan-13.md");
                     assert_eq!(summary, "Completed step 0");
                 }
@@ -675,7 +675,7 @@ mod tests {
             "log",
             "prepend",
             "--step",
-            "step-0",
+            "step-1",
             "--plan",
             ".tugtool/tugplan-1.md",
             "--summary",
@@ -733,7 +733,7 @@ mod tests {
             "--worktree",
             "/path/to/worktree",
             "--step",
-            "step-0",
+            "step-1",
             "--plan",
             ".tugtool/tugplan-1.md",
             "--message",
@@ -752,7 +752,7 @@ mod tests {
                 summary,
             }) => {
                 assert_eq!(worktree, "/path/to/worktree");
-                assert_eq!(step, "step-0");
+                assert_eq!(step, "step-1");
                 assert_eq!(plan, ".tugtool/tugplan-1.md");
                 assert_eq!(message, "feat: add feature");
                 assert_eq!(summary, "Completed step 0");

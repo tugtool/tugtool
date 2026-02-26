@@ -120,7 +120,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### Step 0: Setup {#step-0}
+#### Step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -632,7 +632,7 @@ Test decision.
 
 ### Execution Steps {#execution-steps}
 
-#### Step 0: Test step {#step-0}
+#### Step 1: Test step {#step-1}
 
 **Commit:** Test commit
 
@@ -687,7 +687,7 @@ fn test_worktree_setup_blocks_plan_with_diagnostics() {
     let temp = setup_test_git_repo();
 
     // Create plan with P001 near-miss (lowercase "step" in header)
-    // Use MINIMAL_PLAN as base but modify Step 0 header to trigger P001
+    // Use MINIMAL_PLAN as base but modify Step 1 header to trigger P001
     let plan_with_diagnostics = r#"## Phase 1.0: Test Feature {#phase-1}
 
 **Purpose:** Test plan with diagnostics.
@@ -730,7 +730,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### step 0: Setup {#step-0}
+#### step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -843,7 +843,7 @@ Test context paragraph.
 
 ### 1.0.5 Execution Steps {#execution-steps}
 
-#### step 0: Setup {#step-0}
+#### step 1: Setup {#step-1}
 
 **Commit:** `feat: setup`
 
@@ -898,5 +898,149 @@ Test context paragraph.
     assert!(
         !worktree_dirs.is_empty(),
         "worktree should be created with --skip-validation"
+    );
+}
+
+#[test]
+#[serial_test::serial]
+#[ignore = "requires worktree setup (slow integration test)"]
+fn test_worktree_artifact_dirs_named_by_step_anchor() {
+    // Verify that artifact directories are named by step anchor (e.g. "step-1", "step-2")
+    // rather than by enumerate index (which would give "step-0", "step-1").
+    let temp = setup_test_git_repo();
+
+    let two_step_plan = r#"## Test Plan {#test-plan}
+
+**Purpose:** Test that artifact dirs use step anchors.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Test |
+| Status | active |
+| Target branch | main |
+| Tracking issue/PR | N/A |
+| Last updated | 2026-02-25 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+Test context.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [D01] Test Decision (DECIDED) {#d01-test}
+
+**Decision:** This is a test decision.
+
+**Rationale:**
+- Because testing
+
+**Implications:**
+- Tests work
+
+---
+
+### Execution Steps {#execution-steps}
+
+#### Step 1: First Step {#step-1}
+
+**Commit:** `feat: first step`
+
+**References:** [D01] Test Decision, (#context)
+
+**Tasks:**
+- [ ] Do first thing
+
+**Tests:**
+- [ ] Unit test
+
+**Checkpoint:**
+- [ ] Build passes
+
+---
+
+#### Step 2: Second Step {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `feat: second step`
+
+**References:** [D01] Test Decision, (#context)
+
+**Tasks:**
+- [ ] Do second thing
+
+**Tests:**
+- [ ] Unit test
+
+**Checkpoint:**
+- [ ] Tests pass
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** Working test feature.
+
+#### Phase Exit Criteria {#exit-criteria}
+
+- [ ] All tests pass
+"#;
+
+    create_test_plan(&temp, "anchor-dirs", two_step_plan);
+
+    let output = Command::new(tug_binary())
+        .args([
+            "worktree",
+            "setup",
+            ".tugtool/tugplan-anchor-dirs.md",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run worktree setup");
+
+    assert!(
+        output.status.success(),
+        "worktree setup should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Parse JSON to get the worktree path
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
+
+    let worktree_path = std::path::Path::new(
+        json["worktree_path"]
+            .as_str()
+            .expect("worktree_path should be a string"),
+    );
+
+    let artifacts_base = worktree_path.join(".tugtool/artifacts");
+
+    // Artifact dirs must be named by anchor: "step-1" and "step-2"
+    assert!(
+        artifacts_base.join("step-1").is_dir(),
+        "artifact dir 'step-1' should exist (named by anchor)"
+    );
+    assert!(
+        artifacts_base.join("step-2").is_dir(),
+        "artifact dir 'step-2' should exist (named by anchor)"
+    );
+
+    // "step-0" must NOT exist: the old enumerate-index approach would create this
+    assert!(
+        !artifacts_base.join("step-0").is_dir(),
+        "artifact dir 'step-0' must not exist (would indicate enumerate-index naming)"
     );
 }

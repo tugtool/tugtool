@@ -536,7 +536,7 @@ Last updated: 2026-02-01
 
 ## Execution
 
-### Step 0: Bootstrap {#step-0}
+### Step 1: Bootstrap {#step-1}
 
 ## Tasks
 - [x] Setup project

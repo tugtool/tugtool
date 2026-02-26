@@ -132,7 +132,7 @@ Before returning, verify ALL of these:
 2. **Explicit anchors**: Every heading that will be referenced has `{#anchor-name}`
 3. **Required sections present**: Plan Metadata, Phase Overview, Design Decisions, Execution Steps, Deliverables
 4. **Steps have References lines**: Every execution step has `**References:**` citing decisions, specs, or anchors
-5. **Steps have Depends on lines**: Every step (except Step 0) has `**Depends on:**` line
+5. **Steps have Depends on lines**: Every step (except Step 1) has `**Depends on:**` line
 6. **Anchors are kebab-case**: Lowercase, hyphenated, no phase numbers
 7. **Decision format**: `[D01] Title (DECIDED) {#d01-slug}`
 
@@ -253,7 +253,7 @@ When `critic_feedback` is non-null and conformance issues are resolved:
    - `internal_consistency`: fix contradictions between design decisions, specs, and steps
    - `technical_soundness`: reconsider technical choices, add error handling, address concurrency risks
    - `implementability`: clarify task descriptions, add missing artifact references, fix step dependencies, address source code verification gaps
-   - `completeness`: add missing steps, cover edge cases, strengthen rollback procedures, address implicit requirements
+   - `completeness`: add missing steps, cover edge cases, address implicit requirements
    - `risk_feasibility`: add risk mitigation, clarify assumptions, break down high-risk steps
 3. Use `finding.suggestion` as the starting point for each fix. Read the plan sections cited in `finding.references` to understand the context.
 4. Read `critic_feedback.area_ratings` to understand which areas have `FAIL` ratings — these need the most attention.
