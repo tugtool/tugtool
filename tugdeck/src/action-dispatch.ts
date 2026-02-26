@@ -189,7 +189,7 @@ export function initActionDispatch(
       // Find the tab with componentId === "developer"
       const cardState = deckManager.getDeckState().cards.find((cs) => cs.id === panel.id);
       if (cardState) {
-        for (const tabItem of cardState.tabItems) {
+        for (const tabItem of cardState.tabs) {
           if ((tabItem as any).componentId === "developer") {
             developerCard = deckManager.getCardRegistry().get(tabItem.id);
             break;
@@ -224,7 +224,7 @@ export function initActionDispatch(
     if (panel) {
       const cardState = deckManager.getDeckState().cards.find((cs) => cs.id === panel.id);
       if (cardState) {
-        for (const tabItem of cardState.tabItems) {
+        for (const tabItem of cardState.tabs) {
           if ((tabItem as any).componentId === "developer") {
             developerCard = deckManager.getCardRegistry().get(tabItem.id);
             break;

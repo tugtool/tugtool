@@ -157,7 +157,7 @@ describe("action-dispatch: dev_notification", () => {
     mockDeck._deckState = {
       cards: [{
         id: "p1",
-        tabItems: [{ id: tabId, componentId: "developer" }],
+        tabs: [{ id: tabId, componentId: "developer" }],
       }],
     };
     mockDeck.cardRegistry.set(tabId, mockCard);
@@ -223,7 +223,7 @@ describe("action-dispatch: dev_notification", () => {
     mockDeck._deckState = {
       cards: [{
         id: "p1",
-        tabItems: [{ id: tabId, componentId: "developer" }],
+        tabs: [{ id: tabId, componentId: "developer" }],
       }],
     };
     mockDeck.cardRegistry.set(tabId, mockCard);
@@ -262,7 +262,7 @@ describe("action-dispatch: dev_build_progress", () => {
     mockDeck._deckState = {
       cards: [{
         id: "p1",
-        tabItems: [{ id: tabId, componentId: "developer" }],
+        tabs: [{ id: tabId, componentId: "developer" }],
       }],
     };
     mockDeck.cardRegistry.set(tabId, mockCard);
@@ -302,7 +302,7 @@ describe("action-dispatch: dev_build_progress", () => {
     mockDeck._deckState = {
       cards: [{
         id: "p1",
-        tabItems: [{ id: tabId, componentId: "developer" }],
+        tabs: [{ id: tabId, componentId: "developer" }],
       }],
     };
     mockDeck.cardRegistry.set(tabId, mockCard);

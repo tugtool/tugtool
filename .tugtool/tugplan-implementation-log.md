@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-26T17:39:16Z
+---
+
+## step-1: Fixed notification routing bug: changed cardState.tabItems to cardState.tabs in dev_notification and dev_build_progress handlers, and updated four mock CardState objects in tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-notification-improvements.md
+
+---
+
+---
 step: step-4
 date: 2025-02-26T03:45:07Z
 ---
