@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-26T19:11:23Z
+---
+
+## step-3: Added renderRow() method implementing Table T02 merged display logic with stale-dominates-edited priority, flash guard for Reloaded, editedLabel formatting, and 14 new state merging tests. All 519 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-working-state.md
+
+---
+
+---
+step: step-2
+date: 2025-02-26T19:01:37Z
+---
+
+## step-2: Added FeedId.GIT subscription, onFrame handler with deduplication and categorization, per-row edited counts, and inline working state display updates with 7 new tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-working-state.md
+
+---
+
+---
+step: step-1
+date: 2025-02-26T18:54:52Z
+---
+
+## step-1: Added GitStatus/FileStatus interfaces, RowCategory type, and exported categorizeFile function with comprehensive unit tests covering all Table T03 patterns
+
+**Files changed:**
+- .tugtool/tugplan-dev-working-state.md
+
+---
+
+---
 step: step-4-summary
 date: 2025-02-26T17:57:20Z
 ---

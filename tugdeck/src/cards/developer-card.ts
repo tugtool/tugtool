@@ -3,11 +3,66 @@
  */
 
 import type { TugCard, TugCardMeta } from "./card";
-import type { FeedIdValue } from "../protocol";
+import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugConnection } from "../connection";
 
+/**
+ * GitStatus payload received via FeedId.GIT frames.
+ * Duplicated from git-card.ts -- see that file for the canonical definition.
+ * Keep in sync with the GitStatus interface in git-card.ts.
+ */
+interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  staged: FileStatus[];
+  unstaged: FileStatus[];
+  untracked: string[];
+  head_sha: string;
+  head_message: string;
+}
+
+/** A single file entry in a GitStatus staged/unstaged array. */
+interface FileStatus {
+  path: string;
+  status: string;
+}
+
+/** Row categories for file path classification in the Developer card. */
+export type RowCategory = "styles" | "code" | "app";
+
+/**
+ * Categorize a repository-relative file path into a Developer card row.
+ *
+ * Patterns (Table T03 from the plan):
+ *   Styles: tugdeck/ *.css, tugdeck/ *.html
+ *   Code:   tugdeck/src/ *.ts, tugdeck/src/ *.tsx,
+ *           tugcode/ *.rs, tugcode/ Cargo.toml
+ *   App:    tugapp/Sources/ *.swift
+ *
+ * Returns null for paths that do not match any pattern.
+ * Only staged and unstaged (tracked) files should be passed here;
+ * callers are responsible for ignoring untracked files.
+ */
+export function categorizeFile(path: string): RowCategory | null {
+  // Styles patterns (checked before Code to avoid tugdeck/styles/*.css matching Code)
+  if (path.startsWith("tugdeck/") && path.endsWith(".css")) return "styles";
+  if (path.startsWith("tugdeck/") && path.endsWith(".html")) return "styles";
+
+  // Code patterns -- tugdeck/src/ prefix required for TS/TSX to avoid root-level tugdeck files
+  if (path.startsWith("tugdeck/src/") && path.endsWith(".ts")) return "code";
+  if (path.startsWith("tugdeck/src/") && path.endsWith(".tsx")) return "code";
+  if (path.startsWith("tugcode/") && path.endsWith(".rs")) return "code";
+  if (path.startsWith("tugcode/") && path.endsWith("Cargo.toml")) return "code";
+
+  // App patterns
+  if (path.startsWith("tugapp/Sources/") && path.endsWith(".swift")) return "app";
+
+  return null;
+}
+
 export class DeveloperCard implements TugCard {
-  readonly feedIds: readonly FeedIdValue[] = [];
+  readonly feedIds: readonly FeedIdValue[] = [FeedId.GIT];
 
   private container: HTMLElement | null = null;
   private connection: TugConnection;
@@ -33,12 +88,26 @@ export class DeveloperCard implements TugCard {
   // Timer for "Reloaded" flash
   private reloadedTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Flash guard: true while "Reloaded" text is displayed (per [D08])
+  private stylesFlashing = false;
+
   // Per-row timestamp state
   private stylesLastCleanTs: number | null = null;
   private codeLastCleanTs: number | null = null;
   private codeFirstDirtySinceTs: number | null = null;
   private appLastCleanTs: number | null = null;
   private appFirstDirtySinceTs: number | null = null;
+
+  // Per-row working state: count of edited (staged/unstaged tracked) files per row
+  private stylesEditedCount = 0;
+  private codeEditedCount = 0;
+  private appEditedCount = 0;
+
+  // Per-row stale state (runtime state from dev_notification)
+  private codeIsStale = false;
+  private codeStaleCount = 0;
+  private appIsStale = false;
+  private appStaleCount = 0;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -140,49 +209,39 @@ export class DeveloperCard implements TugCard {
     const timestamp = payload.timestamp as number | undefined;
 
     if (type === "reloaded") {
-      // Flash Styles status to "Reloaded" for 2 seconds, then show clean label with timestamp
+      // Capture clean timestamp before the timer fires (per [D06])
+      if (timestamp !== undefined) {
+        this.stylesLastCleanTs = timestamp;
+      }
+      // Set flash guard and display "Reloaded" (per [D08])
+      this.stylesFlashing = true;
       if (this.stylesStatus) {
         this.stylesStatus.textContent = "Reloaded";
-        if (this.reloadedTimer) clearTimeout(this.reloadedTimer);
-        this.reloadedTimer = setTimeout(() => {
-          if (this.stylesStatus) {
-            if (timestamp !== undefined) {
-              this.stylesLastCleanTs = timestamp;
-            }
-            this.stylesStatus.textContent = this.cleanLabel(this.stylesLastCleanTs);
-          }
-        }, 2000);
       }
+      if (this.reloadedTimer) clearTimeout(this.reloadedTimer);
+      this.reloadedTimer = setTimeout(() => {
+        // Clear flash guard then render to working state (edited or clean) per [D06]
+        this.stylesFlashing = false;
+        this.renderRow("styles");
+      }, 2000);
     } else if (type === "restart_available") {
       // Capture "since" timestamp on first dirty notification after last clean state
       if (this.codeFirstDirtySinceTs === null && timestamp !== undefined) {
         this.codeFirstDirtySinceTs = timestamp;
       }
-      // Set Code row dirty
-      if (this.codeDot) {
-        this.codeDot.style.backgroundColor = "var(--td-warning)";
-      }
-      if (this.codeStatus) {
-        this.codeStatus.textContent = this.dirtyLabel(count ?? 0, this.codeFirstDirtySinceTs);
-      }
-      if (this.codeRestartBtn) {
-        this.codeRestartBtn.style.display = "block";
-      }
+      // Update stale state fields and render
+      this.codeIsStale = true;
+      this.codeStaleCount = count ?? 0;
+      this.renderRow("code");
     } else if (type === "relaunch_available") {
       // Capture "since" timestamp on first dirty notification after last clean state
       if (this.appFirstDirtySinceTs === null && timestamp !== undefined) {
         this.appFirstDirtySinceTs = timestamp;
       }
-      // Set App row dirty
-      if (this.appDot) {
-        this.appDot.style.backgroundColor = "var(--td-warning)";
-      }
-      if (this.appStatus) {
-        this.appStatus.textContent = this.dirtyLabel(count ?? 0, this.appFirstDirtySinceTs);
-      }
-      if (this.appRelaunchBtn) {
-        this.appRelaunchBtn.style.display = "block";
-      }
+      // Update stale state fields and render
+      this.appIsStale = true;
+      this.appStaleCount = count ?? 0;
+      this.renderRow("app");
     }
   }
 
@@ -208,8 +267,42 @@ export class DeveloperCard implements TugCard {
     }
   }
 
-  onFrame(_feedId: FeedIdValue, _payload: Uint8Array): void {
-    // No-op: Developer card receives data via action-dispatch, not frame fan-out
+  onFrame(feedId: FeedIdValue, payload: Uint8Array): void {
+    if (feedId !== FeedId.GIT || payload.length === 0) return;
+
+    const text = new TextDecoder().decode(payload);
+    let status: GitStatus;
+    try {
+      status = JSON.parse(text);
+    } catch {
+      console.error("developer-card: failed to parse GitStatus payload");
+      return;
+    }
+
+    // Collect unique paths from staged and unstaged (ignore untracked per [D03])
+    const paths = new Set<string>();
+    for (const f of status.staged) paths.add(f.path);
+    for (const f of status.unstaged) paths.add(f.path);
+
+    // Count edited files per row
+    let stylesCount = 0;
+    let codeCount = 0;
+    let appCount = 0;
+    for (const path of paths) {
+      const category = categorizeFile(path);
+      if (category === "styles") stylesCount++;
+      else if (category === "code") codeCount++;
+      else if (category === "app") appCount++;
+    }
+
+    this.stylesEditedCount = stylesCount;
+    this.codeEditedCount = codeCount;
+    this.appEditedCount = appCount;
+
+    // Re-render each row to reflect updated working state
+    this.renderRow("styles");
+    this.renderRow("code");
+    this.renderRow("app");
   }
 
   onResize(_w: number, _h: number): void {
@@ -237,12 +330,23 @@ export class DeveloperCard implements TugCard {
     this.appStatus = null;
     this.appRelaunchBtn = null;
     this.buildProgressEl = null;
+    // Clear flash guard and timer
+    this.stylesFlashing = false;
     // Null timestamp state
     this.stylesLastCleanTs = null;
     this.codeLastCleanTs = null;
     this.codeFirstDirtySinceTs = null;
     this.appLastCleanTs = null;
     this.appFirstDirtySinceTs = null;
+    // Reset working state edited counts
+    this.stylesEditedCount = 0;
+    this.codeEditedCount = 0;
+    this.appEditedCount = 0;
+    // Reset stale state
+    this.codeIsStale = false;
+    this.codeStaleCount = 0;
+    this.appIsStale = false;
+    this.appStaleCount = 0;
   }
 
   // ---- Private ----
@@ -258,6 +362,87 @@ export class DeveloperCard implements TugCard {
   private dirtyLabel(count: number, sinceTs: number | null): string {
     const countPart = count === 1 ? "1 change" : `${count} changes`;
     return sinceTs !== null ? countPart + " -- since " + this.formatTime(sinceTs) : countPart;
+  }
+
+  /**
+   * Format the "Edited (N file[s])" label with optional timestamp suffix.
+   * Uses the lastCleanTs for the row to show when the row was last clean.
+   */
+  private editedLabel(count: number, ts: number | null): string {
+    const plural = count === 1 ? "file" : "files";
+    const base = `Edited (${count} ${plural})`;
+    return ts !== null ? base + " -- " + this.formatTime(ts) : base;
+  }
+
+  /**
+   * Render a single row based on merged runtime state (stale) and working state (edited/clean).
+   *
+   * Priority per Table T02:
+   *   1. If Styles row and stylesFlashing: return early (flash guard per [D08])
+   *   2. If Code/App row and isStale: show stale (amber dot, dirty label, action button)
+   *   3. Else if editedCount > 0: show edited (blue dot, edited label, no button)
+   *   4. Else: show clean (green dot, clean label, no button)
+   */
+  private renderRow(row: "styles" | "code" | "app"): void {
+    // Flash guard: do not overwrite "Reloaded" text while flash is active (per [D08])
+    if (row === "styles" && this.stylesFlashing) return;
+
+    let dot: HTMLElement | null;
+    let status: HTMLElement | null;
+    let editedCount: number;
+    let lastCleanTs: number | null;
+    let isStale: boolean;
+    let staleCount: number;
+    let firstDirtySinceTs: number | null;
+    let actionBtn: HTMLElement | null;
+
+    if (row === "styles") {
+      dot = this.stylesDot;
+      status = this.stylesStatus;
+      editedCount = this.stylesEditedCount;
+      lastCleanTs = this.stylesLastCleanTs;
+      isStale = false; // Styles row has no stale state
+      staleCount = 0;
+      firstDirtySinceTs = null;
+      actionBtn = null;
+    } else if (row === "code") {
+      dot = this.codeDot;
+      status = this.codeStatus;
+      editedCount = this.codeEditedCount;
+      lastCleanTs = this.codeLastCleanTs;
+      isStale = this.codeIsStale;
+      staleCount = this.codeStaleCount;
+      firstDirtySinceTs = this.codeFirstDirtySinceTs;
+      actionBtn = this.codeRestartBtn;
+    } else {
+      dot = this.appDot;
+      status = this.appStatus;
+      editedCount = this.appEditedCount;
+      lastCleanTs = this.appLastCleanTs;
+      isStale = this.appIsStale;
+      staleCount = this.appStaleCount;
+      firstDirtySinceTs = this.appFirstDirtySinceTs;
+      actionBtn = this.appRelaunchBtn;
+    }
+
+    if (!dot || !status) return;
+
+    if (isStale) {
+      // Stale dominates edited per [D04]
+      dot.style.backgroundColor = "var(--td-warning)";
+      status.textContent = this.dirtyLabel(staleCount, firstDirtySinceTs);
+      if (actionBtn) actionBtn.style.display = "block";
+    } else if (editedCount > 0) {
+      // Edited state: blue dot per [D05]
+      dot.style.backgroundColor = "var(--td-info)";
+      status.textContent = this.editedLabel(editedCount, lastCleanTs);
+      if (actionBtn) actionBtn.style.display = "none";
+    } else {
+      // Clean state: green dot
+      dot.style.backgroundColor = "var(--td-success)";
+      status.textContent = this.cleanLabel(lastCleanTs);
+      if (actionBtn) actionBtn.style.display = "none";
+    }
   }
 
   private createRow(label: string, statusText: string): HTMLElement {
@@ -287,18 +472,14 @@ export class DeveloperCard implements TugCard {
   }
 
   private handleRestart(): void {
-    // Set Code row to clean with timestamp
+    // Transition Code row from stale to current
+    this.codeIsStale = false;
+    this.codeStaleCount = 0;
     this.codeLastCleanTs = Date.now();
     this.codeFirstDirtySinceTs = null;
-    if (this.codeDot) {
-      this.codeDot.style.backgroundColor = "var(--td-success)";
-    }
-    if (this.codeStatus) {
-      this.codeStatus.textContent = this.cleanLabel(this.codeLastCleanTs);
-    }
-    if (this.codeRestartBtn) {
-      this.codeRestartBtn.style.display = "none";
-    }
+
+    // Render to reflect new state (edited if files still edited, clean otherwise)
+    this.renderRow("code");
 
     // Clear badge
     document.dispatchEvent(new CustomEvent("td-dev-badge", { detail: { count: 0 } }));
@@ -308,18 +489,14 @@ export class DeveloperCard implements TugCard {
   }
 
   private handleRelaunch(): void {
-    // Set App row to clean with timestamp
+    // Transition App row from stale to current
+    this.appIsStale = false;
+    this.appStaleCount = 0;
     this.appLastCleanTs = Date.now();
     this.appFirstDirtySinceTs = null;
-    if (this.appDot) {
-      this.appDot.style.backgroundColor = "var(--td-success)";
-    }
-    if (this.appStatus) {
-      this.appStatus.textContent = this.cleanLabel(this.appLastCleanTs);
-    }
-    if (this.appRelaunchBtn) {
-      this.appRelaunchBtn.style.display = "none";
-    }
+
+    // Render to reflect new state (edited if files still edited, clean otherwise)
+    this.renderRow("app");
 
     // Clear badge
     document.dispatchEvent(new CustomEvent("td-dev-badge", { detail: { count: 0 } }));
