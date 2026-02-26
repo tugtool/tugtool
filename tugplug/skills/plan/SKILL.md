@@ -486,32 +486,17 @@ if critic_feedback.recommendation == "ESCALATE":
 
 **REVISE (conformance or critic) — auto-revise, no user prompt:**
 
-First, collect clarifying questions from the critic (user input required for clarifying questions):
-
-```
-if critic_feedback is non-null and critic_feedback.clarifying_questions is non-empty:
-    for each question in critic_feedback.clarifying_questions:
-        AskUserQuestion(
-          questions: [{
-            question: question.question,
-            header: "Critic Question",
-            options: question.options   # Pass critic-supplied options directly; no skill-derived options
-            # AskUserQuestion auto-appends "Other" for free-text input
-          }]
-        )
-        store answer keyed by question.id → critic_question_answers[question.id] = answer
-```
-
-Then auto-revise without prompting the user:
-
 ```
 if conformance_feedback.recommendation == "REVISE" or critic_feedback.recommendation == "REVISE":
-    # Auto-revise: no "Review found issues" prompt. Go directly to author.
+    # Auto-revise: no user prompt. Go directly to author.
+    # Clarifying questions (if any) are passed to the author as context via critic_feedback.
+    # The author resolves them from the codebase or makes reasonable choices.
+    # critic_question_answers remains null (no user answers collected on REVISE).
     increment revision_count
     GO TO STEP 3 (author)
 ```
 
-User is NOT prompted when recommendation is REVISE. The revision loop runs autonomously. User interaction is only required for: ESCALATE recommendations, stagnation detection, max revision rounds reached, and clarifying questions.
+User is NOT prompted when recommendation is REVISE. The revision loop runs fully autonomously. User interaction is only required for: ESCALATE recommendations, stagnation detection, and max revision rounds reached.
 
 **Both APPROVE — run overviewer gate:**
 
@@ -550,19 +535,10 @@ if conformance_feedback.recommendation == "APPROVE" and critic_feedback.recommen
             → If "Accept as-is": output session end message, HALT with success
             → If "Abort": output "**Plan** — Aborted by user" and HALT
 
-        # Collect overviewer clarifying questions (user input required)
+        # Clarifying questions (if any) are passed to the author as context via overviewer_feedback.
+        # The author resolves them from the codebase or makes reasonable choices.
+        # overviewer_question_answers remains null (no user answers collected on REVISE).
         overviewer_question_answers = null
-        if overviewer_feedback.clarifying_questions is non-empty:
-            for each question in overviewer_feedback.clarifying_questions:
-                AskUserQuestion(
-                  questions: [{
-                    question: question.question,
-                    header: "Overviewer Question",
-                    options: question.options   # Pass overviewer-supplied options directly
-                    # AskUserQuestion auto-appends "Other" for free-text input
-                  }]
-                )
-                store answer keyed by question.id → overviewer_question_answers[question.id] = answer
 
         # Resume author with overviewer feedback (auto-revise, no user prompt)
         increment revision_count

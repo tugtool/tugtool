@@ -32,7 +32,7 @@ If the conformance-agent, critic-agent, or overviewer-agent recommends REVISE or
 
 1. Use your accumulated knowledge (skeleton format, user answers, what you wrote)
 2. Fix conformance issues first (mechanical and quick), then address overviewer findings, then critic findings
-3. Incorporate user answers to clarifying questions (both critic and overviewer) into the affected plan sections
+3. Resolve clarifying questions: if `critic_question_answers` or `overviewer_question_answers` contains user answers, incorporate them. If answers are null but the feedback contains clarifying questions, resolve them yourself from the codebase and your own judgment — make reasonable choices and reflect them in the plan.
 4. Don't rewrite the entire plan — fix what's broken
 
 ---
@@ -263,12 +263,9 @@ When `critic_feedback` is non-null and conformance issues are resolved:
 
 ### From `critic_question_answers`
 
-When `critic_question_answers` is non-null:
+When `critic_question_answers` is non-null, it contains user answers keyed by stable question ID (e.g., `"CQ1"`, `"CQ2"`). For each answered question, identify which plan sections are affected and incorporate the answer. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction.
 
-1. The object is keyed by stable question ID (e.g., `"CQ1"`, `"CQ2"`), not by question text. Use the ID to match each answer to the critic's original question.
-2. For each answered question, identify which plan sections are affected (refer to the question's `impact` field from the critic's prior output, which you have in accumulated context).
-3. Incorporate the user's answer into the affected sections. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction explicitly.
-4. If the answer indicates a direction that conflicts with an existing design decision, update the decision to reflect the new choice.
+When `critic_question_answers` is null but `critic_feedback.clarifying_questions` is non-empty, the questions were not presented to the user (REVISE loops are fully automatic). Resolve each question yourself: read the relevant code, consider the question's context and impact, and make a reasonable choice. Reflect that choice explicitly in the affected plan sections.
 
 ### From `overviewer_feedback`
 
@@ -284,13 +281,9 @@ When `overviewer_feedback` is non-null:
 
 ### From `overviewer_question_answers`
 
-When `overviewer_question_answers` is non-null:
+When `overviewer_question_answers` is non-null, it contains user answers keyed by stable question ID (e.g., `"OQ1"`, `"OQ2"`). For each answered question, identify which plan sections are affected and incorporate the answer. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction.
 
-1. The object is keyed by stable question ID (e.g., `"OQ1"`, `"OQ2"`), not by question text. Use the ID to match each answer to the overviewer's original question.
-2. For each answered question, identify which plan sections are affected. Refer to the question's `impact` field from the overviewer's prior output (available in `overviewer_feedback.clarifying_questions`).
-3. Incorporate the user's answer into the affected sections. If the answer resolves an ambiguity, update the relevant design decision, spec, or step to reflect the chosen direction explicitly.
-4. If the answer indicates a direction that conflicts with an existing design decision, update the decision to reflect the new choice.
-5. Note: even if the user responded with "defer" or "ignore", the answer is still recorded. You do not need to actively apply a "defer/ignore" answer — simply acknowledge that the question was not resolved and move on.
+When `overviewer_question_answers` is null but `overviewer_feedback.clarifying_questions` is non-empty, the questions were not presented to the user (REVISE loops are fully automatic). Resolve each question yourself: read the relevant code, consider the question's context and impact, and make a reasonable choice. Reflect that choice explicitly in the affected plan sections.
 
 **Output after revision:**
 ```json

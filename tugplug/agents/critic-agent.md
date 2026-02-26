@@ -171,11 +171,10 @@ Matching Spec S08:
 if any CRITICAL finding → ESCALATE
 else if any MEDIUM or HIGH finding → REVISE
 else if any area_rating is FAIL → REVISE
-else if clarifying_questions is non-empty → REVISE
 else → APPROVE
 ```
 
-Clarifying questions are blocking. If you cannot determine plan correctness without answers, approving the plan is premature. Those questions will surface as confusion or wrong decisions during implementation.
+Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity (CRITICAL for issues requiring user input → ESCALATE, HIGH/MEDIUM for issues the author can address → REVISE). The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 
 ---
 

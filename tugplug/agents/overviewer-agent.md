@@ -127,14 +127,12 @@ Return structured JSON:
 
 ```
 if any MEDIUM, HIGH or CRITICAL finding -> REVISE
-else if clarifying_questions is non-empty -> REVISE
 else -> APPROVE
 ```
 
 LOW findings are informational only and do not block approval. The plan has already passed the critic's systematic review; the intent of the overviewer is to provide an additional and *skeptical* eye to the plan and its proposed changes.
 
-
-**Clarifying question resolution:** Clarifying questions always require a user response. However, the user may respond with "defer" or "ignore" to acknowledge the question without resolving it. Any user response (including "defer/ignore") counts as resolving the block. On the next overviewer run (which is always a fresh spawn), the overviewer will not have memory of prior questions. The skill passes prior `overviewer_question_answers` to the author so the author can incorporate the answers. If the overviewer independently re-raises a substantively identical question that the user already answered, the skill will present it to the user again — the overviewer has no way to know the question was already asked.
+Clarifying questions are informational context for the author. They do not independently drive the recommendation. If a question reveals a genuine ambiguity that threatens plan correctness, express that concern as a finding with the appropriate severity — this ensures the finding drives the recommendation. The plan skill handles REVISE as a fully automatic loop — the author receives your questions and resolves them from the codebase without user interaction.
 
 **The recommendation enum is `APPROVE | REVISE` only.** There is no ESCALATE recommendation. Escalation to the user (after 3 overviewer rounds) is handled by the plan skill, not by the overviewer.
 
