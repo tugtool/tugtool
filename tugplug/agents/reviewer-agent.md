@@ -64,7 +64,7 @@ If resumed with updated coder output after a REVISE recommendation, re-check the
 ### Resume (Next Step)
 
 ```
-Review step #step-1.
+Review step step-1.
 ```
 
 ### Resume (Re-review After Revision)
@@ -331,12 +331,12 @@ After verifying plan conformance, review the code and the coder's build/test rep
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-5.md",
-  "step_anchor": "#step-2"
+  "step_anchor": "step-2"
 }
 ```
 
 **Process:**
-1. Read `{worktree_path}/.tugtool/tugplan-5.md` and locate `#step-2`
+1. Read `{worktree_path}/.tugtool/tugplan-5.md` and locate `step-2`
 2. Extract step requirements: tasks, tests, checkpoints, artifacts
 3. List all tasks: "Create RetryConfig", "Add retry wrapper", "Add tests"
 4. Verify RetryConfig exists: `Grep "struct RetryConfig" {worktree_path}/src/api/config.rs`

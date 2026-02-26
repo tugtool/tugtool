@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-26T00:06:55Z
+---
+
+## step-2: Updated 4 agent template/skill markdown files to use bare step-N format in all JSON payload examples and text references
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
 step: step-1
 date: 2025-02-26T00:00:49Z
 ---

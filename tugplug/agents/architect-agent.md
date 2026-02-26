@@ -54,8 +54,8 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 {
   "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-N.md",
-  "step_anchor": "#step-0",
-  "all_steps": ["#step-0", "#step-1", "#step-2"]
+  "step_anchor": "step-0",
+  "all_steps": ["step-0", "step-1", "step-2"]
 }
 ```
 
@@ -69,13 +69,13 @@ If resumed with revision feedback, adjust your strategy to address the issues ra
 ### Resume (Next Step)
 
 ```
-Plan strategy for step #step-1. Previous step accomplished: <summary>.
+Plan strategy for step step-1. Previous step accomplished: <summary>.
 ```
 
 ### Resume (Revision Feedback)
 
 ```
-Revision needed for step #step-N. Feedback: <issues>. Adjust your strategy.
+Revision needed for step step-N. Feedback: <issues>. Adjust your strategy.
 ```
 
 **IMPORTANT: File Path Handling**
@@ -95,7 +95,7 @@ Return structured JSON:
 
 ```json
 {
-  "step_anchor": "#step-N",
+  "step_anchor": "step-N",
   "approach": "High-level description of implementation approach",
   "expected_touch_set": ["path/to/file1.rs", "path/to/file2.rs"],
   "implementation_steps": [
@@ -172,7 +172,7 @@ Before returning your response, you MUST validate that your JSON output conforms
 **If validation fails**: Return an error response:
 ```json
 {
-  "step_anchor": "#step-N",
+  "step_anchor": "step-N",
   "approach": "",
   "expected_touch_set": [],
   "implementation_steps": [],
@@ -187,7 +187,7 @@ If the plan or step cannot be found:
 
 ```json
 {
-  "step_anchor": "#step-N",
+  "step_anchor": "step-N",
   "approach": "",
   "expected_touch_set": [],
   "implementation_steps": [],
