@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-26T00:00:49Z
+---
+
+## step-1: Fixed all non-markdown source files to emit bare anchors: log.rs normalization at entry, status.rs format removal, cli.rs doc updates, golden fixture updated
+
+**Files changed:**
+- .tugtool/tugplan-anchor-normalization.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-25T23:53:13Z
 ---
