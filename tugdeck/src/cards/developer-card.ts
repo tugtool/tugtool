@@ -146,7 +146,7 @@ export class DeveloperCard implements TugCard {
     } else if (type === "restart_available") {
       // Set Code row dirty
       if (this.codeDot) {
-        this.codeDot.style.backgroundColor = "var(--color-warning)";
+        this.codeDot.style.backgroundColor = "var(--td-warning)";
       }
       if (this.codeStatus) {
         const changeText = count === 1 ? "1 change" : `${count ?? 0} changes`;
@@ -158,7 +158,7 @@ export class DeveloperCard implements TugCard {
     } else if (type === "relaunch_available") {
       // Set App row dirty
       if (this.appDot) {
-        this.appDot.style.backgroundColor = "var(--color-warning)";
+        this.appDot.style.backgroundColor = "var(--td-warning)";
       }
       if (this.appStatus) {
         const changeText = count === 1 ? "1 change" : `${count ?? 0} changes`;
@@ -231,7 +231,7 @@ export class DeveloperCard implements TugCard {
 
     const dot = document.createElement("span");
     dot.className = "dev-dot";
-    dot.style.backgroundColor = "var(--color-success)"; // Green for clean
+    dot.style.backgroundColor = "var(--td-success)"; // Green for clean
     row.appendChild(dot);
 
     const labelEl = document.createElement("span");
@@ -254,7 +254,7 @@ export class DeveloperCard implements TugCard {
   private handleRestart(): void {
     // Clear Code row state
     if (this.codeDot) {
-      this.codeDot.style.backgroundColor = "var(--color-success)";
+      this.codeDot.style.backgroundColor = "var(--td-success)";
     }
     if (this.codeStatus) {
       this.codeStatus.textContent = "Clean";
@@ -273,7 +273,7 @@ export class DeveloperCard implements TugCard {
   private handleRelaunch(): void {
     // Clear App row state
     if (this.appDot) {
-      this.appDot.style.backgroundColor = "var(--color-success)";
+      this.appDot.style.backgroundColor = "var(--td-success)";
     }
     if (this.appStatus) {
       this.appStatus.textContent = "Clean";

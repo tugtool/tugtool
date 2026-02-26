@@ -173,7 +173,7 @@ describe("developer-card", () => {
       const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
       const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
 
-      expect(codeDot.style.backgroundColor).toBe("var(--color-warning)");
+      expect(codeDot.style.backgroundColor).toBe("var(--td-warning)");
       expect(codeStatus.textContent).toBe("3 changes");
     });
 
@@ -199,7 +199,7 @@ describe("developer-card", () => {
       const appDot = container.querySelectorAll(".dev-dot")[2] as HTMLElement;
       const appStatus = container.querySelectorAll(".dev-status")[2] as HTMLElement;
 
-      expect(appDot.style.backgroundColor).toBe("var(--color-warning)");
+      expect(appDot.style.backgroundColor).toBe("var(--td-warning)");
       expect(appStatus.textContent).toBe("2 changes");
     });
 
@@ -243,7 +243,7 @@ describe("developer-card", () => {
       const codeDot = container.querySelectorAll(".dev-dot")[1] as HTMLElement;
       const codeStatus = container.querySelectorAll(".dev-status")[1] as HTMLElement;
 
-      expect(codeDot.style.backgroundColor).toBe("var(--color-success)");
+      expect(codeDot.style.backgroundColor).toBe("var(--td-success)");
       expect(codeStatus.textContent).toBe("Clean");
       expect(restartBtn.style.display).toBe("none");
     });
@@ -292,7 +292,7 @@ describe("developer-card", () => {
       const appDot = container.querySelectorAll(".dev-dot")[2] as HTMLElement;
       const appStatus = container.querySelectorAll(".dev-status")[2] as HTMLElement;
 
-      expect(appDot.style.backgroundColor).toBe("var(--color-success)");
+      expect(appDot.style.backgroundColor).toBe("var(--td-success)");
       expect(appStatus.textContent).toBe("Clean");
       expect(relaunchBtn.style.display).toBe("none");
     });

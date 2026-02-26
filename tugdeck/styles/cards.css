@@ -1353,3 +1353,125 @@
   color: var(--td-text-soft);
   font-style: italic;
 }
+
+/* ---- Developer Card ---- */
+
+.developer-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--td-surface-content);
+  color: var(--td-text);
+  font-family: var(--td-font-sans);
+}
+
+.developer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Status rows */
+.dev-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  min-height: 28px;
+}
+
+.dev-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.dev-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text);
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.dev-status {
+  font-size: 13px;
+  color: var(--td-text-soft);
+  flex: 1;
+}
+
+.dev-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dev-action-btn {
+  background: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  color: var(--td-text);
+  border-radius: var(--td-radius-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--td-font-sans);
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dev-action-btn:hover {
+  border-color: var(--td-accent-cool);
+  background: var(--td-surface);
+}
+
+/* Reset section */
+.developer-reset-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--td-border);
+}
+
+.dev-reset-btn {
+  background: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  color: var(--td-text);
+  border-radius: var(--td-radius-sm);
+  padding: 3px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--td-font-sans);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dev-reset-btn:hover {
+  border-color: var(--td-danger);
+  background: var(--td-surface);
+}
+
+.dev-reset-note {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  font-style: italic;
+}
+
+/* Build progress area */
+.developer-build-progress {
+  font-family: var(--td-font-mono);
+  font-size: 12px;
+  color: var(--td-text-soft);
+  background: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  padding: 6px 8px;
+  margin-top: 8px;
+}
