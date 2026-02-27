@@ -7,7 +7,6 @@ import "@xterm/xterm/css/xterm.css";
 
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
-import { ConversationCard } from "./cards/conversation-card";
 import { TerminalCard } from "./cards/terminal-card";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
 import { AboutCard as AboutCardComponent } from "./components/cards/about-card";
@@ -16,6 +15,7 @@ import { FilesCard as FilesCardComponent } from "./components/cards/files-card";
 import { GitCard as GitCardComponent } from "./components/cards/git-card";
 import { StatsCard as StatsCardComponent } from "./components/cards/stats-card";
 import { DeveloperCard as DeveloperCardComponent } from "./components/cards/developer-card";
+import { ConversationCard as ConversationCardComponent } from "./components/cards/conversation/conversation-card";
 import { FeedId } from "./protocol";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
@@ -39,9 +39,14 @@ const deck = new DeckManager(container, connection);
 // Factories capture connection in their closures; TugConnection is a single
 // instance that reconnects internally, so the reference stays valid.
 deck.registerCardFactory("code", () => {
-  const card = new ConversationCard(connection);
-  card.setDragState(deck);
-  return card;
+  const adapter = new ReactCardAdapter({
+    component: ConversationCardComponent,
+    feedIds: [FeedId.CODE_OUTPUT],
+    initialMeta: { title: "Code", icon: "MessageSquare", closable: true, menuItems: [] },
+    connection,
+  });
+  adapter.setDragState(deck);
+  return adapter;
 });
 deck.registerCardFactory("terminal", () => {
   const card = new TerminalCard(connection);
@@ -81,11 +86,17 @@ deck.registerCardFactory("developer", () => new ReactCardAdapter({
   connection,
 }));
 
-// Create and register cards by componentId
+// Create and register initial card instances
 // DeckManager.addCard matches cards to layout tree TabItems by componentId
-const codeCard = new ConversationCard(connection);
-codeCard.setDragState(deck);
-deck.addCard(codeCard, "code");
+
+const codeAdapter = new ReactCardAdapter({
+  component: ConversationCardComponent,
+  feedIds: [FeedId.CODE_OUTPUT],
+  initialMeta: { title: "Code", icon: "MessageSquare", closable: true, menuItems: [] },
+  connection,
+});
+codeAdapter.setDragState(deck);
+deck.addCard(codeAdapter, "code");
 
 const terminalCard = new TerminalCard(connection);
 terminalCard.setDragState(deck);

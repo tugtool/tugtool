@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-02-27T01:59:03Z
+---
+
+## step-8: Converted Conversation card (largest card, 990+ lines) to React with all submodules: message-renderer, code-block, tool-card, attachment-handler, streaming-state. Extracted markdown utils to src/lib/markdown.ts, created code-block-utils.ts for Shiki singleton sharing. Composed all submodules into conversation-card.tsx with MessageOrderingBuffer, SessionCache, command history, drag-and-drop. Updated main.tsx. 692 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-7
 date: 2025-02-27T01:33:18Z
 ---
