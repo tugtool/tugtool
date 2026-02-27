@@ -12,10 +12,10 @@ import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
 import { GitCard } from "./cards/git-card";
 import { StatsCard } from "./cards/stats-card";
-import { SettingsCard } from "./cards/settings-card";
 import { DeveloperCard } from "./cards/developer-card";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
 import { AboutCard as AboutCardComponent } from "./components/cards/about-card";
+import { SettingsCard as SettingsCardComponent } from "./components/cards/settings-card";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
 
@@ -55,7 +55,12 @@ deck.registerCardFactory("about", () => new ReactCardAdapter({
   feedIds: [],
   initialMeta: { title: "About", icon: "Info", closable: true, menuItems: [] },
 }));
-deck.registerCardFactory("settings", () => new SettingsCard(connection));
+deck.registerCardFactory("settings", () => new ReactCardAdapter({
+  component: SettingsCardComponent,
+  feedIds: [],
+  initialMeta: { title: "Settings", icon: "Settings", closable: true, menuItems: [] },
+  connection,
+}));
 deck.registerCardFactory("developer", () => new DeveloperCard(connection));
 
 // Create and register cards by componentId

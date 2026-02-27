@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-27T00:57:32Z
+---
+
+## step-5: Converted Settings card to React using shadcn RadioGroup, Switch, and Button. Fixed useTheme hook (td-theme- prefix, td-theme localStorage key, document events). Implemented webkit bridge lifecycle with confirmed/error/timeout handling. Updated main.tsx factory. 563 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-4
 date: 2025-02-27T00:44:00Z
 ---
