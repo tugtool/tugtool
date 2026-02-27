@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-27T01:13:04Z
+---
+
+## step-6: Created React Question card with shadcn RadioGroup/Checkbox/Input/Button for single-select, multi-select, and free-text question types. Created React Approval prompt with shadcn Button default/destructive variants. Both dispatch CustomEvents for answers/approvals. Added RTL tests. 584 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-5
 date: 2025-02-27T00:57:32Z
 ---
