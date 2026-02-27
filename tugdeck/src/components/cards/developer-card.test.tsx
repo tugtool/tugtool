@@ -23,8 +23,7 @@ import { render, act, fireEvent } from "@testing-library/react";
 import React from "react";
 
 import { CardContextProvider } from "../../cards/card-context";
-import { DeveloperCard } from "./developer-card";
-import { categorizeFile } from "../../cards/developer-card";
+import { DeveloperCard, categorizeFile } from "./developer-card";
 import { FeedId } from "../../protocol";
 import type { TugConnection } from "../../connection";
 

@@ -25,7 +25,34 @@ import { Button } from "@/components/ui/button";
 import { useFeed } from "../../hooks/use-feed";
 import { useConnection } from "../../hooks/use-connection";
 import { FeedId } from "../../protocol";
-import { categorizeFile } from "../../cards/developer-card";
+
+/**
+ * Categorize a file path into one of three developer-card categories.
+ *
+ * Moved from vanilla developer-card.ts (deleted in Step 10).
+ * Exported so developer-card.test.tsx can import it from the same module path.
+ *
+ * @returns "styles" | "code" | "app" | null
+ */
+export function categorizeFile(path: string): "styles" | "code" | "app" | null {
+  // tugapp Swift source
+  if (path.startsWith("tugapp/") && path.endsWith(".swift")) {
+    return "app";
+  }
+  // tugdeck CSS/HTML (check before code patterns so tugdeck/src/styles.css → styles)
+  if (path.startsWith("tugdeck/") && (path.endsWith(".css") || path.endsWith(".html"))) {
+    return "styles";
+  }
+  // tugdeck TypeScript source
+  if (path.startsWith("tugdeck/") && (path.endsWith(".ts") || path.endsWith(".tsx"))) {
+    return "code";
+  }
+  // tugcode Rust source or Cargo.toml
+  if (path.startsWith("tugcode/") && (path.endsWith(".rs") || path.endsWith("Cargo.toml"))) {
+    return "code";
+  }
+  return null;
+}
 
 // ---- Types ----
 

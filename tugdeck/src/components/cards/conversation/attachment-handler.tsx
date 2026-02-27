@@ -16,8 +16,64 @@
 import { useState, useCallback, forwardRef, useImperativeHandle, useRef } from "react";
 import { Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { processFile } from "../../../cards/conversation/attachment-handler";
 import type { Attachment } from "../../../cards/conversation/types";
+
+// ---- processFile utility (inlined from deleted vanilla attachment-handler.ts) ----
+
+/** Text MIME types that are read as UTF-8 strings (not base64). */
+const TEXT_TYPES = new Set([
+  "text/plain",
+  "text/html",
+  "text/css",
+  "text/javascript",
+  "text/typescript",
+  "application/json",
+  "application/xml",
+  "application/javascript",
+]);
+
+/** Convert a File to an Attachment (text or base64). */
+async function processFile(file: File): Promise<Attachment> {
+  const isText =
+    TEXT_TYPES.has(file.type) ||
+    file.type.startsWith("text/") ||
+    file.name.endsWith(".ts") ||
+    file.name.endsWith(".tsx") ||
+    file.name.endsWith(".js") ||
+    file.name.endsWith(".jsx") ||
+    file.name.endsWith(".rs") ||
+    file.name.endsWith(".py") ||
+    file.name.endsWith(".md") ||
+    file.name.endsWith(".toml") ||
+    file.name.endsWith(".yaml") ||
+    file.name.endsWith(".yml");
+
+  if (isText) {
+    const content = await file.text();
+    return {
+      filename: file.name,
+      content,
+      media_type: file.type || "text/plain",
+    };
+  }
+
+  // Binary: read as base64
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip the data URL prefix (e.g. "data:image/png;base64,")
+      const base64 = result.split(",")[1] ?? result;
+      resolve({
+        filename: file.name,
+        content: base64,
+        media_type: file.type || "application/octet-stream",
+      });
+    };
+    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
 
 // ---- Imperative handle ----
 

@@ -15,7 +15,14 @@
 
 // fake-indexeddb MUST be imported before setup-test-dom so global.indexedDB is
 // available when the SessionCache module initialises on first import.
+// Also assign fakeIndexedDB directly to global in case another test file in
+// the same bun worker already set global.window before this file runs, which
+// causes fake-indexeddb/auto to target window instead of global.
+import fakeIndexedDB from "fake-indexeddb";
 import "fake-indexeddb/auto";
+
+(global as unknown as Record<string, unknown>).indexedDB = fakeIndexedDB;
+
 import "./setup-test-dom";
 
 import { describe, it, expect } from "bun:test";
