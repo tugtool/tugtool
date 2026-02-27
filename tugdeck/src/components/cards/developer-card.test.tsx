@@ -348,7 +348,7 @@ describe("DeveloperCard – action buttons", () => {
     delete (window as any).webkit;
   });
 
-  it("clicking Restart calls sendControlFrame('restart') and hides button", async () => {
+  it("clicking Restart calls sendControlFrame('restart') and button stays until confirmation", async () => {
     const conn = makeMockConnection();
     const { container, unmount } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
@@ -369,16 +369,27 @@ describe("DeveloperCard – action buttons", () => {
 
     expect(conn._calls).toContainEqual({ action: "restart", params: undefined });
 
-    // Button should be gone after clicking
-    const restartBtnAfter = Array.from(container.querySelectorAll("button")).find(
+    // Button should still be visible because stale state is NOT cleared on click
+    const restartBtnAfterClick = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Restart")
     );
-    expect(restartBtnAfter).toBeUndefined();
+    expect(restartBtnAfterClick).not.toBeUndefined();
+
+    // Dispatch a reloaded notification (confirmation from the new tugcast instance)
+    await act(async () => {
+      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+    });
+
+    // Now the button should be gone (codeRow stale cleared by pending-flag logic)
+    const restartBtnAfterConfirm = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    expect(restartBtnAfterConfirm).toBeUndefined();
 
     unmount();
   });
 
-  it("clicking Relaunch calls sendControlFrame('relaunch') and hides button", async () => {
+  it("clicking Relaunch calls sendControlFrame('relaunch') and button stays until confirmation", async () => {
     (window as any).webkit = {};
     const conn = makeMockConnection();
     const { container, unmount } = renderDeveloperCard(undefined, conn);
@@ -398,6 +409,23 @@ describe("DeveloperCard – action buttons", () => {
     });
 
     expect(conn._calls).toContainEqual({ action: "relaunch", params: undefined });
+
+    // Button should still be visible because stale state is NOT cleared on click
+    const relaunchBtnAfterClick = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Relaunch")
+    );
+    expect(relaunchBtnAfterClick).not.toBeUndefined();
+
+    // Dispatch a reloaded notification (confirmation from the new tugcast instance)
+    await act(async () => {
+      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+    });
+
+    // Now the button should be gone (appRow stale cleared by pending-flag logic)
+    const relaunchBtnAfterConfirm = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Relaunch")
+    );
+    expect(relaunchBtnAfterConfirm).toBeUndefined();
 
     unmount();
     delete (window as any).webkit;
@@ -427,7 +455,7 @@ describe("DeveloperCard – badge events", () => {
     unmount();
   });
 
-  it("dispatches td-dev-badge with 0 when Restart is clicked", async () => {
+  it("badge stays at stale count after Restart click and goes to 0 on confirmation", async () => {
     const conn = makeMockConnection();
     const badgeEvents: any[] = [];
     const listener = (e: Event) => badgeEvents.push((e as CustomEvent).detail);
@@ -445,12 +473,27 @@ describe("DeveloperCard – badge events", () => {
     );
     badgeEvents.length = 0;
 
+    // Click Restart — badge should NOT go to 0 immediately (no optimistic clearing)
     await act(async () => {
       fireEvent.click(restartBtn!);
     });
 
-    const last = badgeEvents[badgeEvents.length - 1];
-    expect(last?.count).toBe(0);
+    // No badge dispatch should have occurred from the click itself
+    // (dispatchBadge(0) was removed from handleRestart)
+    const afterClick = badgeEvents[badgeEvents.length - 1];
+    // Badge should still reflect stale count (5), not 0
+    if (afterClick !== undefined) {
+      expect(afterClick.count).toBe(5);
+    }
+
+    // Dispatch a reloaded notification (confirmation from new tugcast instance)
+    await act(async () => {
+      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+    });
+
+    // Now badge should be dispatched with 0 (codeRow cleared by pending-flag)
+    const afterConfirm = badgeEvents[badgeEvents.length - 1];
+    expect(afterConfirm?.count).toBe(0);
 
     document.removeEventListener("td-dev-badge", listener);
     unmount();
@@ -528,6 +571,95 @@ describe("DeveloperCard – with connection context", () => {
     const devRows = container.querySelectorAll(".dev-row");
     // At minimum Styles and Code rows should be present (App hidden without webkit)
     expect(devRows.length).toBeGreaterThanOrEqual(2);
+
+    unmount();
+  });
+});
+
+describe("DeveloperCard – pending-flag confirmation pattern", () => {
+  afterEach(() => {
+    delete (window as any).webkit;
+  });
+
+  it("codeRow clears stale state when dev_notification arrives after Restart click", async () => {
+    const conn = makeMockConnection();
+    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    await act(async () => {});
+
+    // Make codeRow stale
+    await act(async () => {
+      dispatchDevNotification({ type: "restart_available", count: 3 });
+    });
+
+    // Verify Restart button is visible
+    let restartBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    expect(restartBtn).not.toBeUndefined();
+
+    // Click Restart — sets restartPendingRef, does NOT clear stale state
+    await act(async () => {
+      fireEvent.click(restartBtn!);
+    });
+
+    // Button still visible (stale not cleared yet)
+    restartBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    expect(restartBtn).not.toBeUndefined();
+
+    // Dispatch a reloaded notification (proof the new tugcast instance is running)
+    await act(async () => {
+      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+    });
+
+    // codeRow stale state cleared — Restart button should be gone
+    restartBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    expect(restartBtn).toBeUndefined();
+
+    // Code row status should show "Clean"
+    const codeStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
+    expect(codeStatus?.textContent).toContain("Clean");
+
+    unmount();
+  });
+
+  it("codeRow shows new stale count after restart_available arrives with restartPending set", async () => {
+    const conn = makeMockConnection();
+    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    await act(async () => {});
+
+    // Make codeRow stale with count=1
+    await act(async () => {
+      dispatchDevNotification({ type: "restart_available", count: 1 });
+    });
+
+    // Click Restart — sets restartPendingRef
+    const restartBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    await act(async () => {
+      fireEvent.click(restartBtn!);
+    });
+
+    // Dispatch restart_available(count=2) from the new tugcast instance.
+    // React 18 batches: pending flag clears stale, then restart_available sets new stale.
+    // Net result: codeRow is stale with staleCount=2.
+    await act(async () => {
+      dispatchDevNotification({ type: "restart_available", count: 2 });
+    });
+
+    // Restart button should still be visible (new notification made codeRow stale again)
+    const restartBtnAfter = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("Restart")
+    );
+    expect(restartBtnAfter).not.toBeUndefined();
+
+    // Status should reflect the new stale count
+    const codeStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
+    expect(codeStatus?.textContent).toContain("2");
 
     unmount();
   });

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-27T15:40:36Z
+---
+
+## step-3: Replaced optimistic stale-clearing on Restart/Relaunch click with pending-flag confirmation pattern using useRef booleans, updated and added tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
 step: step-2
 date: 2025-02-27T15:33:24Z
 ---
