@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-27T03:20:10Z
+---
+
+## audit-fix: CI fix: regenerated bun.lock to match package.json after isomorphic-dompurify removal
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-10
 date: 2025-02-27T03:13:08Z
 ---
