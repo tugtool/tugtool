@@ -272,6 +272,8 @@
   position: relative;
   min-height: 0;
   border-radius: 0 0 5px 5px;
+  background: var(--td-surface-content);
+  color: var(--td-text);
 }
 
 /* Resize handles: 8px hit area on each edge/corner */
