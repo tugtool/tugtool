@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-27T19:58:07Z
+---
+
+## step-3: Replaced spawn_vite_watch with spawn_vite_dev, removed ensure_dist_populated, modified wait_for_ready to extract tugcast port, added auth URL rewrite to target Vite port 5173
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-2
 date: 2025-02-27T19:51:47Z
 ---
