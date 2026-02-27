@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-27T15:33:24Z
+---
+
+## step-2: Replaced spawn_bun_dev with ensure_dist_populated + spawn_vite_watch, renamed bun_child to vite_child throughout, removed check_command_available
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
 step: step-1
 date: 2025-02-27T15:27:46Z
 ---

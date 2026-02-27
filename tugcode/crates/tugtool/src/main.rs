@@ -74,55 +74,52 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
     }
 }
 
-/// Check if a command is available in PATH
-async fn check_command_available(command: &str) -> bool {
-    Command::new(command)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+/// Run a one-shot `vite build` (no --watch) to populate dist/ before dev mode activation.
+/// This ensures tugcast's load_dev_state() can find dist/index.html.
+async fn ensure_dist_populated(source_tree: &std::path::Path) -> Result<(), String> {
+    let vite_binary = source_tree.join("tugdeck/node_modules/.bin/vite");
+    if !vite_binary.exists() {
+        return Err(format!(
+            "vite binary not found at {}; run `bun install` in tugdeck/ first",
+            vite_binary.display()
+        ));
+    }
+    let tugdeck_dir = source_tree.join("tugdeck");
+    let status = Command::new(&vite_binary)
+        .arg("build")
+        .current_dir(&tugdeck_dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .status()
         .await
-        .is_ok()
+        .map_err(|e| format!("failed to run vite build: {}", e))?;
+    if !status.success() {
+        return Err(format!(
+            "vite build exited with status {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(())
 }
 
-/// Spawn bun dev as a child process
-async fn spawn_bun_dev(source_tree: &std::path::Path) -> Result<tokio::process::Child, String> {
-    // Check if bun is installed
-    if !check_command_available("bun").await {
-        return Err(
-            "bun is required for dev mode but was not found in PATH. Install it from https://bun.sh"
-                .to_string(),
-        );
+/// Spawn `vite build --watch` as a child process.
+/// The watcher persists across tugcast restarts; call this once on first spawn.
+async fn spawn_vite_watch(source_tree: &std::path::Path) -> Result<tokio::process::Child, String> {
+    let vite_binary = source_tree.join("tugdeck/node_modules/.bin/vite");
+    if !vite_binary.exists() {
+        return Err(format!(
+            "vite binary not found at {}; run `bun install` in tugdeck/ first",
+            vite_binary.display()
+        ));
     }
-
     let tugdeck_dir = source_tree.join("tugdeck");
-
-    // Check if node_modules exists, run bun install if not
-    if !tugdeck_dir.join("node_modules").exists() {
-        info!("node_modules/ not found, running bun install...");
-        let install_status = Command::new("bun")
-            .arg("install")
-            .current_dir(&tugdeck_dir)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .await
-            .map_err(|e| format!("failed to run bun install: {}", e))?;
-
-        if !install_status.success() {
-            return Err("bun install failed".to_string());
-        }
-    }
-
-    // Spawn bun run dev
-    Command::new("bun")
-        .arg("run")
-        .arg("dev")
+    Command::new(&vite_binary)
+        .args(["build", "--watch"])
         .current_dir(&tugdeck_dir)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| format!("failed to spawn bun dev: {}", e))
+        .map_err(|e| format!("failed to spawn vite build --watch: {}", e))
 }
 
 /// Spawn tugcast as a child process with control socket path
@@ -334,11 +331,11 @@ enum RestartDecision {
 
 /// Supervisor loop that manages tugcast lifecycle via UDS control socket.
 /// source_tree: if Some, dev mode is activated after every ready by sending dev_mode control message.
-/// bun_child: spawned once on first_spawn if source_tree is present; persists across tugcast restarts.
+/// vite_child: spawned once on first_spawn if source_tree is present; persists across tugcast restarts.
 async fn supervisor_loop(
     cli: &Cli,
     source_tree: Option<PathBuf>,
-    bun_child: &mut Option<tokio::process::Child>,
+    vite_child: &mut Option<tokio::process::Child>,
 ) -> i32 {
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
@@ -388,6 +385,16 @@ async fn supervisor_loop(
         // Reset backoff on successful ready
         backoff_secs = 0;
 
+        // On first spawn, run a one-shot vite build to populate dist/ before dev mode
+        // activation. Tugcast's load_dev_state() requires dist/index.html to exist.
+        if first_spawn {
+            if let Some(ref st) = source_tree {
+                if let Err(e) = ensure_dist_populated(st).await {
+                    warn!("could not populate dist/: {}", e);
+                }
+            }
+        }
+
         // Activate dev mode after every ready (not gated on first_spawn).
         // Dev mode must be re-established after every restart because a restarted
         // tugcast comes up with empty dev state.
@@ -419,15 +426,15 @@ async fn supervisor_loop(
             info!("auth URL: {}", auth_url);
             open_browser(&auth_url);
 
-            // Spawn bun dev on first spawn only -- bun persists across tugcast restarts.
+            // Spawn vite build --watch on first spawn only -- vite persists across tugcast restarts.
             if let Some(ref st) = source_tree {
-                match spawn_bun_dev(st).await {
+                match spawn_vite_watch(st).await {
                     Ok(child) => {
-                        info!("bun dev started");
-                        *bun_child = Some(child);
+                        info!("vite build --watch started");
+                        *vite_child = Some(child);
                     }
                     Err(e) => {
-                        warn!("could not start bun dev: {}", e);
+                        warn!("could not start vite build --watch: {}", e);
                     }
                 }
             }
@@ -515,8 +522,8 @@ async fn supervisor_loop(
                     // Send shutdown over UDS (best effort)
                     let _ = write_half.write_all(b"{\"type\":\"shutdown\"}\n").await;
                     let mut children = vec![&mut tugcast];
-                    if let Some(bun) = bun_child {
-                        children.push(bun);
+                    if let Some(vite) = vite_child {
+                        children.push(vite);
                     }
                     shutdown_children(children).await;
                     let _ = std::fs::remove_file(&socket_path);
@@ -526,8 +533,8 @@ async fn supervisor_loop(
                     info!("received SIGTERM, shutting down");
                     let _ = write_half.write_all(b"{\"type\":\"shutdown\"}\n").await;
                     let mut children = vec![&mut tugcast];
-                    if let Some(bun) = bun_child {
-                        children.push(bun);
+                    if let Some(vite) = vite_child {
+                        children.push(vite);
                     }
                     shutdown_children(children).await;
                     let _ = std::fs::remove_file(&socket_path);
@@ -568,8 +575,8 @@ async fn supervisor_loop(
             }
             RestartDecision::DoNotRestart | RestartDecision::Pending => {
                 info!("tugcast exited with code {}, not restarting", exit_code);
-                if let Some(bun) = bun_child {
-                    shutdown_children(vec![bun]).await;
+                if let Some(vite) = vite_child {
+                    shutdown_children(vec![vite]).await;
                 }
                 let _ = std::fs::remove_file(&socket_path);
                 return exit_code;
@@ -624,10 +631,10 @@ async fn main() {
         }
     };
 
-    let mut bun_child: Option<tokio::process::Child> = None;
+    let mut vite_child: Option<tokio::process::Child> = None;
 
     // Run supervisor loop
-    let code = supervisor_loop(&cli, source_tree, &mut bun_child).await;
+    let code = supervisor_loop(&cli, source_tree, &mut vite_child).await;
     std::process::exit(code);
 }
 
