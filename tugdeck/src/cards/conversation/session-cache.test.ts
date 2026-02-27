@@ -2,8 +2,18 @@
  * Tests for session cache
  */
 
-// Import fake-indexeddb polyfill first
+// Import fake-indexeddb polyfill and ensure global.indexedDB is set.
+//
+// fake-indexeddb/auto targets whichever global the `window` check resolves to.
+// When another test file in the same bun worker set global.window = happyWindow
+// before this file runs, fake-indexeddb/auto sets happyWindow.indexedDB instead
+// of global.indexedDB.  We import fakeIndexedDB directly and always assign it
+// to global so that bare `indexedDB` references in session-cache.ts resolve
+// correctly regardless of worker execution order.
+import fakeIndexedDB from "fake-indexeddb";
 import "fake-indexeddb/auto";
+
+(global as unknown as Record<string, unknown>).indexedDB = fakeIndexedDB;
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { SessionCache, type StoredMessage } from "./session-cache";

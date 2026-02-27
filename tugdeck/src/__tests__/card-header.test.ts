@@ -1,5 +1,10 @@
 /**
- * CardHeader and DropdownMenu tests.
+ * CardHeader and DropdownMenu tests (Step 10 update).
+ *
+ * After vanilla card deletion, these tests verify CardHeader and DropdownMenu
+ * behavior using mock TugCardMeta objects. Vanilla card imports (ConversationCard,
+ * GitCard, FilesCard, StatsCard) are removed; the full adapter meta bridge is
+ * tested in react-card-adapter.test.tsx (Step 3).
  *
  * Tests cover:
  * a. CardHeader renders correct icon, title, and buttons from meta
@@ -7,11 +12,11 @@
  * c. Close button fires onClose callback
  * d. DropdownMenu opens on menu button click and closes on click-outside
  * e. DropdownMenu closes on Escape key press
- * f. ConversationCard permission mode menu item sends correct IPC message
+ * f. CardHeader.updateMeta() updates title/icon/menu in place
  * g. CardFrame uses full CardHeader (not temporary title bar)
- * h. Integration: all five cards display correct header metadata
+ * h. Integration: mock card meta shapes display correct header metadata
  *
- * [D06] Hybrid header bar construction
+ * [D06] Replace tests
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -61,9 +66,7 @@ if (!htmlElementProto["releasePointerCapture"]) {
   htmlElementProto["releasePointerCapture"] = function () {};
 }
 
-// crypto mock: patch only randomUUID to preserve crypto.subtle for tests that
-// need it (e.g. session-cache, e2e-integration). Unconditional assignment would
-// overwrite crypto.subtle with undefined and corrupt subsequent test files.
+// crypto mock
 let uuidCounter = 0;
 if (!global.crypto) {
   global.crypto = {} as unknown as Crypto;
@@ -76,79 +79,29 @@ if (!global.crypto) {
 import { CardHeader } from "../card-header";
 import { DropdownMenu } from "../card-menu";
 import type { TugCardMeta, CardMenuItem } from "../cards/card";
-import { ConversationCard } from "../cards/conversation-card";
-import { GitCard } from "../cards/git-card";
-import { FilesCard } from "../cards/files-card";
-import { StatsCard } from "../cards/stats-card";
 import { CardFrame } from "../card-frame";
 import { DeckManager } from "../deck-manager";
-import type { TugConnection } from "../connection";
 import type { CardState } from "../layout-tree";
-import { FeedId } from "../protocol";
 
-// ---- MockTerminalCard: replaces the real TerminalCard import to prevent xterm.js
-// WebGL addon from loading in happy-dom (which corrupts crypto.subtle). ----
-//
-// The mock provides the correct meta shape (title, icon, closable, menuItems)
-// without importing xterm.js or any browser-GPU dependent code.
-class MockTerminalCard {
-  readonly feedIds = [FeedId.TERMINAL_OUTPUT];
+// ---- Mock TugCard for DeckManager integration tests ----
 
-  // Accept optional connection argument to match TerminalCard constructor signature.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(_connection?: unknown) {}
+class MockCard {
+  readonly feedIds: readonly number[] = [];
+  readonly meta: TugCardMeta;
 
-  private _fontSize = 14;
-  private _webglEnabled = true;
-
-  get meta(): TugCardMeta {
-    return {
-      title: "Terminal",
-      icon: "Terminal",
-      closable: true,
-      menuItems: [
-        {
-          type: "select",
-          label: "Font Size",
-          options: ["Small", "Medium", "Large"],
-          value: ({ 12: "Small", 14: "Medium", 16: "Large" } as Record<number, string>)[this._fontSize] ?? "Medium",
-          action: (label: string) => {
-            this._fontSize = ({ Small: 12, Medium: 14, Large: 16 } as Record<string, number>)[label] ?? 14;
-          },
-        },
-        {
-          type: "action",
-          label: "Clear Scrollback",
-          action: () => {},
-        },
-        {
-          type: "toggle",
-          label: "WebGL Renderer",
-          checked: this._webglEnabled,
-          action: (_checked: boolean) => {
-            this._webglEnabled = !this._webglEnabled;
-          },
-        },
-      ],
-    };
+  constructor(meta: TugCardMeta) {
+    this.meta = meta;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mount(_container: HTMLElement): void {}
   onFrame(_feedId: number, _payload: Uint8Array): void {}
   onResize(_w: number, _h: number): void {}
-  setDragState(_ds: unknown): void {}
   destroy(): void {}
 }
 
-// Alias so tests can use `TerminalCard` without importing the real one.
-const TerminalCard = MockTerminalCard;
-
 // ---- Helpers ----
 
-function makeMeta(
-  overrides: Partial<TugCardMeta> = {}
-): TugCardMeta {
+function makeMeta(overrides: Partial<TugCardMeta> = {}): TugCardMeta {
   return {
     title: "Test",
     icon: "Activity",
@@ -180,7 +133,7 @@ describe("CardHeader – DOM structure", () => {
     header.destroy();
   });
 
-  test("renders .card-header-title with correct uppercase text", () => {
+  test("renders .card-header-title with correct text", () => {
     const meta = makeMeta({ title: "Git", icon: "GitBranch" });
     const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
     const title = header.getElement().querySelector(".card-header-title");
@@ -327,7 +280,6 @@ describe("DropdownMenu – open and close", () => {
     const menu = new DropdownMenu(items, anchor);
     menu.open();
     expect(menu.isOpen()).toBe(true);
-    // Menu element should be in document.body
     const menuEl = document.querySelector(".card-dropdown-menu");
     expect(menuEl).not.toBeNull();
     menu.destroy();
@@ -393,86 +345,58 @@ describe("DropdownMenu – Escape key", () => {
   });
 });
 
-// ---- f. ConversationCard permission mode IPC ----
+// ---- f. CardHeader.updateMeta() ----
 
-describe("ConversationCard – permission mode meta action", () => {
-  test("meta getter returns TugCardMeta with permission mode select item", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const meta = card.meta;
+describe("CardHeader – updateMeta()", () => {
+  test("updateMeta() updates the title text in place", () => {
+    const meta = makeMeta({ title: "Files", icon: "FolderOpen", menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
 
-    expect(meta.title).toBe("Code");
-    expect(meta.icon).toBe("MessageSquare");
-    expect(meta.closable).toBe(true);
-    expect(meta.menuItems.length).toBeGreaterThan(0);
+    const titleEl = header.getElement().querySelector(".card-header-title");
+    expect(titleEl?.textContent).toBe("Files");
 
-    const permItem = meta.menuItems.find(
-      (m) => m.type === "select" && m.label === "Permission Mode"
-    );
-    expect(permItem).toBeDefined();
-    expect(permItem!.type).toBe("select");
-    card.destroy();
+    header.updateMeta({ title: "Files (2)", icon: "FolderOpen", closable: true, menuItems: [] });
+    expect(titleEl?.textContent).toBe("Files (2)");
+
+    header.destroy();
   });
 
-  test("permission mode action sends correct IPC message on bypassPermissions", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const meta = card.meta;
+  test("updateMeta() adds menu button when new meta has menu items", () => {
+    const meta = makeMeta({ menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
 
-    const permItem = meta.menuItems.find(
-      (m) => m.type === "select" && m.label === "Permission Mode"
-    );
-    expect(permItem).toBeDefined();
+    // No menu button initially
+    expect(header.getElement().querySelector('[aria-label="Card menu"]')).toBeNull();
 
-    // Call the action directly
-    if (permItem && permItem.type === "select") {
-      permItem.action("bypassPermissions");
-    }
+    // After updateMeta with menu items, button should appear
+    header.updateMeta({
+      title: "Test",
+      icon: "Activity",
+      closable: true,
+      menuItems: [{ type: "action", label: "Clear", action: () => {} }],
+    });
 
-    expect(conn.sentMessages.length).toBe(1);
-    const { feedId, payload } = conn.sentMessages[0];
-    expect(feedId).toBe(FeedId.CODE_INPUT);
-    const decoded = JSON.parse(new TextDecoder().decode(payload));
-    expect(decoded.type).toBe("permission_mode");
-    expect(decoded.mode).toBe("bypassPermissions");
+    expect(header.getElement().querySelector('[aria-label="Card menu"]')).not.toBeNull();
 
-    card.destroy();
+    header.destroy();
   });
 
-  test("permission mode action sends correct IPC message on plan", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const meta = card.meta;
+  test("updateMeta() updates the title for a live meta push (Conversation title change)", () => {
+    const meta = makeMeta({ title: "Code", icon: "MessageSquare", menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
 
-    const permItem = meta.menuItems.find(
-      (m) => m.type === "select" && m.label === "Permission Mode"
-    );
-    if (permItem && permItem.type === "select") {
-      permItem.action("plan");
-    }
+    header.updateMeta({ title: "Code — my-project", icon: "MessageSquare", closable: true, menuItems: [] });
 
-    expect(conn.sentMessages.length).toBe(1);
-    const decoded = JSON.parse(new TextDecoder().decode(conn.sentMessages[0].payload));
-    expect(decoded.mode).toBe("plan");
+    const titleEl = header.getElement().querySelector(".card-header-title");
+    expect(titleEl?.textContent).toBe("Code — my-project");
 
-    card.destroy();
-  });
-
-  test("ConversationCard does not create a .card-header element in mount()", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-    const oldHeader = container.querySelector(".card-header");
-    expect(oldHeader).toBeNull();
-    card.destroy();
+    header.destroy();
   });
 });
 
-// ---- g. Floating panel uses full CardHeader ----
+// ---- g. CardFrame uses full CardHeader ----
 
-describe("CardFrame – uses full CardHeader (Step 5)", () => {
+describe("CardFrame – uses full CardHeader", () => {
   test("card frame contains .card-header, not .card-frame-title-bar", () => {
     const canvas = document.createElement("div");
     document.body.appendChild(canvas);
@@ -493,11 +417,9 @@ describe("CardFrame – uses full CardHeader (Step 5)", () => {
       onClose: () => {},
     }, canvas);
 
-    // Should have .card-header (CardHeader)
     const header = fp.getElement().querySelector(".card-header");
     expect(header).not.toBeNull();
 
-    // Should NOT have .card-frame-title-bar (the old temporary title bar)
     const oldTitleBar = fp.getElement().querySelector(".card-frame-title-bar");
     expect(oldTitleBar).toBeNull();
 
@@ -555,69 +477,95 @@ describe("CardFrame – uses full CardHeader (Step 5)", () => {
   });
 });
 
-// ---- h. Integration: all five cards have correct meta ----
+// ---- h. Integration: mock card meta shapes for all card types ----
 
-describe("All five cards – correct header metadata", () => {
-  test("TerminalCard has meta with title Terminal and icon Terminal", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    expect(card.meta).toBeDefined();
-    expect(card.meta!.title).toBe("Terminal");
-    expect(card.meta!.icon).toBe("Terminal");
-    expect(card.meta!.closable).toBe(true);
-  });
-
-  test("GitCard has meta with title Git and icon GitBranch", () => {
-    const card = new GitCard();
-    expect(card.meta).toBeDefined();
-    expect(card.meta!.title).toBe("Git");
-    expect(card.meta!.icon).toBe("GitBranch");
-    expect(card.meta!.closable).toBe(true);
-  });
-
-  test("FilesCard has meta with title Files and icon FolderOpen", () => {
-    const card = new FilesCard();
-    expect(card.meta).toBeDefined();
-    expect(card.meta!.title).toBe("Files");
-    expect(card.meta!.icon).toBe("FolderOpen");
-    expect(card.meta!.closable).toBe(true);
-  });
-
-  test("StatsCard has meta with title Stats and icon Activity", () => {
-    const card = new StatsCard();
-    expect(card.meta).toBeDefined();
-    expect(card.meta!.title).toBe("Stats");
-    expect(card.meta!.icon).toBe("Activity");
-    expect(card.meta!.closable).toBe(true);
-  });
-
-  test("ConversationCard has meta with title Conversation and permission mode item", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const meta = card.meta;
-    expect(meta.title).toBe("Code");
-    expect(meta.icon).toBe("MessageSquare");
+describe("All card types – correct header metadata from mock TugCardMeta", () => {
+  test("Terminal mock meta has title Terminal, icon Terminal, closable true", () => {
+    const meta: TugCardMeta = {
+      title: "Terminal",
+      icon: "Terminal",
+      closable: true,
+      menuItems: [
+        { type: "select", label: "Font Size", options: ["Small", "Medium", "Large"], value: "Medium", action: () => {} },
+        { type: "action", label: "Clear Scrollback", action: () => {} },
+        { type: "toggle", label: "WebGL Renderer", checked: true, action: () => {} },
+      ],
+    };
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Terminal");
     expect(meta.closable).toBe(true);
+    expect(meta.menuItems.length).toBe(3);
+    header.destroy();
+  });
+
+  test("Git mock meta has title Git, icon GitBranch, closable true", () => {
+    const meta: TugCardMeta = {
+      title: "Git",
+      icon: "GitBranch",
+      closable: true,
+      menuItems: [
+        { type: "action", label: "Refresh Now", action: () => {} },
+        { type: "toggle", label: "Show Untracked", checked: true, action: () => {} },
+      ],
+    };
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Git");
+    header.destroy();
+  });
+
+  test("Files mock meta has title Files, icon FolderOpen, closable true", () => {
+    const meta: TugCardMeta = {
+      title: "Files",
+      icon: "FolderOpen",
+      closable: true,
+      menuItems: [
+        { type: "action", label: "Clear History", action: () => {} },
+        { type: "select", label: "Max Entries", options: ["50", "100", "200"], value: "100", action: () => {} },
+      ],
+    };
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Files");
+    header.destroy();
+  });
+
+  test("Stats mock meta has title Stats, icon Activity, closable true", () => {
+    const meta: TugCardMeta = {
+      title: "Stats",
+      icon: "Activity",
+      closable: true,
+      menuItems: [
+        { type: "select", label: "Sparkline Timeframe", options: ["30s", "60s", "120s"], value: "60s", action: () => {} },
+        { type: "toggle", label: "Show CPU / Memory", checked: true, action: () => {} },
+        { type: "toggle", label: "Show Token Usage", checked: true, action: () => {} },
+        { type: "toggle", label: "Show Build Status", checked: true, action: () => {} },
+      ],
+    };
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Stats");
+    header.destroy();
+  });
+
+  test("Conversation mock meta has title Code, icon MessageSquare, permission mode item", () => {
+    const meta: TugCardMeta = {
+      title: "Code",
+      icon: "MessageSquare",
+      closable: true,
+      menuItems: [
+        { type: "select", label: "Permission Mode", options: ["default", "acceptEdits", "bypassPermissions", "plan"], value: "acceptEdits", action: () => {} },
+        { type: "action", label: "New Session", action: () => {} },
+        { type: "action", label: "Export History", action: () => {} },
+      ],
+    };
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Code");
     const permItem = meta.menuItems.find((m) => m.type === "select" && m.label === "Permission Mode");
     expect(permItem).toBeDefined();
-    card.destroy();
-  });
-
-  test("GitCard.destroy() does not reference removed 'header' field", () => {
-    const card = new GitCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-    // Should not throw
-    expect(() => card.destroy()).not.toThrow();
-  });
-
-  test("FilesCard.destroy() does not reference removed 'header' field", () => {
-    const card = new FilesCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-    expect(() => card.destroy()).not.toThrow();
+    header.destroy();
   });
 });
 
@@ -642,20 +590,18 @@ describe("DeckManager – single-tab CardHeader integration", () => {
   });
 
   test("single-tab docked card renders a .card-header element", () => {
-    const manager = new DeckManager(container, connection as unknown as TugConnection);
-    const card = new GitCard();
-    manager.addCard(card, "git");
-    // After addCard, the container should have a .card-header for the single-tab git card
+    const manager = new DeckManager(container, connection as unknown as import("../connection").TugConnection);
+    const card = new MockCard({ title: "Git", icon: "GitBranch", closable: true, menuItems: [] });
+    manager.addCard(card as unknown as import("../cards/card").TugCard, "git");
     const header = container.querySelector(".card-header");
     expect(header).not.toBeNull();
     manager.destroy();
   });
 
   test(".card-header title matches card meta title", () => {
-    const manager = new DeckManager(container, connection as unknown as TugConnection);
-    const card = new GitCard();
-    manager.addCard(card, "git");
-    // There are 5 default panels; find the one with the git title
+    const manager = new DeckManager(container, connection as unknown as import("../connection").TugConnection);
+    const card = new MockCard({ title: "Git", icon: "GitBranch", closable: true, menuItems: [] });
+    manager.addCard(card as unknown as import("../cards/card").TugCard, "git");
     const allTitles = Array.from(container.querySelectorAll(".card-header-title"));
     const gitTitle = allTitles.find((el) => el.textContent === "Git");
     expect(gitTitle).not.toBeNull();

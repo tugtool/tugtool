@@ -364,6 +364,12 @@ export class DeckManager implements IDragState {
    * Existing card mount containers are reparented rather than recreated (D09).
    */
   private render(): void {
+    // Before destroying CardFrames: clear stale CardFrame references on all
+    // React adapters so meta updates don't reach destroyed DOM nodes.
+    for (const card of this.cardRegistry.values()) {
+      card.setCardFrame?.(null);
+    }
+
     // Destroy existing TabBar instances
     for (const tb of this.tabBars.values()) {
       tb.destroy();
@@ -691,6 +697,14 @@ export class DeckManager implements IDragState {
           card.mount(mountEl);
           this.observeContainer(tab.id, mountEl, card);
         }
+
+        // Notify React adapters of their CardFrame and active-tab status.
+        // Called for ALL tabs (not just active) so every adapter has the
+        // CardFrame reference; only the active tab pushes meta to the header.
+        if (card) {
+          card.setCardFrame?.(fp);
+          card.setActiveTab?.(isActive);
+        }
       }
 
       // Create TabBar for multi-tab panels (D05/D07)
@@ -830,6 +844,10 @@ export class DeckManager implements IDragState {
     const newTab = panel.tabs[newIndex];
     if (newTab.id === panel.activeTabId) return;
 
+    // Notify previous active tab's React adapter it is no longer active
+    const prevCard = this.cardRegistry.get(panel.activeTabId);
+    prevCard?.setActiveTab?.(false);
+
     // Hide current active tab's mount element
     const prevMountEl = this.cardContainers.get(panel.activeTabId);
     if (prevMountEl) {
@@ -845,14 +863,17 @@ export class DeckManager implements IDragState {
       newMountEl.style.display = "";
 
       // Mandatory onResize after making element visible (D09 / xterm.js FitAddon)
-      const card = this.cardRegistry.get(newTab.id);
-      if (card) {
+      const newCard = this.cardRegistry.get(newTab.id);
+      if (newCard) {
         const rect = newMountEl.getBoundingClientRect();
         const w = rect.width || newMountEl.clientWidth;
         const h = rect.height || newMountEl.clientHeight;
         if (w > 0 && h > 0) {
-          card.onResize(w, h);
+          newCard.onResize(w, h);
         }
+        // Notify React adapter it is now the active tab; pushes cached meta
+        // to CardFrame header immediately so title/icon/menu reflect this tab
+        newCard.setActiveTab?.(true);
       }
     }
 

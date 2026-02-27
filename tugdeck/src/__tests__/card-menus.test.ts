@@ -1,13 +1,22 @@
 /**
- * Per-card menu item tests (Step 6).
+ * Card chrome-layer menu tests (Step 10 update).
+ *
+ * After vanilla card deletion, these tests verify the chrome-layer menu
+ * infrastructure using mock TugCardMeta objects rather than instantiating
+ * full vanilla card components.
+ *
+ * ReactCardAdapter meta propagation is tested in react-card-adapter.test.tsx
+ * (Step 3). Per-card menu item correctness is tested in each React card's own
+ * RTL test file (Steps 4–9). This file tests CardHeader/DropdownMenu behavior
+ * with arbitrary menu item shapes.
  *
  * Tests cover:
  * a. Action items fire their callback (no throw, expected side-effects)
  * b. Toggle items update their state on action
  * c. Select items update value and fire callback with selected value
- * d. Integration: each card has the correct menu items per Table T02
+ * d. Integration: CardHeader correctly reflects menu items from TugCardMeta
  *
- * [D06] Hybrid header bar construction
+ * [D06] Replace tests
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -34,26 +43,6 @@ const localStorageMock = (() => {
 })();
 global.localStorage = localStorageMock as unknown as Storage;
 
-// crypto mock: patch only randomUUID to preserve crypto.subtle for tests that
-// need it (e.g. session-cache, e2e-integration). Unconditional assignment would
-// overwrite crypto.subtle with undefined and corrupt subsequent test files.
-let uuidCounter = 0;
-if (!global.crypto) {
-  global.crypto = {} as unknown as Crypto;
-}
-(global.crypto as unknown as Record<string, unknown>)["randomUUID"] = () => {
-  uuidCounter++;
-  return `menus-uuid-${uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
-};
-
-// getComputedStyle mock — happy-dom may not expose it globally
-if (!global.getComputedStyle) {
-  (global as Record<string, unknown>)["getComputedStyle"] = (_el: Element) => ({
-    getPropertyValue: (_prop: string) => "",
-  });
-}
-
-// requestAnimationFrame mock
 if (!global.requestAnimationFrame) {
   (global as Record<string, unknown>)["requestAnimationFrame"] = (cb: FrameRequestCallback) => {
     setTimeout(cb, 0);
@@ -64,44 +53,284 @@ if (!global.cancelAnimationFrame) {
   (global as Record<string, unknown>)["cancelAnimationFrame"] = (_id: number) => {};
 }
 
-// URL.createObjectURL / revokeObjectURL may not exist in happy-dom — mock them
-if (!global.URL) {
-  (global as Record<string, unknown>)["URL"] = class URL {
-    static createObjectURL(_blob: Blob) { return "blob:mock-url"; }
-    static revokeObjectURL(_url: string) {}
+import { CardHeader } from "../card-header";
+import { DropdownMenu } from "../card-menu";
+import type { CardMenuAction, CardMenuToggle, CardMenuSelect, TugCardMeta, CardMenuItem } from "../cards/card";
+
+// ---- Helpers ----
+
+function makeMeta(overrides: Partial<TugCardMeta> = {}): TugCardMeta {
+  return {
+    title: "Test",
+    icon: "Activity",
+    closable: true,
+    menuItems: [],
+    ...overrides,
   };
-} else {
-  if (!(URL as unknown as Record<string, unknown>)["createObjectURL"]) {
-    (URL as unknown as Record<string, unknown>)["createObjectURL"] = (_blob: Blob) => "blob:mock-url";
-    (URL as unknown as Record<string, unknown>)["revokeObjectURL"] = (_url: string) => {};
-  }
 }
 
-import { GitCard } from "../cards/git-card";
-import { FilesCard } from "../cards/files-card";
-import { StatsCard } from "../cards/stats-card";
-import { ConversationCard } from "../cards/conversation-card";
-import type { TugConnection } from "../connection";
-import type { CardMenuAction, CardMenuToggle, CardMenuSelect, TugCardMeta } from "../cards/card";
-import { FeedId } from "../protocol";
+function findAction(items: CardMenuItem[], label: string): CardMenuAction {
+  const item = items.find((m) => m.type === "action" && m.label === label);
+  if (!item || item.type !== "action") throw new Error(`Action item "${label}" not found`);
+  return item;
+}
 
-// ---- MockTerminalCard: replaces the real TerminalCard import to prevent xterm.js
-// WebGL addon from loading in happy-dom (which corrupts crypto.subtle). ----
-//
-// The mock provides the correct stateful meta shape with all three menu items:
-// Font Size (select), Clear Scrollback (action), WebGL Renderer (toggle).
-class MockTerminalCard {
-  readonly feedIds = [FeedId.TERMINAL_OUTPUT];
+function findToggle(items: CardMenuItem[], label: string): CardMenuToggle {
+  const item = items.find((m) => m.type === "toggle" && m.label === label);
+  if (!item || item.type !== "toggle") throw new Error(`Toggle item "${label}" not found`);
+  return item;
+}
 
-  // Accept optional connection argument to match TerminalCard constructor signature.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(_connection?: unknown) {}
+function findSelect(items: CardMenuItem[], label: string): CardMenuSelect {
+  const item = items.find((m) => m.type === "select" && m.label === label);
+  if (!item || item.type !== "select") throw new Error(`Select item "${label}" not found`);
+  return item;
+}
 
-  private _fontSize = 14;
-  private _webglEnabled = true;
+// ---- a. Action items fire callback without throw ----
 
-  get meta(): TugCardMeta {
-    return {
+describe("Action items – fire callback without throw", () => {
+  test("action item fires callback when invoked", () => {
+    let called = false;
+    const items: CardMenuItem[] = [
+      { type: "action", label: "Do Thing", action: () => { called = true; } },
+    ];
+    const item = findAction(items, "Do Thing");
+    expect(() => item.action()).not.toThrow();
+    expect(called).toBe(true);
+  });
+
+  test("action item with side effects fires correctly", () => {
+    const log: string[] = [];
+    const items: CardMenuItem[] = [
+      { type: "action", label: "Clear History", action: () => { log.push("cleared"); } },
+      { type: "action", label: "New Session", action: () => { log.push("new-session"); } },
+    ];
+    findAction(items, "Clear History").action();
+    findAction(items, "New Session").action();
+    expect(log).toEqual(["cleared", "new-session"]);
+  });
+
+  test("action item with connection send fires correctly", () => {
+    const sent: string[] = [];
+    const items: CardMenuItem[] = [
+      {
+        type: "action",
+        label: "Export History",
+        action: () => { sent.push("exported"); },
+      },
+    ];
+    findAction(items, "Export History").action();
+    expect(sent).toContain("exported");
+  });
+
+  test("multiple action items fire independently", () => {
+    let aFired = false;
+    let bFired = false;
+    const items: CardMenuItem[] = [
+      { type: "action", label: "Action A", action: () => { aFired = true; } },
+      { type: "action", label: "Action B", action: () => { bFired = true; } },
+    ];
+    findAction(items, "Action A").action();
+    expect(aFired).toBe(true);
+    expect(bFired).toBe(false);
+    findAction(items, "Action B").action();
+    expect(bFired).toBe(true);
+  });
+});
+
+// ---- b. Toggle items update state ----
+
+describe("Toggle items – update state on action", () => {
+  test("toggle item starts with provided checked state", () => {
+    const items: CardMenuItem[] = [
+      { type: "toggle", label: "Show Untracked", checked: true, action: () => {} },
+    ];
+    expect(findToggle(items, "Show Untracked").checked).toBe(true);
+  });
+
+  test("toggle item callback fires with the new checked value", () => {
+    let lastValue: boolean | undefined;
+    const items: CardMenuItem[] = [
+      { type: "toggle", label: "Show Untracked", checked: true, action: (v) => { lastValue = v; } },
+    ];
+    findToggle(items, "Show Untracked").action(false);
+    expect(lastValue).toBe(false);
+  });
+
+  test("toggle item can represent WebGL Renderer toggle", () => {
+    let webglEnabled = true;
+    const getItems = (): CardMenuItem[] => [
+      {
+        type: "toggle",
+        label: "WebGL Renderer",
+        checked: webglEnabled,
+        action: (_checked: boolean) => { webglEnabled = !webglEnabled; },
+      },
+    ];
+    expect(findToggle(getItems(), "WebGL Renderer").checked).toBe(true);
+    findToggle(getItems(), "WebGL Renderer").action(true);
+    expect(webglEnabled).toBe(false);
+    findToggle(getItems(), "WebGL Renderer").action(false);
+    expect(webglEnabled).toBe(true);
+  });
+
+  test("toggle item can represent Show CPU/Memory toggle", () => {
+    let show = true;
+    const getItems = (): CardMenuItem[] => [
+      { type: "toggle", label: "Show CPU / Memory", checked: show, action: () => { show = !show; } },
+    ];
+    expect(findToggle(getItems(), "Show CPU / Memory").checked).toBe(true);
+    findToggle(getItems(), "Show CPU / Memory").action(true);
+    expect(show).toBe(false);
+  });
+
+  test("multiple toggles act independently", () => {
+    let cpuShow = true;
+    let tokenShow = true;
+    let buildShow = true;
+    const getItems = (): CardMenuItem[] => [
+      { type: "toggle", label: "Show CPU / Memory", checked: cpuShow, action: () => { cpuShow = !cpuShow; } },
+      { type: "toggle", label: "Show Token Usage", checked: tokenShow, action: () => { tokenShow = !tokenShow; } },
+      { type: "toggle", label: "Show Build Status", checked: buildShow, action: () => { buildShow = !buildShow; } },
+    ];
+    findToggle(getItems(), "Show CPU / Memory").action(true);
+    expect(cpuShow).toBe(false);
+    expect(tokenShow).toBe(true);
+    expect(buildShow).toBe(true);
+  });
+});
+
+// ---- c. Select items update value and fire callback ----
+
+describe("Select items – update value and fire callback", () => {
+  test("select item starts with provided value", () => {
+    const items: CardMenuItem[] = [
+      { type: "select", label: "Font Size", options: ["Small", "Medium", "Large"], value: "Medium", action: () => {} },
+    ];
+    expect(findSelect(items, "Font Size").value).toBe("Medium");
+  });
+
+  test("select item callback fires with selected value", () => {
+    let selected = "Medium";
+    const items: CardMenuItem[] = [
+      { type: "select", label: "Font Size", options: ["Small", "Medium", "Large"], value: selected, action: (v) => { selected = v; } },
+    ];
+    findSelect(items, "Font Size").action("Large");
+    expect(selected).toBe("Large");
+  });
+
+  test("select item options list is preserved", () => {
+    const items: CardMenuItem[] = [
+      { type: "select", label: "Sparkline Timeframe", options: ["30s", "60s", "120s"], value: "60s", action: () => {} },
+    ];
+    expect(findSelect(items, "Sparkline Timeframe").options).toEqual(["30s", "60s", "120s"]);
+  });
+
+  test("select item representing Max Entries updates correctly", () => {
+    let maxEntries = "100";
+    const items: CardMenuItem[] = [
+      { type: "select", label: "Max Entries", options: ["50", "100", "200"], value: maxEntries, action: (v) => { maxEntries = v; } },
+    ];
+    findSelect(items, "Max Entries").action("50");
+    expect(maxEntries).toBe("50");
+  });
+
+  test("select item representing Permission Mode fires with mode string", () => {
+    let permMode = "acceptEdits";
+    const items: CardMenuItem[] = [
+      {
+        type: "select",
+        label: "Permission Mode",
+        options: ["default", "acceptEdits", "bypassPermissions", "plan"],
+        value: permMode,
+        action: (v) => { permMode = v; },
+      },
+    ];
+    findSelect(items, "Permission Mode").action("bypassPermissions");
+    expect(permMode).toBe("bypassPermissions");
+  });
+});
+
+// ---- d. Integration: CardHeader reflects menu items from TugCardMeta ----
+
+describe("Integration – CardHeader reflects TugCardMeta menu items", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+  });
+
+  test("CardHeader renders menu button when menuItems are present", () => {
+    const meta = makeMeta({
+      menuItems: [
+        { type: "action", label: "Refresh Now", action: () => {} },
+        { type: "toggle", label: "Show Untracked", checked: true, action: () => {} },
+      ],
+    });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const menuBtn = header.getElement().querySelector('[aria-label="Card menu"]');
+    expect(menuBtn).not.toBeNull();
+    header.destroy();
+  });
+
+  test("CardHeader does NOT render menu button when menuItems is empty", () => {
+    const meta = makeMeta({ menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const menuBtn = header.getElement().querySelector('[aria-label="Card menu"]');
+    expect(menuBtn).toBeNull();
+    header.destroy();
+  });
+
+  test("DropdownMenu renders action, toggle, and select items correctly", () => {
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+    anchor.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: 100, bottom: 30,
+      width: 100, height: 30, x: 0, y: 0, toJSON: () => ({})
+    } as DOMRect);
+
+    const items: CardMenuItem[] = [
+      { type: "action", label: "Clear History", action: () => {} },
+      { type: "toggle", label: "Show Untracked", checked: true, action: () => {} },
+      { type: "select", label: "Max Entries", options: ["50", "100", "200"], value: "100", action: () => {} },
+    ];
+    const menu = new DropdownMenu(items, anchor);
+    menu.open();
+
+    const menuItems = document.querySelectorAll(".card-dropdown-item");
+    expect(menuItems.length).toBeGreaterThanOrEqual(1);
+
+    menu.destroy();
+  });
+
+  test("CardHeader title and icon reflect TugCardMeta", () => {
+    const meta = makeMeta({ title: "Git", icon: "GitBranch", menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+    const title = header.getElement().querySelector(".card-header-title");
+    expect(title?.textContent).toBe("Git");
+    header.destroy();
+  });
+
+  test("CardHeader.updateMeta() updates title in place", () => {
+    const meta = makeMeta({ title: "Files", icon: "FolderOpen", menuItems: [] });
+    const header = new CardHeader(meta, { onClose: () => {}, onCollapse: () => {} });
+
+    const titleEl = header.getElement().querySelector(".card-header-title");
+    expect(titleEl?.textContent).toBe("Files");
+
+    header.updateMeta({ title: "Files (2)", icon: "FolderOpen", closable: true, menuItems: [] });
+    expect(titleEl?.textContent).toBe("Files (2)");
+
+    header.destroy();
+  });
+
+  test("mock Terminal meta: 3 items (Font Size select, Clear Scrollback action, WebGL toggle)", () => {
+    let fontSize = 14;
+    let webglEnabled = true;
+    const FONT_SIZE_MAP: Record<string, number> = { Small: 12, Medium: 14, Large: 16 };
+    const FONT_SIZE_LABEL: Record<number, string> = { 12: "Small", 14: "Medium", 16: "Large" };
+
+    const getTerminalMeta = (): TugCardMeta => ({
       title: "Terminal",
       icon: "Terminal",
       closable: true,
@@ -110,10 +339,8 @@ class MockTerminalCard {
           type: "select",
           label: "Font Size",
           options: ["Small", "Medium", "Large"],
-          value: ({ 12: "Small", 14: "Medium", 16: "Large" } as Record<number, string>)[this._fontSize] ?? "Medium",
-          action: (label: string) => {
-            this._fontSize = ({ Small: 12, Medium: 14, Large: 16 } as Record<string, number>)[label] ?? 14;
-          },
+          value: FONT_SIZE_LABEL[fontSize] ?? "Medium",
+          action: (label: string) => { fontSize = FONT_SIZE_MAP[label] ?? 14; },
         },
         {
           type: "action",
@@ -123,428 +350,112 @@ class MockTerminalCard {
         {
           type: "toggle",
           label: "WebGL Renderer",
-          checked: this._webglEnabled,
-          action: (_checked: boolean) => {
-            this._webglEnabled = !this._webglEnabled;
-          },
+          checked: webglEnabled,
+          action: (_checked: boolean) => { webglEnabled = !webglEnabled; },
         },
       ],
+    });
+
+    const meta = getTerminalMeta();
+    expect(meta.menuItems.length).toBe(3);
+    expect(meta.menuItems.find((m) => m.type === "select" && m.label === "Font Size")).toBeDefined();
+    expect(meta.menuItems.find((m) => m.type === "action" && m.label === "Clear Scrollback")).toBeDefined();
+    expect(meta.menuItems.find((m) => m.type === "toggle" && m.label === "WebGL Renderer")).toBeDefined();
+
+    // Font Size starts at Medium (14px)
+    const fontSizeItem = findSelect(meta.menuItems, "Font Size");
+    expect(fontSizeItem.value).toBe("Medium");
+    fontSizeItem.action("Large");
+    expect(fontSize).toBe(16);
+
+    // WebGL toggle
+    const webglItem = findToggle(meta.menuItems, "WebGL Renderer");
+    expect(webglItem.checked).toBe(true);
+    webglItem.action(true);
+    expect(webglEnabled).toBe(false);
+  });
+
+  test("mock Git meta: 2 items (Refresh Now action, Show Untracked toggle)", () => {
+    let refreshCalled = false;
+    let showUntracked = true;
+    const meta: TugCardMeta = {
+      title: "Git",
+      icon: "GitBranch",
+      closable: true,
+      menuItems: [
+        { type: "action", label: "Refresh Now", action: () => { refreshCalled = true; } },
+        { type: "toggle", label: "Show Untracked", checked: showUntracked, action: () => { showUntracked = !showUntracked; } },
+      ],
     };
-  }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  mount(_container: HTMLElement): void {}
-  onFrame(_feedId: number, _payload: Uint8Array): void {}
-  onResize(_w: number, _h: number): void {}
-  setDragState(_ds: unknown): void {}
-  destroy(): void {}
-}
-
-// Alias so tests can use `TerminalCard` without importing the real one.
-const TerminalCard = MockTerminalCard;
-
-// ---- Mock connection ----
-
-class MockConnection {
-  public sentMessages: Array<{ feedId: number; payload: Uint8Array }> = [];
-  onFrame(_feedId: number, _cb: (p: Uint8Array) => void) {}
-  onOpen(_cb: () => void) {}
-  send(feedId: number, payload: Uint8Array) {
-    this.sentMessages.push({ feedId, payload });
-  }
-  getLastDecoded(): Record<string, unknown> | null {
-    const last = this.sentMessages[this.sentMessages.length - 1];
-    if (!last) return null;
-    return JSON.parse(new TextDecoder().decode(last.payload)) as Record<string, unknown>;
-  }
-  clear() { this.sentMessages = []; }
-}
-
-// ---- Helpers ----
-
-function findAction(items: ReturnType<GitCard["meta"]>["menuItems"], label: string): CardMenuAction {
-  const item = items.find((m) => m.type === "action" && m.label === label);
-  if (!item || item.type !== "action") throw new Error(`Action item "${label}" not found`);
-  return item;
-}
-
-function findToggle(items: ReturnType<GitCard["meta"]>["menuItems"], label: string): CardMenuToggle {
-  const item = items.find((m) => m.type === "toggle" && m.label === label);
-  if (!item || item.type !== "toggle") throw new Error(`Toggle item "${label}" not found`);
-  return item;
-}
-
-function findSelect(items: ReturnType<GitCard["meta"]>["menuItems"], label: string): CardMenuSelect {
-  const item = items.find((m) => m.type === "select" && m.label === label);
-  if (!item || item.type !== "select") throw new Error(`Select item "${label}" not found`);
-  return item;
-}
-
-// ---- a. Action items ----
-
-describe("Action items – fire callback without throw", () => {
-  test("GitCard Refresh Now does not throw (no lastStatus)", () => {
-    const card = new GitCard();
-    const item = findAction(card.meta.menuItems, "Refresh Now");
-    expect(() => item.action()).not.toThrow();
+    expect(meta.menuItems.length).toBe(2);
+    findAction(meta.menuItems, "Refresh Now").action();
+    expect(refreshCalled).toBe(true);
+    findToggle(meta.menuItems, "Show Untracked").action(true);
+    expect(showUntracked).toBe(false);
   });
 
-  test("GitCard Refresh Now re-renders when lastStatus is cached", () => {
-    const card = new GitCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    // Push a frame to populate lastStatus
-    const status = {
-      branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [],
-      untracked: ["foo.ts"], head_sha: "abc", head_message: "Init",
+  test("mock Stats meta: 4 items (Sparkline Timeframe select, 3 visibility toggles)", () => {
+    const meta: TugCardMeta = {
+      title: "Stats",
+      icon: "Activity",
+      closable: true,
+      menuItems: [
+        { type: "select", label: "Sparkline Timeframe", options: ["30s", "60s", "120s"], value: "60s", action: () => {} },
+        { type: "toggle", label: "Show CPU / Memory", checked: true, action: () => {} },
+        { type: "toggle", label: "Show Token Usage", checked: true, action: () => {} },
+        { type: "toggle", label: "Show Build Status", checked: true, action: () => {} },
+      ],
     };
-    card.onFrame(FeedId.GIT, new TextEncoder().encode(JSON.stringify(status)));
 
-    // Verify untracked appears
-    expect(container.querySelector(".untracked")).not.toBeNull();
-
-    // Hide untracked, then call refresh
-    findToggle(card.meta.menuItems, "Show Untracked").action(true);
-    expect(container.querySelector(".untracked")).toBeNull();
-
-    // Re-render with Refresh Now should keep showUntracked=false (no change to toggle)
-    expect(() => findAction(card.meta.menuItems, "Refresh Now").action()).not.toThrow();
-
-    card.destroy();
+    expect(meta.menuItems.length).toBe(4);
+    const timeframeItem = findSelect(meta.menuItems, "Sparkline Timeframe");
+    expect(timeframeItem.options).toEqual(["30s", "60s", "120s"]);
+    expect(timeframeItem.value).toBe("60s");
   });
 
-  test("FilesCard Clear History clears event list", () => {
-    const card = new FilesCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    // Add some events
-    const events = [{ kind: "Created", path: "a.ts" }, { kind: "Modified", path: "b.ts" }];
-    card.onFrame(FeedId.FILESYSTEM, new TextEncoder().encode(JSON.stringify(events)));
-    const list = container.querySelector(".event-list")!;
-    expect(list.children.length).toBe(2);
-
-    findAction(card.meta.menuItems, "Clear History").action();
-    expect(list.children.length).toBe(0);
-
-    card.destroy();
-  });
-
-  test("ConversationCard New Session clears message list", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    // The message list should initially be empty; simulate adding a message
-    const msgList = container.querySelector(".message-list") as HTMLElement;
-    const div = document.createElement("div");
-    div.className = "message-row";
-    msgList.appendChild(div);
-    expect(msgList.children.length).toBe(1);
-
-    // New Session clears the list
-    findAction(card.meta.menuItems, "New Session").action();
-    expect(msgList.children.length).toBe(0);
-
-    card.destroy();
-  });
-
-  test("ConversationCard Export History does not throw (meta has Export History action)", () => {
-    // Just verify the menu item exists and is callable — the actual download
-    // requires a real browser environment (Blob, URL.createObjectURL, anchor.click).
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const item = findAction(card.meta.menuItems, "Export History");
-    expect(item).toBeDefined();
-    expect(item.type).toBe("action");
-    expect(item.label).toBe("Export History");
-    // Action should not throw even if Blob/URL are mocked no-ops
-    try {
-      item.action();
-    } catch {
-      // If Blob or URL.createObjectURL is unavailable, the inner try/catch in
-      // exportHistory() handles it gracefully. Test passes either way.
-    }
-    card.destroy();
-  });
-});
-
-// ---- b. Toggle items update state ----
-
-describe("Toggle items – update state on action", () => {
-  test("GitCard Show Untracked starts checked=true", () => {
-    const card = new GitCard();
-    const toggle = findToggle(card.meta.menuItems, "Show Untracked");
-    expect(toggle.checked).toBe(true);
-  });
-
-  test("GitCard Show Untracked toggle off sets checked=false in next meta call", () => {
-    const card = new GitCard();
-    findToggle(card.meta.menuItems, "Show Untracked").action(true);
-    const toggleAfter = findToggle(card.meta.menuItems, "Show Untracked");
-    expect(toggleAfter.checked).toBe(false);
-  });
-
-  test("GitCard Show Untracked toggle on/off/on round-trip", () => {
-    const card = new GitCard();
-    // starts true
-    expect(findToggle(card.meta.menuItems, "Show Untracked").checked).toBe(true);
-    // toggle off
-    findToggle(card.meta.menuItems, "Show Untracked").action(true);
-    expect(findToggle(card.meta.menuItems, "Show Untracked").checked).toBe(false);
-    // toggle on
-    findToggle(card.meta.menuItems, "Show Untracked").action(false);
-    expect(findToggle(card.meta.menuItems, "Show Untracked").checked).toBe(true);
-  });
-
-  test("StatsCard Show CPU/Memory starts checked=true", () => {
-    const card = new StatsCard();
-    const toggle = findToggle(card.meta.menuItems, "Show CPU / Memory");
-    expect(toggle.checked).toBe(true);
-  });
-
-  test("StatsCard Show CPU/Memory toggle off sets checked=false", () => {
-    const card = new StatsCard();
-    findToggle(card.meta.menuItems, "Show CPU / Memory").action(true);
-    expect(findToggle(card.meta.menuItems, "Show CPU / Memory").checked).toBe(false);
-  });
-
-  test("StatsCard Show Token Usage toggle off sets checked=false", () => {
-    const card = new StatsCard();
-    findToggle(card.meta.menuItems, "Show Token Usage").action(true);
-    expect(findToggle(card.meta.menuItems, "Show Token Usage").checked).toBe(false);
-  });
-
-  test("StatsCard Show Build Status toggle off sets checked=false", () => {
-    const card = new StatsCard();
-    findToggle(card.meta.menuItems, "Show Build Status").action(true);
-    expect(findToggle(card.meta.menuItems, "Show Build Status").checked).toBe(false);
-  });
-
-  test("GitCard Show Untracked=false hides untracked section from re-render", () => {
-    const card = new GitCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    const status = {
-      branch: "main", ahead: 0, behind: 0, staged: [], unstaged: [],
-      untracked: ["foo.ts"], head_sha: "abc", head_message: "Init",
+  test("mock Files meta: 2 items (Clear History action, Max Entries select)", () => {
+    const meta: TugCardMeta = {
+      title: "Files",
+      icon: "FolderOpen",
+      closable: true,
+      menuItems: [
+        { type: "action", label: "Clear History", action: () => {} },
+        { type: "select", label: "Max Entries", options: ["50", "100", "200"], value: "100", action: () => {} },
+      ],
     };
-    card.onFrame(FeedId.GIT, new TextEncoder().encode(JSON.stringify(status)));
-    expect(container.querySelector(".untracked")).not.toBeNull();
 
-    // Toggle off
-    findToggle(card.meta.menuItems, "Show Untracked").action(true);
-    expect(container.querySelector(".untracked")).toBeNull();
-
-    card.destroy();
+    expect(meta.menuItems.length).toBe(2);
+    expect(findAction(meta.menuItems, "Clear History")).toBeDefined();
+    const maxEntriesItem = findSelect(meta.menuItems, "Max Entries");
+    expect(maxEntriesItem.options).toEqual(["50", "100", "200"]);
+    expect(maxEntriesItem.value).toBe("100");
   });
 
-  test("StatsCard toggle hides sub-card DOM element", () => {
-    const card = new StatsCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
+  test("mock Conversation meta: 3 items (Permission Mode select, New Session action, Export History action)", () => {
+    const sentPermMode: string[] = [];
+    const meta: TugCardMeta = {
+      title: "Code",
+      icon: "MessageSquare",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Permission Mode",
+          options: ["default", "acceptEdits", "bypassPermissions", "plan"],
+          value: "acceptEdits",
+          action: (mode: string) => { sentPermMode.push(mode); },
+        },
+        { type: "action", label: "New Session", action: () => {} },
+        { type: "action", label: "Export History", action: () => {} },
+      ],
+    };
 
-    const statCards = container.querySelectorAll(".stat-sub-card");
-    expect(statCards.length).toBe(3);
-
-    // Toggle off CPU/Memory — first sub-card should be display:none
-    findToggle(card.meta.menuItems, "Show CPU / Memory").action(true);
-    expect((statCards[0] as HTMLElement).style.display).toBe("none");
-
-    // Toggle it back on
-    findToggle(card.meta.menuItems, "Show CPU / Memory").action(false);
-    expect((statCards[0] as HTMLElement).style.display).toBe("");
-
-    card.destroy();
-  });
-});
-
-// ---- c. Select items update value and fire callback ----
-
-describe("Select items – update value and fire callback", () => {
-  test("TerminalCard Font Size starts at Medium", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    const select = findSelect(card.meta.menuItems, "Font Size");
-    expect(select.value).toBe("Medium");
-  });
-
-  test("TerminalCard Font Size action updates value to Large", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    findSelect(card.meta.menuItems, "Font Size").action("Large");
-    const after = findSelect(card.meta.menuItems, "Font Size");
-    expect(after.value).toBe("Large");
-  });
-
-  test("TerminalCard Font Size action updates value to Small", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    findSelect(card.meta.menuItems, "Font Size").action("Small");
-    expect(findSelect(card.meta.menuItems, "Font Size").value).toBe("Small");
-  });
-
-  test("FilesCard Max Entries starts at 100", () => {
-    const card = new FilesCard();
-    const select = findSelect(card.meta.menuItems, "Max Entries");
-    expect(select.value).toBe("100");
-  });
-
-  test("FilesCard Max Entries action updates value to 50", () => {
-    const card = new FilesCard();
-    findSelect(card.meta.menuItems, "Max Entries").action("50");
-    expect(findSelect(card.meta.menuItems, "Max Entries").value).toBe("50");
-  });
-
-  test("FilesCard Max Entries action trims excess entries immediately", () => {
-    const card = new FilesCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    // Add 100 events
-    const events = Array.from({ length: 100 }, (_, i) => ({ kind: "Created", path: `file-${i}.ts` }));
-    card.onFrame(FeedId.FILESYSTEM, new TextEncoder().encode(JSON.stringify(events)));
-    const list = container.querySelector(".event-list")!;
-    expect(list.children.length).toBe(100);
-
-    // Reduce max to 50 — should trim immediately
-    findSelect(card.meta.menuItems, "Max Entries").action("50");
-    expect(list.children.length).toBeLessThanOrEqual(50);
-
-    card.destroy();
-  });
-
-  test("StatsCard Sparkline Timeframe starts at 60s", () => {
-    const card = new StatsCard();
-    const select = findSelect(card.meta.menuItems, "Sparkline Timeframe");
-    expect(select.value).toBe("60s");
-  });
-
-  test("StatsCard Sparkline Timeframe action updates value to 30s", () => {
-    const card = new StatsCard();
-    findSelect(card.meta.menuItems, "Sparkline Timeframe").action("30s");
-    expect(findSelect(card.meta.menuItems, "Sparkline Timeframe").value).toBe("30s");
-  });
-
-  test("StatsCard Sparkline Timeframe action recreates sub-cards", () => {
-    const card = new StatsCard();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    card.mount(container);
-
-    expect(container.querySelectorAll(".stat-sub-card").length).toBe(3);
-
-    // Change timeframe — recreates sub-cards, still 3
-    findSelect(card.meta.menuItems, "Sparkline Timeframe").action("30s");
-    expect(container.querySelectorAll(".stat-sub-card").length).toBe(3);
-
-    card.destroy();
-  });
-});
-
-// ---- d. Integration: correct menu items per Table T02 ----
-
-describe("Integration – each card has correct menu items (Table T02)", () => {
-  beforeEach(() => {
-    uuidCounter = 5000;
-    localStorageMock.clear();
-  });
-
-  test("TerminalCard has 3 menu items: Font Size select, Clear Scrollback action, WebGL Renderer toggle", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    const items = card.meta.menuItems;
-    expect(items.length).toBe(3);
-
-    const fontSizeItem = items.find((m) => m.type === "select" && m.label === "Font Size");
-    expect(fontSizeItem).toBeDefined();
-    expect(fontSizeItem!.type).toBe("select");
-
-    const clearItem = items.find((m) => m.type === "action" && m.label === "Clear Scrollback");
-    expect(clearItem).toBeDefined();
-
-    const webglItem = items.find((m) => m.type === "toggle" && m.label === "WebGL Renderer");
-    expect(webglItem).toBeDefined();
-  });
-
-  test("GitCard has 2 menu items: Refresh Now action, Show Untracked toggle", () => {
-    const card = new GitCard();
-    const items = card.meta.menuItems;
-    expect(items.length).toBe(2);
-
-    expect(items.find((m) => m.type === "action" && m.label === "Refresh Now")).toBeDefined();
-    expect(items.find((m) => m.type === "toggle" && m.label === "Show Untracked")).toBeDefined();
-  });
-
-  test("FilesCard has 2 menu items: Clear History action, Max Entries select", () => {
-    const card = new FilesCard();
-    const items = card.meta.menuItems;
-    expect(items.length).toBe(2);
-
-    expect(items.find((m) => m.type === "action" && m.label === "Clear History")).toBeDefined();
-    expect(items.find((m) => m.type === "select" && m.label === "Max Entries")).toBeDefined();
-  });
-
-  test("StatsCard has 4 menu items: Sparkline Timeframe select, 3 sub-card visibility toggles", () => {
-    const card = new StatsCard();
-    const items = card.meta.menuItems;
-    expect(items.length).toBe(4);
-
-    expect(items.find((m) => m.type === "select" && m.label === "Sparkline Timeframe")).toBeDefined();
-    expect(items.find((m) => m.type === "toggle" && m.label === "Show CPU / Memory")).toBeDefined();
-    expect(items.find((m) => m.type === "toggle" && m.label === "Show Token Usage")).toBeDefined();
-    expect(items.find((m) => m.type === "toggle" && m.label === "Show Build Status")).toBeDefined();
-  });
-
-  test("ConversationCard has 3 menu items: Permission Mode select, New Session action, Export History action", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const items = card.meta.menuItems;
-    expect(items.length).toBe(3);
-
-    expect(items.find((m) => m.type === "select" && m.label === "Permission Mode")).toBeDefined();
-    expect(items.find((m) => m.type === "action" && m.label === "New Session")).toBeDefined();
-    expect(items.find((m) => m.type === "action" && m.label === "Export History")).toBeDefined();
-
-    card.destroy();
-  });
-
-  test("TerminalCard Font Size options are Small, Medium, Large", () => {
-    const conn = new MockConnection();
-    const card = new TerminalCard(conn as unknown as TugConnection);
-    const item = findSelect(card.meta.menuItems, "Font Size");
-    expect(item.options).toEqual(["Small", "Medium", "Large"]);
-  });
-
-  test("FilesCard Max Entries options are 50, 100, 200", () => {
-    const card = new FilesCard();
-    const item = findSelect(card.meta.menuItems, "Max Entries");
-    expect(item.options).toEqual(["50", "100", "200"]);
-  });
-
-  test("StatsCard Sparkline Timeframe options are 30s, 60s, 120s", () => {
-    const card = new StatsCard();
-    const item = findSelect(card.meta.menuItems, "Sparkline Timeframe");
-    expect(item.options).toEqual(["30s", "60s", "120s"]);
-  });
-
-  test("ConversationCard Permission Mode options include all 4 modes", () => {
-    const conn = new MockConnection();
-    const card = new ConversationCard(conn as unknown as TugConnection);
-    const item = findSelect(card.meta.menuItems, "Permission Mode");
-    expect(item.options).toContain("default");
-    expect(item.options).toContain("acceptEdits");
-    expect(item.options).toContain("bypassPermissions");
-    expect(item.options).toContain("plan");
-    card.destroy();
+    expect(meta.menuItems.length).toBe(3);
+    const permItem = findSelect(meta.menuItems, "Permission Mode");
+    expect(permItem.options).toContain("bypassPermissions");
+    expect(permItem.options).toContain("plan");
+    permItem.action("bypassPermissions");
+    expect(sentPermMode).toContain("bypassPermissions");
   });
 });

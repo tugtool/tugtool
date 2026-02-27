@@ -23,6 +23,7 @@ import {
   Box,
   Info,
   Settings,
+  Code,
 } from "lucide";
 import type { TugCardMeta } from "./cards/card";
 import { DropdownMenu } from "./card-menu";
@@ -37,6 +38,7 @@ const ICON_MAP: Record<string, Parameters<typeof createElement>[0]> = {
   Activity,
   Info,
   Settings,
+  Code,
 };
 
 export interface CardHeaderCallbacks {
@@ -53,6 +55,10 @@ export class CardHeader {
   private collapseBtn: HTMLElement | null = null;
   private meta: TugCardMeta;
   private activeMenu: DropdownMenu | null = null;
+  // Instance fields for targeted DOM mutation in updateMeta()
+  private titleEl: HTMLElement;
+  private iconEl: HTMLElement;
+  private menuBtn: HTMLElement | null = null;
 
   constructor(
     meta: TugCardMeta,
@@ -66,17 +72,17 @@ export class CardHeader {
     this.el.className = "card-header";
 
     // ---- Icon ----
-    const iconEl = document.createElement("div");
-    iconEl.className = "card-header-icon";
+    this.iconEl = document.createElement("div");
+    this.iconEl.className = "card-header-icon";
     const iconDef = ICON_MAP[meta.icon] ?? Box;
-    iconEl.appendChild(createElement(iconDef, { width: 14, height: 14 }));
-    this.el.appendChild(iconEl);
+    this.iconEl.appendChild(createElement(iconDef, { width: 14, height: 14 }));
+    this.el.appendChild(this.iconEl);
 
     // ---- Title ----
-    const titleEl = document.createElement("div");
-    titleEl.className = "card-header-title";
-    titleEl.textContent = meta.title;
-    this.el.appendChild(titleEl);
+    this.titleEl = document.createElement("div");
+    this.titleEl.className = "card-header-title";
+    this.titleEl.textContent = meta.title;
+    this.el.appendChild(this.titleEl);
 
     // ---- Spacer ----
     const spacer = document.createElement("div");
@@ -85,22 +91,23 @@ export class CardHeader {
 
     // ---- Menu button (hidden if no menuItems) ----
     if (meta.menuItems.length > 0) {
-      const menuBtn = document.createElement("button");
-      menuBtn.className = "card-header-btn";
-      menuBtn.setAttribute("aria-label", "Card menu");
-      menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
-      menuBtn.addEventListener("click", (e) => {
+      this.menuBtn = document.createElement("button");
+      this.menuBtn.className = "card-header-btn";
+      this.menuBtn.setAttribute("aria-label", "Card menu");
+      this.menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
+      this.menuBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         if (this.activeMenu && this.activeMenu.isOpen()) {
           this.activeMenu.close();
           this.activeMenu = null;
         } else {
-          const menu = new DropdownMenu(meta.menuItems, menuBtn);
+          // Read from this.meta so updated menu items (from updateMeta) are used
+          const menu = new DropdownMenu(this.meta.menuItems, this.menuBtn!);
           this.activeMenu = menu;
           menu.open();
         }
       });
-      this.el.appendChild(menuBtn);
+      this.el.appendChild(this.menuBtn);
     }
 
     // ---- Collapse button (docked only) ----
@@ -154,6 +161,78 @@ export class CardHeader {
    */
   setCollapsed(_collapsed: boolean): void {
     // Intentionally minimal — collapse state is managed by DeckManager
+  }
+
+  /**
+   * Live-update the header's title, icon, and/or menu items.
+   *
+   * Called by CardFrame.updateMeta() which is triggered by ReactCardAdapter
+   * when the active React card dispatches a "card-meta-update" event.
+   * Performs targeted DOM mutations rather than full header reconstruction.
+   */
+  updateMeta(meta: TugCardMeta): void {
+    // Close and destroy any open dropdown before mutating DOM
+    if (this.activeMenu) {
+      this.activeMenu.destroy();
+      this.activeMenu = null;
+    }
+
+    // Update title if changed
+    if (meta.title !== this.meta.title) {
+      this.titleEl.textContent = meta.title;
+    }
+
+    // Swap icon SVG if changed
+    if (meta.icon !== this.meta.icon) {
+      const iconDef = ICON_MAP[meta.icon] ?? Box;
+      this.iconEl.innerHTML = "";
+      this.iconEl.appendChild(createElement(iconDef, { width: 14, height: 14 }));
+    }
+
+    // Rebuild menu button based on menuItems count change
+    const hadMenu = this.meta.menuItems.length > 0;
+    const hasMenu = meta.menuItems.length > 0;
+
+    if (!hadMenu && hasMenu) {
+      // Create new menu button and insert before collapse button (or at end)
+      this.menuBtn = document.createElement("button");
+      this.menuBtn.className = "card-header-btn";
+      this.menuBtn.setAttribute("aria-label", "Card menu");
+      this.menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
+      this.menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this.activeMenu && this.activeMenu.isOpen()) {
+          this.activeMenu.close();
+          this.activeMenu = null;
+        } else {
+          const menu = new DropdownMenu(this.meta.menuItems, this.menuBtn!);
+          this.activeMenu = menu;
+          menu.open();
+        }
+      });
+      if (this.collapseBtn) {
+        this.el.insertBefore(this.menuBtn, this.collapseBtn);
+      } else {
+        // No collapse button: insert before the first button after the spacer
+        // (close button), or at end if nothing follows
+        const spacer = this.el.querySelector(".card-header-spacer");
+        const nextSibling = spacer ? spacer.nextSibling : null;
+        if (nextSibling) {
+          this.el.insertBefore(this.menuBtn, nextSibling);
+        } else {
+          this.el.appendChild(this.menuBtn);
+        }
+      }
+    } else if (hadMenu && !hasMenu) {
+      // Remove menu button
+      this.menuBtn?.remove();
+      this.menuBtn = null;
+    }
+    // If still >0 items, no DOM change needed — click handler reads this.meta.menuItems
+    // which will be updated below when we store the new meta
+
+    // Store the new meta — must happen after all DOM updates that reference old meta
+    this.meta = meta;
   }
 
   destroy(): void {

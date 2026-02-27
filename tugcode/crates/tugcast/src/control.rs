@@ -664,15 +664,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_relaunch_reads_source_tree_from_dev_state() {
         use arc_swap::ArcSwap;
-        use std::collections::HashMap;
         use std::sync::Arc;
 
         let dev_state = crate::dev::DevState {
             source_tree: PathBuf::from("/test/source"),
-            files: HashMap::new(),
-            index_path: PathBuf::from("/tmp/index.html"),
-            dirs: vec![],
-            fallback: PathBuf::from("/tmp/fallback"),
+            dist_dir: PathBuf::from("/test/source/tugdeck/dist"),
+            index_path: PathBuf::from("/test/source/tugdeck/dist/index.html"),
         };
         let shared_dev_state = Arc::new(ArcSwap::from_pointee(Some(dev_state)));
         let (client_action_tx, _) = broadcast::channel(16);

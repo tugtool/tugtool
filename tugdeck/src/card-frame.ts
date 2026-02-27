@@ -128,6 +128,15 @@ export class CardFrame {
     // Title is rendered by CardHeader; recreate would be needed for live updates.
   }
 
+  /**
+   * Live-update the card header's title, icon, and menu items.
+   * Called by ReactCardAdapter when the active React component dispatches
+   * a "card-meta-update" event with new metadata.
+   */
+  updateMeta(meta: TugCardMeta): void {
+    this.cardHeader.updateMeta(meta);
+  }
+
   updatePosition(x: number, y: number): void {
     this.cardState.position = { x, y };
     this.el.style.left = `${x}px`;

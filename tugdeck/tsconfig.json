@@ -10,7 +10,13 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }
