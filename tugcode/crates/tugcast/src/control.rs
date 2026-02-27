@@ -174,11 +174,6 @@ impl ControlReader {
                                         let _ = response_tx
                                             .send(make_dev_mode_result(true, None))
                                             .await;
-
-                                        // Broadcast reload_frontend for mid-session toggles (per D11)
-                                        let payload = br#"{"action":"reload_frontend"}"#;
-                                        let frame = Frame::new(FeedId::Control, payload.to_vec());
-                                        let _ = client_action_tx.send(frame);
                                     }
                                     Err(e) => {
                                         let _ = response_tx
@@ -668,8 +663,6 @@ mod tests {
 
         let dev_state = crate::dev::DevState {
             source_tree: PathBuf::from("/test/source"),
-            dist_dir: PathBuf::from("/test/source/tugdeck/dist"),
-            index_path: PathBuf::from("/test/source/tugdeck/dist/index.html"),
         };
         let shared_dev_state = Arc::new(ArcSwap::from_pointee(Some(dev_state)));
         let (client_action_tx, _) = broadcast::channel(16);

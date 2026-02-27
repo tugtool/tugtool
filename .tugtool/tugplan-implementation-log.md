@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-27T19:51:47Z
+---
+
+## step-2: Removed dist-based asset serving, styles watcher, frontend_dirty tracking, reload_frontend broadcast. Simplified DevState to source_tree only. Deleted 20+ tests for removed code paths.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-1
 date: 2025-02-27T19:38:43Z
 ---

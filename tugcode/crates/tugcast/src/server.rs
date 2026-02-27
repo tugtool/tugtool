@@ -155,30 +155,16 @@ async fn serve_asset(uri: Uri) -> Response {
 ///
 /// Constructs the Router with auth, WebSocket, and static asset routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-pub(crate) fn build_app(router: FeedRouter, dev_state: SharedDevState) -> Router {
-    let base = Router::new()
+/// In dev mode, the browser loads from the Vite dev server (port 5173), not tugcast.
+/// The `dev_state` parameter is kept because `handle_relaunch` in `control.rs` reads
+/// `source_tree` from it.
+pub(crate) fn build_app(router: FeedRouter, _dev_state: SharedDevState) -> Router {
+    Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
-        .route("/api/tell", post(tell_handler));
-
-    // Unified fallback handler: checks shared dev state per request
-    let shared = dev_state;
-    base.fallback(move |uri: Uri| {
-        let s = shared.clone();
-        async move {
-            let guard = s.load();
-            if let Some(ref state) = **guard {
-                if uri.path() == "/" || uri.path() == "/index.html" {
-                    crate::dev::serve_dev_index(state).await
-                } else {
-                    crate::dev::serve_dev_asset(uri, state).await
-                }
-            } else {
-                serve_asset(uri).await
-            }
-        }
-    })
-    .with_state(router)
+        .route("/api/tell", post(tell_handler))
+        .fallback(serve_asset)
+        .with_state(router)
 }
 
 /// Run the HTTP server
