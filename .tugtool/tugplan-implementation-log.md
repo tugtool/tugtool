@@ -9,6 +9,37 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-02-27T02:22:29Z
+---
+
+## step-9: Converted vanilla TerminalCard to React functional component wrapping xterm.js with useRef/useEffect. Uses useFeed for TERMINAL_OUTPUT subscription, useConnection for input/resize, useCardMeta for live meta updates. 13 RTL tests with mock.module() xterm.js intercepts. 704 tests pass, build clean.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
+step: step-9
+date: 2026-02-26T00:00:00Z
+---
+
+## step-9: Converted Terminal card to React wrapping xterm.js. Created terminal-card.tsx using useRef for container/terminal/fitAddon refs, useEffect for xterm.js init/cleanup, useFeed for TERMINAL_OUTPUT, useConnection for keyboard input forwarding, CardContext.dimensions for resize handling (debounced via requestAnimationFrame), useCardMeta for dynamic menu items (Font Size select, Clear Scrollback action, WebGL Renderer toggle). Updated main.tsx to register Terminal via ReactCardAdapter with setDragState support. Vanilla terminal-card.ts retained for Step 10 deletion. Added requestAnimationFrame/cancelAnimationFrame polyfills to setup-rtl.ts. RTL tests use bun mock.module() to intercept xterm.js imports enabling assertions on open(), fit(), dispose(), onData(), onResize(). 704 tests pass, bun run build exits 0.
+
+**Checkpoint results:**
+- `bun test`: 704 pass, 0 fail across 40 files
+- `bun run build`: ✓ 3881 modules transformed, built in 1.75s
+
+**Files changed:**
+- tugdeck/src/components/cards/terminal-card.tsx (created)
+- tugdeck/src/components/cards/terminal-card.test.tsx (created)
+- tugdeck/src/main.tsx (updated — Terminal now uses ReactCardAdapter)
+- tugdeck/src/__tests__/setup-rtl.ts (updated — added RAF/cancelAF polyfills)
+
+---
+
+---
 step: step-8
 date: 2025-02-27T01:59:03Z
 ---

@@ -60,5 +60,30 @@ if (!existingNav || typeof existingNav.userAgent !== "string") {
   disconnect() {}
 };
 
+// requestAnimationFrame / cancelAnimationFrame are not provided by happy-dom.
+// Terminal card and other animation-based components use these APIs.
+// Provide a synchronous fallback that calls the callback immediately so
+// effects that debounce via RAF complete within act() boundaries.
+if (typeof (global as any).requestAnimationFrame !== "function") {
+  let rafId = 0;
+  const pendingCallbacks = new Map<number, FrameRequestCallback>();
+  (global as any).requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    const id = ++rafId;
+    pendingCallbacks.set(id, cb);
+    // Schedule via setTimeout(0) so act() can flush it
+    setTimeout(() => {
+      const fn = pendingCallbacks.get(id);
+      if (fn) {
+        pendingCallbacks.delete(id);
+        fn(performance.now());
+      }
+    }, 0);
+    return id;
+  };
+  (global as any).cancelAnimationFrame = (id: number): void => {
+    pendingCallbacks.delete(id);
+  };
+}
+
 // Signal to React 19 that we are in an act() environment
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;

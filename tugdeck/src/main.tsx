@@ -7,7 +7,6 @@ import "@xterm/xterm/css/xterm.css";
 
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
-import { TerminalCard } from "./cards/terminal-card";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
 import { AboutCard as AboutCardComponent } from "./components/cards/about-card";
 import { SettingsCard as SettingsCardComponent } from "./components/cards/settings-card";
@@ -16,6 +15,7 @@ import { GitCard as GitCardComponent } from "./components/cards/git-card";
 import { StatsCard as StatsCardComponent } from "./components/cards/stats-card";
 import { DeveloperCard as DeveloperCardComponent } from "./components/cards/developer-card";
 import { ConversationCard as ConversationCardComponent } from "./components/cards/conversation/conversation-card";
+import { TerminalCard as TerminalCardComponent } from "./components/cards/terminal-card";
 import { FeedId } from "./protocol";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
@@ -49,9 +49,14 @@ deck.registerCardFactory("code", () => {
   return adapter;
 });
 deck.registerCardFactory("terminal", () => {
-  const card = new TerminalCard(connection);
-  card.setDragState(deck);
-  return card;
+  const adapter = new ReactCardAdapter({
+    component: TerminalCardComponent,
+    feedIds: [FeedId.TERMINAL_OUTPUT],
+    initialMeta: { title: "Terminal", icon: "Terminal", closable: true, menuItems: [] },
+    connection,
+  });
+  adapter.setDragState(deck);
+  return adapter;
 });
 deck.registerCardFactory("git", () => new ReactCardAdapter({
   component: GitCardComponent,
@@ -98,9 +103,14 @@ const codeAdapter = new ReactCardAdapter({
 codeAdapter.setDragState(deck);
 deck.addCard(codeAdapter, "code");
 
-const terminalCard = new TerminalCard(connection);
-terminalCard.setDragState(deck);
-deck.addCard(terminalCard, "terminal");
+const terminalAdapter = new ReactCardAdapter({
+  component: TerminalCardComponent,
+  feedIds: [FeedId.TERMINAL_OUTPUT],
+  initialMeta: { title: "Terminal", icon: "Terminal", closable: true, menuItems: [] },
+  connection,
+});
+terminalAdapter.setDragState(deck);
+deck.addCard(terminalAdapter, "terminal");
 
 deck.addCard(new ReactCardAdapter({
   component: GitCardComponent,
