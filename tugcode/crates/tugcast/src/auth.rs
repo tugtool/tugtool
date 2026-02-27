@@ -103,7 +103,7 @@ impl AuthState {
     }
 
     /// Set the dev port (Vite dev server) for origin checking.
-    /// Pass `Some(5173)` when dev mode is enabled, `None` when disabled.
+    /// Pass the Vite dev server port when dev mode is enabled, `None` when disabled.
     pub fn set_dev_port(&mut self, port: Option<u16>) {
         self.dev_port = port;
     }

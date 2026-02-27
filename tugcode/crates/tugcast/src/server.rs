@@ -161,7 +161,7 @@ async fn serve_asset(uri: Uri) -> Response {
 ///
 /// Constructs the Router with auth, WebSocket, and static asset routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-/// In dev mode, the browser loads from the Vite dev server (port 5173), not tugcast.
+/// In dev mode, the browser loads from the Vite dev server port, not tugcast.
 /// The `dev_state` parameter is kept because `handle_relaunch` in `control.rs` reads
 /// `source_tree` from it.
 pub(crate) fn build_app(router: FeedRouter, _dev_state: SharedDevState) -> Router {

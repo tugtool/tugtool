@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-27T21:58:10Z
+---
+
+## step-1: Added DEFAULT_VITE_DEV_PORT constant to tugcast-core, added vite_port field to DevMode control message with backward-compatible serde default, updated handler to use runtime port with fallback, updated doc comments, added tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-port-hardening.md
+
+---
+
+---
 step: step-6
 date: 2025-02-27T20:22:37Z
 ---
