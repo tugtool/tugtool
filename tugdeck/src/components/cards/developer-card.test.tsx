@@ -302,12 +302,12 @@ describe("DeveloperCard – dev notifications", () => {
     delete (window as any).webkit;
   });
 
-  it("shows Reloaded flash when reloaded notification received", async () => {
+  it("shows Reloaded flash when td-hmr-update event received", async () => {
     const { container, unmount } = renderDeveloperCard();
     await act(async () => {});
 
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+      document.dispatchEvent(new CustomEvent("td-hmr-update"));
     });
 
     const stylesStatus = Array.from(
@@ -323,7 +323,7 @@ describe("DeveloperCard – dev notifications", () => {
     await act(async () => {});
 
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded" });
+      document.dispatchEvent(new CustomEvent("td-hmr-update"));
     });
 
     // Should show "Reloaded" immediately
@@ -375,9 +375,11 @@ describe("DeveloperCard – action buttons", () => {
     );
     expect(restartBtnAfterClick).not.toBeUndefined();
 
-    // Dispatch a reloaded notification (confirmation from the new tugcast instance)
+    // Dispatch relaunch_available as confirmation from the new tugcast instance.
+    // Any dev_notification clears the restartPendingRef (per D07 pending-flag pattern).
+    // Using relaunch_available avoids re-staleing codeRow, so the Restart button disappears.
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
     // Now the button should be gone (codeRow stale cleared by pending-flag logic)
@@ -416,9 +418,11 @@ describe("DeveloperCard – action buttons", () => {
     );
     expect(relaunchBtnAfterClick).not.toBeUndefined();
 
-    // Dispatch a reloaded notification (confirmation from the new tugcast instance)
+    // Dispatch restart_available as confirmation from the new tugcast instance.
+    // Any dev_notification clears the relaunchPendingRef (per D07 pending-flag pattern).
+    // Using restart_available avoids re-staleing appRow, so the Relaunch button disappears.
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+      dispatchDevNotification({ type: "restart_available", count: 0, timestamp: Date.now() });
     });
 
     // Now the button should be gone (appRow stale cleared by pending-flag logic)
@@ -486,9 +490,11 @@ describe("DeveloperCard – badge events", () => {
       expect(afterClick.count).toBe(5);
     }
 
-    // Dispatch a reloaded notification (confirmation from new tugcast instance)
+    // Dispatch relaunch_available as confirmation from new tugcast instance.
+    // Any dev_notification clears restartPendingRef and resets codeRow to isStale=false.
+    // Using relaunch_available avoids re-staleing codeRow, so badge goes to 0.
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
     // Now badge should be dispatched with 0 (codeRow cleared by pending-flag)
@@ -608,9 +614,11 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
     );
     expect(restartBtn).not.toBeUndefined();
 
-    // Dispatch a reloaded notification (proof the new tugcast instance is running)
+    // Dispatch relaunch_available as confirmation (proof the new tugcast instance is running).
+    // Any dev_notification clears restartPendingRef; using relaunch_available avoids
+    // re-staleing codeRow so the Restart button disappears cleanly.
     await act(async () => {
-      dispatchDevNotification({ type: "reloaded", timestamp: Date.now() });
+      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
     // codeRow stale state cleared — Restart button should be gone

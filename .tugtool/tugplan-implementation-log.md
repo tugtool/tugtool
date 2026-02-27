@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-27T20:13:19Z
+---
+
+## step-5: Replaced reloaded notification with Vite HMR vite:afterUpdate events via td-hmr-update CustomEvent. Removed reloaded from DevNotificationEvent type. Updated pending-flag confirmation tests to use cross-category notifications.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-4
 date: 2025-02-27T20:05:08Z
 ---
