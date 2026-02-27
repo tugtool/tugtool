@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-27T19:38:43Z
+---
+
+## step-1: Updated vite.config.ts with proxy entries for /auth, /ws, /api targeting tugcast via TUGCAST_PORT env var
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-3
 date: 2025-02-27T15:40:36Z
 ---
