@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-02-27T01:33:18Z
+---
+
+## step-7: Converted all 4 simple data cards to React: Files (useFeed FILESYSTEM, ScrollArea, lucide icons), Git (branch/staged/unstaged rendering), Stats (3 stat sections with sparkline canvas), Developer (3-row state machine with bridge events). Updated action-dispatch.ts for CustomEvent bridge. Updated main.tsx to wire all via ReactCardAdapter. 645 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-6
 date: 2025-02-27T01:13:04Z
 ---

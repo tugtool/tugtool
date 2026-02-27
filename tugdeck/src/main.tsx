@@ -9,13 +9,14 @@ import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { ConversationCard } from "./cards/conversation-card";
 import { TerminalCard } from "./cards/terminal-card";
-import { FilesCard } from "./cards/files-card";
-import { GitCard } from "./cards/git-card";
-import { StatsCard } from "./cards/stats-card";
-import { DeveloperCard } from "./cards/developer-card";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
 import { AboutCard as AboutCardComponent } from "./components/cards/about-card";
 import { SettingsCard as SettingsCardComponent } from "./components/cards/settings-card";
+import { FilesCard as FilesCardComponent } from "./components/cards/files-card";
+import { GitCard as GitCardComponent } from "./components/cards/git-card";
+import { StatsCard as StatsCardComponent } from "./components/cards/stats-card";
+import { DeveloperCard as DeveloperCardComponent } from "./components/cards/developer-card";
+import { FeedId } from "./protocol";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
 
@@ -47,9 +48,21 @@ deck.registerCardFactory("terminal", () => {
   card.setDragState(deck);
   return card;
 });
-deck.registerCardFactory("git", () => new GitCard());
-deck.registerCardFactory("files", () => new FilesCard());
-deck.registerCardFactory("stats", () => new StatsCard());
+deck.registerCardFactory("git", () => new ReactCardAdapter({
+  component: GitCardComponent,
+  feedIds: [FeedId.GIT],
+  initialMeta: { title: "Git", icon: "GitBranch", closable: true, menuItems: [] },
+}));
+deck.registerCardFactory("files", () => new ReactCardAdapter({
+  component: FilesCardComponent,
+  feedIds: [FeedId.FILESYSTEM],
+  initialMeta: { title: "Files", icon: "FolderOpen", closable: true, menuItems: [] },
+}));
+deck.registerCardFactory("stats", () => new ReactCardAdapter({
+  component: StatsCardComponent,
+  feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
+  initialMeta: { title: "Stats", icon: "Activity", closable: true, menuItems: [] },
+}));
 deck.registerCardFactory("about", () => new ReactCardAdapter({
   component: AboutCardComponent,
   feedIds: [],
@@ -61,7 +74,12 @@ deck.registerCardFactory("settings", () => new ReactCardAdapter({
   initialMeta: { title: "Settings", icon: "Settings", closable: true, menuItems: [] },
   connection,
 }));
-deck.registerCardFactory("developer", () => new DeveloperCard(connection));
+deck.registerCardFactory("developer", () => new ReactCardAdapter({
+  component: DeveloperCardComponent,
+  feedIds: [FeedId.GIT],
+  initialMeta: { title: "Developer", icon: "Code", closable: true, menuItems: [] },
+  connection,
+}));
 
 // Create and register cards by componentId
 // DeckManager.addCard matches cards to layout tree TabItems by componentId
@@ -73,9 +91,21 @@ const terminalCard = new TerminalCard(connection);
 terminalCard.setDragState(deck);
 deck.addCard(terminalCard, "terminal");
 
-deck.addCard(new GitCard(), "git");
-deck.addCard(new FilesCard(), "files");
-deck.addCard(new StatsCard(), "stats");
+deck.addCard(new ReactCardAdapter({
+  component: GitCardComponent,
+  feedIds: [FeedId.GIT],
+  initialMeta: { title: "Git", icon: "GitBranch", closable: true, menuItems: [] },
+}), "git");
+deck.addCard(new ReactCardAdapter({
+  component: FilesCardComponent,
+  feedIds: [FeedId.FILESYSTEM],
+  initialMeta: { title: "Files", icon: "FolderOpen", closable: true, menuItems: [] },
+}), "files");
+deck.addCard(new ReactCardAdapter({
+  component: StatsCardComponent,
+  feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
+  initialMeta: { title: "Stats", icon: "Activity", closable: true, menuItems: [] },
+}), "stats");
 
 // Re-render so CardFrame headers pick up card meta (menu buttons)
 deck.refresh();
