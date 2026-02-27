@@ -56,29 +56,6 @@ impl ControlWriter {
         Ok(())
     }
 
-    /// Send shutdown message to parent
-    #[allow(dead_code)] // Replaced by make_shutdown_message + draining task in Step 3
-    pub async fn send_shutdown(&mut self, reason: &str, pid: u32) -> std::io::Result<()> {
-        #[derive(Serialize)]
-        struct ShutdownMessage<'a> {
-            r#type: &'static str,
-            reason: &'a str,
-            pid: u32,
-        }
-
-        let msg = ShutdownMessage {
-            r#type: "shutdown",
-            reason,
-            pid,
-        };
-
-        let json = serde_json::to_string(&msg)?;
-        self.writer.write_all(json.as_bytes()).await?;
-        self.writer.write_all(b"\n").await?;
-        self.writer.flush().await?;
-        Ok(())
-    }
-
     /// Extract inner writer for use by draining task
     pub(crate) fn into_inner(self) -> BufWriter<OwnedWriteHalf> {
         self.writer
@@ -174,11 +151,6 @@ impl ControlReader {
                                         let _ = response_tx
                                             .send(make_dev_mode_result(true, None))
                                             .await;
-
-                                        // Broadcast reload_frontend for mid-session toggles (per D11)
-                                        let payload = br#"{"action":"reload_frontend"}"#;
-                                        let frame = Frame::new(FeedId::Control, payload.to_vec());
-                                        let _ = client_action_tx.send(frame);
                                     }
                                     Err(e) => {
                                         let _ = response_tx
@@ -668,8 +640,6 @@ mod tests {
 
         let dev_state = crate::dev::DevState {
             source_tree: PathBuf::from("/test/source"),
-            dist_dir: PathBuf::from("/test/source/tugdeck/dist"),
-            index_path: PathBuf::from("/test/source/tugdeck/dist/index.html"),
         };
         let shared_dev_state = Arc::new(ArcSwap::from_pointee(Some(dev_state)));
         let (client_action_tx, _) = broadcast::channel(16);

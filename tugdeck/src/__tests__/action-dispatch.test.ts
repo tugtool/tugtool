@@ -201,16 +201,15 @@ describe("action-dispatch: dev_notification", () => {
     expect(badgeEvents[0].count).toBe(2);
   });
 
-  it("should not dispatch badge event when card closed and type is reloaded", () => {
+  it("should not dispatch badge event when card closed and type is unknown", () => {
     mockDeck._panelResult = null; // Card closed
 
     dispatchAction({
       action: "dev_notification",
-      type: "reloaded",
-      changes: ["styles.css"],
+      type: "unknown_type",
     });
 
-    // reloaded type should not set badge when card is closed (clean state)
+    // Unknown notification types should not set a dock badge
     expect(badgeEvents.length).toBe(0);
   });
 

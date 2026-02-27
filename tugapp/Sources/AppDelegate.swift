@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreePath: String?
     private var awaitingDevModeResult: Bool = false
     private var lastAuthURL: String?
+    private var lastTugcastPort: Int = 55255
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
@@ -46,18 +47,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenuBar()
 
         // Setup process manager
-        processManager.onReady = { [weak self] url in
+        processManager.onReady = { [weak self] url, port in
             guard let self = self else { return }
             self.lastAuthURL = url
+            self.lastTugcastPort = port
             // If dev mode is enabled and source tree is set, send dev_mode and gate loadURL
             let devEnabled = self.devModeEnabled
             let sourceTree = self.sourceTreePath
             if devEnabled, let path = sourceTree {
+                // Spawn Vite dev server now that we know the actual tugcast port.
+                // The duplication guard inside spawnViteDevServer prevents re-spawning on restarts.
+                self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port)
                 self.processManager.sendDevMode(enabled: true, sourceTree: path)
                 self.awaitingDevModeResult = true
                 // Do NOT call loadURL -- wait for dev_mode_result
             } else {
-                // No dev mode or no source tree -- load immediately
+                // No dev mode or no source tree -- load immediately from tugcast
                 self.window.loadURL(url)
             }
         }
@@ -65,9 +70,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         processManager.onDevModeResult = { [weak self] success in
             guard let self = self else { return }
             if self.awaitingDevModeResult {
-                // Gate lifted -- load the page (success = dev assets, failure = embedded assets)
+                // Gate lifted -- load the page
                 if let url = self.lastAuthURL {
-                    self.window.loadURL(url)
+                    // When dev mode is enabled (regardless of success), load from the Vite dev
+                    // server (port 5173) so the browser gets HMR support. On failure the embedded
+                    // assets are still served via Vite's proxy fallback; a full page load from
+                    // tugcast would bypass HMR entirely.
+                    let urlToLoad: String
+                    if success {
+                        // Rewrite the tugcast port to the Vite dev server port (5173)
+                        let needle = ":\(self.lastTugcastPort)"
+                        urlToLoad = url.replacingOccurrences(of: needle, with: ":5173", options: [], range: url.range(of: needle))
+                    } else {
+                        // Dev mode failed -- load directly from tugcast (embedded assets)
+                        urlToLoad = url
+                    }
+                    self.window.loadURL(urlToLoad)
                 }
                 self.awaitingDevModeResult = false
             }

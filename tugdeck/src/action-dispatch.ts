@@ -228,7 +228,6 @@ export function initActionDispatch(
             })
           );
         }
-        // For "reloaded" type, no badge (clean state)
       }
     }
   });

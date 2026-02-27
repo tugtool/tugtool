@@ -24,8 +24,8 @@ class ProcessManager {
     private var restartDecision: RestartDecision = .pending
     private var backoffSeconds: TimeInterval = 0
 
-    /// Callback for ready message (UDS-based)
-    var onReady: ((String) -> Void)?
+    /// Callback for ready message (UDS-based): passes auth URL and actual tugcast port
+    var onReady: ((String, Int) -> Void)?
 
     /// Callback for dev_mode_result message
     var onDevModeResult: ((Bool) -> Void)?
@@ -108,6 +108,52 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
+    /// Spawn the Vite dev server with the given source tree and tugcast port.
+    ///
+    /// Vite persists across tugcast restarts — call this only once from the onReady callback.
+    /// Uses `--strictPort` so Vite fails fast if port 5173 is occupied rather than
+    /// silently binding elsewhere (which would break the auth URL rewrite).
+    /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
+    func spawnViteDevServer(sourceTree: String, tugcastPort: Int) {
+        // Duplication guard: skip if Vite is already running (prevents duplicate dev servers on tugcast restarts)
+        if viteProcess?.isRunning == true {
+            NSLog("ProcessManager: vite dev server already running, skipping spawn")
+            return
+        }
+
+        let viteBinaryPath = (sourceTree as NSString).appendingPathComponent("tugdeck/node_modules/.bin/vite")
+        guard FileManager.default.isExecutableFile(atPath: viteBinaryPath) else {
+            NSLog("ProcessManager: vite binary not found at %@; HMR disabled", viteBinaryPath)
+            return
+        }
+
+        let viteProc = Process()
+        viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
+        viteProc.arguments = ["--strictPort"]
+        viteProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
+
+        var viteEnv = ProcessInfo.processInfo.environment
+        viteEnv["PATH"] = ProcessManager.shellPATH
+        viteEnv["TUGCAST_PORT"] = String(tugcastPort)
+        viteProc.environment = viteEnv
+
+        viteProc.standardOutput = FileHandle.standardOutput
+        viteProc.standardError = FileHandle.standardError
+
+        // Handle Vite exit: log warning but do not auto-restart (per risk R01)
+        viteProc.terminationHandler = { process in
+            NSLog("ProcessManager: vite dev server exited with code %d", process.terminationStatus)
+        }
+
+        do {
+            try viteProc.run()
+            self.viteProcess = viteProc
+            NSLog("ProcessManager: vite dev server started (pid %d)", viteProc.processIdentifier)
+        } catch {
+            NSLog("ProcessManager: failed to start vite dev server: %@", error.localizedDescription)
+        }
+    }
+
     /// Start tugcast
     func start(sourceTree: String?) {
         self.sourceTree = sourceTree
@@ -158,10 +204,11 @@ class ProcessManager {
                 NSLog("ProcessManager: ready message missing auth_url")
                 return
             }
+            let port = msg.data["port"] as? Int ?? 55255
             // Reset backoff on successful ready
             backoffSeconds = 0
-            NSLog("ProcessManager: ready (auth_url=%@)", authURL)
-            onReady?(authURL)
+            NSLog("ProcessManager: ready (auth_url=%@, port=%d)", authURL, port)
+            onReady?(authURL, port)
         case "dev_mode_result":
             let success = msg.data["success"] as? Bool ?? false
             onDevModeResult?(success)
@@ -182,9 +229,9 @@ class ProcessManager {
                 restartDecision = .restart
             case "relaunch":
                 NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
-                // Stop vite build --watch before app exit
+                // Stop vite dev server before app exit
                 if let proc = viteProcess, proc.isRunning {
-                    NSLog("ProcessManager: terminating vite process before relaunch")
+                    NSLog("ProcessManager: terminating vite dev server before relaunch")
                     proc.terminate()
                     proc.waitUntilExit()
                 }
@@ -239,7 +286,7 @@ class ProcessManager {
 
     /// Stop the tugcast process
     func stop() {
-        // Stop vite first
+        // Stop vite dev server first
         if let proc = viteProcess, proc.isRunning {
             proc.terminate()
             proc.waitUntilExit()
@@ -355,9 +402,6 @@ class ProcessManager {
         if let dir = sourceTree {
             args += ["--dir", dir]
         }
-        // Read fresh dev mode preferences (for vite build --watch)
-        let devEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
-        let freshSourceTree = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
         args += ["--control-socket", controlSocketPath]
         proc.arguments = args
 
@@ -368,45 +412,6 @@ class ProcessManager {
             try proc.run()
             self.process = proc
             self.childPID = proc.processIdentifier
-
-            // Start vite build --watch if in dev mode (guard against duplication on restarts)
-            if devEnabled, let viteSourceTree = freshSourceTree {
-                // Vite duplication guard: skip if already running (prevents duplicate watchers on restarts)
-                if viteProcess?.isRunning == true {
-                    NSLog("ProcessManager: vite build --watch already running, skipping spawn")
-                } else {
-                    let viteBinaryPath = (viteSourceTree as NSString).appendingPathComponent("tugdeck/node_modules/.bin/vite")
-                    if FileManager.default.isExecutableFile(atPath: viteBinaryPath) {
-                        let viteProc = Process()
-                        viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
-                        viteProc.arguments = ["build", "--watch"]
-                        viteProc.currentDirectoryURL = URL(fileURLWithPath: (viteSourceTree as NSString).appendingPathComponent("tugdeck"))
-
-                        // Pass same environment with shell PATH
-                        var viteEnv = ProcessInfo.processInfo.environment
-                        viteEnv["PATH"] = ProcessManager.shellPATH
-                        viteProc.environment = viteEnv
-
-                        viteProc.standardOutput = FileHandle.standardOutput
-                        viteProc.standardError = FileHandle.standardError
-
-                        // Handle vite exit: log but do not crash (no auto-restart per risk R01)
-                        viteProc.terminationHandler = { process in
-                            NSLog("ProcessManager: vite build --watch exited with code %d", process.terminationStatus)
-                        }
-
-                        do {
-                            try viteProc.run()
-                            self.viteProcess = viteProc
-                            NSLog("ProcessManager: vite build --watch started (pid %d)", viteProc.processIdentifier)
-                        } catch {
-                            NSLog("ProcessManager: failed to start vite build --watch: %@", error.localizedDescription)
-                        }
-                    } else {
-                        NSLog("ProcessManager: vite binary not found at %@; JS hot-reload disabled", viteBinaryPath)
-                    }
-                }
-            }
 
             // Supervisor loop in background
             DispatchQueue.global(qos: .background).async { [weak self] in

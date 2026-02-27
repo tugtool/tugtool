@@ -68,7 +68,7 @@ interface GitStatus {
 }
 
 interface DevNotificationEvent {
-  type: "reloaded" | "restart_available" | "relaunch_available";
+  type: "restart_available" | "relaunch_available";
   count?: number;
   timestamp?: number;
 }
@@ -203,6 +203,50 @@ export function DeveloperCard() {
   const restartPendingRef = useRef<boolean>(false);
   const relaunchPendingRef = useRef<boolean>(false);
 
+  // ---- Vite HMR listener: register vite:afterUpdate and bridge to td-hmr-update ----
+
+  useEffect(() => {
+    // import.meta.hot is only available when served by the Vite dev server.
+    // Guard prevents any runtime error in production or test environments.
+    const hot = (import.meta as any).hot;
+    if (!hot) return;
+
+    function onViteAfterUpdate() {
+      // Dispatch a testable CustomEvent indirection so tests can trigger the flash
+      // without needing import.meta.hot (which is Vite-only).
+      document.dispatchEvent(new CustomEvent("td-hmr-update"));
+    }
+
+    hot.on("vite:afterUpdate", onViteAfterUpdate);
+
+    return () => {
+      // Dispose the vite:afterUpdate listener on cleanup
+      if (hot.off) {
+        hot.off("vite:afterUpdate", onViteAfterUpdate);
+      }
+    };
+  }, []);
+
+  // ---- td-hmr-update listener: trigger Reloaded flash ----
+
+  useEffect(() => {
+    function onHmrUpdate() {
+      setStylesFlashing(true);
+      setStylesFlashText("Reloaded");
+      if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
+      reloadedTimerRef.current = setTimeout(() => {
+        reloadedTimerRef.current = null;
+        setStylesFlashing(false);
+        setStylesFlashText(null);
+      }, 2000);
+    }
+
+    document.addEventListener("td-hmr-update", onHmrUpdate);
+    return () => {
+      document.removeEventListener("td-hmr-update", onHmrUpdate);
+    };
+  }, []);
+
   // Build progress state
   const [buildProgress, setBuildProgress] = useState<{
     stage: string;
@@ -305,20 +349,7 @@ export function DeveloperCard() {
         }));
       }
 
-      if (type === "reloaded") {
-        if (timestamp !== undefined) {
-          setStylesRow((prev) => ({ ...prev, lastCleanTs: timestamp }));
-        }
-        // Start "Reloaded" flash
-        setStylesFlashing(true);
-        setStylesFlashText("Reloaded");
-        if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
-        reloadedTimerRef.current = setTimeout(() => {
-          reloadedTimerRef.current = null;
-          setStylesFlashing(false);
-          setStylesFlashText(null);
-        }, 2000);
-      } else if (type === "restart_available") {
+      if (type === "restart_available") {
         setCodeRow((prev) => {
           const firstDirty =
             prev.firstDirtySinceTs === null && timestamp !== undefined
