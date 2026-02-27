@@ -6,6 +6,7 @@
  */
 
 import { type DeckState, type CardState, type TabItem } from "./layout-tree";
+import { CARD_TITLES } from "./card-titles";
 
 // ---- Serialize ----
 
@@ -147,7 +148,7 @@ export function buildDefaultLayout(
 
   const code = makeCardState(
     "code",
-    "Code",
+    CARD_TITLES.code,
     GAP,
     GAP,
     codeWidth,
@@ -157,15 +158,9 @@ export function buildDefaultLayout(
   const rightCards = (
     ["terminal", "git", "files", "stats"] as const
   ).map((componentId, i) => {
-    const titles: Record<string, string> = {
-      terminal: "Terminal",
-      git: "Git",
-      files: "Files",
-      stats: "Stats",
-    };
     return makeCardState(
       componentId,
-      titles[componentId],
+      CARD_TITLES[componentId],
       rightX,
       GAP + i * (cardHeight + GAP),
       rightWidth,

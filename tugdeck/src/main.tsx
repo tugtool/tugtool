@@ -19,6 +19,7 @@ import { TerminalCard as TerminalCardComponent } from "./components/cards/termin
 import { FeedId } from "./protocol";
 import { Dock } from "./dock";
 import { initActionDispatch } from "./action-dispatch";
+import { CARD_TITLES } from "./card-titles";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -42,7 +43,7 @@ deck.registerCardFactory("code", () => {
   const adapter = new ReactCardAdapter({
     component: ConversationCardComponent,
     feedIds: [FeedId.CODE_OUTPUT],
-    initialMeta: { title: "Code", icon: "MessageSquare", closable: true, menuItems: [] },
+    initialMeta: { title: CARD_TITLES.code, icon: "MessageSquare", closable: true, menuItems: [] },
     connection,
   });
   adapter.setDragState(deck);
@@ -52,7 +53,7 @@ deck.registerCardFactory("terminal", () => {
   const adapter = new ReactCardAdapter({
     component: TerminalCardComponent,
     feedIds: [FeedId.TERMINAL_OUTPUT],
-    initialMeta: { title: "Terminal", icon: "Terminal", closable: true, menuItems: [] },
+    initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
     connection,
   });
   adapter.setDragState(deck);
@@ -61,33 +62,33 @@ deck.registerCardFactory("terminal", () => {
 deck.registerCardFactory("git", () => new ReactCardAdapter({
   component: GitCardComponent,
   feedIds: [FeedId.GIT],
-  initialMeta: { title: "Git", icon: "GitBranch", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.git, icon: "GitBranch", closable: true, menuItems: [] },
 }));
 deck.registerCardFactory("files", () => new ReactCardAdapter({
   component: FilesCardComponent,
   feedIds: [FeedId.FILESYSTEM],
-  initialMeta: { title: "Files", icon: "FolderOpen", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.files, icon: "FolderOpen", closable: true, menuItems: [] },
 }));
 deck.registerCardFactory("stats", () => new ReactCardAdapter({
   component: StatsCardComponent,
   feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
-  initialMeta: { title: "Stats", icon: "Activity", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.stats, icon: "Activity", closable: true, menuItems: [] },
 }));
 deck.registerCardFactory("about", () => new ReactCardAdapter({
   component: AboutCardComponent,
   feedIds: [],
-  initialMeta: { title: "About", icon: "Info", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.about, icon: "Info", closable: true, menuItems: [] },
 }));
 deck.registerCardFactory("settings", () => new ReactCardAdapter({
   component: SettingsCardComponent,
   feedIds: [],
-  initialMeta: { title: "Settings", icon: "Settings", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.settings, icon: "Settings", closable: true, menuItems: [] },
   connection,
 }));
 deck.registerCardFactory("developer", () => new ReactCardAdapter({
   component: DeveloperCardComponent,
   feedIds: [FeedId.GIT],
-  initialMeta: { title: "Developer", icon: "Code", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.developer, icon: "Code", closable: true, menuItems: [] },
   connection,
 }));
 
@@ -97,7 +98,7 @@ deck.registerCardFactory("developer", () => new ReactCardAdapter({
 const codeAdapter = new ReactCardAdapter({
   component: ConversationCardComponent,
   feedIds: [FeedId.CODE_OUTPUT],
-  initialMeta: { title: "Code", icon: "MessageSquare", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.code, icon: "MessageSquare", closable: true, menuItems: [] },
   connection,
 });
 codeAdapter.setDragState(deck);
@@ -106,7 +107,7 @@ deck.addCard(codeAdapter, "code");
 const terminalAdapter = new ReactCardAdapter({
   component: TerminalCardComponent,
   feedIds: [FeedId.TERMINAL_OUTPUT],
-  initialMeta: { title: "Terminal", icon: "Terminal", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
   connection,
 });
 terminalAdapter.setDragState(deck);
@@ -115,17 +116,17 @@ deck.addCard(terminalAdapter, "terminal");
 deck.addCard(new ReactCardAdapter({
   component: GitCardComponent,
   feedIds: [FeedId.GIT],
-  initialMeta: { title: "Git", icon: "GitBranch", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.git, icon: "GitBranch", closable: true, menuItems: [] },
 }), "git");
 deck.addCard(new ReactCardAdapter({
   component: FilesCardComponent,
   feedIds: [FeedId.FILESYSTEM],
-  initialMeta: { title: "Files", icon: "FolderOpen", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.files, icon: "FolderOpen", closable: true, menuItems: [] },
 }), "files");
 deck.addCard(new ReactCardAdapter({
   component: StatsCardComponent,
   feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
-  initialMeta: { title: "Stats", icon: "Activity", closable: true, menuItems: [] },
+  initialMeta: { title: CARD_TITLES.stats, icon: "Activity", closable: true, menuItems: [] },
 }), "stats");
 
 // Re-render so CardFrame headers pick up card meta (menu buttons)

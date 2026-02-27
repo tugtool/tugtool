@@ -30,6 +30,7 @@ import { useConnection } from "../../hooks/use-connection";
 import { useCardMeta } from "../../hooks/use-card-meta";
 import { CardContext } from "../../cards/card-context";
 import type { TugCardMeta } from "../../cards/card";
+import { CARD_TITLES } from "../../card-titles";
 
 /** Map from UI label to pixel font size */
 const FONT_SIZE_MAP: Record<string, number> = { Small: 12, Medium: 14, Large: 16 };
@@ -101,7 +102,7 @@ export function TerminalCard() {
 
   const meta = useMemo<TugCardMeta>(
     () => ({
-      title: "Terminal",
+      title: CARD_TITLES.terminal,
       icon: "Terminal",
       closable: true,
       menuItems: [

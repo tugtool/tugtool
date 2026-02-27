@@ -19,6 +19,7 @@ import { useFeed } from "../../hooks/use-feed";
 import { useCardMeta } from "../../hooks/use-card-meta";
 import { FeedId } from "../../protocol";
 import type { TugCardMeta } from "../../cards/card";
+import { CARD_TITLES } from "../../card-titles";
 
 // ---- Types ----
 
@@ -91,7 +92,7 @@ export function FilesCard() {
 
   const meta = useMemo<TugCardMeta>(
     () => ({
-      title: "Files",
+      title: CARD_TITLES.files,
       icon: "FolderOpen",
       closable: true,
       menuItems: [

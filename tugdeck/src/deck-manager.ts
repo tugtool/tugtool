@@ -16,6 +16,7 @@ import { IDragState } from "./drag-state";
 import { type DeckState, type CardState, type TabItem, type TabNode } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { TugCard } from "./cards/card";
+import { CARD_TITLES } from "./card-titles";
 import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
@@ -63,17 +64,7 @@ function constructTabNode(panel: CardState): TabNode {
  * Map componentId to a display title for new TabItems.
  */
 function titleForComponent(componentId: string): string {
-  const titles: Record<string, string> = {
-    code: "Code",
-    terminal: "Terminal",
-    git: "Git",
-    files: "Files",
-    stats: "Stats",
-    about: "About",
-    settings: "Settings",
-    developer: "Developer",
-  };
-  return titles[componentId] ?? componentId;
+  return CARD_TITLES[componentId] ?? componentId;
 }
 
 export class DeckManager implements IDragState {

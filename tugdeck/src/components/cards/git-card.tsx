@@ -22,6 +22,7 @@ import { useFeed } from "../../hooks/use-feed";
 import { useCardMeta } from "../../hooks/use-card-meta";
 import { FeedId } from "../../protocol";
 import type { TugCardMeta } from "../../cards/card";
+import { CARD_TITLES } from "../../card-titles";
 
 // ---- Types ----
 
@@ -124,7 +125,7 @@ export function GitCard() {
 
   const meta = useMemo<TugCardMeta>(
     () => ({
-      title: "Git",
+      title: CARD_TITLES.git,
       icon: "GitBranch",
       closable: true,
       menuItems: [

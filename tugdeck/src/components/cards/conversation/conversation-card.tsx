@@ -64,6 +64,13 @@ import { QuestionCard } from "./question-card";
 import { AttachmentHandler, type AttachmentHandlerHandle } from "./attachment-handler";
 import { StreamingIndicator, useStreamingState } from "./streaming-state";
 import type { ToolApprovalEvent } from "./approval-prompt";
+import { CARD_TITLES } from "../../../card-titles";
+
+// ---- Placeholder strings ----
+
+const PLACEHOLDER_DEFAULT = "Type a message...";
+const PLACEHOLDER_AWAITING_APPROVAL = "Waiting for tool approval...";
+const PLACEHOLDER_AWAITING_ANSWER = "Waiting for answer...";
 
 // ---- Internal state types ----
 
@@ -131,7 +138,7 @@ export function ConversationCard() {
 
   const meta = useMemo(
     () => ({
-      title: projectDir ? `CODE: ${projectDir}` : "Code",
+      title: projectDir ? `CODE: ${projectDir}` : CARD_TITLES.code,
       icon: "MessageSquare" as const,
       closable: true,
       menuItems: [
@@ -176,8 +183,6 @@ export function ConversationCard() {
   const [toolCards, setToolCards] = useState<Map<string, ToolCardState>>(new Map());
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
-  const [inputDisabled, setInputDisabled] = useState(false);
-  const [inputPlaceholder, setInputPlaceholder] = useState("Type a message...");
   const [turnActive, setTurnActive] = useState(false);
   const [errorState, setErrorState] = useState<"none" | "recoverable" | "fatal">("none");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -191,6 +196,17 @@ export function ConversationCard() {
   const savedInputTextRef = useRef("");
 
   const { isStreaming, spinnerText, startStreaming, stopStreaming } = useStreamingState();
+
+  // ---- Derived input state ----
+
+  const hasActiveApprovals = pendingApprovals.some((a) => !a.stale);
+  const hasActiveQuestions = pendingQuestions.length > 0;
+  const inputDisabled = hasActiveApprovals || hasActiveQuestions;
+  const inputPlaceholder = hasActiveApprovals
+    ? PLACEHOLDER_AWAITING_APPROVAL
+    : hasActiveQuestions
+      ? PLACEHOLDER_AWAITING_ANSWER
+      : PLACEHOLDER_DEFAULT;
 
   // ---- Refs ----
 
@@ -495,8 +511,6 @@ export function ConversationCard() {
       ...prev,
       { kind: "approval", id: `approval-${event.request_id}`, requestId: event.request_id },
     ]);
-    setInputDisabled(true);
-    setInputPlaceholder("Waiting for tool approval...");
     scrollToBottom();
   }
 
@@ -509,8 +523,6 @@ export function ConversationCard() {
       ...prev,
       { kind: "question", id: `question-${event.request_id}`, requestId: event.request_id },
     ]);
-    setInputDisabled(true);
-    setInputPlaceholder("Waiting for answer...");
     scrollToBottom();
   }
 
@@ -518,8 +530,6 @@ export function ConversationCard() {
     setTurnActive(false);
     stopStreaming();
     streamingMsgIdRef.current = null;
-    setInputDisabled(false);
-    setInputPlaceholder("Type a message...");
     writeCacheDebounced();
   }
 
@@ -556,8 +566,6 @@ export function ConversationCard() {
       return updated;
     });
 
-    setInputDisabled(false);
-    setInputPlaceholder("Type a message...");
     writeCacheDebounced();
   }
 
@@ -579,8 +587,6 @@ export function ConversationCard() {
       setPendingApprovals((prev) => prev.map((a) => ({ ...a, stale: true })));
       setTurnActive(false);
       stopStreaming();
-      setInputDisabled(false);
-      setInputPlaceholder("Type a message...");
     } else {
       setErrorState("fatal");
       setErrorMessage(
@@ -785,12 +791,6 @@ export function ConversationCard() {
     }
 
     setPendingApprovals((prev) => prev.filter((a) => a.requestId !== requestId));
-
-    const remaining = pendingApprovalsRef.current.filter((a) => a.requestId !== requestId);
-    if (remaining.length === 0 && pendingQuestionsRef.current.length === 0) {
-      setInputDisabled(false);
-      setInputPlaceholder("Type a message...");
-    }
   }
 
   function handleQuestionAnswerBubble(e: Event): void {
@@ -800,12 +800,6 @@ export function ConversationCard() {
 
     const requestId = payload.request_id;
     setPendingQuestions((prev) => prev.filter((q) => q.requestId !== requestId));
-
-    const remaining = pendingQuestionsRef.current.filter((q) => q.requestId !== requestId);
-    if (remaining.length === 0 && pendingApprovalsRef.current.length === 0) {
-      setInputDisabled(false);
-      setInputPlaceholder("Type a message...");
-    }
   }
 
   // ---- Scroll on new messages ----

@@ -18,6 +18,7 @@ import { useFeed } from "../../hooks/use-feed";
 import { useCardMeta } from "../../hooks/use-card-meta";
 import { FeedId } from "../../protocol";
 import type { TugCardMeta } from "../../cards/card";
+import { CARD_TITLES } from "../../card-titles";
 
 // ---- Types ----
 
@@ -268,7 +269,7 @@ export function StatsCard() {
 
   const meta = useMemo<TugCardMeta>(
     () => ({
-      title: "Stats",
+      title: CARD_TITLES.stats,
       icon: "Activity",
       closable: true,
       menuItems: [
