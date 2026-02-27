@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-27T20:05:08Z
+---
+
+## step-4: Updated ProcessManager to spawn Vite dev server from onReady callback with runtime tugcast port, removed old vite build --watch from startProcess, added auth URL rewrite to port 5173 in AppDelegate
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-3
 date: 2025-02-27T19:58:07Z
 ---
