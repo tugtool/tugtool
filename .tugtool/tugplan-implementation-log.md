@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-27T00:14:12Z
+---
+
+## step-2: Rewrote build.rs to invoke vite build and recursively copy dist/ to OUT_DIR. Simplified DevState from files/dirs/fallback to single dist_dir model. Updated serve_dev_asset to single-directory lookup. Migrated all 37 dev.rs tests and 26 integration tests to Vite dist/ fixtures. Deleted assets.toml. All 767 Rust tests pass, 521 frontend tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-1
 date: 2025-02-26T23:54:26Z
 ---

@@ -1,29 +1,31 @@
-use serde::Deserialize;
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-// Keep in sync with dev.rs copy
-#[derive(Debug, Deserialize)]
-struct AssetManifest {
-    files: HashMap<String, String>,
-    dirs: Option<HashMap<String, DirEntry>>,
-    #[allow(dead_code)] // Used in dev.rs but not in build.rs
-    build: Option<BuildConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DirEntry {
-    src: String,
-    pattern: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct BuildConfig {
-    #[allow(dead_code)] // Used in dev.rs but not in build.rs
-    fallback: String,
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) {
+    fs::create_dir_all(dst)
+        .unwrap_or_else(|e| panic!("failed to create dir {}: {}", dst.display(), e));
+    for entry in
+        fs::read_dir(src).unwrap_or_else(|e| panic!("failed to read dir {}: {}", src.display(), e))
+    {
+        let entry = entry
+            .unwrap_or_else(|e| panic!("failed to read dir entry in {}: {}", src.display(), e));
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|e| {
+                panic!(
+                    "failed to copy {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                )
+            });
+        }
+    }
 }
 
 fn main() {
@@ -60,79 +62,22 @@ fn main() {
         }
     }
 
-    // Run bun build to bundle main.ts -> app.js
-    let app_js = tugdeck_out.join("app.js");
+    // Run bun run build (invokes vite build, produces dist/)
     let status = Command::new("bun")
-        .args([
-            "build",
-            "src/main.ts",
-            &format!("--outfile={}", app_js.display()),
-            "--minify",
-        ])
+        .args(["run", "build"])
         .current_dir(&tugdeck_dir)
         .status()
-        .expect("failed to run bun build");
+        .expect("failed to run bun run build");
     if !status.success() {
-        panic!("bun build failed");
+        panic!("bun run build failed");
     }
 
-    // Read and parse asset manifest
-    let manifest_path = tugdeck_dir.join("assets.toml");
-    let manifest_content = fs::read_to_string(&manifest_path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {}", manifest_path.display(), e));
-    let manifest: AssetManifest = toml::from_str(&manifest_content)
-        .unwrap_or_else(|e| panic!("failed to parse {}: {}", manifest_path.display(), e));
-
-    // Copy files from [files] section
-    for (url_key, src_path) in &manifest.files {
-        let src = tugdeck_dir.join(src_path);
-        let dest = tugdeck_out.join(url_key);
-        fs::copy(&src, &dest).unwrap_or_else(|e| {
-            panic!(
-                "failed to copy {} -> {}: {}",
-                src.display(),
-                dest.display(),
-                e
-            )
-        });
-    }
-
-    // Copy files from [dirs] section with glob pattern matching
-    if let Some(ref dirs) = manifest.dirs {
-        for (prefix, entry) in dirs {
-            let src_dir = tugdeck_dir.join(&entry.src);
-            let dest_dir = tugdeck_out.join(prefix);
-            fs::create_dir_all(&dest_dir)
-                .unwrap_or_else(|e| panic!("failed to create dir {}: {}", dest_dir.display(), e));
-
-            let pattern = glob::Pattern::new(&entry.pattern)
-                .unwrap_or_else(|e| panic!("invalid glob pattern '{}': {}", entry.pattern, e));
-
-            if src_dir.exists() {
-                for dir_entry in fs::read_dir(&src_dir)
-                    .unwrap_or_else(|e| panic!("failed to read dir {}: {}", src_dir.display(), e))
-                {
-                    let dir_entry = dir_entry.unwrap_or_else(|e| {
-                        panic!("failed to read dir entry in {}: {}", src_dir.display(), e)
-                    });
-                    let file_name = dir_entry.file_name();
-                    let file_name_str = file_name.to_string_lossy();
-
-                    if pattern.matches(&file_name_str) {
-                        let dest = dest_dir.join(&*file_name);
-                        fs::copy(dir_entry.path(), &dest).unwrap_or_else(|e| {
-                            panic!(
-                                "failed to copy {} -> {}: {}",
-                                dir_entry.path().display(),
-                                dest.display(),
-                                e
-                            )
-                        });
-                    }
-                }
-            }
-        }
-    }
+    // Copy the contents of tugdeck/dist/ into OUT_DIR/tugdeck/ recursively.
+    // dist/index.html -> OUT_DIR/tugdeck/index.html
+    // dist/assets/index-abc123.js -> OUT_DIR/tugdeck/assets/index-abc123.js
+    // dist/fonts/hack-regular.woff2 -> OUT_DIR/tugdeck/fonts/hack-regular.woff2
+    let dist_dir = tugdeck_dir.join("dist");
+    copy_dir_recursive(&dist_dir, &tugdeck_out);
 
     // --- Build tugtalk (conversation engine binary) ---
     let tugtalk_dir = repo_root.join("tugtalk");
@@ -180,28 +125,14 @@ fn main() {
     }
 
     // Set rerun-if-changed for cargo caching
-    // Emit for the manifest itself
-    println!("cargo:rerun-if-changed={}", manifest_path.display());
-
-    // Emit for each [files] source path
-    for src_path in manifest.files.values() {
-        println!(
-            "cargo:rerun-if-changed={}",
-            tugdeck_dir.join(src_path).display()
-        );
-    }
-
-    // Emit for each [dirs] source directory
-    if let Some(ref dirs) = manifest.dirs {
-        for entry in dirs.values() {
-            println!(
-                "cargo:rerun-if-changed={}",
-                tugdeck_dir.join(&entry.src).display()
-            );
-        }
-    }
-
-    // Emit for non-manifest paths (JS source, tugtalk)
+    println!(
+        "cargo:rerun-if-changed={}",
+        tugdeck_dir.join("vite.config.ts").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        tugdeck_dir.join("index.html").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         tugdeck_dir.join("src/").display()

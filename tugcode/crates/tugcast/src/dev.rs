@@ -1,11 +1,9 @@
-//! Dev mode: file watcher, manifest-based serving, and dev asset serving
+//! Dev mode: file watcher, Vite dist/-based serving, and dev asset serving
 
 use arc_swap::ArcSwap;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,35 +11,14 @@ use tokio::sync::broadcast;
 use tracing::{info, warn};
 use tugcast_core::{FeedId, Frame};
 
-// Keep in sync with build.rs copy
-#[derive(Debug, Deserialize)]
-#[cfg_attr(not(test), allow(dead_code))]
-struct AssetManifest {
-    files: HashMap<String, String>,
-    dirs: Option<HashMap<String, DirEntry>>,
-    build: Option<BuildConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(not(test), allow(dead_code))]
-struct DirEntry {
-    src: String,
-    pattern: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(not(test), allow(dead_code))]
-struct BuildConfig {
-    fallback: String,
-}
-
-/// Dev mode state: parsed manifest with resolved absolute paths
+/// Dev mode state: resolved paths for Vite dist/ serving
 #[derive(Clone, Debug)]
 pub(crate) struct DevState {
-    pub files: HashMap<String, PathBuf>,
+    /// Absolute path to the Vite dist/ directory (e.g. `.../tugdeck/dist`)
+    pub dist_dir: PathBuf,
+    /// Absolute path to dist/index.html
     pub index_path: PathBuf,
-    pub dirs: Vec<(String, PathBuf, glob::Pattern)>,
-    pub fallback: PathBuf,
+    /// Absolute path to the source tree root (parent of tugdeck/)
     pub source_tree: PathBuf,
 }
 
@@ -139,7 +116,7 @@ pub(crate) fn new_shared_dev_state() -> SharedDevState {
     Arc::new(ArcSwap::from_pointee(None))
 }
 
-/// Enable dev mode: load manifest, start file watcher, populate shared state
+/// Enable dev mode: load dev state, start file watcher, populate shared state
 pub(crate) async fn enable_dev_mode(
     source_tree: PathBuf,
     shared_state: &SharedDevState,
@@ -155,17 +132,17 @@ pub(crate) async fn enable_dev_mode(
         )
     })?;
 
-    // Load manifest via spawn_blocking (blocking filesystem I/O)
+    // Load dev state via spawn_blocking (blocking filesystem I/O)
     let source = source_tree.clone();
-    let state = tokio::task::spawn_blocking(move || load_manifest(&source))
+    let state = tokio::task::spawn_blocking(move || load_dev_state(&source))
         .await
-        .map_err(|e| format!("manifest load task panicked: {}", e))??;
+        .map_err(|e| format!("dev state load task panicked: {}", e))??;
 
-    // Validate manifest (logs warnings)
-    validate_manifest(&state);
+    // Validate dev state (logs warnings)
+    validate_dev_state(&state);
 
     // Derive watch directories
-    let watch_dirs = watch_dirs_from_manifest(&state);
+    let watch_dirs = watch_dirs(&state);
 
     // Create change tracker
     let change_tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
@@ -178,8 +155,11 @@ pub(crate) async fn enable_dev_mode(
         change_tracker.clone(),
     )?;
 
-    // Create code watcher: compiled code (frontend + backend) mtime poller
-    let frontend_path = source_tree.join("tugdeck/dist/app.js");
+    // Create code watcher: compiled code (frontend + backend) mtime poller.
+    // Vite always produces dist/index.html with stable naming; JS/CSS assets
+    // have content-hashed filenames (e.g. assets/index-abc123.js). Polling
+    // dist/index.html detects any rebuild that updates the entry point.
+    let frontend_path = source_tree.join("tugdeck/dist/index.html");
     let backend_path = source_tree.join("tugcode/target/debug/tugcast");
     let compiled_watcher = dev_compiled_watcher(
         frontend_path,
@@ -219,125 +199,51 @@ pub(crate) fn disable_dev_mode(runtime: DevRuntime, shared_state: &SharedDevStat
     info!("dev mode disabled");
 }
 
-/// Load and parse the asset manifest from source tree
-pub(crate) fn load_manifest(source_tree: &Path) -> Result<DevState, String> {
-    let manifest_path = source_tree.join("tugdeck/assets.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("failed to read {}: {}", manifest_path.display(), e))?;
+/// Load dev state from source tree: verify dist/index.html exists
+pub(crate) fn load_dev_state(source_tree: &Path) -> Result<DevState, String> {
+    let dist_dir = source_tree.join("tugdeck/dist");
+    let index_path = dist_dir.join("index.html");
 
-    let manifest: AssetManifest = toml::from_str(&manifest_content)
-        .map_err(|e| format!("failed to parse {}: {}", manifest_path.display(), e))?;
-
-    let tugdeck_dir = source_tree.join("tugdeck");
-
-    // Resolve files map to absolute paths
-    let mut files = HashMap::new();
-    for (url_key, src_path) in manifest.files {
-        let abs_path = tugdeck_dir.join(&src_path);
-        files.insert(url_key, abs_path);
+    if !index_path.exists() {
+        return Err(format!(
+            "tugdeck/dist/index.html not found at {}; run `bun run build` first",
+            index_path.display()
+        ));
     }
-
-    // Extract index.html path
-    let index_path = files
-        .get("index.html")
-        .ok_or_else(|| "manifest missing required entry: index.html".to_string())?
-        .clone();
-
-    // Resolve dirs to (prefix, abs_path, compiled_pattern)
-    let mut dirs = Vec::new();
-    if let Some(dirs_map) = manifest.dirs {
-        for (prefix, entry) in dirs_map {
-            let abs_path = tugdeck_dir.join(&entry.src);
-            let pattern = glob::Pattern::new(&entry.pattern)
-                .map_err(|e| format!("invalid glob pattern '{}': {}", entry.pattern, e))?;
-            dirs.push((prefix, abs_path, pattern));
-        }
-    }
-
-    // Resolve fallback
-    let fallback = if let Some(build) = manifest.build {
-        tugdeck_dir.join(&build.fallback)
-    } else {
-        tugdeck_dir.join("dist")
-    };
 
     Ok(DevState {
-        files,
+        dist_dir,
         index_path,
-        dirs,
-        fallback,
         source_tree: source_tree.to_path_buf(),
     })
 }
 
-/// Validate manifest at startup: warn about missing files/directories
-pub(crate) fn validate_manifest(state: &DevState) {
-    for (url_key, path) in &state.files {
-        if !path.exists() {
-            warn!(
-                "manifest [files] entry '{}' -> {} does not exist",
-                url_key,
-                path.display()
-            );
-        }
-    }
-
-    for (prefix, dir_path, _) in &state.dirs {
-        if !dir_path.exists() {
-            warn!(
-                "manifest [dirs] entry '{}' -> {} does not exist",
-                prefix,
-                dir_path.display()
-            );
-        }
-    }
-
-    if !state.fallback.exists() {
+/// Validate dev state at startup: warn about missing dist directory or index.html
+pub(crate) fn validate_dev_state(state: &DevState) {
+    if !state.dist_dir.exists() {
         warn!(
-            "manifest [build].fallback -> {} does not exist",
-            state.fallback.display()
+            "dev state dist_dir {} does not exist",
+            state.dist_dir.display()
+        );
+    }
+
+    if !state.index_path.exists() {
+        warn!(
+            "dev state index_path {} does not exist",
+            state.index_path.display()
         );
     }
 }
 
-/// Derive watch directories from manifest, with deduplication to avoid overlapping recursive watches
-pub(crate) fn watch_dirs_from_manifest(state: &DevState) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    // Collect parent directories of all files
-    for path in state.files.values() {
-        if let Some(parent) = path.parent() {
-            dirs.push(parent.to_path_buf());
-        }
-    }
-
-    // Collect all dir source paths
-    for (_, dir_path, _) in &state.dirs {
-        dirs.push(dir_path.clone());
-    }
-
-    // Add the fallback directory
-    dirs.push(state.fallback.clone());
-
-    // Deduplicate: sort by path component count (depth), then filter
-    dirs.sort_by_key(|p| p.components().count());
-    dirs.dedup();
-
-    // Filter out subdirectories of already-watched ancestors
-    let mut result = Vec::new();
-    for candidate in dirs {
-        let is_subdir_of_watched = result
-            .iter()
-            .any(|watched: &PathBuf| candidate.starts_with(watched));
-        if !is_subdir_of_watched {
-            result.push(candidate);
-        }
-    }
-
-    result
+/// Derive watch directories: [dist_dir, source_tree/tugdeck/src]
+pub(crate) fn watch_dirs(state: &DevState) -> Vec<PathBuf> {
+    vec![
+        state.dist_dir.clone(),
+        state.source_tree.join("tugdeck/src"),
+    ]
 }
 
-/// Serve dev asset with three-tier lookup and path safety
+/// Serve dev asset: single-directory lookup against dist_dir with path safety
 pub(crate) async fn serve_dev_asset(uri: Uri, dev_state: &DevState) -> Response {
     // Path safety: decode percent-encoding and normalize
     let raw_path = uri.path();
@@ -367,31 +273,14 @@ pub(crate) async fn serve_dev_asset(uri: Uri, dev_state: &DevState) -> Response 
     }
     let lookup_key = components.join("/");
 
-    // Special case: index.html served from disk
-    if lookup_key == "index.html" {
+    // Special case: serve index.html for root or /index.html
+    if lookup_key.is_empty() || lookup_key == "index.html" {
         return serve_dev_index_impl(dev_state).await;
     }
 
-    // Tier 1: Check files map for exact match
-    if let Some(file_path) = dev_state.files.get(&lookup_key) {
-        return serve_file_with_safety(file_path, dev_state).await;
-    }
-
-    // Tier 2: Check dirs for prefix match with glob filter
-    for (prefix, dir_path, pattern) in &dev_state.dirs {
-        if let Some(remainder) = lookup_key.strip_prefix(&format!("{}/", prefix)) {
-            // Check if remainder matches the glob pattern (basename only)
-            let filename = remainder.split('/').next_back().unwrap_or("");
-            if pattern.matches(filename) {
-                let candidate = dir_path.join(remainder);
-                return serve_file_with_safety(&candidate, dev_state).await;
-            }
-        }
-    }
-
-    // Tier 3: Fallback directory
-    let fallback_path = dev_state.fallback.join(&lookup_key);
-    serve_file_with_safety(&fallback_path, dev_state).await
+    // Single-directory lookup: resolve path under dist_dir
+    let candidate = dev_state.dist_dir.join(&lookup_key);
+    serve_file_with_safety(&candidate, dev_state).await
 }
 
 /// Serve a file with path safety verification
@@ -414,35 +303,18 @@ async fn serve_file_with_safety(candidate: &Path, dev_state: &DevState) -> Respo
 
     let canonical_path = canonical_parent.join(filename);
 
-    // Verify the path starts with an allowed root (tugdeck/ subtree or fallback)
-    // We must canonicalize the roots too for comparison, but handle case where they don't exist yet
-    let tugdeck_root = dev_state.source_tree.join("tugdeck");
-
-    // For path safety, check if the canonical path starts with either:
-    // 1. The canonical tugdeck root (if it exists)
-    // 2. The canonical fallback (if it exists)
-    // 3. Or if canonicalization fails, check against non-canonicalized paths as fallback
+    // Verify the path starts with the canonical dist_dir root
     let mut allowed = false;
 
-    if let Ok(canonical_tugdeck) = tugdeck_root.canonicalize() {
-        if canonical_path.starts_with(&canonical_tugdeck) {
+    if let Ok(canonical_dist) = dev_state.dist_dir.canonicalize() {
+        if canonical_path.starts_with(&canonical_dist) {
             allowed = true;
         }
     }
 
-    if !allowed {
-        if let Ok(canonical_fallback) = dev_state.fallback.canonicalize() {
-            if canonical_path.starts_with(&canonical_fallback) {
-                allowed = true;
-            }
-        }
-    }
-
-    // Fallback: if both roots don't exist or canonicalization failed,
-    // check if the original candidate path starts with the non-canonicalized roots
-    if !allowed
-        && (candidate.starts_with(&tugdeck_root) || candidate.starts_with(&dev_state.fallback))
-    {
+    // Fallback: if dist_dir doesn't exist or canonicalization failed,
+    // check if the original candidate path starts with dist_dir
+    if !allowed && candidate.starts_with(&dev_state.dist_dir) {
         allowed = true;
     }
 
@@ -684,10 +556,17 @@ pub(crate) fn dev_file_watcher(
         .map_err(|e| format!("failed to create dev file watcher: {}", e))?;
 
     for dir in watch_dirs {
-        watcher
-            .watch(dir, RecursiveMode::Recursive)
-            .map_err(|e| format!("failed to watch {}: {}", dir.display(), e))?;
-        info!("dev: watching {}", dir.display());
+        if dir.exists() {
+            watcher
+                .watch(dir, RecursiveMode::Recursive)
+                .map_err(|e| format!("failed to watch {}: {}", dir.display(), e))?;
+            info!("dev: watching {}", dir.display());
+        } else {
+            warn!(
+                "dev: watch directory {} does not exist, skipping",
+                dir.display()
+            );
+        }
     }
 
     // Quiet-period debounce task with dev state gating
@@ -734,7 +613,7 @@ pub(crate) fn dev_file_watcher(
 
 /// Start compiled code watcher (code) using mtime polling
 ///
-/// Polls two exact file paths every 2 seconds: frontend (dist/app.js) and backend (tugcast binary).
+/// Polls two exact file paths every 2 seconds: frontend (dist/index.html) and backend (tugcast binary).
 /// On stable mtime change (after 500ms stabilization), marks the appropriate tracker category
 /// and sends a restart_available notification.
 pub(crate) fn dev_compiled_watcher(
@@ -847,110 +726,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_load_manifest_valid() {
+    fn test_load_dev_state_valid() {
         use std::fs;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-"tokens.css" = "styles/tokens.css"
-
-[dirs]
-"fonts" = { src = "styles/fonts", pattern = "*.woff2" }
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-        let state = load_manifest(temp_dir.path()).unwrap();
-        assert_eq!(state.files.len(), 2);
-        assert!(state.files.contains_key("index.html"));
-        assert!(state.files.contains_key("tokens.css"));
-        assert_eq!(state.dirs.len(), 1);
-        assert_eq!(state.dirs[0].0, "fonts");
+        let state = load_dev_state(temp_dir.path()).unwrap();
+        assert_eq!(state.dist_dir, dist_dir);
+        assert_eq!(state.index_path, dist_dir.join("index.html"));
+        assert_eq!(state.source_tree, temp_dir.path());
     }
 
     #[test]
-    fn test_load_manifest_missing() {
+    fn test_load_dev_state_missing_dist() {
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
-        let result = load_manifest(temp_dir.path());
+        // No tugdeck/dist/index.html
+        let result = load_dev_state(temp_dir.path());
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_watch_dirs_deduplication() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        let styles_dir = tugdeck_dir.join("styles");
-        let fonts_dir = styles_dir.join("fonts");
-        fs::create_dir_all(&fonts_dir).unwrap();
-
-        let mut state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![(
-                "fonts".to_string(),
-                fonts_dir.clone(),
-                glob::Pattern::new("*.woff2").unwrap(),
-            )],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        // Add a file in the styles directory
-        state
-            .files
-            .insert("tokens.css".to_string(), styles_dir.join("tokens.css"));
-
-        let watch_dirs = watch_dirs_from_manifest(&state);
-
-        // Should include styles/ but NOT fonts/ (since fonts/ is a subdirectory of styles/)
-        assert!(watch_dirs.iter().any(|p| p == &styles_dir));
-        // fonts/ should be filtered out by deduplication
-        let fonts_count = watch_dirs.iter().filter(|p| *p == &fonts_dir).count();
-        assert_eq!(
-            fonts_count, 0,
-            "fonts/ should be deduplicated since styles/ is already watched"
+        assert!(
+            result
+                .unwrap_err()
+                .contains("tugdeck/dist/index.html not found")
         );
     }
 
     #[test]
-    fn test_validate_manifest_warns_missing() {
+    fn test_load_dev_state_missing_index_html() {
         use std::fs;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        // Create dist dir but no index.html
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+
+        let result = load_dev_state(temp_dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_watch_dirs_returns_dist_and_src() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
+
+        let state = load_dev_state(temp_dir.path()).unwrap();
+        let dirs = watch_dirs(&state);
+
+        assert_eq!(dirs.len(), 2);
+        assert!(dirs.iter().any(|p| p == &dist_dir));
+        assert!(
+            dirs.iter()
+                .any(|p| p == &temp_dir.path().join("tugdeck/src"))
+        );
+    }
+
+    #[test]
+    fn test_validate_dev_state_warns_missing() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
 
         // Create DevState with nonexistent paths
-        let mut files = HashMap::new();
-        files.insert("missing.css".to_string(), tugdeck_dir.join("missing.css"));
-
         let state = DevState {
-            files,
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![(
-                "missing-fonts".to_string(),
-                tugdeck_dir.join("missing-fonts"),
-                glob::Pattern::new("*.woff2").unwrap(),
-            )],
-            fallback: tugdeck_dir.join("missing-dist"),
+            dist_dir: dist_dir.clone(),
+            index_path: dist_dir.join("index.html"),
             source_tree: temp_dir.path().to_path_buf(),
         };
 
         // Should not panic, just log warnings
-        validate_manifest(&state);
+        validate_dev_state(&state);
     }
 
     #[tokio::test]
@@ -960,17 +815,11 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        // Create minimal state
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
         let uri = Uri::from_static("/../../../etc/passwd");
         let response = serve_dev_asset(uri, &state).await;
@@ -985,16 +834,11 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
         let uri = Uri::from_static("/%2e%2e/secret");
         let response = serve_dev_asset(uri, &state).await;
@@ -1009,16 +853,11 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
         let uri = Uri::from_static("/%252e%252e%252f%252e%252e%252fetc%252fpasswd");
         let response = serve_dev_asset(uri, &state).await;
@@ -1027,138 +866,23 @@ fallback = "dist"
     }
 
     #[tokio::test]
-    async fn test_serve_dev_asset_files_lookup() {
+    async fn test_serve_dev_asset_hashed_js_from_dist_assets() {
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        let styles_dir = tugdeck_dir.join("styles");
-        fs::create_dir_all(&styles_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        let assets_dir = dist_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        // Create a CSS file
-        fs::write(styles_dir.join("tokens.css"), "body { color: red; }").unwrap();
+        // Create a hashed JS file (Vite output pattern)
+        fs::write(assets_dir.join("index-abc123.js"), "console.log('hello');").unwrap();
 
-        let mut files = HashMap::new();
-        files.insert("tokens.css".to_string(), styles_dir.join("tokens.css"));
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
-        let state = DevState {
-            files,
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        let uri = Uri::from_static("/tokens.css");
-        let response = serve_dev_asset(uri, &state).await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        use http_body_util::BodyExt;
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let body = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(body.contains("color: red"));
-    }
-
-    #[tokio::test]
-    async fn test_serve_dev_asset_dirs_lookup_with_glob() {
-        use axum::http::Uri;
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        let fonts_dir = tugdeck_dir.join("styles/fonts");
-        fs::create_dir_all(&fonts_dir).unwrap();
-
-        // Create a font file
-        fs::write(fonts_dir.join("Hack-Regular.woff2"), b"fake font data").unwrap();
-
-        let dirs = vec![(
-            "fonts".to_string(),
-            fonts_dir,
-            glob::Pattern::new("*.woff2").unwrap(),
-        )];
-
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs,
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        let uri = Uri::from_static("/fonts/Hack-Regular.woff2");
-        let response = serve_dev_asset(uri, &state).await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        use http_body_util::BodyExt;
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(&body_bytes[..], b"fake font data");
-    }
-
-    #[tokio::test]
-    async fn test_serve_dev_asset_dirs_lookup_glob_mismatch() {
-        use axum::http::Uri;
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        let fonts_dir = tugdeck_dir.join("styles/fonts");
-        fs::create_dir_all(&fonts_dir).unwrap();
-
-        // Create a file that doesn't match the glob pattern
-        fs::write(fonts_dir.join("readme.txt"), "not a font").unwrap();
-
-        let dirs = vec![(
-            "fonts".to_string(),
-            fonts_dir,
-            glob::Pattern::new("*.woff2").unwrap(),
-        )];
-
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs,
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        // Request a file that doesn't match the glob pattern
-        let uri = Uri::from_static("/fonts/readme.txt");
-        let response = serve_dev_asset(uri, &state).await;
-
-        // Should fall through to fallback/404 since glob pattern doesn't match
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_serve_dev_asset_fallback() {
-        use axum::http::Uri;
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        let dist_dir = tugdeck_dir.join("dist");
-        fs::create_dir_all(&dist_dir).unwrap();
-
-        // Create a JS file in dist
-        fs::write(dist_dir.join("app.js"), "console.log('hello');").unwrap();
-
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: dist_dir,
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        let uri = Uri::from_static("/app.js");
+        let uri = Uri::from_static("/assets/index-abc123.js");
         let response = serve_dev_asset(uri, &state).await;
 
         assert_eq!(response.status(), StatusCode::OK);
@@ -1170,22 +894,44 @@ fallback = "dist"
     }
 
     #[tokio::test]
-    async fn test_serve_dev_asset_404_unknown() {
+    async fn test_serve_dev_asset_font_from_dist_fonts() {
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        let fonts_dir = dist_dir.join("fonts");
+        fs::create_dir_all(&fonts_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        let state = DevState {
-            files: HashMap::new(),
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
+        // Create a font file
+        fs::write(fonts_dir.join("hack-regular.woff2"), b"fake font data").unwrap();
+
+        let state = load_dev_state(temp_dir.path()).unwrap();
+
+        let uri = Uri::from_static("/fonts/hack-regular.woff2");
+        let response = serve_dev_asset(uri, &state).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        use http_body_util::BodyExt;
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&body_bytes[..], b"fake font data");
+    }
+
+    #[tokio::test]
+    async fn test_serve_dev_asset_404_not_in_dist() {
+        use axum::http::Uri;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
+
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
         let uri = Uri::from_static("/nonexistent.css");
         let response = serve_dev_asset(uri, &state).await;
@@ -1194,31 +940,21 @@ fallback = "dist"
     }
 
     #[tokio::test]
-    async fn test_serve_dev_asset_index_html_injection() {
+    async fn test_serve_dev_asset_index_html() {
         use axum::http::Uri;
         use std::fs;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
 
-        // Create index.html
         let original_html = "<html><body>Test</body></html>";
-        fs::write(tugdeck_dir.join("index.html"), original_html).unwrap();
+        fs::write(dist_dir.join("index.html"), original_html).unwrap();
 
-        let mut files = HashMap::new();
-        files.insert("index.html".to_string(), tugdeck_dir.join("index.html"));
+        let state = load_dev_state(temp_dir.path()).unwrap();
 
-        let state = DevState {
-            files,
-            index_path: tugdeck_dir.join("index.html"),
-            dirs: vec![],
-            fallback: tugdeck_dir.join("dist"),
-            source_tree: temp_dir.path().to_path_buf(),
-        };
-
-        // Request /index.html (not /) to test special case in serve_dev_asset
+        // Request /index.html
         let uri = Uri::from_static("/index.html");
         let response = serve_dev_asset(uri, &state).await;
 
@@ -1243,21 +979,12 @@ fallback = "dist"
         use std::fs;
         use tempfile::TempDir;
 
-        // Create a fixture with a valid DevState
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
-        let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-        let state = load_manifest(temp_dir.path()).unwrap();
+        let state = load_dev_state(temp_dir.path()).unwrap();
         let shared = new_shared_dev_state();
 
         // Store the state
@@ -1272,19 +999,11 @@ fallback = "dist"
         use std::fs;
         use tempfile::TempDir;
 
-        // Create a TempDir with a valid tugdeck/assets.toml manifest
+        // Create a TempDir with a valid tugdeck/dist/index.html
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
-
-        let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
@@ -1303,7 +1022,7 @@ fallback = "dist"
     async fn test_enable_dev_mode_invalid_path() {
         use tempfile::TempDir;
 
-        // Create a TempDir with NO tugdeck directory (invalid path)
+        // Create a TempDir with NO tugdeck/dist directory (invalid path)
         let temp_dir = TempDir::new().unwrap();
 
         let shared = new_shared_dev_state();
@@ -1321,19 +1040,10 @@ fallback = "dist"
         use std::fs;
         use tempfile::TempDir;
 
-        // Enable dev mode with valid manifest
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
-
-        let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
@@ -1355,34 +1065,16 @@ fallback = "dist"
         use std::fs;
         use tempfile::TempDir;
 
-        // Create two TempDirs each with valid manifests
+        // Create two TempDirs each with valid dist structures
         let temp_dir1 = TempDir::new().unwrap();
-        let tugdeck_dir1 = temp_dir1.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir1).unwrap();
-
-        let manifest_content1 = r#"
-[files]
-"index.html" = "index.html"
-"file1.css" = "file1.css"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir1.join("assets.toml"), manifest_content1).unwrap();
+        let dist_dir1 = temp_dir1.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir1).unwrap();
+        fs::write(dist_dir1.join("index.html"), "<html>dir1</html>").unwrap();
 
         let temp_dir2 = TempDir::new().unwrap();
-        let tugdeck_dir2 = temp_dir2.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir2).unwrap();
-
-        let manifest_content2 = r#"
-[files]
-"index.html" = "index.html"
-"file2.css" = "file2.css"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir2.join("assets.toml"), manifest_content2).unwrap();
+        let dist_dir2 = temp_dir2.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir2).unwrap();
+        fs::write(dist_dir2.join("index.html"), "<html>dir2</html>").unwrap();
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
@@ -1422,22 +1114,11 @@ fallback = "dist"
         use std::fs;
         use tempfile::TempDir;
 
-        // Create a TempDir with valid manifest and a real .html file
+        // Create a TempDir with a valid dist/index.html
         let temp_dir = TempDir::new().unwrap();
-        let tugdeck_dir = temp_dir.path().join("tugdeck");
-        fs::create_dir_all(&tugdeck_dir).unwrap();
-
-        let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-        fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-        // Create the index.html file
-        fs::write(tugdeck_dir.join("index.html"), "<html></html>").unwrap();
+        let dist_dir = temp_dir.path().join("tugdeck/dist");
+        fs::create_dir_all(&dist_dir).unwrap();
+        fs::write(dist_dir.join("index.html"), "<html></html>").unwrap();
 
         let shared = new_shared_dev_state();
         let (client_action_tx, _) = broadcast::channel(16);
@@ -1448,9 +1129,9 @@ fallback = "dist"
             .await
             .unwrap();
 
-        // Modify the .html file to trigger a file event
+        // Modify the index.html file to trigger a file event
         fs::write(
-            tugdeck_dir.join("index.html"),
+            dist_dir.join("index.html"),
             "<html><body>modified</body></html>",
         )
         .unwrap();
@@ -1713,7 +1394,7 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let frontend_path = temp_dir.path().join("app.js");
+        let frontend_path = temp_dir.path().join("index.html");
         let backend_path = temp_dir.path().join("tugcast");
 
         // Create the frontend file
@@ -1761,7 +1442,7 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let frontend_path = temp_dir.path().join("app.js");
+        let frontend_path = temp_dir.path().join("index.html");
         let backend_path = temp_dir.path().join("tugcast");
 
         // Both files do not exist initially
@@ -1803,7 +1484,7 @@ fallback = "dist"
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
-        let frontend_path = temp_dir.path().join("app.js");
+        let frontend_path = temp_dir.path().join("index.html");
         let backend_path = temp_dir.path().join("tugcast");
 
         // Create the frontend file

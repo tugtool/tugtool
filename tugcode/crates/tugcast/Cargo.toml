@@ -42,7 +42,3 @@ tokio-tungstenite = { workspace = true }
 http-body-util = { workspace = true }
 tempfile = { workspace = true }
 
-[build-dependencies]
-toml = "0.8"
-serde = { version = "1", features = ["derive"] }
-glob = "0.3"

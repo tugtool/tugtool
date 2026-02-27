@@ -428,30 +428,20 @@ async fn test_build_app_dev_mode() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create a temp directory with tugdeck structure
+    // Create a temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    fs::create_dir_all(&tugdeck_dir).unwrap();
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    fs::create_dir_all(&dist_dir).unwrap();
 
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-    // Write index.html
+    // Write dist/index.html
     fs::write(
-        tugdeck_dir.join("index.html"),
+        dist_dir.join("index.html"),
         "<html><body>Dev Mode</body></html>",
     )
     .unwrap();
 
-    // Load manifest to get DevState
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app with dev state
     let auth = auth::new_shared_auth_state(7890);
@@ -509,37 +499,26 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_files_entry() {
+async fn test_dist_based_serving_hashed_css() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create temp directory with tugdeck structure
+    // Create temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    let styles_dir = tugdeck_dir.join("styles");
-    fs::create_dir_all(&styles_dir).unwrap();
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    let assets_dir = dist_dir.join("assets");
+    fs::create_dir_all(&assets_dir).unwrap();
 
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-"tokens.css" = "styles/tokens.css"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-    // Write actual files
+    // Write dist files (Vite output pattern: hashed filenames in assets/)
     fs::write(
-        tugdeck_dir.join("index.html"),
+        dist_dir.join("index.html"),
         "<html><body>Test</body></html>",
     )
     .unwrap();
-    fs::write(styles_dir.join("tokens.css"), "body { color: blue; }").unwrap();
+    fs::write(assets_dir.join("index-abc123.css"), "body { color: blue; }").unwrap();
 
-    // Load manifest
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app
     let auth = auth::new_shared_auth_state(7890);
@@ -566,11 +545,11 @@ fallback = "dist"
     shared_state.store(Arc::new(Some(dev_state)));
     let app = build_app(feed_router, shared_state);
 
-    // Request /tokens.css
+    // Request /assets/index-abc123.css (hashed filename from Vite)
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/tokens.css")
+                .uri("/assets/index-abc123.css")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -596,39 +575,26 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_dirs_entry() {
+async fn test_dist_based_serving_font() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create temp directory with tugdeck structure
+    // Create temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    let fonts_dir = tugdeck_dir.join("styles/fonts");
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    let fonts_dir = dist_dir.join("fonts");
     fs::create_dir_all(&fonts_dir).unwrap();
 
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[dirs]
-"fonts" = { src = "styles/fonts", pattern = "*.woff2" }
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-    // Write files
+    // Write dist files (Vite places fonts in dist/fonts/)
     fs::write(
-        tugdeck_dir.join("index.html"),
+        dist_dir.join("index.html"),
         "<html><body>Test</body></html>",
     )
     .unwrap();
-    fs::write(fonts_dir.join("Hack-Regular.woff2"), b"font binary data").unwrap();
+    fs::write(fonts_dir.join("hack-regular.woff2"), b"font binary data").unwrap();
 
-    // Load manifest
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app
     let auth = auth::new_shared_auth_state(7890);
@@ -655,11 +621,11 @@ fallback = "dist"
     shared_state.store(Arc::new(Some(dev_state)));
     let app = build_app(feed_router, shared_state);
 
-    // Request /fonts/Hack-Regular.woff2
+    // Request /fonts/hack-regular.woff2 (Vite copies fonts to dist/fonts/)
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/fonts/Hack-Regular.woff2")
+                .uri("/fonts/hack-regular.woff2")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -684,31 +650,21 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_index_html() {
+async fn test_dist_based_serving_index_html() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create temp directory with tugdeck structure
+    // Create temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    fs::create_dir_all(&tugdeck_dir).unwrap();
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    fs::create_dir_all(&dist_dir).unwrap();
 
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
-
-    // Write index.html
+    // Write dist/index.html
     let original_html = "<html><body>Index Test</body></html>";
-    fs::write(tugdeck_dir.join("index.html"), original_html).unwrap();
+    fs::write(dist_dir.join("index.html"), original_html).unwrap();
 
-    // Load manifest
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app
     let auth = auth::new_shared_auth_state(7890);
@@ -757,32 +713,22 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_path_traversal() {
+async fn test_dist_based_serving_path_traversal() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create temp directory with tugdeck structure
+    // Create temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    fs::create_dir_all(&tugdeck_dir).unwrap();
-
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    fs::create_dir_all(&dist_dir).unwrap();
     fs::write(
-        tugdeck_dir.join("index.html"),
+        dist_dir.join("index.html"),
         "<html><body>Test</body></html>",
     )
     .unwrap();
 
-    // Load manifest
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app
     let auth = auth::new_shared_auth_state(7890);
@@ -838,32 +784,22 @@ fallback = "dist"
 }
 
 #[tokio::test]
-async fn test_manifest_based_serving_unknown_path_404() {
+async fn test_dist_based_serving_unknown_path_404() {
     use std::fs;
     use tempfile::TempDir;
 
-    // Create temp directory with tugdeck structure
+    // Create temp directory with Vite dist/ structure
     let temp_dir = TempDir::new().unwrap();
-    let tugdeck_dir = temp_dir.path().join("tugdeck");
-    fs::create_dir_all(&tugdeck_dir).unwrap();
-
-    // Write assets.toml
-    let manifest_content = r#"
-[files]
-"index.html" = "index.html"
-
-[build]
-fallback = "dist"
-"#;
-    fs::write(tugdeck_dir.join("assets.toml"), manifest_content).unwrap();
+    let dist_dir = temp_dir.path().join("tugdeck/dist");
+    fs::create_dir_all(&dist_dir).unwrap();
     fs::write(
-        tugdeck_dir.join("index.html"),
+        dist_dir.join("index.html"),
         "<html><body>Test</body></html>",
     )
     .unwrap();
 
-    // Load manifest
-    let dev_state = dev::load_manifest(temp_dir.path()).unwrap();
+    // Load dev state
+    let dev_state = dev::load_dev_state(temp_dir.path()).unwrap();
 
     // Build app
     let auth = auth::new_shared_auth_state(7890);
