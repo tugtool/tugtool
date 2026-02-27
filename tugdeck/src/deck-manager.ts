@@ -1,4 +1,3 @@
-
 /**
  * DeckManager — canvas-based card renderer.
  *
