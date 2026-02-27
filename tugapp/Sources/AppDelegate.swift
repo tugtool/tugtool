@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var awaitingDevModeResult: Bool = false
     private var lastAuthURL: String?
     private var lastTugcastPort: Int = 55255
+    private var vitePort: Int = TugConfig.defaultVitePort
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
@@ -57,15 +58,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if devEnabled, let path = sourceTree {
                 // Spawn Vite dev server now that we know the actual tugcast port.
                 // The duplication guard inside spawnViteDevServer prevents re-spawning on restarts.
-                self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port)
+                self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort)
                 // Wait for Vite to be listening before sending dev_mode, so the URL
                 // rewrite in onDevModeResult loads a ready server instead of a white window.
-                self.processManager.waitForViteReady { [weak self] ready in
+                self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
                     guard let self = self else { return }
                     if !ready {
                         NSLog("AppDelegate: vite dev server did not become ready in 10s")
                     }
-                    self.processManager.sendDevMode(enabled: true, sourceTree: path)
+                    self.processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: self.vitePort)
                     self.awaitingDevModeResult = true
                 }
                 // Do NOT call loadURL -- wait for dev_mode_result
@@ -86,9 +87,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // tugcast would bypass HMR entirely.
                     let urlToLoad: String
                     if success {
-                        // Rewrite the tugcast port to the Vite dev server port (5173)
+                        // Rewrite the tugcast port to the Vite dev server port
                         let needle = ":\(self.lastTugcastPort)"
-                        urlToLoad = url.replacingOccurrences(of: needle, with: ":5173", options: [], range: url.range(of: needle))
+                        urlToLoad = url.replacingOccurrences(of: needle, with: ":\(self.vitePort)", options: [], range: url.range(of: needle))
                     } else {
                         // Dev mode failed -- load directly from tugcast (embedded assets)
                         urlToLoad = url
@@ -362,7 +363,7 @@ extension AppDelegate: BridgeDelegate {
             self.sourceTreeMenuItem?.title = "Source Tree: \(url.path)"
             // Re-send dev_mode if already enabled (per D12)
             if self.devModeEnabled {
-                self.processManager.sendDevMode(enabled: true, sourceTree: url.path)
+                self.processManager.sendDevMode(enabled: true, sourceTree: url.path, vitePort: self.vitePort)
             }
             completion(url.path)
         }
@@ -374,7 +375,7 @@ extension AppDelegate: BridgeDelegate {
         self.savePreferences()
         // Send runtime control message
         if enabled, let path = sourceTreePath {
-            processManager.sendDevMode(enabled: true, sourceTree: path)
+            processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: vitePort)
         } else if !enabled {
             processManager.sendDevMode(enabled: false, sourceTree: nil)
         }

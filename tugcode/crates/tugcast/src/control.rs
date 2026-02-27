@@ -23,6 +23,8 @@ pub enum ControlMessage {
         enabled: bool,
         #[serde(default)]
         source_tree: Option<String>,
+        #[serde(default)]
+        vite_port: Option<u16>,
     },
 }
 
@@ -119,6 +121,7 @@ impl ControlReader {
                         Ok(ControlMessage::DevMode {
                             enabled,
                             source_tree,
+                            vite_port,
                         }) => {
                             if enabled {
                                 // If already enabled, teardown old watcher first
@@ -150,7 +153,9 @@ impl ControlReader {
                                 {
                                     Ok(runtime) => {
                                         dev_runtime = Some(runtime);
-                                        auth.lock().unwrap().set_dev_port(Some(5173));
+                                        let resolved_vite_port = vite_port
+                                            .unwrap_or(tugcast_core::DEFAULT_VITE_DEV_PORT);
+                                        auth.lock().unwrap().set_dev_port(Some(resolved_vite_port));
                                         let _ = response_tx
                                             .send(make_dev_mode_result(true, None))
                                             .await;
@@ -554,6 +559,7 @@ mod tests {
             ControlMessage::DevMode {
                 enabled,
                 source_tree,
+                ..
             } => {
                 assert!(enabled);
                 assert_eq!(source_tree, Some("/path/to/src".to_string()));
@@ -570,9 +576,47 @@ mod tests {
             ControlMessage::DevMode {
                 enabled,
                 source_tree,
+                ..
             } => {
                 assert!(!enabled);
                 assert_eq!(source_tree, None);
+            }
+            _ => panic!("Expected DevMode variant"),
+        }
+    }
+
+    #[test]
+    fn test_control_message_dev_mode_with_vite_port() {
+        let json =
+            r#"{"type":"dev_mode","enabled":true,"source_tree":"/path/to/src","vite_port":3000}"#;
+        let msg: ControlMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ControlMessage::DevMode {
+                enabled,
+                source_tree,
+                vite_port,
+            } => {
+                assert!(enabled);
+                assert_eq!(source_tree, Some("/path/to/src".to_string()));
+                assert_eq!(vite_port, Some(3000));
+            }
+            _ => panic!("Expected DevMode variant"),
+        }
+    }
+
+    #[test]
+    fn test_control_message_dev_mode_without_vite_port() {
+        let json = r#"{"type":"dev_mode","enabled":true,"source_tree":"/path/to/src"}"#;
+        let msg: ControlMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ControlMessage::DevMode {
+                enabled,
+                source_tree,
+                vite_port,
+            } => {
+                assert!(enabled);
+                assert_eq!(source_tree, Some("/path/to/src".to_string()));
+                assert_eq!(vite_port, None);
             }
             _ => panic!("Expected DevMode variant"),
         }

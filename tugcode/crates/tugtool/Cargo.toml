@@ -17,6 +17,7 @@ libc = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
+tugcast-core = { path = "../tugcast-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

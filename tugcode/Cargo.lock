@@ -2255,6 +2255,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tugcast-core",
 ]
 
 [[package]]
