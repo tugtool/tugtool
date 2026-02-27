@@ -17,8 +17,12 @@ class ProcessManager {
     /// Control socket infrastructure
     private var controlListener: ControlSocketListener?
     private var controlConnection: ControlSocketConnection?
+    /// Actual tugcast port, updated from the ready message.
+    /// Initialized to 55255 (the CLI default) so the control socket path is correct
+    /// before the ready message arrives.
+    private var tugcastPort: Int = 55255
     private var controlSocketPath: String {
-        NSTemporaryDirectory() + "tugcast-ctl-55255.sock"
+        NSTemporaryDirectory() + "tugcast-ctl-\(tugcastPort).sock"
     }
     private var childPID: Int32 = 0
     private var restartDecision: RestartDecision = .pending
@@ -108,13 +112,14 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
-    /// Spawn the Vite dev server with the given source tree and tugcast port.
+    /// Spawn the Vite dev server with the given source tree, tugcast port, and Vite port.
     ///
     /// Vite persists across tugcast restarts — call this only once from the onReady callback.
-    /// Uses `--strictPort` so Vite fails fast if port 5173 is occupied rather than
-    /// silently binding elsewhere (which would break the auth URL rewrite).
+    /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
+    /// so Vite fails fast if the port is occupied rather than silently binding elsewhere
+    /// (which would break the auth URL rewrite).
     /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
-    func spawnViteDevServer(sourceTree: String, tugcastPort: Int) {
+    func spawnViteDevServer(sourceTree: String, tugcastPort: Int, vitePort: Int) {
         // Duplication guard: skip if Vite is already running (prevents duplicate dev servers on tugcast restarts)
         if viteProcess?.isRunning == true {
             NSLog("ProcessManager: vite dev server already running, skipping spawn")
@@ -129,7 +134,7 @@ class ProcessManager {
 
         let viteProc = Process()
         viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
-        viteProc.arguments = ["--host", "127.0.0.1", "--strictPort"]
+        viteProc.arguments = ["--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"]
         viteProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
 
         var viteEnv = ProcessInfo.processInfo.environment
@@ -154,12 +159,12 @@ class ProcessManager {
         }
     }
 
-    /// Poll port 5173 until a TCP connection succeeds, the Vite process exits, or timeout expires.
+    /// Poll the given port until a TCP connection succeeds, the Vite process exits, or timeout expires.
     ///
     /// Runs the polling loop on a background queue and calls the completion handler
     /// on the main queue with `true` if the port became reachable, `false` on timeout
     /// or if the Vite process died before the port became ready.
-    func waitForViteReady(timeout: TimeInterval = 10, completion: @escaping (Bool) -> Void) {
+    func waitForViteReady(port: Int, timeout: TimeInterval = 10, completion: @escaping (Bool) -> Void) {
         let viteProc = self.viteProcess
         DispatchQueue.global(qos: .userInitiated).async {
             let deadline = Date().addingTimeInterval(timeout)
@@ -172,7 +177,7 @@ class ProcessManager {
                 }
                 var addr = sockaddr_in()
                 addr.sin_family = sa_family_t(AF_INET)
-                addr.sin_port = UInt16(5173).bigEndian
+                addr.sin_port = UInt16(port).bigEndian
                 addr.sin_addr.s_addr = inet_addr("127.0.0.1")
                 let sock = socket(AF_INET, SOCK_STREAM, 0)
                 if sock >= 0 {
@@ -241,6 +246,8 @@ class ProcessManager {
                 return
             }
             let port = msg.data["port"] as? Int ?? 55255
+            // Store actual tugcast port so controlSocketPath uses the right value
+            self.tugcastPort = port
             // Reset backoff on successful ready
             backoffSeconds = 0
             NSLog("ProcessManager: ready (auth_url=%@, port=%d)", authURL, port)
@@ -307,8 +314,11 @@ class ProcessManager {
         connection.send(msg)
     }
 
-    /// Send dev_mode control message to tugcast via UDS
-    func sendDevMode(enabled: Bool, sourceTree: String?) {
+    /// Send dev_mode control message to tugcast via UDS.
+    ///
+    /// Pass `vitePort` so tugcast can configure its origin allowlist with the actual
+    /// Vite dev server port rather than relying on a hardcoded default.
+    func sendDevMode(enabled: Bool, sourceTree: String?, vitePort: Int? = nil) {
         guard let connection = controlConnection else {
             NSLog("ProcessManager: sendDevMode skipped, no control connection")
             return
@@ -316,6 +326,9 @@ class ProcessManager {
         var msg: [String: Any] = ["type": "dev_mode", "enabled": enabled]
         if let path = sourceTree {
             msg["source_tree"] = path
+        }
+        if let port = vitePort {
+            msg["vite_port"] = port
         }
         connection.send(msg)
     }

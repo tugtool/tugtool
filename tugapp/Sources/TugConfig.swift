@@ -5,6 +5,16 @@ import Foundation
 /// ProcessManager only passes flags it has explicit values for, so tugcast's
 /// defaults are never duplicated here.
 enum TugConfig {
+    // MARK: - Port constants
+
+    /// Default port for the Vite dev server.
+    ///
+    /// This is the single source of truth for the Vite dev server port in Swift code.
+    /// The actual port is communicated at runtime via the `vite_port` field of the
+    /// `DevMode` control message; this constant serves as the default when no override
+    /// is provided.
+    static let defaultVitePort: Int = 5173
+
     // MARK: - UserDefaults keys
 
     static let keySourceTreePath = "SourceTreePath"

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-27T22:10:02Z
+---
+
+## step-3: Added defaultVitePort constant to TugConfig, added tugcastPort stored property and dynamic controlSocketPath to ProcessManager, parameterized spawnViteDevServer/waitForViteReady/sendDevMode, added vitePort property to AppDelegate and updated all call sites
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-port-hardening.md
+
+---
+
+---
 step: step-2
 date: 2025-02-27T22:03:28Z
 ---
