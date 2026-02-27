@@ -75,6 +75,7 @@ impl ControlReader {
         client_action_tx: broadcast::Sender<Frame>,
         shared_dev_state: crate::dev::SharedDevState,
         response_tx: mpsc::Sender<String>,
+        auth: crate::auth::SharedAuthState,
     ) {
         let mut line = String::new();
         let mut dev_runtime: Option<crate::dev::DevRuntime> = None;
@@ -109,6 +110,7 @@ impl ControlReader {
                                         &bytes,
                                         &shutdown_tx,
                                         &client_action_tx,
+                                        &shared_dev_state,
                                     )
                                     .await;
                                 }
@@ -148,6 +150,7 @@ impl ControlReader {
                                 {
                                     Ok(runtime) => {
                                         dev_runtime = Some(runtime);
+                                        auth.lock().unwrap().set_dev_port(Some(5173));
                                         let _ = response_tx
                                             .send(make_dev_mode_result(true, None))
                                             .await;
@@ -163,6 +166,7 @@ impl ControlReader {
                                 if let Some(runtime) = dev_runtime.take() {
                                     crate::dev::disable_dev_mode(runtime, &shared_dev_state);
                                 }
+                                auth.lock().unwrap().set_dev_port(None);
                                 let _ = response_tx.send(make_dev_mode_result(true, None)).await;
                             }
                         }
@@ -249,7 +253,7 @@ pub(crate) fn make_shutdown_message(reason: &str, pid: u32) -> String {
 // ============================================================================
 
 /// Handle relaunch action: spawn tugrelaunch, relay progress, send exit code 45
-async fn handle_relaunch(
+pub(crate) async fn handle_relaunch(
     shared_dev_state: crate::dev::SharedDevState,
     client_action_tx: broadcast::Sender<Frame>,
     shutdown_tx: mpsc::Sender<u8>,

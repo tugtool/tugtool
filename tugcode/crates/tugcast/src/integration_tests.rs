@@ -32,6 +32,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     // Create dummy client action channel for tests
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
+    let dev_state = dev::new_shared_dev_state();
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -42,9 +43,10 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         vec![], // No snapshot feeds for auth/WebSocket tests
         shutdown_tx,
         client_action_tx,
+        dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev::new_shared_dev_state());
+    let app = build_app(feed_router, dev_state);
     (app, token)
 }
 
@@ -531,6 +533,7 @@ async fn test_tell_restart_triggers_shutdown() {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
+    let dev_state = dev::new_shared_dev_state();
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -541,9 +544,10 @@ async fn test_tell_restart_triggers_shutdown() {
         vec![],
         shutdown_tx,
         client_action_tx,
+        dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev::new_shared_dev_state());
+    let app = build_app(feed_router, dev_state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -581,6 +585,7 @@ async fn test_tell_reload_frontend() {
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
+    let dev_state = dev::new_shared_dev_state();
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -591,9 +596,10 @@ async fn test_tell_reload_frontend() {
         vec![],
         shutdown_tx,
         client_action_tx,
+        dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev::new_shared_dev_state());
+    let app = build_app(feed_router, dev_state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -632,6 +638,7 @@ async fn test_tell_hybrid_reset_timing() {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
+    let dev_state = dev::new_shared_dev_state();
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -642,9 +649,10 @@ async fn test_tell_hybrid_reset_timing() {
         vec![],
         shutdown_tx,
         client_action_tx,
+        dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev::new_shared_dev_state());
+    let app = build_app(feed_router, dev_state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -692,6 +700,7 @@ async fn test_tell_client_action_round_trip() {
     let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
     let (client_action_tx, mut client_action_rx) = broadcast::channel(BROADCAST_CAPACITY);
 
+    let dev_state = dev::new_shared_dev_state();
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
@@ -702,9 +711,10 @@ async fn test_tell_client_action_round_trip() {
         vec![],
         shutdown_tx,
         client_action_tx,
+        dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev::new_shared_dev_state());
+    let app = build_app(feed_router, dev_state);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));

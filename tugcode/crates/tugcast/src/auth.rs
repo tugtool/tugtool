@@ -45,6 +45,8 @@ pub struct AuthState {
     sessions: HashMap<String, Session>,
     session_ttl: Duration,
     port: u16,
+    /// When dev mode is active, also allow origins from the Vite dev server port.
+    dev_port: Option<u16>,
 }
 
 impl AuthState {
@@ -58,6 +60,7 @@ impl AuthState {
             sessions: HashMap::new(),
             session_ttl: DEFAULT_SESSION_TTL,
             port,
+            dev_port: None,
         }
     }
 
@@ -99,12 +102,22 @@ impl AuthState {
         false
     }
 
+    /// Set the dev port (Vite dev server) for origin checking.
+    /// Pass `Some(5173)` when dev mode is enabled, `None` when disabled.
+    pub fn set_dev_port(&mut self, port: Option<u16>) {
+        self.dev_port = port;
+    }
+
     /// Check if the origin header matches allowed origins
     pub fn check_origin(&self, origin: &str) -> bool {
-        let allowed_origins = [
+        let mut allowed_origins = vec![
             format!("http://127.0.0.1:{}", self.port),
             format!("http://localhost:{}", self.port),
         ];
+        if let Some(dev_port) = self.dev_port {
+            allowed_origins.push(format!("http://127.0.0.1:{}", dev_port));
+            allowed_origins.push(format!("http://localhost:{}", dev_port));
+        }
         allowed_origins.iter().any(|allowed| allowed == origin)
     }
 
@@ -248,6 +261,7 @@ mod tests {
             sessions: HashMap::new(),
             session_ttl: Duration::from_millis(1),
             port: 7890,
+            dev_port: None,
         };
 
         let session_id = auth.create_session();

@@ -115,8 +115,14 @@ async fn tell_handler(
     };
 
     // Dispatch action
-    crate::actions::dispatch_action(action, &body, &router.shutdown_tx, &router.client_action_tx)
-        .await;
+    crate::actions::dispatch_action(
+        action,
+        &body,
+        &router.shutdown_tx,
+        &router.client_action_tx,
+        &router.dev_state,
+    )
+    .await;
 
     (
         StatusCode::OK,

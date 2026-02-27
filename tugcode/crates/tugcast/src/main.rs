@@ -175,6 +175,7 @@ async fn main() {
         ],
         shutdown_tx,
         client_action_tx,
+        shared_dev_state.clone(),
     );
 
     // Start terminal feed in background task
@@ -283,7 +284,13 @@ async fn main() {
         let tx = response_tx
             .clone()
             .expect("response_tx must exist when control_reader exists");
-        tokio::spawn(reader.run_recv_loop(ctl_shutdown_tx, ctl_client_action_tx, dev_state, tx));
+        tokio::spawn(reader.run_recv_loop(
+            ctl_shutdown_tx,
+            ctl_client_action_tx,
+            dev_state,
+            tx,
+            auth.clone(),
+        ));
     }
 
     // Start server and select! on shutdown channel

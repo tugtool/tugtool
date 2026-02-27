@@ -109,6 +109,10 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         NSLog("Navigation failed: %@", error.localizedDescription)
     }
 
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        NSLog("Navigation failed (provisional): %@", error.localizedDescription)
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         // Allow all navigation for auth flow
         decisionHandler(.allow)

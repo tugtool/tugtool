@@ -49,6 +49,7 @@ pub struct FeedRouter {
     snapshot_watches: Vec<watch::Receiver<Frame>>,
     pub(crate) shutdown_tx: mpsc::Sender<u8>,
     pub(crate) client_action_tx: broadcast::Sender<Frame>,
+    pub(crate) dev_state: crate::dev::SharedDevState,
 }
 
 impl FeedRouter {
@@ -57,7 +58,7 @@ impl FeedRouter {
     // (terminal, code, snapshot, shutdown, client_action) plus session and auth.
     // Grouping into a config struct would add indirection without improving clarity.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         terminal_tx: broadcast::Sender<Frame>,
         input_tx: mpsc::Sender<Frame>,
         code_tx: broadcast::Sender<Frame>,
@@ -67,6 +68,7 @@ impl FeedRouter {
         snapshot_watches: Vec<watch::Receiver<Frame>>,
         shutdown_tx: mpsc::Sender<u8>,
         client_action_tx: broadcast::Sender<Frame>,
+        dev_state: crate::dev::SharedDevState,
     ) -> Self {
         Self {
             terminal_tx,
@@ -78,6 +80,7 @@ impl FeedRouter {
             snapshot_watches,
             shutdown_tx,
             client_action_tx,
+            dev_state,
         }
     }
 
@@ -310,6 +313,7 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                                                             &frame.payload,
                                                             &router.shutdown_tx,
                                                             &router.client_action_tx,
+                                                            &router.dev_state,
                                                         ).await;
                                                     }
                                                 }

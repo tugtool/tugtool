@@ -129,7 +129,7 @@ class ProcessManager {
 
         let viteProc = Process()
         viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
-        viteProc.arguments = ["--strictPort"]
+        viteProc.arguments = ["--host", "127.0.0.1", "--strictPort"]
         viteProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
 
         var viteEnv = ProcessInfo.processInfo.environment
@@ -151,6 +151,42 @@ class ProcessManager {
             NSLog("ProcessManager: vite dev server started (pid %d)", viteProc.processIdentifier)
         } catch {
             NSLog("ProcessManager: failed to start vite dev server: %@", error.localizedDescription)
+        }
+    }
+
+    /// Poll port 5173 until a TCP connection succeeds, the Vite process exits, or timeout expires.
+    ///
+    /// Runs the polling loop on a background queue and calls the completion handler
+    /// on the main queue with `true` if the port became reachable, `false` on timeout
+    /// or if the Vite process died before the port became ready.
+    func waitForViteReady(timeout: TimeInterval = 10, completion: @escaping (Bool) -> Void) {
+        let viteProc = self.viteProcess
+        DispatchQueue.global(qos: .userInitiated).async {
+            let deadline = Date().addingTimeInterval(timeout)
+            var ready = false
+            while Date() < deadline {
+                // Abort early if the Vite process already exited (e.g. port conflict with --strictPort)
+                if let proc = viteProc, !proc.isRunning {
+                    NSLog("ProcessManager: waitForViteReady aborting, vite process exited")
+                    break
+                }
+                var addr = sockaddr_in()
+                addr.sin_family = sa_family_t(AF_INET)
+                addr.sin_port = UInt16(5173).bigEndian
+                addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+                let sock = socket(AF_INET, SOCK_STREAM, 0)
+                if sock >= 0 {
+                    let result = withUnsafePointer(to: &addr) {
+                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                            connect(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                        }
+                    }
+                    close(sock)
+                    if result == 0 { ready = true; break }
+                }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            DispatchQueue.main.async { completion(ready) }
         }
     }
 

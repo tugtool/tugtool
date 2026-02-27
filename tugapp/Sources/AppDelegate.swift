@@ -58,8 +58,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Spawn Vite dev server now that we know the actual tugcast port.
                 // The duplication guard inside spawnViteDevServer prevents re-spawning on restarts.
                 self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port)
-                self.processManager.sendDevMode(enabled: true, sourceTree: path)
-                self.awaitingDevModeResult = true
+                // Wait for Vite to be listening before sending dev_mode, so the URL
+                // rewrite in onDevModeResult loads a ready server instead of a white window.
+                self.processManager.waitForViteReady { [weak self] ready in
+                    guard let self = self else { return }
+                    if !ready {
+                        NSLog("AppDelegate: vite dev server did not become ready in 10s")
+                    }
+                    self.processManager.sendDevMode(enabled: true, sourceTree: path)
+                    self.awaitingDevModeResult = true
+                }
                 // Do NOT call loadURL -- wait for dev_mode_result
             } else {
                 // No dev mode or no source tree -- load immediately from tugcast

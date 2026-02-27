@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::net::UnixListener;
 use tokio::process::Command;
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep, timeout};
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -93,13 +94,27 @@ async fn spawn_vite_dev(
     }
     let tugdeck_dir = source_tree.join("tugdeck");
     Command::new(&vite_binary)
-        .arg("--strictPort")
+        .args(["--host", "127.0.0.1", "--strictPort"])
         .current_dir(&tugdeck_dir)
         .env("TUGCAST_PORT", tugcast_port.to_string())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| format!("failed to spawn vite dev server: {}", e))
+}
+
+/// Poll `127.0.0.1:5173` until a TCP connection succeeds or timeout expires.
+///
+/// Returns `true` if the port became reachable, `false` on timeout.
+async fn wait_for_vite(timeout_secs: u64) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    while Instant::now() < deadline {
+        if TcpStream::connect("127.0.0.1:5173").await.is_ok() {
+            return true;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    false
 }
 
 /// Rewrite the tugcast port in an auth URL to the Vite dev server port (5173).
@@ -420,21 +435,25 @@ async fn supervisor_loop(
                 auth_url.clone()
             };
 
-            info!("auth URL: {}", browser_url);
-            open_browser(&browser_url);
-
-            // Spawn Vite dev server on first spawn only -- it persists across tugcast restarts.
+            // Spawn Vite dev server FIRST, wait for it to be ready, THEN open browser.
+            // This avoids a race condition where the browser loads before Vite is listening.
             if let Some(ref st) = source_tree {
                 match spawn_vite_dev(st, tugcast_port).await {
                     Ok(child) => {
-                        info!("vite dev server started");
+                        info!("vite dev server started, waiting for port 5173...");
                         *vite_child = Some(child);
+                        if !wait_for_vite(10).await {
+                            warn!("vite dev server did not become ready in 10s");
+                        }
                     }
                     Err(e) => {
                         warn!("could not start vite dev server: {}", e);
                     }
                 }
             }
+
+            info!("auth URL: {}", browser_url);
+            open_browser(&browser_url);
 
             first_spawn = false;
         }

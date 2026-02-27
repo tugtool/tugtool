@@ -300,13 +300,24 @@ fn copy_binaries(cli: &Cli) -> Result<(), String> {
 // ============================================================================
 
 fn relaunch_app(app_bundle: &PathBuf) -> Result<(), String> {
-    std::process::Command::new("open")
-        .arg("-a")
-        .arg(app_bundle)
-        .spawn()
-        .map_err(|e| format!("Failed to relaunch app: {}", e))?;
+    // Retry with delay: Launch Services may return -600 (procNotFound) if the
+    // previous instance hasn't fully deregistered yet after SIGTERM.
+    for attempt in 1..=5 {
+        let output = std::process::Command::new("open")
+            .arg(app_bundle)
+            .output()
+            .map_err(|e| format!("Failed to run open: {}", e))?;
 
-    Ok(())
+        if output.status.success() {
+            return Ok(());
+        }
+
+        if attempt < 5 {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    Err("open failed after 5 attempts".to_string())
 }
 
 fn write_status_file() -> Result<(), String> {

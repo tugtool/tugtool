@@ -62,6 +62,8 @@ app: build
     echo "==> Launching Tug.app"
     pkill -x Tug 2>/dev/null || true
     pkill -x tugcast 2>/dev/null || true
+    # Kill any stale Vite dev server on port 5173 so the new one can bind with --strictPort
+    lsof -ti :5173 | xargs kill 2>/dev/null || true
     sleep 0.5
     # Tell the app where the source tree is so tugcast can find tugtalk, tugdeck, etc.
     defaults write dev.tugtool.app SourceTreePath "$(pwd)"
