@@ -79,4 +79,21 @@ export interface TugCard {
 
   /** Destroy the card and clean up resources */
   destroy(): void;
+
+  /**
+   * Called by DeckManager during render() to give the card a reference to its
+   * CardFrame. Also called with null before CardFrame destruction during
+   * re-render teardown, preventing meta updates from reaching destroyed DOM.
+   * Optional — only ReactCardAdapter implements this.
+   */
+  setCardFrame?(frame: import("../card-frame").CardFrame | null): void;
+
+  /**
+   * Called by DeckManager during render() and handleTabActivate() to inform
+   * the card whether it is the currently visible tab. When active is true and
+   * a CardFrame reference is set, the adapter pushes its cached meta to the
+   * CardFrame header immediately.
+   * Optional — only ReactCardAdapter implements this.
+   */
+  setActiveTab?(active: boolean): void;
 }

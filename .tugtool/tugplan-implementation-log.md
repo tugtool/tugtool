@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-27T00:37:38Z
+---
+
+## step-3: Created ReactCardAdapter implementing TugCard interface with live meta updates. Added CardContext/CardContextProvider with dispatch field. Created four hooks (useConnection, useFeed, useTheme, useCardMeta). Refactored CardHeader constructor to support updateMeta(). Added updateMeta to CardFrame. Updated DeckManager with setCardFrame/setActiveTab integration points. 547 tests pass including 26 new adapter and DOM mutation tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-2
 date: 2025-02-27T00:14:12Z
 ---
