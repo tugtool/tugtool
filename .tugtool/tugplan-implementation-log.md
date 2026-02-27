@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-27T20:22:37Z
+---
+
+## step-6: Deleted stale roadmap/dev-mode-vite-dev-server.md, removed send_shutdown dead code from control.rs. All checks pass: fmt, clippy, 746 Rust tests, 429 TS tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-vite-dev-server.md
+
+---
+
+---
 step: step-5
 date: 2025-02-27T20:13:19Z
 ---
