@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-27T22:14:41Z
+---
+
+## step-4: Added VITE_DEV_PORT variable to Justfile and replaced hardcoded 5173 in lsof command with variable reference
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-port-hardening.md
+
+---
+
+---
 step: step-3
 date: 2025-02-27T22:10:02Z
 ---
