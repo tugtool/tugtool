@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-27T15:27:46Z
+---
+
+## step-1: Replaced bun build --watch watcher with Vite build --watch using project-local Vite binary in ProcessManager.swift
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-27T03:20:10Z
 ---
