@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-27T00:44:00Z
+---
+
+## step-4: Converted About card from vanilla TS to React functional component using shadcn Card and lucide-react. Updated main.tsx factory to use ReactCardAdapter. Added RTL tests. 551 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-shadcn-adoption.md
+
+---
+
+---
 step: step-3
 date: 2025-02-27T00:37:38Z
 ---
