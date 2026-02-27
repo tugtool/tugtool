@@ -78,12 +78,14 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
 /// Spawn the Vite dev server as a child process.
 ///
 /// The dev server persists across tugcast restarts; call this once on first spawn.
-/// Uses `--strictPort` so Vite fails fast if port 5173 is already occupied rather
-/// than silently binding to a different port (which would break the auth URL rewrite).
+/// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
+/// so Vite fails fast if the port is already occupied rather than silently binding
+/// to a different port (which would break the auth URL rewrite).
 /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
 async fn spawn_vite_dev(
     source_tree: &Path,
     tugcast_port: u16,
+    vite_port: u16,
 ) -> Result<tokio::process::Child, String> {
     let vite_binary = source_tree.join("tugdeck/node_modules/.bin/vite");
     if !vite_binary.exists() {
@@ -94,7 +96,13 @@ async fn spawn_vite_dev(
     }
     let tugdeck_dir = source_tree.join("tugdeck");
     Command::new(&vite_binary)
-        .args(["--host", "127.0.0.1", "--strictPort"])
+        .args([
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &vite_port.to_string(),
+            "--strictPort",
+        ])
         .current_dir(&tugdeck_dir)
         .env("TUGCAST_PORT", tugcast_port.to_string())
         .stdout(Stdio::inherit())
@@ -103,13 +111,14 @@ async fn spawn_vite_dev(
         .map_err(|e| format!("failed to spawn vite dev server: {}", e))
 }
 
-/// Poll `127.0.0.1:5173` until a TCP connection succeeds or timeout expires.
+/// Poll `127.0.0.1:{port}` until a TCP connection succeeds or timeout expires.
 ///
 /// Returns `true` if the port became reachable, `false` on timeout.
-async fn wait_for_vite(timeout_secs: u64) -> bool {
+async fn wait_for_vite(port: u16, timeout_secs: u64) -> bool {
+    let addr = format!("127.0.0.1:{}", port);
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     while Instant::now() < deadline {
-        if TcpStream::connect("127.0.0.1:5173").await.is_ok() {
+        if TcpStream::connect(&addr).await.is_ok() {
             return true;
         }
         sleep(Duration::from_millis(100)).await;
@@ -117,16 +126,17 @@ async fn wait_for_vite(timeout_secs: u64) -> bool {
     false
 }
 
-/// Rewrite the tugcast port in an auth URL to the Vite dev server port (5173).
+/// Rewrite the tugcast port in an auth URL to the Vite dev server port.
 ///
 /// Input:  `http://127.0.0.1:55255/auth?token=abc`
-/// Output: `http://127.0.0.1:5173/auth?token=abc`
+/// Output: `http://127.0.0.1:5173/auth?token=abc`  (for `vite_port = 5173`)
 ///
-/// Uses a targeted string replacement of `:{tugcast_port}` with `:5173` so the
+/// Uses a targeted string replacement of `:{tugcast_port}` with `:{vite_port}` so the
 /// path, query parameters, and token are preserved unchanged.
-fn rewrite_auth_url_to_vite_port(auth_url: &str, tugcast_port: u16) -> String {
+fn rewrite_auth_url_to_vite_port(auth_url: &str, tugcast_port: u16, vite_port: u16) -> String {
     let needle = format!(":{}", tugcast_port);
-    auth_url.replacen(&needle, ":5173", 1)
+    let replacement = format!(":{}", vite_port);
+    auth_url.replacen(&needle, &replacement, 1)
 }
 
 /// Spawn tugcast as a child process with control socket path
@@ -152,14 +162,19 @@ fn spawn_tugcast(
         .spawn()
 }
 
-/// Send a dev_mode control message to tugcast over the write half of the control socket
+/// Send a dev_mode control message to tugcast over the write half of the control socket.
+///
+/// Includes `vite_port` in the payload so tugcast can configure its origin allowlist
+/// with the actual Vite dev server port rather than relying on a hardcoded default.
 async fn send_dev_mode(
     write_half: &mut tokio::net::unix::OwnedWriteHalf,
     source_tree: &Path,
+    vite_port: u16,
 ) -> Result<(), String> {
     let msg = format!(
-        "{{\"type\":\"dev_mode\",\"enabled\":true,\"source_tree\":\"{}\"}}\n",
-        source_tree.to_string_lossy()
+        "{{\"type\":\"dev_mode\",\"enabled\":true,\"source_tree\":\"{}\",\"vite_port\":{}}}\n",
+        source_tree.to_string_lossy(),
+        vite_port
     );
     write_half
         .write_all(msg.as_bytes())
@@ -354,6 +369,7 @@ async fn supervisor_loop(
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
     let mut first_spawn = true;
     let mut backoff_secs: u64 = 0;
+    let vite_port = tugcast_core::DEFAULT_VITE_DEV_PORT;
 
     // Create UDS listener once -- persists across child restarts
     let (listener, socket_path) = match create_control_listener(cli.port) {
@@ -403,7 +419,7 @@ async fn supervisor_loop(
         // Dev mode must be re-established after every restart because a restarted
         // tugcast comes up with empty dev state.
         if let Some(ref st) = source_tree {
-            match send_dev_mode(&mut write_half, st).await {
+            match send_dev_mode(&mut write_half, st, vite_port).await {
                 Ok(()) => {
                     match wait_for_dev_mode_result(&mut reader).await {
                         Ok(true) => info!("dev mode enabled"),
@@ -427,10 +443,10 @@ async fn supervisor_loop(
         }
 
         if first_spawn {
-            // Rewrite auth URL port to Vite dev server port (5173) when dev mode is active.
+            // Rewrite auth URL port to Vite dev server port when dev mode is active.
             // The browser must load from Vite to get HMR support; auth still works via proxy.
             let browser_url = if source_tree.is_some() {
-                rewrite_auth_url_to_vite_port(&auth_url, tugcast_port)
+                rewrite_auth_url_to_vite_port(&auth_url, tugcast_port, vite_port)
             } else {
                 auth_url.clone()
             };
@@ -438,11 +454,11 @@ async fn supervisor_loop(
             // Spawn Vite dev server FIRST, wait for it to be ready, THEN open browser.
             // This avoids a race condition where the browser loads before Vite is listening.
             if let Some(ref st) = source_tree {
-                match spawn_vite_dev(st, tugcast_port).await {
+                match spawn_vite_dev(st, tugcast_port, vite_port).await {
                     Ok(child) => {
-                        info!("vite dev server started, waiting for port 5173...");
+                        info!("vite dev server started, waiting for port {}...", vite_port);
                         *vite_child = Some(child);
-                        if !wait_for_vite(10).await {
+                        if !wait_for_vite(vite_port, 10).await {
                             warn!("vite dev server did not become ready in 10s");
                         }
                     }
@@ -780,39 +796,6 @@ mod tests {
         assert!(result.unwrap_err().contains("could not find tugdeck/"));
     }
 
-    /// Verify that send_dev_mode writes valid JSON with the correct fields.
-    /// Creates a real Unix socket pair to capture what is written.
-    #[tokio::test]
-    async fn test_send_dev_mode_writes_valid_json() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let sock_path = temp_dir.path().join("test.sock");
-
-        // Create listener, connect, split
-        let listener = UnixListener::bind(&sock_path).unwrap();
-        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
-        let (server, _) = listener.accept().await.unwrap();
-
-        let (_, mut write_half) = client.into_split();
-        let (server_read, _) = server.into_split();
-        let mut server_reader = BufReader::new(server_read);
-
-        let source_tree = Path::new("/some/source/tree");
-        send_dev_mode(&mut write_half, source_tree).await.unwrap();
-
-        let mut line = String::new();
-        server_reader.read_line(&mut line).await.unwrap();
-
-        let msg: serde_json::Value = serde_json::from_str(&line).expect("must be valid JSON");
-        assert_eq!(msg.get("type").and_then(|v| v.as_str()), Some("dev_mode"));
-        assert_eq!(msg.get("enabled").and_then(|v| v.as_bool()), Some(true));
-        assert_eq!(
-            msg.get("source_tree").and_then(|v| v.as_str()),
-            Some("/some/source/tree")
-        );
-    }
-
     /// Verify wait_for_dev_mode_result returns Ok(true) on a success response.
     #[tokio::test]
     async fn test_wait_for_dev_mode_result_success() {
@@ -961,31 +944,87 @@ mod tests {
         assert_eq!(port, 55255);
     }
 
-    /// Verify rewrite_auth_url_to_vite_port rewrites the tugcast port to 5173.
+    /// Verify rewrite_auth_url_to_vite_port rewrites the tugcast port to the Vite port.
     #[test]
     fn test_rewrite_auth_url_to_vite_port() {
-        // Standard case: default tugcast port
+        // Standard case: default tugcast port and default Vite port
         assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255),
+            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 5173),
             "http://127.0.0.1:5173/auth?token=abc"
         );
 
         // Port-rolled case: tugcast bound to a non-default port
         assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55256/auth?token=xyz", 55256),
+            rewrite_auth_url_to_vite_port("http://127.0.0.1:55256/auth?token=xyz", 55256, 5173),
             "http://127.0.0.1:5173/auth?token=xyz"
         );
 
         // Token with special characters is preserved unchanged
         assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc123def456", 55255),
+            rewrite_auth_url_to_vite_port(
+                "http://127.0.0.1:55255/auth?token=abc123def456",
+                55255,
+                5173
+            ),
             "http://127.0.0.1:5173/auth?token=abc123def456"
         );
 
         // Only the first occurrence of the port pattern is replaced (path safety)
         assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255),
+            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 5173),
             "http://127.0.0.1:5173/auth?token=abc"
         );
+    }
+
+    /// Verify rewrite_auth_url_to_vite_port uses the supplied vite_port, not a hardcoded default.
+    #[test]
+    fn test_rewrite_auth_url_to_vite_port_non_default_vite_port() {
+        // Non-default Vite port: 3000
+        assert_eq!(
+            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 3000),
+            "http://127.0.0.1:3000/auth?token=abc"
+        );
+
+        // Another non-default Vite port
+        assert_eq!(
+            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=xyz", 55255, 4000),
+            "http://127.0.0.1:4000/auth?token=xyz"
+        );
+    }
+
+    /// Verify that send_dev_mode writes valid JSON with the correct fields including vite_port.
+    /// Creates a real Unix socket pair to capture what is written.
+    #[tokio::test]
+    async fn test_send_dev_mode_writes_valid_json() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sock_path = temp_dir.path().join("test.sock");
+
+        // Create listener, connect, split
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+
+        let (_, mut write_half) = client.into_split();
+        let (server_read, _) = server.into_split();
+        let mut server_reader = BufReader::new(server_read);
+
+        let source_tree = Path::new("/some/source/tree");
+        send_dev_mode(&mut write_half, source_tree, 5173)
+            .await
+            .unwrap();
+
+        let mut line = String::new();
+        server_reader.read_line(&mut line).await.unwrap();
+
+        let msg: serde_json::Value = serde_json::from_str(&line).expect("must be valid JSON");
+        assert_eq!(msg.get("type").and_then(|v| v.as_str()), Some("dev_mode"));
+        assert_eq!(msg.get("enabled").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            msg.get("source_tree").and_then(|v| v.as_str()),
+            Some("/some/source/tree")
+        );
+        assert_eq!(msg.get("vite_port").and_then(|v| v.as_u64()), Some(5173));
     }
 }

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-27T22:03:28Z
+---
+
+## step-2: Added tugcast-core dependency to tugtool, parameterized spawn_vite_dev, wait_for_vite, rewrite_auth_url_to_vite_port, and send_dev_mode with vite_port parameter, updated supervisor_loop to use DEFAULT_VITE_DEV_PORT constant, updated and added tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-port-hardening.md
+
+---
+
+---
 step: step-1
 date: 2025-02-27T21:58:10Z
 ---
