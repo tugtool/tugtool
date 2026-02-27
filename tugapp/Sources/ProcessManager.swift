@@ -11,7 +11,7 @@ enum RestartDecision {
 /// Manages the tugcast server process lifecycle with supervisor loop
 class ProcessManager {
     private var process: Process?
-    private var bunProcess: Process?
+    private var viteProcess: Process?
     private var sourceTree: String?
 
     /// Control socket infrastructure
@@ -33,7 +33,7 @@ class ProcessManager {
     /// Callback for dev_mode errors
     var onDevModeError: ((String) -> Void)?
 
-    /// Resolve the user's login shell PATH so child processes can find tools like tmux and bun.
+    /// Resolve the user's login shell PATH so child processes can find tools like tmux.
     /// Mac apps inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) — this gets the real one
     /// by launching the user's actual login shell (from /etc/passwd via dscl) in login-interactive
     /// mode and asking it to print $PATH.
@@ -182,13 +182,13 @@ class ProcessManager {
                 restartDecision = .restart
             case "relaunch":
                 NSLog("ProcessManager: shutdown reason=relaunch, tugrelaunch handles restart")
-                // Stop bun build --watch before app exit
-                if let proc = bunProcess, proc.isRunning {
-                    NSLog("ProcessManager: terminating bun process before relaunch")
+                // Stop vite build --watch before app exit
+                if let proc = viteProcess, proc.isRunning {
+                    NSLog("ProcessManager: terminating vite process before relaunch")
                     proc.terminate()
                     proc.waitUntilExit()
                 }
-                bunProcess = nil
+                viteProcess = nil
                 restartDecision = .doNotRestart
             case "error":
                 let message = msg.data["message"] as? String ?? ""
@@ -239,12 +239,12 @@ class ProcessManager {
 
     /// Stop the tugcast process
     func stop() {
-        // Stop bun first
-        if let proc = bunProcess, proc.isRunning {
+        // Stop vite first
+        if let proc = viteProcess, proc.isRunning {
             proc.terminate()
             proc.waitUntilExit()
         }
-        bunProcess = nil
+        viteProcess = nil
 
         // Graceful shutdown: send shutdown over UDS first
         if let connection = controlConnection {
@@ -342,7 +342,7 @@ class ProcessManager {
         let proc = Process()
         proc.executableURL = tugcastURL
 
-        // Pass the user's full shell PATH so tugcast can find tmux, bun, etc.
+        // Pass the user's full shell PATH so tugcast can find tmux, etc.
         // Mac apps inherit a minimal PATH that doesn't include Homebrew, nix, etc.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = ProcessManager.shellPATH
@@ -355,7 +355,7 @@ class ProcessManager {
         if let dir = sourceTree {
             args += ["--dir", dir]
         }
-        // Read fresh dev mode preferences (for bun build --watch)
+        // Read fresh dev mode preferences (for vite build --watch)
         let devEnabled = UserDefaults.standard.bool(forKey: TugConfig.keyDevModeEnabled)
         let freshSourceTree = UserDefaults.standard.string(forKey: TugConfig.keySourceTreePath)
         args += ["--control-socket", controlSocketPath]
@@ -369,39 +369,42 @@ class ProcessManager {
             self.process = proc
             self.childPID = proc.processIdentifier
 
-            // Start bun build --watch if in dev mode (guard against duplication on restarts)
-            if devEnabled, let bunSourceTree = freshSourceTree {
-                // Bun duplication guard: skip if already running (prevents duplicate watchers on restarts)
-                if bunProcess?.isRunning == true {
-                    NSLog("ProcessManager: bun build --watch already running, skipping spawn")
-                } else if let bunPath = ProcessManager.which("bun") {
-                    let bunProc = Process()
-                    bunProc.executableURL = URL(fileURLWithPath: bunPath)
-                    bunProc.arguments = ["build", "src/main.ts", "--outfile=dist/app.js", "--watch"]
-                    bunProc.currentDirectoryURL = URL(fileURLWithPath: (bunSourceTree as NSString).appendingPathComponent("tugdeck"))
-
-                    // Pass same environment with shell PATH
-                    var bunEnv = ProcessInfo.processInfo.environment
-                    bunEnv["PATH"] = ProcessManager.shellPATH
-                    bunProc.environment = bunEnv
-
-                    bunProc.standardOutput = FileHandle.standardOutput
-                    bunProc.standardError = FileHandle.standardError
-
-                    // Handle bun exit: log but do not crash
-                    bunProc.terminationHandler = { process in
-                        NSLog("ProcessManager: bun build --watch exited with code %d", process.terminationStatus)
-                    }
-
-                    do {
-                        try bunProc.run()
-                        self.bunProcess = bunProc
-                        NSLog("ProcessManager: bun build --watch started (pid %d)", bunProc.processIdentifier)
-                    } catch {
-                        NSLog("ProcessManager: failed to start bun build --watch: %@", error.localizedDescription)
-                    }
+            // Start vite build --watch if in dev mode (guard against duplication on restarts)
+            if devEnabled, let viteSourceTree = freshSourceTree {
+                // Vite duplication guard: skip if already running (prevents duplicate watchers on restarts)
+                if viteProcess?.isRunning == true {
+                    NSLog("ProcessManager: vite build --watch already running, skipping spawn")
                 } else {
-                    NSLog("ProcessManager: bun not found on PATH; JS hot-reload disabled")
+                    let viteBinaryPath = (viteSourceTree as NSString).appendingPathComponent("tugdeck/node_modules/.bin/vite")
+                    if FileManager.default.isExecutableFile(atPath: viteBinaryPath) {
+                        let viteProc = Process()
+                        viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
+                        viteProc.arguments = ["build", "--watch"]
+                        viteProc.currentDirectoryURL = URL(fileURLWithPath: (viteSourceTree as NSString).appendingPathComponent("tugdeck"))
+
+                        // Pass same environment with shell PATH
+                        var viteEnv = ProcessInfo.processInfo.environment
+                        viteEnv["PATH"] = ProcessManager.shellPATH
+                        viteProc.environment = viteEnv
+
+                        viteProc.standardOutput = FileHandle.standardOutput
+                        viteProc.standardError = FileHandle.standardError
+
+                        // Handle vite exit: log but do not crash (no auto-restart per risk R01)
+                        viteProc.terminationHandler = { process in
+                            NSLog("ProcessManager: vite build --watch exited with code %d", process.terminationStatus)
+                        }
+
+                        do {
+                            try viteProc.run()
+                            self.viteProcess = viteProc
+                            NSLog("ProcessManager: vite build --watch started (pid %d)", viteProc.processIdentifier)
+                        } catch {
+                            NSLog("ProcessManager: failed to start vite build --watch: %@", error.localizedDescription)
+                        }
+                    } else {
+                        NSLog("ProcessManager: vite binary not found at %@; JS hot-reload disabled", viteBinaryPath)
+                    }
                 }
             }
 

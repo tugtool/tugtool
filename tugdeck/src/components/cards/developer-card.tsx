@@ -198,6 +198,11 @@ export function DeveloperCard() {
   const [stylesFlashText, setStylesFlashText] = useState<string | null>(null);
   const reloadedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Pending-flag refs for restart/relaunch confirmation pattern.
+  // Refs (not state) so that changes do not trigger re-renders.
+  const restartPendingRef = useRef<boolean>(false);
+  const relaunchPendingRef = useRef<boolean>(false);
+
   // Build progress state
   const [buildProgress, setBuildProgress] = useState<{
     stage: string;
@@ -275,6 +280,30 @@ export function DeveloperCard() {
     function handleDevNotification(e: Event) {
       const payload = (e as CustomEvent<DevNotificationEvent>).detail;
       const { type, count, timestamp } = payload;
+
+      // Pending-flag confirmation pattern: clear stale state for the row that was
+      // restarted/relaunched when any dev_notification arrives from the new instance.
+      // Any notification proves the new tugcast instance is running.
+      if (restartPendingRef.current) {
+        restartPendingRef.current = false;
+        setCodeRow((prev) => ({
+          ...prev,
+          isStale: false,
+          staleCount: 0,
+          firstDirtySinceTs: null,
+          lastCleanTs: timestamp ?? Date.now(),
+        }));
+      }
+      if (relaunchPendingRef.current) {
+        relaunchPendingRef.current = false;
+        setAppRow((prev) => ({
+          ...prev,
+          isStale: false,
+          staleCount: 0,
+          firstDirtySinceTs: null,
+          lastCleanTs: timestamp ?? Date.now(),
+        }));
+      }
 
       if (type === "reloaded") {
         if (timestamp !== undefined) {
@@ -363,28 +392,14 @@ export function DeveloperCard() {
   // ---- Action handlers ----
 
   const handleRestart = useCallback(() => {
-    setCodeRow((prev) => ({
-      ...prev,
-      isStale: false,
-      staleCount: 0,
-      lastCleanTs: Date.now(),
-      firstDirtySinceTs: null,
-    }));
-    dispatchBadge(0);
+    restartPendingRef.current = true;
     connection?.sendControlFrame("restart");
-  }, [connection, dispatchBadge]);
+  }, [connection]);
 
   const handleRelaunch = useCallback(() => {
-    setAppRow((prev) => ({
-      ...prev,
-      isStale: false,
-      staleCount: 0,
-      lastCleanTs: Date.now(),
-      firstDirtySinceTs: null,
-    }));
-    dispatchBadge(0);
+    relaunchPendingRef.current = true;
     connection?.sendControlFrame("relaunch");
-  }, [connection, dispatchBadge]);
+  }, [connection]);
 
   const handleReset = useCallback(() => {
     localStorage.clear();

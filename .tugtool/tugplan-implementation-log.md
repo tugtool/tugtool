@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-27T15:40:36Z
+---
+
+## step-3: Replaced optimistic stale-clearing on Restart/Relaunch click with pending-flag confirmation pattern using useRef booleans, updated and added tests
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
+step: step-2
+date: 2025-02-27T15:33:24Z
+---
+
+## step-2: Replaced spawn_bun_dev with ensure_dist_populated + spawn_vite_watch, renamed bun_child to vite_child throughout, removed check_command_available
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
+step: step-1
+date: 2025-02-27T15:27:46Z
+---
+
+## step-1: Replaced bun build --watch watcher with Vite build --watch using project-local Vite binary in ProcessManager.swift
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-post-react.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-27T03:20:10Z
 ---
