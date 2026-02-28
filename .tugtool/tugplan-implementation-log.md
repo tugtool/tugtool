@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-28T17:45:59Z
+---
+
+## step-1: Updated tugplan skeleton to remove step-N-M substep pattern, replacing with flat steps using explicit dependencies and integration checkpoint step template
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-5
 date: 2025-02-28T15:56:36Z
 ---

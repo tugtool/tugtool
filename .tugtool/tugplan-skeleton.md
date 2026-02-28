@@ -11,6 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | <name> |
+| Status | draft |
 | Target branch | <branch> |
 | Last updated | <YYYY-MM-DD> |
 
@@ -67,8 +68,8 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 #### 1) Use explicit anchors everywhere you will cite later
 
 - **Technique**: append an explicit anchor to the end of a heading using `{#anchor-name}`.
-  - Example:
-    - `### Design Decisions {#design-decisions}`
+  - Example (append anchor to any heading):
+    - `### Design Decisions {#my-design-decisions}`
     - `#### [D01] Workspace snapshots are immutable (DECIDED) {#d01-snapshots-immutable}`
 - **Why**: do not rely on auto-generated heading slugs; explicit anchors are stable when titles change.
 
@@ -77,8 +78,7 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 - **Allowed characters**: lowercase `a–z`, digits `0–9`, and hyphen `-` only.
 - **Style**: short, semantic, **kebab-case**, no phase numbers (anchors should survive renumbering).
 - **Prefix conventions (use these consistently)**:
-  - **`step-N`**: execution step anchors, e.g. `{#step-1}`, `{#step-2}`, `{#step-3}`
-  - **`step-N-M`**: substep anchors, e.g. `{#step-2-1}`, `{#step-2-2}`
+  - **`step-N`**: execution step anchors (e.g. `step-1`, `step-2`, `step-3`)
   - **`dNN-...`**: design decisions (`[D01]`) anchors, e.g. `{#d01-sandbox-copy}`
   - **`qNN-...`**: open questions (`[Q01]`) anchors, e.g. `{#q01-import-resolution}`
   - **`rNN-...`**: risk notes (`Risk R01`) anchors, e.g. `{#r01-perf-regression}`
@@ -115,7 +115,6 @@ Steps that depend on other steps must include a `**Depends on:**` line that refe
 **Rules:**
 - Use **anchor references** (`#step-N`), not step titles or numbers
 - Omit the line entirely for steps with no dependencies (typically Step 1)
-- Substeps implicitly depend on their parent step; only add explicit dependencies for cross-substep relationships
 - Multiple dependencies are comma-separated
 - Dependencies must reference valid step anchors within the document (validated by `tug validate`)
 
@@ -303,8 +302,8 @@ Table T05, (#op-rename, #fundamental-wall)
 > **Commit after all checkpoints pass.** This rule applies to every step below.
 >
 > **Patterns:**
-> - If a step is big, split into **substeps** (`Step 2.1`, `Step 2.2`, …) with separate commits and checkpoints.
-> - After completing a multi-substep step, add a **Step N Summary** block that consolidates what was achieved and provides an aggregate checkpoint.
+> - If a step is large, split the work into multiple **flat steps** (`Step N`, `Step N+1`, …) with separate commits and checkpoints, each with explicit `**Depends on:**` lines.
+> - After completing a group of related flat steps, add a lightweight **Integration Checkpoint step** that depends on all constituent steps and verifies they work together. Integration checkpoint steps use `Commit: N/A (verification only)` to signal no separate commit.
 >
 > **References are mandatory:** Every step must cite specific plan artifacts ([D01], Spec S01, Table T01, etc.) and anchors (#section-name). Never cite line numbers—add an anchor instead.
 
@@ -358,21 +357,15 @@ Table T05, (#op-rename, #fundamental-wall)
 
 ---
 
-#### Step 3: <Big Step Title> {#step-3}
+#### Step 3: <First Part of Big Work Title> {#step-3}
 
 **Depends on:** #step-2
-
-> If this step is large, break it into substeps with separate commits and checkpoints.
-> The parent step explains the structure; each substep has its own commit and checkpoint.
-> Substeps implicitly depend on their parent step; explicit **Depends on:** only needed for cross-substep dependencies.
-
-##### Step 3.1: <Substep Title> {#step-3-1}
 
 **Commit:** `<conventional-commit message>`
 
 **References:** [D04] <decision>, Spec S02, Table T01, (#inputs-outputs)
 
-**Artifacts:** (what this substep produces/changes)
+**Artifacts:** (what this step produces/changes)
 - <artifact>
 
 **Tasks:**
@@ -386,15 +379,15 @@ Table T05, (#op-rename, #fundamental-wall)
 
 ---
 
-##### Step 3.2: <Substep Title> {#step-3-2}
+#### Step 4: <Second Part of Big Work Title> {#step-4}
 
-**Depends on:** #step-3-1
+**Depends on:** #step-3
 
 **Commit:** `<conventional-commit message>`
 
 **References:** [D05] <decision>, (#public-api)
 
-**Artifacts:** (what this substep produces/changes)
+**Artifacts:** (what this step produces/changes)
 - <artifact>
 
 **Tasks:**
@@ -408,17 +401,22 @@ Table T05, (#op-rename, #fundamental-wall)
 
 ---
 
-#### Step 3 Summary {#step-3-summary}
+#### Step 5: Integration Checkpoint {#step-5}
 
-> After a multi-substep step, add a summary block to consolidate what was achieved.
+**Depends on:** #step-3, #step-4
 
-After completing Steps 3.1–3.N, you will have:
-- <capability or artifact 1>
-- <capability or artifact 2>
-- <capability or artifact 3>
+**Commit:** `N/A (verification only)`
 
-**Final Step 3 Checkpoint:**
-- [ ] `<aggregate verification command covering all substeps>`
+**References:** [D04] <decision>, [D05] <decision>, (#success-criteria)
+
+**Tasks:**
+- [ ] Verify all artifacts from Steps 3 and 4 are complete and work together
+
+**Tests:**
+- [ ] <aggregate test verifying end-to-end behavior>
+
+**Checkpoint:**
+- [ ] `<aggregate verification command covering all related steps>`
 
 ---
 
