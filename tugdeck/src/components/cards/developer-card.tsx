@@ -2,9 +2,9 @@
  * DeveloperCard — React functional component for the Developer card.
  *
  * Shows dev mode status for 3 file categories:
- *   Styles  (CSS/HTML in tugdeck/)
- *   Code    (TS/TSX in tugdeck/src/, RS/Cargo.toml in tugcode/)
- *   App     (.swift in tugapp/Sources/)
+ *   Frontend  (CSS/HTML/JS/TS/TSX in tugdeck/)
+ *   Backend   (RS/Cargo.toml in tugcode/)
+ *   App       (.swift in tugapp/Sources/)
  *
  * Each row has a status dot, label, status text, and optional action button.
  * Row state machine: Clean (green) → Edited (yellow) → Stale (amber, shows button)
@@ -32,24 +32,24 @@ import { FeedId } from "../../protocol";
  * Moved from vanilla developer-card.ts (deleted in Step 10).
  * Exported so developer-card.test.tsx can import it from the same module path.
  *
- * @returns "styles" | "code" | "app" | null
+ * @returns "frontend" | "backend" | "app" | null
  */
-export function categorizeFile(path: string): "styles" | "code" | "app" | null {
+export function categorizeFile(path: string): "frontend" | "backend" | "app" | null {
   // tugapp Swift source
   if (path.startsWith("tugapp/") && path.endsWith(".swift")) {
     return "app";
   }
-  // tugdeck CSS/HTML (check before code patterns so tugdeck/src/styles.css → styles)
+  // tugdeck CSS/HTML (check before code patterns so tugdeck/src/styles.css → frontend)
   if (path.startsWith("tugdeck/") && (path.endsWith(".css") || path.endsWith(".html"))) {
-    return "styles";
+    return "frontend";
   }
-  // tugdeck TypeScript source
+  // tugdeck TypeScript source (hot-reloadable via Vite HMR)
   if (path.startsWith("tugdeck/") && (path.endsWith(".ts") || path.endsWith(".tsx"))) {
-    return "code";
+    return "frontend";
   }
   // tugcode Rust source or Cargo.toml
   if (path.startsWith("tugcode/") && (path.endsWith(".rs") || path.endsWith("Cargo.toml"))) {
-    return "code";
+    return "backend";
   }
   return null;
 }
@@ -171,14 +171,14 @@ export function DeveloperCard() {
   const connection = useConnection();
 
   // Per-row state
-  const [stylesRow, setStylesRow] = useState<RowState>({
+  const [frontendRow, setFrontendRow] = useState<RowState>({
     editedCount: 0,
     lastCleanTs: null,
     firstDirtySinceTs: null,
     isStale: false,
     staleCount: 0,
   });
-  const [codeRow, setCodeRow] = useState<RowState>({
+  const [backendRow, setBackendRow] = useState<RowState>({
     editedCount: 0,
     lastCleanTs: null,
     firstDirtySinceTs: null,
@@ -193,9 +193,9 @@ export function DeveloperCard() {
     staleCount: 0,
   });
 
-  // Styles "Reloaded" flash state
-  const [stylesFlashing, setStylesFlashing] = useState(false);
-  const [stylesFlashText, setStylesFlashText] = useState<string | null>(null);
+  // Frontend "Reloaded" flash state
+  const [frontendFlashing, setFrontendFlashing] = useState(false);
+  const [frontendFlashText, setFrontendFlashText] = useState<string | null>(null);
   const reloadedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pending-flag refs for restart/relaunch confirmation pattern.
@@ -212,6 +212,7 @@ export function DeveloperCard() {
     if (!hot) return;
 
     function onViteAfterUpdate() {
+      console.log("[dev-flash] vite:afterUpdate received", Date.now());
       // Dispatch a testable CustomEvent indirection so tests can trigger the flash
       // without needing import.meta.hot (which is Vite-only).
       document.dispatchEvent(new CustomEvent("td-hmr-update"));
@@ -231,13 +232,14 @@ export function DeveloperCard() {
 
   useEffect(() => {
     function onHmrUpdate() {
-      setStylesFlashing(true);
-      setStylesFlashText("Reloaded");
+      console.log("[dev-flash] td-hmr-update received", Date.now());
+      setFrontendFlashing(true);
+      setFrontendFlashText("Reloaded");
       if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
       reloadedTimerRef.current = setTimeout(() => {
         reloadedTimerRef.current = null;
-        setStylesFlashing(false);
-        setStylesFlashText(null);
+        setFrontendFlashing(false);
+        setFrontendFlashText(null);
       }, 2000);
     }
 
@@ -272,12 +274,12 @@ export function DeveloperCard() {
 
   // Dispatch badge when stale counts change
   useEffect(() => {
-    const total = (codeRow.isStale ? codeRow.staleCount : 0) +
+    const total = (backendRow.isStale ? backendRow.staleCount : 0) +
       (appRow.isStale ? appRow.staleCount : 0);
     dispatchBadge(total);
   }, [
-    codeRow.isStale,
-    codeRow.staleCount,
+    backendRow.isStale,
+    backendRow.staleCount,
     appRow.isStale,
     appRow.staleCount,
     dispatchBadge,
@@ -302,19 +304,19 @@ export function DeveloperCard() {
     for (const f of status.staged) paths.add(f.path);
     for (const f of status.unstaged) paths.add(f.path);
 
-    let stylesCount = 0;
-    let codeCount = 0;
+    let frontendCount = 0;
+    let backendCount = 0;
     let appCount = 0;
 
     for (const path of paths) {
       const cat = categorizeFile(path);
-      if (cat === "styles") stylesCount++;
-      else if (cat === "code") codeCount++;
+      if (cat === "frontend") frontendCount++;
+      else if (cat === "backend") backendCount++;
       else if (cat === "app") appCount++;
     }
 
-    setStylesRow((prev) => ({ ...prev, editedCount: stylesCount }));
-    setCodeRow((prev) => ({ ...prev, editedCount: codeCount }));
+    setFrontendRow((prev) => ({ ...prev, editedCount: frontendCount }));
+    setBackendRow((prev) => ({ ...prev, editedCount: backendCount }));
     setAppRow((prev) => ({ ...prev, editedCount: appCount }));
   }, [feedPayload]);
 
@@ -330,7 +332,7 @@ export function DeveloperCard() {
       // Any notification proves the new tugcast instance is running.
       if (restartPendingRef.current) {
         restartPendingRef.current = false;
-        setCodeRow((prev) => ({
+        setBackendRow((prev) => ({
           ...prev,
           isStale: false,
           staleCount: 0,
@@ -350,7 +352,7 @@ export function DeveloperCard() {
       }
 
       if (type === "restart_available") {
-        setCodeRow((prev) => {
+        setBackendRow((prev) => {
           const firstDirty =
             prev.firstDirtySinceTs === null && timestamp !== undefined
               ? timestamp
@@ -442,14 +444,14 @@ export function DeveloperCard() {
 
   function getRowDisplay(
     row: RowState,
-    isStyles: boolean
+    isFrontend: boolean
   ): { statusText: string; dotColor: DotColor; showBtn: boolean } {
-    // Flash guard for styles row
-    if (isStyles && stylesFlashing && stylesFlashText) {
-      return { statusText: stylesFlashText, dotColor: "green", showBtn: false };
+    // Flash guard for frontend row
+    if (isFrontend && frontendFlashing && frontendFlashText) {
+      return { statusText: frontendFlashText, dotColor: "green", showBtn: false };
     }
 
-    if (!isStyles && row.isStale) {
+    if (!isFrontend && row.isStale) {
       return {
         statusText: dirtyLabel(row.staleCount, row.firstDirtySinceTs),
         dotColor: "amber",
@@ -472,8 +474,8 @@ export function DeveloperCard() {
     };
   }
 
-  const stylesDisplay = getRowDisplay(stylesRow, true);
-  const codeDisplay = getRowDisplay(codeRow, false);
+  const frontendDisplay = getRowDisplay(frontendRow, true);
+  const backendDisplay = getRowDisplay(backendRow, false);
   const appDisplay = getRowDisplay(appRow, false);
 
   // ---- Render ----
@@ -482,18 +484,18 @@ export function DeveloperCard() {
     <div className="developer-card flex h-full flex-col">
       <div className="developer-content flex flex-col gap-0.5 py-2">
         <DevRow
-          label="Styles"
-          statusText={stylesDisplay.statusText}
-          dotColor={stylesDisplay.dotColor}
+          label="Frontend"
+          statusText={frontendDisplay.statusText}
+          dotColor={frontendDisplay.dotColor}
           showActionBtn={false}
           actionLabel=""
           onAction={() => {}}
         />
         <DevRow
-          label="Code"
-          statusText={codeDisplay.statusText}
-          dotColor={codeDisplay.dotColor}
-          showActionBtn={codeDisplay.showBtn}
+          label="Backend"
+          statusText={backendDisplay.statusText}
+          dotColor={backendDisplay.dotColor}
+          showActionBtn={backendDisplay.showBtn}
           actionLabel="Restart"
           onAction={handleRestart}
         />

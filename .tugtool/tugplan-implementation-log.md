@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-28T02:40:33Z
+---
+
+## step-5: Moved 7 completed roadmap documents to roadmap/archive/. Updated dev-mode-notifications.md with Frontend/Backend naming, Rust source watcher note, Vite dev server references, and DONE markers for completed What to Remove items.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
+step: step-4
+date: 2025-02-28T02:32:56Z
+---
+
+## step-4: Added tracing::debug! logging in dev_compiled_watcher() after mtime change detection and in send_dev_notification() before/after broadcast send. Replaced silent let _ = send() with match that logs receiver count.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
+step: step-3
+date: 2025-02-28T02:25:12Z
+---
+
+## step-3: Fixed WKWebView flash by hiding webView until didFinishNavigation, setting drawsBackground=false, adding dark NSWindow background, and inline dark body background in index.html. Added diagnostic logging reduced to debug level.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
+step: step-2
+date: 2025-02-28T02:15:07Z
+---
+
+## step-2: Added has_rust_extension() helper and dev_rust_source_watcher() with 100ms debounce. Sends restart_available notifications when .rs or Cargo.toml files change. Integrated into DevRuntime and enable_dev_mode().
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
+step: step-1
+date: 2025-02-28T02:09:04Z
+---
+
+## step-1: Renamed file categorization from Styles/Code to Frontend/Backend in developer card. Updated categorizeFile() return values, all state variables, UI labels, and restructured tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-4
 date: 2025-02-27T22:14:41Z
 ---

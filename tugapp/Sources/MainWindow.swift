@@ -47,11 +47,23 @@ class MainWindow: NSWindow, WKNavigationDelegate {
             webView.isInspectable = true
         }
 
+        // Flash fix: suppress WKWebView's default white background so it does not flash
+        // before the page finishes rendering. The webView starts hidden and is revealed
+        // once didFinishNavigation fires, eliminating the startup FOUC.
+        // drawsBackground = false is the supported KVC way to make WKWebView transparent.
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.isHidden = true
+
         self.contentView = webView
+
+        // Match the window background to the app's dark theme so there is no color mismatch
+        // while the webView is hidden during startup.
+        self.backgroundColor = NSColor(red: 0.09, green: 0.09, blue: 0.09, alpha: 1.0)
     }
 
     /// Load URL in webview
     func loadURL(_ urlString: String) {
+        NSLog("MainWindow: loadURL called with %@", urlString)
         guard let url = URL(string: urlString) else { return }
         let request = URLRequest(url: url)
         webView.load(request)
@@ -102,7 +114,10 @@ class MainWindow: NSWindow, WKNavigationDelegate {
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Navigation completed
+        NSLog("MainWindow: didFinish navigation at %@", Date() as CVarArg)
+        // Flash fix: reveal the webView now that the page has finished loading.
+        // Keeping it hidden until this point eliminates the startup FOUC.
+        webView.isHidden = false
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

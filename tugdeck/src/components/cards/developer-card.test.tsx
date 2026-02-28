@@ -2,12 +2,12 @@
  * DeveloperCard React component tests — Steps 7.4a + 7.4b
  *
  * Tests:
- * - Developer card renders 3 rows: Styles, Code, App
+ * - Developer card renders 3 rows: Frontend, Backend, App
  * - All rows show "Clean" status with green dot initially
  * - Rows update to "Edited" status with file count when git feed reports changes
  * - categorizeFile correctly classifies file paths
- * - Styles row shows "Reloaded" flash when transitioning from dirty to clean
- * - Code row shows "Restart" button when stale notification received
+ * - Frontend row shows "Reloaded" flash when transitioning from dirty to clean
+ * - Backend row shows "Restart" button when stale notification received
  * - App row shows "Relaunch" button when stale notification received
  * - Clicking "Restart" dispatches the restart event
  * - Clicking "Relaunch" dispatches the relaunch event
@@ -107,28 +107,28 @@ function dispatchBuildProgress(payload: {
 // ---- categorizeFile tests ----
 
 describe("categorizeFile", () => {
-  it("classifies tugdeck CSS as styles", () => {
-    expect(categorizeFile("tugdeck/styles/main.css")).toBe("styles");
+  it("classifies tugdeck CSS as frontend", () => {
+    expect(categorizeFile("tugdeck/styles/main.css")).toBe("frontend");
   });
 
-  it("classifies tugdeck HTML as styles", () => {
-    expect(categorizeFile("tugdeck/index.html")).toBe("styles");
+  it("classifies tugdeck HTML as frontend", () => {
+    expect(categorizeFile("tugdeck/index.html")).toBe("frontend");
   });
 
-  it("classifies tugdeck/src .ts as code", () => {
-    expect(categorizeFile("tugdeck/src/main.ts")).toBe("code");
+  it("classifies tugdeck/src .ts as frontend", () => {
+    expect(categorizeFile("tugdeck/src/main.ts")).toBe("frontend");
   });
 
-  it("classifies tugdeck/src .tsx as code", () => {
-    expect(categorizeFile("tugdeck/src/app.tsx")).toBe("code");
+  it("classifies tugdeck/src .tsx as frontend", () => {
+    expect(categorizeFile("tugdeck/src/app.tsx")).toBe("frontend");
   });
 
-  it("classifies tugcode .rs as code", () => {
-    expect(categorizeFile("tugcode/src/main.rs")).toBe("code");
+  it("classifies tugcode .rs as backend", () => {
+    expect(categorizeFile("tugcode/src/main.rs")).toBe("backend");
   });
 
-  it("classifies tugcode Cargo.toml as code", () => {
-    expect(categorizeFile("tugcode/Cargo.toml")).toBe("code");
+  it("classifies tugcode Cargo.toml as backend", () => {
+    expect(categorizeFile("tugcode/Cargo.toml")).toBe("backend");
   });
 
   it("classifies tugapp Swift as app", () => {
@@ -141,8 +141,8 @@ describe("categorizeFile", () => {
   });
 
   it("classifies tugdeck CSS before matching code patterns", () => {
-    // A file like tugdeck/src/styles.css should still be styles, not code
-    expect(categorizeFile("tugdeck/src/styles.css")).toBe("styles");
+    // A file like tugdeck/src/styles.css should still be frontend, not backend
+    expect(categorizeFile("tugdeck/src/styles.css")).toBe("frontend");
   });
 });
 
@@ -153,15 +153,15 @@ describe("DeveloperCard – initial rendering", () => {
     delete (window as any).webkit;
   });
 
-  it("renders 3 rows: Styles, Code, App (when webkit available)", async () => {
+  it("renders 3 rows: Frontend, Backend, App (when webkit available)", async () => {
     // Make webkit available so App row shows
     (window as any).webkit = {};
     const { container, unmount } = renderDeveloperCard();
     await act(async () => {});
 
     const text = container.textContent ?? "";
-    expect(text).toContain("Styles");
-    expect(text).toContain("Code");
+    expect(text).toContain("Frontend");
+    expect(text).toContain("Backend");
     expect(text).toContain("App");
 
     unmount();
@@ -188,8 +188,8 @@ describe("DeveloperCard – initial rendering", () => {
     await act(async () => {});
 
     const text = container.textContent ?? "";
-    expect(text).toContain("Styles");
-    expect(text).toContain("Code");
+    expect(text).toContain("Frontend");
+    expect(text).toContain("Backend");
     // App row should not be present
     expect(text).not.toContain("App");
 
@@ -198,23 +198,23 @@ describe("DeveloperCard – initial rendering", () => {
 });
 
 describe("DeveloperCard – git feed parsing", () => {
-  it("shows Edited status with file count when git feed reports styles changes", async () => {
+  it("shows Edited status with file count when git feed reports frontend changes", async () => {
     const payload = encodeGitStatus({
       staged: [{ path: "tugdeck/styles/main.css", status: "M" }],
     });
     const { container, unmount } = renderDeveloperCard(payload);
     await act(async () => {});
 
-    const stylesStatus = Array.from(
+    const frontendStatus = Array.from(
       container.querySelectorAll(".dev-status")
     )[0];
-    expect(stylesStatus?.textContent).toContain("Edited");
-    expect(stylesStatus?.textContent).toContain("1 file");
+    expect(frontendStatus?.textContent).toContain("Edited");
+    expect(frontendStatus?.textContent).toContain("1 file");
 
     unmount();
   });
 
-  it("shows Edited status for Code row with correct count", async () => {
+  it("shows Edited status for Frontend row when git feed reports tugdeck TS/TSX changes", async () => {
     const payload = encodeGitStatus({
       staged: [
         { path: "tugdeck/src/main.ts", status: "M" },
@@ -224,11 +224,30 @@ describe("DeveloperCard – git feed parsing", () => {
     const { container, unmount } = renderDeveloperCard(payload);
     await act(async () => {});
 
-    const codeStatus = Array.from(
+    const frontendStatus = Array.from(
+      container.querySelectorAll(".dev-status")
+    )[0];
+    expect(frontendStatus?.textContent).toContain("Edited");
+    expect(frontendStatus?.textContent).toContain("2 files");
+
+    unmount();
+  });
+
+  it("shows Edited status for Backend row with correct count", async () => {
+    const payload = encodeGitStatus({
+      staged: [
+        { path: "tugcode/crates/tugcast/src/main.rs", status: "M" },
+        { path: "tugcode/crates/tugcast/src/lib.rs", status: "A" },
+      ],
+    });
+    const { container, unmount } = renderDeveloperCard(payload);
+    await act(async () => {});
+
+    const backendStatus = Array.from(
       container.querySelectorAll(".dev-status")
     )[1];
-    expect(codeStatus?.textContent).toContain("Edited");
-    expect(codeStatus?.textContent).toContain("2 files");
+    expect(backendStatus?.textContent).toContain("Edited");
+    expect(backendStatus?.textContent).toContain("2 files");
 
     unmount();
   });
@@ -241,11 +260,11 @@ describe("DeveloperCard – git feed parsing", () => {
     const { container, unmount } = renderDeveloperCard(payload);
     await act(async () => {});
 
-    const codeStatus = Array.from(
+    const backendStatus = Array.from(
       container.querySelectorAll(".dev-status")
     )[1];
-    expect(codeStatus?.textContent).toContain("Edited");
-    expect(codeStatus?.textContent).toContain("2 files");
+    expect(backendStatus?.textContent).toContain("Edited");
+    expect(backendStatus?.textContent).toContain("2 files");
 
     unmount();
   });
@@ -310,15 +329,15 @@ describe("DeveloperCard – dev notifications", () => {
       document.dispatchEvent(new CustomEvent("td-hmr-update"));
     });
 
-    const stylesStatus = Array.from(
+    const frontendStatus = Array.from(
       container.querySelectorAll(".dev-status")
     )[0];
-    expect(stylesStatus?.textContent).toContain("Reloaded");
+    expect(frontendStatus?.textContent).toContain("Reloaded");
 
     unmount();
   });
 
-  it("reverts Styles row to Clean after Reloaded flash expires", async () => {
+  it("reverts Frontend row to Clean after Reloaded flash expires", async () => {
     const { container, unmount } = renderDeveloperCard();
     await act(async () => {});
 
@@ -327,17 +346,17 @@ describe("DeveloperCard – dev notifications", () => {
     });
 
     // Should show "Reloaded" immediately
-    const stylesStatus = Array.from(
+    const frontendStatus = Array.from(
       container.querySelectorAll(".dev-status")
     )[0];
-    expect(stylesStatus?.textContent).toContain("Reloaded");
+    expect(frontendStatus?.textContent).toContain("Reloaded");
 
     // Wait for flash to expire (2 seconds + buffer)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 2100));
     });
 
-    expect(stylesStatus?.textContent).toContain("Clean");
+    expect(frontendStatus?.textContent).toContain("Clean");
 
     unmount();
   });
@@ -377,12 +396,12 @@ describe("DeveloperCard – action buttons", () => {
 
     // Dispatch relaunch_available as confirmation from the new tugcast instance.
     // Any dev_notification clears the restartPendingRef (per D07 pending-flag pattern).
-    // Using relaunch_available avoids re-staleing codeRow, so the Restart button disappears.
+    // Using relaunch_available avoids re-staleing backendRow, so the Restart button disappears.
     await act(async () => {
       dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
-    // Now the button should be gone (codeRow stale cleared by pending-flag logic)
+    // Now the button should be gone (backendRow stale cleared by pending-flag logic)
     const restartBtnAfterConfirm = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Restart")
     );
@@ -491,13 +510,13 @@ describe("DeveloperCard – badge events", () => {
     }
 
     // Dispatch relaunch_available as confirmation from new tugcast instance.
-    // Any dev_notification clears restartPendingRef and resets codeRow to isStale=false.
-    // Using relaunch_available avoids re-staleing codeRow, so badge goes to 0.
+    // Any dev_notification clears restartPendingRef and resets backendRow to isStale=false.
+    // Using relaunch_available avoids re-staleing backendRow, so badge goes to 0.
     await act(async () => {
       dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
-    // Now badge should be dispatched with 0 (codeRow cleared by pending-flag)
+    // Now badge should be dispatched with 0 (backendRow cleared by pending-flag)
     const afterConfirm = badgeEvents[badgeEvents.length - 1];
     expect(afterConfirm?.count).toBe(0);
 
@@ -575,7 +594,7 @@ describe("DeveloperCard – with connection context", () => {
 
     // Should render without errors
     const devRows = container.querySelectorAll(".dev-row");
-    // At minimum Styles and Code rows should be present (App hidden without webkit)
+    // At minimum Frontend and Backend rows should be present (App hidden without webkit)
     expect(devRows.length).toBeGreaterThanOrEqual(2);
 
     unmount();
@@ -587,12 +606,12 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
     delete (window as any).webkit;
   });
 
-  it("codeRow clears stale state when dev_notification arrives after Restart click", async () => {
+  it("backendRow clears stale state when dev_notification arrives after Restart click", async () => {
     const conn = makeMockConnection();
     const { container, unmount } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
-    // Make codeRow stale
+    // Make backendRow stale
     await act(async () => {
       dispatchDevNotification({ type: "restart_available", count: 3 });
     });
@@ -616,30 +635,30 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
 
     // Dispatch relaunch_available as confirmation (proof the new tugcast instance is running).
     // Any dev_notification clears restartPendingRef; using relaunch_available avoids
-    // re-staleing codeRow so the Restart button disappears cleanly.
+    // re-staleing backendRow so the Restart button disappears cleanly.
     await act(async () => {
       dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
-    // codeRow stale state cleared — Restart button should be gone
+    // backendRow stale state cleared — Restart button should be gone
     restartBtn = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Restart")
     );
     expect(restartBtn).toBeUndefined();
 
-    // Code row status should show "Clean"
-    const codeStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
-    expect(codeStatus?.textContent).toContain("Clean");
+    // Backend row status should show "Clean"
+    const backendStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
+    expect(backendStatus?.textContent).toContain("Clean");
 
     unmount();
   });
 
-  it("codeRow shows new stale count after restart_available arrives with restartPending set", async () => {
+  it("backendRow shows new stale count after restart_available arrives with restartPending set", async () => {
     const conn = makeMockConnection();
     const { container, unmount } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
-    // Make codeRow stale with count=1
+    // Make backendRow stale with count=1
     await act(async () => {
       dispatchDevNotification({ type: "restart_available", count: 1 });
     });
@@ -654,20 +673,20 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
 
     // Dispatch restart_available(count=2) from the new tugcast instance.
     // React 18 batches: pending flag clears stale, then restart_available sets new stale.
-    // Net result: codeRow is stale with staleCount=2.
+    // Net result: backendRow is stale with staleCount=2.
     await act(async () => {
       dispatchDevNotification({ type: "restart_available", count: 2 });
     });
 
-    // Restart button should still be visible (new notification made codeRow stale again)
+    // Restart button should still be visible (new notification made backendRow stale again)
     const restartBtnAfter = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("Restart")
     );
     expect(restartBtnAfter).not.toBeUndefined();
 
     // Status should reflect the new stale count
-    const codeStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
-    expect(codeStatus?.textContent).toContain("2");
+    const backendStatus = Array.from(container.querySelectorAll(".dev-status"))[1];
+    expect(backendStatus?.textContent).toContain("2");
 
     unmount();
   });

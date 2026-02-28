@@ -27,9 +27,9 @@ Four operations, each a superset of the previous:
 
 ### Key distinction: Restart vs. Relaunch
 
-**Restart** is fast because the builds have already happened. `bun build --watch` continuously recompiles frontend code. `cargo-watch` (or manual `cargo build`) produces new backend binaries. The Category 2 watchers detect these *build outputs* and notify the user. When the user clicks Restart, there's nothing left to build — it's just a process restart.
+**Restart** is fast because the builds have already happened. The Vite dev server continuously recompiles frontend code via HMR. `cargo-watch` (or manual `cargo build`) produces new backend binaries. The Category 2 watchers detect these *build outputs* and notify the user. When the user clicks Restart, there's nothing left to build — it's just a process restart.
 
-**Relaunch** includes a build step because the Category 3 watcher monitors app *source files*, not build outputs. There's no equivalent of `bun build --watch` for xcodebuild. When the user clicks Relaunch, the build must happen. A dedicated helper binary (`tugrelaunch`) handles the full build-replace-relaunch cycle.
+**Relaunch** includes a build step because the Category 3 watcher monitors app *source files*, not build outputs. There's no equivalent of the Vite dev server for xcodebuild. When the user clicks Relaunch, the build must happen. A dedicated helper binary (`tugrelaunch`) handles the full build-replace-relaunch cycle.
 
 ## Current State
 
@@ -39,7 +39,7 @@ Four operations, each a superset of the previous:
 
 ### What changes
 
-**Frontend auto-reload** currently works via `bun build --watch` → file watcher detects `dist/app.js` change → `reload_frontend`. This must change: `bun build --watch` still runs (it's useful for fast incremental builds), but the file watcher must NOT trigger `reload_frontend` when `dist/app.js` changes. Instead, the watcher sets a "frontend changed" dirty flag and sends a notification to the frontend.
+**Frontend auto-reload** previously worked via `bun build --watch` → file watcher detects `dist/app.js` change → `reload_frontend`. This has been superseded: the Vite dev server handles hot module replacement (HMR) directly. TS/TSX and CSS file changes are hot-reloaded via the `vite:afterUpdate` event bridge, which dispatches the `td-hmr-update` CustomEvent and triggers the "Reloaded" flash on the Frontend row. No `dist/app.js` watcher is needed.
 
 **Backend binary watcher** (`spawn_binary_watcher` in `dev.rs`) currently sends exit code 44 to trigger an automatic shutdown and restart. This entire mechanism must be removed. Instead, the watcher sets a "backend changed" dirty flag and sends a notification.
 
@@ -53,7 +53,7 @@ The file watcher in `dev.rs` currently has one behavior: detect change → reloa
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ Category 1: Style Resources (RELOAD — automatic)    │
+│ Category 1: Frontend Resources (RELOAD — automatic) │
 │                                                     │
 │   Watch: assets.toml [files] and [dirs] entries     │
 │   Extensions: .css, .html, .woff2                   │
@@ -62,14 +62,21 @@ The file watcher in `dev.rs` currently has one behavior: detect change → reloa
 └─────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────┐
-│ Category 2: Compiled Frontend + Backend (RESTART)   │
+│ Category 2: Backend (Compiled + Source) (RESTART)   │
 │                                                     │
-│   Watch: tugdeck/dist/app.js (bun output)           │
-│          tugcode/target/debug/tugcast (binary)       │
+│   Watch: tugcode/target/debug/tugcast (binary)       │
+│          tugcode/crates/**/*.rs (Rust source)        │
+│          tugcode/**/Cargo.toml                       │
 │   On change: set dirty flag, send dev_notification  │
 │              with type "restart_available"           │
 │   Does NOT trigger reload_frontend                  │
 │   Does NOT trigger shutdown/restart                 │
+│                                                     │
+│   Note: The Rust source watcher (dev_rust_source_   │
+│   watcher) fires immediately when .rs or Cargo.toml │
+│   files change — no waiting for cargo build.        │
+│   The compiled binary watcher (dev_compiled_watcher)│
+│   fires when the build output mtime changes.        │
 └─────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────┐
@@ -119,8 +126,8 @@ The card shows a compact list of indicators, one per change category:
 │ Developer                                     ▾  ×  │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│  ● Styles           Clean                           │
-│  ○ Code             2 changes        [ Restart ]    │
+│  ● Frontend         Clean                           │
+│  ○ Backend          2 changes        [ Restart ]    │
 │  ○ App              1 change         [ Relaunch ]   │
 │                                                     │
 │                                      [ Reset ]      │
@@ -129,13 +136,13 @@ The card shows a compact list of indicators, one per change category:
 
 Each row has:
 - **Indicator dot** — green when clean, yellow when dirty
-- **Label** — "Styles", "Code" (covers frontend + backend), "App" (covers Mac app code)
+- **Label** — "Frontend" (CSS/HTML/TS/TSX in tugdeck/), "Backend" (RS/Cargo.toml in tugcode/), "App" (covers Mac app code)
 - **Status text** — "Clean" or "N changes"
-- **Action button** — appears only when dirty. "Restart" for Code, "Relaunch" for App
+- **Action button** — appears only when dirty. "Restart" for Backend, "Relaunch" for App
 
 The "Reset" button is always visible at the bottom, since it's a utility operation not tied to file changes.
 
-Styles row shows "Clean" normally and briefly flashes "Reloaded" when a CSS reload occurs, then returns to "Clean" after ~2 seconds.
+Frontend row shows "Clean" normally and briefly flashes "Reloaded" when a Vite HMR update occurs, then returns to "Clean" after ~2 seconds.
 
 When a Relaunch is in progress, the card shows build status:
 
@@ -144,8 +151,8 @@ When a Relaunch is in progress, the card shows build status:
 │ Developer                                     ▾  ×  │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│  ● Styles           Clean                           │
-│  ◐ Code             Building...                     │
+│  ● Frontend         Clean                           │
+│  ◐ Backend          Building...                     │
 │  ◐ App              Building...                     │
 │                                                     │
 │                                                     │
@@ -326,26 +333,26 @@ The CLI path (`just dev` / tugtool) has no app code and no app bundle. "Relaunch
 
 ### Remove from tugcast/src/dev.rs
 
-1. **`spawn_binary_watcher()`** — the entire function. Binary mtime polling → exit code 44 → shutdown is the auto-restart mechanism we're eliminating.
-2. **`_binary_watcher` field on `DevRuntime`** — no longer needed.
-3. **The `.abort()` call in `disable_dev_mode()`** for the binary watcher handle.
-4. **Exit code 44 mapping** in `tugcast/src/main.rs` — `44 => "binary_updated"` becomes dead code.
+1. **`spawn_binary_watcher()`** — the entire function. Binary mtime polling → exit code 44 → shutdown is the auto-restart mechanism we're eliminating. **DONE** — replaced by `dev_compiled_watcher()` (mtime polling, notification only) and `dev_rust_source_watcher()` (notify events on .rs/Cargo.toml, notification only).
+2. **`_binary_watcher` field on `DevRuntime`** — no longer needed. **DONE** — `DevRuntime` now holds `_compiled_watcher` (JoinHandle), `_app_watcher`, and `_rust_source_watcher`.
+3. **The `.abort()` call in `disable_dev_mode()`** for the binary watcher handle. **DONE** — `disable_dev_mode()` aborts `_compiled_watcher` and drops the runtime.
+4. **Exit code 44 mapping** in `tugcast/src/main.rs` — `44 => "binary_updated"` becomes dead code. **DONE** — exit code 44 is no longer emitted.
 
-Replace with: a notification-only watcher that detects binary mtime changes and sends `dev_notification` with `"type": "restart_available"` over the control socket. No shutdown, no exit codes.
+Replace with: a notification-only watcher that detects binary mtime changes and sends `dev_notification` with `"type": "restart_available"` over the control socket. No shutdown, no exit codes. **DONE**
 
 ### Remove from ProcessManager.swift
 
-1. **`"binary_updated"` case** in the shutdown handler — this shutdown reason no longer exists.
+1. **`"binary_updated"` case** in the shutdown handler — this shutdown reason no longer exists. **DONE**
 
 `copyBinaryFromSourceTree()` **stays** — it's repurposed for the user-triggered Restart flow. The method is unchanged; only its call site changes (called from the explicit `"restart"` handler instead of the automatic `"binary_updated"` handler).
 
 ### Remove from tugtool/src/main.rs
 
-1. **`"binary_updated"` match arm** in the supervisor loop — this restart reason no longer exists.
+1. **`"binary_updated"` match arm** in the supervisor loop — this restart reason no longer exists. **DONE**
 
 ### Remove from the tugplan
 
-The existing `tugplan-full-hot-reload.md` steps 2-4 (binary watcher, ProcessManager copy, tugtool supervisor handling) are superseded by this proposal. Step 0-1 (remove `--dev` flag, send `dev_mode` via control socket) remain valid and should be retained.
+The existing `tugplan-full-hot-reload.md` steps 2-4 (binary watcher, ProcessManager copy, tugtool supervisor handling) are superseded by this proposal. Step 0-1 (remove `--dev` flag, send `dev_mode` via control socket) remain valid and should be retained. **DONE** — `full-hot-reload.md` has been archived to `roadmap/archive/`.
 
 ## What to Add
 
@@ -411,27 +418,30 @@ Developer edits tokens.css
   → File watcher detects change (Category 1)
   → Sends reload_frontend action (browser reloads)
   → Sends dev_notification { type: "reloaded" }
-  → Developer card briefly shows "Reloaded" on Styles row
+  → Developer card briefly shows "Reloaded" on Frontend row
   → After ~2s, returns to "Clean"
 ```
 
 ### Restart (on-demand)
 
-Restart is fast because the builds have already happened. `bun build --watch` recompiles frontend code continuously. `cargo-watch` (or manual `cargo build`) produces new backend binaries. The watchers track build *outputs*, not source files.
+Restart is fast because the builds have already happened. The Vite dev server handles frontend hot module replacement automatically. `cargo-watch` (or manual `cargo build`) produces new backend binaries. The Backend watcher tracks both source edits and build outputs.
 
 ```
 Developer edits a .ts file
-  → bun build --watch recompiles dist/app.js (automatic, always running)
-  → File watcher detects dist/app.js change (Category 2)
-  → Sets frontend_dirty = true, increments count
-  → Sends dev_notification { type: "restart_available", changes: ["frontend"] }
-  → Developer card shows Code row: "1 change" with [Restart] button
+  → Vite dev server applies HMR automatically
+  → td-hmr-update CustomEvent fires
+  → Developer card Frontend row briefly shows "Reloaded"
 
-Developer later edits a .rs file, runs cargo build (or cargo-watch does it)
-  → File watcher detects tugcast binary change (Category 2)
+Developer edits a .rs file
+  → Rust source watcher (dev_rust_source_watcher) detects change immediately
   → Sets backend_dirty = true, increments count
-  → Sends dev_notification { type: "restart_available", changes: ["frontend", "backend"] }
-  → Developer card shows Code row: "2 changes" with [Restart] button
+  → Sends dev_notification { type: "restart_available", changes: ["backend"] }
+  → Developer card shows Backend row: "1 change" with [Restart] button
+
+Developer runs cargo build
+  → Compiled binary watcher (dev_compiled_watcher) detects mtime change
+  → Sends dev_notification { type: "restart_available", changes: ["backend"] }
+  → Developer card shows Backend row: "2 changes" with [Restart] button
 
 Developer clicks [Restart]
   → Frontend sends { action: "restart" } to tugcast
