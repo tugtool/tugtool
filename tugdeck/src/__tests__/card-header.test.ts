@@ -77,7 +77,6 @@ if (!global.crypto) {
 };
 
 import { CardHeader } from "../card-header";
-import { DropdownMenu } from "../card-menu";
 import type { TugCardMeta, CardMenuItem } from "../cards/card";
 import { CardFrame } from "../card-frame";
 import { DeckManager } from "../deck-manager";
@@ -246,102 +245,6 @@ describe("CardHeader – close button", () => {
     closeBtn.click();
     expect(collapseFired).toBe(false);
     header.destroy();
-  });
-});
-
-// ---- d. DropdownMenu opens on click, closes on click-outside ----
-
-describe("DropdownMenu – open and close", () => {
-  beforeEach(() => {
-    document.body.innerHTML = "";
-  });
-
-  test("menu is not open initially", () => {
-    const anchor = document.createElement("button");
-    document.body.appendChild(anchor);
-    anchor.getBoundingClientRect = () => ({
-      left: 100, top: 100, right: 200, bottom: 130,
-      width: 100, height: 30, x: 100, y: 100, toJSON: () => ({})
-    } as DOMRect);
-    const items: CardMenuItem[] = [{ type: "action", label: "Do thing", action: () => {} }];
-    const menu = new DropdownMenu(items, anchor);
-    expect(menu.isOpen()).toBe(false);
-    menu.destroy();
-  });
-
-  test("menu is open after open() is called", () => {
-    const anchor = document.createElement("button");
-    document.body.appendChild(anchor);
-    anchor.getBoundingClientRect = () => ({
-      left: 100, top: 100, right: 200, bottom: 130,
-      width: 100, height: 30, x: 100, y: 100, toJSON: () => ({})
-    } as DOMRect);
-    const items: CardMenuItem[] = [{ type: "action", label: "Do thing", action: () => {} }];
-    const menu = new DropdownMenu(items, anchor);
-    menu.open();
-    expect(menu.isOpen()).toBe(true);
-    const menuEl = document.querySelector(".card-dropdown-menu");
-    expect(menuEl).not.toBeNull();
-    menu.destroy();
-  });
-
-  test("menu closes after close() is called", () => {
-    const anchor = document.createElement("button");
-    document.body.appendChild(anchor);
-    anchor.getBoundingClientRect = () => ({
-      left: 100, top: 100, right: 200, bottom: 130,
-      width: 100, height: 30, x: 100, y: 100, toJSON: () => ({})
-    } as DOMRect);
-    const items: CardMenuItem[] = [{ type: "action", label: "Do thing", action: () => {} }];
-    const menu = new DropdownMenu(items, anchor);
-    menu.open();
-    menu.close();
-    expect(menu.isOpen()).toBe(false);
-    const menuEl = document.querySelector(".card-dropdown-menu");
-    expect(menuEl).toBeNull();
-    menu.destroy();
-  });
-
-  test("action item click fires action and closes menu", () => {
-    const anchor = document.createElement("button");
-    document.body.appendChild(anchor);
-    anchor.getBoundingClientRect = () => ({
-      left: 0, top: 0, right: 100, bottom: 30,
-      width: 100, height: 30, x: 0, y: 0, toJSON: () => ({})
-    } as DOMRect);
-    let actionFired = false;
-    const items: CardMenuItem[] = [{ type: "action", label: "Do thing", action: () => { actionFired = true; } }];
-    const menu = new DropdownMenu(items, anchor);
-    menu.open();
-    const itemEl = document.querySelector(".card-dropdown-item") as HTMLElement;
-    itemEl.click();
-    expect(actionFired).toBe(true);
-    expect(menu.isOpen()).toBe(false);
-    menu.destroy();
-  });
-});
-
-// ---- e. DropdownMenu closes on Escape ----
-
-describe("DropdownMenu – Escape key", () => {
-  test("Escape key closes the menu", () => {
-    const anchor = document.createElement("button");
-    document.body.appendChild(anchor);
-    anchor.getBoundingClientRect = () => ({
-      left: 0, top: 0, right: 100, bottom: 30,
-      width: 100, height: 30, x: 0, y: 0, toJSON: () => ({})
-    } as DOMRect);
-    const items: CardMenuItem[] = [{ type: "action", label: "Dismiss me", action: () => {} }];
-    const menu = new DropdownMenu(items, anchor);
-    menu.open();
-    expect(menu.isOpen()).toBe(true);
-
-    const KE = (window as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent;
-    const escEvent = new KE("keydown", { key: "Escape", bubbles: true });
-    document.dispatchEvent(escEvent);
-
-    expect(menu.isOpen()).toBe(false);
-    menu.destroy();
   });
 });
 

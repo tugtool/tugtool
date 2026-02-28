@@ -7,6 +7,10 @@
  * Drag initiation: pointerdown on the header root element (excluding buttons)
  * fires onDragStart, enabling single-tab docked cards to be dragged.
  *
+ * Menu button: uses a temporary React bridge that renders CardDropdownMenu
+ * items via the shadcn DropdownMenu primitives in a controlled open state.
+ * This hybrid pattern survives until Step 2 converts CardHeader to React.
+ *
  * [D06] Hybrid header bar construction
  */
 
@@ -25,8 +29,11 @@ import {
   Settings,
   Code,
 } from "lucide";
+import React from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import type { TugCardMeta } from "./cards/card";
-import { DropdownMenu } from "./card-menu";
+import { CardDropdownMenuBridge } from "./components/chrome/card-dropdown-menu";
 
 // ---- Icon lookup map ----
 
@@ -54,7 +61,9 @@ export class CardHeader {
   private el: HTMLElement;
   private collapseBtn: HTMLElement | null = null;
   private meta: TugCardMeta;
-  private activeMenu: DropdownMenu | null = null;
+  // Tracked React root for the menu bridge (guarded against orphan roots)
+  private menuRoot: Root | null = null;
+  private menuContainer: HTMLElement | null = null;
   // Instance fields for targeted DOM mutation in updateMeta()
   private titleEl: HTMLElement;
   private iconEl: HTMLElement;
@@ -97,15 +106,7 @@ export class CardHeader {
       this.menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
       this.menuBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (this.activeMenu && this.activeMenu.isOpen()) {
-          this.activeMenu.close();
-          this.activeMenu = null;
-        } else {
-          // Read from this.meta so updated menu items (from updateMeta) are used
-          const menu = new DropdownMenu(this.meta.menuItems, this.menuBtn!);
-          this.activeMenu = menu;
-          menu.open();
-        }
+        this.openReactMenu();
       });
       this.el.appendChild(this.menuBtn);
     }
@@ -171,11 +172,8 @@ export class CardHeader {
    * Performs targeted DOM mutations rather than full header reconstruction.
    */
   updateMeta(meta: TugCardMeta): void {
-    // Close and destroy any open dropdown before mutating DOM
-    if (this.activeMenu) {
-      this.activeMenu.destroy();
-      this.activeMenu = null;
-    }
+    // Close and destroy any open React menu before mutating DOM
+    this.closeReactMenu();
 
     // Update title if changed
     if (meta.title !== this.meta.title) {
@@ -201,14 +199,7 @@ export class CardHeader {
       this.menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
       this.menuBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (this.activeMenu && this.activeMenu.isOpen()) {
-          this.activeMenu.close();
-          this.activeMenu = null;
-        } else {
-          const menu = new DropdownMenu(this.meta.menuItems, this.menuBtn!);
-          this.activeMenu = menu;
-          menu.open();
-        }
+        this.openReactMenu();
       });
       if (this.collapseBtn) {
         this.el.insertBefore(this.menuBtn, this.collapseBtn);
@@ -236,10 +227,62 @@ export class CardHeader {
   }
 
   destroy(): void {
-    if (this.activeMenu) {
-      this.activeMenu.destroy();
-      this.activeMenu = null;
-    }
+    this.closeReactMenu();
     this.el.remove();
+  }
+
+  // ---- Private: React menu bridge ----
+
+  /**
+   * Open the card dropdown menu using a temporary React root bridge.
+   * Renders a controlled DropdownMenu that opens immediately.
+   * The onOpenChange(false) callback is the sole cleanup path.
+   * Guards against orphan roots by unmounting any existing root first.
+   * This transitional pattern is removed in Step 2 when CardHeader becomes React.
+   */
+  private openReactMenu(): void {
+    // Unmount any existing orphan root first
+    this.closeReactMenu();
+
+    // Create container div as sibling of the menu button so Radix's Popper
+    // can anchor relative to this position.
+    const container = document.createElement("div");
+    container.style.position = "absolute";
+    container.style.width = "0";
+    container.style.height = "0";
+    container.style.overflow = "visible";
+    if (this.menuBtn && this.menuBtn.parentNode) {
+      this.menuBtn.parentNode.insertBefore(container, this.menuBtn.nextSibling);
+    } else {
+      this.el.appendChild(container);
+    }
+    this.menuContainer = container;
+
+    const root = createRoot(container);
+    this.menuRoot = root;
+
+    const handleClose = () => {
+      this.closeReactMenu();
+    };
+
+    root.render(
+      React.createElement(CardDropdownMenuBridge, {
+        items: this.meta.menuItems,
+        onClose: handleClose,
+        align: "end",
+        side: "bottom",
+      })
+    );
+  }
+
+  private closeReactMenu(): void {
+    if (this.menuRoot) {
+      this.menuRoot.unmount();
+      this.menuRoot = null;
+    }
+    if (this.menuContainer) {
+      this.menuContainer.remove();
+      this.menuContainer = null;
+    }
   }
 }

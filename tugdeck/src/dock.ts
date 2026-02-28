@@ -3,13 +3,19 @@
  *
  * Replaces TugMenu with icon buttons for card creation, settings dropdown
  * with theme selection, and runtime theme change dispatch via MutationObserver.
+ *
+ * Settings menu: uses CardDropdownMenuBridge (React) via a temporary React root.
+ * This transitional pattern is removed in Step 5 when Dock becomes a React component.
  */
 
 import type { DeckManager } from "./deck-manager";
-import { DropdownMenu } from "./card-menu";
 import type { CardMenuItem } from "./cards/card";
 import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Code, Settings } from "lucide";
 import { dispatchAction } from "./action-dispatch";
+import React from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { CardDropdownMenuBridge } from "./components/chrome/card-dropdown-menu";
 
 /** Tug logo SVG (24x24 rounded square with "T" text) */
 const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -20,7 +26,9 @@ const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
 export class Dock {
   private deckManager: DeckManager;
   private dockEl: HTMLElement;
-  private currentMenu: DropdownMenu | null = null;
+  // Tracked React root for the settings menu bridge (guarded against orphan roots)
+  private menuRoot: Root | null = null;
+  private menuContainer: HTMLElement | null = null;
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
   private btnEls: Map<string, HTMLElement> = new Map();
@@ -96,10 +104,7 @@ export class Dock {
   }
 
   destroy(): void {
-    if (this.currentMenu) {
-      this.currentMenu.destroy();
-      this.currentMenu = null;
-    }
+    this.closeSettingsMenu();
     if (this.observer) {
       this.observer.disconnect();
       this.observer = null;
@@ -160,21 +165,58 @@ export class Dock {
     this.btnEls.set(cardType, btn);
   }
 
+  /**
+   * Toggle the settings menu open/closed.
+   * Uses CardDropdownMenuBridge (React) via a temporary React root bridge.
+   * Guards against orphan roots by unmounting any existing root first.
+   * This transitional pattern is removed in Step 5 when Dock becomes React.
+   */
   private toggleSettingsMenu(): void {
-    if (this.currentMenu && this.currentMenu.isOpen()) {
-      this.currentMenu.destroy();
-      this.currentMenu = null;
+    // If menu is already open, close it
+    if (this.menuRoot) {
+      this.closeSettingsMenu();
       return;
     }
 
-    if (this.currentMenu) {
-      this.currentMenu.destroy();
-      this.currentMenu = null;
+    // Create container div as sibling of the settings button
+    const container = document.createElement("div");
+    container.style.position = "absolute";
+    container.style.width = "0";
+    container.style.height = "0";
+    container.style.overflow = "visible";
+    if (this.settingsBtnEl && this.settingsBtnEl.parentNode) {
+      this.settingsBtnEl.parentNode.insertBefore(container, this.settingsBtnEl.nextSibling);
+    } else {
+      this.dockEl.appendChild(container);
     }
+    this.menuContainer = container;
 
-    const items = this.buildSettingsMenuItems();
-    this.currentMenu = new DropdownMenu(items, this.settingsBtnEl!);
-    this.currentMenu.open();
+    const root = createRoot(container);
+    this.menuRoot = root;
+
+    const handleClose = () => {
+      this.closeSettingsMenu();
+    };
+
+    root.render(
+      React.createElement(CardDropdownMenuBridge, {
+        items: this.buildSettingsMenuItems(),
+        onClose: handleClose,
+        align: "end",
+        side: "left",
+      })
+    );
+  }
+
+  private closeSettingsMenu(): void {
+    if (this.menuRoot) {
+      this.menuRoot.unmount();
+      this.menuRoot = null;
+    }
+    if (this.menuContainer) {
+      this.menuContainer.remove();
+      this.menuContainer = null;
+    }
   }
 
   private buildSettingsMenuItems(): CardMenuItem[] {

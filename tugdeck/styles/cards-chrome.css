@@ -210,59 +210,6 @@
   background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
-/* ---- Card dropdown menu ---- */
-
-.card-dropdown-menu {
-  position: fixed;
-  background: var(--td-surface);
-  color: var(--td-text);
-  border: 1px solid var(--td-border-soft);
-  box-shadow: var(--td-depth-raise);
-  border-radius: 4px;
-  padding: 4px 0;
-  z-index: 10000;
-  min-width: 160px;
-  font-family: var(--td-font-mono);
-  text-transform: uppercase;
-  font-size: 0.62rem;
-}
-
-.card-dropdown-item {
-  padding: 6px 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.card-dropdown-item:hover {
-  background: color-mix(in srgb, var(--td-text) 8%, transparent);
-}
-
-.card-dropdown-separator {
-  height: 1px;
-  background: var(--td-border);
-  margin: 4px 0;
-}
-
-.card-dropdown-select-group {
-  padding: 4px 0;
-}
-
-.card-dropdown-select-option {
-  padding: 4px 20px;
-  cursor: pointer;
-  border-radius: 2px;
-}
-
-.card-dropdown-select-option:hover {
-  background: color-mix(in srgb, var(--td-text) 8%, transparent);
-}
-
-.card-dropdown-select-option.selected {
-  color: var(--td-accent);
-  font-weight: 600;
-}
 
 .card-frame-content {
   flex: 1;

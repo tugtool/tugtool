@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-28T22:18:12Z
+---
+
+## step-1: Replaced vanilla card-menu.ts with CardDropdownMenu React component using shadcn DropdownMenu primitives. Updated card-header.ts and dock.ts to use React bridge pattern. Deleted vanilla CSS rules and tests, added new RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-28T19:10:10Z
 ---

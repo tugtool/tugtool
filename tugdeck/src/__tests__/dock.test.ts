@@ -392,17 +392,19 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Dock settings menu does not include Save Layout or preset items", () => {
+  test("Dock settings menu does not include Save Layout or preset items", async () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("code", () => makeMockCard([FeedId.CODE_OUTPUT], "code"));
     const dock = new Dock(manager);
 
-    // Click settings gear to open menu
+    // Click settings gear to open menu (React bridge renders asynchronously)
     const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[5] as HTMLElement;
     settingsBtn?.click();
+    // Allow React root to flush
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    // Check no preset-related items exist
-    const menuItems = document.querySelectorAll(".card-dropdown-item");
+    // Check no preset-related items exist (Radix uses role='menuitem')
+    const menuItems = document.querySelectorAll("[role='menuitem']");
     const labels = Array.from(menuItems).map((el) => el.textContent ?? "");
 
     expect(labels.some((l) => l.includes("Save Layout"))).toBe(false);
@@ -412,25 +414,29 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Dock settings menu includes all expected items", () => {
+  test("Dock settings menu includes all expected items", async () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     // Click settings gear (now at index 6 because we have 6 card type buttons)
+    // React bridge renders asynchronously so we await a tick after clicking.
     const settingsBtn = document.body.querySelectorAll(".dock-icon-btn")[6] as HTMLElement;
     settingsBtn?.click();
+    // Allow React root to flush
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    const menuItems = document.querySelectorAll(".card-dropdown-item");
-    const labels = Array.from(menuItems).map((el) => el.textContent ?? "");
+    // Radix DropdownMenu uses role='menuitem' and role='menuitemradio' for items.
+    // Text content is spread across all menu item types.
+    const bodyText = document.body.textContent ?? "";
 
-    expect(labels.some((l) => l.includes("Add Code"))).toBe(true);
-    expect(labels.some((l) => l.includes("Add Terminal"))).toBe(true);
-    expect(labels.some((l) => l.includes("Add Git"))).toBe(true);
-    expect(labels.some((l) => l.includes("Add Files"))).toBe(true);
-    expect(labels.some((l) => l.includes("Add Stats"))).toBe(true);
-    expect(labels.some((l) => l.includes("Reset Layout"))).toBe(true);
-    expect(labels.some((l) => l.includes("Theme"))).toBe(true);
-    expect(labels.some((l) => l.includes("About tugdeck"))).toBe(true);
+    expect(bodyText).toContain("Add Code");
+    expect(bodyText).toContain("Add Terminal");
+    expect(bodyText).toContain("Add Git");
+    expect(bodyText).toContain("Add Files");
+    expect(bodyText).toContain("Add Stats");
+    expect(bodyText).toContain("Reset Layout");
+    expect(bodyText).toContain("Theme");
+    expect(bodyText).toContain("About tugdeck");
 
     dock.destroy();
     manager.destroy();
