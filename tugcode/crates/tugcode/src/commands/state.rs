@@ -1119,6 +1119,15 @@ fn print_step_state(step: &tugtool_core::StepState, indent: usize) {
 
     println!("{}{} {} - {}", prefix, status_icon, step.anchor, step.title);
 
+    // Show human-readable status label
+    let status_label = match step.status.as_str() {
+        "completed" => "Done",
+        "in_progress" => "In progress",
+        "claimed" => "Claimed",
+        _ => "Pending",
+    };
+    println!("{}  Status: {}", prefix, status_label);
+
     // Show checklist progress
     let cl = &step.checklist;
     if cl.tasks_total > 0 {
@@ -1143,17 +1152,21 @@ fn print_step_state(step: &tugtool_core::StepState, indent: usize) {
         );
     }
 
-    // Show claim/lease info
-    if let Some(claimed_by) = &step.claimed_by {
-        println!("{}  Claimed by: {}", prefix, claimed_by);
-        if let Some(expires) = &step.lease_expires_at {
-            println!("{}  Lease expires: {}", prefix, expires);
+    // Show claim/lease info (only for non-completed steps)
+    if step.status != "completed" {
+        if let Some(claimed_by) = &step.claimed_by {
+            println!("{}  Claimed by: {}", prefix, claimed_by);
+            if let Some(expires) = &step.lease_expires_at {
+                println!("{}  Lease expires: {}", prefix, expires);
+            }
         }
     }
 
-    // Show force-completion reason
+    // Show force-completion reason (only when non-empty)
     if let Some(reason) = &step.complete_reason {
-        println!("{}  Force-completed: {}", prefix, reason);
+        if !reason.is_empty() {
+            println!("{}  Force-completed: {}", prefix, reason);
+        }
     }
 
     // Show substeps
