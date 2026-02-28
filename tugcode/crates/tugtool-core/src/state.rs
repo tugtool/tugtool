@@ -413,10 +413,9 @@ COMMIT;
         })?;
 
         // Insert steps with sequential step_index
-        let mut step_index: i32 = 0;
         let mut step_count = 0;
 
-        for step in &plan.steps {
+        for (step_index, step) in (0_i32..).zip(plan.steps.iter()) {
             tx.execute(
                 "INSERT INTO steps (plan_path, anchor, step_index, title, status)
                  VALUES (?1, ?2, ?3, ?4, 'pending')",
@@ -426,7 +425,6 @@ COMMIT;
                 reason: format!("failed to insert step {}: {}", step.anchor, e),
             })?;
             step_count += 1;
-            step_index += 1;
         }
 
         // Insert dependencies
@@ -664,7 +662,7 @@ COMMIT;
         }
     }
 
-    /// Check if the given worktree owns the step (or its parent if it's a substep).
+    /// Check if the given worktree owns the step.
     pub fn check_ownership(
         &self,
         plan_path: &str,
@@ -4111,7 +4109,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let mut db = StateDb::open(&db_path).unwrap();
 
-        // Initialize a plan with substeps and checklist items
+        // Initialize a plan with checklist items
         let plan = make_test_plan();
         let plan_file = temp.path().join(".tugtool/tugplan-test.md");
         fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
@@ -4146,9 +4144,8 @@ mod tests {
         db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
             .unwrap();
 
-        // Verify that non-completed checklist items for claimed substeps are reset
-        // Note: the existing reclaim logic only resets checklist items for substeps with status='claimed',
-        // not the parent step's own items. This test verifies the existing behavior is preserved.
+        // Verify that non-completed checklist items for reclaimed steps are reset.
+        // This test verifies the existing reclaim behavior is preserved.
         let count: i32 = db
             .conn
             .query_row(
@@ -4159,7 +4156,6 @@ mod tests {
             .unwrap();
 
         // The test plan has Task 1 and Test 1 for step-1, and a checkpoint for step-2.
-        // Since step-1 has no substeps in the test plan, the reclaim logic won't reset anything.
         // The completed item should remain completed. This test documents current behavior.
         assert!(count >= 0, "checklist reset logic should not error");
     }
