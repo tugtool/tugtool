@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-28T15:56:36Z
+---
+
+## step-5: Added useEffect in developer-card.tsx to post badge state to devBadge bridge handler when stale state changes
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
 step: step-4
 date: 2025-02-28T15:45:10Z
 ---

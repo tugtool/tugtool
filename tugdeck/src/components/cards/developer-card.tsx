@@ -288,6 +288,19 @@ export function DeveloperCard() {
     dispatchBadge,
   ]);
 
+  // ---- Post badge state to Swift devBadge bridge handler ----
+  //
+  // Posts { backend, app } booleans to the native menu whenever stale state
+  // changes, so the Developer menu items show the diamond (◆) badge when their
+  // respective category has pending changes. Uses optional chaining so the call
+  // is a no-op in non-WebKit environments (tests, browser).
+  useEffect(() => {
+    (window as any).webkit?.messageHandlers?.devBadge?.postMessage({
+      backend: backendRow.isStale,
+      app: appRow.isStale,
+    });
+  }, [backendRow.isStale, appRow.isStale]);
+
   // ---- Parse git feed ----
 
   useEffect(() => {
