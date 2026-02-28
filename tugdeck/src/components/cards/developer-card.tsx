@@ -523,7 +523,7 @@ export function DeveloperCard() {
             Reset
           </Button>
           <span className="dev-reset-note text-xs text-muted-foreground">
-            Clear localStorage and restart
+            Clear localStorage and relaunch
           </span>
         </div>
 

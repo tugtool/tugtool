@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-28T15:37:56Z
+---
+
+## step-3: Split restart/reset case in ProcessManager.swift so reset follows relaunch path (stop Vite, doNotRestart). Updated reset button label to say relaunch.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
 step: step-2
 date: 2025-02-28T15:33:45Z
 ---
