@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-02-28T18:35:27Z
+---
+
+## step-7: Phase 2 Integration Checkpoint: all 5 checkpoints pass — tests (753), fmt clean, parent_anchor migration-only, substep symbols removed, skeleton validates
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-6
 date: 2025-02-28T18:31:24Z
 ---
