@@ -87,6 +87,7 @@ impl DevChangeTracker {
 pub(crate) struct DevRuntime {
     pub(crate) _compiled_watcher: tokio::task::JoinHandle<()>,
     pub(crate) _app_watcher: RecommendedWatcher,
+    pub(crate) _rust_source_watcher: RecommendedWatcher,
     #[allow(dead_code)]
     pub(crate) change_tracker: SharedChangeTracker,
 }
@@ -125,7 +126,16 @@ pub(crate) async fn enable_dev_mode(
 
     // Create app watcher: app sources (.swift files) notify watcher
     let app_sources_dir = source_tree.join("tugapp/Sources");
-    let app_watcher = dev_app_watcher(app_sources_dir, change_tracker.clone(), client_action_tx)?;
+    let app_watcher = dev_app_watcher(
+        app_sources_dir,
+        change_tracker.clone(),
+        client_action_tx.clone(),
+    )?;
+
+    // Create rust source watcher: tugcode Rust source files notify watcher
+    let rust_sources_dir = source_tree.join("tugcode/crates");
+    let rust_source_watcher =
+        dev_rust_source_watcher(rust_sources_dir, change_tracker.clone(), client_action_tx)?;
 
     // Store loaded DevState into shared state
     shared_state.store(Arc::new(Some(DevState {
@@ -137,6 +147,7 @@ pub(crate) async fn enable_dev_mode(
     Ok(DevRuntime {
         _compiled_watcher: compiled_watcher,
         _app_watcher: app_watcher,
+        _rust_source_watcher: rust_source_watcher,
         change_tracker,
     })
 }
@@ -310,6 +321,77 @@ fn has_swift_extension(event: &notify::Event) -> bool {
         .paths
         .iter()
         .any(|p| p.extension().is_some_and(|ext| ext == "swift"))
+}
+
+/// Check whether a notify event contains paths with .rs extension or named Cargo.toml
+fn has_rust_extension(event: &notify::Event) -> bool {
+    event.paths.iter().any(|p| {
+        p.extension().is_some_and(|ext| ext == "rs")
+            || p.file_name().is_some_and(|name| name == "Cargo.toml")
+    })
+}
+
+/// Start Rust source watcher using notify events
+///
+/// Watches tugcode/crates/ recursively for .rs file and Cargo.toml changes. Uses a
+/// quiet-period debounce (100ms silence window). On change, marks
+/// the backend tracker category and sends a restart_available notification.
+pub(crate) fn dev_rust_source_watcher(
+    rust_sources_dir: PathBuf,
+    tracker: SharedChangeTracker,
+    client_action_tx: broadcast::Sender<Frame>,
+) -> Result<RecommendedWatcher, String> {
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            let _ = event_tx.send(res);
+        })
+        .map_err(|e| format!("failed to create dev rust source watcher: {}", e))?;
+
+    // Watch rust sources directory if it exists
+    if rust_sources_dir.exists() {
+        watcher
+            .watch(&rust_sources_dir, RecursiveMode::Recursive)
+            .map_err(|e| format!("failed to watch {}: {}", rust_sources_dir.display(), e))?;
+        info!("dev: watching rust sources {}", rust_sources_dir.display());
+    } else {
+        warn!(
+            "dev: rust sources directory {} does not exist, skipping rust source watcher",
+            rust_sources_dir.display()
+        );
+    }
+
+    // Quiet-period debounce task
+    tokio::spawn(async move {
+        let quiet_period = Duration::from_millis(100);
+        loop {
+            // Phase 1: Wait for a .rs or Cargo.toml file event
+            loop {
+                match event_rx.recv().await {
+                    Some(Ok(event)) if has_rust_extension(&event) => break,
+                    Some(_) => continue,
+                    None => return,
+                }
+            }
+
+            // Phase 2: Consume events until quiet
+            loop {
+                match tokio::time::timeout(quiet_period, event_rx.recv()).await {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => return,
+                    Err(_) => break,
+                }
+            }
+
+            // Phase 3: Mark and notify
+            tracker.lock().unwrap().mark_backend();
+            send_dev_notification("restart_available", &tracker, &client_action_tx);
+            info!("dev: sent dev_notification type=restart_available (rust source)");
+        }
+    });
+
+    Ok(watcher)
 }
 
 /// Start compiled code watcher (backend only) using mtime polling
@@ -689,6 +771,103 @@ mod tests {
             attrs: Default::default(),
         };
         assert!(!has_swift_extension(&other_event));
+    }
+
+    #[test]
+    fn test_has_rust_extension_rs_file() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.rs")],
+            attrs: Default::default(),
+        };
+        assert!(has_rust_extension(&event));
+    }
+
+    #[test]
+    fn test_has_rust_extension_cargo_toml() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("some/path/Cargo.toml")],
+            attrs: Default::default(),
+        };
+        assert!(has_rust_extension(&event));
+    }
+
+    #[test]
+    fn test_has_rust_extension_swift_false() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.swift")],
+            attrs: Default::default(),
+        };
+        assert!(!has_rust_extension(&event));
+    }
+
+    #[test]
+    fn test_has_rust_extension_ts_false() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("test.ts")],
+            attrs: Default::default(),
+        };
+        assert!(!has_rust_extension(&event));
+    }
+
+    #[tokio::test]
+    async fn test_rust_source_watcher_detects_rs_change() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let crates_dir = temp_dir.path().join("crates");
+        fs::create_dir_all(&crates_dir).unwrap();
+
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _watcher =
+            dev_rust_source_watcher(crates_dir.clone(), tracker.clone(), client_action_tx).unwrap();
+
+        // Create a .rs file
+        let rs_file = crates_dir.join("main.rs");
+        fs::write(&rs_file, "fn main() {}").unwrap();
+
+        // Wait for notification (100ms debounce + buffer)
+        match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
+            Ok(Ok(frame)) => {
+                assert_eq!(frame.feed_id, FeedId::Control);
+                let json: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+                assert_eq!(json["action"], "dev_notification");
+                assert_eq!(json["type"], "restart_available");
+
+                // Verify tracker was marked
+                let guard = tracker.lock().unwrap();
+                assert!(guard.backend_dirty);
+                assert_eq!(guard.code_count, 1);
+            }
+            Ok(Err(e)) => panic!("broadcast recv error: {}", e),
+            Err(_) => panic!("Timeout waiting for rust source watcher notification"),
+        }
     }
 
     #[tokio::test]

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-28T02:15:07Z
+---
+
+## step-2: Added has_rust_extension() helper and dev_rust_source_watcher() with 100ms debounce. Sends restart_available notifications when .rs or Cargo.toml files change. Integrated into DevRuntime and enable_dev_mode().
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-1
 date: 2025-02-28T02:09:04Z
 ---
