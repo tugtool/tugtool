@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-28T18:22:51Z
+---
+
+## step-4: Added v3-to-v4 migration that promotes substeps, deletes container parents, recreates steps table without parent_anchor column, and updates schema version to 4
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-3
 date: 2025-02-28T17:53:34Z
 ---

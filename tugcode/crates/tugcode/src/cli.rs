@@ -85,7 +85,7 @@ pub enum Commands {
     ///
     /// Displays step-by-step progress with task and checkpoint counts.
     #[command(
-        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n  - Substep progress if present\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse 'tugcode state show' for detailed execution state."
+        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse 'tugcode state show' for detailed execution state."
     )]
     Status {
         /// Plan file to show status for

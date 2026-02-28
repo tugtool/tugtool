@@ -126,7 +126,6 @@ CREATE TABLE IF NOT EXISTS plans (
 CREATE TABLE IF NOT EXISTS steps (
     plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
     anchor           TEXT NOT NULL,
-    parent_anchor    TEXT,
     step_index       INTEGER NOT NULL,
     title            TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'pending',
@@ -138,8 +137,7 @@ CREATE TABLE IF NOT EXISTS steps (
     completed_at     TEXT,
     commit_hash      TEXT,
     complete_reason  TEXT,
-    PRIMARY KEY (plan_path, anchor),
-    FOREIGN KEY (plan_path, parent_anchor) REFERENCES steps(plan_path, anchor)
+    PRIMARY KEY (plan_path, anchor)
 );
 
 CREATE TABLE IF NOT EXISTS step_deps (
@@ -174,8 +172,7 @@ CREATE TABLE IF NOT EXISTS step_artifacts (
     FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
 );
 
-CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_path, status) WHERE parent_anchor IS NULL;
-CREATE INDEX IF NOT EXISTS idx_steps_parent ON steps(plan_path, parent_anchor) WHERE parent_anchor IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_path, status);
 CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_path, status, lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_checklist_step ON checklist_items(plan_path, step_anchor);
 CREATE INDEX IF NOT EXISTS idx_artifacts_step ON step_artifacts(plan_path, step_anchor);
@@ -212,7 +209,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         // Insert schema version (idempotent via NOT EXISTS check)
         conn.execute(
-            "INSERT INTO schema_version SELECT 3 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
+            "INSERT INTO schema_version SELECT 4 WHERE NOT EXISTS (SELECT 1 FROM schema_version)",
             [],
         )
         .map_err(|e| TugError::StateDbOpen {
@@ -253,6 +250,75 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 .execute("UPDATE schema_version SET version = 3", [])
                 .map_err(|e| TugError::StateDbOpen {
                     reason: format!("failed to update schema version: {}", e),
+                })?;
+        }
+
+        // Migrate from v3 to v4: promote substep rows to top-level, drop parent_anchor column
+        if self.schema_version()? == 3 {
+            self.conn
+                .execute_batch(
+                    r#"
+BEGIN EXCLUSIVE;
+
+-- Delete pure container parent rows BEFORE promoting substeps.
+-- A pure container parent is a step that:
+-- 1. Has parent_anchor IS NULL (is itself a top-level step, not a substep)
+-- 2. Appears as parent_anchor in other rows (has substeps)
+-- 3. Has no checklist items of its own
+-- These rows exist only as structural containers and carry no work.
+DELETE FROM steps
+WHERE parent_anchor IS NULL
+AND anchor IN (SELECT DISTINCT parent_anchor FROM steps WHERE parent_anchor IS NOT NULL)
+AND anchor NOT IN (SELECT DISTINCT step_anchor FROM checklist_items);
+
+-- Promote substep rows: clear parent_anchor so they become top-level steps.
+UPDATE steps SET parent_anchor = NULL WHERE parent_anchor IS NOT NULL;
+
+-- Renumber step_index sequentially (0, 1, 2, ...) per plan, ordered by the
+-- original step_index. After deleting container parents and promoting substeps
+-- the step_index values may have gaps; this closes them.
+UPDATE steps SET step_index = (
+    SELECT COUNT(*) FROM steps s2
+    WHERE s2.plan_path = steps.plan_path AND s2.step_index < steps.step_index
+);
+
+-- Recreate the steps table without the parent_anchor column
+CREATE TABLE steps_v4 (
+    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+    anchor           TEXT NOT NULL,
+    step_index       INTEGER NOT NULL,
+    title            TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    claimed_by       TEXT,
+    claimed_at       TEXT,
+    lease_expires_at TEXT,
+    heartbeat_at     TEXT,
+    started_at       TEXT,
+    completed_at     TEXT,
+    commit_hash      TEXT,
+    complete_reason  TEXT,
+    PRIMARY KEY (plan_path, anchor)
+);
+
+INSERT INTO steps_v4
+    SELECT plan_path, anchor, step_index, title, status, claimed_by, claimed_at,
+           lease_expires_at, heartbeat_at, started_at, completed_at, commit_hash, complete_reason
+    FROM steps;
+
+DROP TABLE steps;
+ALTER TABLE steps_v4 RENAME TO steps;
+
+-- Recreate indexes on the new steps table
+CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(plan_path, status);
+CREATE INDEX IF NOT EXISTS idx_steps_lease ON steps(plan_path, status, lease_expires_at);
+
+UPDATE schema_version SET version = 4;
+
+COMMIT;
+                    "#,
+                )
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to migrate schema to v4: {}", e),
                 })?;
         }
 
@@ -316,7 +382,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             return Ok(InitResult {
                 already_initialized: true,
                 step_count: 0,
-                substep_count: 0,
                 dep_count: 0,
                 checklist_count: 0,
             });
@@ -347,16 +412,14 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             reason: format!("failed to insert plan: {}", e),
         })?;
 
-        // Insert steps and substeps with interleaved step_index
+        // Insert steps with sequential step_index
         let mut step_index: i32 = 0;
         let mut step_count = 0;
-        let mut substep_count = 0;
 
         for step in &plan.steps {
-            // Insert top-level step
             tx.execute(
-                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
-                 VALUES (?1, ?2, NULL, ?3, ?4, 'pending')",
+                "INSERT INTO steps (plan_path, anchor, step_index, title, status)
+                 VALUES (?1, ?2, ?3, ?4, 'pending')",
                 rusqlite::params![plan_path, &step.anchor, step_index, &step.title],
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -364,26 +427,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             })?;
             step_count += 1;
             step_index += 1;
-
-            // Insert substeps
-            for substep in &step.substeps {
-                tx.execute(
-                    "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-                    rusqlite::params![
-                        plan_path,
-                        &substep.anchor,
-                        &step.anchor,
-                        step_index,
-                        &substep.title
-                    ],
-                )
-                .map_err(|e| TugError::StateDbQuery {
-                    reason: format!("failed to insert substep {}: {}", substep.anchor, e),
-                })?;
-                substep_count += 1;
-                step_index += 1;
-            }
         }
 
         // Insert dependencies
@@ -398,18 +441,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     reason: format!("failed to insert dependency: {}", e),
                 })?;
                 dep_count += 1;
-            }
-            for substep in &step.substeps {
-                for dep in &substep.depends_on {
-                    tx.execute(
-                        "INSERT INTO step_deps (plan_path, step_anchor, depends_on) VALUES (?1, ?2, ?3)",
-                        rusqlite::params![plan_path, &substep.anchor, dep],
-                    )
-                    .map_err(|e| TugError::StateDbQuery {
-                        reason: format!("failed to insert substep dependency: {}", e),
-                    })?;
-                    dep_count += 1;
-                }
             }
         }
 
@@ -427,30 +458,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 &step.checkpoints,
                 "checkpoint",
             )?;
-
-            for substep in &step.substeps {
-                checklist_count += insert_checklist_items(
-                    &tx,
-                    plan_path,
-                    &substep.anchor,
-                    &substep.tasks,
-                    "task",
-                )?;
-                checklist_count += insert_checklist_items(
-                    &tx,
-                    plan_path,
-                    &substep.anchor,
-                    &substep.tests,
-                    "test",
-                )?;
-                checklist_count += insert_checklist_items(
-                    &tx,
-                    plan_path,
-                    &substep.anchor,
-                    &substep.checkpoints,
-                    "checkpoint",
-                )?;
-            }
         }
 
         // Commit transaction
@@ -461,7 +468,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         Ok(InitResult {
             already_initialized: false,
             step_count,
-            substep_count,
             dep_count,
             checklist_count,
         })
@@ -512,14 +518,13 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         let now = now_iso8601();
         let lease_expires = iso8601_after_secs(lease_duration_secs);
 
-        // Find next claimable top-level step
+        // Find next claimable step
         let claimable = if force {
             // Force: claim any non-completed step regardless of lease or owner
             tx.query_row(
                 "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
                  FROM steps s
                  WHERE s.plan_path = ?1
-                   AND s.parent_anchor IS NULL
                    AND (s.status = 'pending' OR s.status IN ('claimed', 'in_progress'))
                    AND NOT EXISTS (
                        SELECT 1 FROM step_deps d
@@ -545,7 +550,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 "SELECT s.anchor, s.title, s.step_index, s.status, s.lease_expires_at
                  FROM steps s
                  WHERE s.plan_path = ?1
-                   AND s.parent_anchor IS NULL
                    AND (s.status = 'pending'
                         OR (s.status IN ('claimed', 'in_progress') AND s.lease_expires_at < ?2)
                         OR (s.status IN ('claimed', 'in_progress') AND s.claimed_by = ?3))
@@ -573,7 +577,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             Ok((anchor, title, index, status, _old_lease)) => {
                 let reclaimed = status != "pending";
 
-                // Update the parent step
+                // Claim the step
                 tx.execute(
                     "UPDATE steps SET status = 'claimed', claimed_by = ?1, claimed_at = ?2,
                      lease_expires_at = ?3, heartbeat_at = ?2
@@ -584,37 +588,11 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     reason: format!("failed to update claimed step: {}", e),
                 })?;
 
-                // Update non-completed substeps to claimed
-                tx.execute(
-                    "UPDATE steps SET status = 'claimed', claimed_by = ?1, claimed_at = ?2,
-                     lease_expires_at = ?3, heartbeat_at = ?2
-                     WHERE plan_path = ?4 AND parent_anchor = ?5 AND status != 'completed'",
-                    rusqlite::params![worktree, &now, &lease_expires, plan_path, &anchor],
-                )
-                .map_err(|e| TugError::StateDbQuery {
-                    reason: format!("failed to update substeps: {}", e),
-                })?;
-
-                // If reclaimed, reset checklist items for non-completed substeps back to 'open'
-                if reclaimed {
-                    tx.execute(
-                        "UPDATE checklist_items SET status = 'open', updated_at = NULL
-                         WHERE plan_path = ?1 AND step_anchor IN (
-                             SELECT anchor FROM steps WHERE plan_path = ?1 AND parent_anchor = ?2 AND status = 'claimed'
-                         )",
-                        rusqlite::params![plan_path, &anchor],
-                    )
-                    .map_err(|e| TugError::StateDbQuery {
-                        reason: format!("failed to reset checklist items: {}", e),
-                    })?;
-                }
-
                 // Count remaining ready steps
                 let remaining_ready: usize = tx
                     .query_row(
                         "SELECT COUNT(*) FROM steps s
                          WHERE s.plan_path = ?1
-                           AND s.parent_anchor IS NULL
                            AND s.status = 'pending'
                            AND NOT EXISTS (
                                SELECT 1 FROM step_deps d
@@ -629,11 +607,14 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 // Count total remaining steps
                 let total_remaining: usize = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL AND status != 'completed'",
+                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
                         [plan_path],
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
+
+                // Suppress unused variable warning when reclaimed is not used
+                let _ = reclaimed;
 
                 tx.commit().map_err(|e| TugError::StateDbQuery {
                     reason: format!("failed to commit claim transaction: {}", e),
@@ -653,7 +634,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 // No claimable steps found - check if all completed
                 let total: i32 = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL",
+                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1",
                         [plan_path],
                         |row| row.get(0),
                     )
@@ -661,7 +642,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
                 let completed: i32 = tx
                     .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL AND status = 'completed'",
+                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status = 'completed'",
                         [plan_path],
                         |row| row.get(0),
                     )
@@ -696,12 +677,9 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .query_row(
                 "SELECT claimed_by FROM steps
                  WHERE plan_path = ?1
-                   AND anchor = COALESCE(
-                       (SELECT parent_anchor FROM steps WHERE plan_path = ?2 AND anchor = ?3),
-                       ?4
-                   )
+                   AND anchor = ?2
                    AND status IN ('claimed', 'in_progress')",
-                rusqlite::params![plan_path, plan_path, anchor, anchor],
+                rusqlite::params![plan_path, anchor],
                 |row| row.get(0),
             )
             .ok();
@@ -1089,28 +1067,21 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         let now = now_iso8601();
 
-        // Check if this is a top-level step or substep
-        let is_substep: bool = match tx.query_row(
-            "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-            rusqlite::params![plan_path, anchor],
-            |row| row.get(0),
-        ) {
-            Ok(val) => val,
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                return Err(TugError::StateStepNotFound {
-                    plan_path: plan_path.to_string(),
-                    anchor: anchor.to_string(),
-                });
-            }
-            Err(e) => {
-                return Err(TugError::StateDbQuery {
-                    reason: format!(
-                        "failed to query step for plan={} anchor={}: {}",
-                        plan_path, anchor, e
-                    ),
-                });
-            }
-        };
+        // Verify the step exists
+        let step_exists: bool = tx
+            .query_row(
+                "SELECT 1 FROM steps WHERE plan_path = ?1 AND anchor = ?2",
+                rusqlite::params![plan_path, anchor],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if !step_exists {
+            return Err(TugError::StateStepNotFound {
+                plan_path: plan_path.to_string(),
+                anchor: anchor.to_string(),
+            });
+        }
 
         // Idempotency check: if the step is already completed, succeed silently
         let current_status: String = tx
@@ -1122,22 +1093,17 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .unwrap_or_default();
 
         if current_status == "completed" {
-            let all_steps_completed = if !is_substep {
-                let remaining: i32 = tx
-                    .query_row(
-                        "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL AND status != 'completed'",
-                        rusqlite::params![plan_path],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                remaining == 0
-            } else {
-                false
-            };
+            let remaining: i32 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
+                    rusqlite::params![plan_path],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
             return Ok(CompleteResult {
                 completed: true,
                 forced: false,
-                all_steps_completed,
+                all_steps_completed: remaining == 0,
             });
         }
 
@@ -1158,25 +1124,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     incomplete_count: incomplete_items,
                 });
             }
-
-            // If top-level step, check all substeps are completed
-            if !is_substep {
-                let incomplete_substeps: usize = tx
-                    .query_row(
-                        "SELECT COUNT(*) FROM steps
-                         WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
-                        rusqlite::params![plan_path, anchor],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-
-                if incomplete_substeps > 0 {
-                    return Err(TugError::StateIncompleteSubsteps {
-                        anchor: anchor.to_string(),
-                        incomplete_count: incomplete_substeps,
-                    });
-                }
-            }
         } else {
             // Force mode: auto-complete remaining checklist items
             tx.execute(
@@ -1190,21 +1137,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                     plan_path, anchor, e
                 ),
             })?;
-
-            // Force mode: auto-complete remaining substeps (if top-level step)
-            if !is_substep {
-                tx.execute(
-                    "UPDATE steps SET status = 'completed', completed_at = ?1
-                     WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'",
-                    rusqlite::params![&now, plan_path, anchor],
-                )
-                .map_err(|e| TugError::StateDbQuery {
-                    reason: format!(
-                        "failed to force-complete substeps for plan={} anchor={}: {}",
-                        plan_path, anchor, e
-                    ),
-                })?;
-            }
         }
 
         // Update the step to completed
@@ -1238,13 +1170,12 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             });
         }
 
-        // If this is a top-level step, check if all top-level steps are now completed
+        // Check if all steps are now completed
         let mut all_completed = false;
-        if !is_substep {
+        {
             let remaining: i32 = tx
                 .query_row(
-                    "SELECT COUNT(*) FROM steps
-                     WHERE plan_path = ?1 AND parent_anchor IS NULL AND status != 'completed'",
+                    "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status != 'completed'",
                     rusqlite::params![plan_path],
                     |row| row.get(0),
                 )
@@ -1309,13 +1240,13 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 reason: format!("failed to query plan: {}", e),
             })?;
 
-        // Query all top-level steps (those with parent_anchor = NULL)
+        // Query all steps ordered by step_index
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT anchor, title, step_index, status, claimed_by, lease_expires_at,
                         completed_at, commit_hash, complete_reason
-                 FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL
+                 FROM steps WHERE plan_path = ?1
                  ORDER BY step_index",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1357,14 +1288,12 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             })?;
 
             let checklist = self.query_checklist_summary(plan_path, &anchor)?;
-            let substeps = self.query_substeps(plan_path, &anchor)?;
             let artifacts = self.query_artifacts(plan_path, &anchor)?;
 
             steps.push(StepState {
                 anchor,
                 title,
                 step_index,
-                parent_anchor: None,
                 status,
                 claimed_by,
                 lease_expires_at,
@@ -1372,7 +1301,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
                 commit_hash,
                 complete_reason,
                 checklist,
-                substeps,
                 artifacts,
             });
         }
@@ -1475,81 +1403,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         })
     }
 
-    /// Helper: query substeps for a parent step
-    fn query_substeps(
-        &self,
-        plan_path: &str,
-        parent_anchor: &str,
-    ) -> Result<Vec<StepState>, TugError> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT anchor, title, step_index, status, claimed_by, lease_expires_at,
-                        completed_at, commit_hash, complete_reason
-                 FROM steps WHERE plan_path = ?1 AND parent_anchor = ?2
-                 ORDER BY step_index",
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to prepare substep query: {}", e),
-            })?;
-
-        let mut substeps = Vec::new();
-        let rows = stmt
-            .query_map(rusqlite::params![plan_path, parent_anchor], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,         // anchor
-                    row.get::<_, String>(1)?,         // title
-                    row.get::<_, i32>(2)?,            // step_index
-                    row.get::<_, String>(3)?,         // status
-                    row.get::<_, Option<String>>(4)?, // claimed_by
-                    row.get::<_, Option<String>>(5)?, // lease_expires_at
-                    row.get::<_, Option<String>>(6)?, // completed_at
-                    row.get::<_, Option<String>>(7)?, // commit_hash
-                    row.get::<_, Option<String>>(8)?, // complete_reason
-                ))
-            })
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to query substeps: {}", e),
-            })?;
-
-        for row in rows {
-            let (
-                anchor,
-                title,
-                step_index,
-                status,
-                claimed_by,
-                lease_expires_at,
-                completed_at,
-                commit_hash,
-                complete_reason,
-            ) = row.map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to read substep row: {}", e),
-            })?;
-
-            let checklist = self.query_checklist_summary(plan_path, &anchor)?;
-            let artifacts = self.query_artifacts(plan_path, &anchor)?;
-
-            substeps.push(StepState {
-                anchor,
-                title,
-                step_index,
-                parent_anchor: Some(parent_anchor.to_string()),
-                status,
-                claimed_by,
-                lease_expires_at,
-                completed_at,
-                commit_hash,
-                complete_reason,
-                checklist,
-                substeps: vec![], // substeps don't have sub-substeps
-                artifacts,
-            });
-        }
-
-        Ok(substeps)
-    }
-
     /// Helper: query artifacts for a step
     fn query_artifacts(
         &self,
@@ -1608,7 +1461,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             .conn
             .prepare(
                 "SELECT anchor, title, step_index, status, lease_expires_at
-                 FROM steps WHERE plan_path = ?1 AND parent_anchor IS NULL
+                 FROM steps WHERE plan_path = ?1
                  ORDER BY step_index",
             )
             .map_err(|e| TugError::StateDbQuery {
@@ -1709,17 +1562,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             });
         }
 
-        // Check if this is a top-level step
-        let is_substep: bool = tx
-            .query_row(
-                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
-                |row| row.get(0),
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to query step type: {}", e),
-            })?;
-
         let now = now_iso8601();
 
         // Reset the step
@@ -1742,32 +1584,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to reset checklist items: {}", e),
         })?;
-
-        // If top-level step, cascade to non-completed substeps
-        if !is_substep {
-            // Reset non-completed substeps
-            tx.execute(
-                "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
-                                  lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
-                 WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
-                rusqlite::params![plan_path, anchor],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to reset substeps: {}", e),
-            })?;
-
-            // Reset checklist items for those substeps
-            tx.execute(
-                "UPDATE checklist_items SET status = 'open', updated_at = ?1
-                 WHERE plan_path = ?2 AND step_anchor IN (
-                     SELECT anchor FROM steps WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'
-                 ) AND status != 'completed'",
-                rusqlite::params![&now, plan_path, anchor],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to reset substep checklist items: {}", e),
-            })?;
-        }
 
         tx.commit().map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to commit reset transaction: {}", e),
@@ -1840,17 +1656,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         let now = now_iso8601();
 
-        // Check if this is a top-level step
-        let is_substep: bool = tx
-            .query_row(
-                "SELECT parent_anchor IS NOT NULL FROM steps WHERE plan_path = ?1 AND anchor = ?2",
-                rusqlite::params![plan_path, anchor],
-                |row| row.get(0),
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to query step type: {}", e),
-            })?;
-
         // Reset the step to pending
         tx.execute(
             "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
@@ -1862,7 +1667,7 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
             reason: format!("failed to release step: {}", e),
         })?;
 
-        // Reset non-completed checklist items for the parent step itself
+        // Reset non-completed checklist items
         tx.execute(
             "UPDATE checklist_items SET status = 'open', updated_at = ?1
              WHERE plan_path = ?2 AND step_anchor = ?3 AND status != 'completed'",
@@ -1871,32 +1676,6 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
         .map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to reset checklist items: {}", e),
         })?;
-
-        // If top-level step, cascade to non-completed substeps
-        if !is_substep {
-            // Reset non-completed substeps
-            tx.execute(
-                "UPDATE steps SET status = 'pending', claimed_by = NULL, claimed_at = NULL,
-                                  lease_expires_at = NULL, heartbeat_at = NULL, started_at = NULL
-                 WHERE plan_path = ?1 AND parent_anchor = ?2 AND status != 'completed'",
-                rusqlite::params![plan_path, anchor],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to release substeps: {}", e),
-            })?;
-
-            // Reset checklist items for those substeps
-            tx.execute(
-                "UPDATE checklist_items SET status = 'open', updated_at = ?1
-                 WHERE plan_path = ?2 AND step_anchor IN (
-                     SELECT anchor FROM steps WHERE plan_path = ?2 AND parent_anchor = ?3 AND status != 'completed'
-                 ) AND status != 'completed'",
-                rusqlite::params![&now, plan_path, anchor],
-            )
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to reset substep checklist items: {}", e),
-            })?;
-        }
 
         tx.commit().map_err(|e| TugError::StateDbQuery {
             reason: format!("failed to commit release transaction: {}", e),
@@ -2099,10 +1878,8 @@ pub enum ClaimResult {
 pub struct InitResult {
     /// True if the plan was already initialized (idempotent return)
     pub already_initialized: bool,
-    /// Number of top-level steps created
+    /// Number of steps created
     pub step_count: usize,
-    /// Number of substeps created
-    pub substep_count: usize,
     /// Number of dependency edges created
     pub dep_count: usize,
     /// Number of checklist items created
@@ -2178,7 +1955,6 @@ pub struct StepState {
     pub anchor: String,
     pub title: String,
     pub step_index: i32,
-    pub parent_anchor: Option<String>,
     pub status: String,
     pub claimed_by: Option<String>,
     pub lease_expires_at: Option<String>,
@@ -2186,7 +1962,6 @@ pub struct StepState {
     pub commit_hash: Option<String>,
     pub complete_reason: Option<String>,
     pub checklist: ChecklistSummary,
-    pub substeps: Vec<StepState>,
     pub artifacts: Vec<ArtifactSummary>,
 }
 
@@ -2251,12 +2026,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_open_creates_db_and_schema_version_is_3() {
+    fn test_open_creates_db_and_schema_version_is_4() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path).expect("open should succeed");
         assert!(db_path.exists(), "state.db file should be created");
-        assert_eq!(db.schema_version().unwrap(), 3);
+        assert_eq!(db.schema_version().unwrap(), 4);
     }
 
     #[test]
@@ -2265,7 +2040,7 @@ mod tests {
         let db_path = temp.path().join("state.db");
         let _db1 = StateDb::open(&db_path).expect("first open should succeed");
         let db2 = StateDb::open(&db_path).expect("second open should succeed");
-        assert_eq!(db2.schema_version().unwrap(), 3);
+        assert_eq!(db2.schema_version().unwrap(), 4);
     }
 
     #[test]
@@ -2373,8 +2148,8 @@ mod tests {
         // Open with StateDb, which should trigger migration
         let db = StateDb::open(&db_path).unwrap();
 
-        // Verify schema version is now 3
-        assert_eq!(db.schema_version().unwrap(), 3);
+        // Verify schema version is now 4
+        assert_eq!(db.schema_version().unwrap(), 4);
 
         // Verify reason column exists by querying schema
         let has_reason: bool = db
@@ -2450,8 +2225,8 @@ mod tests {
         // Open with StateDb, which should trigger migration
         let db = StateDb::open(&db_path).unwrap();
 
-        // Verify schema version is now 3
-        assert_eq!(db.schema_version().unwrap(), 3);
+        // Verify schema version is now 4
+        assert_eq!(db.schema_version().unwrap(), 4);
 
         // Verify reason column exists by querying schema
         let has_reason: bool = db
@@ -2596,8 +2371,8 @@ mod tests {
         // Open with StateDb, which should trigger migration
         let db = StateDb::open(&db_path).unwrap();
 
-        // Verify schema version is now 3
-        assert_eq!(db.schema_version().unwrap(), 3);
+        // Verify schema version is now 4
+        assert_eq!(db.schema_version().unwrap(), 4);
 
         // THIS IS THE KEY TEST: Call show_plan which queries checklist_items
         // including the reason column. This was the actual failure scenario.
@@ -2637,12 +2412,12 @@ mod tests {
     }
 
     #[test]
-    fn test_new_db_has_schema_v3() {
+    fn test_new_db_has_schema_v4() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
         let db = StateDb::open(&db_path).unwrap();
 
-        assert_eq!(db.schema_version().unwrap(), 3);
+        assert_eq!(db.schema_version().unwrap(), 4);
 
         // Verify reason column exists
         let has_reason: bool = db
@@ -2654,6 +2429,239 @@ mod tests {
             )
             .unwrap();
         assert!(has_reason, "reason column should exist in new database");
+
+        // Verify parent_anchor column does NOT exist
+        let has_parent_anchor: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('steps') WHERE name = 'parent_anchor'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !has_parent_anchor,
+            "parent_anchor column should not exist in v4 schema"
+        );
+    }
+
+    #[test]
+    fn test_schema_migration_v3_to_v4_promotes_substeps() {
+        use rusqlite::Connection;
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("state.db");
+
+        // Create a v3 database with substep rows (parent_anchor IS NOT NULL)
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+            // Create v3 schema (with parent_anchor column)
+            conn.execute_batch(
+                r#"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version VALUES (3);
+
+                CREATE TABLE plans (
+                    plan_path    TEXT PRIMARY KEY,
+                    plan_hash    TEXT NOT NULL,
+                    phase_title  TEXT,
+                    status       TEXT NOT NULL DEFAULT 'active',
+                    created_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                );
+
+                CREATE TABLE steps (
+                    plan_path        TEXT NOT NULL REFERENCES plans(plan_path),
+                    anchor           TEXT NOT NULL,
+                    parent_anchor    TEXT,
+                    step_index       INTEGER NOT NULL,
+                    title            TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    claimed_by       TEXT,
+                    claimed_at       TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at     TEXT,
+                    started_at       TEXT,
+                    completed_at     TEXT,
+                    commit_hash      TEXT,
+                    complete_reason  TEXT,
+                    PRIMARY KEY (plan_path, anchor)
+                );
+
+                CREATE TABLE step_deps (
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    depends_on   TEXT NOT NULL,
+                    PRIMARY KEY (plan_path, step_anchor, depends_on),
+                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+                );
+
+                CREATE TABLE checklist_items (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    ordinal      INTEGER NOT NULL,
+                    text         TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'open',
+                    updated_at   TEXT,
+                    reason       TEXT
+                );
+
+                CREATE TABLE step_artifacts (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_path    TEXT NOT NULL,
+                    step_anchor  TEXT NOT NULL,
+                    kind         TEXT NOT NULL,
+                    summary      TEXT NOT NULL,
+                    recorded_at  TEXT NOT NULL
+                );
+                "#,
+            )
+            .unwrap();
+
+            // Insert a test plan
+            conn.execute(
+                "INSERT INTO plans (plan_path, plan_hash, status, created_at, updated_at) VALUES (?1, ?2, 'active', ?3, ?4)",
+                rusqlite::params!["test.md", "hash123", "2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"],
+            )
+            .unwrap();
+
+            // Insert top-level step-1 (no parent)
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params!["test.md", "step-1", Option::<String>::None, 0, "Step One"],
+            )
+            .unwrap();
+
+            // Insert container parent step-2 (no parent, no checklist items) - should be deleted
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params!["test.md", "step-2", Option::<String>::None, 1, "Step Two (parent container)"],
+            )
+            .unwrap();
+
+            // Insert substep step-2-1 (child of step-2, has checklist items) - should be promoted
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params!["test.md", "step-2-1", "step-2", 2, "Substep 2.1"],
+            )
+            .unwrap();
+
+            // Insert substep step-2-2 (child of step-2, has checklist items) - should be promoted
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params!["test.md", "step-2-2", "step-2", 3, "Substep 2.2"],
+            )
+            .unwrap();
+
+            // Insert step-3 (top-level)
+            conn.execute(
+                "INSERT INTO steps (plan_path, anchor, parent_anchor, step_index, title, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                rusqlite::params!["test.md", "step-3", Option::<String>::None, 4, "Step Three"],
+            )
+            .unwrap();
+
+            // Add checklist items for substeps (so they are NOT pure containers)
+            conn.execute(
+                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
+                rusqlite::params!["test.md", "step-2-1", "task", 0, "Substep 2.1 task"],
+            )
+            .unwrap();
+
+            conn.execute(
+                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
+                rusqlite::params!["test.md", "step-2-2", "task", 0, "Substep 2.2 task"],
+            )
+            .unwrap();
+
+            // Add checklist items for step-1 (not a container)
+            conn.execute(
+                "INSERT INTO checklist_items (plan_path, step_anchor, kind, ordinal, text, status) VALUES (?1, ?2, ?3, ?4, ?5, 'open')",
+                rusqlite::params!["test.md", "step-1", "task", 0, "Step 1 task"],
+            )
+            .unwrap();
+        }
+
+        // Open with StateDb, which should trigger v3-to-v4 migration
+        let db = StateDb::open(&db_path).unwrap();
+
+        // Verify schema version is now 4
+        assert_eq!(db.schema_version().unwrap(), 4);
+
+        // Verify parent_anchor column does NOT exist after migration
+        let has_parent_anchor: bool = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('steps') WHERE name = 'parent_anchor'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !has_parent_anchor,
+            "parent_anchor column should not exist after v4 migration"
+        );
+
+        // Collect all remaining steps with their step_index values ordered by step_index
+        let mut stmt = db
+            .conn
+            .prepare(
+                "SELECT anchor, step_index FROM steps WHERE plan_path = 'test.md' ORDER BY step_index",
+            )
+            .unwrap();
+        let rows: Vec<(String, i32)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let anchors: Vec<&str> = rows.iter().map(|(a, _)| a.as_str()).collect();
+        let indices: Vec<i32> = rows.iter().map(|(_, i)| *i).collect();
+
+        // step-2 (pure container parent with no checklist items) should be deleted
+        assert!(
+            !anchors.contains(&"step-2"),
+            "pure container parent step-2 should be deleted after migration"
+        );
+
+        // step-2-1 and step-2-2 (substeps with checklist items) should be promoted to top-level
+        assert!(
+            anchors.contains(&"step-2-1"),
+            "substep step-2-1 should be promoted to top-level"
+        );
+        assert!(
+            anchors.contains(&"step-2-2"),
+            "substep step-2-2 should be promoted to top-level"
+        );
+
+        // Top-level steps should still be present
+        assert!(anchors.contains(&"step-1"), "step-1 should remain");
+        assert!(anchors.contains(&"step-3"), "step-3 should remain");
+
+        // step_index values must be sequential starting at 0 with no gaps
+        // Original indices were: step-1=0, step-2=1(deleted), step-2-1=2, step-2-2=3, step-3=4
+        // After deleting step-2 and renumbering: step-1=0, step-2-1=1, step-2-2=2, step-3=3
+        assert_eq!(
+            indices,
+            vec![0, 1, 2, 3],
+            "step_index values should be renumbered sequentially 0..N-1 after migration"
+        );
+
+        // Verify checklist items for promoted substeps are still accessible
+        let checklist_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM checklist_items WHERE plan_path = 'test.md'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            checklist_count, 3,
+            "all checklist items (step-1, step-2-1, step-2-2) should be preserved"
+        );
     }
 
     #[test]
@@ -2816,9 +2824,8 @@ mod tests {
 
         assert!(!result.already_initialized);
         assert_eq!(result.step_count, 3); // step-1, step-2, step-3
-        assert_eq!(result.substep_count, 2); // step-2-1, step-2-2
-        assert_eq!(result.dep_count, 3); // step-2->step-1, step-2-2->step-2-1, step-3->step-2
-        assert_eq!(result.checklist_count, 6); // task1, test1, check1, sub-task1, sub-task2, sub-test
+        assert_eq!(result.dep_count, 2); // step-2->step-1, step-3->step-2 (substep deps no longer inserted)
+        assert_eq!(result.checklist_count, 3); // task1, test1, check1 (substep checklist items no longer inserted)
     }
 
     #[test]
@@ -2865,14 +2872,14 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
+        // Substeps (step-2-1, step-2-2) in Step.substeps are not inserted into the DB;
+        // only top-level steps from plan.steps are inserted.
         assert_eq!(
             rows,
             vec![
                 ("step-1".to_string(), 0),
                 ("step-2".to_string(), 1),
-                ("step-2-1".to_string(), 2),
-                ("step-2-2".to_string(), 3),
-                ("step-3".to_string(), 4),
+                ("step-3".to_string(), 2),
             ]
         );
     }
@@ -3012,112 +3019,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reclaim_preserves_completed_substeps() {
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
-        let plan = make_test_plan();
-
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
-            .unwrap();
-
-        // Complete step-1 so step-2 can be claimed
-        db.conn
-            .execute(
-                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-1'",
-                [],
-            )
-            .unwrap();
-
-        // Claim step-2 (which has substeps)
-        let result = db
-            .claim_step(
-                ".tugtool/tugplan-test.md",
-                "wt-a",
-                7200,
-                "abc123hash",
-                false,
-            )
-            .unwrap();
-        // Verify we got step-2
-        match result {
-            ClaimResult::Claimed { anchor, .. } => {
-                assert_eq!(anchor, "step-2");
-            }
-            _ => panic!("Expected to claim step-2"),
-        }
-
-        // Mark substep step-2-1 as completed
-        db.conn
-            .execute(
-                "UPDATE steps SET status = 'completed', completed_at = '2024-01-01T00:00:00.000Z'
-                 WHERE anchor = 'step-2-1'",
-                [],
-            )
-            .unwrap();
-
-        // Mark one checklist item of step-2-1 as done
-        db.conn
-            .execute(
-                "UPDATE checklist_items SET status = 'done', updated_at = '2024-01-01T00:00:00.000Z'
-                 WHERE step_anchor = 'step-2-1' AND kind = 'task' AND ordinal = 0",
-                [],
-            )
-            .unwrap();
-
-        // Expire the lease on step-2
-        db.conn
-            .execute(
-                "UPDATE steps SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE anchor = 'step-2'",
-                [],
-            )
-            .unwrap();
-
-        // Reclaim step-2 as wt-b
-        db.claim_step(
-            ".tugtool/tugplan-test.md",
-            "wt-b",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-
-        // Verify completed substep is still completed
-        let substep_status: String = db
-            .conn
-            .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-2-1'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(substep_status, "completed");
-
-        // Verify completed checklist item is still done
-        let item_status: String = db
-            .conn
-            .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-2-1' AND kind = 'task' AND ordinal = 0",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(item_status, "done");
-
-        // Verify non-completed substep (step-2-2) was reclaimed
-        let substep2_claimed: String = db
-            .conn
-            .query_row(
-                "SELECT claimed_by FROM steps WHERE anchor = 'step-2-2'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(substep2_claimed, "wt-b");
-    }
-
-    #[test]
     fn test_claim_all_completed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
@@ -3127,12 +3028,9 @@ mod tests {
         db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
             .unwrap();
 
-        // Mark all top-level steps as completed
+        // Mark all steps as completed
         db.conn
-            .execute(
-                "UPDATE steps SET status = 'completed' WHERE parent_anchor IS NULL",
-                [],
-            )
+            .execute("UPDATE steps SET status = 'completed'", [])
             .unwrap();
 
         // Try to claim - should return AllCompleted
@@ -3886,26 +3784,6 @@ mod tests {
     }
 
     #[test]
-    fn test_show_includes_substeps() {
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
-        let plan = make_test_plan();
-
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
-            .unwrap();
-
-        let plan_state = db.show_plan(".tugtool/tugplan-test.md").unwrap();
-
-        // step-2 has 2 substeps
-        let step1 = &plan_state.steps[1];
-        assert_eq!(step1.anchor, "step-2");
-        assert_eq!(step1.substeps.len(), 2);
-        assert_eq!(step1.substeps[0].anchor, "step-2-1");
-        assert_eq!(step1.substeps[1].anchor, "step-2-2");
-    }
-
-    #[test]
     fn test_show_annotates_force_completed() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("state.db");
@@ -4039,63 +3917,6 @@ mod tests {
 
         assert_eq!(status, "pending");
         assert_eq!(claimed_by, None);
-    }
-
-    #[test]
-    fn test_reset_cascades_to_substeps() {
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
-        let plan = make_test_plan();
-
-        db.init_plan(".tugtool/tugplan-test.md", &plan, "abc123hash")
-            .unwrap();
-
-        // Complete step-1 so step-2 can be claimed
-        db.conn
-            .execute(
-                "UPDATE steps SET status = 'completed' WHERE anchor = 'step-1'",
-                [],
-            )
-            .unwrap();
-
-        // Claim and start step-2 (which has substeps)
-        db.claim_step(
-            ".tugtool/tugplan-test.md",
-            "wt-a",
-            7200,
-            "abc123hash",
-            false,
-        )
-        .unwrap();
-        db.start_step(".tugtool/tugplan-test.md", "step-2", "wt-a")
-            .unwrap();
-
-        // Reset step-2
-        db.reset_step(".tugtool/tugplan-test.md", "step-2").unwrap();
-
-        // Verify step-2 is pending
-        let status: String = db
-            .conn
-            .query_row(
-                "SELECT status FROM steps WHERE anchor = 'step-2'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(status, "pending");
-
-        // Verify substeps were also reset
-        let substep_statuses: Vec<String> = db
-            .conn
-            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-2' ORDER BY step_index")
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-
-        assert_eq!(substep_statuses, vec!["pending", "pending"]);
     }
 
     #[test]
@@ -4541,86 +4362,6 @@ mod tests {
             }
             _ => panic!("expected StateStepNotClaimed error"),
         }
-    }
-
-    #[test]
-    fn test_release_cascades_to_substeps() {
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("state.db");
-        let mut db = StateDb::open(&db_path).unwrap();
-
-        // Initialize a plan with substeps
-        use crate::types::*;
-        let plan_with_substeps = TugPlan {
-            phase_title: Some("Test Phase".to_string()),
-            steps: vec![Step {
-                anchor: "step-1".to_string(),
-                title: "Step Three".to_string(),
-                substeps: vec![
-                    Substep {
-                        number: "0.0".to_string(),
-                        anchor: "step-1-sub-0".to_string(),
-                        title: "Substep 0".to_string(),
-                        line: 1,
-                        depends_on: vec![],
-                        commit_message: None,
-                        references: None,
-                        tasks: vec![],
-                        tests: vec![],
-                        checkpoints: vec![],
-                        artifacts: vec![],
-                    },
-                    Substep {
-                        number: "0.1".to_string(),
-                        anchor: "step-1-sub-1".to_string(),
-                        title: "Substep 1".to_string(),
-                        line: 2,
-                        depends_on: vec![],
-                        commit_message: None,
-                        references: None,
-                        tasks: vec![],
-                        tests: vec![],
-                        checkpoints: vec![],
-                        artifacts: vec![],
-                    },
-                ],
-                tasks: vec![],
-                tests: vec![],
-                checkpoints: vec![],
-                depends_on: vec![],
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-
-        let plan_file = temp.path().join(".tugtool/tugplan-test.md");
-        fs::create_dir_all(plan_file.parent().unwrap()).unwrap();
-        fs::write(&plan_file, "# Test plan\n").unwrap();
-        let hash = compute_plan_hash(&plan_file).unwrap();
-        db.init_plan(".tugtool/tugplan-test.md", &plan_with_substeps, &hash)
-            .unwrap();
-
-        // Claim step-1 (which claims substeps too)
-        db.claim_step(".tugtool/tugplan-test.md", "wt-a", 7200, &hash, false)
-            .unwrap();
-
-        // Release step-1
-        db.release_step(".tugtool/tugplan-test.md", "step-1", Some("wt-a"), false)
-            .unwrap();
-
-        // Verify substeps are also pending
-        let substep_status: Vec<String> = db
-            .conn
-            .prepare("SELECT status FROM steps WHERE parent_anchor = 'step-1' ORDER BY anchor")
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-
-        assert_eq!(substep_status.len(), 2);
-        assert_eq!(substep_status[0], "pending");
-        assert_eq!(substep_status[1], "pending");
     }
 
     #[test]

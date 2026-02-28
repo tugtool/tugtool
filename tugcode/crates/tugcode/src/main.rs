@@ -144,6 +144,7 @@ fn main() -> ExitCode {
                 plan,
                 summary,
                 checklist,
+                worktree: _,
             } => commands::run_state_show(plan, summary, checklist, cli.json, cli.quiet),
             StateCommands::Ready { plan } => commands::run_state_ready(plan, cli.json, cli.quiet),
             StateCommands::Reset { plan, step } => {
