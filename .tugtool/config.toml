@@ -28,9 +28,6 @@ prune_deps = false
 # Root bead type (epic recommended for bd ready --parent)
 root_issue_type = "epic"
 
-# Substep mapping: "none" (default) or "children"
-substeps = "none"
-
 # Pull behavior: which checkboxes to update when a bead is complete
 # - "checkpoints": update only **Checkpoint:** items (default)
 # - "all": update Tasks/Tests/Checkpoints

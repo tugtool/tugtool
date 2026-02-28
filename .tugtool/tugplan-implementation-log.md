@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-02-28T18:57:28Z
+---
+
+## step-11: Deleted with-substeps.md test fixture and removed dead substeps=none config key from .tugtool/config.toml
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-10
 date: 2025-02-28T18:52:41Z
 ---
