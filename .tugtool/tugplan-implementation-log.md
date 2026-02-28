@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-28T15:33:45Z
+---
+
+## step-2: Widened Rust source watcher from tugcode/crates to tugcode/, added Cargo.lock to has_rust_extension(), added is_target_path() exclusion, updated frontend categorizeFile for Cargo.lock
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
 step: step-1
 date: 2025-02-28T15:27:44Z
 ---

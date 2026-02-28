@@ -133,7 +133,7 @@ pub(crate) async fn enable_dev_mode(
     )?;
 
     // Create rust source watcher: tugcode Rust source files notify watcher
-    let rust_sources_dir = source_tree.join("tugcode/crates");
+    let rust_sources_dir = source_tree.join("tugcode");
     let rust_source_watcher =
         dev_rust_source_watcher(rust_sources_dir, change_tracker.clone(), client_action_tx)?;
 
@@ -334,19 +334,33 @@ fn has_swift_extension(event: &notify::Event) -> bool {
         .any(|p| p.extension().is_some_and(|ext| ext == "swift"))
 }
 
-/// Check whether a notify event contains paths with .rs extension or named Cargo.toml
+/// Check whether a notify event contains paths with .rs extension or named Cargo.toml or Cargo.lock
 fn has_rust_extension(event: &notify::Event) -> bool {
     event.paths.iter().any(|p| {
         p.extension().is_some_and(|ext| ext == "rs")
-            || p.file_name().is_some_and(|name| name == "Cargo.toml")
+            || p.file_name()
+                .is_some_and(|name| name == "Cargo.toml" || name == "Cargo.lock")
     })
+}
+
+/// Check whether a notify event contains paths that are inside a `/target/` directory.
+///
+/// Returns `true` if any path in the event has `/target/` as a path component, which
+/// indicates a build artifact change that should not trigger restart notifications.
+fn is_target_path(event: &notify::Event) -> bool {
+    event
+        .paths
+        .iter()
+        .any(|p| p.components().any(|c| c.as_os_str() == "target"))
 }
 
 /// Start Rust source watcher using notify events
 ///
-/// Watches tugcode/crates/ recursively for .rs file and Cargo.toml changes. Uses a
-/// quiet-period debounce (100ms silence window). On change, marks
-/// the backend tracker category and sends a restart_available notification.
+/// Watches `tugcode/` recursively for `.rs` file, `Cargo.toml`, and `Cargo.lock` changes.
+/// Events from paths containing a `/target/` component are excluded to prevent build
+/// artifact changes from triggering restart notifications. Uses a quiet-period debounce
+/// (100ms silence window). On change, marks the backend tracker category and sends a
+/// restart_available notification.
 pub(crate) fn dev_rust_source_watcher(
     rust_sources_dir: PathBuf,
     tracker: SharedChangeTracker,
@@ -377,10 +391,13 @@ pub(crate) fn dev_rust_source_watcher(
     tokio::spawn(async move {
         let quiet_period = Duration::from_millis(100);
         loop {
-            // Phase 1: Wait for a .rs or Cargo.toml file event
+            // Phase 1: Wait for a .rs, Cargo.toml, or Cargo.lock event that is not
+            // inside a /target/ directory (to exclude build artifacts).
             loop {
                 match event_rx.recv().await {
-                    Some(Ok(event)) if has_rust_extension(&event) => break,
+                    Some(Ok(event)) if has_rust_extension(&event) && !is_target_path(&event) => {
+                        break;
+                    }
                     Some(_) => continue,
                     None => return,
                 }
@@ -846,6 +863,81 @@ mod tests {
             attrs: Default::default(),
         };
         assert!(!has_rust_extension(&event));
+    }
+
+    #[test]
+    fn test_has_rust_extension_cargo_lock() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("tugcode/Cargo.lock")],
+            attrs: Default::default(),
+        };
+        assert!(has_rust_extension(&event));
+    }
+
+    #[test]
+    fn test_is_target_path_true() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("tugcode/target/debug/tugcast")],
+            attrs: Default::default(),
+        };
+        assert!(is_target_path(&event));
+    }
+
+    #[test]
+    fn test_is_target_path_false() {
+        use notify::{Event, EventKind};
+        use std::path::PathBuf;
+
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![PathBuf::from("tugcode/crates/tugcast/src/main.rs")],
+            attrs: Default::default(),
+        };
+        assert!(!is_target_path(&event));
+    }
+
+    #[tokio::test]
+    async fn test_rust_source_watcher_ignores_target_dir() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let tugcode_dir = temp_dir.path().join("tugcode");
+        let target_dir = tugcode_dir.join("target").join("debug");
+        fs::create_dir_all(&target_dir).unwrap();
+
+        let tracker = Arc::new(std::sync::Mutex::new(DevChangeTracker::new()));
+        let (client_action_tx, mut rx) = broadcast::channel(16);
+
+        let _watcher =
+            dev_rust_source_watcher(tugcode_dir.clone(), tracker.clone(), client_action_tx)
+                .unwrap();
+
+        // Create a file inside target/ — this should NOT trigger a notification
+        let artifact = target_dir.join("tugcast");
+        fs::write(&artifact, b"binary content").unwrap();
+
+        // Wait longer than the debounce window — no notification expected
+        match tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+            Ok(_) => panic!("Expected no notification for /target/ path change, but got one"),
+            Err(_) => {
+                // Timeout means no notification was sent — correct behavior
+            }
+        }
     }
 
     #[tokio::test]

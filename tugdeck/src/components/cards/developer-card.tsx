@@ -47,8 +47,11 @@ export function categorizeFile(path: string): "frontend" | "backend" | "app" | n
   if (path.startsWith("tugdeck/") && (path.endsWith(".ts") || path.endsWith(".tsx"))) {
     return "frontend";
   }
-  // tugcode Rust source or Cargo.toml
-  if (path.startsWith("tugcode/") && (path.endsWith(".rs") || path.endsWith("Cargo.toml"))) {
+  // tugcode Rust source, Cargo.toml, or Cargo.lock
+  if (
+    path.startsWith("tugcode/") &&
+    (path.endsWith(".rs") || path.endsWith("Cargo.toml") || path.endsWith("Cargo.lock"))
+  ) {
     return "backend";
   }
   return null;
