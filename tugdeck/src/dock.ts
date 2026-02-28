@@ -4,16 +4,29 @@
  * Replaces TugMenu with icon buttons for card creation, settings dropdown
  * with theme selection, and runtime theme change dispatch via MutationObserver.
  *
- * Settings menu: uses CardDropdownMenuBridge (React) via a temporary React root.
- * This transitional pattern is removed in Step 5 when Dock becomes a React component.
+ * Icons: lucide-react components rendered via small per-button React roots.
+ * Settings menu: CardDropdownMenuBridge via a temporary React root.
+ * Both patterns are removed in Step 5 when Dock becomes a React component.
+ *
+ * [D07] lucide-react replaces vanilla lucide for chrome icons
  */
 
 import type { DeckManager } from "./deck-manager";
 import type { CardMenuItem } from "./cards/card";
-import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Code, Settings } from "lucide";
+import {
+  MessageSquare,
+  Terminal,
+  GitBranch,
+  FolderOpen,
+  Activity,
+  Code,
+  Settings,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { dispatchAction } from "./action-dispatch";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import type { Root } from "react-dom/client";
 import { CardDropdownMenuBridge } from "./components/chrome/card-dropdown-menu";
 
@@ -23,12 +36,23 @@ const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
   <text x="12" y="16.5" text-anchor="middle" font-family="IBM Plex Sans, Inter, Segoe UI, system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" fill="currentColor">T</text>
 </svg>`;
 
+/** Render a lucide-react icon into a container div synchronously. */
+function renderIcon(container: HTMLElement, Icon: LucideIcon): Root {
+  const root = createRoot(container);
+  flushSync(() => {
+    root.render(React.createElement(Icon, { width: 20, height: 20 }));
+  });
+  return root;
+}
+
 export class Dock {
   private deckManager: DeckManager;
   private dockEl: HTMLElement;
   // Tracked React root for the settings menu bridge (guarded against orphan roots)
   private menuRoot: Root | null = null;
   private menuContainer: HTMLElement | null = null;
+  // React roots for icon buttons — unmounted in destroy()
+  private iconRoots: Root[] = [];
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
   private btnEls: Map<string, HTMLElement> = new Map();
@@ -46,7 +70,7 @@ export class Dock {
     this.dockEl = document.createElement("div");
     this.dockEl.className = "dock";
 
-    // Create card-type icon buttons
+    // Create card-type icon buttons using lucide-react icons
     this.addIconButton(MessageSquare, "code");
     this.addIconButton(Terminal, "terminal");
     this.addIconButton(GitBranch, "git");
@@ -59,13 +83,14 @@ export class Dock {
     spacer.className = "dock-spacer";
     this.dockEl.appendChild(spacer);
 
-    // Settings gear button
+    // Settings gear button — icon rendered via lucide-react
     this.settingsBtnEl = document.createElement("div");
     this.settingsBtnEl.className = "dock-icon-btn";
     this.settingsBtnEl.setAttribute("role", "button");
     this.settingsBtnEl.setAttribute("aria-label", "Settings");
-    const settingsIcon = createElement(Settings);
-    this.settingsBtnEl.appendChild(settingsIcon);
+    const settingsIconContainer = document.createElement("span");
+    this.settingsBtnEl.appendChild(settingsIconContainer);
+    this.iconRoots.push(renderIcon(settingsIconContainer, Settings));
     this.settingsBtnEl.addEventListener("click", (e) => {
       e.stopPropagation();
       this.toggleSettingsMenu();
@@ -105,6 +130,11 @@ export class Dock {
 
   destroy(): void {
     this.closeSettingsMenu();
+    // Unmount all icon React roots
+    for (const root of this.iconRoots) {
+      root.unmount();
+    }
+    this.iconRoots = [];
     if (this.observer) {
       this.observer.disconnect();
       this.observer = null;
@@ -151,13 +181,22 @@ export class Dock {
 
   // ---- Private ----
 
-  private addIconButton(iconConstructor: typeof MessageSquare, cardType: string): void {
+  /**
+   * Add a card-type icon button to the dock.
+   * The icon is rendered via a lucide-react component in a small React root.
+   * This transitional pattern is removed in Step 5 when Dock becomes React.
+   */
+  private addIconButton(Icon: LucideIcon, cardType: string): void {
     const btn = document.createElement("div");
     btn.className = "dock-icon-btn";
     btn.setAttribute("role", "button");
     btn.setAttribute("aria-label", `Add ${cardType}`);
-    const icon = createElement(iconConstructor);
-    btn.appendChild(icon);
+
+    // Render icon via lucide-react into a container span
+    const iconContainer = document.createElement("span");
+    btn.appendChild(iconContainer);
+    this.iconRoots.push(renderIcon(iconContainer, Icon));
+
     btn.addEventListener("click", () => {
       dispatchAction({ action: "show-card", component: cardType });
     });

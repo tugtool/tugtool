@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-28T22:38:19Z
+---
+
+## step-2: Converted vanilla CardHeader class to React component with lucide-react icons and CardDropdownMenu integration. Updated card-frame.ts to render via React root. Switched dock.ts icons to lucide-react. Deleted vanilla card-header.ts and tests, added new RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-1
 date: 2025-02-28T22:18:12Z
 ---

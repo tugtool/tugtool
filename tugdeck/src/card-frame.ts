@@ -2,21 +2,28 @@
  * CardFrame — absolutely-positioned card with move, resize, and z-order.
  *
  * The card frame contains:
- * - A CardHeader providing icon, title, close, and drag-to-move.
+ * - A React CardHeader (rendered via a React root in the header container div).
  * - A card area below the header where card DOM is mounted.
  * - Eight resize handles (4 edges + 4 corners).
  *
  * All mutations (move end, resize end, focus, close) fire callbacks so
  * DeckManager owns the DeckState mutations and serialization.
  *
+ * Header is now a React component (Step 2). This hybrid remains until Step 3
+ * converts CardFrame itself to React and eliminates these per-panel roots.
+ *
  * Spec S01: CardState data model
  * [D03] CardFrame accepts CardState directly
  * [D06] Key panel focus model with title bar tint
  */
 
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import type { Root } from "react-dom/client";
 import type { CardState } from "./layout-tree";
 import type { TugCardMeta } from "./cards/card";
-import { CardHeader } from "./card-header";
+import { CardHeader } from "./components/chrome/card-header";
 
 /** Minimum floating panel dimension in pixels */
 const MIN_SIZE_PX = 100;
@@ -47,11 +54,14 @@ export interface CardFrameCallbacks {
 
 export class CardFrame {
   private el: HTMLElement;
-  private cardHeader: CardHeader;
+  private headerContainerEl: HTMLElement;
+  private headerRoot: Root;
   private cardAreaEl: HTMLElement;
   private cardState: CardState;
   private callbacks: CardFrameCallbacks;
   private canvasEl: HTMLElement;
+  private currentMeta: TugCardMeta;
+  private currentIsKey: boolean = false;
 
   constructor(
     panelState: CardState,
@@ -77,26 +87,20 @@ export class CardFrame {
     // Build meta from CardState active tab if not provided
     const activeTab = panelState.tabs.find((t) => t.id === panelState.activeTabId)
       ?? panelState.tabs[0];
-    const headerMeta: TugCardMeta = meta ?? {
+    this.currentMeta = meta ?? {
       title: activeTab?.title ?? "Panel",
       icon: "Box",
       closable: true,
       menuItems: [],
     };
 
-    this.cardHeader = new CardHeader(headerMeta, {
-      onClose: () => {
-        callbacks.onClose();
-      },
-      onCollapse: () => {
-        // No-op: collapse does not apply to floating panels
-      },
-      onDragStart: (downEvent: PointerEvent) => {
-        this.handleHeaderDrag(downEvent);
-      },
-    }, { showCollapse: false });
+    // Header container: a plain div that the React root mounts into.
+    this.headerContainerEl = document.createElement("div");
+    this.el.appendChild(this.headerContainerEl);
 
-    this.el.appendChild(this.cardHeader.getElement());
+    // Mount the React CardHeader into the container.
+    this.headerRoot = createRoot(this.headerContainerEl);
+    this.renderHeader();
 
     // Card area
     this.cardAreaEl = document.createElement("div");
@@ -125,7 +129,7 @@ export class CardFrame {
 
   /** Kept for API compatibility; CardHeader renders the title. */
   updateTitle(_title: string): void {
-    // Title is rendered by CardHeader; recreate would be needed for live updates.
+    // Title is rendered by React CardHeader via updateMeta.
   }
 
   /**
@@ -134,7 +138,8 @@ export class CardFrame {
    * a "card-meta-update" event with new metadata.
    */
   updateMeta(meta: TugCardMeta): void {
-    this.cardHeader.updateMeta(meta);
+    this.currentMeta = meta;
+    this.renderHeader();
   }
 
   updatePosition(x: number, y: number): void {
@@ -151,15 +156,40 @@ export class CardFrame {
 
   /** Toggle the key-panel title bar tint on the header element. */
   setKey(isKey: boolean): void {
-    this.cardHeader.getElement().classList.toggle("card-header-key", isKey);
+    this.currentIsKey = isKey;
+    this.renderHeader();
   }
 
   destroy(): void {
-    this.cardHeader.destroy();
+    this.headerRoot.unmount();
     this.el.remove();
   }
 
   // ---- Private ----
+
+  /**
+   * Re-render the React CardHeader with current meta and isKey state.
+   * Uses flushSync so that DOM is available synchronously after the call —
+   * required for DeckManager's imperative call sites that query .card-header
+   * immediately after construction or setKey(). flushSync is a transitional
+   * measure removed in Step 7 when DeckCanvas replaces imperative rendering.
+   */
+  private renderHeader(): void {
+    flushSync(() => {
+      this.headerRoot.render(
+        React.createElement(CardHeader, {
+          meta: this.currentMeta,
+          isKey: this.currentIsKey,
+          showCollapse: false,
+          onClose: () => this.callbacks.onClose(),
+          onCollapse: () => {},
+          onDragStart: (e: React.PointerEvent<HTMLDivElement>) => {
+            this.handleHeaderDrag(e.nativeEvent as PointerEvent);
+          },
+        })
+      );
+    });
+  }
 
   private applyGeometry(): void {
     const { x, y } = this.cardState.position;
@@ -178,7 +208,7 @@ export class CardFrame {
   private handleHeaderDrag(downEvent: PointerEvent): void {
     downEvent.preventDefault();
 
-    const headerEl = this.cardHeader.getElement();
+    const headerEl = this.headerContainerEl;
     if (headerEl.setPointerCapture) {
       headerEl.setPointerCapture(downEvent.pointerId);
     }
