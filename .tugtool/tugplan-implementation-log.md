@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-28T17:53:34Z
+---
+
+## step-3: Expanded state-init block to query ready_steps from state DB after successful init_plan, replacing hardcoded None
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-2
 date: 2025-02-28T17:48:53Z
 ---
