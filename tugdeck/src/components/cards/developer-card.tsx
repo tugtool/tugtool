@@ -212,6 +212,7 @@ export function DeveloperCard() {
     if (!hot) return;
 
     function onViteAfterUpdate() {
+      console.log("[dev-flash] vite:afterUpdate received", Date.now());
       // Dispatch a testable CustomEvent indirection so tests can trigger the flash
       // without needing import.meta.hot (which is Vite-only).
       document.dispatchEvent(new CustomEvent("td-hmr-update"));
@@ -231,6 +232,7 @@ export function DeveloperCard() {
 
   useEffect(() => {
     function onHmrUpdate() {
+      console.log("[dev-flash] td-hmr-update received", Date.now());
       setFrontendFlashing(true);
       setFrontendFlashText("Reloaded");
       if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);

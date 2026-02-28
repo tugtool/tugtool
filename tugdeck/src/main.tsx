@@ -5,6 +5,10 @@ import "../styles/dock.css";
 // xterm CSS — previously mapped via assets.toml; now imported directly from node_modules
 import "@xterm/xterm/css/xterm.css";
 
+// Dev-flash diagnostic: log when this module executes to track startup timing.
+// Note: inline <script> in index.html would be blocked by the CSP (script-src 'self' 'wasm-unsafe-eval').
+console.debug("[dev-flash] main.tsx module executed", Date.now());
+
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { ReactCardAdapter } from "./cards/react-card-adapter";

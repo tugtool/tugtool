@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-02-28T02:25:12Z
+---
+
+## step-3: Fixed WKWebView flash by hiding webView until didFinishNavigation, setting drawsBackground=false, adding dark NSWindow background, and inline dark body background in index.html. Added diagnostic logging reduced to debug level.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-2
 date: 2025-02-28T02:15:07Z
 ---
