@@ -86,7 +86,7 @@ export interface TugCard {
    * re-render teardown, preventing meta updates from reaching destroyed DOM.
    * Optional — only ReactCardAdapter implements this.
    */
-  setCardFrame?(frame: import("../card-frame").CardFrame | null): void;
+  setCardFrame?(frame: import("../components/chrome/card-frame").CardFrameHandle | null): void;
 
   /**
    * Called by DeckManager during render() and handleTabActivate() to inform

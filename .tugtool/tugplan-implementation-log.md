@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-28T23:48:35Z
+---
+
+## step-6: Chrome integration checkpoint. Fixed stale dynamic import in card.ts referencing deleted card-frame.ts. Verified all 5 vanilla chrome files and 5 vanilla test files deleted, no stale imports remain, full test suite passes (403/0).
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-5
 date: 2025-02-28T23:41:16Z
 ---
