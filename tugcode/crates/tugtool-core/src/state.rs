@@ -255,9 +255,20 @@ CREATE INDEX IF NOT EXISTS idx_dash_rounds_name ON dash_rounds(dash_name);
 
         // Migrate from v3 to v4: promote substep rows to top-level, drop parent_anchor column
         if self.schema_version()? == 3 {
+            // Disable FK enforcement during migration. The bundled SQLite is compiled
+            // with SQLITE_DEFAULT_FOREIGN_KEYS=1, so FKs are ON by default. The migration
+            // deletes parent rows before clearing substep parent_anchor references, and
+            // drops/recreates the steps table while other tables still reference it —
+            // both operations violate FK constraints if enforcement is active.
+            // PRAGMA foreign_keys must be set outside a transaction.
             self.conn
-                .execute_batch(
-                    r#"
+                .execute_batch("PRAGMA foreign_keys = OFF;")
+                .map_err(|e| TugError::StateDbOpen {
+                    reason: format!("failed to disable foreign keys for v4 migration: {}", e),
+                })?;
+
+            let migration_result = self.conn.execute_batch(
+                r#"
 BEGIN EXCLUSIVE;
 
 -- Delete pure container parent rows BEFORE promoting substeps.
@@ -316,10 +327,18 @@ UPDATE schema_version SET version = 4;
 
 COMMIT;
                     "#,
-                )
+            );
+
+            // Re-enable FK enforcement regardless of migration outcome
+            self.conn
+                .execute_batch("PRAGMA foreign_keys = ON;")
                 .map_err(|e| TugError::StateDbOpen {
-                    reason: format!("failed to migrate schema to v4: {}", e),
+                    reason: format!("failed to re-enable foreign keys after v4 migration: {}", e),
                 })?;
+
+            migration_result.map_err(|e| TugError::StateDbOpen {
+                reason: format!("failed to migrate schema to v4: {}", e),
+            })?;
         }
 
         Ok(())
@@ -2484,15 +2503,21 @@ mod tests {
                     completed_at     TEXT,
                     commit_hash      TEXT,
                     complete_reason  TEXT,
-                    PRIMARY KEY (plan_path, anchor)
+                    PRIMARY KEY (plan_path, anchor),
+                    FOREIGN KEY (plan_path, parent_anchor) REFERENCES steps(plan_path, anchor)
                 );
+
+                CREATE INDEX idx_steps_status ON steps(plan_path, status) WHERE parent_anchor IS NULL;
+                CREATE INDEX idx_steps_parent ON steps(plan_path, parent_anchor) WHERE parent_anchor IS NOT NULL;
+                CREATE INDEX idx_steps_lease ON steps(plan_path, status, lease_expires_at);
 
                 CREATE TABLE step_deps (
                     plan_path    TEXT NOT NULL,
                     step_anchor  TEXT NOT NULL,
                     depends_on   TEXT NOT NULL,
                     PRIMARY KEY (plan_path, step_anchor, depends_on),
-                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor)
+                    FOREIGN KEY (plan_path, step_anchor) REFERENCES steps(plan_path, anchor),
+                    FOREIGN KEY (plan_path, depends_on) REFERENCES steps(plan_path, anchor)
                 );
 
                 CREATE TABLE checklist_items (
