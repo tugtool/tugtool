@@ -24,7 +24,7 @@
 import React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { TugCard, TugCardMeta } from "./card";
-import type { CardFrame } from "../card-frame";
+import type { CardFrameHandle } from "../components/chrome/card-frame";
 import type { TugConnection } from "../connection";
 import type { IDragState } from "../drag-state";
 import type { FeedIdValue } from "../protocol";
@@ -47,7 +47,7 @@ export class ReactCardAdapter implements TugCard {
   readonly feedIds: readonly FeedIdValue[];
 
   private _meta: TugCardMeta;
-  private _cardFrame: CardFrame | null = null;
+  private _cardFrame: CardFrameHandle | null = null;
   private _isActiveTab = false;
   private _root: Root | null = null;
   private _container: HTMLElement | null = null;
@@ -75,7 +75,7 @@ export class ReactCardAdapter implements TugCard {
    * Called by DeckManager for ALL tabs in a panel (not just the active tab).
    * Also called with null before CardFrame destruction to clear stale refs.
    */
-  setCardFrame(frame: CardFrame | null): void {
+  setCardFrame(frame: CardFrameHandle | null): void {
     this._cardFrame = frame;
   }
 

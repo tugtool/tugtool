@@ -19,8 +19,12 @@ import { TugCard } from "./cards/card";
 import { CARD_TITLES } from "./card-titles";
 import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import type { Root } from "react-dom/client";
 import { TabBar } from "./tab-bar";
-import { CardFrame, CARD_TITLE_BAR_HEIGHT } from "./card-frame";
+import { CardFrame, CARD_TITLE_BAR_HEIGHT, type CardFrameHandle, type CardFrameCallbacks } from "./components/chrome/card-frame";
 import { computeSnap, computeResizeSnap, computeEdgeVisibility, cardToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type CardSet, type SharedEdge, type EdgeValidator } from "./snap";
 
 /** localStorage key for layout persistence */
@@ -103,10 +107,22 @@ export class DeckManager implements IDragState {
   private tabBars: Map<string, TabBar> = new Map();
 
   /**
-   * CardFrame instances keyed by panel.id.
+   * CardFrame React refs keyed by panel.id.
    * Destroyed and recreated on render.
    */
-  private cardFrames: Map<string, CardFrame> = new Map();
+  private cardFrames: Map<string, React.RefObject<CardFrameHandle>> = new Map();
+
+  /**
+   * React roots for CardFrame components keyed by panel.id.
+   * Unmounted and recreated on render.
+   */
+  private cardFrameRoots: Map<string, Root> = new Map();
+
+  /**
+   * Container elements for CardFrame React roots keyed by panel.id.
+   * Each root mounts into a dedicated container div appended to this.container.
+   */
+  private cardFrameContainers: Map<string, HTMLElement> = new Map();
 
   /** Key panel: only code/terminal panels get title bar tint */
   private keyPanelId: string | null = null;
@@ -367,10 +383,16 @@ export class DeckManager implements IDragState {
     }
     this.tabBars.clear();
 
-    // Destroy existing CardFrame DOM instances (removes from DOM)
-    for (const fp of this.cardFrames.values()) {
-      fp.destroy();
+    // Unmount existing CardFrame React roots (removes from DOM)
+    for (const root of this.cardFrameRoots.values()) {
+      root.unmount();
     }
+    this.cardFrameRoots.clear();
+    // Remove container divs from DOM
+    for (const container of this.cardFrameContainers.values()) {
+      container.remove();
+    }
+    this.cardFrameContainers.clear();
     this.cardFrames.clear();
 
     // Clear rootEl (floating panels are appended to container, not rootEl)
@@ -387,9 +409,7 @@ export class DeckManager implements IDragState {
         ? this.cardRegistry.get(activeTab.id)?.meta
         : undefined;
 
-      const fp = new CardFrame(
-        panel,
-        {
+      const panelCallbacks: CardFrameCallbacks = {
           onMoveEnd: (x, y) => {
             this._isDragging = false;
             this.hideGuides();
@@ -538,7 +558,7 @@ export class DeckManager implements IDragState {
               // Build occlusion validator: set members (high z-index) can occlude non-set panel edges.
               // No single panel excluded — set members remain as valid occluders.
               const setMoveZMap = new Map<string, number>();
-              this.deckState.cards.forEach((p, i) => { setMoveZMap.set(p.id, 100 + i); });
+              this.deckState.cards.forEach((p, idx) => { setMoveZMap.set(p.id, 100 + idx); });
 
               const setMoveTargetZ = nonSetPanels.map(p => setMoveZMap.get(p.id) ?? 0);
               const setMoveExcludeIds = nonSetPanels.map(p => new Set([p.id]));
@@ -559,7 +579,7 @@ export class DeckManager implements IDragState {
                 const proposed = proposedPositions.get(memberId)!;
                 const siblingFp = this.cardFrames.get(memberId);
                 if (siblingFp) {
-                  siblingFp.updatePosition(proposed.x + snapDX, proposed.y + snapDY);
+                  siblingFp.current!.updatePosition(proposed.x + snapDX, proposed.y + snapDY);
                 }
               }
 
@@ -577,7 +597,7 @@ export class DeckManager implements IDragState {
 
               // Z-index map: panelId -> z-index (100 + array position)
               const soloZMap = new Map<string, number>();
-              this.deckState.cards.forEach((p, i) => { soloZMap.set(p.id, 100 + i); });
+              this.deckState.cards.forEach((p, idx) => { soloZMap.set(p.id, 100 + idx); });
 
               for (const p of this.deckState.cards) {
                 if (p.id === panel.id) continue;
@@ -642,16 +662,42 @@ export class DeckManager implements IDragState {
             if (newH < MIN_SIZE) { newH = height; newY = y; }
             return { x: newX, y: newY, width: newW, height: newH };
           },
-        },
-        this.container,
-        cardMeta
-      );
+      };
 
-      // Assign z-index in array order (100, 101, 102, ...)
-      fp.setZIndex(100 + i);
+      // Create a React ref and container div for this panel's CardFrame.
+      const fpRef = React.createRef<CardFrameHandle>();
+      const fpContainer = document.createElement("div");
+      this.container.appendChild(fpContainer);
 
-      this.container.appendChild(fp.getElement());
-      this.cardFrames.set(panel.id, fp);
+      const fpRoot = createRoot(fpContainer);
+      // Use flushSync to ensure the React root renders synchronously so
+      // fpRef.current is available immediately for DeckManager's imperative calls.
+      // This is a transitional measure removed in Step 7 when DeckCanvas replaces
+      // the imperative rendering path.
+      flushSync(() => {
+        fpRoot.render(
+          React.createElement(CardFrame, {
+            ref: fpRef,
+            panelState: panel,
+            meta: cardMeta ?? {
+              title: (panel.tabs.find((t) => t.id === panel.activeTabId) ?? panel.tabs[0])?.title ?? "Panel",
+              icon: "Box",
+              closable: true,
+              menuItems: [],
+            },
+            isKey: false,
+            zIndex: 100 + i,
+            canvasEl: this.container,
+            callbacks: panelCallbacks,
+          })
+        );
+      });
+
+      this.cardFrames.set(panel.id, fpRef);
+      this.cardFrameRoots.set(panel.id, fpRoot);
+      this.cardFrameContainers.set(panel.id, fpContainer);
+
+      const fp = fpRef;
 
       // Mount cards via D09 reparenting
       for (const tab of panel.tabs) {
@@ -668,7 +714,7 @@ export class DeckManager implements IDragState {
         mountEl.style.display = isActive ? "" : "none";
 
         // Reparent into floating panel card area (D09)
-        fp.getCardAreaElement().appendChild(mountEl);
+        fp.current!.getCardAreaElement().appendChild(mountEl);
 
         // Mount the card if registered; auto-create from factory if
         // the tab was restored from persisted layout with no card instance.
@@ -693,7 +739,7 @@ export class DeckManager implements IDragState {
         // Called for ALL tabs (not just active) so every adapter has the
         // CardFrame reference; only the active tab pushes meta to the header.
         if (card) {
-          card.setCardFrame?.(fp);
+          card.setCardFrame?.(fp.current ?? null);
           card.setActiveTab?.(isActive);
         }
       }
@@ -713,9 +759,9 @@ export class DeckManager implements IDragState {
           },
         });
         // Insert tab bar before card area
-        fp.getCardAreaElement().parentElement?.insertBefore(
+        fp.current!.getCardAreaElement().parentElement?.insertBefore(
           tabBar.getElement(),
-          fp.getCardAreaElement()
+          fp.current!.getCardAreaElement()
         );
         this.tabBars.set(panel.id, tabBar);
       } else if (panel.tabs.length === 1 && activeTab) {
@@ -737,7 +783,7 @@ export class DeckManager implements IDragState {
       }
     }
     for (const [id, fp] of this.cardFrames) {
-      fp.setKey(id === this.keyPanelId);
+      fp.current!.setKey(id === this.keyPanelId);
     }
 
     // Always recompute sets after render so this.sets is never stale.
@@ -797,7 +843,7 @@ export class DeckManager implements IDragState {
     for (const [id, fp] of this.cardFrames) {
       const newIdx = this.deckState.cards.findIndex((p) => p.id === id);
       if (newIdx !== -1) {
-        fp.setZIndex(100 + newIdx);
+        fp.current!.setZIndex(100 + newIdx);
       }
     }
 
@@ -807,12 +853,12 @@ export class DeckManager implements IDragState {
     if (this.acceptsKey(panelId)) {
       const prevKeyFp = this.keyPanelId ? this.cardFrames.get(this.keyPanelId) : null;
       if (prevKeyFp && this.keyPanelId !== panelId) {
-        prevKeyFp.setKey(false);
+        prevKeyFp.current!.setKey(false);
       }
       this.keyPanelId = panelId;
       const newKeyFp = this.cardFrames.get(panelId);
       if (newKeyFp) {
-        newKeyFp.setKey(true);
+        newKeyFp.current!.setKey(true);
       }
     }
 
@@ -1266,7 +1312,7 @@ export class DeckManager implements IDragState {
         if (panelB.position.y !== target) {
           panelB.position.y = target;
           const fp = this.cardFrames.get(edge.cardBId);
-          if (fp) fp.updatePosition(panelB.position.x, panelB.position.y);
+          if (fp) fp.current!.updatePosition(panelB.position.x, panelB.position.y);
         }
       } else {
         // A is left of B: set B.left = A.right
@@ -1274,7 +1320,7 @@ export class DeckManager implements IDragState {
         if (panelB.position.x !== target) {
           panelB.position.x = target;
           const fp = this.cardFrames.get(edge.cardBId);
-          if (fp) fp.updatePosition(panelB.position.x, panelB.position.y);
+          if (fp) fp.current!.updatePosition(panelB.position.x, panelB.position.y);
         }
       }
     }
@@ -1290,9 +1336,6 @@ export class DeckManager implements IDragState {
    * Corner radius is tracked per-card as a 4-element array [TL, TR, BR, BL].
    */
   private updateDockedStyles(): void {
-    const RADIUS = "6px";
-    const HEADER_RADIUS = "5px";
-
     // Track which corners should be squared per card: [TL, TR, BR, BL]
     // true = keep radius, false = zero
     const corners = new Map<string, [boolean, boolean, boolean, boolean]>();
@@ -1327,38 +1370,18 @@ export class DeckManager implements IDragState {
       }
     }
 
-    // Apply styles to card frame elements
+    // Apply styles via the CardFrame imperative handle
     for (const card of this.deckState.cards) {
       const fp = this.cardFrames.get(card.id);
       if (!fp) continue;
 
-      const el = fp.getElement();
       const c = corners.get(card.id)!;
       const o = offsets.get(card.id)!;
 
-      // Build border-radius string: TL TR BR BL
-      const r = (v: boolean) => v ? RADIUS : "0";
-      const hr = (v: boolean) => v ? HEADER_RADIUS : "0";
-      el.style.borderRadius = `${r(c[0])} ${r(c[1])} ${r(c[2])} ${r(c[3])}`;
-
-      // Apply to child elements
-      const header = el.querySelector(".card-header") as HTMLElement | null;
-      if (header) {
-        header.style.borderRadius = `${hr(c[0])} ${hr(c[1])} 0 0`;
-      }
-      const content = el.querySelector(".card-frame-content") as HTMLElement | null;
-      if (content) {
-        content.style.borderRadius = `0 0 ${hr(c[2])} ${hr(c[3])}`;
-      }
-
-      // Apply 1px overlap by nudging the DOM element position directly.
-      // The logical cardState position stays unchanged for edge detection.
       if (o.dx !== 0 || o.dy !== 0) {
-        const card = this.deckState.cards.find((c) => c.id === fp.getCardState().id);
-        if (card) {
-          el.style.top = `${card.position.y + o.dy}px`;
-          el.style.left = `${card.position.x + o.dx}px`;
-        }
+        fp.current!.setDockedStyle(c, o);
+      } else {
+        fp.current!.setDockedStyle(c, { dx: 0, dy: 0 });
       }
     }
   }
@@ -1367,18 +1390,7 @@ export class DeckManager implements IDragState {
   private resetDockedStyles(panelId: string): void {
     const fp = this.cardFrames.get(panelId);
     if (!fp) return;
-    const el = fp.getElement();
-    el.style.borderRadius = "6px";
-    // Restore DOM position to logical position
-    const card = this.deckState.cards.find((c) => c.id === panelId);
-    if (card) {
-      el.style.top = `${card.position.y}px`;
-      el.style.left = `${card.position.x}px`;
-    }
-    const header = el.querySelector(".card-header") as HTMLElement | null;
-    if (header) header.style.borderRadius = "5px 5px 0 0";
-    const content = el.querySelector(".card-frame-content") as HTMLElement | null;
-    if (content) content.style.borderRadius = "0 0 5px 5px";
+    fp.current!.resetDockedStyle();
   }
 
   /** Create the pool of 4 guide line elements appended to the canvas container. */
@@ -1578,7 +1590,7 @@ export class DeckManager implements IDragState {
     // Update z-indices
     for (const [id, fp] of this.cardFrames) {
       const idx = this.deckState.cards.findIndex((p) => p.id === id);
-      if (idx >= 0) fp.setZIndex(100 + idx);
+      if (idx >= 0) fp.current!.setZIndex(100 + idx);
     }
   }
 
@@ -1653,7 +1665,7 @@ export class DeckManager implements IDragState {
       if (leftInternal) el.style.borderLeft = "none";
       if (rightInternal) el.style.borderRight = "none";
 
-      fp.getElement().appendChild(el);
+      fp.current!.getElement().appendChild(el);
       el.addEventListener("animationend", () => el.remove());
     }
   }
@@ -1746,7 +1758,7 @@ export class DeckManager implements IDragState {
 
       type PanelSnap = {
         panel: CardState;
-        fp: CardFrame;
+        fp: React.RefObject<CardFrameHandle>;
         startX: number; startY: number;
         startW: number; startH: number;
       };
@@ -1794,11 +1806,11 @@ export class DeckManager implements IDragState {
           }
 
           for (const s of aPanels) {
-            s.fp.updateSize(s.startW + dx, s.startH);
+            s.fp.current!.updateSize(s.startW + dx, s.startH);
           }
           for (const s of bPanels) {
-            s.fp.updatePosition(s.startX + dx, s.startY);
-            s.fp.updateSize(s.startW - dx, s.startH);
+            s.fp.current!.updatePosition(s.startX + dx, s.startY);
+            s.fp.current!.updateSize(s.startW - dx, s.startH);
           }
         } else {
           let dy = e.clientY - startClientY;
@@ -1812,11 +1824,11 @@ export class DeckManager implements IDragState {
           }
 
           for (const s of aPanels) {
-            s.fp.updateSize(s.startW, s.startH + dy);
+            s.fp.current!.updateSize(s.startW, s.startH + dy);
           }
           for (const s of bPanels) {
-            s.fp.updatePosition(s.startX, s.startY + dy);
-            s.fp.updateSize(s.startW, s.startH - dy);
+            s.fp.current!.updatePosition(s.startX, s.startY + dy);
+            s.fp.current!.updateSize(s.startW, s.startH - dy);
           }
         }
 
@@ -1968,9 +1980,14 @@ export class DeckManager implements IDragState {
       tb.destroy();
     }
     this.tabBars.clear();
-    for (const fp of this.cardFrames.values()) {
-      fp.destroy();
+    for (const root of this.cardFrameRoots.values()) {
+      root.unmount();
     }
+    this.cardFrameRoots.clear();
+    for (const container of this.cardFrameContainers.values()) {
+      container.remove();
+    }
+    this.cardFrameContainers.clear();
     this.cardFrames.clear();
     for (const card of this.cardRegistry.values()) {
       card.destroy();

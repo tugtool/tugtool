@@ -27,7 +27,7 @@ import { useFeed } from "../hooks/use-feed";
 import { FeedId } from "../protocol";
 import type { TugCardMeta, CardMenuItem } from "./card";
 import type { TugConnection } from "../connection";
-import type { CardFrame } from "../card-frame";
+import type { CardFrameHandle } from "../components/chrome/card-frame";
 
 // ---- Minimal DOM setup for tests that don't use RTL ----
 
@@ -56,7 +56,7 @@ function makeCardFrameMock() {
       calls.push(meta);
     },
     _calls: calls,
-  } as unknown as CardFrame & { _calls: TugCardMeta[] };
+  } as unknown as CardFrameHandle & { _calls: TugCardMeta[] };
   return mock;
 }
 
