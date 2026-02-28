@@ -35,6 +35,11 @@ function readCurrentTheme(): ThemeName {
   return DEFAULT_THEME;
 }
 
+/** Post the current theme name to the Swift bridge so UserDefaults stays in sync. */
+function postThemeToBridge(themeName: ThemeName): void {
+  (window as any).webkit?.messageHandlers?.setTheme?.postMessage({ theme: themeName });
+}
+
 export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
   const [theme, setThemeState] = useState<ThemeName>(readCurrentTheme);
 
@@ -48,6 +53,13 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
     return () => {
       document.removeEventListener("td-theme-change", handleThemeChange);
     };
+  }, []);
+
+  // Post initial theme to the bridge on first render so UserDefaults is updated
+  // even if the user never changes themes (covers the case where localStorage has
+  // a theme but UserDefaults does not, e.g. after first upgrade).
+  useEffect(() => {
+    postThemeToBridge(readCurrentTheme());
   }, []);
 
   const setTheme = (newTheme: ThemeName) => {
@@ -68,6 +80,8 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
     } catch {
       // localStorage may be unavailable in some contexts
     }
+    // Sync theme to Swift bridge so the window background and UserDefaults update.
+    postThemeToBridge(newTheme);
     // Dispatch event on document so dock.ts, terminal-card, and other
     // vanilla TS listeners (which all use document) stay in sync.
     document.dispatchEvent(new CustomEvent("td-theme-change", { detail: { theme: newTheme } }));

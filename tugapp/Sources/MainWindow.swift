@@ -8,6 +8,8 @@ protocol BridgeDelegate: AnyObject {
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
     func bridgeDevModeError(message: String)
+    func bridgeSetTheme(theme: String)
+    func bridgeDevBadge(backend: Bool, app: Bool)
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
@@ -29,6 +31,8 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         contentController.add(self, name: "setDevMode")
         contentController.add(self, name: "getSettings")
         contentController.add(self, name: "frontendReady")
+        contentController.add(self, name: "setTheme")
+        contentController.add(self, name: "devBadge")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -56,9 +60,10 @@ class MainWindow: NSWindow, WKNavigationDelegate {
 
         self.contentView = webView
 
-        // Match the window background to the app's dark theme so there is no color mismatch
+        // Set theme-aware window background so there is no color mismatch
         // while the webView is hidden during startup.
-        self.backgroundColor = NSColor(red: 0.09, green: 0.09, blue: 0.09, alpha: 1.0)
+        let savedTheme = UserDefaults.standard.string(forKey: TugConfig.keyTheme) ?? "brio"
+        updateBackgroundForTheme(savedTheme)
     }
 
     /// Load URL in webview
@@ -80,6 +85,25 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         inspector.perform(NSSelectorFromString("show"))
     }
 
+    /// Update the window background color to match the given theme name.
+    ///
+    /// Maps theme names to their `--td-canvas` background colors per Table T01:
+    /// - brio:     #1c1e22  (default)
+    /// - bluenote: #2a3136
+    /// - harmony:  #b0ab9f  (uses --td-canvas, not --tl-bg)
+    /// Unknown values fall back to Brio's color.
+    func updateBackgroundForTheme(_ theme: String) {
+        switch theme {
+        case "bluenote":
+            self.backgroundColor = NSColor(sRGBRed: 0.165, green: 0.192, blue: 0.212, alpha: 1.0)
+        case "harmony":
+            self.backgroundColor = NSColor(sRGBRed: 0.69, green: 0.67, blue: 0.624, alpha: 1.0)
+        default:
+            // brio (default) or unknown
+            self.backgroundColor = NSColor(sRGBRed: 0.11, green: 0.118, blue: 0.133, alpha: 1.0)
+        }
+    }
+
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
@@ -87,6 +111,8 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         contentController.removeScriptMessageHandler(forName: "setDevMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
         contentController.removeScriptMessageHandler(forName: "frontendReady")
+        contentController.removeScriptMessageHandler(forName: "setTheme")
+        contentController.removeScriptMessageHandler(forName: "devBadge")
         bridgeCleaned = true
     }
 
@@ -185,6 +211,15 @@ extension MainWindow: WKScriptMessageHandler {
             }
         case "frontendReady":
             bridgeDelegate?.bridgeFrontendReady()
+        case "setTheme":
+            guard let body = message.body as? [String: Any],
+                  let theme = body["theme"] as? String else { return }
+            bridgeDelegate?.bridgeSetTheme(theme: theme)
+        case "devBadge":
+            guard let body = message.body as? [String: Any] else { return }
+            let backend = body["backend"] as? Bool ?? false
+            let app = body["app"] as? Bool ?? false
+            bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }

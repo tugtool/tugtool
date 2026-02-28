@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-28T15:45:10Z
+---
+
+## step-4: Added TugTheme UserDefaults key, updateBackgroundForTheme method mapping themes to NSColor sRGB values, setTheme bridge handler, and use-theme.ts bridge sync for native window background
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
 step: step-3
 date: 2025-02-28T15:37:56Z
 ---

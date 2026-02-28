@@ -13,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sourceTreeMenuItem: NSMenuItem?
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
+    private var restartMenuItem: NSMenuItem?
+    private var relaunchMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check tmux availability
@@ -217,7 +219,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let devMenu = NSMenu(title: "Developer")
         developerMenu.submenu = devMenu
         devMenu.addItem(NSMenuItem(title: "Reload Frontend", action: #selector(reloadFrontend(_:)), keyEquivalent: "r"))
-        devMenu.addItem(NSMenuItem(title: "Restart Server", action: #selector(restartServer(_:)), keyEquivalent: "r", modifierMask: [.command, .shift]))
+        let restartItem = NSMenuItem(title: "Restart Server", action: #selector(restartServer(_:)), keyEquivalent: "r", modifierMask: [.command, .shift])
+        devMenu.addItem(restartItem)
+        restartMenuItem = restartItem
+        let relaunchItem = NSMenuItem(title: "Relaunch App", action: #selector(relaunchApp(_:)), keyEquivalent: "r", modifierMask: [.command, .option, .shift])
+        devMenu.addItem(relaunchItem)
+        relaunchMenuItem = relaunchItem
         devMenu.addItem(NSMenuItem(title: "Reset Everything", action: #selector(resetEverything(_:)), keyEquivalent: "r", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Open Web Inspector", action: #selector(openWebInspector(_:)), keyEquivalent: ""))
@@ -286,6 +293,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func restartServer(_ sender: Any) {
         sendControl("restart")
+    }
+
+    @objc private func relaunchApp(_ sender: Any) {
+        sendControl("relaunch")
     }
 
     @objc private func resetEverything(_ sender: Any) {
@@ -396,6 +407,37 @@ extension AppDelegate: BridgeDelegate {
 
     func bridgeDevModeError(message: String) {
         window.bridgeDevModeError(message: message)
+    }
+
+    func bridgeSetTheme(theme: String) {
+        UserDefaults.standard.set(theme, forKey: TugConfig.keyTheme)
+        window.updateBackgroundForTheme(theme)
+    }
+
+    func bridgeDevBadge(backend: Bool, app: Bool) {
+        let diamond = "◆ "
+        if let item = restartMenuItem {
+            if backend {
+                if !item.title.hasPrefix(diamond) {
+                    item.title = diamond + item.title
+                }
+            } else {
+                if item.title.hasPrefix(diamond) {
+                    item.title = String(item.title.dropFirst(diamond.count))
+                }
+            }
+        }
+        if let item = relaunchMenuItem {
+            if app {
+                if !item.title.hasPrefix(diamond) {
+                    item.title = diamond + item.title
+                }
+            } else {
+                if item.title.hasPrefix(diamond) {
+                    item.title = String(item.title.dropFirst(diamond.count))
+                }
+            }
+        }
     }
 }
 
