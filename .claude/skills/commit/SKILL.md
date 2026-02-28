@@ -1,8 +1,6 @@
 ---
 name: commit
-description: |
-  Analyze recent work, stage relevant files, and create a git commit with a
-  clear, informative commit message.
+description: Analyze recent work, stage relevant files, and create a git commit with a clear, informative commit message.
 disable-model-invocation: true
 ---
 
