@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-12
+date: 2025-02-28T19:02:47Z
+---
+
+## step-12: Replaced progress message with 'Reviewer approved. Committing step.', simplified recovery loop to immediate escalation, updated tugrelaunch comment labels from Substep to Section
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-11
 date: 2025-02-28T18:57:28Z
 ---

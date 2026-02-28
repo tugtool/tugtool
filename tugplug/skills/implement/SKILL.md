@@ -185,15 +185,14 @@ For `state_update_failed` (recovery attempted, then escalation if unresolvable):
 **tugplug:committer-agent**(FAILED: state update failed)
   Commit: {commit_hash} succeeded
   State: complete FAILED — reason: {state_failure_reason}
-  Recovery: attempting automatic reconciliation (max 3 attempts for open_items; immediate escalation for drift/ownership/db_error)
+  Recovery: escalating immediately (all failure reasons escalate; no retry loop)
 ```
 
-For `state_update_failed` after exhausting recovery (escalation):
+For `state_update_failed` (escalation):
 ```
-**tugplug:committer-agent**(FAILED: state reconciliation exhausted)
+**tugplug:committer-agent**(FAILED: state update failed — escalating)
   Commit: {commit_hash} succeeded
-  State: could not reconcile after 3 attempts
-  Open items: {list}
+  State: update failed — reason: {state_failure_reason}
   Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
 ```
 
@@ -565,13 +564,11 @@ Bash: tugcode state artifact {plan_path} {step_anchor} --kind reviewer_verdict -
 
 **After APPROVE — progress message and simplified batch update:**
 
-**Step 1: Emit a progress message** (informational only — `checklist_status` is non-authoritative progress telemetry and is never used for state updates):
+**Step 1: Emit a progress message:**
 
 ```
-Coder reported: {tasks_completed}/{tasks_total} tasks completed, {tests_completed}/{tests_total} tests completed
+Reviewer approved. Committing step.
 ```
-
-Compute these counts from `checklist_status.tasks` and `checklist_status.tests` (count entries with `status == "completed"` vs total entries). This message is for human monitoring only.
 
 **Step 2: Collect deferred checkpoint items** from the reviewer's `plan_conformance.checkpoints[]`:
 
@@ -709,57 +706,17 @@ Read `state_failure_reason` from the committer JSON output. Switch on its value:
   ```
   HALT after escalation.
 
-- `"open_items"` or null/missing (defensive fallback): Enter retry loop below.
+- `"open_items"` (defensive fallback — this reason is unreachable after `StateIncompleteSubsteps` removal, but kept as an explicit escalation case):
+  ```
+  AskUserQuestion: "State update failed: open checklist items remain for step {step_anchor}. The git commit succeeded. Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
+  ```
+  HALT after escalation.
 
-**Retry loop** (`recovery_attempts = 0`, `max_recovery_attempts = 3`):
-
-While `recovery_attempts < max_recovery_attempts`:
-
-  1. Increment `recovery_attempts`.
-
-  2. Query open items:
-     ```
-     Bash: tugcode state show {plan_path} --json
-     ```
-     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` (bare anchor without `#`, e.g., `"step-1"`) AND `status == "open"`. Collect as `open_items`.
-
-  3. If `open_items` is empty:
-     - State is already consistent (another process may have reconciled it).
-     - Break loop and continue to next step (no `state complete` call needed — commit already called it).
-
-  4. If `open_items` is non-empty AND reviewer verdict was APPROVE with no non-PASS checkpoints:
-     ```
-     Bash: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
-     ```
-     If this succeeds: proceed to post-recovery verification (step 6).
-     If this fails: continue loop (retry).
-
-  5. If `open_items` is non-empty AND reviewer had non-PASS checkpoint items:
-     Construct deferred-only batch from reviewer's non-PASS checkpoint verdicts (same format as section 3e step 2).
-     ```
-     Bash: echo '<deferred_batch_json>' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining
-     ```
-     If this succeeds: proceed to post-recovery verification (step 6).
-     If this fails: continue loop (retry).
-
-  6. Post-recovery verification:
-     ```
-     Bash: tugcode state show {plan_path} --json
-     ```
-     Parse JSON. Filter `data.plan.checklist_items` client-side where `step_anchor == {step_anchor}` AND `status == "open"`.
-     - If zero open items remain:
-       ```
-       Bash: tugcode state complete {plan_path} {step_anchor} --worktree {worktree_path}
-       ```
-       If `state complete` succeeds: break loop and continue.
-       If `state complete` fails: continue loop (retry).
-     - If open items remain: continue loop (retry).
-
-If `recovery_attempts >= max_recovery_attempts`:
-```
-AskUserQuestion: "State reconciliation failed after 3 attempts for step {step_anchor}. The git commit succeeded. Open items: {open_items list}. Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
-```
-HALT after escalation.
+- null/missing reason (catch-all for any unrecognized failure):
+  ```
+  AskUserQuestion: "State update failed for step {step_anchor} (unknown reason). The git commit succeeded. Manual recovery: echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining"
+  ```
+  HALT after escalation.
 
 Output the Committer post-call message.
 
@@ -1048,16 +1005,15 @@ When `state_update_failed == true` in the commit JSON, the `state_failure_reason
 
 | Value | Meaning | Recovery action |
 |-------|---------|-----------------|
-| `"open_items"` | Checklist items still open | Retry loop (max 3 attempts) |
+| `"open_items"` | Checklist items still open (unreachable after substep removal) | Escalate immediately |
 | `"drift"` | Plan file changed since state init | Escalate immediately |
 | `"ownership"` | Step ownership mismatch | Escalate immediately |
 | `"db_error"` | Database or infrastructure error | Escalate immediately |
-| null/missing | Unclassified (defensive fallback) | Enter retry loop |
+| null/missing | Unclassified (defensive fallback) | Escalate immediately |
 
 **Error handling:**
-- All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately (except within the recovery loop where failure triggers retry)
-- If `state_update_failed == true`: read `state_failure_reason` and follow the recovery loop in section 3f
-- The recovery loop uses `--complete-remaining` as the primary mechanism; it does NOT use `state reconcile` (which erases deferred state) or `state complete --force` (which overwrites deferred items)
+- All `tugcode state` command failures (non-zero exit) are **fatal** — halt immediately
+- If `state_update_failed == true`: read `state_failure_reason` and follow the escalation handler in section 3f (all reasons escalate immediately — no retry loop)
 - Manual recovery (escalation path only): `echo '[]' | tugcode state update {plan_path} {step_anchor} --worktree {worktree_path} --batch --complete-remaining`
 - The orchestrator never calls `tugcode state reconcile` automatically — it is a manual recovery tool only
 
