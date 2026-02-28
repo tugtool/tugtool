@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-02-28T18:31:24Z
+---
+
+## step-6: Verification-only step: confirmed all substep artifacts removed from error.rs, output.rs, CLI commands, main.rs, and golden fixtures
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-5
 date: 2025-02-28T18:27:42Z
 ---
