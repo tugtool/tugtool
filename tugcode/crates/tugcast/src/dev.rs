@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use tugcast_core::{FeedId, Frame};
 
 /// Dev mode state: source tree path for the dev session
@@ -271,8 +271,19 @@ pub(crate) fn send_dev_notification(
     });
     let payload = serde_json::to_vec(&json).unwrap_or_default();
 
+    debug!(
+        "dev: send_dev_notification type={} count={} timestamp={}",
+        notification_type, count, timestamp
+    );
+
     let frame = Frame::new(FeedId::Control, payload);
-    let _ = client_action_tx.send(frame);
+    match client_action_tx.send(frame) {
+        Ok(receivers) => debug!(
+            "dev: send_dev_notification sent to {} receiver(s)",
+            receivers
+        ),
+        Err(_) => debug!("dev: send_dev_notification had no receivers"),
+    }
 }
 
 /// Read mtime for a file path. Returns None if file does not exist or is unreadable.
@@ -422,6 +433,10 @@ pub(crate) fn dev_compiled_watcher(
             // Check backend path
             if let Some(new_mtime) = check_and_stabilize(&backend_path, &backend_mtime).await {
                 backend_mtime = Some(new_mtime);
+                debug!(
+                    "dev: compiled watcher mtime changed for {}",
+                    backend_path.display()
+                );
                 tracker.lock().unwrap().mark_backend();
                 send_dev_notification("restart_available", &tracker, &client_action_tx);
                 info!("dev: compiled watcher detected backend change");

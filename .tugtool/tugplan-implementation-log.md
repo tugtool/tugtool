@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-02-28T02:32:56Z
+---
+
+## step-4: Added tracing::debug! logging in dev_compiled_watcher() after mtime change detection and in send_dev_notification() before/after broadcast send. Replaced silent let _ = send() with match that logs receiver count.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-3
 date: 2025-02-28T02:25:12Z
 ---
