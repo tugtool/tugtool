@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-02-28T18:52:41Z
+---
+
+## step-10: Phase 3 Integration Checkpoint: all 3 checkpoints pass — tests (750), fmt clean, substep type fully removed from types/parser/lib/validator
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-9
 date: 2025-02-28T18:49:59Z
 ---
