@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-28T02:09:04Z
+---
+
+## step-1: Renamed file categorization from Styles/Code to Frontend/Backend in developer card. Updated categorizeFile() return values, all state variables, UI labels, and restructured tests.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-4
 date: 2025-02-27T22:14:41Z
 ---
