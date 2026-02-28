@@ -409,9 +409,9 @@ extension AppDelegate: BridgeDelegate {
         window.bridgeDevModeError(message: message)
     }
 
-    func bridgeSetTheme(theme: String) {
-        UserDefaults.standard.set(theme, forKey: TugConfig.keyTheme)
-        window.updateBackgroundForTheme(theme)
+    func bridgeSetTheme(color: String) {
+        UserDefaults.standard.set(color, forKey: TugConfig.keyWindowBackground)
+        window.updateBackgroundColor(color)
     }
 
     func bridgeDevBadge(backend: Bool, app: Bool) {

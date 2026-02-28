@@ -35,9 +35,28 @@ function readCurrentTheme(): ThemeName {
   return DEFAULT_THEME;
 }
 
-/** Post the current theme name to the Swift bridge so UserDefaults stays in sync. */
-function postThemeToBridge(themeName: ThemeName): void {
-  (window as any).webkit?.messageHandlers?.setTheme?.postMessage({ theme: themeName });
+/** Convert a CSS color value (hex or rgb()) to a 6-digit hex string. */
+function normalizeToHex(css: string): string | null {
+  const trimmed = css.trim();
+  // Already hex
+  if (trimmed.startsWith("#")) {
+    return trimmed.length === 7 ? trimmed : null;
+  }
+  // rgb(r, g, b)
+  const match = trimmed.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+  if (!match) return null;
+  const [, r, g, b] = match;
+  const hex = (c: string) => Number(c).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+/** Read the resolved body background-color and post the hex string to the Swift bridge. */
+function sendCanvasColor(): void {
+  const raw = getComputedStyle(document.body).getPropertyValue("background-color");
+  const hex = normalizeToHex(raw);
+  if (hex) {
+    (window as any).webkit?.messageHandlers?.setTheme?.postMessage({ color: hex });
+  }
 }
 
 export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
@@ -48,6 +67,9 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
   useEffect(() => {
     const handleThemeChange = () => {
       setThemeState(readCurrentTheme());
+      // Theme may have been changed by vanilla TS code (dock.ts) which doesn't
+      // call sendCanvasColor itself, so always sync to the Swift bridge here.
+      requestAnimationFrame(sendCanvasColor);
     };
     document.addEventListener("td-theme-change", handleThemeChange);
     return () => {
@@ -55,11 +77,11 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
     };
   }, []);
 
-  // Post initial theme to the bridge on first render so UserDefaults is updated
-  // even if the user never changes themes (covers the case where localStorage has
-  // a theme but UserDefaults does not, e.g. after first upgrade).
+  // Post initial canvas color to the bridge on first render so UserDefaults is
+  // updated even if the user never changes themes. Use rAF so styles are fully
+  // resolved after page load.
   useEffect(() => {
-    postThemeToBridge(readCurrentTheme());
+    requestAnimationFrame(sendCanvasColor);
   }, []);
 
   const setTheme = (newTheme: ThemeName) => {
@@ -80,8 +102,10 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
     } catch {
       // localStorage may be unavailable in some contexts
     }
-    // Sync theme to Swift bridge so the window background and UserDefaults update.
-    postThemeToBridge(newTheme);
+    // Sync canvas color to Swift bridge so the window background and UserDefaults update.
+    // Called synchronously — the body class change above is already applied, and
+    // getComputedStyle forces style recalculation, so the new color is available now.
+    sendCanvasColor();
     // Dispatch event on document so dock.ts, terminal-card, and other
     // vanilla TS listeners (which all use document) stay in sync.
     document.dispatchEvent(new CustomEvent("td-theme-change", { detail: { theme: newTheme } }));

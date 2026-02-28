@@ -8,7 +8,7 @@ protocol BridgeDelegate: AnyObject {
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
     func bridgeDevModeError(message: String)
-    func bridgeSetTheme(theme: String)
+    func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
 }
 
@@ -60,10 +60,10 @@ class MainWindow: NSWindow, WKNavigationDelegate {
 
         self.contentView = webView
 
-        // Set theme-aware window background so there is no color mismatch
-        // while the webView is hidden during startup.
-        let savedTheme = UserDefaults.standard.string(forKey: TugConfig.keyTheme) ?? "brio"
-        updateBackgroundForTheme(savedTheme)
+        // Set window background so there is no color mismatch while the
+        // webView is hidden during startup.
+        let savedHex = UserDefaults.standard.string(forKey: TugConfig.keyWindowBackground) ?? MainWindow.defaultBackgroundHex
+        updateBackgroundColor(savedHex)
     }
 
     /// Load URL in webview
@@ -85,23 +85,12 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         inspector.perform(NSSelectorFromString("show"))
     }
 
-    /// Update the window background color to match the given theme name.
-    ///
-    /// Maps theme names to their `--td-canvas` background colors per Table T01:
-    /// - brio:     #1c1e22  (default)
-    /// - bluenote: #2a3136
-    /// - harmony:  #b0ab9f  (uses --td-canvas, not --tl-bg)
-    /// Unknown values fall back to Brio's color.
-    func updateBackgroundForTheme(_ theme: String) {
-        switch theme {
-        case "bluenote":
-            self.backgroundColor = NSColor(sRGBRed: 0.165, green: 0.192, blue: 0.212, alpha: 1.0)
-        case "harmony":
-            self.backgroundColor = NSColor(sRGBRed: 0.69, green: 0.67, blue: 0.624, alpha: 1.0)
-        default:
-            // brio (default) or unknown
-            self.backgroundColor = NSColor(sRGBRed: 0.11, green: 0.118, blue: 0.133, alpha: 1.0)
-        }
+    /// Brio canvas color — used as fallback when no saved value exists.
+    static let defaultBackgroundHex = "#1c1e22"
+
+    /// Update the window background color from a CSS hex string (e.g. "#1c1e22").
+    func updateBackgroundColor(_ hex: String) {
+        self.backgroundColor = NSColor(hexString: hex) ?? NSColor(hexString: MainWindow.defaultBackgroundHex)!
     }
 
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
@@ -213,8 +202,8 @@ extension MainWindow: WKScriptMessageHandler {
             bridgeDelegate?.bridgeFrontendReady()
         case "setTheme":
             guard let body = message.body as? [String: Any],
-                  let theme = body["theme"] as? String else { return }
-            bridgeDelegate?.bridgeSetTheme(theme: theme)
+                  let color = body["color"] as? String else { return }
+            bridgeDelegate?.bridgeSetTheme(color: color)
         case "devBadge":
             guard let body = message.body as? [String: Any] else { return }
             let backend = body["backend"] as? Bool ?? false
@@ -223,5 +212,26 @@ extension MainWindow: WKScriptMessageHandler {
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
         }
+    }
+}
+
+// MARK: - NSColor hex parsing
+
+private extension NSColor {
+    /// Create an NSColor from a CSS hex string (e.g. "#1c1e22" or "1c1e22").
+    convenience init?(hexString hex: String) {
+        var cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("#") {
+            cleaned.removeFirst()
+        }
+        guard cleaned.count == 6 else { return nil }
+        var rgb: UInt64 = 0
+        guard Scanner(string: cleaned).scanHexInt64(&rgb) else { return nil }
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255.0,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
+            blue: CGFloat(rgb & 0xFF) / 255.0,
+            alpha: 1.0
+        )
     }
 }
