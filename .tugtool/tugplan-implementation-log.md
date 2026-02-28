@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-28T18:27:42Z
+---
+
+## step-5: Verification-only step: confirmed all parent-child logic removed from state.rs core functions, all 753 tests pass, parent_anchor only in migration/test-fixture code
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-4
 date: 2025-02-28T18:22:51Z
 ---
