@@ -23,7 +23,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { Root } from "react-dom/client";
-import { TabBar } from "./tab-bar";
+import { TabBar, type TabBarHandle, type TabBarCallbacks } from "./components/chrome/tab-bar";
 import { CardFrame, CARD_TITLE_BAR_HEIGHT, type CardFrameHandle, type CardFrameCallbacks } from "./components/chrome/card-frame";
 import { computeSnap, computeResizeSnap, computeEdgeVisibility, cardToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type CardSet, type SharedEdge, type EdgeValidator } from "./snap";
 
@@ -101,10 +101,20 @@ export class DeckManager implements IDragState {
   private resizeObservers: Map<string, ResizeObserver> = new Map();
 
   /**
-   * TabBar instances keyed by panel.id (for multi-tab panels).
+   * TabBar React refs keyed by panel.id (for multi-tab panels).
    * Destroyed and recreated on render.
    */
-  private tabBars: Map<string, TabBar> = new Map();
+  private tabBars: Map<string, React.RefObject<TabBarHandle>> = new Map();
+
+  /**
+   * React roots for TabBar components keyed by panel.id.
+   */
+  private tabBarRoots: Map<string, Root> = new Map();
+
+  /**
+   * Container elements for TabBar React roots keyed by panel.id.
+   */
+  private tabBarContainers: Map<string, HTMLElement> = new Map();
 
   /**
    * CardFrame React refs keyed by panel.id.
@@ -377,10 +387,15 @@ export class DeckManager implements IDragState {
       card.setCardFrame?.(null);
     }
 
-    // Destroy existing TabBar instances
-    for (const tb of this.tabBars.values()) {
-      tb.destroy();
+    // Unmount existing TabBar React roots
+    for (const root of this.tabBarRoots.values()) {
+      root.unmount();
     }
+    this.tabBarRoots.clear();
+    for (const container of this.tabBarContainers.values()) {
+      container.remove();
+    }
+    this.tabBarContainers.clear();
     this.tabBars.clear();
 
     // Unmount existing CardFrame React roots (removes from DOM)
@@ -747,7 +762,7 @@ export class DeckManager implements IDragState {
       // Create TabBar for multi-tab panels (D05/D07)
       if (panel.tabs.length > 1) {
         const tabNode = constructTabNode(panel);
-        const tabBar = new TabBar(tabNode, {
+        const tabBarCallbacks: TabBarCallbacks = {
           onTabActivate: (tabIndex: number) => {
             this.handleTabActivate(panel, tabIndex);
           },
@@ -757,13 +772,32 @@ export class DeckManager implements IDragState {
           onTabReorder: (fromIndex: number, toIndex: number) => {
             this.handleTabReorder(panel, fromIndex, toIndex);
           },
+        };
+
+        const tbRef = React.createRef<TabBarHandle>();
+        const tbContainer = document.createElement("div");
+        const tbRoot = createRoot(tbContainer);
+
+        flushSync(() => {
+          tbRoot.render(
+            React.createElement(TabBar, {
+              ref: tbRef,
+              tabs: tabNode.tabs,
+              activeTabIndex: tabNode.activeTabIndex,
+              callbacks: tabBarCallbacks,
+            })
+          );
         });
-        // Insert tab bar before card area
+
+        // Insert tab bar container before card area
         fp.current!.getCardAreaElement().parentElement?.insertBefore(
-          tabBar.getElement(),
+          tbContainer,
           fp.current!.getCardAreaElement()
         );
-        this.tabBars.set(panel.id, tabBar);
+
+        this.tabBars.set(panel.id, tbRef);
+        this.tabBarRoots.set(panel.id, tbRoot);
+        this.tabBarContainers.set(panel.id, tbContainer);
       } else if (panel.tabs.length === 1 && activeTab) {
         // Single-tab panel: CardHeader is rendered by CardFrame internally.
         // If we have a card with meta, update header retroactively via addCard path.
@@ -917,7 +951,7 @@ export class DeckManager implements IDragState {
     // Refresh tab bar visuals
     const tabBar = this.tabBars.get(panel.id);
     if (tabBar) {
-      tabBar.update(constructTabNode(panel));
+      tabBar.current!.update(constructTabNode(panel));
     }
 
     this.scheduleSave();
@@ -956,7 +990,7 @@ export class DeckManager implements IDragState {
     // Refresh tab bar visuals only (no full re-render needed)
     const tabBar = this.tabBars.get(panel.id);
     if (tabBar) {
-      tabBar.update(constructTabNode(panel));
+      tabBar.current!.update(constructTabNode(panel));
     }
 
     this.scheduleSave();
@@ -1976,9 +2010,14 @@ export class DeckManager implements IDragState {
       ro.disconnect();
     }
     this.resizeObservers.clear();
-    for (const tb of this.tabBars.values()) {
-      tb.destroy();
+    for (const root of this.tabBarRoots.values()) {
+      root.unmount();
     }
+    this.tabBarRoots.clear();
+    for (const container of this.tabBarContainers.values()) {
+      container.remove();
+    }
+    this.tabBarContainers.clear();
     this.tabBars.clear();
     for (const root of this.cardFrameRoots.values()) {
       root.unmount();
