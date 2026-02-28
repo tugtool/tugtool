@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-28T02:40:33Z
+---
+
+## step-5: Moved 7 completed roadmap documents to roadmap/archive/. Updated dev-mode-notifications.md with Frontend/Backend naming, Rust source watcher note, Vite dev server references, and DONE markers for completed What to Remove items.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-audit-fixes.md
+
+---
+
+---
 step: step-4
 date: 2025-02-28T02:32:56Z
 ---
