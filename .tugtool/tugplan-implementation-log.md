@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-02-28T18:47:39Z
+---
+
+## step-8: Deleted Substep struct, impl, field from types.rs; removed substep parsing from parser.rs; cleaned substep loops from validator.rs; updated state.rs test helper and integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-7
 date: 2025-02-28T18:35:27Z
 ---

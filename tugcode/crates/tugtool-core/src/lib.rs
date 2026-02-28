@@ -55,8 +55,8 @@ pub use state::{
     compute_plan_hash,
 };
 pub use types::{
-    Anchor, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step, Substep,
-    TugPlan, TugPlanMetadata, TugPlanStatus,
+    Anchor, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step, TugPlan,
+    TugPlanMetadata, TugPlanStatus,
 };
 pub use validator::{
     Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,

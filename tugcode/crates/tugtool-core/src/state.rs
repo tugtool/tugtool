@@ -1,7 +1,7 @@
 //! Embedded SQLite state management for Tugstate
 //!
 //! Provides `StateDb` for managing plan execution state via an embedded SQLite
-//! database. The database tracks steps, substeps, checklist items, dependencies,
+//! database. The database tracks steps, checklist items, dependencies,
 //! and artifacts for each initialized plan.
 
 use crate::error::TugError;
@@ -1044,7 +1044,7 @@ COMMIT;
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// Complete a step, optionally forcing completion despite incomplete items/substeps.
+    /// Complete a step, optionally forcing completion despite incomplete items.
     pub fn complete_step(
         &mut self,
         plan_path: &str,
@@ -2718,7 +2718,7 @@ mod tests {
         }
     }
 
-    // Helper to create a test plan with substeps
+    // Helper to create a test plan with three flat steps
     fn make_test_plan() -> TugPlan {
         use crate::types::*;
         TugPlan {
@@ -2726,7 +2726,7 @@ mod tests {
             steps: vec![
                 Step {
                     anchor: "step-1".to_string(),
-                    title: "Step Three".to_string(),
+                    title: "Step One".to_string(),
                     tasks: vec![Checkpoint {
                         checked: false,
                         text: "Task 1".to_string(),
@@ -2740,13 +2740,12 @@ mod tests {
                         line: 2,
                     }],
                     checkpoints: vec![],
-                    substeps: vec![],
                     depends_on: vec![],
                     ..Default::default()
                 },
                 Step {
                     anchor: "step-2".to_string(),
-                    title: "Step Three".to_string(),
+                    title: "Step Two".to_string(),
                     depends_on: vec!["step-1".to_string()],
                     tasks: vec![],
                     tests: vec![],
@@ -2756,44 +2755,6 @@ mod tests {
                         kind: CheckpointKind::Checkpoint,
                         line: 3,
                     }],
-                    substeps: vec![
-                        Substep {
-                            anchor: "step-2-1".to_string(),
-                            title: "Substep 1.1".to_string(),
-                            depends_on: vec![],
-                            tasks: vec![
-                                Checkpoint {
-                                    checked: false,
-                                    text: "Sub task 1".to_string(),
-                                    kind: CheckpointKind::Task,
-                                    line: 4,
-                                },
-                                Checkpoint {
-                                    checked: false,
-                                    text: "Sub task 2".to_string(),
-                                    kind: CheckpointKind::Task,
-                                    line: 5,
-                                },
-                            ],
-                            tests: vec![],
-                            checkpoints: vec![],
-                            ..Default::default()
-                        },
-                        Substep {
-                            anchor: "step-2-2".to_string(),
-                            title: "Substep 1.2".to_string(),
-                            depends_on: vec!["step-2-1".to_string()],
-                            tasks: vec![],
-                            tests: vec![Checkpoint {
-                                checked: false,
-                                text: "Sub test".to_string(),
-                                kind: CheckpointKind::Test,
-                                line: 6,
-                            }],
-                            checkpoints: vec![],
-                            ..Default::default()
-                        },
-                    ],
                     ..Default::default()
                 },
                 Step {
@@ -2803,7 +2764,6 @@ mod tests {
                     tasks: vec![],
                     tests: vec![],
                     checkpoints: vec![],
-                    substeps: vec![],
                     ..Default::default()
                 },
             ],
@@ -2872,8 +2832,7 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        // Substeps (step-2-1, step-2-2) in Step.substeps are not inserted into the DB;
-        // only top-level steps from plan.steps are inserted.
+        // Only top-level steps from plan.steps are inserted into the DB.
         assert_eq!(
             rows,
             vec![
