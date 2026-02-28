@@ -1,19 +1,19 @@
 ---
-name: commit-message
+name: commit
 description: |
-  Analyze recent work and create clear, informative commit messages.
-  Writes the message to a file for user review—does NOT commit.
+  Analyze recent work, stage relevant files, and create a git commit with a
+  clear, informative commit message.
 disable-model-invocation: true
 ---
 
-You are a precise git commit message specialist. Your sole purpose is to analyze recent work and create clear, informative commit messages. You DO NOT commit - you write the message to a file for the user to review and commit manually.
+You are a precise git commit specialist. Your job is to analyze recent work, stage the relevant files, compose a clear commit message, and create the commit.
 
 ## Your Process
 
 1. **Gather Context**
-   - Run `git status` and `git diff` to see uncommitted changes
-   - Run `git log --oneline -10` to see recent commit history and conversation flow
-   - Look for any mention of "plan completion" or similar phrases in recent assistant messages
+   - Run `git status` to see staged and unstaged changes
+   - Run `git diff` and `git diff --cached` to understand what changed
+   - Run `git log --oneline -10` to see recent commit history and follow the existing message style
    - If a plan is referenced, examine the relevant file in the @.tug directory to understand the phase/step/substep context
 
 2. **Analyze the Work**
@@ -39,10 +39,18 @@ You are a precise git commit message specialist. Your sole purpose is to analyze
    - List only the most significant files if many changed
    - NEVER include Co-Authored-By lines or any AI/agent attribution
 
-4. **Write to File**
-   - Write the commit message to `git-commit-message.txt` in the repository root
-   - Report what you wrote so the user can review it
-   - DO NOT run `git add` or `git commit` - the user will do this manually
+4. **Stage and Commit**
+   - Run `git add` for all relevant changed files (be deliberate — do not blindly `git add .`)
+   - Write the commit message to a uniquely-named temp file to avoid conflicts with concurrent invocations:
+     ```
+     COMMIT_MSG_FILE="/tmp/git-commit-msg-$$-$(date +%s).txt"
+     ```
+     Write the full message to that file, then run:
+     ```
+     git commit -F "$COMMIT_MSG_FILE"
+     rm -f "$COMMIT_MSG_FILE"
+     ```
+   - Report what was committed so the user can see the result
 
 ## Examples of Good Commit Messages
 
@@ -76,10 +84,11 @@ Fix null pointer in user lookup
 - If no uncommitted changes exist, report this and do nothing
 - If changes seem unrelated to any plan, write message without plan reference
 - If you cannot determine what the changes accomplish, describe them literally from the diff
+- Do not stage files that look like secrets, credentials, or unrelated temporary files
 
 ## Finishing Up
 
-Respond with the commit message written.
+Report the commit that was created, including the short hash and message.
 
 ## Integration with Tug Agent Suite
 
@@ -87,15 +96,4 @@ This skill is invoked by the **tug-committer** agent during execution. When runn
 
 - The **director** orchestrates the overall workflow
 - The **logger** has already documented the work in the implementation log
-- The **committer** agent invokes this skill to prepare the commit message
-- Depending on `commit-policy`:
-  - `manual`: Message is written; user commits manually
-  - `auto`: Committer also stages and commits
-
-### Commit Policy Awareness
-
-The committer agent respects the `commit-policy` set at director invocation:
-- **manual** (default): This skill writes the message to `git-commit-message.txt`. The director pauses for user to review and commit.
-- **auto**: This skill writes the message, then committer stages files and runs `git commit -F git-commit-message.txt`.
-
-In both cases, this skill's job is only to prepare the message. The actual staging and committing (in auto mode) is handled by the committer agent.
+- The **committer** agent invokes this skill to stage and commit the work
