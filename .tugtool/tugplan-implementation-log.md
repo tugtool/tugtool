@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-02-28T17:48:53Z
+---
+
+## step-2: Added explicit instructions to author-agent prohibiting substep generation and requiring integration checkpoint steps for related step groups
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-1
 date: 2025-02-28T17:45:59Z
 ---

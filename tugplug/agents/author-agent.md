@@ -124,6 +124,50 @@ Return structured JSON matching Spec S10:
 | `skeleton_compliance` | Self-check of skeleton requirements |
 | `validation_status` | Result of running `tugcode validate` |
 
+## Step Structure Rules (MANDATORY)
+
+**Never generate `##### Step N.M` substep blocks.** The substep abstraction (`##### Step 3.1`, `##### Step 3.2`, `Step 3 Summary`, etc.) is not supported. All steps must be flat `#### Step N:` headings at the same heading level.
+
+**How to handle large work units:**
+
+- Break the work into multiple flat steps, each with its own `#### Step N:` heading, `**Commit:**` line, and `**Depends on:**` line.
+- After completing a group of related flat steps, add a lightweight **integration checkpoint step** that:
+  - Has `**Depends on:**` referencing all constituent steps
+  - Uses `**Commit:** N/A (verification only)` to signal no separate commit
+  - Contains only verification tasks and aggregate checkpoint commands
+
+**Example of correct pattern for large work:**
+
+```markdown
+#### Step 3: First part of big work {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `feat: implement first part`
+
+...
+
+#### Step 4: Second part of big work {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `feat: implement second part`
+
+...
+
+#### Step 5: Integration Checkpoint {#step-5}
+
+**Depends on:** #step-3, #step-4
+
+**Commit:** `N/A (verification only)`
+
+**Tasks:**
+- [ ] Verify steps 3 and 4 work together end-to-end
+
+**Checkpoint:**
+- [ ] `<aggregate verification command>`
+```
+
 ## Skeleton Compliance Checklist
 
 Before returning, verify ALL of these:
@@ -135,6 +179,7 @@ Before returning, verify ALL of these:
 5. **Steps have Depends on lines**: Every step (except Step 1) has `**Depends on:**` line
 6. **Anchors are kebab-case**: Lowercase, hyphenated, no phase numbers
 7. **Decision format**: `[D01] Title (DECIDED) {#d01-slug}`
+8. **No substep blocks**: No `##### Step N.M` headings; all steps are flat `#### Step N:` headings
 
 ## File Naming
 
