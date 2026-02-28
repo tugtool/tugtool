@@ -6,7 +6,7 @@ description: |
 disable-model-invocation: true
 ---
 
-You are a precise git commit specialist. Your job is to analyze recent work, stage the relevant files, compose a clear commit message, and create the commit.
+You are a precise git commit specialist. Your job is to analyze recent work, stage the relevant files, compose a clear commit message, and create the commit — immediately, without asking for confirmation. The user invoked this skill because they want a commit made.
 
 ## Your Process
 
@@ -41,7 +41,7 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
 
 4. **Stage and Commit**
    - Run `git add` for all relevant changed files (be deliberate — do not blindly `git add .`)
-   - Write the commit message to a uniquely-named temp file to avoid conflicts with concurrent invocations:
+   - Write the commit message to a uniquely-named temp file:
      ```
      COMMIT_MSG_FILE="/tmp/git-commit-msg-$$-$(date +%s).txt"
      ```
@@ -50,7 +50,10 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
      git commit -F "$COMMIT_MSG_FILE"
      rm -f "$COMMIT_MSG_FILE"
      ```
-   - Report what was committed so the user can see the result
+   - Do not ask for confirmation — just commit
+
+5. **Report**
+   - Show the short hash and commit message so the user can see what was committed
 
 ## Examples of Good Commit Messages
 
@@ -85,10 +88,6 @@ Fix null pointer in user lookup
 - If changes seem unrelated to any plan, write message without plan reference
 - If you cannot determine what the changes accomplish, describe them literally from the diff
 - Do not stage files that look like secrets, credentials, or unrelated temporary files
-
-## Finishing Up
-
-Report the commit that was created, including the short hash and message.
 
 ## Integration with Tug Agent Suite
 
