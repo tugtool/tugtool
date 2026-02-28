@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-02-28T15:27:44Z
+---
+
+## step-1: Changed .card-frame-content from overflow: hidden to overflow-y: auto to allow scrolling to Developer Mode toggle
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
 step: step-5
 date: 2025-02-28T02:40:33Z
 ---
