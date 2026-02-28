@@ -265,22 +265,6 @@ pub struct StepStatus {
     pub done: usize,
     /// Total number of items
     pub total: usize,
-    /// Substeps (if any)
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub substeps: Vec<SubstepStatus>,
-}
-
-/// Status of a substep
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubstepStatus {
-    /// Substep title
-    pub title: String,
-    /// Substep anchor (with #)
-    pub anchor: String,
-    /// Number of completed items
-    pub done: usize,
-    /// Total number of items
-    pub total: usize,
 }
 
 /// Lightweight step information for extended status queries
@@ -368,7 +352,7 @@ pub struct HealthCheck {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum StateFailureReason {
-    /// complete_step failed because open checklist items or substeps remain
+    /// complete_step failed because open checklist items remain
     OpenItems,
     /// Plan file has been modified since state was initialized
     Drift,
@@ -635,10 +619,8 @@ pub struct StateInitData {
     pub plan_hash: String,
     /// True if the plan was already initialized
     pub already_initialized: bool,
-    /// Number of top-level steps created
+    /// Number of steps created
     pub step_count: usize,
-    /// Number of substeps created
-    pub substep_count: usize,
     /// Number of dependency edges created
     pub dep_count: usize,
     /// Number of checklist items created

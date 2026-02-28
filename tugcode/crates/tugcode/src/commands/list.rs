@@ -126,12 +126,6 @@ fn count_checkboxes(tugplan: &TugPlan) -> (usize, usize) {
     for step in &tugplan.steps {
         total += step.total_items();
         done += step.completed_items();
-
-        // Count substeps
-        for substep in &step.substeps {
-            total += substep.total_items();
-            done += substep.completed_items();
-        }
     }
 
     (done, total)

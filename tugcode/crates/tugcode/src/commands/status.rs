@@ -8,9 +8,7 @@ use tugtool_core::{
     tugplan_name_from_path,
 };
 
-use crate::output::{
-    JsonIssue, JsonResponse, Progress, StatusData, StepInfo, StepStatus, SubstepStatus,
-};
+use crate::output::{JsonIssue, JsonResponse, Progress, StatusData, StepInfo, StepStatus};
 
 /// Run the status command
 pub fn run_status(
@@ -335,30 +333,11 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
             total_done += step_done;
             total_items += step_total;
 
-            let substeps: Vec<SubstepStatus> = step
-                .substeps
-                .iter()
-                .map(|substep| {
-                    let sub_done = substep.completed_items();
-                    let sub_total = substep.total_items();
-                    total_done += sub_done;
-                    total_items += sub_total;
-
-                    SubstepStatus {
-                        title: substep.title.clone(),
-                        anchor: substep.anchor.clone(),
-                        done: sub_done,
-                        total: sub_total,
-                    }
-                })
-                .collect();
-
             StepStatus {
                 title: step.title.clone(),
                 anchor: step.anchor.clone(),
                 done: step_done,
                 total: step_total,
-                substeps,
             }
         })
         .collect();
@@ -380,7 +359,7 @@ fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
         })
         .collect();
 
-    // A step is complete if all its items are checked (both tasks and substeps)
+    // A step is complete if all its items are checked
     let completed_steps: Vec<StepInfo> = plan
         .steps
         .iter()
@@ -467,20 +446,6 @@ fn output_text(data: &StatusData, plan: &TugPlan, verbose: bool) {
             "Step {}: {:<40} {} {}",
             plan.steps[i].number, step.title, check, progress
         );
-
-        // Show substeps
-        for (j, substep) in step.substeps.iter().enumerate() {
-            let sub_check = if substep.total > 0 && substep.done == substep.total {
-                "[x]"
-            } else {
-                "[ ]"
-            };
-            let sub_progress = format!("{}/{}", substep.done, substep.total);
-            println!(
-                "  Step {}: {:<38} {} {}",
-                plan.steps[i].substeps[j].number, substep.title, sub_check, sub_progress
-            );
-        }
 
         // Verbose mode: show individual tasks
         if verbose {

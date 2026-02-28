@@ -200,13 +200,6 @@ pub enum TugError {
         incomplete_count: usize,
     },
 
-    /// E052: Cannot complete step with incomplete substeps
-    #[error("E052: Cannot complete step {anchor}: {incomplete_count} substeps not completed")]
-    StateIncompleteSubsteps {
-        anchor: String,
-        incomplete_count: usize,
-    },
-
     /// E053: No steps ready for claiming
     #[error("E053: No steps ready for claiming")]
     StateNoReadySteps,
@@ -285,7 +278,6 @@ impl TugError {
             TugError::StateOwnershipViolation { .. } => "E049",
             TugError::StateStepNotClaimed { .. } => "E050",
             TugError::StateIncompleteChecklist { .. } => "E051",
-            TugError::StateIncompleteSubsteps { .. } => "E052",
             TugError::StateNoReadySteps => "E053",
             TugError::StateStepNotFound { .. } => "E059",
             TugError::DashNotFound { .. } => "E054",
@@ -365,7 +357,6 @@ impl TugError {
             TugError::StateOwnershipViolation { .. } => 14, // Ownership violation
             TugError::StateStepNotClaimed { .. } => 14, // Step not claimed
             TugError::StateIncompleteChecklist { .. } => 14, // Incomplete checklist
-            TugError::StateIncompleteSubsteps { .. } => 14, // Incomplete substeps
             TugError::StateNoReadySteps => 14,    // No ready steps
             TugError::StateStepNotFound { .. } => 14, // Step not found in DB
             TugError::DashNotFound { .. } => 15,  // Dash not found

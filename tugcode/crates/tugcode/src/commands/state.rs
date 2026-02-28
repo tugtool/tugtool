@@ -184,7 +184,7 @@ pub enum StateCommands {
         /// Worktree path (must match claimer)
         #[arg(long, value_name = "PATH")]
         worktree: String,
-        /// Force completion despite incomplete items/substeps
+        /// Force completion despite incomplete items
         #[arg(long)]
         force: bool,
         /// Reason for forcing completion
@@ -204,6 +204,9 @@ pub enum StateCommands {
         /// Show every checklist item with its status
         #[arg(long, conflicts_with = "summary")]
         checklist: bool,
+        /// Worktree path (accepted for CLI consistency, currently unused)
+        #[arg(long, value_name = "PATH")]
+        worktree: Option<String>,
     },
     /// List ready steps for claiming
     Ready {
@@ -293,7 +296,6 @@ pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, Stri
             plan_hash,
             already_initialized: result.already_initialized,
             step_count: result.step_count,
-            substep_count: result.substep_count,
             dep_count: result.dep_count,
             checklist_count: result.checklist_count,
         };
@@ -308,7 +310,6 @@ pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, Stri
         } else {
             println!("Initialized state for plan: {}", plan);
             println!("  Steps: {}", result.step_count);
-            println!("  Substeps: {}", result.substep_count);
             println!("  Dependencies: {}", result.dep_count);
             println!("  Checklist items: {}", result.checklist_count);
         }
@@ -1169,11 +1170,6 @@ fn print_step_state(step: &tugtool_core::StepState, indent: usize) {
         }
     }
 
-    // Show substeps
-    for substep in &step.substeps {
-        print_step_state(substep, indent + 1);
-    }
-
     println!();
 }
 
@@ -1277,11 +1273,6 @@ fn print_step_checklist(
                 print_checklist_item(item, indent + 1);
             }
         }
-    }
-
-    // Show substeps
-    for substep in &step.substeps {
-        print_step_checklist(substep, items_by_step, indent + 1);
     }
 
     println!();

@@ -399,21 +399,6 @@ fn check_step_references(tugplan: &TugPlan, result: &mut ValidationResult) {
                 .with_anchor(&step.anchor),
             );
         }
-
-        // Also check substeps
-        for substep in &step.substeps {
-            if substep.references.is_none() {
-                result.add_issue(
-                    ValidationIssue::new(
-                        "E004",
-                        Severity::Error,
-                        format!("Step {} missing References line", substep.number),
-                    )
-                    .at_line(substep.line)
-                    .with_anchor(&substep.anchor),
-                );
-            }
-        }
     }
 }
 
@@ -480,13 +465,7 @@ fn check_dependency_references(
     result: &mut ValidationResult,
 ) {
     // Collect all step anchors
-    let step_anchors: HashSet<&str> = tugplan
-        .steps
-        .iter()
-        .flat_map(|s| {
-            std::iter::once(s.anchor.as_str()).chain(s.substeps.iter().map(|ss| ss.anchor.as_str()))
-        })
-        .collect();
+    let step_anchors: HashSet<&str> = tugplan.steps.iter().map(|s| s.anchor.as_str()).collect();
 
     for step in &tugplan.steps {
         for dep in &step.depends_on {
@@ -502,22 +481,6 @@ fn check_dependency_references(
                 );
             }
         }
-
-        for substep in &step.substeps {
-            for dep in &substep.depends_on {
-                if !step_anchors.contains(dep.as_str()) && !anchor_map.contains_key(dep) {
-                    result.add_issue(
-                        ValidationIssue::new(
-                            "E010",
-                            Severity::Error,
-                            format!("Dependency references non-existent step anchor: {}", dep),
-                        )
-                        .at_line(substep.line)
-                        .with_anchor(&substep.anchor),
-                    );
-                }
-            }
-        }
     }
 }
 
@@ -531,13 +494,6 @@ fn check_circular_dependencies(tugplan: &TugPlan, result: &mut ValidationResult)
             step.anchor.as_str(),
             step.depends_on.iter().map(|s| s.as_str()).collect(),
         );
-
-        for substep in &step.substeps {
-            deps.insert(
-                substep.anchor.as_str(),
-                substep.depends_on.iter().map(|s| s.as_str()).collect(),
-            );
-        }
     }
 
     // DFS to detect cycles
@@ -617,26 +573,6 @@ fn check_depends_on_format(tugplan: &TugPlan, result: &mut ValidationResult) {
                 }
             }
         }
-
-        // Also check substeps
-        for substep in &step.substeps {
-            for dep in &substep.depends_on {
-                if !dep.starts_with("step-") && !dep.contains('-') {
-                    result.add_issue(
-                        ValidationIssue::new(
-                            "E017",
-                            Severity::Error,
-                            format!(
-                                "Invalid dependency format: '{}' (must be anchor ref like 'step-1', not prose)",
-                                dep
-                            ),
-                        )
-                        .at_line(substep.line)
-                        .with_anchor(&substep.anchor),
-                    );
-                }
-            }
-        }
     }
 }
 
@@ -688,33 +624,6 @@ fn check_references_format(tugplan: &TugPlan, result: &mut ValidationResult) {
                     .at_line(step.line)
                     .with_anchor(&step.anchor),
                 );
-            }
-        }
-
-        // Also check substeps
-        for substep in &step.substeps {
-            if let Some(refs) = &substep.references {
-                let has_decision_citation = DECISION_CITATION.is_match(refs);
-                let has_anchor_citation = ANCHOR_CITATION.is_match(refs);
-                let is_vague = refs.to_lowercase().contains("see above")
-                    || refs.to_lowercase().contains("n/a")
-                    || refs.to_lowercase().contains("see below")
-                    || refs.trim().is_empty();
-
-                if is_vague && !has_decision_citation && !has_anchor_citation {
-                    result.add_issue(
-                        ValidationIssue::new(
-                            "E018",
-                            Severity::Error,
-                            format!(
-                                "Step {} has vague References '{}' (must cite [DNN] decisions or (#anchor) refs)",
-                                substep.number, refs
-                            ),
-                        )
-                        .at_line(substep.line)
-                        .with_anchor(&substep.anchor),
-                    );
-                }
             }
         }
     }
@@ -788,10 +697,8 @@ fn check_step_tests(tugplan: &TugPlan, result: &mut ValidationResult) {
     }
 }
 
-/// W005: References citing non-existent anchors
 /// W005: References citing non-existent anchors (superseded by W013 check_undefined_referenced_anchors)
 /// This function is kept for backwards compatibility but is no longer called.
-/// W013 expands W005 to cover substeps which were previously missed.
 #[allow(dead_code)]
 fn check_reference_anchors(
     tugplan: &TugPlan,
@@ -875,20 +782,6 @@ fn check_commit_lines(tugplan: &TugPlan, result: &mut ValidationResult) {
                 .with_anchor(&step.anchor),
             );
         }
-
-        for substep in &step.substeps {
-            if substep.commit_message.is_none() {
-                result.add_issue(
-                    ValidationIssue::new(
-                        "W009",
-                        Severity::Warning,
-                        format!("Step {} missing **Commit:** line", substep.number),
-                    )
-                    .at_line(substep.line)
-                    .with_anchor(&substep.anchor),
-                );
-            }
-        }
     }
 }
 
@@ -905,20 +798,6 @@ fn check_step_tasks(tugplan: &TugPlan, result: &mut ValidationResult) {
                 .at_line(step.line)
                 .with_anchor(&step.anchor),
             );
-        }
-
-        for substep in &step.substeps {
-            if substep.tasks.is_empty() {
-                result.add_issue(
-                    ValidationIssue::new(
-                        "W010",
-                        Severity::Warning,
-                        format!("Step {} has no task items", substep.number),
-                    )
-                    .at_line(substep.line)
-                    .with_anchor(&substep.anchor),
-                );
-            }
         }
     }
 }
@@ -943,14 +822,6 @@ fn check_uncited_decisions(tugplan: &TugPlan, result: &mut ValidationResult) {
         if let Some(refs) = &step.references {
             for cap in DECISION_ID_CAPTURE.captures_iter(refs) {
                 cited_ids.insert(cap.get(1).unwrap().as_str().to_string());
-            }
-        }
-
-        for substep in &step.substeps {
-            if let Some(refs) = &substep.references {
-                for cap in DECISION_ID_CAPTURE.captures_iter(refs) {
-                    cited_ids.insert(cap.get(1).unwrap().as_str().to_string());
-                }
             }
         }
     }
@@ -1000,28 +871,6 @@ fn check_undefined_cited_decisions(tugplan: &TugPlan, result: &mut ValidationRes
                 }
             }
         }
-
-        for substep in &step.substeps {
-            if let Some(refs) = &substep.references {
-                for cap in DECISION_ID_CAPTURE.captures_iter(refs) {
-                    let cited_id = cap.get(1).unwrap().as_str();
-                    if !defined_ids.contains(cited_id) {
-                        result.add_issue(
-                            ValidationIssue::new(
-                                "W012",
-                                Severity::Warning,
-                                format!(
-                                    "Step {} references decision [{}] which is not defined",
-                                    substep.number, cited_id
-                                ),
-                            )
-                            .at_line(substep.line)
-                            .with_anchor(&substep.anchor),
-                        );
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1048,26 +897,6 @@ fn check_undefined_referenced_anchors(
                         .at_line(step.line)
                         .with_anchor(&step.anchor),
                     );
-                }
-            }
-        }
-
-        // Check substeps (this was missing in W005)
-        for substep in &step.substeps {
-            if let Some(refs) = &substep.references {
-                for cap in anchor_ref_pattern.captures_iter(refs) {
-                    let ref_anchor = cap.get(1).unwrap().as_str();
-                    if !anchor_map.contains_key(ref_anchor) {
-                        result.add_issue(
-                            ValidationIssue::new(
-                                "W013",
-                                Severity::Warning,
-                                format!("Reference to non-existent anchor: #{}", ref_anchor),
-                            )
-                            .at_line(substep.line)
-                            .with_anchor(&substep.anchor),
-                        );
-                    }
                 }
             }
         }
@@ -2048,48 +1877,6 @@ This decision exists.
             result.issues.iter().filter(|i| i.code == "W013").collect();
         assert_eq!(w013_issues.len(), 1);
         assert!(w013_issues[0].message.contains("nonexistent-anchor"));
-    }
-
-    #[test]
-    fn test_w013_substep_references() {
-        use crate::parser::parse_tugplan;
-
-        let content = r#"## Phase 1.0: Test {#phase-1}
-
-### TugPlan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | active |
-| Last updated | 2026-02-03 |
-
-#### Step 2: Main Step {#step-2}
-
-**Commit:** `feat: add parent`
-
-**References:** (#plan-metadata)
-
-**Tasks:**
-- [ ] Parent task
-
-##### Step 2.1: Substep {#step-2-1}
-
-**Commit:** `feat: add substep`
-
-**References:** (#undefined-in-substep)
-
-**Tasks:**
-- [ ] Substep task
-"#;
-
-        let plan = parse_tugplan(content).unwrap();
-        let result = validate_tugplan(&plan);
-
-        let w013_issues: Vec<&ValidationIssue> =
-            result.issues.iter().filter(|i| i.code == "W013").collect();
-        assert_eq!(w013_issues.len(), 1);
-        assert!(w013_issues[0].message.contains("undefined-in-substep"));
     }
 
     #[test]

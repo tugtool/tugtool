@@ -136,8 +136,6 @@ pub struct Step {
     /// Artifact items (deliverables from this step)
     #[serde(default)]
     pub artifacts: Vec<String>,
-    /// Substeps (for nested steps like 2.1, 2.2)
-    pub substeps: Vec<Substep>,
 }
 
 impl Step {
@@ -154,106 +152,6 @@ impl Step {
     }
 
     /// Render the step description as markdown (Tasks, Artifacts, Commit Template)
-    pub fn render_description(&self) -> String {
-        let mut sections = Vec::new();
-
-        // Tasks section
-        if !self.tasks.is_empty() {
-            let mut task_lines = vec!["## Tasks".to_string()];
-            for task in &self.tasks {
-                let check = if task.checked { "x" } else { " " };
-                task_lines.push(format!("- [{}] {}", check, task.text));
-            }
-            sections.push(task_lines.join("\n"));
-        }
-
-        // Artifacts section
-        if !self.artifacts.is_empty() {
-            let mut artifact_lines = vec!["## Artifacts".to_string()];
-            for artifact in &self.artifacts {
-                artifact_lines.push(format!("- {}", artifact));
-            }
-            sections.push(artifact_lines.join("\n"));
-        }
-
-        // Commit Template section
-        if let Some(ref commit) = self.commit_message {
-            sections.push(format!("## Commit Template\n{}", commit));
-        }
-
-        sections.join("\n\n")
-    }
-
-    /// Render the acceptance criteria as markdown (Tests, Checkpoints)
-    pub fn render_acceptance_criteria(&self) -> String {
-        let mut sections = Vec::new();
-
-        // Tests section
-        if !self.tests.is_empty() {
-            let mut test_lines = vec!["## Tests".to_string()];
-            for test in &self.tests {
-                let check = if test.checked { "x" } else { " " };
-                test_lines.push(format!("- [{}] {}", check, test.text));
-            }
-            sections.push(test_lines.join("\n"));
-        }
-
-        // Checkpoints section
-        if !self.checkpoints.is_empty() {
-            let mut checkpoint_lines = vec!["## Checkpoints".to_string()];
-            for checkpoint in &self.checkpoints {
-                let check = if checkpoint.checked { "x" } else { " " };
-                checkpoint_lines.push(format!("- [{}] {}", check, checkpoint.text));
-            }
-            sections.push(checkpoint_lines.join("\n"));
-        }
-
-        sections.join("\n\n")
-    }
-}
-
-/// A nested substep within a step
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Substep {
-    /// Substep number (e.g., "2.1")
-    pub number: String,
-    /// Substep title
-    pub title: String,
-    /// Substep anchor
-    pub anchor: String,
-    /// Line number where the substep starts
-    pub line: usize,
-    /// Dependencies (step anchors this substep depends on)
-    pub depends_on: Vec<String>,
-    /// Commit message
-    pub commit_message: Option<String>,
-    /// References line content
-    pub references: Option<String>,
-    /// Task items
-    pub tasks: Vec<Checkpoint>,
-    /// Test items
-    pub tests: Vec<Checkpoint>,
-    /// Checkpoint/verification items
-    pub checkpoints: Vec<Checkpoint>,
-    /// Artifact items (deliverables from this substep)
-    #[serde(default)]
-    pub artifacts: Vec<String>,
-}
-
-impl Substep {
-    /// Count total checkbox items
-    pub fn total_items(&self) -> usize {
-        self.tasks.len() + self.tests.len() + self.checkpoints.len()
-    }
-
-    /// Count completed checkbox items
-    pub fn completed_items(&self) -> usize {
-        self.tasks.iter().filter(|c| c.checked).count()
-            + self.tests.iter().filter(|c| c.checked).count()
-            + self.checkpoints.iter().filter(|c| c.checked).count()
-    }
-
-    /// Render the substep description as markdown (Tasks, Artifacts, Commit Template)
     pub fn render_description(&self) -> String {
         let mut sections = Vec::new();
 
@@ -395,11 +293,6 @@ impl TugPlan {
         for step in &self.steps {
             done += step.completed_items();
             total += step.total_items();
-
-            for substep in &step.substeps {
-                done += substep.completed_items();
-                total += substep.total_items();
-            }
         }
 
         (done, total)

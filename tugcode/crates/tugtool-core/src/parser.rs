@@ -8,9 +8,7 @@
 //! - Execution steps with tasks, tests, and checkpoints
 
 use crate::error::TugError;
-use crate::types::{
-    Anchor, Checkpoint, CheckpointKind, Decision, Question, Step, Substep, TugPlan,
-};
+use crate::types::{Anchor, Checkpoint, CheckpointKind, Decision, Question, Step, TugPlan};
 use std::collections::HashMap;
 
 /// Regex patterns for parsing (compiled once)
@@ -25,10 +23,7 @@ mod patterns {
     });
 
     pub static STEP_HEADER: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(
-            r"^#{3,5}\s+Step\s+(\d+(?:\.\d+)?):?\s*(.+?)\s*(?:\{#([a-z0-9-]+)\})?\s*$",
-        )
-        .unwrap()
+        regex::Regex::new(r"^#{3,5}\s+Step\s+(\d+):?\s*(.+?)\s*(?:\{#([a-z0-9-]+)\})?\s*$").unwrap()
     });
 
     pub static DECISION_HEADER: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -109,7 +104,6 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
     // Track current parsing context
     let mut in_metadata_table = false;
     let mut in_step: Option<usize> = None; // Index into tugplan.steps
-    let mut in_substep: Option<usize> = None; // Index into current step's substeps
     let mut current_section = CurrentSection::None;
     let mut anchor_locations: HashMap<String, usize> = HashMap::new();
     let mut in_code_block = false;
@@ -342,37 +336,17 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
             let anchor = caps
                 .get(3)
                 .map(|m| m.as_str().to_string())
-                .unwrap_or_else(|| format!("step-{}", number.replace('.', "-")));
+                .unwrap_or_else(|| format!("step-{}", number));
 
-            // Check if this is a substep (contains a dot)
-            if number.contains('.') {
-                // This is a substep
-                let substep = Substep {
-                    number: number.to_string(),
-                    title: title.to_string(),
-                    anchor: anchor.clone(),
-                    line: line_number,
-                    ..Default::default()
-                };
-
-                if let Some(step_idx) = in_step {
-                    let substep_idx = tugplan.steps[step_idx].substeps.len();
-                    tugplan.steps[step_idx].substeps.push(substep);
-                    in_substep = Some(substep_idx);
-                }
-            } else {
-                // This is a main step
-                let step = Step {
-                    number: number.to_string(),
-                    title: title.to_string(),
-                    anchor: anchor.clone(),
-                    line: line_number,
-                    ..Default::default()
-                };
-                tugplan.steps.push(step);
-                in_step = Some(tugplan.steps.len() - 1);
-                in_substep = None;
-            }
+            let step = Step {
+                number: number.to_string(),
+                title: title.to_string(),
+                anchor: anchor.clone(),
+                line: line_number,
+                ..Default::default()
+            };
+            tugplan.steps.push(step);
+            in_step = Some(tugplan.steps.len() - 1);
 
             current_section = CurrentSection::None;
             continue;
@@ -389,11 +363,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                     .map(|c| c.get(1).unwrap().as_str().to_string())
                     .collect();
 
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx].depends_on = deps;
-                    }
-                } else if let Some(step_idx) = in_step {
+                if let Some(step_idx) = in_step {
                     tugplan.steps[step_idx].depends_on = deps;
                 }
                 continue;
@@ -404,12 +374,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                 matched = true;
                 let commit_msg = caps.get(1).unwrap().as_str().to_string();
 
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx].commit_message =
-                            Some(commit_msg);
-                    }
-                } else if let Some(step_idx) = in_step {
+                if let Some(step_idx) = in_step {
                     tugplan.steps[step_idx].commit_message = Some(commit_msg);
                 }
                 continue;
@@ -420,11 +385,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                 matched = true;
                 let refs = caps.get(1).unwrap().as_str().to_string();
 
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx].references = Some(refs);
-                    }
-                } else if let Some(step_idx) = in_step {
+                if let Some(step_idx) = in_step {
                     tugplan.steps[step_idx].references = Some(refs);
                 }
                 continue;
@@ -438,13 +399,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
 
                 // Special handling for Artifacts section: capture text as plain artifact item
                 if current_section == CurrentSection::Artifacts {
-                    if let Some(substep_idx) = in_substep {
-                        if let Some(step_idx) = in_step {
-                            tugplan.steps[step_idx].substeps[substep_idx]
-                                .artifacts
-                                .push(text);
-                        }
-                    } else if let Some(step_idx) = in_step {
+                    if let Some(step_idx) = in_step {
                         tugplan.steps[step_idx].artifacts.push(text);
                     }
                     continue;
@@ -464,27 +419,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                     line: line_number,
                 };
 
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        match kind {
-                            CheckpointKind::Task => {
-                                tugplan.steps[step_idx].substeps[substep_idx]
-                                    .tasks
-                                    .push(checkpoint);
-                            }
-                            CheckpointKind::Test => {
-                                tugplan.steps[step_idx].substeps[substep_idx]
-                                    .tests
-                                    .push(checkpoint);
-                            }
-                            CheckpointKind::Checkpoint => {
-                                tugplan.steps[step_idx].substeps[substep_idx]
-                                    .checkpoints
-                                    .push(checkpoint);
-                            }
-                        }
-                    }
-                } else if let Some(step_idx) = in_step {
+                if let Some(step_idx) = in_step {
                     match kind {
                         CheckpointKind::Task => {
                             tugplan.steps[step_idx].tasks.push(checkpoint);
@@ -504,13 +439,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
             if current_section == CurrentSection::Artifacts && line.trim_start().starts_with("- ") {
                 matched = true;
                 let text = line.trim_start().strip_prefix("- ").unwrap().to_string();
-                if let Some(substep_idx) = in_substep {
-                    if let Some(step_idx) = in_step {
-                        tugplan.steps[step_idx].substeps[substep_idx]
-                            .artifacts
-                            .push(text);
-                    }
-                } else if let Some(step_idx) = in_step {
+                if let Some(step_idx) = in_step {
                     tugplan.steps[step_idx].artifacts.push(text);
                 }
             }
@@ -793,59 +722,6 @@ mod tests {
         assert_eq!(tugplan.steps.len(), 1);
         assert_eq!(tugplan.steps[0].title, "Test Step");
         assert_eq!(tugplan.steps[0].anchor, "step-0");
-    }
-
-    #[test]
-    fn test_parse_substeps() {
-        let content = r#"## Phase 1.0: Test {#phase-1}
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | active |
-| Last updated | 2026-02-03 |
-
-#### Step 2: Big Step {#step-2}
-
-**Depends on:** #step-1
-
-**Tasks:**
-- [ ] Parent task
-
-##### Step 2.1: First Substep {#step-2-1}
-
-**Commit:** `feat: substep 1`
-
-**Tasks:**
-- [ ] Substep task
-
-##### Step 2.2: Second Substep {#step-2-2}
-
-**Depends on:** #step-2-1
-
-**Tasks:**
-- [x] Another substep task
-"#;
-
-        let tugplan = parse_tugplan(content).unwrap();
-
-        assert_eq!(tugplan.steps.len(), 1);
-        let step = &tugplan.steps[0];
-        assert_eq!(step.number, "2");
-        assert_eq!(step.substeps.len(), 2);
-
-        assert_eq!(step.substeps[0].number, "2.1");
-        assert_eq!(step.substeps[0].title, "First Substep");
-        assert_eq!(
-            step.substeps[0].commit_message,
-            Some("feat: substep 1".to_string())
-        );
-
-        assert_eq!(step.substeps[1].number, "2.2");
-        assert_eq!(step.substeps[1].depends_on, vec!["step-2-1"]);
-        assert!(step.substeps[1].tasks[0].checked);
     }
 
     #[test]

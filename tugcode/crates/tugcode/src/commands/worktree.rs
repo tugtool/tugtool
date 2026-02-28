@@ -579,22 +579,32 @@ pub fn run_worktree_setup_with_root(
                 synced_plan.steps.iter().map(|s| s.anchor.clone()).collect();
             let total_steps = synced_plan.steps.len();
 
-            // ready_steps is computed from tugstate claim operation (orchestrator responsibility)
-            let ready_steps: Option<Vec<String>> = None;
-
-            // Initialize tugstate for this worktree
-            let (state_initialized, state_warnings) = {
+            // Initialize tugstate for this worktree and query ready steps while db is in scope
+            let (state_initialized, state_warnings, ready_steps) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::compute_plan_hash(&synced_plan_path) {
                     Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path) {
                         Ok(mut db) => match db.init_plan(&plan, &synced_plan, &plan_hash) {
-                            Ok(_) => (true, vec![]),
+                            Ok(_) => {
+                                let ready = match db.ready_steps(&plan) {
+                                    Ok(result) => Some(
+                                        result.ready.iter().map(|s| s.anchor.clone()).collect(),
+                                    ),
+                                    Err(e) => {
+                                        if !quiet {
+                                            eprintln!("warning: ready_steps query failed: {}", e);
+                                        }
+                                        None
+                                    }
+                                };
+                                (true, vec![], ready)
+                            }
                             Err(e) => {
                                 let msg = format!("state init failed: {}", e);
                                 if !quiet {
                                     eprintln!("warning: {}", msg);
                                 }
-                                (false, vec![msg])
+                                (false, vec![msg], None)
                             }
                         },
                         Err(e) => {
@@ -602,7 +612,7 @@ pub fn run_worktree_setup_with_root(
                             if !quiet {
                                 eprintln!("warning: {}", msg);
                             }
-                            (false, vec![msg])
+                            (false, vec![msg], None)
                         }
                     },
                     Err(e) => {
@@ -610,7 +620,7 @@ pub fn run_worktree_setup_with_root(
                         if !quiet {
                             eprintln!("warning: {}", msg);
                         }
-                        (false, vec![msg])
+                        (false, vec![msg], None)
                     }
                 }
             };

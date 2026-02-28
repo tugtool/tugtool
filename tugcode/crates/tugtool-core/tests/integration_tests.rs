@@ -155,40 +155,6 @@ fn test_valid_complete_fixture() {
 }
 
 #[test]
-fn test_valid_with_substeps_fixture() {
-    let content = fs::read_to_string(format!("{}/valid/with-substeps.md", FIXTURES_DIR))
-        .expect("Failed to read with-substeps.md fixture");
-
-    let plan = parse_tugplan(&content).expect("Failed to parse with-substeps plan");
-    let result = validate_tugplan(&plan);
-
-    // Check no errors
-    let errors: Vec<_> = result
-        .issues
-        .iter()
-        .filter(|i| i.severity == Severity::Error)
-        .collect();
-    assert!(
-        errors.is_empty(),
-        "Valid with-substeps plan should have no errors, got: {:?}",
-        errors
-    );
-
-    // Verify substeps were parsed
-    let step_with_substeps = plan.steps.iter().find(|s| !s.substeps.is_empty());
-    assert!(
-        step_with_substeps.is_some(),
-        "Should have at least one step with substeps"
-    );
-
-    let step = step_with_substeps.unwrap();
-    assert!(
-        step.substeps.len() >= 2,
-        "Step with substeps should have multiple substeps"
-    );
-}
-
-#[test]
 fn test_valid_agent_output_example_fixture() {
     let content = fs::read_to_string(format!("{}/valid/agent-output-example.md", FIXTURES_DIR))
         .expect("Failed to read agent-output-example.md fixture");
@@ -520,7 +486,6 @@ fn test_full_validation_workflow() {
     let valid_fixtures = [
         "minimal",
         "complete",
-        "with-substeps",
         "agent-output-example",
         "enrichment-test",
     ];

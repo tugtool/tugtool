@@ -14,8 +14,7 @@
         "title": "Bootstrap",
         "anchor": "step-1",
         "done": 2,
-        "total": 4,
-        "substeps": []
+        "total": 4
       }
     ],
     "all_steps": [

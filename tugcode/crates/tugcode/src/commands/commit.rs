@@ -13,8 +13,7 @@ use std::process::Command;
 /// a TugError is available. All other error paths set state_failure_reason directly.
 fn classify_state_error(e: &tugtool_core::TugError) -> StateFailureReason {
     match e {
-        tugtool_core::TugError::StateIncompleteChecklist { .. }
-        | tugtool_core::TugError::StateIncompleteSubsteps { .. } => StateFailureReason::OpenItems,
+        tugtool_core::TugError::StateIncompleteChecklist { .. } => StateFailureReason::OpenItems,
         tugtool_core::TugError::StatePlanHashMismatch { .. } => StateFailureReason::Drift,
         tugtool_core::TugError::StateOwnershipViolation { .. }
         | tugtool_core::TugError::StateStepNotClaimed { .. } => StateFailureReason::Ownership,
@@ -458,19 +457,6 @@ mod tests {
             classify_state_error(&err),
             StateFailureReason::OpenItems,
             "StateIncompleteChecklist should map to OpenItems"
-        );
-    }
-
-    #[test]
-    fn test_classify_state_error_open_items_incomplete_substeps() {
-        let err = tugtool_core::TugError::StateIncompleteSubsteps {
-            anchor: "step-1".to_string(),
-            incomplete_count: 1,
-        };
-        assert_eq!(
-            classify_state_error(&err),
-            StateFailureReason::OpenItems,
-            "StateIncompleteSubsteps should map to OpenItems"
         );
     }
 

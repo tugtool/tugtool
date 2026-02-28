@@ -9,6 +9,174 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-28T19:10:10Z
+---
+
+## audit-fix: Audit fix: rewrote explicit counter loop for clippy, removed stale substep doc comments
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-13
+date: 2025-02-28T19:06:22Z
+---
+
+## step-13: Final Integration Checkpoint: all 7 checkpoints pass, all 5 decisions verified, all 4 reliability issues resolved
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-12
+date: 2025-02-28T19:02:47Z
+---
+
+## step-12: Replaced progress message with 'Reviewer approved. Committing step.', simplified recovery loop to immediate escalation, updated tugrelaunch comment labels from Substep to Section
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-11
+date: 2025-02-28T18:57:28Z
+---
+
+## step-11: Deleted with-substeps.md test fixture and removed dead substeps=none config key from .tugtool/config.toml
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-10
+date: 2025-02-28T18:52:41Z
+---
+
+## step-10: Phase 3 Integration Checkpoint: all 3 checkpoints pass — tests (750), fmt clean, substep type fully removed from types/parser/lib/validator
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-9
+date: 2025-02-28T18:49:59Z
+---
+
+## step-9: Verification-only step: confirmed all substep iteration loops and test deleted from validator.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-8
+date: 2025-02-28T18:47:39Z
+---
+
+## step-8: Deleted Substep struct, impl, field from types.rs; removed substep parsing from parser.rs; cleaned substep loops from validator.rs; updated state.rs test helper and integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-7
+date: 2025-02-28T18:35:27Z
+---
+
+## step-7: Phase 2 Integration Checkpoint: all 5 checkpoints pass — tests (753), fmt clean, parent_anchor migration-only, substep symbols removed, skeleton validates
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-6
+date: 2025-02-28T18:31:24Z
+---
+
+## step-6: Verification-only step: confirmed all substep artifacts removed from error.rs, output.rs, CLI commands, main.rs, and golden fixtures
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-5
+date: 2025-02-28T18:27:42Z
+---
+
+## step-5: Verification-only step: confirmed all parent-child logic removed from state.rs core functions, all 753 tests pass, parent_anchor only in migration/test-fixture code
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-4
+date: 2025-02-28T18:22:51Z
+---
+
+## step-4: Added v3-to-v4 migration that promotes substeps, deletes container parents, recreates steps table without parent_anchor column, and updates schema version to 4
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-3
+date: 2025-02-28T17:53:34Z
+---
+
+## step-3: Expanded state-init block to query ready_steps from state DB after successful init_plan, replacing hardcoded None
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-2
+date: 2025-02-28T17:48:53Z
+---
+
+## step-2: Added explicit instructions to author-agent prohibiting substep generation and requiring integration checkpoint steps for related step groups
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
+step: step-1
+date: 2025-02-28T17:45:59Z
+---
+
+## step-1: Updated tugplan skeleton to remove step-N-M substep pattern, replacing with flat steps using explicit dependencies and integration checkpoint step template
+
+**Files changed:**
+- .tugtool/tugplan-tugstate-reliability.md
+
+---
+
+---
 step: step-5
 date: 2025-02-28T15:56:36Z
 ---
