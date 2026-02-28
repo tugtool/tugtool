@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-02-28T15:56:36Z
+---
+
+## step-5: Added useEffect in developer-card.tsx to post badge state to devBadge bridge handler when stale state changes
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
+step: step-4
+date: 2025-02-28T15:45:10Z
+---
+
+## step-4: Added TugTheme UserDefaults key, updateBackgroundForTheme method mapping themes to NSColor sRGB values, setTheme bridge handler, and use-theme.ts bridge sync for native window background
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
+step: step-3
+date: 2025-02-28T15:37:56Z
+---
+
+## step-3: Split restart/reset case in ProcessManager.swift so reset follows relaunch path (stop Vite, doNotRestart). Updated reset button label to say relaunch.
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
+step: step-2
+date: 2025-02-28T15:33:45Z
+---
+
+## step-2: Widened Rust source watcher from tugcode/crates to tugcode/, added Cargo.lock to has_rust_extension(), added is_target_path() exclusion, updated frontend categorizeFile for Cargo.lock
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
+step: step-1
+date: 2025-02-28T15:27:44Z
+---
+
+## step-1: Changed .card-frame-content from overflow: hidden to overflow-y: auto to allow scrolling to Developer Mode toggle
+
+**Files changed:**
+- .tugtool/tugplan-dev-mode-completeness.md
+
+---
+
+---
+step: step-5
 date: 2025-02-28T02:40:33Z
 ---
 

@@ -47,8 +47,11 @@ export function categorizeFile(path: string): "frontend" | "backend" | "app" | n
   if (path.startsWith("tugdeck/") && (path.endsWith(".ts") || path.endsWith(".tsx"))) {
     return "frontend";
   }
-  // tugcode Rust source or Cargo.toml
-  if (path.startsWith("tugcode/") && (path.endsWith(".rs") || path.endsWith("Cargo.toml"))) {
+  // tugcode Rust source, Cargo.toml, or Cargo.lock
+  if (
+    path.startsWith("tugcode/") &&
+    (path.endsWith(".rs") || path.endsWith("Cargo.toml") || path.endsWith("Cargo.lock"))
+  ) {
     return "backend";
   }
   return null;
@@ -285,6 +288,19 @@ export function DeveloperCard() {
     dispatchBadge,
   ]);
 
+  // ---- Post badge state to Swift devBadge bridge handler ----
+  //
+  // Posts { backend, app } booleans to the native menu whenever stale state
+  // changes, so the Developer menu items show the diamond (◆) badge when their
+  // respective category has pending changes. Uses optional chaining so the call
+  // is a no-op in non-WebKit environments (tests, browser).
+  useEffect(() => {
+    (window as any).webkit?.messageHandlers?.devBadge?.postMessage({
+      backend: backendRow.isStale,
+      app: appRow.isStale,
+    });
+  }, [backendRow.isStale, appRow.isStale]);
+
   // ---- Parse git feed ----
 
   useEffect(() => {
@@ -520,7 +536,7 @@ export function DeveloperCard() {
             Reset
           </Button>
           <span className="dev-reset-note text-xs text-muted-foreground">
-            Clear localStorage and restart
+            Clear localStorage and relaunch
           </span>
         </div>
 

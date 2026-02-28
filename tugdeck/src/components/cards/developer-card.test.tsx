@@ -131,6 +131,10 @@ describe("categorizeFile", () => {
     expect(categorizeFile("tugcode/Cargo.toml")).toBe("backend");
   });
 
+  it("classifies tugcode Cargo.lock as backend", () => {
+    expect(categorizeFile("tugcode/Cargo.lock")).toBe("backend");
+  });
+
   it("classifies tugapp Swift as app", () => {
     expect(categorizeFile("tugapp/Sources/App.swift")).toBe("app");
   });

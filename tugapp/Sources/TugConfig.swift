@@ -19,6 +19,7 @@ enum TugConfig {
 
     static let keySourceTreePath = "SourceTreePath"
     static let keyDevModeEnabled = "DevModeEnabled"
+    static let keyTheme = "TugTheme"
 
     // MARK: - Source tree validation
 
