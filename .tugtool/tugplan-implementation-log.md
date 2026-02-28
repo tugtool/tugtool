@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-02-28T23:41:16Z
+---
+
+## step-5: Converted vanilla Dock class to React component using lucide-react icons, CardDropdownMenu for settings, useTheme hook for theme management. Rendered as separate React root in main.tsx. Replaced dock.css with Tailwind utilities. Deleted vanilla dock.ts, dock.test.ts, dock.css. Added new RTL tests with theme setter verification.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-4
 date: 2025-02-28T23:10:56Z
 ---

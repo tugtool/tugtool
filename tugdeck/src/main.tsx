@@ -1,7 +1,7 @@
 // CSS imports — globals.css imports tailwindcss and tokens.css (which provides the shadcn variable bridge)
 import "./globals.css";
 import "../styles/cards-chrome.css";
-import "../styles/dock.css";
+// dock.css deleted in Step 5 — Dock styles are now Tailwind utilities on the React Dock component
 // xterm CSS — previously mapped via assets.toml; now imported directly from node_modules
 import "@xterm/xterm/css/xterm.css";
 
@@ -9,6 +9,8 @@ import "@xterm/xterm/css/xterm.css";
 // Note: inline <script> in index.html would be blocked by the CSP (script-src 'self' 'wasm-unsafe-eval').
 console.debug("[dev-flash] main.tsx module executed", Date.now());
 
+import React from "react";
+import { createRoot } from "react-dom/client";
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
@@ -21,8 +23,9 @@ import { DeveloperCard as DeveloperCardComponent } from "./components/cards/deve
 import { ConversationCard as ConversationCardComponent } from "./components/cards/conversation/conversation-card";
 import { TerminalCard as TerminalCardComponent } from "./components/cards/terminal-card";
 import { FeedId } from "./protocol";
-import { Dock } from "./dock";
-import { initActionDispatch } from "./action-dispatch";
+import { Dock } from "./components/chrome/dock";
+import type { DockCallbacks } from "./components/chrome/dock";
+import { initActionDispatch, dispatchAction } from "./action-dispatch";
 import { CARD_TITLES } from "./card-titles";
 
 // Determine WebSocket URL from current page location
@@ -136,11 +139,32 @@ deck.addCard(new ReactCardAdapter({
 // Re-render so CardFrame headers pick up card meta (menu buttons)
 deck.refresh();
 
-// Create Dock (48px vertical rail on right viewport edge)
-new Dock(deck);
-
-// Initialize action dispatch system
+// Initialize action dispatch system (must be done before Dock is rendered so
+// the show-card handler is registered when Dock icon buttons are first clicked)
 initActionDispatch(connection, deck);
+
+// Render React Dock (48px vertical rail on right viewport edge).
+// Temporarily rendered as a separate React root; Step 7 unifies it into DeckCanvas.
+const dockContainer = document.createElement("div");
+document.body.appendChild(dockContainer);
+
+const dockCallbacks: DockCallbacks = {
+  onShowCard: (cardType: string) => {
+    dispatchAction({ action: "show-card", component: cardType });
+  },
+  onResetLayout: () => deck.resetLayout(),
+  onRestartServer: () => deck.sendControlFrame("restart"),
+  onResetEverything: () => {
+    // Clear localStorage before sending reset, since the server
+    // will exit and the WebSocket will close
+    localStorage.clear();
+    deck.sendControlFrame("reset");
+  },
+  onReloadFrontend: () => deck.sendControlFrame("reload_frontend"),
+};
+
+const dockRoot = createRoot(dockContainer);
+dockRoot.render(React.createElement(Dock, { callbacks: dockCallbacks }));
 
 // Signal frontend readiness to native app (enables menu items)
 connection.onOpen(() => {
