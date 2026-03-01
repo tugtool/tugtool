@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-01T04:55:10Z
+---
+
+## step-7: Removed lsof/kill Vite line and unused VITE_DEV_PORT variable from justfile; app now manages Vite lifecycle
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-6
 date: 2025-03-01T04:51:36Z
 ---
