@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-01T04:39:51Z
+---
+
+## step-4: Renamed spawnViteDevServer to spawnViteServer with devMode: Bool parameter for dev vs preview mode, updated call site in AppDelegate
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-3
 date: 2025-03-01T04:35:47Z
 ---

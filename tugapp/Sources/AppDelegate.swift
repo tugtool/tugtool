@@ -58,9 +58,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let devEnabled = self.devModeEnabled
             let sourceTree = self.sourceTreePath
             if devEnabled, let path = sourceTree {
-                // Spawn Vite dev server now that we know the actual tugcast port.
-                // The duplication guard inside spawnViteDevServer prevents re-spawning on restarts.
-                self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort)
+                // Spawn Vite server now that we know the actual tugcast port.
+                // The duplication guard inside spawnViteServer prevents re-spawning on restarts.
+                self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: self.devModeEnabled)
                 // Wait for Vite to be listening before sending dev_mode, so the URL
                 // rewrite in onDevModeResult loads a ready server instead of a white window.
                 self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
