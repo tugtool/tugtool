@@ -32,7 +32,6 @@ pub use state::{
     StateCommands, run_state_artifact, run_state_claim, run_state_complete,
     run_state_complete_checklist, run_state_heartbeat, run_state_init, run_state_ready,
     run_state_reconcile, run_state_release, run_state_reset, run_state_show, run_state_start,
-    run_state_update,
 };
 pub use status::run_status;
 pub use tell::run_tell;

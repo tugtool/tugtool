@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-01T21:39:15Z
+---
+
+## step-2: Removed Update variant from StateCommands, run_state_update function, ChecklistUpdate enum, update_checklist method, 5 unit tests, and early-deleted integration tests that called state update
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
 step: step-1
 date: 2025-03-01T21:20:10Z
 ---
