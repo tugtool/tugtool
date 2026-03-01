@@ -9,6 +9,53 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-01T22:44:51Z
+---
+
+## step-2: Added get_settings and post_settings handlers with loopback check, null-as-delete merge semantics, and mutex-guarded read-modify-write. Registered /api/settings route in build_app with Extension layer. Added 7 integration tests (17 total settings tests pass).
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-2
+plan: tugplan-shared-settings.md
+date: 2026-03-01T00:01:00Z
+---
+
+## step-2 (shared-settings): Add GET/POST /api/settings handlers and route registration
+
+**Summary:** Added `get_settings` and `post_settings` axum handlers to `settings.rs`. Wired `/api/settings` route and `Extension<Arc<SettingsState>>` layer into `build_app` in `server.rs`. Added 7 integration tests covering all specified scenarios. Removed all `#[allow(dead_code)]` scaffolding from step 1.
+
+**Files changed:**
+- tugcode/crates/tugcast/src/settings.rs (added get_settings, post_settings handlers; removed dead_code allows)
+- tugcode/crates/tugcast/src/server.rs (added Extension import, Arc, SettingsState; wired /api/settings route)
+- tugcode/crates/tugcast/src/integration_tests.rs (added build_settings_test_app helper + 7 integration tests)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd tugcode && cargo nextest run -p tugcast --filter-expr 'test(settings)'`
+```
+Nextest run ID 338b13c8-5fcb-4f2b-9e9e-19b9ce39617d with nextest profile: default
+    Starting 17 tests across 1 binary (157 tests skipped)
+     Summary [   0.023s] 17 tests run: 17 passed, 157 skipped
+```
+Result: PASSED
+
+Checkpoint 2: `cd tugcode && cargo build -p tugcast` (no warnings)
+```
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.84s
+```
+Result: PASSED (zero warnings)
+
+Checkpoints 3-5 (Manual: curl tests) — deferred to user for runtime verification.
+
+---
+
+---
 step: step-1
 date: 2025-03-01T22:36:33Z
 ---

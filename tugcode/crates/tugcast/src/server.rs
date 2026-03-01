@@ -6,6 +6,7 @@
 //! route. In dev mode, the Vite dev server on port 55155 handles the
 //! frontend; tugcast handles only the API routes.
 
+use axum::Extension;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, State};
@@ -15,12 +16,14 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
+use crate::settings::SettingsState;
 
 /// Request payload for /api/tell endpoint
 // Allow dead_code: struct is used only for testing/documentation
@@ -128,11 +131,28 @@ pub(crate) fn build_app(
     _dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
 ) -> Router {
+    // Derive settings path before source_tree is consumed by the if-let below.
+    let settings_path = source_tree
+        .as_ref()
+        .map(|t| t.join(".tugtool/deck-settings.json"));
+    let settings_state = Arc::new(SettingsState {
+        path: settings_path,
+        lock: tokio::sync::Mutex::new(()),
+    });
+
     let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .with_state(router);
+        .with_state(router)
+        // Settings handlers use Extension, not State<FeedRouter>, so the route
+        // is added after .with_state() as a stateless route and gets the
+        // Extension layer applied to the whole router.
+        .route(
+            "/api/settings",
+            get(crate::settings::get_settings).post(crate::settings::post_settings),
+        )
+        .layer(Extension(settings_state));
 
     if let Some(tree) = source_tree {
         let dist_path = tree.join("tugdeck").join("dist");

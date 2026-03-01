@@ -4,19 +4,27 @@
 //! `SettingsState` for sharing settings path and write serialization
 //! across axum handlers, and `load_settings`/`save_settings` for
 //! atomic file I/O.
+//!
+//! HTTP handlers `get_settings` and `post_settings` implement
+//! `GET /api/settings` and `POST /api/settings` respectively.
 
 use std::io;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Extension;
+use axum::body::Bytes;
+use axum::extract::ConnectInfo;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 /// Persisted deck settings: layout and theme.
 ///
 /// Both fields are optional and use `skip_serializing_if` so that
 /// absent fields are omitted from the JSON file, keeping it minimal.
-// Allow dead_code: DeckSettings is used in handlers wired in server.rs in the next step.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct DeckSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,8 +38,6 @@ pub(crate) struct DeckSettings {
 /// `path` is `None` when no `source_tree` is configured (graceful
 /// degradation per [D06]). `lock` serializes read-modify-write
 /// operations in `post_settings` to prevent concurrent POST races.
-// Allow dead_code: SettingsState is fully wired in server.rs in the next step.
-#[allow(dead_code)]
 pub(crate) struct SettingsState {
     pub path: Option<PathBuf>,
     pub lock: tokio::sync::Mutex<()>,
@@ -39,8 +45,6 @@ pub(crate) struct SettingsState {
 
 /// Load settings from `path`, returning `DeckSettings::default()` on
 /// any error (missing file, invalid JSON, I/O failure).
-// Allow dead_code: called from axum handlers wired in server.rs in the next step.
-#[allow(dead_code)]
 pub(crate) async fn load_settings(path: &Path) -> DeckSettings {
     match tokio::fs::read_to_string(path).await {
         Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
@@ -54,8 +58,6 @@ pub(crate) async fn load_settings(path: &Path) -> DeckSettings {
 /// same directory, then renames to the target path. `rename(2)` is
 /// atomic on POSIX filesystems, preventing partial writes from
 /// corrupting the settings file.
-// Allow dead_code: called from axum handlers wired in server.rs in the next step.
-#[allow(dead_code)]
 pub(crate) async fn save_settings(path: &Path, settings: &DeckSettings) -> Result<(), io::Error> {
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -73,17 +75,138 @@ pub(crate) async fn save_settings(path: &Path, settings: &DeckSettings) -> Resul
     Ok(())
 }
 
-/// Construct an `Arc<SettingsState>` from an optional source tree path.
+// ── HTTP handlers ──────────────────────────────────────────────────────────
+
+/// Handle GET /api/settings
 ///
-/// Convenience helper used in `build_app`.
-// Allow dead_code: wired into build_app in server.rs in the next step.
-#[allow(dead_code)]
-pub(crate) fn make_settings_state(source_tree: Option<&Path>) -> Arc<SettingsState> {
-    let path = source_tree.map(|t| t.join(".tugtool/deck-settings.json"));
-    Arc::new(SettingsState {
-        path,
-        lock: tokio::sync::Mutex::new(()),
-    })
+/// Returns the current deck settings as JSON. Restricted to loopback
+/// connections (403 for non-loopback). Returns `{}` when `source_tree`
+/// is not configured or the settings file does not exist.
+pub(crate) async fn get_settings(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(state): Extension<Arc<SettingsState>>,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        warn!(
+            "get_settings: rejected non-loopback connection from {}",
+            addr
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "forbidden"})),
+        )
+            .into_response();
+    }
+
+    let settings = match &state.path {
+        Some(path) => load_settings(path).await,
+        None => DeckSettings::default(),
+    };
+
+    (
+        StatusCode::OK,
+        axum::Json(
+            serde_json::to_value(&settings)
+                .unwrap_or(serde_json::Value::Object(Default::default())),
+        ),
+    )
+        .into_response()
+}
+
+/// Handle POST /api/settings
+///
+/// Merges the posted JSON into the stored settings using null-as-delete
+/// semantics per [D09]:
+/// - Field present with non-null value → overwrite existing field.
+/// - Field absent from body → preserve existing value.
+/// - Field explicitly set to `null` → remove field from stored settings.
+///
+/// Restricted to loopback connections. When `source_tree` is not
+/// configured, silently discards the payload and returns `{"status":"ok"}`.
+pub(crate) async fn post_settings(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(state): Extension<Arc<SettingsState>>,
+    body: Bytes,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        warn!(
+            "post_settings: rejected non-loopback connection from {}",
+            addr
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "forbidden"})),
+        )
+            .into_response();
+    }
+
+    // Parse body as raw JSON value for null-as-delete merge logic
+    let posted: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "invalid JSON"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Graceful degradation: no source_tree configured, silently discard
+    let path = match &state.path {
+        Some(p) => p.clone(),
+        None => {
+            return (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({"status": "ok"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Acquire the write lock to serialize the read-modify-write cycle
+    let _guard = state.lock.lock().await;
+
+    // Load existing settings as a raw JSON object for field-level merge
+    let mut stored: serde_json::Map<String, serde_json::Value> = {
+        let existing = load_settings(&path).await;
+        match serde_json::to_value(&existing) {
+            Ok(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        }
+    };
+
+    // Apply null-as-delete merge from posted object
+    if let serde_json::Value::Object(posted_map) = posted {
+        for (key, value) in posted_map {
+            if value.is_null() {
+                // Explicit null → delete the field
+                stored.remove(&key);
+            } else {
+                // Non-null value → overwrite
+                stored.insert(key, value);
+            }
+        }
+    }
+
+    // Deserialize merged map back to DeckSettings for atomic write
+    let merged: DeckSettings =
+        serde_json::from_value(serde_json::Value::Object(stored)).unwrap_or_default();
+
+    if let Err(e) = save_settings(&path, &merged).await {
+        warn!("post_settings: failed to save settings: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "failed to save"})),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({"status": "ok"})),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
