@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-01T17:35:44Z
+---
+
+## step-6: Verified diagnostic.js and ErrorBoundary are present in production bundle and correctly wired. Manual Web Inspector testing deferred to step 7.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-5
 date: 2025-03-01T17:30:01Z
 ---
