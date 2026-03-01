@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-01T05:04:00Z
+---
+
+## step-8: Verification-only step: 740 Rust tests pass, clippy clean, Swift app builds, no stale symbol references
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-7
 date: 2025-03-01T04:55:10Z
 ---
