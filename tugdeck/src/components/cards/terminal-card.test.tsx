@@ -159,7 +159,7 @@ describe("TerminalCard – mounts xterm.js instance into container ref", () => {
     const openArg = mockOpen.mock.calls[0]?.[0];
     expect(openArg).toBeInstanceOf(HTMLElement);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("renders the terminal-container element for xterm.js to mount into", async () => {
@@ -170,7 +170,7 @@ describe("TerminalCard – mounts xterm.js instance into container ref", () => {
     expect(termContainer).not.toBeNull();
     expect(termContainer).toBeInstanceOf(HTMLElement);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("loads FitAddon and WebLinksAddon via terminal.loadAddon() on mount", async () => {
@@ -180,7 +180,7 @@ describe("TerminalCard – mounts xterm.js instance into container ref", () => {
     // FitAddon + WebLinksAddon = at least 2 calls (WebglAddon throws, skipped)
     expect(mockLoadAddon.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("writes incoming feed payload to the terminal instance", async () => {
@@ -191,7 +191,7 @@ describe("TerminalCard – mounts xterm.js instance into container ref", () => {
     expect(mockWrite.mock.calls.length).toBe(1);
     expect(mockWrite.mock.calls[0]?.[0]).toEqual(payload);
 
-    unmount();
+    act(() => { unmount(); });
   });
 });
 
@@ -230,7 +230,7 @@ describe("TerminalCard – calls fit() on resize", () => {
     // fit() must have been called as part of the resize debounce
     expect(mockFit.mock.calls.length).toBeGreaterThan(0);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("does not call fit() when dragState.isDragging is true", async () => {
@@ -271,7 +271,7 @@ describe("TerminalCard – calls fit() on resize", () => {
     // fit() must be suppressed during active drag
     expect(mockFit.mock.calls.length).toBe(0);
 
-    unmount();
+    act(() => { unmount(); });
   });
 });
 
@@ -288,7 +288,7 @@ describe("TerminalCard – cleans up xterm.js on unmount", () => {
     // Reset dispose counter so we only count the unmount call
     mockTerminalDispose.mockClear();
 
-    unmount();
+    act(() => { unmount(); });
 
     // terminal.dispose() must be called exactly once during cleanup
     expect(mockTerminalDispose.mock.calls.length).toBe(1);
@@ -320,7 +320,7 @@ describe("TerminalCard – cleans up xterm.js on unmount", () => {
     document.body.classList.remove("td-theme-bluenote");
     document.dispatchEvent(new CustomEvent("td-theme-change", { detail: { theme: "brio" } }));
 
-    unmount();
+    act(() => { unmount(); });
   });
 });
 
@@ -334,7 +334,7 @@ describe("TerminalCard – context integration", () => {
     // onData must be called once during xterm.js initialization
     expect(mockOnData.mock.calls.length).toBe(1);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("registers terminal.onResize() to forward resize events to server", async () => {
@@ -343,7 +343,7 @@ describe("TerminalCard – context integration", () => {
 
     expect(mockOnResize.mock.calls.length).toBe(1);
 
-    unmount();
+    act(() => { unmount(); });
   });
 
   it("uses FeedId.TERMINAL_OUTPUT (0x00) as its data feed", () => {
@@ -358,6 +358,6 @@ describe("TerminalCard – context integration", () => {
     const wrapper = container.querySelector(".terminal-card");
     expect(wrapper).not.toBeNull();
 
-    unmount();
+    act(() => { unmount(); });
   });
 });

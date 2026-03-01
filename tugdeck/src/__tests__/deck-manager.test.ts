@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { act } from "react";
 import { Window } from "happy-dom";
 import { DeckManager } from "../deck-manager";
 import type { TugCard, TugCardMeta } from "../cards/card";
@@ -17,6 +18,19 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 } as any;
+
+// Signal to React that we are in a test environment
+(global as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+// Suppress React act() warnings from Radix UI internal animations
+// (card chrome includes dropdown menus backed by Radix).
+const _origConsoleError = console.error;
+console.error = (...args: unknown[]) => {
+  if (typeof args[0] === "string" && args[0].includes("was not wrapped in act(")) {
+    return;
+  }
+  _origConsoleError.call(console, ...args);
+};
 
 // Minimal mock TugConnection
 class MockConnection {
@@ -58,18 +72,26 @@ describe("DeckManager.closePanelByComponent", () => {
     document.body.appendChild(container);
 
     const connection = new MockConnection();
-    deck = new DeckManager(container, connection as any);
+    act(() => {
+      deck = new DeckManager(container, connection as any);
+    });
     deck.registerCardFactory("test-card", () => createMockCard());
   });
 
+  afterEach(() => {
+    act(() => {
+      document.body.innerHTML = "";
+    });
+  });
+
   it("should remove a card that was added via addNewCard", () => {
-    deck.addNewCard("test-card");
+    act(() => { deck.addNewCard("test-card"); });
     // Verify card exists
     const panel = deck.findPanelByComponent("test-card");
     expect(panel).not.toBeNull();
 
     // Now close it
-    deck.closePanelByComponent("test-card");
+    act(() => { deck.closePanelByComponent("test-card"); });
 
     // Verify card is gone
     const panelAfter = deck.findPanelByComponent("test-card");
@@ -78,7 +100,7 @@ describe("DeckManager.closePanelByComponent", () => {
 
   it("should be a no-op when component does not exist", () => {
     // Should not throw
-    deck.closePanelByComponent("nonexistent");
+    act(() => { deck.closePanelByComponent("nonexistent"); });
     expect(deck.findPanelByComponent("nonexistent")).toBeNull();
   });
 });
