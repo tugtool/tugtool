@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-01T04:46:10Z
+---
+
+## step-5: Removed awaitingDevModeResult flag and onDevModeResult callback; onReady now always spawns Vite and loads URL from Vite port; NSAlert shown when no source tree
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-4
 date: 2025-03-01T04:39:51Z
 ---
