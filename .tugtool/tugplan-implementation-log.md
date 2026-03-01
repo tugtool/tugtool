@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-01T21:56:35Z
+---
+
+## step-4: Replaced all tugcode state update and --complete-remaining references with complete-checklist in implement skill documentation
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
 step: step-3
 date: 2025-03-01T21:48:49Z
 ---
