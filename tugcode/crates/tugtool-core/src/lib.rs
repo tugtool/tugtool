@@ -49,10 +49,9 @@ pub use parser::parse_tugplan;
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use session::now_iso8601;
 pub use state::{
-    ArtifactSummary, BatchEntry, ChecklistItemDetail, ChecklistSummary, ChecklistUpdate,
-    ClaimResult, CompleteResult, InitResult, PlanState, ReadyResult, ReconcileEntry,
-    ReconcileResult, ReleaseResult, SkippedMismatch, StateDb, StepInfo, StepState, UpdateResult,
-    compute_plan_hash,
+    ArtifactSummary, BatchEntry, ChecklistItemDetail, ChecklistSummary, ClaimResult,
+    CompleteResult, InitResult, PlanState, ReadyResult, ReconcileEntry, ReconcileResult,
+    ReleaseResult, SkippedMismatch, StateDb, StepInfo, StepState, UpdateResult, compute_plan_hash,
 };
 pub use types::{
     Anchor, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step, TugPlan,

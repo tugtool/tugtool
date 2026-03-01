@@ -1,7 +1,6 @@
 //! Integration tests for state command lifecycle
 
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
@@ -299,75 +298,6 @@ Test context for concurrent claims.
 - [ ] All tests pass
 "#;
 
-const COMMIT_TEST_PLAN: &str = r#"## Phase 1.0: Commit Test Plan {#phase-1}
-
-**Purpose:** Test plan for commit strict mode testing.
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | Test |
-| Status | active |
-| Target branch | main |
-| Tracking issue/PR | N/A |
-| Last updated | 2026-02-24 |
-
----
-
-### Phase Overview {#phase-overview}
-
-#### Context {#context}
-
-Test context for commit strict mode.
-
----
-
-### 1.0.0 Design Decisions {#design-decisions}
-
-#### [D01] Test Decision (DECIDED) {#d01-test}
-
-**Decision:** This is a test decision.
-
-**Rationale:**
-- Because testing
-
-**Implications:**
-- Tests work
-
----
-
-### 1.0.5 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Commit:** `test: commit strict mode`
-
-**Tasks:**
-- [ ] Task one
-- [ ] Task two
-
-**Tests:**
-- [ ] Test one
-- [ ] Test two
-
-**Checkpoint:**
-- [ ] `cargo build` succeeds
-- [ ] `cargo test` succeeds
-
----
-
-### 1.0.6 Deliverables and Checkpoints {#deliverables}
-
-**Deliverable:** Working test feature.
-
-#### Phase Exit Criteria {#exit-criteria}
-
-- [ ] All tests pass
-"#;
-
 const SINGLE_STEP_PLAN: &str = r#"## Phase 1.0: Single Step Plan {#phase-1}
 
 **Purpose:** Test plan with single step for strict completion testing.
@@ -564,209 +494,6 @@ fn test_state_claim_start_heartbeat_lifecycle() {
 }
 
 #[test]
-fn test_state_update_artifact_complete_lifecycle() {
-    let temp = setup_test_git_repo();
-    create_test_plan(&temp, "test-state-full", MINIMAL_PLAN);
-
-    // Commit the plan file
-    Command::new("git")
-        .args(["add", ".tugtool/tugplan-test-state-full.md"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to stage plan");
-
-    Command::new("git")
-        .args(["commit", "-m", "Add test plan"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to commit plan");
-
-    // Step 1: Initialize state
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("init")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state init");
-
-    assert!(
-        output.status.success(),
-        "state init failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Step 2: Claim and start a step
-    Command::new(tug_binary())
-        .arg("state")
-        .arg("claim")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to claim");
-
-    Command::new(tug_binary())
-        .arg("state")
-        .arg("start")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start");
-
-    // Step 3: Update checklist items
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("update")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--task")
-        .arg("1:completed")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state update");
-
-    assert!(
-        output.status.success(),
-        "state update failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let update_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse update JSON");
-    assert_eq!(update_json["status"], "ok");
-    assert_eq!(update_json["data"]["items_updated"], 1);
-
-    // Step 4: Record an artifact
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("artifact")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--kind")
-        .arg("architect_strategy")
-        .arg("--summary")
-        .arg("Test artifact summary")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state artifact");
-
-    assert!(
-        output.status.success(),
-        "state artifact failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let artifact_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse artifact JSON");
-    assert_eq!(artifact_json["status"], "ok");
-    assert_eq!(artifact_json["data"]["kind"], "architect_strategy");
-    assert!(artifact_json["data"]["artifact_id"].is_number());
-
-    // Step 5: Complete all remaining checklist items
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("update")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--all")
-        .arg("completed")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to complete all items");
-
-    assert!(output.status.success());
-
-    // Step 6: Complete the step
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("complete")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state complete");
-
-    assert!(
-        output.status.success(),
-        "state complete failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let complete_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
-    assert_eq!(complete_json["status"], "ok");
-    assert_eq!(complete_json["data"]["completed"], true);
-    assert_eq!(complete_json["data"]["forced"], false);
-
-    // Step 7: Test force complete on another step
-    // Claim step-2 (depends on step-1 which is now complete)
-    Command::new(tug_binary())
-        .arg("state")
-        .arg("claim")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to claim step-2");
-
-    Command::new(tug_binary())
-        .arg("state")
-        .arg("start")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-2")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to start step-2");
-
-    // Force complete without completing checklist items
-    let output = Command::new(tug_binary())
-        .arg("state")
-        .arg("complete")
-        .arg(".tugtool/tugplan-test-state-full.md")
-        .arg("step-2")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--force")
-        .arg("--reason")
-        .arg("testing force mode")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to force complete");
-
-    assert!(
-        output.status.success(),
-        "force complete failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let force_complete_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("failed to parse force complete JSON");
-    assert_eq!(force_complete_json["status"], "ok");
-    assert_eq!(force_complete_json["data"]["forced"], true);
-}
-
-#[test]
 fn test_state_show_ready_reset_reconcile_lifecycle() {
     let temp = setup_test_git_repo();
     create_test_plan(&temp, "test-lifecycle", MINIMAL_PLAN);
@@ -871,19 +598,20 @@ fn test_state_show_ready_reset_reconcile_lifecycle() {
         .output()
         .expect("failed to start");
 
-    // Step 5: Update and complete step-1
+    // Step 5: Complete all checklist items and complete step-1
     Command::new(tug_binary())
-        .arg("state")
-        .arg("update")
-        .arg(".tugtool/tugplan-test-lifecycle.md")
-        .arg("step-1")
-        .arg("--worktree")
-        .arg("/tmp/test-worktree")
-        .arg("--all")
-        .arg("completed")
+        .args([
+            "state",
+            "complete-checklist",
+            ".tugtool/tugplan-test-lifecycle.md",
+            "step-1",
+            "--worktree",
+            "/tmp/test-worktree",
+        ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
         .output()
-        .expect("failed to update");
+        .expect("failed to complete-checklist");
 
     Command::new(tug_binary())
         .arg("state")
@@ -1025,17 +753,16 @@ fn test_full_lifecycle_plan_done() {
     Command::new(tug_binary())
         .args([
             "state",
-            "update",
+            "complete-checklist",
             plan_path,
             "step-1",
             "--worktree",
             "/tmp/wt-a",
-            "--all",
-            "completed",
         ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
         .output()
-        .expect("failed to update step-1");
+        .expect("failed to complete-checklist step-1");
 
     let output = Command::new(tug_binary())
         .args([
@@ -1080,15 +807,14 @@ fn test_full_lifecycle_plan_done() {
     Command::new(tug_binary())
         .args([
             "state",
-            "update",
+            "complete-checklist",
             plan_path,
             "step-2",
             "--worktree",
             "/tmp/wt-a",
-            "--all",
-            "completed",
         ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
         .output()
         .expect("failed to update step-2");
 
@@ -1642,693 +1368,6 @@ fn test_reconcile_from_git_trailers() {
     assert!(show_json["data"]["plan"]["steps"][0]["commit_hash"].is_string());
 }
 
-#[test]
-fn test_batch_update_success() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-- [ ] Task two
-
-**Tests:**
-- [ ] Test one
-
-**Checkpoint:**
-- [ ] Checkpoint one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    // Claim and start the step
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Batch update via stdin
-    let batch_json = r#"[
-  {"kind": "task", "ordinal": 0, "status": "completed"},
-  {"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"},
-  {"kind": "test", "ordinal": 0, "status": "completed"}
-]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(
-        output.status.success(),
-        "batch update failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Verify by checking show output includes the completed items
-    let show_output = Command::new(tug_binary())
-        .args(["state", "show", plan_path, "--json"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to show state");
-
-    assert!(show_output.status.success());
-    // DB verification is handled by unit tests in state.rs
-}
-
-#[test]
-fn test_batch_update_invalid_kind() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    let batch_json = r#"[{"kind": "invalid_kind", "ordinal": 0, "status": "completed"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Invalid kind"));
-}
-
-#[test]
-fn test_batch_update_out_of_range_ordinal() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    let batch_json = r#"[{"kind": "task", "ordinal": 99, "status": "completed"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("out of range") || stderr.contains("valid range"));
-}
-
-#[test]
-fn test_batch_update_duplicate_entries() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}, {"kind": "task", "ordinal": 0, "status": "completed"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Duplicate"));
-}
-
-#[test]
-fn test_batch_update_open_status_rejected() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "open"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("only accept 'completed' or 'deferred'"));
-}
-
-#[test]
-fn test_batch_update_idempotent() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // First update to completed
-    let batch_json1 = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json1.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(output.status.success());
-
-    // Second update to same status (idempotent)
-    let batch_json2 = r#"[{"kind": "task", "ordinal": 0, "status": "completed"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json2.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(output.status.success());
-    // Idempotency verified - no error on second update to same status
-}
-
-#[test]
-fn test_batch_update_deferred_requires_reason() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Deferred without reason
-    let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "deferred"}]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
-
-    use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("requires a non-empty reason"));
-}
-
-#[test]
-fn test_batch_update_conflict_with_individual_flags() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Try to use both --batch and --task
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--batch",
-            "--task",
-            "1:completed",
-        ])
-        .current_dir(temp.path())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .expect("failed to run");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("cannot be used") || stderr.contains("conflict"));
-}
-
-#[test]
-fn test_per_item_deferred_requires_reason() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Try per-item deferred update (should fail)
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:deferred",
-        ])
-        .current_dir(temp.path())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .expect("failed to run");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("deferred") && stderr.contains("batch"));
-}
-
-#[test]
-fn test_per_item_open_requires_allow_reopen() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // First mark as completed
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:completed",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run");
-    assert!(output.status.success());
-
-    // Try to reopen without --allow-reopen (should fail)
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:open",
-        ])
-        .current_dir(temp.path())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .expect("failed to run");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("allow-reopen") || stderr.contains("allow_reopen"));
-
-    // Try with --allow-reopen (should succeed)
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:open",
-            "--allow-reopen",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run");
-
-    assert!(
-        output.status.success(),
-        "reopen with --allow-reopen failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    // Item successfully reopened with --allow-reopen flag
-}
-
 // ===== Step 2.1 Display Mode Tests =====
 
 #[test]
@@ -2406,21 +1445,20 @@ fn test_state_show_checklist_mode() {
 
     claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
-    // Complete one task
+    // Complete all checklist items
     Command::new(tug_binary())
         .args([
             "state",
-            "update",
+            "complete-checklist",
             plan_path,
             "step-1",
             "--worktree",
             "/tmp/wt",
-            "--task",
-            "1:completed",
         ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
         .output()
-        .expect("failed to update");
+        .expect("failed to complete-checklist");
 
     // Show with --checklist
     let output = Command::new(tug_binary())
@@ -2431,7 +1469,7 @@ fn test_state_show_checklist_mode() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Checklist mode shows [x] and [ ] markers
+    // Checklist mode shows [x] markers for completed items
     assert!(stdout.contains("[x]") || stdout.contains("[ ]"));
     assert!(stdout.contains("Task one") || stdout.contains("Task two"));
 }
@@ -2466,17 +1504,16 @@ fn test_state_show_checklist_deferred_with_reason() {
 
     claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
-    // Defer a task with reason
+    // Defer a task with reason via complete-checklist
     let batch_json = r#"[{"kind": "task", "ordinal": 0, "status": "deferred", "reason": "needs manual review"}]"#;
     let mut child = Command::new(tug_binary())
         .args([
             "state",
-            "update",
+            "complete-checklist",
             plan_path,
             "step-1",
             "--worktree",
             "/tmp/wt",
-            "--batch",
         ])
         .current_dir(temp.path())
         .stdin(std::process::Stdio::piped())
@@ -2687,122 +1724,6 @@ fn test_plan_hash_drift_warning_in_show() {
 }
 
 #[test]
-fn test_plan_hash_drift_blocks_update() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Modify the plan file after init
-    let plan_file = temp.path().join(plan_path);
-    let modified_content = plan_content.to_string() + "\n- [ ] Task two\n";
-    std::fs::write(&plan_file, modified_content).expect("failed to modify plan");
-
-    // Try to update - should be blocked
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:completed",
-        ])
-        .current_dir(temp.path())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .expect("failed to update");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("modified") || stderr.contains("allow-drift"));
-}
-
-#[test]
-fn test_plan_hash_drift_allow_drift_override() {
-    let temp = setup_test_git_repo();
-    let plan_content = r#"## Phase 1.0: Test {#phase-1}
-
----
-
-### Plan Metadata {#plan-metadata}
-
-| Field | Value |
-|------|-------|
-| Owner | test |
-| Status | active |
-| Last updated | 2026-02-24 |
-
----
-
-### 1.0.0 Execution Steps {#execution-steps}
-
-#### Step 1: Test Step {#step-1}
-
-**Tasks:**
-- [ ] Task one
-"#;
-
-    init_plan_in_repo(&temp, "test", plan_content);
-    let plan_path = ".tugtool/tugplan-test.md";
-
-    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
-
-    // Modify the plan file after init
-    let plan_file = temp.path().join(plan_path);
-    let modified_content = plan_content.to_string() + "\n- [ ] Extra task\n";
-    std::fs::write(&plan_file, modified_content).expect("failed to modify plan");
-
-    // Try to update with --allow-drift - should succeed
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            plan_path,
-            "step-1",
-            "--worktree",
-            "/tmp/wt",
-            "--task",
-            "1:completed",
-            "--allow-drift",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to update");
-
-    assert!(
-        output.status.success(),
-        "update with --allow-drift failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[test]
 fn test_plan_hash_drift_blocks_complete() {
     let temp = setup_test_git_repo();
     let plan_content = r#"## Phase 1.0: Test {#phase-1}
@@ -2832,21 +1753,20 @@ fn test_plan_hash_drift_blocks_complete() {
 
     claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
 
-    // Complete all items
+    // Complete all checklist items
     Command::new(tug_binary())
         .args([
             "state",
-            "update",
+            "complete-checklist",
             plan_path,
             "step-1",
             "--worktree",
             "/tmp/wt",
-            "--all",
-            "completed",
         ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
         .output()
-        .expect("failed to update");
+        .expect("failed to complete-checklist");
 
     // Modify the plan file after init
     let plan_file = temp.path().join(plan_path);
@@ -2883,214 +1803,6 @@ fn test_plan_hash_drift_commit_warns() {
 }
 
 #[test]
-fn test_commit_strict_default_succeeds() {
-    // Verify that state complete (used by tugcode commit) succeeds when all items are completed or deferred
-    // Note: We use the --force flag here to bypass strict checks for setup, then verify non-force behavior
-    // The actual unit tests in state.rs comprehensively test complete_step(force=false)
-    let temp = setup_test_git_repo();
-    create_test_plan(&temp, "commit-test", COMMIT_TEST_PLAN);
-
-    // Commit the plan
-    Command::new("git")
-        .args(["add", ".tugtool/tugplan-commit-test.md"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to stage plan");
-    Command::new("git")
-        .args(["commit", "-m", "Add plan"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to commit plan");
-
-    // Initialize state
-    let output = Command::new(tug_binary())
-        .args(["state", "init", ".tugtool/tugplan-commit-test.md", "--json"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state init");
-    assert!(output.status.success());
-
-    // Claim and start step
-    claim_and_start_step(
-        &temp,
-        ".tugtool/tugplan-commit-test.md",
-        "step-1",
-        "/tmp/test-worktree-commit",
-    );
-
-    // Mark all tasks and tests as completed using batch update
-    let batch_json = r#"[
-        {"kind": "task", "ordinal": 0, "status": "completed"},
-        {"kind": "task", "ordinal": 1, "status": "completed"},
-        {"kind": "test", "ordinal": 0, "status": "completed"},
-        {"kind": "test", "ordinal": 1, "status": "completed"}
-    ]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            ".tugtool/tugplan-commit-test.md",
-            "step-1",
-            "--worktree",
-            "/tmp/test-worktree-commit",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn batch update");
-
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write batch JSON");
-
-    let output = child
-        .wait_with_output()
-        .expect("failed to wait for batch update");
-    assert!(output.status.success(), "batch update should succeed");
-
-    // Complete with --force to bypass the checkpoint items that we left incomplete
-    // This verifies that state complete command exists and works
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            ".tugtool/tugplan-commit-test.md",
-            "step-1",
-            "--worktree",
-            "/tmp/test-worktree-commit",
-            "--force",
-            "--json",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state complete");
-
-    // Should succeed with --force even if some items are incomplete
-    assert!(
-        output.status.success(),
-        "state complete --force should succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // The comprehensive tests for force=false behavior are in state.rs unit tests:
-    // - test_complete_step_strict_mode_success
-    // - test_complete_step_strict_with_deferred
-    // - test_complete_step_strict_fails_with_open_and_deferred
-}
-
-#[test]
-fn test_commit_strict_default_warns_on_incomplete() {
-    // Verify that state complete without --force fails when items are still open
-    // This simulates what happens when tugcode commit calls complete_step(force=false)
-    let temp = setup_test_git_repo();
-    create_test_plan(&temp, "commit-incomplete", COMMIT_TEST_PLAN);
-
-    // Commit the plan
-    Command::new("git")
-        .args(["add", ".tugtool/tugplan-commit-incomplete.md"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to stage plan");
-    Command::new("git")
-        .args(["commit", "-m", "Add plan"])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to commit plan");
-
-    // Initialize state
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "init",
-            ".tugtool/tugplan-commit-incomplete.md",
-            "--json",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state init");
-    assert!(output.status.success());
-
-    // Claim and start step
-    claim_and_start_step(
-        &temp,
-        ".tugtool/tugplan-commit-incomplete.md",
-        "step-1",
-        "/tmp/test-worktree-incomplete",
-    );
-
-    // Mark only SOME items as completed, leaving others open
-    let batch_json = r#"[
-        {"kind": "task", "ordinal": 0, "status": "completed"}
-    ]"#;
-
-    let mut child = Command::new(tug_binary())
-        .args([
-            "state",
-            "update",
-            ".tugtool/tugplan-commit-incomplete.md",
-            "step-1",
-            "--worktree",
-            "/tmp/test-worktree-incomplete",
-            "--batch",
-        ])
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn batch update");
-
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write batch JSON");
-
-    let output = child
-        .wait_with_output()
-        .expect("failed to wait for batch update");
-    assert!(output.status.success(), "batch update should succeed");
-
-    // Now verify that state complete without --force FAILS because items are still open
-    let output = Command::new(tug_binary())
-        .args([
-            "state",
-            "complete",
-            ".tugtool/tugplan-commit-incomplete.md",
-            "step-1",
-            "--worktree",
-            "/tmp/test-worktree-incomplete",
-            "--json",
-        ])
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run state complete");
-
-    // Should fail because not all items are completed or deferred (default is force=false now)
-    assert!(
-        !output.status.success(),
-        "state complete should fail with incomplete items"
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("not completed")
-            || stderr.contains("incomplete")
-            || stderr.contains("Cannot complete"),
-        "error message should mention incomplete items: {}",
-        stderr
-    );
-}
-
-#[test]
 fn test_commit_strict_allows_deferred_items() {
     // This test is covered by unit tests in state.rs:
     // - test_complete_step_strict_with_deferred
@@ -3099,12 +1811,44 @@ fn test_commit_strict_allows_deferred_items() {
     // while open items cause failure. This integration test stub documents that the behavior exists.
 }
 
-// === --complete-remaining integration tests ===
+// === complete-checklist integration tests ===
 
-/// Minimal plan with multiple checklist items for complete-remaining tests
-const COMPLETE_REMAINING_PLAN: &str = r#"## Phase 1.0: Complete Remaining Test {#phase-1}
+/// Helper: get checklist items for a step from state show JSON.
+/// step_anchor should be the bare anchor without leading '#' (e.g. "step-1").
+#[allow(dead_code)]
+fn get_checklist_items(
+    temp: &tempfile::TempDir,
+    plan_path: &str,
+    step_anchor: &str,
+) -> Vec<serde_json::Value> {
+    let output = Command::new(tug_binary())
+        .args(["state", "show", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state show");
+    assert!(
+        output.status.success(),
+        "state show failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
-**Purpose:** Test plan for --complete-remaining integration tests.
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("invalid JSON from state show");
+    let checklist_items = json["data"]["plan"]["checklist_items"]
+        .as_array()
+        .expect("no checklist_items array");
+
+    checklist_items
+        .iter()
+        .filter(|item| item["step_anchor"].as_str() == Some(step_anchor))
+        .cloned()
+        .collect()
+}
+
+/// Plan with multiple open checklist items for complete-checklist tests.
+const MULTI_ITEM_PLAN: &str = r#"## Phase 1.0: Multi-Item Plan {#phase-1}
+
+**Purpose:** Test plan with multiple checklist items for complete-checklist tests.
 
 ---
 
@@ -3115,7 +1859,7 @@ const COMPLETE_REMAINING_PLAN: &str = r#"## Phase 1.0: Complete Remaining Test {
 | Owner | test |
 | Status | active |
 | Target branch | main |
-| Last updated | 2026-02-25 |
+| Last updated | 2026-03-01 |
 
 ---
 
@@ -3147,98 +1891,368 @@ const COMPLETE_REMAINING_PLAN: &str = r#"## Phase 1.0: Complete Remaining Test {
 - [ ] All tests pass
 "#;
 
-/// Helper: run batch update via stdin, returning (success, stdout, stderr)
-fn run_batch_update(
-    temp: &tempfile::TempDir,
-    plan_path: &str,
-    step: &str,
-    worktree: &str,
-    batch_json: &str,
-    extra_args: &[&str],
-) -> (bool, String, String) {
-    let mut args = vec!["state", "update", plan_path, step, "--worktree", worktree];
-    args.extend_from_slice(extra_args);
+// === Rewritten L02 tests ===
 
-    let mut child = Command::new(tug_binary())
-        .args(&args)
-        .current_dir(temp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn");
+#[test]
+fn test_state_complete_checklist_artifact_lifecycle() {
+    // Rewrite of test_state_update_artifact_complete_lifecycle using complete-checklist
+    let temp = setup_test_git_repo();
+    create_test_plan(&temp, "test-state-full", MINIMAL_PLAN);
 
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(batch_json.as_bytes())
-        .expect("failed to write to stdin");
-
-    let output = child.wait_with_output().expect("failed to wait");
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    (output.status.success(), stdout, stderr)
-}
-
-/// Helper: get checklist items for a step from state show JSON.
-/// step_anchor should be the bare anchor without leading '#' (e.g. "step-1").
-fn get_checklist_items(
-    temp: &tempfile::TempDir,
-    plan_path: &str,
-    step_anchor: &str,
-) -> Vec<serde_json::Value> {
-    let output = Command::new(tug_binary())
-        .args(["state", "show", plan_path, "--json"])
+    Command::new("git")
+        .args(["add", ".tugtool/tugplan-test-state-full.md"])
         .current_dir(temp.path())
         .output()
-        .expect("failed to run state show");
+        .expect("failed to stage plan");
+
+    Command::new("git")
+        .args(["commit", "-m", "Add test plan"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to commit plan");
+
+    // Initialize state
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "init",
+            ".tugtool/tugplan-test-state-full.md",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state init");
     assert!(
         output.status.success(),
-        "state show failed: {}",
+        "state init failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("invalid JSON from state show");
-    let checklist_items = json["data"]["plan"]["checklist_items"]
-        .as_array()
-        .expect("no checklist_items array");
+    // Claim and start step-1
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "claim",
+            ".tugtool/tugplan-test-state-full.md",
+            "--worktree",
+            "/tmp/test-worktree",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim");
 
-    checklist_items
-        .iter()
-        .filter(|item| item["step_anchor"].as_str() == Some(step_anchor))
-        .cloned()
-        .collect()
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-1",
+            "--worktree",
+            "/tmp/test-worktree",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start");
+
+    // Record an artifact
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "artifact",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-1",
+            "--worktree",
+            "/tmp/test-worktree",
+            "--kind",
+            "architect_strategy",
+            "--summary",
+            "Test artifact summary",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state artifact");
+    assert!(
+        output.status.success(),
+        "state artifact failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse artifact JSON");
+    assert_eq!(artifact_json["status"], "ok");
+    assert_eq!(artifact_json["data"]["kind"], "architect_strategy");
+    assert!(artifact_json["data"]["artifact_id"].is_number());
+
+    // Complete all checklist items using complete-checklist (replaces state update --task/--all)
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-1",
+            "--worktree",
+            "/tmp/test-worktree",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("failed to run state complete-checklist");
+    assert!(
+        output.status.success(),
+        "state complete-checklist failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let cc_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse complete-checklist JSON");
+    assert_eq!(cc_json["status"], "ok");
+    assert_eq!(cc_json["command"], "state complete-checklist");
+    assert!(cc_json["data"]["items_updated"].as_u64().unwrap_or(0) > 0);
+
+    // Complete the step
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-1",
+            "--worktree",
+            "/tmp/test-worktree",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state complete");
+    assert!(
+        output.status.success(),
+        "state complete failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let complete_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse complete JSON");
+    assert_eq!(complete_json["status"], "ok");
+    assert_eq!(complete_json["data"]["completed"], true);
+    assert_eq!(complete_json["data"]["forced"], false);
+
+    // Force complete step-2 (depends on step-1 which is now done)
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "claim",
+            ".tugtool/tugplan-test-state-full.md",
+            "--worktree",
+            "/tmp/test-worktree",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step-2");
+
+    Command::new(tug_binary())
+        .args([
+            "state",
+            "start",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-2",
+            "--worktree",
+            "/tmp/test-worktree",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to start step-2");
+
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete",
+            ".tugtool/tugplan-test-state-full.md",
+            "step-2",
+            "--worktree",
+            "/tmp/test-worktree",
+            "--force",
+            "--reason",
+            "testing force mode",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to force complete");
+    assert!(
+        output.status.success(),
+        "force complete failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let force_json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse force complete JSON");
+    assert_eq!(force_json["status"], "ok");
+    assert_eq!(force_json["data"]["forced"], true);
 }
 
 #[test]
-fn test_complete_remaining_empty_array_marks_all_open_completed() {
-    // Spec S01 scenario 1: empty array + --complete-remaining marks all open items completed
+fn test_plan_hash_drift_blocks_complete_checklist() {
+    // Rewrite of test_plan_hash_drift_blocks_update: verify drift blocks complete-checklist
     let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining.md";
-    let worktree = "/tmp/wt-cr-1";
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-03-01 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 1: Test Step {#step-1}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
+
+    // Modify the plan file after init to trigger drift
+    let plan_file = temp.path().join(plan_path);
+    let modified_content = plan_content.to_string() + "\n- [ ] Task two\n";
+    std::fs::write(&plan_file, modified_content).expect("failed to modify plan");
+
+    // complete-checklist should be blocked by drift
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            "/tmp/wt",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("failed to run");
+
+    assert!(
+        !output.status.success(),
+        "complete-checklist should be blocked by drift"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("modified") || stderr.contains("allow-drift"),
+        "error should mention drift: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_plan_hash_drift_allow_drift_complete_checklist() {
+    // Rewrite of test_plan_hash_drift_allow_drift_override: verify --allow-drift bypasses check
+    let temp = setup_test_git_repo();
+    let plan_content = r#"## Phase 1.0: Test {#phase-1}
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | test |
+| Status | active |
+| Last updated | 2026-03-01 |
+
+---
+
+### 1.0.0 Execution Steps {#execution-steps}
+
+#### Step 1: Test Step {#step-1}
+
+**Tasks:**
+- [ ] Task one
+"#;
+
+    init_plan_in_repo(&temp, "test", plan_content);
+    let plan_path = ".tugtool/tugplan-test.md";
+    claim_and_start_step(&temp, plan_path, "step-1", "/tmp/wt");
+
+    // Modify the plan file after init to trigger drift
+    let plan_file = temp.path().join(plan_path);
+    let modified_content = plan_content.to_string() + "\n- [ ] Extra task\n";
+    std::fs::write(&plan_file, modified_content).expect("failed to modify plan");
+
+    // complete-checklist with --allow-drift should succeed
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            "/tmp/wt",
+            "--allow-drift",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("failed to run");
+
+    assert!(
+        output.status.success(),
+        "complete-checklist --allow-drift failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+// === New L03 tests ===
+
+#[test]
+fn test_complete_checklist_happy_path() {
+    // L03: init state, claim, start, run complete-checklist with null stdin,
+    // verify all items completed via state show --json
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "cc-happy", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-happy.md";
+    let worktree = "/tmp/wt-cc-happy";
 
     claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
-    // Send empty batch with --complete-remaining
-    let (success, _stdout, stderr) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        worktree,
-        "[]",
-        &["--batch", "--complete-remaining"],
-    );
-    assert!(
-        success,
-        "empty batch + --complete-remaining should succeed: {}",
-        stderr
-    );
+    // Run complete-checklist with no deferrals
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            worktree,
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("failed to run complete-checklist");
 
-    // Verify all items are now completed
+    assert!(
+        output.status.success(),
+        "complete-checklist failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["command"], "state complete-checklist");
+    // MULTI_ITEM_PLAN step-1 has 3 tasks + 2 tests + 2 checkpoints = 7 items,
+    // plus the "All tests pass" exit criteria item in the deliverables section = 8 total
+    assert_eq!(json["data"]["items_updated"], 8);
+
+    // Verify all items are completed via state show --json
     let items = get_checklist_items(&temp, plan_path, "step-1");
+    assert!(!items.is_empty(), "should have checklist items");
     for item in &items {
         assert_eq!(
             item["status"].as_str(),
@@ -3247,87 +2261,57 @@ fn test_complete_remaining_empty_array_marks_all_open_completed() {
             item
         );
     }
-    assert!(!items.is_empty(), "should have checklist items");
 }
 
 #[test]
-fn test_complete_remaining_deferred_items_preserved() {
-    // Spec S01 scenario 2: non-empty deferred items + --complete-remaining
-    // specified deferred items get deferred status, remaining open items get completed
+fn test_complete_checklist_with_deferrals() {
+    // L03: pipe deferral JSON via stdin, verify deferred items have status "deferred"
+    // and non-deferred items are "completed"
     let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-2", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-2.md";
-    let worktree = "/tmp/wt-cr-2";
+    init_plan_in_repo(&temp, "cc-defer", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-defer.md";
+    let worktree = "/tmp/wt-cc-defer";
 
     claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
-    // Defer task ordinal 1, complete remaining
-    let batch_json = r#"[{"kind": "task", "ordinal": 1, "status": "deferred", "reason": "manual verification required"}]"#;
-    let (success, _stdout, stderr) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        worktree,
-        batch_json,
-        &["--batch", "--complete-remaining"],
-    );
+    // Defer checkpoint ordinal 0
+    let deferral_json =
+        r#"[{"kind": "checkpoint", "ordinal": 0, "status": "deferred", "reason": "flaky in CI"}]"#;
+
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            worktree,
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(deferral_json.as_bytes())
+        .expect("failed to write deferral JSON");
+
+    let output = child.wait_with_output().expect("failed to wait");
     assert!(
-        success,
-        "deferred items + --complete-remaining should succeed: {}",
-        stderr
+        output.status.success(),
+        "complete-checklist with deferrals failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify: task ordinal 1 is deferred, all others are completed
+    // Verify: checkpoint 0 is deferred, all others are completed
     let items = get_checklist_items(&temp, plan_path, "step-1");
-    for item in &items {
-        let kind = item["kind"].as_str().unwrap_or("");
-        let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
-        let status = item["status"].as_str().unwrap_or("");
-        if kind == "task" && ordinal == 1 {
-            assert_eq!(
-                status, "deferred",
-                "task ordinal 1 should be deferred, got: {}",
-                status
-            );
-        } else {
-            assert_eq!(
-                status, "completed",
-                "item (kind={}, ordinal={}) should be completed, got: {}",
-                kind, ordinal, status
-            );
-        }
-    }
-}
-
-#[test]
-fn test_complete_remaining_deferred_only_batch_orchestrator_path() {
-    // Spec S01 scenario 3: deferred-only batch + --complete-remaining
-    // This is the orchestrator's primary path when reviewer has non-PASS checkpoints
-    let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-3", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-3.md";
-    let worktree = "/tmp/wt-cr-3";
-
-    claim_and_start_step(&temp, plan_path, "step-1", worktree);
-
-    // Reviewer marked checkpoint 0 as deferred (non-PASS), orchestrator sends only that
-    let batch_json = r#"[{"kind": "checkpoint", "ordinal": 0, "status": "deferred", "reason": "checkpoint FAIL: tests did not pass"}]"#;
-    let (success, _stdout, stderr) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        worktree,
-        batch_json,
-        &["--batch", "--complete-remaining"],
-    );
-    assert!(
-        success,
-        "deferred-only batch + --complete-remaining should succeed: {}",
-        stderr
-    );
-
-    // Verify: checkpoint 0 is deferred, all tasks and tests and checkpoint 1 are completed
-    let items = get_checklist_items(&temp, plan_path, "step-1");
+    assert!(!items.is_empty());
     for item in &items {
         let kind = item["kind"].as_str().unwrap_or("");
         let ordinal = item["ordinal"].as_i64().unwrap_or(-1);
@@ -3349,40 +2333,160 @@ fn test_complete_remaining_deferred_only_batch_orchestrator_path() {
 }
 
 #[test]
-fn test_empty_array_without_complete_remaining_still_errors() {
-    // Spec S01 scenario 4 (regression): empty array WITHOUT --complete-remaining still errors
+fn test_complete_checklist_idempotent() {
+    // L03: run complete-checklist twice, second invocation succeeds with 0 items updated
     let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-4", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-4.md";
-    let worktree = "/tmp/wt-cr-4";
+    init_plan_in_repo(&temp, "cc-idem", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-idem.md";
+    let worktree = "/tmp/wt-cc-idem";
 
     claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
-    let (success, _stdout, stderr) =
-        run_batch_update(&temp, plan_path, "step-1", worktree, "[]", &["--batch"]);
+    // First invocation: completes all items
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            worktree,
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("failed to run first complete-checklist");
     assert!(
-        !success,
-        "empty array without --complete-remaining should fail"
+        output.status.success(),
+        "first complete-checklist failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    let json1: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse JSON");
+    assert!(json1["data"]["items_updated"].as_u64().unwrap_or(0) > 0);
+
+    // Second invocation: no open items remain, 0 items updated
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            worktree,
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("failed to run second complete-checklist");
     assert!(
-        stderr.contains("at least one entry") || stderr.contains("must contain"),
-        "error should mention at least one entry: {}",
+        output.status.success(),
+        "second complete-checklist should succeed idempotently: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json2: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse JSON");
+    assert_eq!(
+        json2["data"]["items_updated"], 0,
+        "second invocation should update 0 items"
+    );
+}
+
+#[test]
+fn test_complete_checklist_ownership_enforcement() {
+    // L03: invoke with wrong worktree and null stdin, verify error
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "cc-own", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-own.md";
+    let correct_worktree = "/tmp/wt-cc-own-correct";
+    let wrong_worktree = "/tmp/wt-cc-own-wrong";
+
+    claim_and_start_step(&temp, plan_path, "step-1", correct_worktree);
+
+    // Invoke with wrong worktree -- should fail
+    let output = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            wrong_worktree,
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("failed to run");
+
+    assert!(
+        !output.status.success(),
+        "complete-checklist with wrong worktree should fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("wnership") || stderr.contains("claimed") || stderr.contains("E049"),
+        "error should mention ownership: {}",
         stderr
     );
 }
 
 #[test]
-fn test_complete_remaining_without_batch_rejected_by_clap() {
-    // Spec S01 scenario 5: --complete-remaining without --batch is rejected
+fn test_complete_checklist_invalid_deferral_json() {
+    // L03: pipe malformed JSON via stdin, verify error
     let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-5", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-5.md";
-    let worktree = "/tmp/wt-cr-5";
+    init_plan_in_repo(&temp, "cc-bad-json", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-bad-json.md";
+    let worktree = "/tmp/wt-cc-bad-json";
 
     claim_and_start_step(&temp, plan_path, "step-1", worktree);
 
-    // Try --complete-remaining without --batch (using --all-tasks to satisfy "at least one update" requirement)
-    // Note: clap's `requires = "batch"` means --complete-remaining requires --batch to be present
+    let mut child = Command::new(tug_binary())
+        .args([
+            "state",
+            "complete-checklist",
+            plan_path,
+            "step-1",
+            "--worktree",
+            worktree,
+        ])
+        .current_dir(temp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn");
+
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"not valid json {{{")
+        .expect("failed to write");
+
+    let output = child.wait_with_output().expect("failed to wait");
+    assert!(
+        !output.status.success(),
+        "complete-checklist with invalid JSON should fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid JSON") || stderr.contains("JSON"),
+        "error should mention invalid JSON: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_state_update_subcommand_rejected() {
+    // L03 drift prevention: verify tugcode state update is no longer recognized by clap
+    let temp = setup_test_git_repo();
+    init_plan_in_repo(&temp, "cc-reject", MULTI_ITEM_PLAN);
+    let plan_path = ".tugtool/tugplan-cc-reject.md";
+
     let output = Command::new(tug_binary())
         .args([
             "state",
@@ -3390,96 +2494,22 @@ fn test_complete_remaining_without_batch_rejected_by_clap() {
             plan_path,
             "step-1",
             "--worktree",
-            worktree,
-            "--complete-remaining",
+            "/tmp/wt",
         ])
         .current_dir(temp.path())
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .output()
-        .expect("failed to spawn");
+        .expect("failed to run");
 
     assert!(
         !output.status.success(),
-        "--complete-remaining without --batch should be rejected by clap"
+        "state update should be rejected by clap"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // clap reports: "error: the following required arguments were not provided: --batch"
-    // or similar phrasing
     assert!(
         !stderr.is_empty(),
         "clap should produce an error message: {}",
-        stderr
-    );
-}
-
-#[test]
-fn test_complete_remaining_with_no_open_items_is_idempotent() {
-    // Spec S01 scenario 6: --complete-remaining when no open items remain succeeds with 0 updated
-    let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-6", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-6.md";
-    let worktree = "/tmp/wt-cr-6";
-
-    claim_and_start_step(&temp, plan_path, "step-1", worktree);
-
-    // First: complete all items
-    let (success, _stdout, stderr) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        worktree,
-        "[]",
-        &["--batch", "--complete-remaining"],
-    );
-    assert!(
-        success,
-        "first complete-remaining should succeed: {}",
-        stderr
-    );
-
-    // Second: complete-remaining again (no open items left) should still succeed
-    let (success2, _stdout2, stderr2) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        worktree,
-        "[]",
-        &["--batch", "--complete-remaining"],
-    );
-    assert!(
-        success2,
-        "--complete-remaining with no open items should succeed idempotently: {}",
-        stderr2
-    );
-}
-
-#[test]
-fn test_complete_remaining_respects_ownership_check() {
-    // Spec S01 scenario 7: ownership check still enforced with --complete-remaining
-    let temp = setup_test_git_repo();
-    init_plan_in_repo(&temp, "complete-remaining-7", COMPLETE_REMAINING_PLAN);
-    let plan_path = ".tugtool/tugplan-complete-remaining-7.md";
-    let correct_worktree = "/tmp/wt-cr-7-correct";
-    let wrong_worktree = "/tmp/wt-cr-7-wrong";
-
-    claim_and_start_step(&temp, plan_path, "step-1", correct_worktree);
-
-    // Try --complete-remaining with wrong worktree
-    let (success, _stdout, stderr) = run_batch_update(
-        &temp,
-        plan_path,
-        "step-1",
-        wrong_worktree,
-        "[]",
-        &["--batch", "--complete-remaining"],
-    );
-    assert!(
-        !success,
-        "--complete-remaining with wrong worktree should be rejected: {}",
-        stderr
-    );
-    assert!(
-        stderr.contains("wnership") || stderr.contains("claimed") || stderr.contains("E049"),
-        "error should mention ownership: {}",
         stderr
     );
 }

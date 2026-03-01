@@ -783,55 +783,6 @@ COMMIT;
         Ok(lease_expires)
     }
 
-    /// Update checklist item(s) for a step.
-    pub fn update_checklist(
-        &self,
-        plan_path: &str,
-        anchor: &str,
-        worktree: &str,
-        updates: &[ChecklistUpdate],
-    ) -> Result<UpdateResult, TugError> {
-        let anchor = normalize_anchor(anchor);
-        // Check ownership first
-        self.check_ownership(plan_path, anchor, worktree)?;
-
-        let now = now_iso8601();
-        let mut total_updated = 0;
-
-        for update in updates {
-            let rows_affected = match update {
-                ChecklistUpdate::Individual {
-                    kind,
-                    ordinal,
-                    status,
-                } => self.conn.execute(
-                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
-                         WHERE plan_path = ?3 AND step_anchor = ?4 AND kind = ?5 AND ordinal = ?6",
-                    rusqlite::params![status, &now, plan_path, anchor, kind, ordinal],
-                ),
-                ChecklistUpdate::BulkByKind { kind, status } => self.conn.execute(
-                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
-                         WHERE plan_path = ?3 AND step_anchor = ?4 AND kind = ?5",
-                    rusqlite::params![status, &now, plan_path, anchor, kind],
-                ),
-                ChecklistUpdate::AllItems { status } => self.conn.execute(
-                    "UPDATE checklist_items SET status = ?1, updated_at = ?2
-                         WHERE plan_path = ?3 AND step_anchor = ?4",
-                    rusqlite::params![status, &now, plan_path, anchor],
-                ),
-            }
-            .map_err(|e| TugError::StateDbQuery {
-                reason: format!("failed to update checklist: {}", e),
-            })?;
-
-            total_updated += rows_affected;
-        }
-
-        Ok(UpdateResult {
-            items_updated: total_updated,
-        })
-    }
-
     /// Batch update checklist items in a single transaction.
     ///
     /// Accepts a slice of batch entries (each with kind, ordinal, status, and optional reason).
@@ -1828,22 +1779,7 @@ pub trait BatchEntry {
     fn reason(&self) -> Option<&str>;
 }
 
-/// Checklist update operation
-#[derive(Debug)]
-pub enum ChecklistUpdate {
-    /// Update a single item by kind and ordinal
-    Individual {
-        kind: String,
-        ordinal: i32,
-        status: String,
-    },
-    /// Update all items of a specific kind
-    BulkByKind { kind: String, status: String },
-    /// Update all items for the step
-    AllItems { status: String },
-}
-
-/// Result from update_checklist operation
+/// Result from checklist update operations
 #[derive(Debug)]
 pub struct UpdateResult {
     /// Number of checklist items updated
@@ -2041,6 +1977,25 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// A no-op BatchEntry implementation for tests that only need complete_remaining=true
+    /// with no explicit deferral entries.
+    struct NoopBatchEntry;
+
+    impl BatchEntry for NoopBatchEntry {
+        fn kind(&self) -> &str {
+            ""
+        }
+        fn ordinal(&self) -> usize {
+            0
+        }
+        fn status(&self) -> &str {
+            ""
+        }
+        fn reason(&self) -> Option<&str> {
+            None
+        }
+    }
 
     #[test]
     fn test_open_creates_db_and_schema_version_is_4() {
@@ -3251,88 +3206,6 @@ mod tests {
             .unwrap();
 
         (temp, db)
-    }
-
-    #[test]
-    fn test_update_checklist_individual() {
-        let (_temp, db) = setup_claimed_plan();
-
-        // Update task 1 (0-indexed in storage)
-        let updates = vec![ChecklistUpdate::Individual {
-            kind: "task".to_string(),
-            ordinal: 0,
-            status: "completed".to_string(),
-        }];
-
-        let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
-            .unwrap();
-
-        assert_eq!(result.items_updated, 1);
-
-        // Verify it was updated
-        let status: String = db
-            .conn
-            .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1' AND kind = 'task' AND ordinal = 0",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(status, "completed");
-    }
-
-    #[test]
-    fn test_update_checklist_bulk_by_kind() {
-        let (_temp, db) = setup_claimed_plan();
-
-        // Update all tasks
-        let updates = vec![ChecklistUpdate::BulkByKind {
-            kind: "task".to_string(),
-            status: "in_progress".to_string(),
-        }];
-
-        let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
-            .unwrap();
-
-        // step-1 has 1 task
-        assert_eq!(result.items_updated, 1);
-    }
-
-    #[test]
-    fn test_update_checklist_all_items() {
-        let (_temp, db) = setup_claimed_plan();
-
-        // Update all checklist items
-        let updates = vec![ChecklistUpdate::AllItems {
-            status: "completed".to_string(),
-        }];
-
-        let result = db
-            .update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-a", &updates)
-            .unwrap();
-
-        // step-1 has 1 task + 1 test = 2 items
-        assert_eq!(result.items_updated, 2);
-    }
-
-    #[test]
-    fn test_update_checklist_ownership_enforced() {
-        let (_temp, db) = setup_claimed_plan();
-
-        // Try to update as different worktree
-        let updates = vec![ChecklistUpdate::AllItems {
-            status: "completed".to_string(),
-        }];
-
-        let result = db.update_checklist(".tugtool/tugplan-test.md", "step-1", "wt-b", &updates);
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            TugError::StateOwnershipViolation { .. } => {} // expected
-            other => panic!("Expected StateOwnershipViolation, got: {:?}", other),
-        }
     }
 
     #[test]
@@ -4597,13 +4470,14 @@ mod tests {
             .unwrap();
 
         // Mark all checklist items complete so strict mode succeeds
-        db.update_checklist(
+        // Use batch_update_checklist with complete_remaining=true and empty entries
+        let no_deferrals: &[NoopBatchEntry] = &[];
+        db.batch_update_checklist(
             ".tugtool/tugplan-test.md",
             "step-1",
             "wt-a",
-            &[ChecklistUpdate::AllItems {
-                status: "completed".to_string(),
-            }],
+            no_deferrals,
+            true,
         )
         .unwrap();
 
@@ -4676,36 +4550,6 @@ mod tests {
             result.is_ok(),
             "check_ownership with #step-1 should succeed"
         );
-    }
-
-    #[test]
-    fn test_update_checklist_with_hash_prefix() {
-        let (_temp, db) = setup_claimed_plan();
-
-        // update_checklist with hash-prefixed anchor — should succeed via normalization
-        let updates = vec![ChecklistUpdate::Individual {
-            kind: "task".to_string(),
-            ordinal: 0,
-            status: "completed".to_string(),
-        }];
-
-        let result = db.update_checklist(".tugtool/tugplan-test.md", "#step-1", "wt-a", &updates);
-        assert!(
-            result.is_ok(),
-            "update_checklist with #step-1 should succeed"
-        );
-        assert_eq!(result.unwrap().items_updated, 1);
-
-        // Verify item was actually updated in DB (stored under bare anchor)
-        let status: String = db
-            .conn
-            .query_row(
-                "SELECT status FROM checklist_items WHERE step_anchor = 'step-1' AND kind = 'task' AND ordinal = 0",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(status, "completed");
     }
 
     #[test]
