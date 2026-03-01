@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-01T17:23:47Z
+---
+
+## step-4: Updated onReady and bridgeSetDevMode to branch on devModeEnabled: production loads from tugcast port 55255, dev spawns Vite on port 55155
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-3
 date: 2025-03-01T17:18:11Z
 ---

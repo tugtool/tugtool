@@ -113,11 +113,16 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
-    /// Spawn the Vite server with the given source tree, tugcast port, Vite port, and mode.
+    /// Spawn the Vite dev server with the given source tree, tugcast port, and Vite port.
     ///
-    /// Vite persists across tugcast restarts — call this only once from the onReady callback.
-    /// When `devMode` is true, runs `vite` (HMR, live transforms). When false, runs
-    /// `vite preview` (serves pre-built dist/).
+    /// Under the dual-mode architecture, this method is only called when dev mode is enabled.
+    /// In production mode tugcast serves the pre-built frontend directly via ServeDir; no
+    /// Vite process is started. This method MUST only be called from a `devModeEnabled == true`
+    /// branch in AppDelegate.
+    ///
+    /// Vite persists across tugcast restarts — call this only once from the onReady callback
+    /// or from bridgeSetDevMode. The duplication guard prevents re-spawning if Vite is already
+    /// running.
     /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
     /// so Vite fails fast if the port is occupied rather than silently binding elsewhere.
     /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.

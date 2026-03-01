@@ -53,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.lastAuthURL = url
 
             guard let path = self.sourceTreePath else {
-                // No source tree -- Vite cannot start; show error alert
+                // No source tree -- sendDevMode needs the source tree; show error alert
                 let alert = NSAlert()
                 alert.messageText = "Source Tree Required"
                 alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Developer > Choose Source Tree... to set one."
@@ -62,21 +62,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            // Always spawn Vite and load from the Vite port.
-            // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
-            self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: self.devModeEnabled)
-            self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
-                guard let self = self else { return }
-                if !ready {
-                    NSLog("AppDelegate: vite server did not become ready in 10s")
+            // Extract the auth token from the ready URL so both paths can construct their load URL.
+            let token = url.components(separatedBy: "token=").dropFirst().first?.components(separatedBy: "&").first ?? ""
+
+            if self.devModeEnabled {
+                // Dev mode: spawn Vite (HMR), wait for it, then load from the Vite port.
+                // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
+                self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: true)
+                self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
+                    guard let self = self else { return }
+                    if !ready {
+                        NSLog("AppDelegate: vite server did not become ready in 10s")
+                    }
+                    let viteURL = "http://127.0.0.1:\(self.vitePort)/auth?token=\(token)"
+                    self.window.loadURL(viteURL)
+                    // Notify tugcast to activate file watchers and set origin allowlist.
+                    self.processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: self.vitePort)
                 }
-                // Construct the browser URL directly from the auth token using the Vite port.
-                // Vite is always the frontend server; no port rewriting needed.
-                let token = url.components(separatedBy: "token=").dropFirst().first?.components(separatedBy: "&").first ?? ""
-                let viteURL = "http://127.0.0.1:\(self.vitePort)/auth?token=\(token)"
-                self.window.loadURL(viteURL)
-                // Send dev_mode to tugcast to activate file watchers (decoupled from URL loading).
-                self.processManager.sendDevMode(enabled: self.devModeEnabled, sourceTree: path, vitePort: self.vitePort)
+            } else {
+                // Production mode: load directly from tugcast. No Vite process is spawned.
+                // tugcast serves pre-built dist/ files via ServeDir on port 55255.
+                let tugcastURL = "http://127.0.0.1:\(port)/auth?token=\(token)"
+                self.window.loadURL(tugcastURL)
+                // Notify tugcast to update file watchers and clear dev_port from origin allowlist.
+                self.processManager.sendDevMode(enabled: false, sourceTree: path, vitePort: self.vitePort)
             }
         }
 
@@ -374,9 +383,9 @@ extension AppDelegate: BridgeDelegate {
             return
         }
 
-        // Kill the current Vite process synchronously on a background thread,
-        // then respawn in the correct mode and reload the WebView.
+        // Kill any running Vite process synchronously on a background thread before branching.
         // waitUntilExit() blocks, so this must not run on the main thread.
+        // This runs regardless of the new mode so a stale Vite is always cleaned up first.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
@@ -386,34 +395,41 @@ extension AppDelegate: BridgeDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
 
-                guard let path = self.sourceTreePath else {
-                    // No source tree (disabling case is fine -- just notify tugcast)
-                    self.processManager.sendDevMode(enabled: enabled, sourceTree: nil, vitePort: self.vitePort)
-                    completion(enabled)
-                    return
-                }
+                let currentPort = self.processManager.currentTugcastPort
 
-                // Step 2: respawn Vite in the correct mode
-                self.processManager.spawnViteServer(
-                    sourceTree: path,
-                    tugcastPort: self.processManager.currentTugcastPort,
-                    vitePort: self.vitePort,
-                    devMode: enabled
-                )
-
-                // Step 3: wait for Vite to be ready, then reload the WebView
-                self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
-                    guard let self = self else { return }
-                    if !ready {
-                        NSLog("AppDelegate: vite server did not become ready after dev mode toggle")
+                if enabled {
+                    // Dev mode ON: spawn Vite (HMR), wait for it, then load from the Vite port.
+                    guard let path = self.sourceTreePath else {
+                        self.processManager.sendDevMode(enabled: true, sourceTree: nil, vitePort: self.vitePort)
+                        completion(enabled)
+                        return
                     }
-                    // Reload from the same Vite port (auth is already established, so load root)
-                    self.window.loadURL("http://127.0.0.1:\(self.vitePort)/")
 
-                    // Step 4: notify tugcast to update file watchers
-                    self.processManager.sendDevMode(enabled: enabled, sourceTree: path, vitePort: self.vitePort)
+                    self.processManager.spawnViteServer(
+                        sourceTree: path,
+                        tugcastPort: currentPort,
+                        vitePort: self.vitePort,
+                        devMode: true
+                    )
 
-                    // Step 5: signal completion
+                    self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
+                        guard let self = self else { return }
+                        if !ready {
+                            NSLog("AppDelegate: vite server did not become ready after dev mode toggle")
+                        }
+                        // Auth is already established; load the root from the Vite port.
+                        self.window.loadURL("http://127.0.0.1:\(self.vitePort)/")
+                        // Notify tugcast to activate file watchers and add Vite port to allowlist.
+                        self.processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: self.vitePort)
+                        completion(enabled)
+                    }
+                } else {
+                    // Production mode OFF: load directly from tugcast. No Vite process is running.
+                    // tugcast serves pre-built dist/ files via ServeDir on port 55255.
+                    self.window.loadURL("http://127.0.0.1:\(currentPort)/")
+                    // Notify tugcast to deactivate file watchers and clear dev_port from allowlist.
+                    let path = self.sourceTreePath
+                    self.processManager.sendDevMode(enabled: false, sourceTree: path, vitePort: self.vitePort)
                     completion(enabled)
                 }
             }
