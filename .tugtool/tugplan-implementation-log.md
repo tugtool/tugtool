@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-01T17:58:44Z
+---
+
+## step-8: Verified P->D and D->P transitions: Vite starts/stops correctly, cards render in both modes, session cookie persists across port changes
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-7
 date: 2025-03-01T17:47:43Z
 ---
