@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-01T21:48:49Z
+---
+
+## step-3: Rewrote L02 tests to use complete-checklist, added 6 new L03 tests (happy path, deferrals, idempotent, ownership, invalid JSON, state update rejected). 722 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
 step: step-2
 date: 2025-03-01T21:39:15Z
 ---
