@@ -20,7 +20,11 @@ class ProcessManager {
     /// Actual tugcast port, updated from the ready message.
     /// Initialized to 55255 (the CLI default) so the control socket path is correct
     /// before the ready message arrives.
-    private var tugcastPort: Int = 55255
+    private(set) var currentTugcastPort: Int = 55255
+    private var tugcastPort: Int {
+        get { currentTugcastPort }
+        set { currentTugcastPort = newValue }
+    }
     private var controlSocketPath: String {
         NSTemporaryDirectory() + "tugcast-ctl-\(tugcastPort).sock"
     }
@@ -159,6 +163,20 @@ class ProcessManager {
         } catch {
             NSLog("ProcessManager: failed to start vite server: %@", error.localizedDescription)
         }
+    }
+
+    /// Kill the running Vite server process and wait for it to exit.
+    ///
+    /// Synchronous (`waitUntilExit`) so the caller can safely spawn a new Vite process
+    /// immediately after without two processes competing for the same port (per risk R02).
+    func killViteServer() {
+        guard let proc = viteProcess else { return }
+        if proc.isRunning {
+            proc.terminate()
+            proc.waitUntilExit()
+            NSLog("ProcessManager: vite server killed (exit code %d)", proc.terminationStatus)
+        }
+        viteProcess = nil
     }
 
     /// Poll the given port until a TCP connection succeeds, the Vite process exits, or timeout expires.

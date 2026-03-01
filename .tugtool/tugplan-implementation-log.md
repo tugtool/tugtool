@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-01T04:51:36Z
+---
+
+## step-6: Added killViteServer() to ProcessManager, rewrote bridgeSetDevMode to kill/respawn Vite in correct mode, wait for ready, reload WebView
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-5
 date: 2025-03-01T04:46:10Z
 ---
