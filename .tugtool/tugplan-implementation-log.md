@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-01T18:04:07Z
+---
+
+## step-10: Final integration checkpoint: cargo fmt clean, cargo build zero warnings, 740/740 tests pass. All 5 success criteria code-complete; control action manual testing deferred to user.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-9
 date: 2025-03-01T18:00:57Z
 ---
