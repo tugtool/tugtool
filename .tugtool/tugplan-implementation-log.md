@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-01T17:47:43Z
+---
+
+## step-7: Verified dev mode: Vite on 55155, cards render, HMR works. Added explicit server.hmr config to vite.config.ts and NSAllowsLocalNetworking to Info.plist as defensive improvements.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-6
 date: 2025-03-01T17:35:44Z
 ---
