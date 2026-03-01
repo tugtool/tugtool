@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-01T04:29:25Z
+---
+
+## step-2: Removed Assets struct, serve_asset, content_type_for, .fallback, 8 tests, build.rs tugdeck pipeline, and rust-embed from workspace and crate deps
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-1
 date: 2025-03-01T04:21:43Z
 ---

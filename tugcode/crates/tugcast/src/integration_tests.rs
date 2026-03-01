@@ -128,26 +128,6 @@ async fn test_auth_token_single_use() {
 }
 
 #[tokio::test]
-async fn test_static_index() {
-    let (app, _token) = build_test_app(7890);
-
-    let response = app
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(content_type.contains("text/html"));
-}
-
-#[tokio::test]
 async fn test_ws_requires_session() {
     let (app, _token) = build_test_app(7890);
 
@@ -402,26 +382,6 @@ async fn test_reconnection_snapshot_delivery() {
     // Verify client 2 receives the same snapshot immediately
     assert_eq!(frame2.feed_id, FeedId::Filesystem);
     assert_eq!(frame2.payload, initial_payload);
-}
-
-#[tokio::test]
-async fn test_build_app_production_mode() {
-    let (app, _token) = build_test_app(7890);
-
-    let response = app
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(content_type.contains("text/html"));
 }
 
 #[tokio::test]
