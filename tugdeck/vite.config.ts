@@ -5,6 +5,11 @@ import path from "path";
 
 export default defineConfig(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
+  const proxyConfig = {
+    "/auth": { target: `http://localhost:${tugcastPort}` },
+    "/ws": { target: `ws://localhost:${tugcastPort}`, ws: true },
+    "/api": { target: `http://localhost:${tugcastPort}` },
+  };
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -18,15 +23,14 @@ export default defineConfig(() => {
       },
     },
     server: {
-      proxy: {
-        "/auth": { target: `http://localhost:${tugcastPort}` },
-        "/ws": { target: `ws://localhost:${tugcastPort}`, ws: true },
-        "/api": { target: `http://localhost:${tugcastPort}` },
-      },
+      proxy: proxyConfig,
+    },
+    preview: {
+      proxy: proxyConfig,
     },
     build: {
       outDir: "dist",
-      emptyOutDir: false,
+      emptyOutDir: true,
     },
   };
 });

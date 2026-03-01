@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-01T04:21:43Z
+---
+
+## step-1: Extracted proxy config into shared proxyConfig variable, added preview.proxy block, changed emptyOutDir to true
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-11
 date: 2025-03-01T02:19:24Z
 ---
