@@ -171,7 +171,11 @@ impl ControlReader {
                                 if let Some(runtime) = dev_runtime.take() {
                                     crate::dev::disable_dev_mode(runtime, &shared_dev_state);
                                 }
-                                auth.lock().unwrap().set_dev_port(None);
+                                // Always set vite_port in origin allowlist — the frontend is
+                                // served from Vite in both modes (preview in production, dev
+                                // server in dev mode). Without this, WebSocket connections from
+                                // the Vite-served page are rejected by the origin check.
+                                auth.lock().unwrap().set_dev_port(vite_port);
                                 let _ = response_tx.send(make_dev_mode_result(true, None)).await;
                             }
                         }

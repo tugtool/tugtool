@@ -32,6 +32,7 @@ import type { Root } from "react-dom/client";
 import { DeckCanvas, type DeckCanvasHandle, type CardConfig, type CanvasCallbacks, type PanelFlashConfig } from "./components/chrome/deck-canvas";
 import type { SashGroup, PanelSnapshot } from "./components/chrome/virtual-sash";
 import { DevNotificationProvider, type DevNotificationRef } from "./contexts/dev-notification-context";
+import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { computeSnap, computeResizeSnap, computeEdgeVisibility, cardToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type CardSet, type SharedEdge, type EdgeValidator } from "./snap";
 import { CARD_TITLE_BAR_HEIGHT } from "./components/chrome/card-frame";
 import type { DockCallbacks } from "./components/chrome/dock";
@@ -774,27 +775,31 @@ export class DeckManager implements IDragState {
 
     this.reactRoot.render(
       React.createElement(
-        DevNotificationProvider,
-        { controlRef: this.devNotificationRef },
-        React.createElement(DeckCanvas, {
-          ref: this.deckCanvasRef,
-          panels: this.deckState.cards,
-          cardConfigs: this.cardConfigs,
-          cardMetas: this.cardMetas,
-          keyPanelId: this.keyPanelId,
-          canvasEl: this.container,
-          callbacks: canvasCallbacks,
-          connection: this.connection,
-          dragState: this,
-          panelDockedCorners: this.dockedCorners,
-          panelPositionOffsets: this.positionOffsets,
-          guides: this.guides,
-          sashGroups: this.sashGroups,
-          sashPanelSnapshots,
-          flashingPanels: this.flashingPanels,
-          onSashDragEnd: handleSashDragEnd,
-          onFlashEnd: handleFlashEnd,
-        })
+        ErrorBoundary,
+        null,
+        React.createElement(
+          DevNotificationProvider,
+          { controlRef: this.devNotificationRef },
+          React.createElement(DeckCanvas, {
+            ref: this.deckCanvasRef,
+            panels: this.deckState.cards,
+            cardConfigs: this.cardConfigs,
+            cardMetas: this.cardMetas,
+            keyPanelId: this.keyPanelId,
+            canvasEl: this.container,
+            callbacks: canvasCallbacks,
+            connection: this.connection,
+            dragState: this,
+            panelDockedCorners: this.dockedCorners,
+            panelPositionOffsets: this.positionOffsets,
+            guides: this.guides,
+            sashGroups: this.sashGroups,
+            sashPanelSnapshots,
+            flashingPanels: this.flashingPanels,
+            onSashDragEnd: handleSashDragEnd,
+            onFlashEnd: handleFlashEnd,
+          })
+        )
       )
     );
   }

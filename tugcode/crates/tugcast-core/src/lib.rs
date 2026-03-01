@@ -23,4 +23,4 @@ pub use types::{FileStatus, FsEvent, GitStatus, StatSnapshot};
 /// Both `tugcast` and `tugtool` crates reference this constant. The actual port
 /// is communicated at runtime via the `vite_port` field of the `DevMode` control
 /// message; this constant serves as the fallback when that field is absent.
-pub const DEFAULT_VITE_DEV_PORT: u16 = 5173;
+pub const DEFAULT_VITE_DEV_PORT: u16 = 55155;
