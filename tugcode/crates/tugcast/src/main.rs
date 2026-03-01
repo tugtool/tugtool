@@ -6,6 +6,7 @@ mod dev;
 mod feeds;
 mod router;
 mod server;
+mod settings;
 
 #[cfg(test)]
 mod integration_tests;

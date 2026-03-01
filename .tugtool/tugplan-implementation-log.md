@@ -9,6 +9,50 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-01T22:36:33Z
+---
+
+## step-1: Created settings.rs with DeckSettings/SettingsState structs, load_settings/save_settings with atomic writes, and 10 unit tests. Added mod settings to main.rs.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-1
+plan: tugplan-shared-settings.md
+date: 2026-03-01T00:00:00Z
+---
+
+## step-1 (shared-settings): Add settings.rs module with DeckSettings struct and atomic file I/O
+
+**Summary:** Created `tugcode/crates/tugcast/src/settings.rs` with `DeckSettings` struct, `SettingsState` struct, `load_settings`, `save_settings`, and `make_settings_state` helper. Added `mod settings;` to `main.rs`.
+
+**Files changed:**
+- tugcode/crates/tugcast/src/settings.rs (created)
+- tugcode/crates/tugcast/src/main.rs (added `mod settings;`)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd tugcode && cargo nextest run -p tugcast --filter-expr 'test(settings)'`
+```
+Nextest run ID 4bbbde2c-4ed9-4bfd-be95-903b42be4cc3 with nextest profile: default
+    Starting 10 tests across 1 binary (157 tests skipped)
+     Summary [   0.009s] 10 tests run: 10 passed, 157 skipped
+```
+Result: PASSED
+
+Checkpoint 2: `cd tugcode && cargo build -p tugcast` (no warnings)
+```
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+```
+Result: PASSED (zero warnings)
+
+---
+
+---
 step: step-5
 date: 2025-03-01T22:04:55Z
 ---
