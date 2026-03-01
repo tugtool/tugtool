@@ -281,12 +281,24 @@ export function TerminalCard() {
     });
   }, [dimensions, dragState, connection]);
 
+  // ---- Focus: explicitly focus xterm on click ----
+  // When the user clicks on the terminal, the card-frame's onFocus callback
+  // triggers DeckManager.render() → reactRoot.render(), which runs a full
+  // React reconciliation pass. This re-render can shift browser focus away
+  // from xterm.js's internal textarea. Deferring the focus() call ensures
+  // it runs after React's synchronous work completes.
+
+  const handlePointerDown = useCallback(() => {
+    setTimeout(() => terminalRef.current?.focus(), 0);
+  }, []);
+
   // ---- Render ----
 
   return (
     <div
       className="terminal-card h-full w-full"
       style={{ overflow: "hidden" }}
+      onPointerDown={handlePointerDown}
     >
       <div
         ref={containerRef}
