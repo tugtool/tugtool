@@ -159,6 +159,19 @@ fn main() -> ExitCode {
             StateCommands::Reconcile { plan, force } => {
                 commands::run_state_reconcile(plan, force, cli.json, cli.quiet)
             }
+            StateCommands::CompleteChecklist {
+                plan,
+                step,
+                worktree,
+                allow_drift,
+            } => commands::run_state_complete_checklist(
+                plan,
+                step,
+                worktree,
+                allow_drift,
+                cli.json,
+                cli.quiet,
+            ),
         },
         Some(Commands::Merge {
             plan,

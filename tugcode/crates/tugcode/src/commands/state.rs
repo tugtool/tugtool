@@ -241,6 +241,19 @@ pub enum StateCommands {
         #[arg(long)]
         force: bool,
     },
+    /// Mark all open checklist items for a step as completed
+    CompleteChecklist {
+        /// Plan file path
+        plan: String,
+        /// Step anchor (e.g., step-1)
+        step: String,
+        /// Worktree path (ownership check)
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+        /// Allow operation even if plan file has been modified since state was initialized
+        #[arg(long)]
+        allow_drift: bool,
+    },
 }
 
 pub fn run_state_init(plan: String, json: bool, quiet: bool) -> Result<i32, String> {
@@ -813,6 +826,106 @@ pub fn run_state_update(
     } else if !quiet {
         println!(
             "Updated {} checklist item(s) for step: {}",
+            result.items_updated, step
+        );
+    }
+
+    Ok(0)
+}
+
+pub fn run_state_complete_checklist(
+    plan: String,
+    step: String,
+    worktree: String,
+    allow_drift: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    use std::io::IsTerminal;
+
+    // 1. Resolve repo root
+    let repo_root = tugtool_core::find_repo_root().map_err(|e| e.to_string())?;
+
+    // 2. Resolve plan path
+    let resolved = tugtool_core::resolve_plan(&plan, &repo_root).map_err(|e| e.to_string())?;
+
+    let (plan_abs, plan_rel) = match resolved {
+        tugtool_core::ResolveResult::Found { path, .. } => {
+            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
+            (path, relative_path)
+        }
+        tugtool_core::ResolveResult::NotFound => {
+            return Err(format!("Plan not found: {}", plan));
+        }
+        tugtool_core::ResolveResult::Ambiguous(candidates) => {
+            let candidate_strs: Vec<String> =
+                candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "Ambiguous plan reference '{}'. Matches: {}",
+                plan,
+                candidate_strs.join(", ")
+            ));
+        }
+    };
+    let _ = plan_abs; // plan_abs resolved for path validation; not needed after
+
+    // 3. Open state.db
+    let db_path = repo_root.join(".tugtool").join("state.db");
+    let mut db = tugtool_core::StateDb::open(&db_path).map_err(|e| e.to_string())?;
+
+    let plan_rel_str = plan_rel.to_string_lossy().to_string();
+
+    // 4. Check for plan drift
+    if let Some(drift) = check_plan_drift(&repo_root, &plan_rel, &db, &plan_rel_str)? {
+        if !allow_drift {
+            return Err(format!(
+                "{}. Use --allow-drift to proceed.",
+                format_drift_message(&drift)
+            ));
+        }
+    }
+
+    // 5. Determine deferral entries from stdin (TTY-aware with EOF tolerance)
+    let entries: Vec<BatchUpdateEntry> = if std::io::stdin().is_terminal() {
+        // Interactive invocation: no deferrals
+        Vec::new()
+    } else {
+        // Piped invocation: read stdin to string first for EOF tolerance
+        let mut buf = String::new();
+        use std::io::Read;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read stdin: {}", e))?;
+        let trimmed = buf.trim();
+        if trimmed.is_empty() {
+            // Empty or EOF: treat as no deferrals (same as TTY)
+            Vec::new()
+        } else {
+            serde_json::from_str(trimmed).map_err(|e| format!("Invalid JSON: {}", e))?
+        }
+    };
+
+    // 6. Call batch_update_checklist with complete_remaining = true
+    let result = db
+        .batch_update_checklist(&plan_rel_str, &step, &worktree, &entries, true)
+        .map_err(|e| e.to_string())?;
+
+    // 7. Output
+    if json {
+        use crate::output::{JsonResponse, StateUpdateData};
+        let data = StateUpdateData {
+            plan_path: plan_rel_str,
+            anchor: step.clone(),
+            items_updated: result.items_updated,
+        };
+        let response = JsonResponse::ok("state complete-checklist", data);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&response).map_err(|e| e.to_string())?
+        );
+    } else if !quiet {
+        println!(
+            "Completed {} checklist item(s) for step: {}",
             result.items_updated, step
         );
     }

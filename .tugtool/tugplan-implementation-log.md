@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-01T21:20:10Z
+---
+
+## step-1: Added CompleteChecklist variant to StateCommands enum, implemented run_state_complete_checklist with TTY-aware stdin handling, added re-export and dispatch arm
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
 step: step-10
 date: 2025-03-01T18:04:07Z
 ---
