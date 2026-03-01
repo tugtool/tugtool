@@ -77,12 +77,13 @@ fn detect_source_tree_from(start: &std::path::Path) -> Result<PathBuf, String> {
 
 /// Spawn the Vite dev server as a child process.
 ///
-/// The dev server persists across tugcast restarts; call this once on first spawn.
+/// tugtool always runs Vite in dev mode (with HMR). The dev server persists across
+/// tugcast restarts; call this once on first spawn.
 /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
 /// so Vite fails fast if the port is already occupied rather than silently binding
-/// to a different port (which would break the auth URL rewrite).
+/// to a different port.
 /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
-async fn spawn_vite_dev(
+async fn spawn_vite(
     source_tree: &Path,
     tugcast_port: u16,
     vite_port: u16,
@@ -108,7 +109,7 @@ async fn spawn_vite_dev(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| format!("failed to spawn vite dev server: {}", e))
+        .map_err(|e| format!("failed to spawn vite server: {}", e))
 }
 
 /// Poll `127.0.0.1:{port}` until a TCP connection succeeds or timeout expires.
@@ -124,19 +125,6 @@ async fn wait_for_vite(port: u16, timeout_secs: u64) -> bool {
         sleep(Duration::from_millis(100)).await;
     }
     false
-}
-
-/// Rewrite the tugcast port in an auth URL to the Vite dev server port.
-///
-/// Input:  `http://127.0.0.1:55255/auth?token=abc`
-/// Output: `http://127.0.0.1:5173/auth?token=abc`  (for `vite_port = 5173`)
-///
-/// Uses a targeted string replacement of `:{tugcast_port}` with `:{vite_port}` so the
-/// path, query parameters, and token are preserved unchanged.
-fn rewrite_auth_url_to_vite_port(auth_url: &str, tugcast_port: u16, vite_port: u16) -> String {
-    let needle = format!(":{}", tugcast_port);
-    let replacement = format!(":{}", vite_port);
-    auth_url.replacen(&needle, &replacement, 1)
 }
 
 /// Spawn tugcast as a child process with control socket path
@@ -443,27 +431,31 @@ async fn supervisor_loop(
         }
 
         if first_spawn {
-            // Rewrite auth URL port to Vite dev server port when dev mode is active.
-            // The browser must load from Vite to get HMR support; auth still works via proxy.
-            let browser_url = if source_tree.is_some() {
-                rewrite_auth_url_to_vite_port(&auth_url, tugcast_port, vite_port)
-            } else {
-                auth_url.clone()
-            };
+            // Extract the auth token from the tugcast auth URL and construct the browser URL
+            // directly using the Vite port. Vite is always the frontend server.
+            // The auth URL format is: http://127.0.0.1:{port}/auth?token={token}
+            let token = auth_url
+                .split("token=")
+                .nth(1)
+                .unwrap_or_default()
+                .split('&')
+                .next()
+                .unwrap_or_default();
+            let browser_url = format!("http://127.0.0.1:{}/auth?token={}", vite_port, token);
 
             // Spawn Vite dev server FIRST, wait for it to be ready, THEN open browser.
             // This avoids a race condition where the browser loads before Vite is listening.
             if let Some(ref st) = source_tree {
-                match spawn_vite_dev(st, tugcast_port, vite_port).await {
+                match spawn_vite(st, tugcast_port, vite_port).await {
                     Ok(child) => {
-                        info!("vite dev server started, waiting for port {}...", vite_port);
+                        info!("vite server started, waiting for port {}...", vite_port);
                         *vite_child = Some(child);
                         if !wait_for_vite(vite_port, 10).await {
-                            warn!("vite dev server did not become ready in 10s");
+                            warn!("vite server did not become ready in 10s");
                         }
                     }
                     Err(e) => {
-                        warn!("could not start vite dev server: {}", e);
+                        warn!("could not start vite server: {}", e);
                     }
                 }
             }
@@ -634,9 +626,9 @@ async fn main() {
         "tugtool starting"
     );
 
-    // Resolve source tree for dev mode.
+    // Resolve source tree (required -- Vite is the only frontend server).
     // --source-tree explicitly provided: validate it (fatal if invalid).
-    // Not provided: auto-detect (non-fatal if fails; log warning, run without dev mode).
+    // Not provided: auto-detect (fatal if fails; no source tree means no Vite, no frontend).
     let source_tree: Option<PathBuf> = if let Some(ref path) = cli.source_tree {
         if !path.join("tugdeck").is_dir() {
             eprintln!(
@@ -654,11 +646,11 @@ async fn main() {
                 Some(path)
             }
             Err(e) => {
-                warn!(
-                    "could not auto-detect source tree: {}. Running without dev mode.",
+                eprintln!(
+                    "tugtool: error: could not find source tree: {}. Use --source-tree to specify the mono-repo root.",
                     e
                 );
-                None
+                std::process::exit(1);
             }
         }
     };
@@ -942,54 +934,6 @@ mod tests {
 
         assert_eq!(auth_url, "http://127.0.0.1:55255/auth?token=abc");
         assert_eq!(port, 55255);
-    }
-
-    /// Verify rewrite_auth_url_to_vite_port rewrites the tugcast port to the Vite port.
-    #[test]
-    fn test_rewrite_auth_url_to_vite_port() {
-        // Standard case: default tugcast port and default Vite port
-        assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 5173),
-            "http://127.0.0.1:5173/auth?token=abc"
-        );
-
-        // Port-rolled case: tugcast bound to a non-default port
-        assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55256/auth?token=xyz", 55256, 5173),
-            "http://127.0.0.1:5173/auth?token=xyz"
-        );
-
-        // Token with special characters is preserved unchanged
-        assert_eq!(
-            rewrite_auth_url_to_vite_port(
-                "http://127.0.0.1:55255/auth?token=abc123def456",
-                55255,
-                5173
-            ),
-            "http://127.0.0.1:5173/auth?token=abc123def456"
-        );
-
-        // Only the first occurrence of the port pattern is replaced (path safety)
-        assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 5173),
-            "http://127.0.0.1:5173/auth?token=abc"
-        );
-    }
-
-    /// Verify rewrite_auth_url_to_vite_port uses the supplied vite_port, not a hardcoded default.
-    #[test]
-    fn test_rewrite_auth_url_to_vite_port_non_default_vite_port() {
-        // Non-default Vite port: 3000
-        assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=abc", 55255, 3000),
-            "http://127.0.0.1:3000/auth?token=abc"
-        );
-
-        // Another non-default Vite port
-        assert_eq!(
-            rewrite_auth_url_to_vite_port("http://127.0.0.1:55255/auth?token=xyz", 55255, 4000),
-            "http://127.0.0.1:4000/auth?token=xyz"
-        );
     }
 
     /// Verify that send_dev_mode writes valid JSON with the correct fields including vite_port.

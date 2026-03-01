@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-01T04:35:47Z
+---
+
+## step-3: Renamed spawn_vite_dev to spawn_vite, deleted rewrite_auth_url_to_vite_port, simplified browser URL construction, made source_tree=None fatal
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-2
 date: 2025-03-01T04:29:25Z
 ---
