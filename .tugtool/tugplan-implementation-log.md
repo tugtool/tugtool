@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-01T23:25:58Z
+---
+
+## step-4: Wrapped main.tsx init in async IIFE with fetchSettingsWithRetry before DeckManager construction. DeckManager accepts optional initialLayout, applies theme to document.body before React renders. saveLayout and setTheme now POST to /api/settings. Both onResetEverything locations send null-as-delete to clear server settings.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
 step: step-3
 date: 2025-03-01T23:17:02Z
 ---

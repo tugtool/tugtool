@@ -36,6 +36,7 @@ import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { computeSnap, computeResizeSnap, computeEdgeVisibility, cardToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type CardSet, type SharedEdge, type EdgeValidator } from "./snap";
 import { CARD_TITLE_BAR_HEIGHT } from "./components/chrome/card-frame";
 import type { DockCallbacks } from "./components/chrome/dock";
+import { postSettings } from "./settings-api";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -174,9 +175,16 @@ export class DeckManager implements IDragState {
    */
   private soloOverridePanels: Set<string> = new Set();
 
-  constructor(container: HTMLElement, connection: TugConnection) {
+  /**
+   * Pre-fetched layout from the settings API (passed in from main.tsx).
+   * Consumed once by loadLayout(); null thereafter.
+   */
+  private initialLayout: object | null;
+
+  constructor(container: HTMLElement, connection: TugConnection, initialLayout?: object) {
     this.container = container;
     this.connection = connection;
+    this.initialLayout = initialLayout ?? null;
 
     // Initialize cardsByFeed sets for all output feedIds (D10)
     for (const feedId of OUTPUT_FEED_IDS) {
@@ -827,6 +835,9 @@ export class DeckManager implements IDragState {
       onResetLayout: () => this.resetLayout(),
       onRestartServer: () => this.sendControlFrame("restart"),
       onResetEverything: () => {
+        // Clear server-side settings first (null-as-delete per [D09]) so a reload
+        // after reset starts with an empty settings file.
+        postSettings({ layout: null, theme: null });
         localStorage.clear();
         this.sendControlFrame("reset");
       },
@@ -1198,28 +1209,67 @@ export class DeckManager implements IDragState {
   // ---- Layout Persistence ----
 
   private loadLayout(): DeckState {
+    const canvasWidth = this.container.clientWidth || 800;
+    const canvasHeight = this.container.clientHeight || 600;
+
+    // Try pre-fetched layout from the settings API first (D07).
+    if (this.initialLayout !== null) {
+      try {
+        const json = JSON.stringify(this.initialLayout);
+        const state = deserialize(json, canvasWidth, canvasHeight);
+        // Cache to localStorage so subsequent loads (e.g. on refresh without API) are fast.
+        try {
+          localStorage.setItem(LAYOUT_STORAGE_KEY, json);
+        } catch {
+          // localStorage may be unavailable
+        }
+        this.initialLayout = null;
+        return state;
+      } catch (e) {
+        console.warn("DeckManager: failed to deserialize initialLayout from API, falling back", e);
+      }
+      this.initialLayout = null;
+    }
+
+    // Fall back to localStorage.
     try {
       const json = localStorage.getItem(LAYOUT_STORAGE_KEY);
       if (json) {
-        const canvasWidth = this.container.clientWidth || 800;
-        const canvasHeight = this.container.clientHeight || 600;
         return deserialize(json, canvasWidth, canvasHeight);
       }
     } catch (e) {
       console.warn("DeckManager: failed to load layout from localStorage", e);
     }
-    const canvasWidth = this.container.clientWidth || 800;
-    const canvasHeight = this.container.clientHeight || 600;
+
     return buildDefaultLayout(canvasWidth, canvasHeight);
   }
 
   private saveLayout(): void {
     try {
       const serialized = serialize(this.deckState);
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(serialized));
+      const json = JSON.stringify(serialized);
+      localStorage.setItem(LAYOUT_STORAGE_KEY, json);
+      // Persist to API (fire-and-forget) so both dev and prod modes share layout.
+      postSettings({ layout: serialized, theme: this.readCurrentThemeFromDOM() });
     } catch (e) {
       console.warn("DeckManager: failed to save layout to localStorage", e);
     }
+  }
+
+  /**
+   * Read the active theme from document.body.classList.
+   * Mirrors the logic in readCurrentTheme() in use-theme.ts without requiring
+   * that private function to be exported.
+   */
+  private readCurrentThemeFromDOM(): string {
+    if (typeof document === "undefined") return "brio";
+    const prefix = "td-theme-";
+    for (const cls of Array.from(document.body.classList)) {
+      if (cls.startsWith(prefix)) {
+        return cls.slice(prefix.length);
+      }
+    }
+    return "brio";
   }
 
   private scheduleSave(): void {

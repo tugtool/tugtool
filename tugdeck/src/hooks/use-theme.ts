@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { postSettings } from "../settings-api";
 
 export type ThemeName = "brio" | "bluenote" | "harmony";
 
@@ -102,6 +103,8 @@ export function useTheme(): [ThemeName, (theme: ThemeName) => void] {
     } catch {
       // localStorage may be unavailable in some contexts
     }
+    // Persist to settings API so both dev and prod modes share the theme (fire-and-forget).
+    postSettings({ theme: newTheme });
     // Sync canvas color to Swift bridge so the window background and UserDefaults update.
     // Called synchronously — the body class change above is already applied, and
     // getComputedStyle forces style recalculation, so the new color is available now.
