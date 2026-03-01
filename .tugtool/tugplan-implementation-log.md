@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-01T05:04:00Z
+---
+
+## step-8: Verification-only step: 740 Rust tests pass, clippy clean, Swift app builds, no stale symbol references
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-7
+date: 2025-03-01T04:55:10Z
+---
+
+## step-7: Removed lsof/kill Vite line and unused VITE_DEV_PORT variable from justfile; app now manages Vite lifecycle
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-6
+date: 2025-03-01T04:51:36Z
+---
+
+## step-6: Added killViteServer() to ProcessManager, rewrote bridgeSetDevMode to kill/respawn Vite in correct mode, wait for ready, reload WebView
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-5
+date: 2025-03-01T04:46:10Z
+---
+
+## step-5: Removed awaitingDevModeResult flag and onDevModeResult callback; onReady now always spawns Vite and loads URL from Vite port; NSAlert shown when no source tree
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T04:39:51Z
+---
+
+## step-4: Renamed spawnViteDevServer to spawnViteServer with devMode: Bool parameter for dev vs preview mode, updated call site in AppDelegate
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T04:35:47Z
+---
+
+## step-3: Renamed spawn_vite_dev to spawn_vite, deleted rewrite_auth_url_to_vite_port, simplified browser URL construction, made source_tree=None fatal
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T04:29:25Z
+---
+
+## step-2: Removed Assets struct, serve_asset, content_type_for, .fallback, 8 tests, build.rs tugdeck pipeline, and rust-embed from workspace and crate deps
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T04:21:43Z
+---
+
+## step-1: Extracted proxy config into shared proxyConfig variable, added preview.proxy block, changed emptyOutDir to true
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
 step: step-11
 date: 2025-03-01T02:19:24Z
 ---

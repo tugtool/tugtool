@@ -1,15 +1,15 @@
-//! HTTP server and static asset serving
+//! HTTP server for tugcast
 //!
 //! Implements the axum server with routes for auth, WebSocket upgrade,
-//! and static asset serving using rust-embed.
+//! and API commands. Static asset serving is handled by Vite (dev mode)
+//! or `vite preview` (non-dev mode); tugcast does not serve web pages.
 
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{StatusCode, Uri, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -17,11 +17,6 @@ use tracing::warn;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
-
-/// Embedded static assets (tugdeck frontend)
-#[derive(RustEmbed)]
-#[folder = "$OUT_DIR/tugdeck/"]
-struct Assets;
 
 /// Request payload for /api/tell endpoint
 // Allow dead_code: struct is used only for testing/documentation
@@ -37,29 +32,6 @@ struct TellResponse {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
-}
-
-/// Determine Content-Type header for a file path
-pub(crate) fn content_type_for(path: &str) -> &'static str {
-    if path.ends_with(".html") {
-        "text/html; charset=utf-8"
-    } else if path.ends_with(".js") {
-        "application/javascript; charset=utf-8"
-    } else if path.ends_with(".css") {
-        "text/css; charset=utf-8"
-    } else if path.ends_with(".wasm") {
-        "application/wasm"
-    } else if path.ends_with(".png") {
-        "image/png"
-    } else if path.ends_with(".svg") {
-        "image/svg+xml"
-    } else if path.ends_with(".json") {
-        "application/json"
-    } else if path.ends_with(".woff2") {
-        "font/woff2"
-    } else {
-        "application/octet-stream"
-    }
 }
 
 /// Handle POST /api/tell requests for triggering actions
@@ -134,34 +106,11 @@ async fn tell_handler(
         .into_response()
 }
 
-/// Serve static assets from embedded files
-async fn serve_asset(uri: Uri) -> Response {
-    let mut path = uri.path().trim_start_matches('/');
-
-    // Default to index.html for root
-    if path.is_empty() {
-        path = "index.html";
-    }
-
-    match Assets::get(path) {
-        Some(content) => {
-            let content_type = content_type_for(path);
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, content_type)],
-                content.data,
-            )
-                .into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "Not found").into_response(),
-    }
-}
-
 /// Build the axum application router
 ///
-/// Constructs the Router with auth, WebSocket, and static asset routes.
+/// Constructs the Router with auth, WebSocket, and API routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-/// In dev mode, the browser loads from the Vite dev server port, not tugcast.
+/// The frontend is served by Vite; tugcast does not serve static assets.
 /// The `dev_state` parameter is kept because `handle_relaunch` in `control.rs` reads
 /// `source_tree` from it.
 pub(crate) fn build_app(router: FeedRouter, _dev_state: SharedDevState) -> Router {
@@ -169,7 +118,6 @@ pub(crate) fn build_app(router: FeedRouter, _dev_state: SharedDevState) -> Route
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .fallback(serve_asset)
         .with_state(router)
 }
 
@@ -193,39 +141,6 @@ pub async fn run_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_content_type_html() {
-        assert_eq!(content_type_for("index.html"), "text/html; charset=utf-8");
-    }
-
-    #[test]
-    fn test_content_type_js() {
-        assert_eq!(
-            content_type_for("app.js"),
-            "application/javascript; charset=utf-8"
-        );
-    }
-
-    #[test]
-    fn test_content_type_css() {
-        assert_eq!(content_type_for("app.css"), "text/css; charset=utf-8");
-    }
-
-    #[test]
-    fn test_content_type_unknown() {
-        assert_eq!(content_type_for("file.xyz"), "application/octet-stream");
-    }
-
-    #[test]
-    fn test_content_type_woff2() {
-        assert_eq!(content_type_for("font.woff2"), "font/woff2");
-    }
-
-    #[test]
-    fn test_assets_index_exists() {
-        assert!(Assets::get("index.html").is_some());
-    }
 
     #[test]
     fn test_tell_request_deserialization() {

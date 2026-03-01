@@ -16,7 +16,6 @@ tokio = { workspace = true }
 axum = { workspace = true }
 pty-process = { workspace = true }
 rand = { workspace = true }
-rust-embed = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true }

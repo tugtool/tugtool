@@ -20,7 +20,11 @@ class ProcessManager {
     /// Actual tugcast port, updated from the ready message.
     /// Initialized to 55255 (the CLI default) so the control socket path is correct
     /// before the ready message arrives.
-    private var tugcastPort: Int = 55255
+    private(set) var currentTugcastPort: Int = 55255
+    private var tugcastPort: Int {
+        get { currentTugcastPort }
+        set { currentTugcastPort = newValue }
+    }
     private var controlSocketPath: String {
         NSTemporaryDirectory() + "tugcast-ctl-\(tugcastPort).sock"
     }
@@ -30,9 +34,6 @@ class ProcessManager {
 
     /// Callback for ready message (UDS-based): passes auth URL and actual tugcast port
     var onReady: ((String, Int) -> Void)?
-
-    /// Callback for dev_mode_result message
-    var onDevModeResult: ((Bool) -> Void)?
 
     /// Callback for dev_mode errors
     var onDevModeError: ((String) -> Void)?
@@ -112,29 +113,34 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
-    /// Spawn the Vite dev server with the given source tree, tugcast port, and Vite port.
+    /// Spawn the Vite server with the given source tree, tugcast port, Vite port, and mode.
     ///
     /// Vite persists across tugcast restarts — call this only once from the onReady callback.
+    /// When `devMode` is true, runs `vite` (HMR, live transforms). When false, runs
+    /// `vite preview` (serves pre-built dist/).
     /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
-    /// so Vite fails fast if the port is occupied rather than silently binding elsewhere
-    /// (which would break the auth URL rewrite).
+    /// so Vite fails fast if the port is occupied rather than silently binding elsewhere.
     /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
-    func spawnViteDevServer(sourceTree: String, tugcastPort: Int, vitePort: Int) {
-        // Duplication guard: skip if Vite is already running (prevents duplicate dev servers on tugcast restarts)
+    func spawnViteServer(sourceTree: String, tugcastPort: Int, vitePort: Int, devMode: Bool) {
+        // Duplication guard: skip if Vite is already running (prevents duplicate servers on tugcast restarts)
         if viteProcess?.isRunning == true {
-            NSLog("ProcessManager: vite dev server already running, skipping spawn")
+            NSLog("ProcessManager: vite server already running, skipping spawn")
             return
         }
 
         let viteBinaryPath = (sourceTree as NSString).appendingPathComponent("tugdeck/node_modules/.bin/vite")
         guard FileManager.default.isExecutableFile(atPath: viteBinaryPath) else {
-            NSLog("ProcessManager: vite binary not found at %@; HMR disabled", viteBinaryPath)
+            NSLog("ProcessManager: vite binary not found at %@; frontend unavailable", viteBinaryPath)
             return
         }
 
         let viteProc = Process()
         viteProc.executableURL = URL(fileURLWithPath: viteBinaryPath)
-        viteProc.arguments = ["--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"]
+        if devMode {
+            viteProc.arguments = ["--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"]
+        } else {
+            viteProc.arguments = ["preview", "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"]
+        }
         viteProc.currentDirectoryURL = URL(fileURLWithPath: (sourceTree as NSString).appendingPathComponent("tugdeck"))
 
         var viteEnv = ProcessInfo.processInfo.environment
@@ -147,16 +153,30 @@ class ProcessManager {
 
         // Handle Vite exit: log warning but do not auto-restart (per risk R01)
         viteProc.terminationHandler = { process in
-            NSLog("ProcessManager: vite dev server exited with code %d", process.terminationStatus)
+            NSLog("ProcessManager: vite server exited with code %d", process.terminationStatus)
         }
 
         do {
             try viteProc.run()
             self.viteProcess = viteProc
-            NSLog("ProcessManager: vite dev server started (pid %d)", viteProc.processIdentifier)
+            NSLog("ProcessManager: vite server started (pid %d, devMode=%d)", viteProc.processIdentifier, devMode ? 1 : 0)
         } catch {
-            NSLog("ProcessManager: failed to start vite dev server: %@", error.localizedDescription)
+            NSLog("ProcessManager: failed to start vite server: %@", error.localizedDescription)
         }
+    }
+
+    /// Kill the running Vite server process and wait for it to exit.
+    ///
+    /// Synchronous (`waitUntilExit`) so the caller can safely spawn a new Vite process
+    /// immediately after without two processes competing for the same port (per risk R02).
+    func killViteServer() {
+        guard let proc = viteProcess else { return }
+        if proc.isRunning {
+            proc.terminate()
+            proc.waitUntilExit()
+            NSLog("ProcessManager: vite server killed (exit code %d)", proc.terminationStatus)
+        }
+        viteProcess = nil
     }
 
     /// Poll the given port until a TCP connection succeeds, the Vite process exits, or timeout expires.
@@ -254,7 +274,6 @@ class ProcessManager {
             onReady?(authURL, port)
         case "dev_mode_result":
             let success = msg.data["success"] as? Bool ?? false
-            onDevModeResult?(success)
             if !success {
                 let errorMessage = msg.data["error"] as? String ?? "Unknown error"
                 onDevModeError?(errorMessage)

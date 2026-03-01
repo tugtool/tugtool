@@ -5,9 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var processManager = ProcessManager()
     private var devModeEnabled = false
     private var sourceTreePath: String?
-    private var awaitingDevModeResult: Bool = false
     private var lastAuthURL: String?
-    private var lastTugcastPort: Int = 55255
     private var vitePort: Int = TugConfig.defaultVitePort
     private var developerMenu: NSMenuItem!
     private var sourceTreeMenuItem: NSMenuItem?
@@ -53,52 +51,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         processManager.onReady = { [weak self] url, port in
             guard let self = self else { return }
             self.lastAuthURL = url
-            self.lastTugcastPort = port
-            // If dev mode is enabled and source tree is set, send dev_mode and gate loadURL
-            let devEnabled = self.devModeEnabled
-            let sourceTree = self.sourceTreePath
-            if devEnabled, let path = sourceTree {
-                // Spawn Vite dev server now that we know the actual tugcast port.
-                // The duplication guard inside spawnViteDevServer prevents re-spawning on restarts.
-                self.processManager.spawnViteDevServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort)
-                // Wait for Vite to be listening before sending dev_mode, so the URL
-                // rewrite in onDevModeResult loads a ready server instead of a white window.
-                self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
-                    guard let self = self else { return }
-                    if !ready {
-                        NSLog("AppDelegate: vite dev server did not become ready in 10s")
-                    }
-                    self.processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: self.vitePort)
-                    self.awaitingDevModeResult = true
-                }
-                // Do NOT call loadURL -- wait for dev_mode_result
-            } else {
-                // No dev mode or no source tree -- load immediately from tugcast
-                self.window.loadURL(url)
-            }
-        }
 
-        processManager.onDevModeResult = { [weak self] success in
-            guard let self = self else { return }
-            if self.awaitingDevModeResult {
-                // Gate lifted -- load the page
-                if let url = self.lastAuthURL {
-                    // When dev mode is enabled (regardless of success), load from the Vite dev
-                    // server (port 5173) so the browser gets HMR support. On failure the embedded
-                    // assets are still served via Vite's proxy fallback; a full page load from
-                    // tugcast would bypass HMR entirely.
-                    let urlToLoad: String
-                    if success {
-                        // Rewrite the tugcast port to the Vite dev server port
-                        let needle = ":\(self.lastTugcastPort)"
-                        urlToLoad = url.replacingOccurrences(of: needle, with: ":\(self.vitePort)", options: [], range: url.range(of: needle))
-                    } else {
-                        // Dev mode failed -- load directly from tugcast (embedded assets)
-                        urlToLoad = url
-                    }
-                    self.window.loadURL(urlToLoad)
+            guard let path = self.sourceTreePath else {
+                // No source tree -- Vite cannot start; show error alert
+                let alert = NSAlert()
+                alert.messageText = "Source Tree Required"
+                alert.informativeText = "Tug requires a source tree to serve the frontend.\nGo to Developer > Choose Source Tree... to set one."
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
+            }
+
+            // Always spawn Vite and load from the Vite port.
+            // The duplication guard inside spawnViteServer prevents re-spawning on tugcast restarts.
+            self.processManager.spawnViteServer(sourceTree: path, tugcastPort: port, vitePort: self.vitePort, devMode: self.devModeEnabled)
+            self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
+                guard let self = self else { return }
+                if !ready {
+                    NSLog("AppDelegate: vite server did not become ready in 10s")
                 }
-                self.awaitingDevModeResult = false
+                // Construct the browser URL directly from the auth token using the Vite port.
+                // Vite is always the frontend server; no port rewriting needed.
+                let token = url.components(separatedBy: "token=").dropFirst().first?.components(separatedBy: "&").first ?? ""
+                let viteURL = "http://127.0.0.1:\(self.vitePort)/auth?token=\(token)"
+                self.window.loadURL(viteURL)
+                // Send dev_mode to tugcast to activate file watchers (decoupled from URL loading).
+                self.processManager.sendDevMode(enabled: self.devModeEnabled, sourceTree: path, vitePort: self.vitePort)
             }
         }
 
@@ -384,14 +362,62 @@ extension AppDelegate: BridgeDelegate {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()
         self.savePreferences()
-        // Send runtime control message
-        if enabled, let path = sourceTreePath {
-            processManager.sendDevMode(enabled: true, sourceTree: path, vitePort: vitePort)
-        } else if !enabled {
-            processManager.sendDevMode(enabled: false, sourceTree: nil)
+
+        // If enabling without source tree, show error and bail out
+        if enabled, sourceTreePath == nil {
+            let alert = NSAlert()
+            alert.messageText = "Source Tree Required"
+            alert.informativeText = "Dev mode requires a source tree.\nGo to Developer > Choose Source Tree... to set one."
+            alert.alertStyle = .warning
+            alert.runModal()
+            completion(enabled)
+            return
         }
-        // If enabling without source tree, skip sendDevMode silently per D08
-        completion(enabled)
+
+        // Kill the current Vite process synchronously on a background thread,
+        // then respawn in the correct mode and reload the WebView.
+        // waitUntilExit() blocks, so this must not run on the main thread.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            // Step 1: kill existing Vite (blocks until exit)
+            self.processManager.killViteServer()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+
+                guard let path = self.sourceTreePath else {
+                    // No source tree (disabling case is fine -- just notify tugcast)
+                    self.processManager.sendDevMode(enabled: enabled, sourceTree: nil, vitePort: self.vitePort)
+                    completion(enabled)
+                    return
+                }
+
+                // Step 2: respawn Vite in the correct mode
+                self.processManager.spawnViteServer(
+                    sourceTree: path,
+                    tugcastPort: self.processManager.currentTugcastPort,
+                    vitePort: self.vitePort,
+                    devMode: enabled
+                )
+
+                // Step 3: wait for Vite to be ready, then reload the WebView
+                self.processManager.waitForViteReady(port: self.vitePort) { [weak self] ready in
+                    guard let self = self else { return }
+                    if !ready {
+                        NSLog("AppDelegate: vite server did not become ready after dev mode toggle")
+                    }
+                    // Reload from the same Vite port (auth is already established, so load root)
+                    self.window.loadURL("http://127.0.0.1:\(self.vitePort)/")
+
+                    // Step 4: notify tugcast to update file watchers
+                    self.processManager.sendDevMode(enabled: enabled, sourceTree: path, vitePort: self.vitePort)
+
+                    // Step 5: signal completion
+                    completion(enabled)
+                }
+            }
+        }
     }
 
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void) {

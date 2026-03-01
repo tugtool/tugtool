@@ -68,9 +68,6 @@ percent-encoding = "2.3"
 # Random generation
 rand = "0.10"
 
-# Asset embedding
-rust-embed = { version = "8", features = ["interpolate-folder-path"] }
-
 # System interfaces
 libc = "0.2"
 sysinfo = "0.34"
