@@ -2182,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "tugcode"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "anyhow",
  "clap",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "tugrelaunch"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "clap",
  "libc",
@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "clap",
  "libc",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool-core"
-version = "0.7.24"
+version = "0.7.25"
 dependencies = [
  "regex",
  "rusqlite",
