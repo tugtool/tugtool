@@ -23,7 +23,13 @@ export default defineConfig(() => {
       },
     },
     server: {
+      host: "127.0.0.1",
       proxy: proxyConfig,
+      hmr: {
+        host: "127.0.0.1",
+        port: 55155,
+        protocol: "ws",
+      },
     },
     preview: {
       proxy: proxyConfig,

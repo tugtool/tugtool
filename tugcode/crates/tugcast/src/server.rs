@@ -1,8 +1,10 @@
 //! HTTP server for tugcast
 //!
 //! Implements the axum server with routes for auth, WebSocket upgrade,
-//! and API commands. Static asset serving is handled by Vite (dev mode)
-//! or `vite preview` (non-dev mode); tugcast does not serve web pages.
+//! and API commands. In production mode, tugcast serves the pre-built
+//! frontend from `tugdeck/dist/` via `tower-http::ServeDir` as a fallback
+//! route. In dev mode, the Vite dev server on port 55155 handles the
+//! frontend; tugcast handles only the API routes.
 
 use axum::Router;
 use axum::body::Bytes;
@@ -12,7 +14,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
 
 use crate::dev::SharedDevState;
@@ -110,26 +114,56 @@ async fn tell_handler(
 ///
 /// Constructs the Router with auth, WebSocket, and API routes.
 /// Separated from `run_server` to enable testing without TCP binding.
-/// The frontend is served by Vite; tugcast does not serve static assets.
-/// The `dev_state` parameter is kept because `handle_relaunch` in `control.rs` reads
-/// `source_tree` from it.
-pub(crate) fn build_app(router: FeedRouter, _dev_state: SharedDevState) -> Router {
-    Router::new()
+///
+/// When `source_tree` is `Some(path)`, tugcast checks for a built frontend
+/// at `{source_tree}/tugdeck/dist/`. If found, a `ServeDir` fallback is added
+/// so that tugcast serves the production frontend directly on port 55255.
+/// If the dist directory does not exist, a warning is logged and unmatched
+/// routes return axum's default 404 (API routes remain fully functional).
+///
+/// Pass `None` for `source_tree` (e.g., in tests) to disable static file
+/// serving entirely.
+pub(crate) fn build_app(
+    router: FeedRouter,
+    _dev_state: SharedDevState,
+    source_tree: Option<PathBuf>,
+) -> Router {
+    let base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .with_state(router)
+        .with_state(router);
+
+    if let Some(tree) = source_tree {
+        let dist_path = tree.join("tugdeck").join("dist");
+        if dist_path.is_dir() {
+            let index_html = dist_path.join("index.html");
+            return base.fallback_service(
+                ServeDir::new(&dist_path).not_found_service(ServeFile::new(index_html)),
+            );
+        } else {
+            warn!(
+                "dist directory not found at {}, static file serving disabled",
+                dist_path.display()
+            );
+        }
+    }
+
+    base
 }
 
 /// Run the HTTP server
 ///
-/// Serves the axum application on the provided `TcpListener`
+/// Serves the axum application on the provided `TcpListener`.
+/// The `source_tree` path is forwarded to `build_app` to enable
+/// `ServeDir` static file serving in production mode.
 pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: SharedDevState,
+    source_tree: Option<PathBuf>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state);
+    let app = build_app(router, dev_state, source_tree);
 
     axum::serve(
         listener,

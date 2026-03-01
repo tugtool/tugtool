@@ -113,11 +113,16 @@ class ProcessManager {
         return FileManager.default.fileExists(atPath: tugcastURL.path) ? tugcastURL : nil
     }
 
-    /// Spawn the Vite server with the given source tree, tugcast port, Vite port, and mode.
+    /// Spawn the Vite dev server with the given source tree, tugcast port, and Vite port.
     ///
-    /// Vite persists across tugcast restarts — call this only once from the onReady callback.
-    /// When `devMode` is true, runs `vite` (HMR, live transforms). When false, runs
-    /// `vite preview` (serves pre-built dist/).
+    /// Under the dual-mode architecture, this method is only called when dev mode is enabled.
+    /// In production mode tugcast serves the pre-built frontend directly via ServeDir; no
+    /// Vite process is started. This method MUST only be called from a `devModeEnabled == true`
+    /// branch in AppDelegate.
+    ///
+    /// Vite persists across tugcast restarts — call this only once from the onReady callback
+    /// or from bridgeSetDevMode. The duplication guard prevents re-spawning if Vite is already
+    /// running.
     /// Passes `--port` explicitly so the Vite port is deterministic, and `--strictPort`
     /// so Vite fails fast if the port is occupied rather than silently binding elsewhere.
     /// Passes `TUGCAST_PORT` so `vite.config.ts` can proxy `/auth`, `/api`, `/ws` to tugcast.
@@ -127,6 +132,11 @@ class ProcessManager {
             NSLog("ProcessManager: vite server already running, skipping spawn")
             return
         }
+
+        // Kill any orphaned process holding the port (e.g. stale Vite from a previous app launch
+        // that wasn't cleaned up). Without this, --strictPort causes the new Vite to fail silently
+        // while the stale server keeps serving outdated content.
+        killProcessOnPort(vitePort)
 
         let viteBinaryPath = (sourceTree as NSString).appendingPathComponent("tugdeck/node_modules/.bin/vite")
         guard FileManager.default.isExecutableFile(atPath: viteBinaryPath) else {
@@ -162,6 +172,57 @@ class ProcessManager {
             NSLog("ProcessManager: vite server started (pid %d, devMode=%d)", viteProc.processIdentifier, devMode ? 1 : 0)
         } catch {
             NSLog("ProcessManager: failed to start vite server: %@", error.localizedDescription)
+        }
+    }
+
+    /// Kill any process listening on the given TCP port.
+    ///
+    /// Uses a direct socket probe to check if the port is occupied, then `lsof` to find
+    /// the PID. This catches orphaned Vite processes from previous app launches that
+    /// weren't cleaned up (e.g. the app was force-quit or relaunched without graceful shutdown).
+    private func killProcessOnPort(_ port: Int) {
+        // Quick socket probe — if nothing is listening, skip the lsof lookup entirely
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(port).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
+        guard sock >= 0 else { return }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        close(sock)
+        guard connected == 0 else { return }
+
+        // Port is occupied — find the PID via lsof
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        proc.arguments = ["-ti", ":\(port)", "-sTCP:LISTEN"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else { return }
+            for line in output.split(separator: "\n") {
+                if let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
+                    NSLog("ProcessManager: killing orphaned process on port %d (pid %d)", port, pid)
+                    kill(pid, SIGTERM)
+                    // Brief wait for graceful exit
+                    usleep(200_000)
+                    // Force-kill if still alive
+                    if kill(pid, 0) == 0 {
+                        kill(pid, SIGKILL)
+                        usleep(100_000)
+                    }
+                }
+            }
+        } catch {
+            NSLog("ProcessManager: lsof failed: %@", error.localizedDescription)
         }
     }
 

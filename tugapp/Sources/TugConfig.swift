@@ -13,7 +13,7 @@ enum TugConfig {
     /// The actual port is communicated at runtime via the `vite_port` field of the
     /// `DevMode` control message; this constant serves as the default when no override
     /// is provided.
-    static let defaultVitePort: Int = 5173
+    static let defaultVitePort: Int = 55155
 
     // MARK: - UserDefaults keys
 

@@ -955,7 +955,7 @@ mod tests {
         let mut server_reader = BufReader::new(server_read);
 
         let source_tree = Path::new("/some/source/tree");
-        send_dev_mode(&mut write_half, source_tree, 5173)
+        send_dev_mode(&mut write_half, source_tree, 55155)
             .await
             .unwrap();
 
@@ -969,6 +969,6 @@ mod tests {
             msg.get("source_tree").and_then(|v| v.as_str()),
             Some("/some/source/tree")
         );
-        assert_eq!(msg.get("vite_port").and_then(|v| v.as_u64()), Some(5173));
+        assert_eq!(msg.get("vite_port").and_then(|v| v.as_u64()), Some(55155));
     }
 }

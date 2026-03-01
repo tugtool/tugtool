@@ -9,6 +9,126 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-01T18:04:07Z
+---
+
+## step-10: Final integration checkpoint: cargo fmt clean, cargo build zero warnings, 740/740 tests pass. All 5 success criteria code-complete; control action manual testing deferred to user.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-9
+date: 2025-03-01T18:00:57Z
+---
+
+## step-9: Step 9 verification-only: all 8 control action tests (4 actions x 2 modes) deferred to user for post-plan manual testing
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-8
+date: 2025-03-01T17:58:44Z
+---
+
+## step-8: Verified P->D and D->P transitions: Vite starts/stops correctly, cards render in both modes, session cookie persists across port changes
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-7
+date: 2025-03-01T17:47:43Z
+---
+
+## step-7: Verified dev mode: Vite on 55155, cards render, HMR works. Added explicit server.hmr config to vite.config.ts and NSAllowsLocalNetworking to Info.plist as defensive improvements.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-6
+date: 2025-03-01T17:35:44Z
+---
+
+## step-6: Verified diagnostic.js and ErrorBoundary are present in production bundle and correctly wired. Manual Web Inspector testing deferred to step 7.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-5
+date: 2025-03-01T17:30:01Z
+---
+
+## step-5: Built tugdeck/dist via bun run build and manually verified production mode: cards render, no Vite process, WebSocket connected
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T17:23:47Z
+---
+
+## step-4: Updated onReady and bridgeSetDevMode to branch on devModeEnabled: production loads from tugcast port 55255, dev spawns Vite on port 55155
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T17:18:11Z
+---
+
+## step-3: Fixed origin allowlist by calling set_dev_port(None) in the DevMode disabled branch instead of set_dev_port(vite_port)
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T17:14:21Z
+---
+
+## step-2: Added ServeDir fallback to tugcast router with SPA routing for production mode static file serving from tugdeck/dist/
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T17:06:09Z
+---
+
+## step-1: Added tower-http 0.6 with fs feature to workspace and tugcast crate dependencies
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-8
 date: 2025-03-01T05:04:00Z
 ---

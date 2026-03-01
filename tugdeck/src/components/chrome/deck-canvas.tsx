@@ -355,11 +355,19 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
       }
     }, [panels]);
 
+    // Stabilize callbacks via ref so downstream hooks don't see changing
+    // function identities. DeckManager creates fresh callback objects on every
+    // render() call; without this ref, handleMetaUpdate would get a new identity
+    // on every render, causing useCardMeta's useEffect to re-fire, which calls
+    // updateMeta → DeckManager.render() → new callbacks → infinite loop.
+    const callbacksRef = useRef(callbacks);
+    callbacksRef.current = callbacks;
+
     const handleMetaUpdate = useCallback(
       (tabId: string, meta: TugCardMeta) => {
-        callbacks.onMetaUpdate(tabId, meta);
+        callbacksRef.current.onMetaUpdate(tabId, meta);
       },
-      [callbacks]
+      []
     );
 
     return (
