@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-01T17:30:01Z
+---
+
+## step-5: Built tugdeck/dist via bun run build and manually verified production mode: cards render, no Vite process, WebSocket connected
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-4
 date: 2025-03-01T17:23:47Z
 ---
