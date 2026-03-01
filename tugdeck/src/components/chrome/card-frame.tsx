@@ -340,7 +340,7 @@ export function CardFrame({
   return (
     <div
       ref={rootRef}
-      className="card-frame"
+      className="card-frame absolute flex flex-col min-w-[100px] min-h-[100px] box-border overflow-visible"
       style={{
         left: `${x + dx}px`,
         top: `${y + dy}px`,
@@ -348,6 +348,9 @@ export function CardFrame({
         height: `${height}px`,
         zIndex,
         borderRadius: frameBorderRadius,
+        background: "var(--td-panel)",
+        border: "1px solid var(--td-border)",
+        boxShadow: "var(--td-depth-raise)",
       }}
       onPointerDown={handleRootPointerDown}
     >
@@ -361,7 +364,14 @@ export function CardFrame({
         style={{ borderRadius: headerBorderRadius }}
       />
 
-      <div className="card-frame-content" style={{ borderRadius: contentBorderRadius }}>
+      <div
+        className="card-frame-content flex-1 flex flex-col relative min-h-0 overflow-y-auto"
+        style={{
+          borderRadius: contentBorderRadius,
+          background: "var(--td-surface-content)",
+          color: "var(--td-text)",
+        }}
+      >
         {children}
       </div>
 

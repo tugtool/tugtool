@@ -119,19 +119,52 @@ function Tab({ tab, tabIndex, isActive, tabRefs, callbacks }: TabProps) {
     [tab.id, callbacks]
   );
 
+  // Tailwind classes replace .card-tab and .card-tab-active CSS rules.
+  // .card-tab-close uses group/group-hover pattern for show-on-hover behavior.
+  const tabClass = isActive
+    ? "card-tab card-tab-active group flex items-center gap-1 px-2 cursor-pointer whitespace-nowrap select-none transition-colors duration-150"
+    : "card-tab group flex items-center gap-1 px-2 cursor-pointer whitespace-nowrap select-none transition-colors duration-150";
+
+  const tabStyle: React.CSSProperties = isActive
+    ? {
+        background: "var(--td-surface)",
+        color: "var(--td-text)",
+        fontFamily: "var(--td-font-mono)",
+        fontSize: "0.67rem",
+        textTransform: "uppercase",
+        border: "var(--tl-line-ui, 1px) solid var(--td-border-soft)",
+        borderBottom: 0,
+        borderRadius: "var(--td-radius-sm, 3px) var(--td-radius-sm, 3px) 0 0",
+      }
+    : {
+        color: "var(--td-text-soft)",
+        fontFamily: "var(--td-font-mono)",
+        fontSize: "0.67rem",
+        textTransform: "uppercase",
+        border: "var(--tl-line-ui, 1px) solid var(--td-border-soft)",
+        borderBottom: 0,
+        borderRadius: "var(--td-radius-sm, 3px) var(--td-radius-sm, 3px) 0 0",
+      };
+
   return (
     <div
       ref={(el) => {
         tabRefs.current[tabIndex] = el;
       }}
-      className={isActive ? "card-tab card-tab-active" : "card-tab"}
+      className={tabClass}
+      style={tabStyle}
       data-tab-id={tab.id}
       data-tab-index={String(tabIndex)}
       onPointerDown={handlePointerDown}
     >
       <span className="card-tab-label">{tab.title}</span>
       {tab.closable !== false && (
-        <span className="card-tab-close" onClick={handleCloseClick}>
+        // card-tab-close: hidden by default, shown on parent hover via group-hover
+        <span
+          className="card-tab-close hidden group-hover:inline-flex text-[14px] leading-none p-0.5 rounded-sm cursor-pointer"
+          style={{ color: "var(--td-text-soft)" }}
+          onClick={handleCloseClick}
+        >
           {"×"}
         </span>
       )}
@@ -164,8 +197,15 @@ export function TabBar({ tabs, activeTabIndex, callbacks }: TabBarProps) {
   // Keep tabRefs array sized to current tab count
   tabRefs.current = tabRefs.current.slice(0, tabs.length);
 
+  // Tailwind classes replace .card-tab-bar CSS rules
   return (
-    <div className="card-tab-bar">
+    <div
+      className="card-tab-bar flex flex-row items-stretch h-7 flex-shrink-0 overflow-x-auto overflow-y-hidden"
+      style={{
+        background: "var(--td-surface-tab)",
+        borderBottom: "1px solid var(--td-border)",
+      }}
+    >
       {tabs.map((tab, i) => (
         <Tab
           key={tab.id}

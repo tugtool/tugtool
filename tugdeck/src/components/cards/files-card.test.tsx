@@ -28,13 +28,9 @@ function renderFilesCard(feedPayload?: Uint8Array) {
   if (feedPayload) {
     feedData.set(FeedId.FILESYSTEM, feedPayload);
   }
-  const containerEl = document.createElement("div");
-  document.body.appendChild(containerEl);
 
+  // Capture meta updates via the updateMeta callback (replaces card-meta-update CustomEvent)
   const metaUpdates: any[] = [];
-  containerEl.addEventListener("card-meta-update", (e: Event) => {
-    metaUpdates.push((e as CustomEvent).detail);
-  });
 
   const result = render(
     <CardContextProvider
@@ -42,12 +38,12 @@ function renderFilesCard(feedPayload?: Uint8Array) {
       feedData={feedData}
       dimensions={{ width: 0, height: 0 }}
       dragState={null}
-      containerEl={containerEl}
+      updateMeta={(meta) => metaUpdates.push(meta)}
     >
       <FilesCard />
     </CardContextProvider>
   );
-  return { ...result, containerEl, metaUpdates };
+  return { ...result, metaUpdates };
 }
 
 // ---- Tests ----

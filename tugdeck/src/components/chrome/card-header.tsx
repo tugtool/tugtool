@@ -88,22 +88,45 @@ export function CardHeader({
     ? { ...baseStyle, ...extraStyle }
     : baseStyle;
 
+  // Tailwind classes replace .card-header and .card-header-key CSS rules
+  const headerClass = isKey
+    ? "card-header card-header-key h-7 flex items-center gap-1.5 px-2 flex-shrink-0 select-none box-border"
+    : "card-header h-7 flex items-center gap-1.5 px-2 flex-shrink-0 select-none box-border";
+
+  const headerStyle: React.CSSProperties = {
+    background: isKey ? "var(--td-header-active)" : "var(--td-header-inactive)",
+    borderBottom: "1px solid var(--td-border)",
+    ...(Object.keys(mergedStyle).length > 0 ? mergedStyle : {}),
+  };
+
   return (
     <div
-      className={`card-header${isKey ? " card-header-key" : ""}`}
-      style={Object.keys(mergedStyle).length > 0 ? mergedStyle : undefined}
+      className={headerClass}
+      style={headerStyle}
       onPointerDown={onDragStart ? handlePointerDown : undefined}
     >
-      {/* Icon */}
-      <div className="card-header-icon">
+      {/* Icon — .card-header-icon: flex items-center text-soft flex-shrink-0 */}
+      <div className="card-header-icon flex items-center flex-shrink-0" style={{ color: "var(--td-text-soft)" }}>
         <IconComponent width={14} height={14} />
       </div>
 
-      {/* Title */}
-      <div className="card-header-title">{meta.title}</div>
+      {/* Title — .card-header-title: mono font, 12px, 600, uppercase, letter-spacing */}
+      <div
+        className="card-header-title flex-shrink-0 whitespace-nowrap overflow-hidden text-ellipsis"
+        style={{
+          fontFamily: "var(--td-font-mono)",
+          fontSize: "12px",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: isKey ? "var(--td-text)" : "var(--td-text-soft)",
+        }}
+      >
+        {meta.title}
+      </div>
 
-      {/* Spacer */}
-      <div className="card-header-spacer" />
+      {/* Spacer — .card-header-spacer: flex-1 */}
+      <div className="card-header-spacer flex-1" />
 
       {/* Menu button — only rendered when menuItems are present */}
       {meta.menuItems.length > 0 && (
@@ -111,7 +134,8 @@ export function CardHeader({
           items={meta.menuItems}
           trigger={
             <button
-              className="card-header-btn"
+              className="card-header-btn w-6 h-6 flex items-center justify-center bg-transparent border-none cursor-pointer rounded-sm p-0 flex-shrink-0"
+              style={{ color: "var(--td-text-soft)" }}
               aria-label="Card menu"
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
@@ -127,7 +151,8 @@ export function CardHeader({
       {/* Collapse button — docked panels only */}
       {showCollapse && (
         <button
-          className="card-header-btn"
+          className="card-header-btn w-6 h-6 flex items-center justify-center bg-transparent border-none cursor-pointer rounded-sm p-0 flex-shrink-0"
+          style={{ color: "var(--td-text-soft)" }}
           aria-label="Collapse card"
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -143,7 +168,8 @@ export function CardHeader({
       {/* Close button — only rendered when meta.closable */}
       {meta.closable && (
         <button
-          className="card-header-btn"
+          className="card-header-btn w-6 h-6 flex items-center justify-center bg-transparent border-none cursor-pointer rounded-sm p-0 flex-shrink-0"
+          style={{ color: "var(--td-text-soft)" }}
           aria-label="Close card"
           type="button"
           onPointerDown={(e) => e.stopPropagation()}

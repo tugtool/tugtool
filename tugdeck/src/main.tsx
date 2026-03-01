@@ -1,6 +1,7 @@
 // CSS imports — globals.css imports tailwindcss and tokens.css (which provides the shadcn variable bridge)
 import "./globals.css";
-import "../styles/cards-chrome.css";
+import "../styles/chrome.css";
+// cards-chrome.css deleted in Step 10 — styles migrated to Tailwind utilities on React components + chrome.css
 // dock.css deleted in Step 5 — Dock styles are now Tailwind utilities on the React Dock component
 // xterm CSS — previously mapped via assets.toml; now imported directly from node_modules
 import "@xterm/xterm/css/xterm.css";

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-01T02:02:22Z
+---
+
+## step-10: Deleted cards-chrome.css (404 lines). Created minimal chrome.css (49 lines) retaining resize handles, snap guides, sashes, and flash overlay. Migrated card-frame, card-header, and tab-bar styling to Tailwind utilities. Fixed 8 pre-existing test failures in StatsCard/FilesCard/GitCard by updating to updateMeta callback pattern. All 471 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-9
 date: 2025-03-01T01:40:40Z
 ---
