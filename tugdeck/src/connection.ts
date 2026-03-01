@@ -17,6 +17,21 @@ import {
 /** Callback for receiving frames from a specific feed */
 export type FrameCallback = (payload: Uint8Array) => void;
 
+/** State emitted to DisconnectBanner when connection status changes */
+export interface DisconnectState {
+  /** true = disconnected/reconnecting, false = connected */
+  disconnected: boolean;
+  /** Seconds remaining until next reconnect attempt (0 when reconnecting) */
+  countdown: number;
+  /** Human-readable reason (close reason from server, if any) */
+  reason: string | null;
+  /** true = actively attempting reconnect, false = waiting for countdown */
+  reconnecting: boolean;
+}
+
+/** Callback for disconnect state changes */
+export type DisconnectStateCallback = (state: DisconnectState) => void;
+
 /** Heartbeat interval in milliseconds (15 seconds) */
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -47,6 +62,7 @@ export class TugConnection {
   private callbacks: Map<number, FrameCallback[]> = new Map();
   private openCallbacks: Array<() => void> = [];
   private closeCallbacks: Array<() => void> = [];
+  private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
 
@@ -56,7 +72,6 @@ export class TugConnection {
   private retryTimer: number | null = null;
   private countdownTimer: number | null = null;
   private countdownSeconds: number = 0;
-  private bannerElement: HTMLElement | null = null;
   private intentionalClose: boolean = false;
   private lastCloseCode: number | null = null;
   private lastCloseReason: string | null = null;
@@ -78,7 +93,8 @@ export class TugConnection {
       console.log("tugdeck: WebSocket connected");
       this.state = ConnectionState.CONNECTED;
       this.retryDelay = INITIAL_RETRY_DELAY_MS;
-      this.hideDisconnectBanner();
+      this.clearCountdownTimer();
+      this.notifyDisconnectState(false);
       this.startHeartbeat();
       for (const cb of this.openCallbacks) {
         cb();
@@ -141,12 +157,12 @@ export class TugConnection {
     // Calculate countdown seconds
     this.countdownSeconds = Math.ceil(this.retryDelay / 1000);
 
-    // Show banner with countdown
-    this.showDisconnectBanner();
+    // Notify React components of disconnected state
+    this.notifyDisconnectState(false);
 
     // Start countdown timer (updates every second)
     this.countdownTimer = window.setInterval(() => {
-      this.updateBannerCountdown();
+      this.tickCountdown();
     }, 1000);
 
     // Schedule reconnection attempt
@@ -159,65 +175,38 @@ export class TugConnection {
    * Attempt to reconnect
    */
   private reconnect(): void {
-    // Clear countdown timer
-    if (this.countdownTimer !== null) {
-      window.clearInterval(this.countdownTimer);
-      this.countdownTimer = null;
-    }
+    this.clearCountdownTimer();
 
     this.state = ConnectionState.RECONNECTING;
-    this.updateBannerText("Reconnecting...");
+    this.notifyDisconnectState(true);
 
     console.log("tugdeck: attempting reconnection");
     this.connect();
   }
 
   /**
-   * Show the disconnect banner
+   * Notify disconnect state callbacks with the current state.
+   * @param reconnecting true when actively attempting to reconnect
    */
-  private showDisconnectBanner(): void {
-    if (!this.bannerElement) {
-      this.bannerElement = document.getElementById("disconnect-banner");
-    }
-
-    if (this.bannerElement) {
-      this.bannerElement.style.display = "block";
-      this.updateBannerText();
+  private notifyDisconnectState(reconnecting: boolean): void {
+    const disconnected = this.state !== ConnectionState.CONNECTED;
+    const state: DisconnectState = {
+      disconnected,
+      countdown: this.countdownSeconds,
+      reason: this.lastCloseReason && this.lastCloseReason.trim() !== "" ? this.lastCloseReason : null,
+      reconnecting,
+    };
+    for (const cb of this.disconnectStateCallbacks) {
+      try { cb(state); } catch (e) { console.error("disconnectStateCallback error:", e); }
     }
   }
 
   /**
-   * Update banner text with current countdown
+   * Tick the countdown by 1 second and notify listeners.
    */
-  private updateBannerText(customText?: string): void {
-    if (!this.bannerElement) {
-      return;
-    }
-
-    if (customText) {
-      this.bannerElement.textContent = customText;
-      return;
-    }
-
-    let text = "Disconnected";
-
-    // Add close reason if available
-    if (this.lastCloseReason && this.lastCloseReason.trim() !== "") {
-      text += ` (${this.lastCloseReason})`;
-    }
-
-    // Add countdown
-    text += ` -- reconnecting in ${this.countdownSeconds}s...`;
-
-    this.bannerElement.textContent = text;
-  }
-
-  /**
-   * Update the countdown display
-   */
-  private updateBannerCountdown(): void {
+  private tickCountdown(): void {
     this.countdownSeconds = Math.max(0, this.countdownSeconds - 1);
-    this.updateBannerText();
+    this.notifyDisconnectState(false);
 
     if (this.countdownSeconds === 0 && this.countdownTimer !== null) {
       window.clearInterval(this.countdownTimer);
@@ -226,13 +215,9 @@ export class TugConnection {
   }
 
   /**
-   * Hide the disconnect banner
+   * Clear the countdown interval timer.
    */
-  private hideDisconnectBanner(): void {
-    if (this.bannerElement) {
-      this.bannerElement.style.display = "none";
-    }
-
+  private clearCountdownTimer(): void {
     if (this.countdownTimer !== null) {
       window.clearInterval(this.countdownTimer);
       this.countdownTimer = null;
@@ -273,6 +258,19 @@ export class TugConnection {
   }
 
   /**
+   * Register a callback for disconnect state changes.
+   * Called when the connection disconnects, the countdown ticks, or reconnection is attempted.
+   * Returns a cleanup function to unregister.
+   */
+  onDisconnectState(callback: DisconnectStateCallback): () => void {
+    this.disconnectStateCallbacks.push(callback);
+    return () => {
+      const idx = this.disconnectStateCallbacks.indexOf(callback);
+      if (idx >= 0) this.disconnectStateCallbacks.splice(idx, 1);
+    };
+  }
+
+  /**
    * Register a callback for frames from a specific feed
    *
    * Multiple callbacks can be registered for the same feed ID.
@@ -296,10 +294,7 @@ export class TugConnection {
       window.clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    if (this.countdownTimer !== null) {
-      window.clearInterval(this.countdownTimer);
-      this.countdownTimer = null;
-    }
+    this.clearCountdownTimer();
 
     if (this.ws) {
       this.ws.close();

@@ -294,42 +294,33 @@ describe("TerminalCard – cleans up xterm.js on unmount", () => {
     expect(mockTerminalDispose.mock.calls.length).toBe(1);
   });
 
-  it("registers and removes the td-theme-change event listener", async () => {
-    const addedListeners: string[] = [];
-    const removedListeners: string[] = [];
-
-    const origAdd = document.addEventListener.bind(document);
-    const origRemove = document.removeEventListener.bind(document);
-
-    (document as any).addEventListener = (
-      type: string,
-      handler: EventListener,
-      opts?: unknown
-    ) => {
-      addedListeners.push(type);
-      origAdd(type, handler, opts as any);
-    };
-    (document as any).removeEventListener = (
-      type: string,
-      handler: EventListener,
-      opts?: unknown
-    ) => {
-      removedListeners.push(type);
-      origRemove(type, handler, opts as any);
-    };
-
+  it("calls terminal.refresh() when theme changes via useTheme hook", async () => {
     const { unmount } = renderTerminalCard();
     await act(async () => {});
 
-    expect(addedListeners).toContain("td-theme-change");
+    // Clear previous refresh calls from mount
+    mockRefresh.mockClear();
+
+    // Simulate a theme change by dispatching td-theme-change (which useTheme hook listens to)
+    // This updates the theme state, triggering the useEffect([theme]) in TerminalCard
+    await act(async () => {
+      document.body.classList.add("td-theme-bluenote");
+      document.dispatchEvent(new CustomEvent("td-theme-change", { detail: { theme: "bluenote" } }));
+    });
+
+    // rAF polyfill runs as setTimeout(0)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    // terminal.refresh() should have been called to apply new colors
+    expect(mockRefresh.mock.calls.length).toBeGreaterThan(0);
+
+    // Cleanup
+    document.body.classList.remove("td-theme-bluenote");
+    document.dispatchEvent(new CustomEvent("td-theme-change", { detail: { theme: "brio" } }));
 
     unmount();
-
-    expect(removedListeners).toContain("td-theme-change");
-
-    // Restore
-    (document as any).addEventListener = origAdd;
-    (document as any).removeEventListener = origRemove;
   });
 });
 

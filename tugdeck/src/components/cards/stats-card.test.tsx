@@ -38,13 +38,8 @@ function renderStatsCard(feeds: {
     feedData.set(FeedId.STATS_BUILD_STATUS, encodeJSON(feeds.buildStatus));
   }
 
-  const containerEl = document.createElement("div");
-  document.body.appendChild(containerEl);
-
+  // Capture meta updates via the updateMeta callback (replaces card-meta-update CustomEvent)
   const metaUpdates: any[] = [];
-  containerEl.addEventListener("card-meta-update", (e: Event) => {
-    metaUpdates.push((e as CustomEvent).detail);
-  });
 
   const result = render(
     <CardContextProvider
@@ -52,12 +47,12 @@ function renderStatsCard(feeds: {
       feedData={feedData}
       dimensions={{ width: 0, height: 0 }}
       dragState={null}
-      containerEl={containerEl}
+      updateMeta={(meta) => metaUpdates.push(meta)}
     >
       <StatsCard />
     </CardContextProvider>
   );
-  return { ...result, containerEl, metaUpdates };
+  return { ...result, metaUpdates };
 }
 
 // ---- Tests ----

@@ -8,6 +8,7 @@
  *   - useConnection for sending terminal input back via WebSocket
  *   - useContext(CardContext) for dimensions/dragState for resize handling
  *   - useCardMeta for dynamic menu items (font size, clear scrollback, WebGL toggle)
+ *   - useTheme for reactive theme updates (replaces td-theme-change CustomEvent listener)
  *
  * xterm.js manages its own internal DOM within the container ref. The component
  * owns lifecycle (mount/unmount) and delegates all rendering to xterm.js.
@@ -28,6 +29,7 @@ import { FeedId, resizeFrame } from "../../protocol";
 import { useFeed } from "../../hooks/use-feed";
 import { useConnection } from "../../hooks/use-connection";
 import { useCardMeta } from "../../hooks/use-card-meta";
+import { useTheme } from "../../hooks/use-theme";
 import { CardContext } from "../../cards/card-context";
 import type { TugCardMeta } from "../../cards/card";
 import { CARD_TITLES } from "../../card-titles";
@@ -46,6 +48,7 @@ export function TerminalCard() {
 
   const feedPayload = useFeed(FeedId.TERMINAL_OUTPUT);
   const connection = useConnection();
+  const [theme] = useTheme();
   const { dimensions, dragState } = useContext(CardContext);
 
   // ---- Menu state ----
@@ -202,28 +205,7 @@ export function TerminalCard() {
       connection.send(frame.feedId, frame.payload);
     });
 
-    // Listen for theme changes and update terminal colors
-    const handleThemeChange = () => {
-      requestAnimationFrame(() => {
-        if (!terminalRef.current) return;
-        const s = getComputedStyle(document.body);
-        const newBg = s.getPropertyValue("--td-surface-content").trim();
-        const newFg = s.getPropertyValue("--td-text").trim();
-        const newAccent = s.getPropertyValue("--tl-accent-2").trim();
-        const newFont = s.getPropertyValue("--td-font-mono").trim();
-        terminalRef.current.options.theme = {
-          background: newBg,
-          foreground: newFg,
-          green: newAccent,
-        };
-        if (newFont) terminalRef.current.options.fontFamily = newFont;
-        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-      });
-    };
-    document.addEventListener("td-theme-change", handleThemeChange);
-
     return () => {
-      document.removeEventListener("td-theme-change", handleThemeChange);
       dataDisposable.dispose();
       resizeDisposable.dispose();
       if (resizeDebounceIdRef.current !== null) {
@@ -244,6 +226,27 @@ export function TerminalCard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount; connection ref is stable
+
+  // ---- Update xterm colors when theme changes (via useTheme hook) ----
+
+  useEffect(() => {
+    if (!terminalRef.current) return;
+    requestAnimationFrame(() => {
+      if (!terminalRef.current) return;
+      const s = getComputedStyle(document.body);
+      const newBg = s.getPropertyValue("--td-surface-content").trim();
+      const newFg = s.getPropertyValue("--td-text").trim();
+      const newAccent = s.getPropertyValue("--tl-accent-2").trim();
+      const newFont = s.getPropertyValue("--td-font-mono").trim();
+      terminalRef.current.options.theme = {
+        background: newBg,
+        foreground: newFg,
+        green: newAccent,
+      };
+      if (newFont) terminalRef.current.options.fontFamily = newFont;
+      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+    });
+  }, [theme]);
 
   // ---- Write incoming terminal output ----
 

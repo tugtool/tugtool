@@ -3,10 +3,10 @@
  *
  * React components call this hook with their current TugCardMeta (including
  * menu item callbacks that close over React state). On mount and whenever the
- * meta value changes, the hook dispatches a "card-meta-update" CustomEvent on
- * the card container element via the updateMeta function from CardContext.
- * The ReactCardAdapter listens for this event and forwards the meta to
- * CardFrame.updateMeta(), which performs targeted CardHeader DOM updates.
+ * meta value changes, the hook calls the updateMeta function from CardContext,
+ * which updates DeckCanvas state flowing to CardHeader via props.
+ *
+ * [D04] updateMeta is a state callback in the unified DeckCanvas tree (not a CustomEvent)
  *
  * Usage:
  *   useCardMeta({ title: "My Card", icon: "Info", closable: true, menuItems: [...] });

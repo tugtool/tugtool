@@ -82,18 +82,16 @@ export interface TugCard {
 
   /**
    * Called by DeckManager during render() to give the card a reference to its
-   * CardFrame. Also called with null before CardFrame destruction during
-   * re-render teardown, preventing meta updates from reaching destroyed DOM.
-   * Optional — only ReactCardAdapter implements this.
+   * CardFrame. No-op in the unified DeckCanvas architecture (Step 7+); kept for
+   * backward compatibility.
+   * @deprecated Unused in unified React root architecture (Step 7+).
    */
-  setCardFrame?(frame: import("../card-frame").CardFrame | null): void;
+  setCardFrame?(frame: unknown): void;
 
   /**
    * Called by DeckManager during render() and handleTabActivate() to inform
-   * the card whether it is the currently visible tab. When active is true and
-   * a CardFrame reference is set, the adapter pushes its cached meta to the
-   * CardFrame header immediately.
-   * Optional — only ReactCardAdapter implements this.
+   * the card whether it is the currently visible tab.
+   * @deprecated Unused in unified React root architecture (Step 7+).
    */
   setActiveTab?(active: boolean): void;
 }

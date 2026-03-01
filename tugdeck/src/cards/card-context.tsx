@@ -3,15 +3,17 @@
  *
  * Shape (Spec S02):
  *   connection  — TugConnection WebSocket instance
- *   feedData    — Map of feedId -> latest payload bytes (updated by ReactCardAdapter.onFrame)
- *   dimensions  — current { width, height } of the card container (updated by onResize)
+ *   feedData    — Map of feedId -> latest payload bytes (updated by DeckCanvas onFrame)
+ *   dimensions  — current { width, height } of the card container (updated by ResizeObserver)
  *   dragState   — IDragState reference (optional, for cards that need it)
  *   dispatch    — send a binary frame to the server (Spec S02)
  *   updateMeta  — callback for React components to push TugCardMeta to the CardHeader
  *
  * CardContextProvider wraps a React card component and supplies all context values.
- * The updateMeta callback dispatches a "card-meta-update" CustomEvent on the
- * container element; ReactCardAdapter listens and forwards to CardFrame.updateMeta().
+ * The updateMeta callback is a state setter provided by DeckCanvas, replacing the
+ * previous "card-meta-update" CustomEvent dispatch mechanism.
+ *
+ * [D04] Unified single React root — updateMeta is now a state callback, not a CustomEvent
  */
 
 import React, { createContext, useCallback } from "react";
@@ -33,7 +35,7 @@ export interface CardContextValue {
   dragState: IDragState | null;
   /** Send a binary frame to the server (Spec S02) */
   dispatch: (feedId: FeedIdValue, payload: Uint8Array) => void;
-  /** Push updated metadata to the CardHeader via adapter event */
+  /** Push updated metadata to the CardHeader via state callback */
   updateMeta: (meta: TugCardMeta) => void;
 }
 
@@ -55,8 +57,8 @@ export interface CardContextProviderProps {
   feedData: Map<FeedIdValue, Uint8Array>;
   dimensions: { width: number; height: number };
   dragState: IDragState | null;
-  /** The container element on which "card-meta-update" events are dispatched */
-  containerEl: HTMLElement;
+  /** State callback provided by DeckCanvas to update the panel's card header meta. */
+  updateMeta?: (meta: TugCardMeta) => void;
   /** Send a binary frame to the server; delegates to connection.send() when provided */
   dispatch?: (feedId: FeedIdValue, payload: Uint8Array) => void;
   children: React.ReactNode;
@@ -69,17 +71,17 @@ export function CardContextProvider({
   feedData,
   dimensions,
   dragState,
-  containerEl,
+  updateMeta: updateMetaProp,
   dispatch: dispatchProp,
   children,
 }: CardContextProviderProps) {
   const updateMeta = useCallback(
     (meta: TugCardMeta) => {
-      containerEl.dispatchEvent(
-        new CustomEvent("card-meta-update", { detail: meta, bubbles: false })
-      );
+      if (updateMetaProp) {
+        updateMetaProp(meta);
+      }
     },
-    [containerEl]
+    [updateMetaProp]
   );
 
   const dispatch = useCallback(

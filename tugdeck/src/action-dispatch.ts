@@ -7,6 +7,7 @@
 
 import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
+import type { DevNotificationRef } from "./contexts/dev-notification-context";
 import { FeedId } from "./protocol";
 
 /** Handler function for an action */
@@ -17,6 +18,9 @@ const handlers = new Map<string, ActionHandler>();
 
 /** Module-level flag to prevent duplicate reload_frontend calls */
 let reloadPending = false;
+
+/** DevNotificationRef for context-based notification dispatch (set by initActionDispatch) */
+let devNotificationRef: { current: DevNotificationRef | null } | null = null;
 
 /** TextDecoder for UTF-8 payload decoding */
 const textDecoder = new TextDecoder();
@@ -35,6 +39,7 @@ export function registerAction(action: string, handler: ActionHandler): void {
 export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
+  devNotificationRef = null;
 }
 
 /**
@@ -59,11 +64,16 @@ export function dispatchAction(payload: Record<string, unknown>): void {
  * Initialize action dispatch system
  *
  * Registers a callback for Control frames and registers all built-in handlers.
+ * @param devNotificationRefArg Optional ref to DevNotificationContext for context-based dispatch
  */
 export function initActionDispatch(
   connection: TugConnection,
-  deckManager: DeckManager
+  deckManager: DeckManager,
+  devNotificationRefArg?: { current: DevNotificationRef | null }
 ): void {
+  if (devNotificationRefArg) {
+    devNotificationRef = devNotificationRefArg;
+  }
   // Register Control frame callback
   connection.onFrame(FeedId.CONTROL, (payload: Uint8Array) => {
     try {
@@ -176,10 +186,8 @@ export function initActionDispatch(
     }
   });
 
-  // dev_notification: Route to Developer card, set badge if card closed.
-  // For React DeveloperCard: dispatches "td-dev-notification" CustomEvent on document
-  // so the React component can listen directly without the adapter's method bridge.
-  // For vanilla DeveloperCard (retained until Step 10): calls card.update() directly.
+  // dev_notification: Route to Developer card via DevNotificationContext.
+  // Also set dock badge when card is closed and notification is a dirty type.
   registerAction("dev_notification", (payload) => {
     const type = payload.type as string | undefined;
     const count = payload.count as number | undefined;
@@ -201,40 +209,23 @@ export function initActionDispatch(
       }
     }
 
-    if (developerCard) {
-      if (typeof developerCard.update === "function") {
-        // Vanilla DeveloperCard: call update() directly
-        developerCard.update(payload);
-      } else {
-        // React DeveloperCard (ReactCardAdapter): dispatch CustomEvent on document
-        if (typeof document !== "undefined") {
-          document.dispatchEvent(
-            new CustomEvent("td-dev-notification", { detail: payload })
-          );
-        }
-      }
+    if (developerCard && typeof developerCard.update === "function") {
+      // Vanilla DeveloperCard: call update() directly
+      developerCard.update(payload);
     } else {
-      // Card is closed — dispatch CustomEvent for React component if it was open
-      // before being unmounted; also set dock badge for dirty notifications.
-      if (typeof document !== "undefined") {
-        document.dispatchEvent(
-          new CustomEvent("td-dev-notification", { detail: payload })
-        );
+      // React DeveloperCard: push notification via DevNotificationContext ref
+      devNotificationRef?.current?.notify(payload);
+
+      if (!developerCard) {
+        // Card is closed: also set dock badge for dirty notifications
         if (type === "restart_available" || type === "relaunch_available") {
-          // Set dock badge for dirty notifications
-          document.dispatchEvent(
-            new CustomEvent("td-dev-badge", {
-              detail: { componentId: "developer", count: count ?? 0 },
-            })
-          );
+          devNotificationRef?.current?.setBadge("developer", count ?? 0);
         }
       }
     }
   });
 
-  // dev_build_progress: Route to Developer card.
-  // For React DeveloperCard: dispatches "td-dev-build-progress" CustomEvent on document.
-  // For vanilla DeveloperCard (retained until Step 10): calls card.updateBuildProgress().
+  // dev_build_progress: Route to Developer card via DevNotificationContext.
   registerAction("dev_build_progress", (payload) => {
     // Find Developer card same way
     const panel = deckManager.findPanelByComponent("developer");
@@ -252,18 +243,12 @@ export function initActionDispatch(
       }
     }
 
-    if (developerCard) {
-      if (typeof developerCard.updateBuildProgress === "function") {
-        // Vanilla DeveloperCard: call updateBuildProgress() directly
-        developerCard.updateBuildProgress(payload);
-      } else {
-        // React DeveloperCard (ReactCardAdapter): dispatch CustomEvent on document
-        if (typeof document !== "undefined") {
-          document.dispatchEvent(
-            new CustomEvent("td-dev-build-progress", { detail: payload })
-          );
-        }
-      }
+    if (developerCard && typeof developerCard.updateBuildProgress === "function") {
+      // Vanilla DeveloperCard: call updateBuildProgress() directly
+      developerCard.updateBuildProgress(payload);
+    } else {
+      // React DeveloperCard: push build progress via DevNotificationContext ref
+      devNotificationRef?.current?.updateBuildProgress(payload);
     }
     // If card closed, no-op
   });
