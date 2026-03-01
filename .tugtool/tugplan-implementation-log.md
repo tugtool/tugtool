@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-01T17:18:11Z
+---
+
+## step-3: Fixed origin allowlist by calling set_dev_port(None) in the DevMode disabled branch instead of set_dev_port(vite_port)
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-2
 date: 2025-03-01T17:14:21Z
 ---
