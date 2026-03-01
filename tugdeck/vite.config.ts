@@ -37,6 +37,28 @@ export default defineConfig(() => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
+      // Shiki language grammars are large by nature; suppress the warning for
+      // chunks that exceed 500 kB since we can't split them further without
+      // restructuring the syntax-highlighting feature.
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks: (id: string) => {
+            if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+              return "vendor";
+            }
+            if (
+              id.includes("node_modules/@xterm/") ||
+              id.includes("node_modules/xterm")
+            ) {
+              return "terminal";
+            }
+            if (id.includes("node_modules/shiki")) {
+              return "shiki";
+            }
+          },
+        },
+      },
     },
   };
 });
