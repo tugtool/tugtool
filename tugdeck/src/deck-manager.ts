@@ -779,26 +779,28 @@ export class DeckManager implements IDragState {
         null,
         React.createElement(
           DevNotificationProvider,
-          { controlRef: this.devNotificationRef },
-          React.createElement(DeckCanvas, {
-            ref: this.deckCanvasRef,
-            panels: this.deckState.cards,
-            cardConfigs: this.cardConfigs,
-            cardMetas: this.cardMetas,
-            keyPanelId: this.keyPanelId,
-            canvasEl: this.container,
-            callbacks: canvasCallbacks,
-            connection: this.connection,
-            dragState: this,
-            panelDockedCorners: this.dockedCorners,
-            panelPositionOffsets: this.positionOffsets,
-            guides: this.guides,
-            sashGroups: this.sashGroups,
-            sashPanelSnapshots,
-            flashingPanels: this.flashingPanels,
-            onSashDragEnd: handleSashDragEnd,
-            onFlashEnd: handleFlashEnd,
-          })
+          {
+            controlRef: this.devNotificationRef,
+            children: React.createElement(DeckCanvas, {
+              ref: this.deckCanvasRef,
+              panels: this.deckState.cards,
+              cardConfigs: this.cardConfigs,
+              cardMetas: this.cardMetas,
+              keyPanelId: this.keyPanelId,
+              canvasEl: this.container,
+              callbacks: canvasCallbacks,
+              connection: this.connection,
+              dragState: this,
+              panelDockedCorners: this.dockedCorners,
+              panelPositionOffsets: this.positionOffsets,
+              guides: this.guides,
+              sashGroups: this.sashGroups,
+              sashPanelSnapshots,
+              flashingPanels: this.flashingPanels,
+              onSashDragEnd: handleSashDragEnd,
+              onFlashEnd: handleFlashEnd,
+            }),
+          }
         )
       )
     );

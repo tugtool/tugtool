@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-01T23:17:02Z
+---
+
+## step-3: Created settings-api.ts with ServerSettings interface, fetchSettingsWithRetry (exponential backoff, no max retries), and postSettings (fire-and-forget POST). Fixed pre-existing TS errors in tsconfig.json and deck-manager.ts to enable tsc --noEmit checkpoint.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
 step: step-2
 date: 2025-03-01T22:44:51Z
 ---
