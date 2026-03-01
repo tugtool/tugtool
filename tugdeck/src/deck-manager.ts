@@ -29,7 +29,8 @@ import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { DeckCanvas, type DeckCanvasHandle, type CardConfig, type CanvasCallbacks } from "./components/chrome/deck-canvas";
+import { DeckCanvas, type DeckCanvasHandle, type CardConfig, type CanvasCallbacks, type PanelFlashConfig } from "./components/chrome/deck-canvas";
+import type { SashGroup, PanelSnapshot } from "./components/chrome/virtual-sash";
 import { DevNotificationProvider, type DevNotificationRef } from "./contexts/dev-notification-context";
 import { computeSnap, computeResizeSnap, computeEdgeVisibility, cardToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type CardSet, type SharedEdge, type EdgeValidator } from "./snap";
 import { CARD_TITLE_BAR_HEIGHT } from "./components/chrome/card-frame";
@@ -99,8 +100,8 @@ export class DeckManager implements IDragState {
   /** Card factory functions keyed by componentId. Registered externally by main.ts. */
   private cardFactories: Map<string, () => TugCard> = new Map();
 
-  /** Pool of guide line elements: 2 vertical (.snap-guide-line-x) + 2 horizontal (.snap-guide-line-y) */
-  private guideElements: HTMLElement[] = [];
+  /** Active snap guide lines to render during drag. Passed as props to DeckCanvas. */
+  private guides: GuidePosition[] = [];
 
   /** Runtime set membership: groups of panels connected by shared edges (D05) */
   private sets: CardSet[] = [];
@@ -108,8 +109,11 @@ export class DeckManager implements IDragState {
   /** Current shared edges between panels, computed alongside sets */
   private sharedEdges: SharedEdge[] = [];
 
-  /** Virtual sash DOM elements for shared-edge resize (D04) */
-  private sashElements: HTMLElement[] = [];
+  /** Virtual sash groups for shared-edge resize. Passed as props to DeckCanvas. */
+  private sashGroups: SashGroup[] = [];
+
+  /** Active flash overlay state per panelId. Passed as props to DeckCanvas. */
+  private flashingPanels: Map<string, PanelFlashConfig> = new Map();
 
   /**
    * Transient context for the current set-move drag.
@@ -195,9 +199,6 @@ export class DeckManager implements IDragState {
 
     // Canvas container needs position:relative for absolutely-positioned children
     container.style.position = "relative";
-
-    // Create guide line element pool (D03: absolutely-positioned divs in canvas container)
-    this.createGuideLines();
 
     // Initialize React root and refs
     this.deckCanvasRef = React.createRef<DeckCanvasHandle | null>();
@@ -395,7 +396,7 @@ export class DeckManager implements IDragState {
     const canvasCallbacks: CanvasCallbacks = {
       onMoveEnd: (panelId, x, y) => {
         this._isDragging = false;
-        this.hideGuides();
+        this.guides = [];
         const panel = this.deckState.cards.find((p) => p.id === panelId);
         if (panel) {
           panel.position = { x, y };
@@ -418,7 +419,7 @@ export class DeckManager implements IDragState {
           if (finalSet) {
             const finalSetKey = [...finalSet.cardIds].sort().join(",");
             if (finalSetKey !== initialSetKey || breakOutFired) {
-              this.flashPanels(finalSet.cardIds);
+              this.triggerSetFlash(finalSet.cardIds);
             }
           }
         }
@@ -426,7 +427,7 @@ export class DeckManager implements IDragState {
       },
       onResizeEnd: (panelId, x, y, width, height) => {
         this._isDragging = false;
-        this.hideGuides();
+        this.guides = [];
         const panel = this.deckState.cards.find((p) => p.id === panelId);
         if (panel) {
           panel.position = { x, y };
@@ -578,7 +579,7 @@ export class DeckManager implements IDragState {
           );
 
           const snap = computeSnap(setBBox, nonSetRects, setMoveValidator);
-          this.showGuides(snap.guides);
+          this.guides = snap.guides;
 
           // Apply snap offset to all sibling positions.
           const snapDX = snap.x !== null ? snap.x - setBBox.x : 0;
@@ -648,7 +649,7 @@ export class DeckManager implements IDragState {
           );
 
           const snap = computeSnap(movingRect, others, soloValidator);
-          this.showGuides(snap.guides);
+          this.guides = snap.guides;
           const finalX = snap.x !== null ? snap.x : x;
           const finalY = snap.y !== null ? snap.y : y;
           this.detectDragSetChange(panelId, finalX, finalY, panel.size.width, panel.size.height);
@@ -667,7 +668,7 @@ export class DeckManager implements IDragState {
           bottom: y + height,
         };
         const snap = computeResizeSnap(resizingEdges, others);
-        this.showGuides(snap.guides);
+        this.guides = snap.guides;
         let newX = snap.left !== undefined ? snap.left : x;
         let newY = snap.top !== undefined ? snap.top : y;
         const newRight = snap.right !== undefined ? snap.right : x + width;
@@ -708,6 +709,58 @@ export class DeckManager implements IDragState {
       dock: this.buildDockCallbacks(),
     };
 
+    // Build panel snapshots for VirtualSash drag calculations.
+    // These capture the current position/size of each panel at render time.
+    const sashPanelSnapshots = new Map<string, PanelSnapshot>();
+    for (const panel of this.deckState.cards) {
+      sashPanelSnapshots.set(panel.id, {
+        id: panel.id,
+        startX: panel.position.x,
+        startY: panel.position.y,
+        startW: panel.size.width,
+        startH: panel.size.height,
+      });
+    }
+
+    const handleSashDragEnd = (
+      axis: "vertical" | "horizontal",
+      aSideIds: string[],
+      bSideIds: string[],
+      delta: number
+    ) => {
+      // Apply final delta to deck state so positions/sizes persist after re-render
+      for (const id of aSideIds) {
+        const panel = this.deckState.cards.find((p) => p.id === id);
+        if (!panel) continue;
+        if (axis === "vertical") {
+          panel.size.width = panel.size.width + delta;
+        } else {
+          panel.size.height = panel.size.height + delta;
+        }
+      }
+      for (const id of bSideIds) {
+        const panel = this.deckState.cards.find((p) => p.id === id);
+        if (!panel) continue;
+        if (axis === "vertical") {
+          panel.position.x = panel.position.x + delta;
+          panel.size.width = panel.size.width - delta;
+        } else {
+          panel.position.y = panel.position.y + delta;
+          panel.size.height = panel.size.height - delta;
+        }
+      }
+      this.ensureSetAdjacency();
+      this.render();
+      this.scheduleSave();
+    };
+
+    const handleFlashEnd = (panelId: string) => {
+      const next = new Map(this.flashingPanels);
+      next.delete(panelId);
+      this.flashingPanels = next;
+      this.render();
+    };
+
     this.reactRoot.render(
       React.createElement(
         DevNotificationProvider,
@@ -724,6 +777,12 @@ export class DeckManager implements IDragState {
           dragState: this,
           panelDockedCorners: this.dockedCorners,
           panelPositionOffsets: this.positionOffsets,
+          guides: this.guides,
+          sashGroups: this.sashGroups,
+          sashPanelSnapshots,
+          flashingPanels: this.flashingPanels,
+          onSashDragEnd: handleSashDragEnd,
+          onFlashEnd: handleFlashEnd,
         })
       )
     );
@@ -1074,7 +1133,8 @@ export class DeckManager implements IDragState {
     this.keyPanelId = null;
     this.sets = [];
     this.sharedEdges = [];
-    this.destroySashes();
+    this.sashGroups = [];
+    this.flashingPanels = new Map();
     this._setMoveContext = null;
     this._dragInitialSetKey = null;
     this._dragBreakOutFired = false;
@@ -1204,9 +1264,43 @@ export class DeckManager implements IDragState {
     this.sets = computeSets(cardIds, sharedEdges);
     this.sharedEdges = sharedEdges;
     this.normalizeSetPositions();
-    this.destroySashes();
-    this.createSashes();
+    this.sashGroups = this.computeSashGroups();
     this.updateDockedStyles();
+  }
+
+  /**
+   * Compute sash groups from the current shared edges.
+   * Groups adjacent edges along the same axis and boundary into a single sash.
+   */
+  private computeSashGroups(): SashGroup[] {
+    const groups: SashGroup[] = [];
+
+    for (const edge of this.sharedEdges) {
+      let added = false;
+      for (const group of groups) {
+        if (
+          group.axis === edge.axis &&
+          Math.abs(group.boundary - edge.boundaryPosition) <= 2
+        ) {
+          group.edges.push(edge);
+          group.overlapStart = Math.min(group.overlapStart, edge.overlapStart);
+          group.overlapEnd = Math.max(group.overlapEnd, edge.overlapEnd);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        groups.push({
+          axis: edge.axis,
+          boundary: edge.boundaryPosition,
+          overlapStart: edge.overlapStart,
+          overlapEnd: edge.overlapEnd,
+          edges: [edge],
+        });
+      }
+    }
+
+    return groups;
   }
 
   /**
@@ -1299,55 +1393,6 @@ export class DeckManager implements IDragState {
     // Store computed values. The enclosing render() passes them to DeckCanvas.
     this.dockedCorners = corners;
     this.positionOffsets = offsets;
-  }
-
-  /** Create the pool of 4 guide line elements appended to the canvas container. */
-  private createGuideLines(): void {
-    const classes = [
-      "snap-guide-line snap-guide-line-x",
-      "snap-guide-line snap-guide-line-x",
-      "snap-guide-line snap-guide-line-y",
-      "snap-guide-line snap-guide-line-y",
-    ];
-    for (const cls of classes) {
-      const el = document.createElement("div");
-      el.className = cls;
-      this.container.appendChild(el);
-      this.guideElements.push(el);
-    }
-  }
-
-  /**
-   * Show guide lines at the specified positions.
-   */
-  private showGuides(guides: GuidePosition[]): void {
-    const xGuides = guides.filter((g) => g.axis === "x");
-    const yGuides = guides.filter((g) => g.axis === "y");
-    for (let i = 0; i < 2; i++) {
-      const el = this.guideElements[i];
-      if (i < xGuides.length) {
-        el.style.left = `${xGuides[i].position}px`;
-        el.style.display = "block";
-      } else {
-        el.style.display = "none";
-      }
-    }
-    for (let i = 0; i < 2; i++) {
-      const el = this.guideElements[i + 2];
-      if (i < yGuides.length) {
-        el.style.top = `${yGuides[i].position}px`;
-        el.style.display = "block";
-      } else {
-        el.style.display = "none";
-      }
-    }
-  }
-
-  /** Hide all guide line elements. */
-  private hideGuides(): void {
-    for (const el of this.guideElements) {
-      el.style.display = "none";
-    }
   }
 
   /**
@@ -1528,7 +1573,7 @@ export class DeckManager implements IDragState {
     const currentSetKey = mySet ? [...mySet.cardIds].sort().join(",") : null;
 
     if (currentSetKey !== this._dragInitialSetKey) {
-      this.flashPanels([panelId]);
+      this.triggerSetFlash([panelId]);
       this._dragBreakOutFired = true;
       // Reset docked corners for the breaking-out panel
       this.resetDockedStyleForPanel(panelId);
@@ -1549,257 +1594,42 @@ export class DeckManager implements IDragState {
     this.render();
   }
 
-  /** Flash overlay on one or more panels. */
-  private flashPanels(cardIds: string[]): void {
+  /**
+   * Trigger set flash overlays on the given panels via React state.
+   * DeckCanvas renders a SetFlashOverlay inside each affected panel.
+   * Overlays clear automatically when the animation ends (onFlashEnd callback).
+   *
+   * For multi-panel flashes, suppresses internal shared-edge borders so
+   * adjacent overlays merge visually into a single flash across the set.
+   */
+  private triggerSetFlash(cardIds: string[]): void {
     const panelSet = new Set(cardIds);
+    const newFlashing = new Map(this.flashingPanels);
 
     for (const id of cardIds) {
-      const el = this.deckCanvasRef.current?.getPanelElement(id);
-      if (!el) continue;
-
-      let topInternal = false;
-      let bottomInternal = false;
-      let leftInternal = false;
-      let rightInternal = false;
+      let hideTop = false;
+      let hideBottom = false;
+      let hideLeft = false;
+      let hideRight = false;
 
       if (cardIds.length > 1) {
         for (const edge of this.sharedEdges) {
           if (!panelSet.has(edge.cardAId) || !panelSet.has(edge.cardBId)) continue;
           if (edge.axis === "vertical") {
-            if (edge.cardAId === id) rightInternal = true;
-            if (edge.cardBId === id) leftInternal = true;
+            if (edge.cardAId === id) hideRight = true;
+            if (edge.cardBId === id) hideLeft = true;
           } else {
-            if (edge.cardAId === id) bottomInternal = true;
-            if (edge.cardBId === id) topInternal = true;
+            if (edge.cardAId === id) hideBottom = true;
+            if (edge.cardBId === id) hideTop = true;
           }
         }
       }
 
-      const flashEl = document.createElement("div");
-      flashEl.className = "set-flash-overlay";
-
-      if (topInternal) flashEl.style.borderTop = "none";
-      if (bottomInternal) flashEl.style.borderBottom = "none";
-      if (leftInternal) flashEl.style.borderLeft = "none";
-      if (rightInternal) flashEl.style.borderRight = "none";
-
-      el.appendChild(flashEl);
-      flashEl.addEventListener("animationend", () => flashEl.remove());
-    }
-  }
-
-  /** Remove all virtual sash elements from the DOM. */
-  private destroySashes(): void {
-    for (const el of this.sashElements) {
-      el.remove();
-    }
-    this.sashElements = [];
-  }
-
-  /**
-   * Create virtual sash elements for shared edges.
-   */
-  private createSashes(): void {
-    type SashGroup = {
-      axis: "vertical" | "horizontal";
-      boundary: number;
-      edges: SharedEdge[];
-    };
-    const groups: SashGroup[] = [];
-
-    for (const edge of this.sharedEdges) {
-      let added = false;
-      for (const group of groups) {
-        if (
-          group.axis === edge.axis &&
-          Math.abs(group.boundary - edge.boundaryPosition) <= 2
-        ) {
-          group.edges.push(edge);
-          added = true;
-          break;
-        }
-      }
-      if (!added) {
-        groups.push({
-          axis: edge.axis,
-          boundary: edge.boundaryPosition,
-          edges: [edge],
-        });
-      }
+      newFlashing.set(id, { hideTop, hideBottom, hideLeft, hideRight });
     }
 
-    for (const group of groups) {
-      let overlapStart = Infinity;
-      let overlapEnd = -Infinity;
-      for (const edge of group.edges) {
-        overlapStart = Math.min(overlapStart, edge.overlapStart);
-        overlapEnd = Math.max(overlapEnd, edge.overlapEnd);
-      }
-
-      const sash = document.createElement("div");
-      if (group.axis === "vertical") {
-        sash.className = "virtual-sash virtual-sash-vertical";
-        sash.style.left = `${group.boundary - 4}px`;
-        sash.style.top = `${overlapStart}px`;
-        sash.style.height = `${overlapEnd - overlapStart}px`;
-      } else {
-        sash.className = "virtual-sash virtual-sash-horizontal";
-        sash.style.top = `${group.boundary - 4}px`;
-        sash.style.left = `${overlapStart}px`;
-        sash.style.width = `${overlapEnd - overlapStart}px`;
-      }
-
-      this.attachSashDrag(sash, group);
-      this.container.appendChild(sash);
-      this.sashElements.push(sash);
-    }
-  }
-
-  /**
-   * Attach pointer event handlers to a grouped sash for multi-panel resize.
-   */
-  private attachSashDrag(
-    sash: HTMLElement,
-    group: {
-      axis: "vertical" | "horizontal";
-      boundary: number;
-      edges: SharedEdge[];
-    }
-  ): void {
-    const MIN_SIZE = 100;
-
-    sash.addEventListener("pointerdown", (downEvent: PointerEvent) => {
-      downEvent.preventDefault();
-      downEvent.stopPropagation();
-      if (sash.setPointerCapture) {
-        sash.setPointerCapture(downEvent.pointerId);
-      }
-
-      const aSideIds = new Set<string>();
-      const bSideIds = new Set<string>();
-      for (const edge of group.edges) {
-        aSideIds.add(edge.cardAId);
-        bSideIds.add(edge.cardBId);
-      }
-
-      type PanelSnap = {
-        panel: CardState;
-        startX: number;
-        startY: number;
-        startW: number;
-        startH: number;
-      };
-      const aPanels: PanelSnap[] = [];
-      const bPanels: PanelSnap[] = [];
-
-      for (const id of aSideIds) {
-        const panel = this.deckState.cards.find((p) => p.id === id);
-        if (panel) {
-          aPanels.push({
-            panel,
-            startX: panel.position.x,
-            startY: panel.position.y,
-            startW: panel.size.width,
-            startH: panel.size.height,
-          });
-        }
-      }
-      for (const id of bSideIds) {
-        const panel = this.deckState.cards.find((p) => p.id === id);
-        if (panel) {
-          bPanels.push({
-            panel,
-            startX: panel.position.x,
-            startY: panel.position.y,
-            startW: panel.size.width,
-            startH: panel.size.height,
-          });
-        }
-      }
-
-      if (aPanels.length === 0 || bPanels.length === 0) return;
-
-      const startClientX = downEvent.clientX;
-      const startClientY = downEvent.clientY;
-
-      const onMove = (e: PointerEvent) => {
-        if (group.axis === "vertical") {
-          let dx = e.clientX - startClientX;
-          for (const s of aPanels) {
-            dx = Math.max(dx, -(s.startW - MIN_SIZE));
-          }
-          for (const s of bPanels) {
-            dx = Math.min(dx, s.startW - MIN_SIZE);
-          }
-
-          for (const s of aPanels) {
-            s.panel.size.width = s.startW + dx;
-            if (this.deckCanvasRef.current) {
-              this.deckCanvasRef.current.updatePanelSize(s.panel.id, s.startW + dx, s.startH);
-            }
-          }
-          for (const s of bPanels) {
-            s.panel.position.x = s.startX + dx;
-            s.panel.size.width = s.startW - dx;
-            if (this.deckCanvasRef.current) {
-              this.deckCanvasRef.current.updatePanelPosition(s.panel.id, s.startX + dx, s.startY);
-              this.deckCanvasRef.current.updatePanelSize(s.panel.id, s.startW - dx, s.startH);
-            }
-          }
-        } else {
-          let dy = e.clientY - startClientY;
-          for (const s of aPanels) {
-            dy = Math.max(dy, -(s.startH - MIN_SIZE));
-          }
-          for (const s of bPanels) {
-            dy = Math.min(dy, s.startH - MIN_SIZE);
-          }
-
-          for (const s of aPanels) {
-            s.panel.size.height = s.startH + dy;
-            if (this.deckCanvasRef.current) {
-              this.deckCanvasRef.current.updatePanelSize(s.panel.id, s.startW, s.startH + dy);
-            }
-          }
-          for (const s of bPanels) {
-            s.panel.position.y = s.startY + dy;
-            s.panel.size.height = s.startH - dy;
-            if (this.deckCanvasRef.current) {
-              this.deckCanvasRef.current.updatePanelPosition(s.panel.id, s.startX, s.startY + dy);
-              this.deckCanvasRef.current.updatePanelSize(s.panel.id, s.startW, s.startH - dy);
-            }
-          }
-        }
-
-        // Move the sash element to track the boundary
-        if (group.axis === "vertical") {
-          const dx = e.clientX - startClientX;
-          sash.style.left = `${group.boundary - 4 + dx}px`;
-        } else {
-          const dy = e.clientY - startClientY;
-          sash.style.top = `${group.boundary - 4 + dy}px`;
-        }
-      };
-
-      const onUp = (_e: PointerEvent) => {
-        if (sash.releasePointerCapture) {
-          sash.releasePointerCapture(downEvent.pointerId);
-        }
-        sash.removeEventListener("pointermove", onMove);
-        sash.removeEventListener("pointerup", onUp);
-        sash.removeEventListener("pointercancel", onUp);
-
-        this.ensureSetAdjacency();
-        // Re-render: recomputeSets() runs first inside render(), updating sashes
-        // and docked corner props.
-        this.render();
-        this.scheduleSave();
-      };
-
-      sash.addEventListener("pointermove", onMove);
-      sash.addEventListener("pointerup", onUp);
-      sash.addEventListener("pointercancel", onUp);
-    });
+    this.flashingPanels = newFlashing;
+    this.render();
   }
 
   /**
@@ -1904,13 +1734,10 @@ export class DeckManager implements IDragState {
       card.destroy();
     }
     this.cardRegistry.clear();
-    // Remove guide line elements
-    for (const el of this.guideElements) {
-      el.remove();
-    }
-    this.guideElements = [];
-    // Remove virtual sash elements
-    this.destroySashes();
+    // Clear overlay state (React root is already unmounted above)
+    this.guides = [];
+    this.sashGroups = [];
+    this.flashingPanels = new Map();
     // Clear transient drag context
     this._setMoveContext = null;
     this._dragInitialSetKey = null;

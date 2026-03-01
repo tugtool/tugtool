@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-01T01:08:12Z
+---
+
+## step-8: Created SnapGuideLine, VirtualSash, and SetFlashOverlay React components. Updated DeckCanvas to render overlays from props/state. Removed createGuideLines/showGuides/hideGuides/createSashes/destroySashes/attachSashDrag/flashPanels and guideElements/sashElements from DeckManager. Added RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-7
 date: 2025-03-01T00:40:09Z
 ---

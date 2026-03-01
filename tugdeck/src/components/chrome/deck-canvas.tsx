@@ -16,7 +16,7 @@
  *     - updatePanelPosition/Size/ZIndex: direct DOM mutations during sash drag (no re-render)
  *
  * [D04] Unified single React root with DeckCanvas
- * Spec S05
+ * Spec S05, #step-8
  */
 
 import React, {
@@ -32,10 +32,27 @@ import type { TugCardMeta } from "@/cards/card";
 import type { TugConnection } from "@/connection";
 import type { IDragState } from "@/drag-state";
 import type { FeedIdValue } from "@/protocol";
+import type { GuidePosition } from "@/snap";
 import { CardFrame, type CardFrameCallbacks } from "./card-frame";
 import { TabBar, type TabBarCallbacks } from "./tab-bar";
 import { Dock, type DockCallbacks } from "./dock";
 import { CardContextProvider } from "@/cards/card-context";
+import { SnapGuideLine } from "./snap-guide-line";
+import { VirtualSash, type SashGroup, type VirtualSashCallbacks, type PanelSnapshot } from "./virtual-sash";
+import { SetFlashOverlay } from "./set-flash-overlay";
+
+// ---- Flash overlay config ----
+
+/**
+ * Per-panel flash overlay configuration.
+ * Describes which borders are suppressed for internal shared edges.
+ */
+export interface PanelFlashConfig {
+  hideTop?: boolean;
+  hideBottom?: boolean;
+  hideLeft?: boolean;
+  hideRight?: boolean;
+}
 
 // ---- CardConfig ----
 
@@ -103,7 +120,7 @@ export interface DeckCanvasHandle {
   updatePanelZIndex(panelId: string, zIndex: number): void;
   /**
    * Return the root DOM element of a panel.
-   * Used by DeckManager for flash overlay injection (until Step 8 React conversion).
+   * Kept for DeckManager sash drag normalization; flash overlay now uses React.
    */
   getPanelElement(panelId: string): HTMLDivElement | null;
 }
@@ -135,6 +152,53 @@ export interface DeckCanvasProps {
    * When absent or not set for a panel, no offset is applied.
    */
   panelPositionOffsets?: Map<string, { dx: number; dy: number }>;
+
+  // ---- Overlay props (Step 8) ----
+
+  /**
+   * Active snap guide lines to render over the canvas during drag.
+   * Computed by DeckManager's onMoving/onResizing callbacks.
+   * Empty array (or absent) = no guides visible.
+   */
+  guides?: GuidePosition[];
+
+  /**
+   * Virtual sash groups to render at shared edges between docked panels.
+   * Computed by DeckManager's recomputeSets() after each render.
+   * Empty array (or absent) = no sashes.
+   */
+  sashGroups?: SashGroup[];
+
+  /**
+   * Panel snapshots needed by VirtualSash for drag calculations.
+   * Map from panelId to its current position/size.
+   * Provided by DeckManager alongside sashGroups.
+   */
+  sashPanelSnapshots?: Map<string, PanelSnapshot>;
+
+  /**
+   * Active flash overlays per panel.
+   * Map from panelId to flash border config.
+   * DeckManager sets this when a set is formed/broken; clears on onFlashEnd.
+   */
+  flashingPanels?: Map<string, PanelFlashConfig>;
+
+  /**
+   * Called when a VirtualSash drag ends.
+   * DeckManager commits the new panel sizes/positions and triggers re-render.
+   */
+  onSashDragEnd?: (
+    axis: "vertical" | "horizontal",
+    aSideIds: string[],
+    bSideIds: string[],
+    delta: number
+  ) => void;
+
+  /**
+   * Called when a flash overlay animation completes.
+   * DeckManager removes the panel from flashingPanels.
+   */
+  onFlashEnd?: (panelId: string) => void;
 }
 
 // ---- CardContent ----
@@ -224,6 +288,12 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
       dragState,
       panelDockedCorners,
       panelPositionOffsets,
+      guides,
+      sashGroups,
+      sashPanelSnapshots,
+      flashingPanels,
+      onSashDragEnd,
+      onFlashEnd,
     },
     ref
   ) {
@@ -331,6 +401,8 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
               callbacks.onTabReorder(panel.id, fromIndex, toIndex),
           };
 
+          const flashConfig = flashingPanels?.get(panel.id);
+
           return (
             <PanelContainer
               key={panel.id}
@@ -344,6 +416,8 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
               callbacks={frameCallbacks}
               dockedCorners={panelDockedCorners?.get(panel.id)}
               positionOffset={panelPositionOffsets?.get(panel.id)}
+              flashConfig={flashConfig}
+              onFlashEnd={onFlashEnd ? () => onFlashEnd(panel.id) : undefined}
             >
               {panel.tabs.length > 1 && (
                 <TabBar
@@ -375,6 +449,47 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
             </PanelContainer>
           );
         })}
+        {/* Snap guide lines rendered over the canvas during drag */}
+        {guides?.map((guide, i) => (
+          <SnapGuideLine key={`guide-${guide.axis}-${i}`} guide={guide} />
+        ))}
+        {/* Virtual sashes rendered at shared edges between docked panels */}
+        {sashGroups?.map((group, i) => {
+          const groupPanelIds = new Set([
+            ...group.edges.map((e) => e.cardAId),
+            ...group.edges.map((e) => e.cardBId),
+          ]);
+          const groupPanels = sashPanelSnapshots
+            ? Array.from(groupPanelIds)
+                .map((id) => sashPanelSnapshots.get(id))
+                .filter((s): s is PanelSnapshot => s !== undefined)
+            : [];
+          const sashCallbacks: VirtualSashCallbacks = {
+            onUpdatePanelSize: (panelId, width, height) => {
+              const el = panelElementRefs.current.get(panelId);
+              if (el) {
+                el.style.width = `${width}px`;
+                el.style.height = `${height}px`;
+              }
+            },
+            onUpdatePanelPosition: (panelId, x, y) => {
+              const el = panelElementRefs.current.get(panelId);
+              if (el) {
+                el.style.left = `${x}px`;
+                el.style.top = `${y}px`;
+              }
+            },
+            onDragEnd: onSashDragEnd ?? (() => {}),
+          };
+          return (
+            <VirtualSash
+              key={`sash-${i}-${group.axis}-${group.boundary}`}
+              group={group}
+              panels={groupPanels}
+              callbacks={sashCallbacks}
+            />
+          );
+        })}
         <Dock callbacks={callbacks.dock} />
       </>
     );
@@ -395,6 +510,10 @@ interface PanelContainerProps {
   callbacks: CardFrameCallbacks;
   dockedCorners?: [boolean, boolean, boolean, boolean];
   positionOffset?: { dx: number; dy: number };
+  /** Flash overlay config for this panel, if active. */
+  flashConfig?: PanelFlashConfig;
+  /** Called when the flash overlay animation ends. */
+  onFlashEnd?: () => void;
   children: React.ReactNode;
 }
 
@@ -409,6 +528,8 @@ function PanelContainer({
   callbacks,
   dockedCorners,
   positionOffset,
+  flashConfig,
+  onFlashEnd,
   children,
 }: PanelContainerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -435,6 +556,15 @@ function PanelContainer({
       positionOffset={positionOffset}
     >
       {children}
+      {flashConfig && onFlashEnd && (
+        <SetFlashOverlay
+          hideTop={flashConfig.hideTop}
+          hideBottom={flashConfig.hideBottom}
+          hideLeft={flashConfig.hideLeft}
+          hideRight={flashConfig.hideRight}
+          onAnimationEnd={onFlashEnd}
+        />
+      )}
     </CardFrame>
   );
 }
