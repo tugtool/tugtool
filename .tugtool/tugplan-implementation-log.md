@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-01T18:00:57Z
+---
+
+## step-9: Step 9 verification-only: all 8 control action tests (4 actions x 2 modes) deferred to user for post-plan manual testing
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-8
 date: 2025-03-01T17:58:44Z
 ---
