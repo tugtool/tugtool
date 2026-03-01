@@ -21,6 +21,14 @@ enum TugConfig {
     static let keyDevModeEnabled = "DevModeEnabled"
     static let keyWindowBackground = "TugWindowBackground"
 
+    /// Persisted mirror of the `tugdeck-layout` localStorage key.
+    /// Used to carry card layout settings across origin switches (dev/prod ports).
+    static let keyTugdeckLayout = "TugdeckLayout"
+
+    /// Persisted mirror of the `td-theme` localStorage key.
+    /// Used to carry theme settings across origin switches (dev/prod ports).
+    static let keyTugdeckTheme = "TugdeckTheme"
+
     // MARK: - Source tree validation
 
     /// Paths that must exist (relative to repo root) for a directory

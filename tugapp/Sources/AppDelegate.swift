@@ -125,6 +125,93 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - localStorage sync
+
+    /// Called after every page load. Syncs `tugdeck-layout` and `td-theme` between
+    /// the page's localStorage and UserDefaults so that settings survive origin switches
+    /// (dev port 55155 vs. production port 55255).
+    ///
+    /// Strategy: localStorage wins when it has data (user interaction on this origin).
+    /// UserDefaults wins when localStorage is empty (fresh origin that hasn't seen the
+    /// keys yet). After reconciliation both stores hold the same values.
+    private func syncLocalStorageOnPageLoad() {
+        // Read both keys from localStorage in a single JS call. Returns a JSON object
+        // with nullable string fields so we can distinguish missing vs. empty values.
+        let readScript = """
+            (function() {
+                return JSON.stringify({
+                    layout: localStorage.getItem('tugdeck-layout'),
+                    theme: localStorage.getItem('td-theme')
+                });
+            })()
+            """
+        window.evaluateJavaScript(readScript) { [weak self] result, error in
+            guard let self = self else { return }
+            if let error = error {
+                NSLog("AppDelegate: syncLocalStorageOnPageLoad read failed: %@", error.localizedDescription)
+                return
+            }
+            guard let jsonStr = result as? String,
+                  let data = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                return
+            }
+
+            let lsLayout = obj["layout"] as? String  // nil means key absent
+            let lsTheme  = obj["theme"]  as? String
+
+            let udLayout = UserDefaults.standard.string(forKey: TugConfig.keyTugdeckLayout)
+            let udTheme  = UserDefaults.standard.string(forKey: TugConfig.keyTugdeckTheme)
+
+            // Determine the winning value for each key:
+            // localStorage value wins when present; fall back to UserDefaults otherwise.
+            let finalLayout = lsLayout ?? udLayout
+            let finalTheme  = lsTheme  ?? udTheme
+
+            // Persist winners back to UserDefaults so the next origin load can read them.
+            if let v = finalLayout { UserDefaults.standard.set(v, forKey: TugConfig.keyTugdeckLayout) }
+            if let v = finalTheme  { UserDefaults.standard.set(v, forKey: TugConfig.keyTugdeckTheme) }
+
+            // If either key was absent in localStorage but present in UserDefaults,
+            // inject the saved value into this origin's localStorage now.
+            let needsLayoutInject = lsLayout == nil && udLayout != nil
+            let needsThemeInject  = lsTheme  == nil && udTheme  != nil
+
+            guard needsLayoutInject || needsThemeInject else { return }
+
+            // Build the injection script. We base64-encode the payload to avoid
+            // quote and backslash issues with arbitrary settings content.
+            var payload: [String: String] = [:]
+            if needsLayoutInject, let v = udLayout { payload["layout"] = v }
+            if needsThemeInject,  let v = udTheme  { payload["theme"]  = v }
+
+            guard let payloadData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+            let b64 = payloadData.base64EncodedString()
+            let writeScript = """
+                (function() {
+                    try {
+                        var d = JSON.parse(atob('\(b64)'));
+                        if (d.layout != null) localStorage.setItem('tugdeck-layout', d.layout);
+                        if (d.theme  != null) localStorage.setItem('td-theme',       d.theme);
+                    } catch(e) {
+                        console.warn('Tug: localStorage sync inject failed:', e);
+                    }
+                })();
+                """
+            self.window.evaluateJavaScript(writeScript) { _, writeError in
+                if let writeError = writeError {
+                    NSLog("AppDelegate: syncLocalStorageOnPageLoad write failed: %@", writeError.localizedDescription)
+                } else {
+                    NSLog("AppDelegate: injected localStorage from UserDefaults (layout=%@, theme=%@)",
+                          needsLayoutInject ? "yes" : "no",
+                          needsThemeInject  ? "yes" : "no")
+                }
+            }
+        }
+    }
+
     // MARK: - Menu Bar
 
     private func buildMenuBar() {
@@ -428,8 +515,7 @@ extension AppDelegate: BridgeDelegate {
                     // tugcast serves pre-built dist/ files via ServeDir on port 55255.
                     self.window.loadURL("http://127.0.0.1:\(currentPort)/")
                     // Notify tugcast to deactivate file watchers and clear dev_port from allowlist.
-                    let path = self.sourceTreePath
-                    self.processManager.sendDevMode(enabled: false, sourceTree: path, vitePort: self.vitePort)
+                    self.processManager.sendDevMode(enabled: false, sourceTree: self.sourceTreePath, vitePort: self.vitePort)
                     completion(enabled)
                 }
             }
@@ -445,6 +531,10 @@ extension AppDelegate: BridgeDelegate {
             self.aboutMenuItem?.isEnabled = true
             self.settingsMenuItem?.isEnabled = true
         }
+    }
+
+    func bridgePageDidLoad() {
+        syncLocalStorageOnPageLoad()
     }
 
     func bridgeDevModeError(message: String) {

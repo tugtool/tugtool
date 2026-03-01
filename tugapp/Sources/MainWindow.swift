@@ -7,6 +7,7 @@ protocol BridgeDelegate: AnyObject {
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
+    func bridgePageDidLoad()
     func bridgeDevModeError(message: String)
     func bridgeSetTheme(color: String)
     func bridgeDevBadge(backend: Bool, app: Bool)
@@ -79,6 +80,11 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         webView.reload()
     }
 
+    /// Evaluate JavaScript in the current page context.
+    func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        webView.evaluateJavaScript(script, completionHandler: completionHandler)
+    }
+
     /// Open web inspector
     func openWebInspector() {
         guard let inspector = webView.value(forKey: "_inspector") as? NSObject else { return }
@@ -133,6 +139,8 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         // Flash fix: reveal the webView now that the page has finished loading.
         // Keeping it hidden until this point eliminates the startup FOUC.
         webView.isHidden = false
+        // Notify delegate so it can sync localStorage with UserDefaults.
+        bridgeDelegate?.bridgePageDidLoad()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
