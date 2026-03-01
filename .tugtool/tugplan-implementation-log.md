@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-01T17:06:09Z
+---
+
+## step-1: Added tower-http 0.6 with fs feature to workspace and tugcast crate dependencies
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-8
 date: 2025-03-01T05:04:00Z
 ---
