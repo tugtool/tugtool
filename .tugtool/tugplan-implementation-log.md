@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-01T17:14:21Z
+---
+
+## step-2: Added ServeDir fallback to tugcast router with SPA routing for production mode static file serving from tugdeck/dist/
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
 step: step-1
 date: 2025-03-01T17:06:09Z
 ---

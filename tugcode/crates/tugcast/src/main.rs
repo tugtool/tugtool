@@ -294,7 +294,8 @@ async fn main() {
     }
 
     // Start server and select! on shutdown channel
-    let server_future = server::run_server(listener, feed_router, shared_dev_state);
+    let server_future =
+        server::run_server(listener, feed_router, shared_dev_state, Some(watch_dir));
 
     let exit_code = tokio::select! {
         result = server_future => {
