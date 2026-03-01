@@ -143,13 +143,12 @@ describe("DevNotificationProvider – updateBuildProgress()", () => {
     const { result, unmount } = renderProvider();
 
     await act(async () => {
-      result.captured!.updateBuildProgress({ step: "Compiling", progress: 3, total: 10 });
+      result.captured!.updateBuildProgress({ stage: "compile", status: "running" });
     });
 
     expect(result.captured!.state.buildProgress).not.toBeNull();
-    expect(result.captured!.state.buildProgress?.step).toBe("Compiling");
-    expect(result.captured!.state.buildProgress?.progress).toBe(3);
-    expect(result.captured!.state.buildProgress?.total).toBe(10);
+    expect(result.captured!.state.buildProgress?.stage).toBe("compile");
+    expect(result.captured!.state.buildProgress?.status).toBe("running");
     unmount();
   });
 
@@ -158,7 +157,7 @@ describe("DevNotificationProvider – updateBuildProgress()", () => {
 
     // First set it
     await act(async () => {
-      result.captured!.updateBuildProgress({ step: "Building", progress: 5, total: 10 });
+      result.captured!.updateBuildProgress({ stage: "compile", status: "running" });
     });
     expect(result.captured!.state.buildProgress).not.toBeNull();
 
@@ -263,10 +262,11 @@ describe("DevNotificationContext – ref-based setter (controlRef)", () => {
     await act(async () => {});
 
     await act(async () => {
-      controlRef.current?.updateBuildProgress({ step: "Linking", progress: 8, total: 10 });
+      controlRef.current?.updateBuildProgress({ stage: "link", status: "running" });
     });
 
-    expect(result.captured!.state.buildProgress?.step).toBe("Linking");
+    expect(result.captured!.state.buildProgress?.stage).toBe("link");
+    expect(result.captured!.state.buildProgress?.status).toBe("running");
     unmount();
   });
 });

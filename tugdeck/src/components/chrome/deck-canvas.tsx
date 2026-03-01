@@ -40,6 +40,7 @@ import { CardContextProvider } from "@/cards/card-context";
 import { SnapGuideLine } from "./snap-guide-line";
 import { VirtualSash, type SashGroup, type VirtualSashCallbacks, type PanelSnapshot } from "./virtual-sash";
 import { SetFlashOverlay } from "./set-flash-overlay";
+import { DisconnectBanner } from "./disconnect-banner";
 
 // ---- Flash overlay config ----
 
@@ -363,6 +364,7 @@ export const DeckCanvas = forwardRef<DeckCanvasHandle, DeckCanvasProps>(
 
     return (
       <>
+        <DisconnectBanner connection={connection} />
         {panels.map((panel, i) => {
           const activeTab =
             panel.tabs.find((t) => t.id === panel.activeTabId) ?? panel.tabs[0];

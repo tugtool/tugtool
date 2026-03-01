@@ -9,14 +9,13 @@
  * Each row has a status dot, label, status text, and optional action button.
  * Row state machine: Clean (green) → Edited (yellow) → Stale (amber, shows button)
  *
- * Bridge events:
- *   Listens for  "td-dev-notification" CustomEvent on document
- *   Dispatches   "td-dev-badge" CustomEvent with total stale count
+ * Notifications received via DevNotificationContext (replaces CustomEvent bridges).
+ * Badge count updated via DevNotificationContext.setBadge().
  *
  * Replaces the vanilla DeveloperCard class (src/cards/developer-card.ts),
  * which is retained until Step 10 bulk deletion.
  *
- * References: [D03] React content only, [D04] CustomEvents, [D06] Replace tests,
+ * References: [D03] React content only, [D05] DevNotificationContext, [D06] Replace tests,
  *             [D08] React adapter, Table T03
  */
 
@@ -24,6 +23,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useFeed } from "../../hooks/use-feed";
 import { useConnection } from "../../hooks/use-connection";
+import { useDevNotification } from "../../contexts/dev-notification-context";
 import { FeedId } from "../../protocol";
 
 /**
@@ -172,6 +172,7 @@ function DevRow({
 export function DeveloperCard() {
   const feedPayload = useFeed(FeedId.GIT);
   const connection = useConnection();
+  const { state: devState, setBadge } = useDevNotification();
 
   // Per-row state
   const [frontendRow, setFrontendRow] = useState<RowState>({
@@ -262,13 +263,11 @@ export function DeveloperCard() {
   // WebKit bridge availability
   const hasWebKit = typeof (window as any).webkit !== "undefined";
 
-  // ---- Dispatch badge count on mount and on stale changes ----
+  // ---- Update badge count via DevNotificationContext ----
 
   const dispatchBadge = useCallback((count: number) => {
-    document.dispatchEvent(
-      new CustomEvent("td-dev-badge", { detail: { count } })
-    );
-  }, []);
+    setBadge("developer", count);
+  }, [setBadge]);
 
   // Clear badge on mount
   useEffect(() => {
@@ -336,11 +335,19 @@ export function DeveloperCard() {
     setAppRow((prev) => ({ ...prev, editedCount: appCount }));
   }, [feedPayload]);
 
-  // ---- Listen for td-dev-notification ----
+  // ---- Track processed notification count to detect new notifications ----
+
+  const processedNotificationCountRef = useRef<number>(0);
+
+  // ---- React to new notifications via DevNotificationContext ----
 
   useEffect(() => {
-    function handleDevNotification(e: Event) {
-      const payload = (e as CustomEvent<DevNotificationEvent>).detail;
+    const allNotifications = devState.notifications;
+    const newNotifications = allNotifications.slice(processedNotificationCountRef.current);
+    processedNotificationCountRef.current = allNotifications.length;
+
+    for (const notification of newNotifications) {
+      const payload = notification.payload as DevNotificationEvent & Record<string, unknown>;
       const { type, count, timestamp } = payload;
 
       // Pending-flag confirmation pattern: clear stale state for the row that was
@@ -395,38 +402,22 @@ export function DeveloperCard() {
         });
       }
     }
+  }, [devState.notifications]);
 
-    document.addEventListener("td-dev-notification", handleDevNotification);
-    return () => {
-      document.removeEventListener("td-dev-notification", handleDevNotification);
-    };
-  }, []);
-
-  // ---- Listen for td-dev-build-progress ----
+  // ---- React to build progress via DevNotificationContext ----
 
   useEffect(() => {
-    function handleBuildProgress(e: Event) {
-      const payload = (e as CustomEvent<{
-        stage?: string;
-        status?: string;
-        error?: string;
-      }>).detail;
-      if (payload.stage && payload.status) {
-        setBuildProgress({
-          stage: payload.stage,
-          status: payload.status,
-          error: payload.error,
-        });
-      } else {
-        setBuildProgress(null);
-      }
+    const progress = devState.buildProgress;
+    if (progress && progress.stage && progress.status) {
+      setBuildProgress({
+        stage: progress.stage,
+        status: progress.status,
+        error: progress.error,
+      });
+    } else {
+      setBuildProgress(null);
     }
-
-    document.addEventListener("td-dev-build-progress", handleBuildProgress);
-    return () => {
-      document.removeEventListener("td-dev-build-progress", handleBuildProgress);
-    };
-  }, []);
+  }, [devState.buildProgress]);
 
   // Cleanup timer on unmount
   useEffect(() => {

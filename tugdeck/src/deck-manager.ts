@@ -227,6 +227,17 @@ export class DeckManager implements IDragState {
     return this._isDragging;
   }
 
+  // ---- DevNotificationRef accessor ----
+
+  /**
+   * Return the DevNotificationRef for use by action-dispatch.ts.
+   * Allows action-dispatch to push notifications into the React context tree
+   * without having a direct reference to the provider.
+   */
+  getDevNotificationRef(): React.RefObject<DevNotificationRef | null> {
+    return this.devNotificationRef;
+  }
+
   // ---- Card Registration ----
 
   /**

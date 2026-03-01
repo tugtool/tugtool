@@ -19,12 +19,14 @@ export interface DevNotification {
   message: string;
   level: "info" | "warning" | "error";
   timestamp: number;
+  /** The raw payload passed to notify(), for consumers that need structured fields. */
+  payload: Record<string, unknown>;
 }
 
 export interface BuildProgressPayload {
-  step: string;
-  progress: number;
-  total: number;
+  stage: string;
+  status: string;
+  error?: string;
 }
 
 export interface DevNotificationState {
@@ -93,19 +95,20 @@ export function DevNotificationProvider({
           : payload["level"] === "error"
             ? "error"
             : "info",
-      timestamp: Date.now(),
+      timestamp: typeof payload["timestamp"] === "number" ? payload["timestamp"] : Date.now(),
+      payload,
     };
     setNotifications((prev) => [...prev, notification]);
   }, []);
 
   const updateBuildProgress = useCallback((payload: Record<string, unknown>) => {
-    if (payload === null) {
+    if (!payload || (typeof payload["stage"] !== "string" && typeof payload["status"] !== "string")) {
       setBuildProgressState(null);
     } else {
       setBuildProgressState({
-        step: typeof payload["step"] === "string" ? payload["step"] : "",
-        progress: typeof payload["progress"] === "number" ? payload["progress"] : 0,
-        total: typeof payload["total"] === "number" ? payload["total"] : 0,
+        stage: typeof payload["stage"] === "string" ? payload["stage"] : "",
+        status: typeof payload["status"] === "string" ? payload["status"] : "",
+        error: typeof payload["error"] === "string" ? payload["error"] : undefined,
       });
     }
   }, []);

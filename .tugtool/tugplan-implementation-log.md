@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-01T01:40:40Z
+---
+
+## step-9: Eliminated td-dev-notification, td-dev-build-progress, td-dev-badge CustomEvent bridges. Wired action-dispatch.ts to push via DevNotificationRef. DeveloperCard and Dock consume via useDevNotification context. terminal-card uses useTheme hook. Created DisconnectBanner React component replacing vanilla DOM manipulation in connection.ts. Removed disconnect-banner div from index.html.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-8
 date: 2025-03-01T01:08:12Z
 ---

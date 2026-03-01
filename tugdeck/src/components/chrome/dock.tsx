@@ -5,18 +5,17 @@
  * - Renders icon buttons via lucide-react components
  * - Uses CardDropdownMenu (shadcn-based) for the settings dropdown
  * - Reads and sets theme state via useTheme hook (eliminates MutationObserver)
- * - Listens for td-dev-badge CustomEvents via useEffect for badge display
- *   TODO: Step 9 replaces with DevNotificationContext
+ * - Reads badge counts from DevNotificationContext (step-9: replaces td-dev-badge CustomEvent)
  * - Styles applied via Tailwind utilities (dock.css deleted in this step)
  *
  * CSS class names (.dock, .dock-icon-btn, .dock-spacer, .dock-logo, .dock-badge)
  * are preserved on elements for test selector compatibility.
  *
- * Spec S07, [D01] shadcn DropdownMenu, [D06] Delete vanilla test files,
- * [D07] lucide-react replaces vanilla lucide
+ * Spec S07, [D01] shadcn DropdownMenu, [D05] DevNotificationContext,
+ * [D06] Delete vanilla test files, [D07] lucide-react replaces vanilla lucide
  */
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   MessageSquare,
   Terminal,
@@ -31,6 +30,7 @@ import { CardDropdownMenu } from "@/components/chrome/card-dropdown-menu";
 import type { CardMenuItem } from "@/cards/card";
 import { useTheme } from "@/hooks/use-theme";
 import type { ThemeName } from "@/hooks/use-theme";
+import { useDevNotification } from "@/contexts/dev-notification-context";
 
 // ---- Tug logo SVG ----
 
@@ -147,38 +147,9 @@ export interface DockProps {
 
 export function Dock({ callbacks }: DockProps) {
   const [theme, setTheme] = useTheme();
-  // Badge counts keyed by componentId
-  // TODO: Step 9 replaces with DevNotificationContext
-  const [badgeCounts, setBadgeCounts] = useState<Map<string, number>>(
-    new Map()
-  );
-
-  // Listen for td-dev-badge CustomEvents (same mechanism as deleted vanilla Dock)
-  // TODO: Step 9 replaces with DevNotificationContext
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const { componentId, count } = customEvent.detail as {
-        componentId?: string;
-        count?: number;
-      };
-      if (componentId && typeof count === "number") {
-        setBadgeCounts((prev) => {
-          const next = new Map(prev);
-          if (count > 0) {
-            next.set(componentId, count);
-          } else {
-            next.delete(componentId);
-          }
-          return next;
-        });
-      }
-    };
-    document.addEventListener("td-dev-badge", handler);
-    return () => {
-      document.removeEventListener("td-dev-badge", handler);
-    };
-  }, []);
+  // Badge counts from DevNotificationContext (step-9: replaces td-dev-badge CustomEvent)
+  const { state: devState } = useDevNotification();
+  const badgeCounts = devState.badgeCounts;
 
   // Build settings menu items from callbacks
   const settingsMenuItems: CardMenuItem[] = [

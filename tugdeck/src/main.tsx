@@ -203,7 +203,9 @@ deck.refresh();
 // Initialize action dispatch system (must be done before Dock callbacks fire).
 // Dock is now rendered inside DeckCanvas; action dispatch is initialized here
 // and DeckManager is given the DockCallbacks so it can pass them to DeckCanvas.
-initActionDispatch(connection, deck);
+// Pass the devNotificationRef so action-dispatch routes notifications via context
+// instead of CustomEvents (step-9 event bridge cleanup).
+initActionDispatch(connection, deck, deck.getDevNotificationRef());
 
 const dockCallbacks: DockCallbacks = {
   onShowCard: (cardType: string) => {

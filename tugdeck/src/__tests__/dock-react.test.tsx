@@ -13,15 +13,17 @@
  * - Settings menu theme select: clicking Harmony adds td-theme-harmony to body class
  * - Badge count renders when count > 0, hidden when count === 0
  *
- * Spec S07, [D01] shadcn DropdownMenu, [D07] lucide-react
+ * Spec S07, [D01] shadcn DropdownMenu, [D05] DevNotificationContext, [D07] lucide-react
  */
 import "./setup-rtl";
 
-import React from "react";
+import React, { createRef } from "react";
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 import { Dock } from "@/components/chrome/dock";
 import type { DockCallbacks } from "@/components/chrome/dock";
+import { DevNotificationProvider } from "@/contexts/dev-notification-context";
+import type { DevNotificationRef } from "@/contexts/dev-notification-context";
 
 // ---- Setup ----
 
@@ -93,9 +95,20 @@ function makeCallbacks(overrides: Partial<DockCallbacks> = {}): {
   };
 }
 
-function renderDock(callbacks?: DockCallbacks) {
+function renderDock(callbacks?: DockCallbacks, devNotifRef?: React.MutableRefObject<DevNotificationRef | null>) {
   const cb = callbacks ?? makeCallbacks().callbacks;
-  return render(<Dock callbacks={cb} />);
+  if (devNotifRef) {
+    return render(
+      <DevNotificationProvider controlRef={devNotifRef}>
+        <Dock callbacks={cb} />
+      </DevNotificationProvider>
+    );
+  }
+  return render(
+    <DevNotificationProvider>
+      <Dock callbacks={cb} />
+    </DevNotificationProvider>
+  );
 }
 
 // ---- Tests ----
@@ -405,21 +418,18 @@ describe("Dock – settings menu callbacks", () => {
 describe("Dock – badge counts", () => {
   it("badge is not rendered when count is 0", () => {
     const { callbacks } = makeCallbacks();
-    const { container } = render(<Dock callbacks={callbacks} />);
+    const { container } = renderDock(callbacks);
     const badges = container.querySelectorAll(".dock-badge");
     expect(badges.length).toBe(0);
   });
 
-  it("badge renders when td-dev-badge CustomEvent fires with count > 0", async () => {
+  it("badge renders when DevNotificationContext.setBadge fires with count > 0", async () => {
     const { callbacks } = makeCallbacks();
-    const { container } = render(<Dock callbacks={callbacks} />);
+    const devNotifRef = createRef<DevNotificationRef | null>() as React.MutableRefObject<DevNotificationRef | null>;
+    const { container } = renderDock(callbacks, devNotifRef);
 
     await act(async () => {
-      document.dispatchEvent(
-        new CustomEvent("td-dev-badge", {
-          detail: { componentId: "developer", count: 3 },
-        })
-      );
+      devNotifRef.current?.setBadge("developer", 3);
     });
 
     const badge = container.querySelector(".dock-badge");
@@ -427,28 +437,21 @@ describe("Dock – badge counts", () => {
     expect(badge?.textContent).toBe("3");
   });
 
-  it("badge is removed when td-dev-badge CustomEvent fires with count 0", async () => {
+  it("badge is removed when DevNotificationContext.setBadge fires with count 0", async () => {
     const { callbacks } = makeCallbacks();
-    const { container } = render(<Dock callbacks={callbacks} />);
+    const devNotifRef = createRef<DevNotificationRef | null>() as React.MutableRefObject<DevNotificationRef | null>;
+    const { container } = renderDock(callbacks, devNotifRef);
 
     // First add a badge
     await act(async () => {
-      document.dispatchEvent(
-        new CustomEvent("td-dev-badge", {
-          detail: { componentId: "developer", count: 5 },
-        })
-      );
+      devNotifRef.current?.setBadge("developer", 5);
     });
 
     expect(container.querySelector(".dock-badge")).not.toBeNull();
 
     // Then remove it
     await act(async () => {
-      document.dispatchEvent(
-        new CustomEvent("td-dev-badge", {
-          detail: { componentId: "developer", count: 0 },
-        })
-      );
+      devNotifRef.current?.setBadge("developer", 0);
     });
 
     expect(container.querySelector(".dock-badge")).toBeNull();

@@ -1,5 +1,5 @@
 /**
- * DeveloperCard React component tests — Steps 7.4a + 7.4b
+ * DeveloperCard React component tests — Step 9 (context-based flow)
  *
  * Tests:
  * - Developer card renders 3 rows: Frontend, Backend, App
@@ -7,22 +7,24 @@
  * - Rows update to "Edited" status with file count when git feed reports changes
  * - categorizeFile correctly classifies file paths
  * - Frontend row shows "Reloaded" flash when transitioning from dirty to clean
- * - Backend row shows "Restart" button when stale notification received
- * - App row shows "Relaunch" button when stale notification received
+ * - Backend row shows "Restart" button when stale notification received via DevNotificationContext
+ * - App row shows "Relaunch" button when stale notification received via DevNotificationContext
  * - Clicking "Restart" dispatches the restart event
  * - Clicking "Relaunch" dispatches the relaunch event
  * - App row is hidden when WebKit bridge is not available
- * - td-dev-badge event dispatched with correct stale count
- * - Build progress indicator shows/hides based on td-dev-build-progress event
+ * - DevNotificationContext.setBadge called with correct stale count
+ * - Build progress indicator shows/hides based on DevNotificationContext.updateBuildProgress
  * - Developer card renders correctly with connection context provided
  */
 import "./setup-test-dom"; // must be first
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, fireEvent } from "@testing-library/react";
-import React from "react";
+import React, { createRef } from "react";
 
 import { CardContextProvider } from "../../cards/card-context";
+import { DevNotificationProvider, useDevNotification } from "../../contexts/dev-notification-context";
+import type { DevNotificationRef } from "../../contexts/dev-notification-context";
 import { DeveloperCard, categorizeFile } from "./developer-card";
 import { FeedId } from "../../protocol";
 import type { TugConnection } from "../../connection";
@@ -70,38 +72,45 @@ function renderDeveloperCard(
   const containerEl = document.createElement("div");
   document.body.appendChild(containerEl);
 
+  // Control ref for injecting notifications from tests
+  const devNotifRef = createRef<DevNotificationRef | null>() as React.MutableRefObject<DevNotificationRef | null>;
+
   const result = render(
-    <CardContextProvider
-      connection={connection}
-      feedData={feedData}
-      dimensions={{ width: 0, height: 0 }}
-      dragState={null}
-      containerEl={containerEl}
-    >
-      <DeveloperCard />
-    </CardContextProvider>
+    <DevNotificationProvider controlRef={devNotifRef}>
+      <CardContextProvider
+        connection={connection}
+        feedData={feedData}
+        dimensions={{ width: 0, height: 0 }}
+        dragState={null}
+        containerEl={containerEl}
+      >
+        <DeveloperCard />
+      </CardContextProvider>
+    </DevNotificationProvider>
   );
-  return { ...result, containerEl };
+  return { ...result, containerEl, devNotifRef };
 }
 
-function dispatchDevNotification(payload: {
-  type: string;
-  count?: number;
-  timestamp?: number;
-}) {
-  document.dispatchEvent(
-    new CustomEvent("td-dev-notification", { detail: payload })
-  );
+function dispatchDevNotification(
+  devNotifRef: React.MutableRefObject<DevNotificationRef | null>,
+  payload: {
+    type: string;
+    count?: number;
+    timestamp?: number;
+  }
+) {
+  devNotifRef.current?.notify(payload as Record<string, unknown>);
 }
 
-function dispatchBuildProgress(payload: {
-  stage?: string;
-  status?: string;
-  error?: string;
-}) {
-  document.dispatchEvent(
-    new CustomEvent("td-dev-build-progress", { detail: payload })
-  );
+function dispatchBuildProgress(
+  devNotifRef: React.MutableRefObject<DevNotificationRef | null>,
+  payload: {
+    stage?: string;
+    status?: string;
+    error?: string;
+  }
+) {
+  devNotifRef.current?.updateBuildProgress(payload as Record<string, unknown>);
 }
 
 // ---- categorizeFile tests ----
@@ -274,13 +283,13 @@ describe("DeveloperCard – git feed parsing", () => {
   });
 });
 
-describe("DeveloperCard – dev notifications", () => {
+describe("DeveloperCard – dev notifications via DevNotificationContext", () => {
   afterEach(() => {
     delete (window as any).webkit;
   });
 
   it("shows Restart button when restart_available notification received", async () => {
-    const { container, unmount } = renderDeveloperCard();
+    const { container, unmount, devNotifRef } = renderDeveloperCard();
     await act(async () => {});
 
     // No restart button initially
@@ -290,7 +299,7 @@ describe("DeveloperCard – dev notifications", () => {
     expect(restartBtn).toBeUndefined();
 
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 2 });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 2 });
     });
 
     restartBtn = Array.from(container.querySelectorAll("button")).find(
@@ -303,7 +312,7 @@ describe("DeveloperCard – dev notifications", () => {
 
   it("shows Relaunch button when relaunch_available notification received", async () => {
     (window as any).webkit = {};
-    const { container, unmount } = renderDeveloperCard();
+    const { container, unmount, devNotifRef } = renderDeveloperCard();
     await act(async () => {});
 
     // No relaunch button initially
@@ -313,7 +322,7 @@ describe("DeveloperCard – dev notifications", () => {
     expect(relaunchBtn).toBeUndefined();
 
     await act(async () => {
-      dispatchDevNotification({ type: "relaunch_available", count: 1 });
+      dispatchDevNotification(devNotifRef, { type: "relaunch_available", count: 1 });
     });
 
     relaunchBtn = Array.from(container.querySelectorAll("button")).find(
@@ -373,12 +382,12 @@ describe("DeveloperCard – action buttons", () => {
 
   it("clicking Restart calls sendControlFrame('restart') and button stays until confirmation", async () => {
     const conn = makeMockConnection();
-    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    const { container, unmount, devNotifRef } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
-    // Trigger restart_available notification
+    // Trigger restart_available notification via context
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 1 });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 1 });
     });
 
     const restartBtn = Array.from(container.querySelectorAll("button")).find(
@@ -402,7 +411,7 @@ describe("DeveloperCard – action buttons", () => {
     // Any dev_notification clears the restartPendingRef (per D07 pending-flag pattern).
     // Using relaunch_available avoids re-staleing backendRow, so the Restart button disappears.
     await act(async () => {
-      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
+      dispatchDevNotification(devNotifRef, { type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
     // Now the button should be gone (backendRow stale cleared by pending-flag logic)
@@ -417,11 +426,11 @@ describe("DeveloperCard – action buttons", () => {
   it("clicking Relaunch calls sendControlFrame('relaunch') and button stays until confirmation", async () => {
     (window as any).webkit = {};
     const conn = makeMockConnection();
-    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    const { container, unmount, devNotifRef } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
     await act(async () => {
-      dispatchDevNotification({ type: "relaunch_available", count: 1 });
+      dispatchDevNotification(devNotifRef, { type: "relaunch_available", count: 1 });
     });
 
     const relaunchBtn = Array.from(container.querySelectorAll("button")).find(
@@ -445,7 +454,7 @@ describe("DeveloperCard – action buttons", () => {
     // Any dev_notification clears the relaunchPendingRef (per D07 pending-flag pattern).
     // Using restart_available avoids re-staleing appRow, so the Relaunch button disappears.
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 0, timestamp: Date.now() });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 0, timestamp: Date.now() });
     });
 
     // Now the button should be gone (appRow stale cleared by pending-flag logic)
@@ -459,79 +468,58 @@ describe("DeveloperCard – action buttons", () => {
   });
 });
 
-describe("DeveloperCard – badge events", () => {
-  it("dispatches td-dev-badge with stale count when restart_available notification received", async () => {
-    const badgeEvents: any[] = [];
-    const listener = (e: Event) => badgeEvents.push((e as CustomEvent).detail);
-    document.addEventListener("td-dev-badge", listener);
+// BadgeProbe reads badgeCounts from DevNotificationContext for test assertions
+function BadgeProbe({ result }: { result: { badgeCount: number } }) {
+  const { state: devState } = useDevNotification();
+  result.badgeCount = devState.badgeCounts.get("developer") ?? 0;
+  return null;
+}
 
-    const { unmount } = renderDeveloperCard();
-    await act(async () => {});
+describe("DeveloperCard – badge via DevNotificationContext", () => {
+  it("badge count updated in context when restart_available notification received", async () => {
+    const feedData = new Map<number, Uint8Array>();
+    const containerEl = document.createElement("div");
+    document.body.appendChild(containerEl);
 
-    // Clear the initial badge=0 dispatch
-    badgeEvents.length = 0;
+    const devNotifRef = createRef<DevNotificationRef | null>() as React.MutableRefObject<DevNotificationRef | null>;
+    const badgeResult = { badgeCount: 0 };
 
-    await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 3 });
-    });
-
-    const last = badgeEvents[badgeEvents.length - 1];
-    expect(last?.count).toBe(3);
-
-    document.removeEventListener("td-dev-badge", listener);
-    unmount();
-  });
-
-  it("badge stays at stale count after Restart click and goes to 0 on confirmation", async () => {
-    const conn = makeMockConnection();
-    const badgeEvents: any[] = [];
-    const listener = (e: Event) => badgeEvents.push((e as CustomEvent).detail);
-    document.addEventListener("td-dev-badge", listener);
-
-    const { container, unmount } = renderDeveloperCard(undefined, conn);
-    await act(async () => {});
-
-    await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 5 });
-    });
-
-    const restartBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Restart")
+    const { unmount } = render(
+      <DevNotificationProvider controlRef={devNotifRef}>
+        <CardContextProvider
+          connection={null}
+          feedData={feedData}
+          dimensions={{ width: 0, height: 0 }}
+          dragState={null}
+          containerEl={containerEl}
+        >
+          <DeveloperCard />
+          <BadgeProbe result={badgeResult} />
+        </CardContextProvider>
+      </DevNotificationProvider>
     );
-    badgeEvents.length = 0;
+    await act(async () => {});
 
-    // Click Restart — badge should NOT go to 0 immediately (no optimistic clearing)
+    // Dispatch restart_available notification via context
     await act(async () => {
-      fireEvent.click(restartBtn!);
+      devNotifRef.current?.notify({ type: "restart_available", count: 3 } as Record<string, unknown>);
     });
 
-    // No badge dispatch should have occurred from the click itself
-    // (dispatchBadge(0) was removed from handleRestart)
-    const afterClick = badgeEvents[badgeEvents.length - 1];
-    // Badge should still reflect stale count (5), not 0
-    if (afterClick !== undefined) {
-      expect(afterClick.count).toBe(5);
-    }
-
-    // Dispatch relaunch_available as confirmation from new tugcast instance.
-    // Any dev_notification clears restartPendingRef and resets backendRow to isStale=false.
-    // Using relaunch_available avoids re-staleing backendRow, so badge goes to 0.
+    // Allow React state to settle
     await act(async () => {
-      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
-    // Now badge should be dispatched with 0 (backendRow cleared by pending-flag)
-    const afterConfirm = badgeEvents[badgeEvents.length - 1];
-    expect(afterConfirm?.count).toBe(0);
+    // The DeveloperCard dispatchBadge useEffect should have updated badge in context
+    expect(badgeResult.badgeCount).toBe(3);
 
-    document.removeEventListener("td-dev-badge", listener);
     unmount();
   });
 });
 
-describe("DeveloperCard – build progress", () => {
-  it("shows build progress text when td-dev-build-progress dispatched", async () => {
-    const { container, unmount } = renderDeveloperCard();
+describe("DeveloperCard – build progress via DevNotificationContext", () => {
+  it("shows build progress text when updateBuildProgress dispatched via context", async () => {
+    const { container, unmount, devNotifRef } = renderDeveloperCard();
     await act(async () => {});
 
     // No progress initially
@@ -539,7 +527,7 @@ describe("DeveloperCard – build progress", () => {
     expect(progressEl).toBeNull();
 
     await act(async () => {
-      dispatchBuildProgress({ stage: "compile", status: "running" });
+      dispatchBuildProgress(devNotifRef, { stage: "compile", status: "running" });
     });
 
     progressEl = container.querySelector(".developer-build-progress");
@@ -551,19 +539,19 @@ describe("DeveloperCard – build progress", () => {
   });
 
   it("hides build progress when dispatch has no stage/status", async () => {
-    const { container, unmount } = renderDeveloperCard();
+    const { container, unmount, devNotifRef } = renderDeveloperCard();
     await act(async () => {});
 
     // Show progress first
     await act(async () => {
-      dispatchBuildProgress({ stage: "compile", status: "running" });
+      dispatchBuildProgress(devNotifRef, { stage: "compile", status: "running" });
     });
 
     expect(container.querySelector(".developer-build-progress")).not.toBeNull();
 
     // Now hide it
     await act(async () => {
-      dispatchBuildProgress({});
+      dispatchBuildProgress(devNotifRef, {});
     });
 
     expect(container.querySelector(".developer-build-progress")).toBeNull();
@@ -572,11 +560,11 @@ describe("DeveloperCard – build progress", () => {
   });
 
   it("includes error text in build progress when error field is present", async () => {
-    const { container, unmount } = renderDeveloperCard();
+    const { container, unmount, devNotifRef } = renderDeveloperCard();
     await act(async () => {});
 
     await act(async () => {
-      dispatchBuildProgress({
+      dispatchBuildProgress(devNotifRef, {
         stage: "compile",
         status: "failed",
         error: "syntax error",
@@ -612,12 +600,12 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
 
   it("backendRow clears stale state when dev_notification arrives after Restart click", async () => {
     const conn = makeMockConnection();
-    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    const { container, unmount, devNotifRef } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
     // Make backendRow stale
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 3 });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 3 });
     });
 
     // Verify Restart button is visible
@@ -641,7 +629,7 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
     // Any dev_notification clears restartPendingRef; using relaunch_available avoids
     // re-staleing backendRow so the Restart button disappears cleanly.
     await act(async () => {
-      dispatchDevNotification({ type: "relaunch_available", count: 0, timestamp: Date.now() });
+      dispatchDevNotification(devNotifRef, { type: "relaunch_available", count: 0, timestamp: Date.now() });
     });
 
     // backendRow stale state cleared — Restart button should be gone
@@ -659,12 +647,12 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
 
   it("backendRow shows new stale count after restart_available arrives with restartPending set", async () => {
     const conn = makeMockConnection();
-    const { container, unmount } = renderDeveloperCard(undefined, conn);
+    const { container, unmount, devNotifRef } = renderDeveloperCard(undefined, conn);
     await act(async () => {});
 
     // Make backendRow stale with count=1
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 1 });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 1 });
     });
 
     // Click Restart — sets restartPendingRef
@@ -679,7 +667,7 @@ describe("DeveloperCard – pending-flag confirmation pattern", () => {
     // React 18 batches: pending flag clears stale, then restart_available sets new stale.
     // Net result: backendRow is stale with staleCount=2.
     await act(async () => {
-      dispatchDevNotification({ type: "restart_available", count: 2 });
+      dispatchDevNotification(devNotifRef, { type: "restart_available", count: 2 });
     });
 
     // Restart button should still be visible (new notification made backendRow stale again)

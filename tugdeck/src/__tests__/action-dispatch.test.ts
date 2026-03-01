@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "bun:test";
 import { initActionDispatch, dispatchAction, _resetForTest } from "../action-dispatch";
+import type { DevNotificationRef } from "../contexts/dev-notification-context";
 
 // Mock DeckManager that records method calls
 function createMockDeckManager() {
@@ -40,6 +41,25 @@ function createMockConnection() {
   };
 }
 
+// Mock DevNotificationRef for verifying context-based notification flow
+function createMockDevNotificationRef() {
+  const calls: { method: string; args: any[] }[] = [];
+  const ref: { current: DevNotificationRef | null } = {
+    current: {
+      notify: (payload: Record<string, unknown>) => {
+        calls.push({ method: "notify", args: [payload] });
+      },
+      updateBuildProgress: (payload: Record<string, unknown>) => {
+        calls.push({ method: "updateBuildProgress", args: [payload] });
+      },
+      setBadge: (componentId: string, count: number) => {
+        calls.push({ method: "setBadge", args: [componentId, count] });
+      },
+    },
+  };
+  return { ref, calls };
+}
+
 describe("action-dispatch: show-card", () => {
   let mockDeck: ReturnType<typeof createMockDeckManager>;
 
@@ -47,7 +67,8 @@ describe("action-dispatch: show-card", () => {
     _resetForTest();
     mockDeck = createMockDeckManager();
     const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any);
+    const mockDevRef = createMockDevNotificationRef();
+    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
   it("should call addNewCard when no card exists", () => {
@@ -99,7 +120,8 @@ describe("action-dispatch: close-card", () => {
     _resetForTest();
     mockDeck = createMockDeckManager();
     const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any);
+    const mockDevRef = createMockDevNotificationRef();
+    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
   it("should call closePanelByComponent when card exists", () => {
@@ -115,35 +137,17 @@ describe("action-dispatch: close-card", () => {
 
 describe("action-dispatch: dev_notification", () => {
   let mockDeck: ReturnType<typeof createMockDeckManager>;
-  let badgeEvents: Array<{ componentId: string; count: number }> = [];
-  let badgeListener: ((e: Event) => void) | null = null;
+  let mockDevRef: ReturnType<typeof createMockDevNotificationRef>;
 
   beforeEach(() => {
     _resetForTest();
     mockDeck = createMockDeckManager();
+    mockDevRef = createMockDevNotificationRef();
     const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any);
-
-    // Clear and setup badge listener
-    badgeEvents = [];
-    if (badgeListener) {
-      document.removeEventListener("td-dev-badge", badgeListener);
-    }
-    badgeListener = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      badgeEvents.push(customEvent.detail);
-    };
-    document.addEventListener("td-dev-badge", badgeListener);
+    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
-  afterEach(() => {
-    if (badgeListener) {
-      document.removeEventListener("td-dev-badge", badgeListener);
-      badgeListener = null;
-    }
-  });
-
-  it("should route to card.update() when developer card is open", () => {
+  it("should route to card.update() when developer card is open (vanilla card)", () => {
     const mockCard = {
       update: (payload: any) => {
         (mockCard as any).lastUpdate = payload;
@@ -175,7 +179,32 @@ describe("action-dispatch: dev_notification", () => {
     });
   });
 
-  it("should dispatch badge event when card closed and type is restart_available", () => {
+  it("should call devNotificationRef.notify() when React card is open (no update method)", () => {
+    const mockCard = {}; // React card adapter: no update method
+
+    const panel = { id: "p1" };
+    const tabId = "tab1";
+    mockDeck._panelResult = panel;
+    mockDeck._deckState = {
+      cards: [{
+        id: "p1",
+        tabs: [{ id: tabId, componentId: "developer" }],
+      }],
+    };
+    mockDeck.cardRegistry.set(tabId, mockCard);
+
+    dispatchAction({
+      action: "dev_notification",
+      type: "restart_available",
+      count: 3,
+    });
+
+    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
+    expect(notifyCalls.length).toBe(1);
+    expect(notifyCalls[0].args[0]).toMatchObject({ type: "restart_available", count: 3 });
+  });
+
+  it("should call devNotificationRef.notify() and setBadge() when card closed and type is restart_available", () => {
     mockDeck._panelResult = null; // Card closed
 
     dispatchAction({
@@ -184,11 +213,15 @@ describe("action-dispatch: dev_notification", () => {
       count: 5,
     });
 
-    expect(badgeEvents.length).toBe(1);
-    expect(badgeEvents[0].count).toBe(5);
+    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
+    expect(notifyCalls.length).toBe(1);
+
+    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
+    expect(badgeCalls.length).toBe(1);
+    expect(badgeCalls[0].args).toEqual(["developer", 5]);
   });
 
-  it("should dispatch badge event when card closed and type is relaunch_available", () => {
+  it("should call devNotificationRef.notify() and setBadge() when card closed and type is relaunch_available", () => {
     mockDeck._panelResult = null; // Card closed
 
     dispatchAction({
@@ -197,11 +230,12 @@ describe("action-dispatch: dev_notification", () => {
       count: 2,
     });
 
-    expect(badgeEvents.length).toBe(1);
-    expect(badgeEvents[0].count).toBe(2);
+    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
+    expect(badgeCalls.length).toBe(1);
+    expect(badgeCalls[0].args).toEqual(["developer", 2]);
   });
 
-  it("should not dispatch badge event when card closed and type is unknown", () => {
+  it("should call notify() but not setBadge() when card closed and type is unknown", () => {
     mockDeck._panelResult = null; // Card closed
 
     dispatchAction({
@@ -210,7 +244,12 @@ describe("action-dispatch: dev_notification", () => {
     });
 
     // Unknown notification types should not set a dock badge
-    expect(badgeEvents.length).toBe(0);
+    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
+    expect(badgeCalls.length).toBe(0);
+
+    // But notify() should still be called
+    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
+    expect(notifyCalls.length).toBe(1);
   });
 
   it("should not crash when card exists but has no update method", () => {
@@ -239,15 +278,17 @@ describe("action-dispatch: dev_notification", () => {
 
 describe("action-dispatch: dev_build_progress", () => {
   let mockDeck: ReturnType<typeof createMockDeckManager>;
+  let mockDevRef: ReturnType<typeof createMockDevNotificationRef>;
 
   beforeEach(() => {
     _resetForTest();
     mockDeck = createMockDeckManager();
+    mockDevRef = createMockDevNotificationRef();
     const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any);
+    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
-  it("should route to card.updateBuildProgress() when developer card is open", () => {
+  it("should route to card.updateBuildProgress() when developer card is open (vanilla card)", () => {
     const mockCard = {
       updateBuildProgress: (payload: any) => {
         (mockCard as any).lastBuildProgress = payload;
@@ -279,10 +320,34 @@ describe("action-dispatch: dev_build_progress", () => {
     });
   });
 
-  it("should be no-op when developer card is closed", () => {
+  it("should call devNotificationRef.updateBuildProgress() when React card is open (no updateBuildProgress method)", () => {
+    const mockCard = {}; // React card: no updateBuildProgress method
+
+    const panel = { id: "p1" };
+    const tabId = "tab1";
+    mockDeck._panelResult = panel;
+    mockDeck._deckState = {
+      cards: [{
+        id: "p1",
+        tabs: [{ id: tabId, componentId: "developer" }],
+      }],
+    };
+    mockDeck.cardRegistry.set(tabId, mockCard);
+
+    dispatchAction({
+      action: "dev_build_progress",
+      stage: "compile",
+      status: "running",
+    });
+
+    const progressCalls = mockDevRef.calls.filter((c) => c.method === "updateBuildProgress");
+    expect(progressCalls.length).toBe(1);
+    expect(progressCalls[0].args[0]).toMatchObject({ stage: "compile", status: "running" });
+  });
+
+  it("should call devNotificationRef.updateBuildProgress() when developer card is closed", () => {
     mockDeck._panelResult = null; // Card closed
 
-    // Should not crash
     expect(() => {
       dispatchAction({
         action: "dev_build_progress",
@@ -290,6 +355,9 @@ describe("action-dispatch: dev_build_progress", () => {
         status: "done",
       });
     }).not.toThrow();
+
+    const progressCalls = mockDevRef.calls.filter((c) => c.method === "updateBuildProgress");
+    expect(progressCalls.length).toBe(1);
   });
 
   it("should not crash when card exists but has no updateBuildProgress method", () => {
