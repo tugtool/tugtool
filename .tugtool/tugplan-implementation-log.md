@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-01T22:04:55Z
+---
+
+## step-5: Verification-only step: confirmed 722/722 tests pass, formatting clean, zero dead code references, all success criteria met
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T21:56:35Z
+---
+
+## step-4: Replaced all tugcode state update and --complete-remaining references with complete-checklist in implement skill documentation
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T21:48:49Z
+---
+
+## step-3: Rewrote L02 tests to use complete-checklist, added 6 new L03 tests (happy path, deferrals, idempotent, ownership, invalid JSON, state update rejected). 722 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T21:39:15Z
+---
+
+## step-2: Removed Update variant from StateCommands, run_state_update function, ChecklistUpdate enum, update_checklist method, 5 unit tests, and early-deleted integration tests that called state update
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T21:20:10Z
+---
+
+## step-1: Added CompleteChecklist variant to StateCommands enum, implemented run_state_complete_checklist with TTY-aware stdin handling, added re-export and dispatch arm
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
 step: step-10
 date: 2025-03-01T18:04:07Z
 ---
