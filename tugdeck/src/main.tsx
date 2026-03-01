@@ -9,11 +9,10 @@ import "@xterm/xterm/css/xterm.css";
 // Note: inline <script> in index.html would be blocked by the CSP (script-src 'self' 'wasm-unsafe-eval').
 console.debug("[dev-flash] main.tsx module executed", Date.now());
 
-import React from "react";
-import { createRoot } from "react-dom/client";
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { ReactCardAdapter } from "./cards/react-card-adapter";
+import type { CardConfig } from "./components/chrome/deck-canvas";
 import { AboutCard as AboutCardComponent } from "./components/cards/about-card";
 import { SettingsCard as SettingsCardComponent } from "./components/cards/settings-card";
 import { FilesCard as FilesCardComponent } from "./components/cards/files-card";
@@ -23,10 +22,9 @@ import { DeveloperCard as DeveloperCardComponent } from "./components/cards/deve
 import { ConversationCard as ConversationCardComponent } from "./components/cards/conversation/conversation-card";
 import { TerminalCard as TerminalCardComponent } from "./components/cards/terminal-card";
 import { FeedId } from "./protocol";
-import { Dock } from "./components/chrome/dock";
-import type { DockCallbacks } from "./components/chrome/dock";
 import { initActionDispatch, dispatchAction } from "./action-dispatch";
 import { CARD_TITLES } from "./card-titles";
+import type { DockCallbacks } from "./components/chrome/dock";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -40,32 +38,95 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 
-// Create deck manager
+// Create deck manager (creates single React root internally)
 const deck = new DeckManager(container, connection);
 
+// ---- Card configs for DeckCanvas rendering ----
+// These configs are used by DeckCanvas to render card components directly
+// in the unified React tree. No per-card createRoot calls.
+
+const codeConfig: CardConfig = {
+  component: ConversationCardComponent,
+  feedIds: [FeedId.CODE_OUTPUT],
+  initialMeta: { title: CARD_TITLES.code, icon: "MessageSquare", closable: true, menuItems: [] },
+  connection,
+};
+
+const terminalConfig: CardConfig = {
+  component: TerminalCardComponent,
+  feedIds: [FeedId.TERMINAL_OUTPUT],
+  initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
+  connection,
+  dragState: deck,
+};
+
+const gitConfig: CardConfig = {
+  component: GitCardComponent,
+  feedIds: [FeedId.GIT],
+  initialMeta: { title: CARD_TITLES.git, icon: "GitBranch", closable: true, menuItems: [] },
+};
+
+const filesConfig: CardConfig = {
+  component: FilesCardComponent,
+  feedIds: [FeedId.FILESYSTEM],
+  initialMeta: { title: CARD_TITLES.files, icon: "FolderOpen", closable: true, menuItems: [] },
+};
+
+const statsConfig: CardConfig = {
+  component: StatsCardComponent,
+  feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
+  initialMeta: { title: CARD_TITLES.stats, icon: "Activity", closable: true, menuItems: [] },
+};
+
+const aboutConfig: CardConfig = {
+  component: AboutCardComponent,
+  feedIds: [],
+  initialMeta: { title: CARD_TITLES.about, icon: "Info", closable: true, menuItems: [] },
+};
+
+const settingsConfig: CardConfig = {
+  component: SettingsCardComponent,
+  feedIds: [],
+  initialMeta: { title: CARD_TITLES.settings, icon: "Settings", closable: true, menuItems: [] },
+  connection,
+};
+
+const developerConfig: CardConfig = {
+  component: DeveloperCardComponent,
+  feedIds: [FeedId.GIT],
+  initialMeta: { title: CARD_TITLES.developer, icon: "Code", closable: true, menuItems: [] },
+  connection,
+};
+
+// Register card configs with DeckManager (for DeckCanvas rendering)
+deck.registerCardConfig("code", codeConfig);
+deck.registerCardConfig("terminal", terminalConfig);
+deck.registerCardConfig("git", gitConfig);
+deck.registerCardConfig("files", filesConfig);
+deck.registerCardConfig("stats", statsConfig);
+deck.registerCardConfig("about", aboutConfig);
+deck.registerCardConfig("settings", settingsConfig);
+deck.registerCardConfig("developer", developerConfig);
+
 // Register card factories for multi-instance and reset-layout support.
-// Factories capture connection in their closures; TugConnection is a single
-// instance that reconnects internally, so the reference stays valid.
+// Factories capture connection in their closures.
 deck.registerCardFactory("code", () => {
   const adapter = new ReactCardAdapter({
     component: ConversationCardComponent,
     feedIds: [FeedId.CODE_OUTPUT],
     initialMeta: { title: CARD_TITLES.code, icon: "MessageSquare", closable: true, menuItems: [] },
     connection,
+    dragState: deck,
   });
-  adapter.setDragState(deck);
   return adapter;
 });
-deck.registerCardFactory("terminal", () => {
-  const adapter = new ReactCardAdapter({
-    component: TerminalCardComponent,
-    feedIds: [FeedId.TERMINAL_OUTPUT],
-    initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
-    connection,
-  });
-  adapter.setDragState(deck);
-  return adapter;
-});
+deck.registerCardFactory("terminal", () => new ReactCardAdapter({
+  component: TerminalCardComponent,
+  feedIds: [FeedId.TERMINAL_OUTPUT],
+  initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
+  connection,
+  dragState: deck,
+}));
 deck.registerCardFactory("git", () => new ReactCardAdapter({
   component: GitCardComponent,
   feedIds: [FeedId.GIT],
@@ -99,54 +160,50 @@ deck.registerCardFactory("developer", () => new ReactCardAdapter({
   connection,
 }));
 
-// Create and register initial card instances
-// DeckManager.addCard matches cards to layout tree TabItems by componentId
-
-const codeAdapter = new ReactCardAdapter({
+// Register initial card instances for feedId tracking.
+// DeckManager uses these for routing frames from TugConnection to DeckCanvas.
+// DeckCanvas renders card components directly via cardConfigs (no mounting needed).
+deck.addCard(new ReactCardAdapter({
   component: ConversationCardComponent,
   feedIds: [FeedId.CODE_OUTPUT],
   initialMeta: { title: CARD_TITLES.code, icon: "MessageSquare", closable: true, menuItems: [] },
   connection,
-});
-codeAdapter.setDragState(deck);
-deck.addCard(codeAdapter, "code");
+  dragState: deck,
+}), "code");
 
-const terminalAdapter = new ReactCardAdapter({
+deck.addCard(new ReactCardAdapter({
   component: TerminalCardComponent,
   feedIds: [FeedId.TERMINAL_OUTPUT],
   initialMeta: { title: CARD_TITLES.terminal, icon: "Terminal", closable: true, menuItems: [] },
   connection,
-});
-terminalAdapter.setDragState(deck);
-deck.addCard(terminalAdapter, "terminal");
+  dragState: deck,
+}), "terminal");
 
 deck.addCard(new ReactCardAdapter({
   component: GitCardComponent,
   feedIds: [FeedId.GIT],
   initialMeta: { title: CARD_TITLES.git, icon: "GitBranch", closable: true, menuItems: [] },
 }), "git");
+
 deck.addCard(new ReactCardAdapter({
   component: FilesCardComponent,
   feedIds: [FeedId.FILESYSTEM],
   initialMeta: { title: CARD_TITLES.files, icon: "FolderOpen", closable: true, menuItems: [] },
 }), "files");
+
 deck.addCard(new ReactCardAdapter({
   component: StatsCardComponent,
   feedIds: [FeedId.STATS, FeedId.STATS_PROCESS_INFO, FeedId.STATS_TOKEN_USAGE, FeedId.STATS_BUILD_STATUS],
   initialMeta: { title: CARD_TITLES.stats, icon: "Activity", closable: true, menuItems: [] },
 }), "stats");
 
-// Re-render so CardFrame headers pick up card meta (menu buttons)
+// Re-render so DeckCanvas picks up card configs
 deck.refresh();
 
-// Initialize action dispatch system (must be done before Dock is rendered so
-// the show-card handler is registered when Dock icon buttons are first clicked)
+// Initialize action dispatch system (must be done before Dock callbacks fire).
+// Dock is now rendered inside DeckCanvas; action dispatch is initialized here
+// and DeckManager is given the DockCallbacks so it can pass them to DeckCanvas.
 initActionDispatch(connection, deck);
-
-// Render React Dock (48px vertical rail on right viewport edge).
-// Temporarily rendered as a separate React root; Step 7 unifies it into DeckCanvas.
-const dockContainer = document.createElement("div");
-document.body.appendChild(dockContainer);
 
 const dockCallbacks: DockCallbacks = {
   onShowCard: (cardType: string) => {
@@ -155,16 +212,12 @@ const dockCallbacks: DockCallbacks = {
   onResetLayout: () => deck.resetLayout(),
   onRestartServer: () => deck.sendControlFrame("restart"),
   onResetEverything: () => {
-    // Clear localStorage before sending reset, since the server
-    // will exit and the WebSocket will close
     localStorage.clear();
     deck.sendControlFrame("reset");
   },
   onReloadFrontend: () => deck.sendControlFrame("reload_frontend"),
 };
-
-const dockRoot = createRoot(dockContainer);
-dockRoot.render(React.createElement(Dock, { callbacks: dockCallbacks }));
+deck.setDockCallbacks(dockCallbacks);
 
 // Signal frontend readiness to native app (enables menu items)
 connection.onOpen(() => {

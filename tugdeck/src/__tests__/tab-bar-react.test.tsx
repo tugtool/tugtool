@@ -1,5 +1,5 @@
 /**
- * TabBar React component RTL tests.
+ * TabBar React component RTL tests — Step 7.
  *
  * Tests cover:
  * - Renders tabs with correct labels and active state
@@ -7,22 +7,20 @@
  * - Click on close button fires onTabClose with correct tab id
  * - Drag threshold: small movement does not trigger reorder, fires onTabActivate instead
  * - closable=false tabs do not render close button
- * - Imperative handle: ref.current.getElement() returns .card-tab-bar
- * - Imperative handle: ref.current.update(node) re-renders with new state
- * - Imperative handle: ref.current.destroy() is a no-op (cleanup via React root)
+ * - Re-rendering with new props updates active state (prop-based, no imperative handle)
  *
- * Spec S04, Spec S04a
+ * Spec S04
  * [D02] React synthetic events
- * [D08] useImperativeHandle transition
+ * [D04] Unified single React root — forwardRef/useImperativeHandle removed
  */
 import "./setup-rtl";
 
-import React, { createRef } from "react";
+import React from "react";
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 import { TabBar } from "@/components/chrome/tab-bar";
-import type { TabBarHandle, TabBarCallbacks } from "@/components/chrome/tab-bar";
-import type { TabItem, TabNode } from "@/layout-tree";
+import type { TabBarCallbacks } from "@/components/chrome/tab-bar";
+import type { TabItem } from "@/layout-tree";
 
 // ---- Setup ----
 
@@ -48,10 +46,7 @@ beforeEach(() => {
 
 // ---- Helpers ----
 
-function makeTab(
-  index: number,
-  overrides: Partial<TabItem> = {}
-): TabItem {
+function makeTab(index: number, overrides: Partial<TabItem> = {}): TabItem {
   return {
     id: `tab-id-${index}`,
     componentId: `component-${index}`,
@@ -85,19 +80,9 @@ function makeCallbacks(
   return { callbacks, onTabActivate, onTabClose, onTabReorder };
 }
 
-function renderTabBar(
-  tabs: TabItem[],
-  activeTabIndex: number,
-  callbacks: TabBarCallbacks,
-  ref?: React.Ref<TabBarHandle>
-) {
+function renderTabBar(tabs: TabItem[], activeTabIndex: number, callbacks: TabBarCallbacks) {
   return render(
-    <TabBar
-      ref={ref}
-      tabs={tabs}
-      activeTabIndex={activeTabIndex}
-      callbacks={callbacks}
-    />
+    <TabBar tabs={tabs} activeTabIndex={activeTabIndex} callbacks={callbacks} />
   );
 }
 
@@ -157,7 +142,6 @@ describe("TabBar – click-to-switch", () => {
     const { callbacks, onTabActivate } = makeCallbacks();
     const { container } = renderTabBar(makeTabs(3), 0, callbacks);
     const tabs = container.querySelectorAll<HTMLElement>(".card-tab");
-    // Click on tab index 2 (inactive)
     fireEvent.pointerDown(tabs[2], { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerUp(tabs[2], { pointerId: 1, clientX: 0, clientY: 0 });
     expect(onTabActivate).toHaveBeenCalledTimes(1);
@@ -168,7 +152,6 @@ describe("TabBar – click-to-switch", () => {
     const { callbacks, onTabActivate } = makeCallbacks();
     const { container } = renderTabBar(makeTabs(2), 0, callbacks);
     const tabs = container.querySelectorAll<HTMLElement>(".card-tab");
-    // Click on already-active tab
     fireEvent.pointerDown(tabs[0], { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerUp(tabs[0], { pointerId: 1, clientX: 0, clientY: 0 });
     expect(onTabActivate).toHaveBeenCalledTimes(1);
@@ -179,7 +162,6 @@ describe("TabBar – click-to-switch", () => {
     const { callbacks, onTabActivate } = makeCallbacks();
     const { container } = renderTabBar(makeTabs(2), 0, callbacks);
     const tabs = container.querySelectorAll<HTMLElement>(".card-tab");
-    // Right-click (button=2)
     fireEvent.pointerDown(tabs[1], { pointerId: 1, clientX: 0, clientY: 0, button: 2 });
     fireEvent.pointerUp(tabs[1], { pointerId: 1, clientX: 0, clientY: 0 });
     expect(onTabActivate).not.toHaveBeenCalled();
@@ -192,11 +174,9 @@ describe("TabBar – close button", () => {
     const tabs = makeTabs(2);
     const { container } = renderTabBar(tabs, 0, callbacks);
     const closeButtons = container.querySelectorAll<HTMLElement>(".card-tab-close");
-    // Click close button for tab at index 1
     fireEvent.click(closeButtons[1]);
     expect(onTabClose).toHaveBeenCalledTimes(1);
     expect((onTabClose.mock.calls[0] as [string])[0]).toBe("tab-id-1");
-    // onTabActivate should NOT have been called (stopPropagation)
     expect(onTabActivate).not.toHaveBeenCalled();
   });
 
@@ -205,17 +185,14 @@ describe("TabBar – close button", () => {
     const tabs = makeTabs(2);
     const { container } = renderTabBar(tabs, 0, callbacks);
     const closeButton = container.querySelector<HTMLElement>(".card-tab-close")!;
-    // Simulate pointerdown on close button
     fireEvent.pointerDown(closeButton, {
       pointerId: 1,
       clientX: 0,
       clientY: 0,
       button: 0,
     });
-    // Move beyond threshold
     fireEvent.pointerMove(closeButton, { pointerId: 1, clientX: 100, clientY: 0 });
     fireEvent.pointerUp(closeButton, { pointerId: 1, clientX: 100, clientY: 0 });
-    // No activate should fire (close button intercepted pointerdown in Tab handler)
     expect(onTabActivate).not.toHaveBeenCalled();
   });
 });
@@ -226,7 +203,6 @@ describe("TabBar – drag reorder threshold", () => {
     const { container } = renderTabBar(makeTabs(3), 0, callbacks);
     const tabs = container.querySelectorAll<HTMLElement>(".card-tab");
 
-    // Move only 3px (below 5px threshold)
     fireEvent.pointerDown(tabs[1], { pointerId: 1, clientX: 100, clientY: 0, button: 0 });
     fireEvent.pointerMove(tabs[1], { pointerId: 1, clientX: 103, clientY: 0 });
     fireEvent.pointerUp(tabs[1], { pointerId: 1, clientX: 103, clientY: 0 });
@@ -236,12 +212,11 @@ describe("TabBar – drag reorder threshold", () => {
     expect((onTabActivate.mock.calls[0] as [number])[0]).toBe(1);
   });
 
-  it("movement exactly at threshold (5px) does not trigger activate", () => {
-    const { callbacks, onTabActivate, onTabReorder } = makeCallbacks();
+  it("movement at threshold (> 5px) does not trigger activate", () => {
+    const { callbacks, onTabActivate } = makeCallbacks();
     const { container } = renderTabBar(makeTabs(3), 0, callbacks);
     const tabs = container.querySelectorAll<HTMLElement>(".card-tab");
 
-    // Mock getBoundingClientRect for reorder detection (return different tab)
     tabs[0].getBoundingClientRect = () => ({
       left: 0, right: 100, top: 0, bottom: 30,
       width: 100, height: 30, x: 0, y: 0, toJSON: () => ({}),
@@ -255,62 +230,31 @@ describe("TabBar – drag reorder threshold", () => {
       width: 100, height: 30, x: 200, y: 0, toJSON: () => ({}),
     } as DOMRect);
 
-    // Move exactly 6px (above 5px threshold) — dragging starts
     fireEvent.pointerDown(tabs[1], { pointerId: 1, clientX: 150, clientY: 0, button: 0 });
     fireEvent.pointerMove(tabs[1], { pointerId: 1, clientX: 156, clientY: 0 });
     fireEvent.pointerUp(tabs[1], { pointerId: 1, clientX: 156, clientY: 0 });
 
-    // Since dragging happened, onTabActivate should NOT be called
     expect(onTabActivate).not.toHaveBeenCalled();
   });
 });
 
-describe("TabBar – imperative handle", () => {
-  it("ref.current.getElement() returns the .card-tab-bar element", async () => {
-    const ref = createRef<TabBarHandle>();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <TabBar
-        ref={ref}
-        tabs={makeTabs(2)}
-        activeTabIndex={0}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-tab-bar")!;
-    expect(ref.current!.getElement()).toBe(root);
-  });
-
-  it("ref.current.update(node) re-renders tabs with new active state", async () => {
-    const ref = createRef<TabBarHandle>();
+describe("TabBar – prop-based updates (replaces imperative handle)", () => {
+  it("re-rendering with new activeTabIndex updates active tab class", async () => {
     const { callbacks } = makeCallbacks();
     const tabs = makeTabs(3);
-    const { container } = render(
-      <TabBar
-        ref={ref}
-        tabs={tabs}
-        activeTabIndex={0}
-        callbacks={callbacks}
-      />
+
+    const { container, rerender } = render(
+      <TabBar tabs={tabs} activeTabIndex={0} callbacks={callbacks} />
     );
     await act(async () => {});
 
-    // Initially tab 0 is active
     let tabEls = container.querySelectorAll(".card-tab");
     expect(tabEls[0].classList.contains("card-tab-active")).toBe(true);
     expect(tabEls[2].classList.contains("card-tab-active")).toBe(false);
 
-    // Update to make tab 2 active
-    const updatedNode: TabNode = {
-      type: "tab",
-      id: "node-1",
-      tabs,
-      activeTabIndex: 2,
-    };
-
+    // Re-render with tab 2 active (DeckCanvas passes new props on state change)
     await act(async () => {
-      ref.current!.update(updatedNode);
+      rerender(<TabBar tabs={tabs} activeTabIndex={2} callbacks={callbacks} />);
     });
 
     tabEls = container.querySelectorAll(".card-tab");
@@ -318,49 +262,21 @@ describe("TabBar – imperative handle", () => {
     expect(tabEls[2].classList.contains("card-tab-active")).toBe(true);
   });
 
-  it("ref.current.update(node) re-renders with updated tab list", async () => {
-    const ref = createRef<TabBarHandle>();
+  it("re-rendering with updated tab list shows new tabs", async () => {
     const { callbacks } = makeCallbacks();
     const tabs = makeTabs(2);
-    const { container } = render(
-      <TabBar
-        ref={ref}
-        tabs={tabs}
-        activeTabIndex={0}
-        callbacks={callbacks}
-      />
+
+    const { container, rerender } = render(
+      <TabBar tabs={tabs} activeTabIndex={0} callbacks={callbacks} />
     );
     await act(async () => {});
     expect(container.querySelectorAll(".card-tab").length).toBe(2);
 
-    // Update with a new tab added
     const newTabs = [...tabs, makeTab(2)];
-    const updatedNode: TabNode = {
-      type: "tab",
-      id: "node-1",
-      tabs: newTabs,
-      activeTabIndex: 0,
-    };
-
     await act(async () => {
-      ref.current!.update(updatedNode);
+      rerender(<TabBar tabs={newTabs} activeTabIndex={0} callbacks={callbacks} />);
     });
 
     expect(container.querySelectorAll(".card-tab").length).toBe(3);
-  });
-
-  it("ref.current.destroy() does not throw", async () => {
-    const ref = createRef<TabBarHandle>();
-    const { callbacks } = makeCallbacks();
-    render(
-      <TabBar
-        ref={ref}
-        tabs={makeTabs(2)}
-        activeTabIndex={0}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    expect(() => ref.current!.destroy()).not.toThrow();
   });
 });

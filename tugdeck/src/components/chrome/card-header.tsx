@@ -59,6 +59,8 @@ export interface CardHeaderProps {
   onClose: () => void;
   onCollapse: () => void;
   onDragStart?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  /** Additional inline styles merged onto the header root element. Used by CardFrame to apply docked border-radius. */
+  style?: React.CSSProperties;
 }
 
 // ---- Component ----
@@ -70,6 +72,7 @@ export function CardHeader({
   onClose,
   onCollapse,
   onDragStart,
+  style: extraStyle,
 }: CardHeaderProps) {
   const IconComponent = ICON_MAP[meta.icon] ?? Box;
 
@@ -80,10 +83,15 @@ export function CardHeader({
     onDragStart?.(e);
   };
 
+  const baseStyle: React.CSSProperties = onDragStart ? { cursor: "grab" } : {};
+  const mergedStyle: React.CSSProperties = extraStyle
+    ? { ...baseStyle, ...extraStyle }
+    : baseStyle;
+
   return (
     <div
       className={`card-header${isKey ? " card-header-key" : ""}`}
-      style={onDragStart ? { cursor: "grab" } : undefined}
+      style={Object.keys(mergedStyle).length > 0 ? mergedStyle : undefined}
       onPointerDown={onDragStart ? handlePointerDown : undefined}
     >
       {/* Icon */}

@@ -9,26 +9,22 @@
  * - Close button (fires onTabClose, stops propagation)
  * - Drag-reorder with 5px threshold (fires onTabReorder)
  *
- * Implements TabBarHandle via forwardRef + useImperativeHandle for
- * DeckManager compatibility during the transition period (Steps 4-6).
- * Removed in Step 7 when DeckCanvas replaces imperative calls.
+ * In the unified single-root architecture (Step 7+), forwardRef + useImperativeHandle
+ * are removed. DeckManager communicates active tab state via props through DeckCanvas.
  *
  * CSS class names preserved for test selector compatibility:
  *   .card-tab-bar, .card-tab, .card-tab-active, .card-tab-close
  *
- * Spec S04, Spec S04a
+ * Spec S04
  * [D02] React synthetic events for all pointer interactions
- * [D08] useImperativeHandle transition for DeckManager compatibility
+ * [D04] Unified single React root — forwardRef/useImperativeHandle removed
  */
 
 import React, {
-  forwardRef,
-  useImperativeHandle,
   useRef,
-  useState,
   useCallback,
 } from "react";
-import type { TabItem, TabNode } from "@/layout-tree";
+import type { TabItem } from "@/layout-tree";
 
 // ---- Callbacks ----
 
@@ -43,24 +39,6 @@ export interface TabBarCallbacks {
 
 /** Pixel threshold before a pointerdown-move is treated as a drag, not a click. */
 const DRAG_THRESHOLD_PX = 5;
-
-// ---- Imperative handle ----
-
-/**
- * Imperative handle exposed to DeckManager via forwardRef + useImperativeHandle.
- * Transitional bridge (Steps 4-6); removed in Step 7.
- */
-export interface TabBarHandle {
-  /** Return the root .card-tab-bar element. */
-  getElement(): HTMLElement;
-  /**
-   * Re-render the tab strip from an updated TabNode.
-   * Called by DeckManager after tab activate, reorder, or close.
-   */
-  update(node: TabNode): void;
-  /** Detach from DOM (no-op; React root unmount handles cleanup). */
-  destroy(): void;
-}
 
 // ---- Props ----
 
@@ -180,50 +158,24 @@ function hitTestTabIndex(
 
 // ---- Component ----
 
-export const TabBar = forwardRef<TabBarHandle, TabBarProps>(
-  function TabBar({ tabs: initialTabs, activeTabIndex: initialActiveTabIndex, callbacks }, ref) {
-    const rootRef = useRef<HTMLDivElement>(null);
-    const tabRefs = useRef<(HTMLDivElement | null)[]>([]);
+export function TabBar({ tabs, activeTabIndex, callbacks }: TabBarProps) {
+  const tabRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-    // State updated imperatively via update(node) handle
-    const [tabs, setTabs] = useState<TabItem[]>(initialTabs);
-    const [activeTabIndex, setActiveTabIndex] = useState(initialActiveTabIndex);
+  // Keep tabRefs array sized to current tab count
+  tabRefs.current = tabRefs.current.slice(0, tabs.length);
 
-    // ---- Imperative handle ----
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        getElement(): HTMLElement {
-          return rootRef.current!;
-        },
-        update(node: TabNode) {
-          setTabs([...node.tabs]);
-          setActiveTabIndex(node.activeTabIndex);
-        },
-        destroy() {
-          // No-op: React root unmount handles cleanup.
-        },
-      }),
-      []
-    );
-
-    // Keep tabRefs array sized to current tab count
-    tabRefs.current = tabRefs.current.slice(0, tabs.length);
-
-    return (
-      <div ref={rootRef} className="card-tab-bar">
-        {tabs.map((tab, i) => (
-          <Tab
-            key={tab.id}
-            tab={tab}
-            tabIndex={i}
-            isActive={i === activeTabIndex}
-            tabRefs={tabRefs}
-            callbacks={callbacks}
-          />
-        ))}
-      </div>
-    );
-  }
-);
+  return (
+    <div className="card-tab-bar">
+      {tabs.map((tab, i) => (
+        <Tab
+          key={tab.id}
+          tab={tab}
+          tabIndex={i}
+          isActive={i === activeTabIndex}
+          tabRefs={tabRefs}
+          callbacks={callbacks}
+        />
+      ))}
+    </div>
+  );
+}

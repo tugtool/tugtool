@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-01T00:40:09Z
+---
+
+## step-7: Created DeckCanvas component as single React root for all chrome rendering. Removed forwardRef/useImperativeHandle from CardFrame and TabBar. Replaced card-meta-update CustomEvent with direct callbacks. Simplified ReactCardAdapter to config object. Created DevNotificationContext. Migrated docked styling to props-based approach.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
 step: step-6
 date: 2025-02-28T23:48:35Z
 ---

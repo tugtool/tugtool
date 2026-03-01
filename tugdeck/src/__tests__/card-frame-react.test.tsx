@@ -1,5 +1,5 @@
 /**
- * CardFrame React component RTL tests.
+ * CardFrame React component RTL tests — Step 7.
  *
  * Tests cover:
  * - Renders header, content area, and 8 resize handles
@@ -9,24 +9,21 @@
  * - onResizeEnd callback receives final geometry after resize sequence
  * - zIndex prop applied to root element style
  * - isKey prop flows to CardHeader
- * - Imperative handle: ref.current.setZIndex updates element style
- * - Imperative handle: ref.current.updatePosition/updateSize mutate element styles
- * - Imperative handle: ref.current.setKey toggles card-header-key class
- * - Imperative handle: ref.current.setDockedStyle applies squared corners and position offset
- * - Imperative handle: ref.current.resetDockedStyle restores default rounded corners
+ * - children rendered inside card-frame-content
+ * - External rootRef provided by DeckCanvas PanelContainer registers element
  *
- * Spec S03, Spec S03a
+ * Spec S03
  * [D02] React synthetic events
  * [D03] Ref-based style mutation during drag
- * [D08] useImperativeHandle transition
+ * [D04] Unified single React root — forwardRef/useImperativeHandle removed
  */
 import "./setup-rtl";
 
-import React, { createRef } from "react";
+import React, { createRef, useRef } from "react";
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 import { CardFrame } from "@/components/chrome/card-frame";
-import type { CardFrameHandle, CardFrameCallbacks } from "@/components/chrome/card-frame";
+import type { CardFrameCallbacks } from "@/components/chrome/card-frame";
 import type { CardState } from "@/layout-tree";
 
 // ---- Setup ----
@@ -121,16 +118,17 @@ function renderFrame(
     zIndex: number;
     callbacks: CardFrameCallbacks;
     canvasEl: HTMLElement;
+    children: React.ReactNode;
   }> = {}
 ) {
   const canvasEl = overrides.canvasEl ?? makeCanvasEl();
-  const { callbacks } = overrides.callbacks ? { callbacks: overrides.callbacks } : makeCallbacks();
-  const ref = createRef<CardFrameHandle>();
+  const { callbacks } = overrides.callbacks
+    ? { callbacks: overrides.callbacks }
+    : makeCallbacks();
   const panelState = overrides.panelState ?? makeCardState();
 
   const result = render(
     <CardFrame
-      ref={ref}
       panelState={panelState}
       meta={{
         title: panelState.tabs[0]?.title ?? "Panel",
@@ -142,10 +140,12 @@ function renderFrame(
       zIndex={overrides.zIndex ?? 100}
       canvasEl={canvasEl}
       callbacks={callbacks}
-    />
+    >
+      {overrides.children}
+    </CardFrame>
   );
 
-  return { ...result, ref, panelState, canvasEl, callbacks };
+  return { ...result, panelState, canvasEl, callbacks };
 }
 
 // ---- Tests ----
@@ -200,6 +200,14 @@ describe("CardFrame – DOM structure", () => {
     expect(root.style.width).toBe("500px");
     expect(root.style.height).toBe("400px");
   });
+
+  it("renders children inside card-frame-content", () => {
+    const { container } = renderFrame({
+      children: <div data-testid="child-content">child</div>,
+    });
+    const content = container.querySelector(".card-frame-content")!;
+    expect(content.querySelector("[data-testid='child-content']")).not.toBeNull();
+  });
 });
 
 describe("CardFrame – isKey prop", () => {
@@ -253,12 +261,9 @@ describe("CardFrame – header drag (onDragStart)", () => {
     });
 
     const header = container.querySelector<HTMLElement>(".card-header")!;
-    // pointerdown to start drag
     fireEvent.pointerDown(header, { pointerId: 1, clientX: 200, clientY: 110 });
-    // Move with delta > DRAG_THRESHOLD_PX (3)
     fireEvent.pointerMove(header, { pointerId: 1, clientX: 215, clientY: 125 });
 
-    // onMoving should have been called (drag in progress)
     expect(onMoving.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -278,7 +283,6 @@ describe("CardFrame – header drag (onDragStart)", () => {
     fireEvent.pointerUp(header, { pointerId: 1, clientX: 220, clientY: 130 });
 
     expect(onMoveEnd).toHaveBeenCalledTimes(1);
-    // dx=20, dy=20 from start (100,100), result = (120, 120)
     const [x, y] = onMoveEnd.mock.calls[0] as [number, number];
     expect(x).toBe(120);
     expect(y).toBe(120);
@@ -296,11 +300,9 @@ describe("CardFrame – header drag (onDragStart)", () => {
 
     const header = container.querySelector<HTMLElement>(".card-header")!;
     fireEvent.pointerDown(header, { pointerId: 1, clientX: 200, clientY: 110 });
-    // Move only 2px (below 3px threshold)
     fireEvent.pointerMove(header, { pointerId: 1, clientX: 202, clientY: 110 });
     fireEvent.pointerUp(header, { pointerId: 1, clientX: 202, clientY: 110 });
 
-    // No drag occurred
     expect(onMoveEnd).not.toHaveBeenCalled();
   });
 });
@@ -326,10 +328,10 @@ describe("CardFrame – resize drag", () => {
 
     expect(onResizeEnd).toHaveBeenCalledTimes(1);
     const [x, y, w, h] = onResizeEnd.mock.calls[0] as [number, number, number, number];
-    expect(x).toBe(100); // x unchanged for east resize
-    expect(y).toBe(100); // y unchanged
-    expect(w).toBe(450); // width grew by 50px
-    expect(h).toBe(300); // height unchanged
+    expect(x).toBe(100);
+    expect(y).toBe(100);
+    expect(w).toBe(450);
+    expect(h).toBe(300);
   });
 
   it("onResizeEnd callback receives final geometry after south resize", () => {
@@ -355,18 +357,19 @@ describe("CardFrame – resize drag", () => {
     expect(x).toBe(100);
     expect(y).toBe(100);
     expect(w).toBe(400);
-    expect(h).toBe(350); // height grew by 50px
+    expect(h).toBe(350);
   });
 });
 
-describe("CardFrame – imperative handle (ref.current)", () => {
-  it("ref.current.setZIndex updates element style", async () => {
-    const ref = createRef<CardFrameHandle>();
+describe("CardFrame – external rootRef", () => {
+  it("external rootRef provided via rootRef prop is populated after render", async () => {
+    const rootRef = createRef<HTMLDivElement>();
     const canvasEl = makeCanvasEl();
     const { callbacks } = makeCallbacks();
-    const { container } = render(
+
+    render(
       <CardFrame
-        ref={ref}
+        rootRef={rootRef}
         panelState={makeCardState()}
         meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
         isKey={false}
@@ -376,18 +379,18 @@ describe("CardFrame – imperative handle (ref.current)", () => {
       />
     );
     await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-    ref.current!.setZIndex(200);
-    expect(root.style.zIndex).toBe("200");
+    expect(rootRef.current).not.toBeNull();
+    expect(rootRef.current?.classList.contains("card-frame")).toBe(true);
   });
 
-  it("ref.current.updatePosition mutates element styles", async () => {
-    const ref = createRef<CardFrameHandle>();
+  it("direct DOM mutations via rootRef update element styles", async () => {
+    const rootRef = createRef<HTMLDivElement>();
     const canvasEl = makeCanvasEl();
     const { callbacks } = makeCallbacks();
-    const { container } = render(
+
+    render(
       <CardFrame
-        ref={ref}
+        rootRef={rootRef}
         panelState={makeCardState(100, 100)}
         meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
         isKey={false}
@@ -397,231 +400,13 @@ describe("CardFrame – imperative handle (ref.current)", () => {
       />
     );
     await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-    ref.current!.updatePosition(250, 180);
-    expect(root.style.left).toBe("250px");
-    expect(root.style.top).toBe("180px");
-  });
 
-  it("ref.current.updateSize mutates element styles", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState(100, 100, 400, 300)}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-    ref.current!.updateSize(600, 450);
-    expect(root.style.width).toBe("600px");
-    expect(root.style.height).toBe("450px");
-  });
-
-  it("ref.current.setKey(true) toggles card-header-key class", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState()}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    expect(container.querySelector(".card-header-key")).toBeNull();
-
-    await act(async () => {
-      ref.current!.setKey(true);
-    });
-
-    expect(container.querySelector(".card-header-key")).not.toBeNull();
-  });
-
-  it("ref.current.setKey(false) removes card-header-key class", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState()}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={true}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    expect(container.querySelector(".card-header-key")).not.toBeNull();
-
-    await act(async () => {
-      ref.current!.setKey(false);
-    });
-
-    expect(container.querySelector(".card-header-key")).toBeNull();
-  });
-
-  it("ref.current.setDockedStyle applies squared corners and position offset", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState(100, 200)}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-    // Apply squared bottom corners and -1px Y offset
-    ref.current!.setDockedStyle([true, true, false, false], { dx: 0, dy: -1 });
-
-    // Border-radius: TL TR BR BL = 6px 6px 0 0
-    // happy-dom normalizes "0" to "0px" in border-radius shorthand
-    expect(root.style.borderRadius).toMatch(/6px 6px 0/);
-    // Position offset applied
-    expect(root.style.top).toBe("199px"); // 200 + (-1)
-    expect(root.style.left).toBe("100px"); // unchanged
-  });
-
-  it("ref.current.resetDockedStyle restores default rounded corners", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState(100, 200)}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-
-    // First apply docked style, then reset
-    ref.current!.setDockedStyle([true, true, false, false], { dx: -1, dy: 0 });
-    ref.current!.resetDockedStyle();
-
-    expect(root.style.borderRadius).toBe("6px");
-    // Position restored to logical position
-    expect(root.style.left).toBe("100px");
-    expect(root.style.top).toBe("200px");
-  });
-
-  it("ref.current.getElement() returns the root .card-frame element", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState()}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const root = container.querySelector<HTMLElement>(".card-frame")!;
-    expect(ref.current!.getElement()).toBe(root);
-  });
-
-  it("ref.current.getCardAreaElement() returns the .card-frame-content element", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState()}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const content = container.querySelector<HTMLElement>(".card-frame-content")!;
-    expect(ref.current!.getCardAreaElement()).toBe(content);
-  });
-
-  it("ref.current.getCardState() returns the CardState with live position", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const panelState = makeCardState(100, 100, 400, 300);
-    render(
-      <CardFrame
-        ref={ref}
-        panelState={panelState}
-        meta={{ title: "T", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    ref.current!.updatePosition(250, 300);
-    const state = ref.current!.getCardState();
-    expect(state.position.x).toBe(250);
-    expect(state.position.y).toBe(300);
-  });
-
-  it("ref.current.updateMeta updates the card header title", async () => {
-    const ref = createRef<CardFrameHandle>();
-    const canvasEl = makeCanvasEl();
-    const { callbacks } = makeCallbacks();
-    const { container } = render(
-      <CardFrame
-        ref={ref}
-        panelState={makeCardState()}
-        meta={{ title: "Original", icon: "Box", closable: true, menuItems: [] }}
-        isKey={false}
-        zIndex={100}
-        canvasEl={canvasEl}
-        callbacks={callbacks}
-      />
-    );
-    await act(async () => {});
-    const title = container.querySelector(".card-header-title");
-    expect(title?.textContent).toBe("Original");
-
-    await act(async () => {
-      ref.current!.updateMeta({
-        title: "Updated",
-        icon: "Box",
-        closable: true,
-        menuItems: [],
-      });
-    });
-
-    expect(title?.textContent).toBe("Updated");
+    // Simulate DeckCanvas imperative update
+    if (rootRef.current) {
+      rootRef.current.style.left = "250px";
+      rootRef.current.style.top = "180px";
+    }
+    expect(rootRef.current?.style.left).toBe("250px");
+    expect(rootRef.current?.style.top).toBe("180px");
   });
 });
