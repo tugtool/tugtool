@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-02T19:32:05Z
+---
+
+## step-2: Added motion tokens section with 4 duration tokens, 3 easing tokens, duration scalar, and @media prefers-reduced-motion block with 0.001 scalar
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-1
 date: 2025-03-02T19:27:27Z
 ---
