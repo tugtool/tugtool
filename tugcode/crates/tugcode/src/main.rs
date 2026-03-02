@@ -23,11 +23,6 @@ fn main() -> ExitCode {
             level,
         }) => commands::run_validate(file, strict, level, cli.json, cli.quiet),
         Some(Commands::List { status }) => commands::run_list(status, cli.json, cli.quiet),
-        Some(Commands::Status { file, verbose }) => {
-            // Use verbose flag from subcommand, or global verbose
-            let verbose = verbose || cli.verbose;
-            commands::run_status(file, verbose, cli.json, cli.quiet)
-        }
         Some(Commands::Worktree(worktree_cmd)) => match worktree_cmd {
             WorktreeCommands::Setup {
                 plan,

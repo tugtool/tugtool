@@ -10,7 +10,6 @@ pub mod merge;
 pub mod open_pr;
 pub mod resolve;
 pub mod state;
-pub mod status;
 pub mod tell;
 pub mod validate;
 pub mod version;
@@ -33,7 +32,6 @@ pub use state::{
     run_state_complete_checklist, run_state_heartbeat, run_state_init, run_state_ready,
     run_state_reconcile, run_state_release, run_state_reset, run_state_show, run_state_start,
 };
-pub use status::run_status;
 pub use tell::run_tell;
 pub use validate::run_validate;
 pub use version::run_version;

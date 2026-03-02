@@ -81,21 +81,6 @@ pub enum Commands {
         status: Option<String>,
     },
 
-    /// Show detailed completion status for a plan
-    ///
-    /// Displays step-by-step progress with task and checkpoint counts.
-    #[command(
-        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse 'tugcode state show' for detailed execution state."
-    )]
-    Status {
-        /// Plan file to show status for
-        file: String,
-
-        /// Show individual task and checkpoint details
-        #[arg(short, long)]
-        verbose: bool,
-    },
-
     /// Worktree commands for isolated implementation environments
     ///
     /// Create, list, and clean up git worktrees for plan implementations.
@@ -448,19 +433,6 @@ mod tests {
                 assert!(status.is_none());
             }
             _ => panic!("Expected List command"),
-        }
-    }
-
-    #[test]
-    fn test_status_command() {
-        let cli = Cli::try_parse_from(["tugcode", "status", "tugplan-1.md"]).unwrap();
-
-        match cli.command {
-            Some(Commands::Status { file, verbose }) => {
-                assert_eq!(file, "tugplan-1.md");
-                assert!(!verbose);
-            }
-            _ => panic!("Expected Status command"),
         }
     }
 

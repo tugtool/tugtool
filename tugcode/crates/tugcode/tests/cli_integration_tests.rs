@@ -308,25 +308,6 @@ fn test_list_shows_plans() {
 }
 
 #[test]
-fn test_status_shows_step_breakdown() {
-    let temp = setup_test_project();
-    create_test_plan(&temp, "test", MINIMAL_PLAN);
-
-    let output = Command::new(tug_binary())
-        .arg("status")
-        .arg("tugplan-test.md")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run tug status");
-
-    assert!(output.status.success(), "status should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Step 1"), "output should contain step");
-    assert!(stdout.contains("Setup"), "output should contain step title");
-    assert!(stdout.contains("Total:"), "output should contain total");
-}
-
-#[test]
 fn test_json_output_init() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -398,33 +379,6 @@ fn test_json_output_validate() {
     assert_eq!(json["status"], "ok");
     assert!(json["data"]["files"].is_array());
     assert_eq!(json["data"]["files"][0]["valid"], true);
-}
-
-#[test]
-fn test_json_output_status() {
-    let temp = setup_test_project();
-    create_test_plan(&temp, "test", MINIMAL_PLAN);
-
-    let output = Command::new(tug_binary())
-        .arg("status")
-        .arg("tugplan-test.md")
-        .arg("--json")
-        .current_dir(temp.path())
-        .output()
-        .expect("failed to run tug status --json");
-
-    assert!(output.status.success(), "status --json should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Parse JSON
-    let json: serde_json::Value = serde_json::from_str(&stdout).expect("should be valid JSON");
-    assert_eq!(json["schema_version"], "1");
-    assert_eq!(json["command"], "status");
-    assert_eq!(json["status"], "ok");
-    assert_eq!(json["data"]["name"], "test");
-    assert!(json["data"]["steps"].is_array());
-    assert!(json["data"]["progress"]["done"].is_number());
-    assert!(json["data"]["progress"]["total"].is_number());
 }
 
 #[test]
