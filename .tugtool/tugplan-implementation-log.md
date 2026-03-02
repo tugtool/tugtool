@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-02T18:07:13Z
+---
+
+## step-8: main.tsx already stripped to 58 lines in step 6 (Spec S01). Removed dead xterm manual chunk splitting from vite.config.ts. All checkpoints pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-7
 date: 2025-03-02T18:04:21Z
 ---

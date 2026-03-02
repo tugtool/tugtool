@@ -47,12 +47,6 @@ export default defineConfig(() => {
             if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
               return "vendor";
             }
-            if (
-              id.includes("node_modules/@xterm/") ||
-              id.includes("node_modules/xterm")
-            ) {
-              return "terminal";
-            }
             if (id.includes("node_modules/shiki")) {
               return "shiki";
             }
