@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { FeedId, controlFrame, encodeFrame, decodeFrame } from "./protocol";
+import { FeedId, controlFrame, encodeFrame, decodeFrame } from "../protocol";
 
 describe("controlFrame", () => {
   test("restart produces correct feedId and payload", () => {

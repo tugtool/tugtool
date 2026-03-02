@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { MessageOrderingBuffer } from "../cards/conversation/ordering.ts";
-import type { ConversationEvent, AssistantText } from "../cards/conversation/types.ts";
+import { MessageOrderingBuffer } from "../_archive/cards/conversation/ordering.ts";
+import type { ConversationEvent, AssistantText } from "../_archive/cards/conversation/types.ts";
 
 describe("MessageOrderingBuffer", () => {
   let delivered: ConversationEvent[];

@@ -7,7 +7,7 @@ import {
   type ToolResult,
   type TurnComplete,
   type ErrorEvent,
-} from "../cards/conversation/types.ts";
+} from "../_archive/cards/conversation/types.ts";
 import { encodeCodeInput, decodeFrame, FeedId } from "../protocol.ts";
 
 describe("conversation types", () => {
