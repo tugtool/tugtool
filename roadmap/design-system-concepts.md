@@ -14,7 +14,7 @@
 | 6 | Tugcard: The Common Base Component | DESIGNED | [#c06-tugcard](#c06-tugcard) |
 | 7 | Feed Abstraction | DESIGNED | [#c07-feed](#c07-feed) |
 | 8 | Motion and Visual Continuity | DESIGNED | [#c08-motion](#c08-motion) |
-| 9 | Alert and Dialog System | OPEN | [#c09-dialog](#c09-dialog) |
+| 9 | Alert and Dialog System | DESIGNED | [#c09-dialog](#c09-dialog) |
 | 10 | Card Title Bar Enhancements | OPEN | [#c10-titlebar](#c10-titlebar) |
 | 11 | Dock Redesign | OPEN | [#c11-dock](#c11-dock) |
 | 12 | Keybindings View | OPEN | [#c12-keybindings](#c12-keybindings) |
@@ -48,6 +48,8 @@
 | [D22] | Component inventory: TS interfaces, gallery card, design doc | Concept 3 | [#d22-component-inventory](#d22-component-inventory) |
 | [D23] | Motion tokens as CSS custom properties (`--td-duration-*`, `--td-easing-*`) | Concept 8 | [#d23-motion-tokens](#d23-motion-tokens) |
 | [D24] | Reduced motion via duration scalar, not removal | Concept 8 | [#d24-reduced-motion](#d24-reduced-motion) |
+| [D25] | Four modal categories: alert, sheet, confirm-popover, toast | Concept 9 | [#d25-four-modal-categories](#d25-four-modal-categories) |
+| [D26] | Button-confirmation via popover, not sheet or alert | Concept 9 | [#d26-confirm-popover](#d26-confirm-popover) |
 
 ### Key Architectural Patterns
 
@@ -63,6 +65,7 @@
 | Enter/exit via Radix data-state | CSS `@keyframes` triggered by `data-state="open"/"closed"`, Presence delays unmount | [#enter-exit-transitions](#enter-exit-transitions) |
 | Skeleton shimmer | Per-card shapes, synchronized via `background-attachment: fixed`, theme-aware colors | [#skeleton-loading](#skeleton-loading) |
 | Startup three-layer continuity | Inline body styles → startup overlay → CSS HMR boundary | [#startup-continuity](#startup-continuity) |
+| Imperative-over-declarative alerts | `tugAlert()` returns Promise; host component renders AlertDialog | [#alert-architecture](#alert-architecture) |
 
 ### External References
 
@@ -1607,16 +1610,238 @@ This concept establishes the pattern for all visual continuity in tugdeck:
 
 ### 9. Alert and Dialog System {#c09-dialog}
 
-**The problem.** We need three levels of modal interaction:
-- **App-modal:** blocks the entire application (e.g., critical error, unsaved changes confirmation)
-- **Card-modal:** blocks a single card (e.g., "are you sure you want to close this card?")
-- **Modeless informational:** non-blocking notification (e.g., "build succeeded", "agent completed step 3")
+**Status: DESIGNED** (2026-03-02)
 
-**Questions to resolve:**
-- How do modals interact with the responder chain? App-modal should intercept the chain at the top. Card-modal should intercept within the card's subtree.
-- How do modals interact with focus management? Opening a modal should trap focus; closing should restore it.
-- What is the API? `showAppModal(content)`, `card.showModal(content)`, `showNotification(content)`?
-- Does the close-confirmation for cards (feature list item) use the card-modal system, or is it simpler (a dropdown attached to the close button)?
+**The problem.** Tugdeck needs structured modal interaction at multiple scopes — app-wide, card-scoped, button-local, and non-blocking — with each level having clear rules for how it interacts with the responder chain, focus management, and the rest of the UI.
+
+#### Apple's Modal Model: What We're Drawing From {#apple-modal-model}
+
+Apple's AppKit provides the architectural reference. Three mechanisms, each with different scope and event handling:
+
+**`NSApplication.runModal(for:)`** — app-modal. Starts a nested run loop. The calling code *blocks* at the call site. Only the modal window receives events. All other windows are inert. When the user clicks a button, `stopModal(withCode:)` breaks the loop and control returns to the caller with a `ModalResponse` value.
+
+**`NSWindow.beginSheet(_:completionHandler:)`** — document-modal. A sheet slides down from the parent window's title bar. Only the parent window is blocked; other windows remain interactive. The completion handler fires asynchronously when the sheet is dismissed. Sheets queue — if one is already showing, the next one waits.
+
+**`NSAlert`** — the alert primitive. Configurable: `messageText`, `informativeText`, `alertStyle` (informational/warning/critical), up to 3+ buttons via `addButton(withTitle:)`. Can be presented as either app-modal (`runModal()`) or document-modal (`beginSheetModal(for:completionHandler:)`).
+
+**`NSPopover`** — not modal. Auxiliary content anchored to a view. Three behaviors: `.transient` (closes on outside click), `.semitransient` (closes on parent window interaction), `.applicationDefined` (manual). Does not trap focus. Not used for confirmations in Apple's own apps — but SwiftUI's `confirmationDialog` renders as a popover on iPad, establishing precedent for button-anchored confirmations.
+
+#### How This Maps to Tugdeck {#d25-four-modal-categories}
+
+JavaScript cannot block the event loop like AppKit's `runModal(for:)`. But we can block the *responder chain*. When an app-modal alert is showing, the chain manager sets a `modalScope` flag. `dispatch()` checks this flag and refuses to route actions to the main chain. The dialog's own buttons use direct `onClick` handlers — they bypass the chain entirely. This gives the *behavioral* equivalent of Apple's nested run loop without blocking the thread.
+
+**Four categories, mapped from Apple:**
+
+| Category | Apple equivalent | Scope | Chain impact | Focus |
+|----------|-----------------|-------|-------------|-------|
+| **TugAlert** | `NSAlert.runModal()` | Entire app | Chain blocked | Trapped in dialog |
+| **TugSheet** | `NSWindow.beginSheet()` | Single card | Card's node suspended | Trapped in sheet |
+| **TugConfirmPopover** | iPad `confirmationDialog` | Button-local | None | Moves to popover |
+| **TugToast** | Notification center | None | None | Never steals focus |
+
+#### TugAlert — App-Modal Alert {#tugalert}
+
+Blocks the entire application. The user must respond before doing anything else.
+
+**When to use:** Critical errors, unsaved-changes warnings, destructive actions that affect multiple cards or the whole app, first-run setup confirmations.
+
+**Responder chain:** The chain manager enters `modalScope: "app"`. All `dispatch()` calls to the main chain are refused. Global shortcuts (Cmd+Q) are blocked. Escape dismisses the alert (matching Apple's behavior). The alert's buttons have direct `onClick` handlers — they do not participate in the responder chain.
+
+**Focus:** Radix AlertDialog handles focus trapping. Tab/Shift+Tab cycle within the dialog. On dismiss, focus returns to the element that triggered the alert. Background content gets the `inert` attribute (applied automatically by Radix).
+
+**Visual treatment:** Full-viewport overlay (semi-transparent dark backdrop using motion tokens from [#c08-motion](#c08-motion)). Alert content fades in + scales from 95% using the enter/exit pattern from [#enter-exit-transitions](#enter-exit-transitions). Overlay click does *not* dismiss (this is AlertDialog, not Dialog — the user must click a button).
+
+**Why AlertDialog, not Dialog:** Radix's `AlertDialog` sets `role="alertdialog"` and prevents overlay-click dismissal. `Dialog` allows dismissal by clicking outside, which is wrong for confirmations. The behavioral difference maps exactly to Apple's distinction between sheets (can cancel by clicking elsewhere on some platforms) and alerts (must respond explicitly).
+
+**API — imperative, Promise-based:**
+
+```tsx
+const response = await tugAlert({
+  title: "Delete project?",
+  message: "This action cannot be undone.",
+  style: "warning",                              // "informational" | "warning" | "critical"
+  buttons: [
+    { label: "Delete", role: "destructive" },    // red text, not the default
+    { label: "Cancel", role: "cancel" },          // bold, default (Enter key)
+  ],
+});
+// response === "Delete" | "Cancel"
+```
+
+The imperative API wraps a declarative React component internally. A `TugAlertHost` component (rendered once, at the app root) listens for alert requests and manages the AlertDialog state. The `tugAlert()` function posts a request and returns a Promise that resolves when the user clicks a button.
+
+**Button roles** (modeled on `UIAlertAction.Style` and Apple HIG):
+- `"destructive"` — red text. Signals danger. Never the default button.
+- `"cancel"` — bold text. The safe choice. Responds to Enter key and Escape. There is exactly one cancel button.
+- `"default"` — standard text. For non-destructive, non-cancel actions.
+
+Apple's HIG guidance: when the alert confirms a destructive action that the user explicitly initiated, make Cancel the default (bold) button so Enter cancels rather than confirms. `tugAlert` follows this — `"cancel"` is always the default when a `"destructive"` button is present.
+
+**Alert styles** (modeled on `NSAlert.Style`):
+- `"informational"` — app icon. Notice about a current or impending event.
+- `"warning"` — caution badge. User should be aware of consequences.
+- `"critical"` — caution icon. Potential data loss or system damage.
+
+In practice, the visual difference between styles is minimal (icon changes). The semantic distinction matters for screen readers and for establishing the gravity of the alert.
+
+#### TugSheet — Card-Modal Dialog {#tugsheet}
+
+Blocks a single card. Other cards remain interactive.
+
+**When to use:** Card close confirmation ("you have unsaved changes"), card-specific settings that require acknowledgment, card-specific destructive actions.
+
+**Responder chain:** The card's responder node is marked `suspended`. Actions dispatched from within the card's subtree are blocked. Other cards' chains are unaffected. Deck-level actions (switching focus to another card) still work. Global shortcuts still work — this matches Apple's behavior where sheets don't disable the menu bar.
+
+**Focus:** Focus is trapped within the card's sheet content. Tab/Shift+Tab cycle within the sheet. On dismiss, focus returns to the card's previously focused element. The card's content area (outside the sheet) receives a visual dimming overlay but other cards do not.
+
+**Visual treatment:** The sheet renders *within the card's bounds*, not as a full-viewport overlay. A semi-transparent backdrop covers only the card's content area. The sheet content slides down from the card's header (matching Apple's sheet animation) or fades in, using motion tokens. Other cards are visually unaffected — they remain bright and interactive.
+
+**Implementation — Radix Dialog with scoped rendering:**
+
+Radix's `Dialog.Portal` accepts a `container` prop to render inside a specific DOM element. For card-modal sheets:
+
+1. The sheet portal targets the card's content container.
+2. The overlay is scoped to the card (CSS `position: absolute` within the card, not `position: fixed` on the viewport).
+3. `inert` is applied to the card's content area only — not to the whole document. This is manual (Radix applies `inert` globally for its portals); we override by removing `inert` from non-card elements after Radix applies it, or by not using Radix's `modal` mode and implementing card-scoped inertness ourselves.
+
+This is the one place where we diverge from Radix's defaults. Radix doesn't natively support subtree-scoped modality. We accept the extra implementation work because card-modal is a core interaction pattern — cards are independent workspaces, and blocking the entire app for a card-level concern violates that model.
+
+**API — imperative, same shape as TugAlert:**
+
+```tsx
+const response = await tugSheet(cardId, {
+  title: "Close this card?",
+  message: "You have unsaved changes.",
+  buttons: [
+    { label: "Close Without Saving", role: "destructive" },
+    { label: "Cancel", role: "cancel" },
+  ],
+});
+```
+
+A `TugSheetHost` is rendered inside each Tugcard. It listens for sheet requests scoped to its card ID.
+
+#### TugConfirmPopover — Button-Anchored Confirmation {#d26-confirm-popover}
+
+A small popover graphically tied to a button that compels the user to move their mouse and click again to confirm. Not modal in the responder chain sense — it's a lightweight UI gate on a single action.
+
+**When to use:** Close-button confirmation on cards, delete-item buttons, any single-button destructive action where a full alert is too heavy but accidental clicks need prevention.
+
+**Responder chain:** No impact. The chain is unaffected. The popover is just UI — the underlying button enters a "pending confirmation" visual state while the popover is open, but no chain nodes are suspended or blocked.
+
+**Focus:** Focus moves to the popover on open (the confirm button receives focus, so Enter confirms). Escape closes the popover and returns focus to the trigger. The popover does not trap focus — Tab can move out of it, which closes it (matching `NSPopover.Behavior.transient`). This is intentional: the popover is lightweight. Moving focus away is equivalent to clicking away — a soft cancel.
+
+**Visual treatment:** Radix Popover anchored to the trigger button. Arrow pointing to the trigger. Positioned via `side`/`align` props with collision avoidance. Enter/exit animation using the `data-state` + CSS `@keyframes` pattern from [#enter-exit-transitions](#enter-exit-transitions). Fast timing — `--td-duration-fast` — because this is a micro-interaction, not a major state change.
+
+**API — declarative component (not imperative):**
+
+```tsx
+<TugConfirmPopover
+  onConfirm={() => closeCard(cardId)}
+  message="Close this card?"
+  confirmLabel="Close"
+  confirmVariant="destructive"
+>
+  <TugButton subtype="icon" icon={<X />} aria-label="Close card" />
+</TugConfirmPopover>
+```
+
+`TugConfirmPopover` wraps its children as the trigger. When clicked, instead of immediately firing `onConfirm`, it opens a small popover with the message and two buttons: the confirm button (label and variant configurable) and a Cancel button. The user must click confirm (or press Enter, since confirm is focused) to execute the action. Clicking away, pressing Escape, or clicking Cancel dismisses without confirming.
+
+**Why this is a separate category from TugSheet:** The user's response was clear — button confirmation is its own thing. It's not modal to the card or the app. It doesn't block the responder chain. It doesn't trap focus. It's a lightweight "are you sure?" tied to a specific button. A TugSheet for every close button would be too heavy — it dims the card, traps focus, suspends the chain. The confirm popover is snappy: click, see a small popover, click again or press Enter to confirm. Done.
+
+**Close-button integration:** The card title bar's close button ([#c10-titlebar](#c10-titlebar)) wraps in `TugConfirmPopover`. Click the X → popover appears anchored to the X → click "Close" or press Enter → card closes. Click away → nothing happens. This is the standard pattern for all destructive button actions.
+
+#### TugToast — Non-Blocking Notification {#tugtoast}
+
+Fire-and-forget notifications that don't interrupt the user's workflow.
+
+**When to use:** Build succeeded/failed, agent completed a step, connection restored, settings saved, any status update the user should see but doesn't need to act on.
+
+**Responder chain:** No impact whatsoever. Toasts don't participate in the chain. They don't receive focus. They don't block actions. They are pure informational.
+
+**Focus:** Toasts never steal focus. They appear in a corner of the viewport and auto-dismiss after a configurable duration. A global hotkey (Alt+T, configurable) moves focus to the toast region for keyboard interaction. This matches macOS's notification behavior — notifications are announced by VoiceOver but don't take key focus.
+
+**Accessibility:** Sonner renders a persistent `<section role="region" aria-label="Notifications">` with `aria-relevant="additions text"`. Screen readers announce new toasts via the live region without interrupting the user's current interaction. The region element exists in the DOM even when no toasts are showing — required for ARIA live regions to work.
+
+**Implementation — Sonner (already in the shadcn ecosystem):**
+
+```tsx
+// App root — render once
+<TugToaster position="bottom-right" theme="system" duration={4000} />
+
+// Anywhere in the app — fire and forget
+tugToast.success("Build succeeded");
+tugToast.error("Connection lost");
+tugToast.info("Agent completed step 3");
+
+// With action button
+tugToast("Settings saved", {
+  action: { label: "Undo", onClick: () => revertSettings() },
+});
+
+// Promise-based (loading → success/error)
+tugToast.promise(deployBuild(), {
+  loading: "Deploying...",
+  success: "Deployed successfully",
+  error: (err) => `Deploy failed: ${err.message}`,
+});
+```
+
+`TugToaster` is a thin wrapper around Sonner's `Toaster` that applies tugways theming (colors from `var(--td-*)` tokens, border radius from `--td-radius-*`, enter/exit animation from [#enter-exit-transitions](#enter-exit-transitions)). `tugToast` is a thin wrapper around Sonner's `toast` function.
+
+**Toast variants:**
+- `success` — green accent (token: `--td-toast-success`)
+- `error` — red accent (token: `--td-toast-error`)
+- `warning` — yellow accent (token: `--td-toast-warning`)
+- `info` — blue accent (token: `--td-toast-info`)
+- Default — no accent color, neutral background
+
+**Auto-dismiss:** 4 seconds default. Configurable per-toast via `duration`. Hovering pauses the timer (Sonner default behavior). Error toasts use a longer duration (8 seconds) because they're more important.
+
+#### Alert System Architecture {#alert-architecture}
+
+**Host components:** Two host components render at fixed points in the tree:
+
+```
+TugApp
+  ├─ TugAlertHost          ← listens for tugAlert() requests, renders AlertDialog
+  ├─ TugToaster            ← Sonner toast container
+  └─ DeckCanvas
+       ├─ CardFrame
+       │    └─ Tugcard
+       │         ├─ TugSheetHost   ← listens for tugSheet(cardId) requests
+       │         └─ card content
+       └─ ...
+```
+
+`TugAlertHost` and `TugSheetHost` are thin React components that subscribe to an alert request store (a simple `useSyncExternalStore` pattern — matches [#d12-three-zones](#d12-three-zones)). When `tugAlert()` or `tugSheet()` is called, the request is posted to the store, the host component renders the dialog, and the Promise resolves when the user responds.
+
+**The imperative-over-declarative bridge:** `tugAlert()` and `tugSheet()` are imperative functions that return Promises, but they drive declarative React components under the hood. The pattern:
+
+1. Call `tugAlert({ title, message, buttons })`.
+2. The function creates a Promise, posts a request object to a module-level store.
+3. `TugAlertHost` re-renders, sees the pending request, renders `<AlertDialog>`.
+4. User clicks a button. The `onClick` handler resolves the Promise with the button's label and clears the request from the store.
+5. `TugAlertHost` re-renders, sees no pending request, unmounts the dialog.
+
+This is the standard React pattern for imperative-over-declarative APIs (same pattern as `react-hot-toast`, Sonner, Chakra's `useToast`).
+
+#### Mutation Zone Assignment {#dialog-zones}
+
+| Zone | What changes | Mechanism |
+|------|-------------|-----------|
+| **Appearance** | Backdrop opacity, dialog scale/fade animation, dimming of blocked content | CSS transitions + `data-state` (zero re-renders) |
+| **Local data** | Alert host's pending request state | `useSyncExternalStore` on the alert request store |
+| **Structure** | Dialog component mount/unmount, `inert` attribute on background | React conditional rendering driven by request store |
+
+#### What Concept 9 Establishes {#c09-demonstrates}
+
+1. **Four modal categories with clear scope** — app-modal, card-modal, button-confirmation, toast. Each has defined responder chain impact, focus behavior, and visual treatment. ([#d25-four-modal-categories](#d25-four-modal-categories))
+2. **Responder chain modality** — app-modal blocks the chain globally; card-modal suspends one node; confirm-popover and toast have zero chain impact. The chain is the modality mechanism, not the DOM. ([#apple-modal-model](#apple-modal-model))
+3. **Imperative API for alerts, declarative for confirmations** — `tugAlert()` and `tugSheet()` return Promises (Apple-inspired, web-adapted). `TugConfirmPopover` is a component you wrap around a button. `tugToast` is fire-and-forget. ([#tugalert](#tugalert), [#d26-confirm-popover](#d26-confirm-popover), [#tugtoast](#tugtoast))
+4. **Button-confirmation is its own category** — not a sheet, not an alert. A lightweight popover anchored to the trigger button. Snappy, not ceremonial. ([#d26-confirm-popover](#d26-confirm-popover))
+5. **All animations use concept 8's motion system** — enter/exit via `data-state` + CSS keyframes, timing from motion tokens, reduced-motion scalar applies. ([#c08-motion](#c08-motion))
 
 ### 10. Card Title Bar Enhancements {#c10-titlebar}
 
@@ -1863,3 +2088,22 @@ Key decisions:
 - **Old concept 14 absorbed** — the three-layer startup continuity approach (inline body styles, startup overlay, CSS HMR boundary) is now a subsection of concept 8 rather than a standalone concept.
 
 Concept count reduced from 14 to 13. No open items in concept 8.
+
+### Entry 13: Concept 9 Designed — Alert and Dialog System {#log-13} (2026-03-02)
+
+Designed concept 9 after researching Apple's AppKit/UIKit modal APIs in depth. The core challenge: AppKit's `runModal(for:)` blocks the calling code via a nested run loop. JavaScript can't do this. The solution: block the *responder chain*, not the thread.
+
+Researched `NSApplication.runModal(for:)`, `NSWindow.beginSheet()`, `NSAlert` (styles, buttons, presentation modes), `UIAlertController` (action styles, preferred action), `NSPopover`, SwiftUI `confirmationDialog`, Radix Dialog/AlertDialog/Popover, the native `<dialog>` element with `showModal()`, the `inert` attribute, and Sonner for toasts.
+
+Key decisions:
+
+- **[D25] Four modal categories.** TugAlert (app-modal, chain blocked), TugSheet (card-modal, card node suspended), TugConfirmPopover (button-local, no chain impact), TugToast (non-blocking, no chain impact). Each maps to a specific Apple mechanism.
+- **[D26] Button-confirmation is a popover, not a sheet or alert.** The user specified: "a simple popup graphically tied to a button that compels the user to move their mouse and click again." This is lighter than a card-modal sheet — no chain suspension, no focus trapping, no backdrop dimming. Snappy micro-interaction.
+- **Imperative API for alerts and sheets.** `tugAlert()` and `tugSheet()` return Promises, inspired by `NSAlert.runModal()` returning `ModalResponse`. The imperative API wraps declarative React components (host pattern: `TugAlertHost` at app root, `TugSheetHost` inside each Tugcard).
+- **Radix AlertDialog for app-modal** (prevents overlay-click dismissal), **scoped Dialog for card-modal** (portal targets card container, manual `inert` scoping), **Radix Popover for button confirmation** (anchored, collision-aware, transient dismiss).
+- **Button roles from `UIAlertAction.Style`**: destructive (red, never default), cancel (bold, responds to Enter/Escape), default (standard). When destructive is present, cancel is always the default — matching Apple HIG.
+- **Sonner for toasts** — already in the shadcn ecosystem. Live region accessibility, never steals focus, theme-aware via `--td-*` tokens.
+
+Card-modal scoping (TugSheet) is the most complex implementation: Radix doesn't support subtree-scoped modality natively. We diverge from Radix defaults here, applying `inert` to the card's content area only and rendering the portal inside the card container. This is justified because cards are independent workspaces — blocking the entire app for a card-level concern violates the model.
+
+No open items. Concept 9 is fully designed.
