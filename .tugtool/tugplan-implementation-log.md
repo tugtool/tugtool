@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-02T18:24:31Z
+---
+
+## step-10: Final verification step. Restored 8 archived test files per D01. Added CSP meta tag to index.html for drift test. Moved protocol.test.ts to __tests__/ and set bunfig.toml test root to scope discovery. All 119 tests pass across 9 files, tsc clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-9
 date: 2025-03-02T18:11:48Z
 ---
