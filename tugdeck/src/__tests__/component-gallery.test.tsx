@@ -254,3 +254,85 @@ describe("ComponentGallery – key pipeline with gallery focused", () => {
     expect(cyclePanelCalled).toBe(true);
   });
 });
+
+// ============================================================================
+// Step 7: Chain-action buttons in the gallery
+// ============================================================================
+
+describe("ComponentGallery – chain-action button demo section", () => {
+  it("'Cycle Panel' button is visible and enabled when DeckCanvas responder is registered", () => {
+    const managerRef = { current: null as ResponderChainManager | null };
+    const onClose = mock(() => {});
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <GalleryWrapper onClose={onClose} managerRef={managerRef} />
+      ));
+    });
+
+    // Find all buttons whose text content includes "Cycle Panel"
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const cyclePanelBtn = buttons.find((b) => b.textContent?.includes("Cycle Panel"));
+    expect(cyclePanelBtn).not.toBeUndefined();
+    // Should be enabled (no aria-disabled, no HTML disabled)
+    expect(cyclePanelBtn!.getAttribute("aria-disabled")).toBeNull();
+    expect(cyclePanelBtn!.disabled).toBe(false);
+  });
+
+  it("'nonexistentAction' button is hidden (TugButton returns null)", () => {
+    const onClose = mock(() => {});
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <GalleryWrapper onClose={onClose} />
+      ));
+    });
+
+    // No button should contain the text "Hidden (nonexistentAction)"
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const hiddenBtn = buttons.find((b) =>
+      b.textContent?.includes("Hidden") || b.textContent?.includes("nonexistentAction")
+    );
+    expect(hiddenBtn).toBeUndefined();
+  });
+
+  it("clicking 'Cycle Panel' dispatches the cyclePanel action", () => {
+    let cyclePanelCalled = false;
+
+    function TestWrapper() {
+      const { ResponderScope } = useResponder({
+        id: "deck-canvas",
+        actions: {
+          cyclePanel: () => { cyclePanelCalled = true; },
+          resetLayout: () => {},
+          showSettings: () => {},
+          showComponentGallery: () => {},
+        },
+      });
+      return (
+        <ResponderScope>
+          <ComponentGallery onClose={() => {}} />
+        </ResponderScope>
+      );
+    }
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <TestWrapper />
+        </ResponderChainProvider>
+      ));
+    });
+
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const cyclePanelBtn = buttons.find((b) => b.textContent?.includes("Cycle Panel"));
+    expect(cyclePanelBtn).not.toBeUndefined();
+
+    act(() => { fireEvent.click(cyclePanelBtn!); });
+
+    expect(cyclePanelCalled).toBe(true);
+  });
+});

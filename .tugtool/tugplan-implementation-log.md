@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-02T23:55:44Z
+---
+
+## step-7: Add Chain-Action Buttons demo section to ComponentGallery with three buttons: cyclePanel (visible/enabled), showComponentGallery (visible/enabled toggle), nonexistentAction (hidden). Demonstrates full chain-action pipeline end-to-end. Add 3 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-6
 date: 2025-03-02T23:51:02Z
 ---

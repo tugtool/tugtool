@@ -4,7 +4,9 @@
  * Phase 2: TugButton section only. Renders all subtype/variant/size combinations
  * in a grid, with interactive controls for variant, size, disabled, and loading.
  *
- * Phase 3: Registers as responder "component-gallery" via useResponder.
+ * Phase 3 (Step 6): Registers as responder "component-gallery" via useResponder.
+ * Phase 3 (Step 7): Adds "Chain-Action Buttons" demo section with cyclePanel,
+ *   showComponentGallery, and a nonexistentAction button (demonstrates hidden state).
  *   - parentId is inherited from ResponderParentContext (set by DeckCanvas's
  *     ResponderScope, so parentId = "deck-canvas").
  *   - actions: {} -- no gallery-specific actions in Phase 3; the gallery is a
@@ -241,6 +243,34 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
                   ))}
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="cg-divider" />
+
+          {/* ---- Chain-Action Buttons Section ---- */}
+          {/*
+           * Demonstrates chain-action TugButton mode (Phase 3, Step 7).
+           *
+           * - "Cycle Panel": dispatches cyclePanel (handled by DeckCanvas parent).
+           *   Visible and enabled whenever a DeckCanvas responder is in the chain.
+           * - "Toggle Gallery": dispatches showComponentGallery (handled by DeckCanvas).
+           *   Clicking it while the gallery is open will close the gallery.
+           * - nonexistentAction: canHandle returns false so TugButton returns null
+           *   (hidden) -- demonstrates the invisible-when-unhandled behavior.
+           */}
+          <div className="cg-section">
+            <div className="cg-section-title">Chain-Action Buttons</div>
+            <div className="cg-variant-row">
+              <TugButton action="cyclePanel">
+                Cycle Panel
+              </TugButton>
+              <TugButton action="showComponentGallery">
+                Toggle Gallery
+              </TugButton>
+              <TugButton action="nonexistentAction">
+                Hidden (nonexistentAction)
+              </TugButton>
             </div>
           </div>
 
