@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-02T20:07:07Z
+---
+
+## step-8: Added Theme submenu with Brio/Bluenote/Harmony items to app menu, each sending set-theme control frame via sendControl. Items always enabled.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-7
 date: 2025-03-02T20:02:08Z
 ---
