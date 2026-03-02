@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-02T17:42:15Z
+---
+
+## step-3: Deleted 9 test files exercising demolished components: canvas-overlays, card-dropdown-menu, card-frame-react, card-header-react, deck-canvas, deck-manager, dev-notification-context, dock-react, tab-bar-react
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-2
 date: 2025-03-02T17:40:09Z
 ---
