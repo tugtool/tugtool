@@ -1,0 +1,509 @@
+# Tug Implementation Log
+
+This file documents the implementation progress for this project.
+
+**Format:** Each entry records a completed step with tasks, files, and verification results.
+
+Entries are sorted newest-first.
+
+---
+
+---
+step: step-4
+date: 2025-03-01T23:25:58Z
+---
+
+## step-4: Wrapped main.tsx init in async IIFE with fetchSettingsWithRetry before DeckManager construction. DeckManager accepts optional initialLayout, applies theme to document.body before React renders. saveLayout and setTheme now POST to /api/settings. Both onResetEverything locations send null-as-delete to clear server settings.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T23:17:02Z
+---
+
+## step-3: Created settings-api.ts with ServerSettings interface, fetchSettingsWithRetry (exponential backoff, no max retries), and postSettings (fire-and-forget POST). Fixed pre-existing TS errors in tsconfig.json and deck-manager.ts to enable tsc --noEmit checkpoint.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T22:44:51Z
+---
+
+## step-2: Added get_settings and post_settings handlers with loopback check, null-as-delete merge semantics, and mutex-guarded read-modify-write. Registered /api/settings route in build_app with Extension layer. Added 7 integration tests (17 total settings tests pass).
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-2
+plan: tugplan-shared-settings.md
+date: 2026-03-01T00:01:00Z
+---
+
+## step-2 (shared-settings): Add GET/POST /api/settings handlers and route registration
+
+**Summary:** Added `get_settings` and `post_settings` axum handlers to `settings.rs`. Wired `/api/settings` route and `Extension<Arc<SettingsState>>` layer into `build_app` in `server.rs`. Added 7 integration tests covering all specified scenarios. Removed all `#[allow(dead_code)]` scaffolding from step 1.
+
+**Files changed:**
+- tugcode/crates/tugcast/src/settings.rs (added get_settings, post_settings handlers; removed dead_code allows)
+- tugcode/crates/tugcast/src/server.rs (added Extension import, Arc, SettingsState; wired /api/settings route)
+- tugcode/crates/tugcast/src/integration_tests.rs (added build_settings_test_app helper + 7 integration tests)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd tugcode && cargo nextest run -p tugcast --filter-expr 'test(settings)'`
+```
+Nextest run ID 338b13c8-5fcb-4f2b-9e9e-19b9ce39617d with nextest profile: default
+    Starting 17 tests across 1 binary (157 tests skipped)
+     Summary [   0.023s] 17 tests run: 17 passed, 157 skipped
+```
+Result: PASSED
+
+Checkpoint 2: `cd tugcode && cargo build -p tugcast` (no warnings)
+```
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.84s
+```
+Result: PASSED (zero warnings)
+
+Checkpoints 3-5 (Manual: curl tests) — deferred to user for runtime verification.
+
+---
+
+---
+step: step-1
+date: 2025-03-01T22:36:33Z
+---
+
+## step-1: Created settings.rs with DeckSettings/SettingsState structs, load_settings/save_settings with atomic writes, and 10 unit tests. Added mod settings to main.rs.
+
+**Files changed:**
+- .tugtool/tugplan-shared-settings.md
+
+---
+
+---
+step: step-1
+plan: tugplan-shared-settings.md
+date: 2026-03-01T00:00:00Z
+---
+
+## step-1 (shared-settings): Add settings.rs module with DeckSettings struct and atomic file I/O
+
+**Summary:** Created `tugcode/crates/tugcast/src/settings.rs` with `DeckSettings` struct, `SettingsState` struct, `load_settings`, `save_settings`, and `make_settings_state` helper. Added `mod settings;` to `main.rs`.
+
+**Files changed:**
+- tugcode/crates/tugcast/src/settings.rs (created)
+- tugcode/crates/tugcast/src/main.rs (added `mod settings;`)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd tugcode && cargo nextest run -p tugcast --filter-expr 'test(settings)'`
+```
+Nextest run ID 4bbbde2c-4ed9-4bfd-be95-903b42be4cc3 with nextest profile: default
+    Starting 10 tests across 1 binary (157 tests skipped)
+     Summary [   0.009s] 10 tests run: 10 passed, 157 skipped
+```
+Result: PASSED
+
+Checkpoint 2: `cd tugcode && cargo build -p tugcast` (no warnings)
+```
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+```
+Result: PASSED (zero warnings)
+
+---
+
+---
+step: step-5
+date: 2025-03-01T22:04:55Z
+---
+
+## step-5: Verification-only step: confirmed 722/722 tests pass, formatting clean, zero dead code references, all success criteria met
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T21:56:35Z
+---
+
+## step-4: Replaced all tugcode state update and --complete-remaining references with complete-checklist in implement skill documentation
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T21:48:49Z
+---
+
+## step-3: Rewrote L02 tests to use complete-checklist, added 6 new L03 tests (happy path, deferrals, idempotent, ownership, invalid JSON, state update rejected). 722 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T21:39:15Z
+---
+
+## step-2: Removed Update variant from StateCommands, run_state_update function, ChecklistUpdate enum, update_checklist method, 5 unit tests, and early-deleted integration tests that called state update
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T21:20:10Z
+---
+
+## step-1: Added CompleteChecklist variant to StateCommands enum, implemented run_state_complete_checklist with TTY-aware stdin handling, added re-export and dispatch arm
+
+**Files changed:**
+- .tugtool/tugplan-state-complete-checklist.md
+
+---
+
+---
+step: step-10
+date: 2025-03-01T18:04:07Z
+---
+
+## step-10: Final integration checkpoint: cargo fmt clean, cargo build zero warnings, 740/740 tests pass. All 5 success criteria code-complete; control action manual testing deferred to user.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-9
+date: 2025-03-01T18:00:57Z
+---
+
+## step-9: Step 9 verification-only: all 8 control action tests (4 actions x 2 modes) deferred to user for post-plan manual testing
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-8
+date: 2025-03-01T17:58:44Z
+---
+
+## step-8: Verified P->D and D->P transitions: Vite starts/stops correctly, cards render in both modes, session cookie persists across port changes
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-7
+date: 2025-03-01T17:47:43Z
+---
+
+## step-7: Verified dev mode: Vite on 55155, cards render, HMR works. Added explicit server.hmr config to vite.config.ts and NSAllowsLocalNetworking to Info.plist as defensive improvements.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-6
+date: 2025-03-01T17:35:44Z
+---
+
+## step-6: Verified diagnostic.js and ErrorBoundary are present in production bundle and correctly wired. Manual Web Inspector testing deferred to step 7.
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-5
+date: 2025-03-01T17:30:01Z
+---
+
+## step-5: Built tugdeck/dist via bun run build and manually verified production mode: cards render, no Vite process, WebSocket connected
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T17:23:47Z
+---
+
+## step-4: Updated onReady and bridgeSetDevMode to branch on devModeEnabled: production loads from tugcast port 55255, dev spawns Vite on port 55155
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T17:18:11Z
+---
+
+## step-3: Fixed origin allowlist by calling set_dev_port(None) in the DevMode disabled branch instead of set_dev_port(vite_port)
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T17:14:21Z
+---
+
+## step-2: Added ServeDir fallback to tugcast router with SPA routing for production mode static file serving from tugdeck/dist/
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T17:06:09Z
+---
+
+## step-1: Added tower-http 0.6 with fs feature to workspace and tugcast crate dependencies
+
+**Files changed:**
+- .tugtool/tugplan-frontend-rendering-fix.md
+
+---
+
+---
+step: step-8
+date: 2025-03-01T05:04:00Z
+---
+
+## step-8: Verification-only step: 740 Rust tests pass, clippy clean, Swift app builds, no stale symbol references
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-7
+date: 2025-03-01T04:55:10Z
+---
+
+## step-7: Removed lsof/kill Vite line and unused VITE_DEV_PORT variable from justfile; app now manages Vite lifecycle
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-6
+date: 2025-03-01T04:51:36Z
+---
+
+## step-6: Added killViteServer() to ProcessManager, rewrote bridgeSetDevMode to kill/respawn Vite in correct mode, wait for ready, reload WebView
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-5
+date: 2025-03-01T04:46:10Z
+---
+
+## step-5: Removed awaitingDevModeResult flag and onDevModeResult callback; onReady now always spawns Vite and loads URL from Vite port; NSAlert shown when no source tree
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-4
+date: 2025-03-01T04:39:51Z
+---
+
+## step-4: Renamed spawnViteDevServer to spawnViteServer with devMode: Bool parameter for dev vs preview mode, updated call site in AppDelegate
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-3
+date: 2025-03-01T04:35:47Z
+---
+
+## step-3: Renamed spawn_vite_dev to spawn_vite, deleted rewrite_auth_url_to_vite_port, simplified browser URL construction, made source_tree=None fatal
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-2
+date: 2025-03-01T04:29:25Z
+---
+
+## step-2: Removed Assets struct, serve_asset, content_type_for, .fallback, 8 tests, build.rs tugdeck pipeline, and rust-embed from workspace and crate deps
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-1
+date: 2025-03-01T04:21:43Z
+---
+
+## step-1: Extracted proxy config into shared proxyConfig variable, added preview.proxy block, changed emptyOutDir to true
+
+**Files changed:**
+- .tugtool/tugplan-frontend-serving-cleanup.md
+
+---
+
+---
+step: step-11
+date: 2025-03-01T02:19:24Z
+---
+
+## step-11: Final integration checkpoint: verified all automated success criteria pass — 471/471 tests, zero non-test document.createElement, addEventListener only in acceptable patterns, one createRoot, zero non-acceptable CustomEvents, CSS consolidated. Manual smoke test deferred.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-10
+date: 2025-03-01T02:02:22Z
+---
+
+## step-10: Deleted cards-chrome.css (404 lines). Created minimal chrome.css (49 lines) retaining resize handles, snap guides, sashes, and flash overlay. Migrated card-frame, card-header, and tab-bar styling to Tailwind utilities. Fixed 8 pre-existing test failures in StatsCard/FilesCard/GitCard by updating to updateMeta callback pattern. All 471 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-9
+date: 2025-03-01T01:40:40Z
+---
+
+## step-9: Eliminated td-dev-notification, td-dev-build-progress, td-dev-badge CustomEvent bridges. Wired action-dispatch.ts to push via DevNotificationRef. DeveloperCard and Dock consume via useDevNotification context. terminal-card uses useTheme hook. Created DisconnectBanner React component replacing vanilla DOM manipulation in connection.ts. Removed disconnect-banner div from index.html.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-8
+date: 2025-03-01T01:08:12Z
+---
+
+## step-8: Created SnapGuideLine, VirtualSash, and SetFlashOverlay React components. Updated DeckCanvas to render overlays from props/state. Removed createGuideLines/showGuides/hideGuides/createSashes/destroySashes/attachSashDrag/flashPanels and guideElements/sashElements from DeckManager. Added RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-7
+date: 2025-03-01T00:40:09Z
+---
+
+## step-7: Created DeckCanvas component as single React root for all chrome rendering. Removed forwardRef/useImperativeHandle from CardFrame and TabBar. Replaced card-meta-update CustomEvent with direct callbacks. Simplified ReactCardAdapter to config object. Created DevNotificationContext. Migrated docked styling to props-based approach.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-6
+date: 2025-02-28T23:48:35Z
+---
+
+## step-6: Chrome integration checkpoint. Fixed stale dynamic import in card.ts referencing deleted card-frame.ts. Verified all 5 vanilla chrome files and 5 vanilla test files deleted, no stale imports remain, full test suite passes (403/0).
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-5
+date: 2025-02-28T23:41:16Z
+---
+
+## step-5: Converted vanilla Dock class to React component using lucide-react icons, CardDropdownMenu for settings, useTheme hook for theme management. Rendered as separate React root in main.tsx. Replaced dock.css with Tailwind utilities. Deleted vanilla dock.ts, dock.test.ts, dock.css. Added new RTL tests with theme setter verification.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-4
+date: 2025-02-28T23:10:56Z
+---
+
+## step-4: Converted vanilla TabBar class to React component with forwardRef + useImperativeHandle. Updated DeckManager to create React roots per tab bar with flushSync. Implemented pointer capture drag-reorder with 5px threshold. Deleted vanilla tab-bar.ts and tests, added new RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
+---
+step: step-3
+date: 2025-02-28T23:00:51Z
+---
+
+## step-3: Converted vanilla CardFrame class to React component using forwardRef + useImperativeHandle. Updated DeckManager to create React roots per panel with flushSync. Implemented ref-based style mutation during drag/resize. Deleted vanilla card-frame.ts and tests, added new RTL tests.
+
+**Files changed:**
+- .tugtool/tugplan-react-foundation-cleanup.md
+
+---
+
