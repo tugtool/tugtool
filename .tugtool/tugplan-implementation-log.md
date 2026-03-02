@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-02T21:16:32Z
+---
+
+## step-3: Created ComponentGallery panel rendering TugButton in all subtype/variant/size combinations with interactive controls (variant/size selectors, disabled/loading toggles). Title bar with close button. Styled with var(--td-*) tokens. Added 3 render tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
 step: step-2
 date: 2025-03-02T21:10:51Z
 ---
@@ -29,6 +41,34 @@ date: 2025-03-02T21:05:45Z
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
+step: step-3
+plan: tugways-phase-2-first-component
+date: 2026-03-02T22:00:00Z
+---
+
+## step-3: Created ComponentGallery panel with TugButton showcase (full subtype/variant/size matrix) and interactive controls
+
+**Files changed:**
+- tugdeck/src/components/tugways/component-gallery.tsx (created)
+- tugdeck/src/components/tugways/component-gallery.css (created)
+- tugdeck/src/__tests__/component-gallery.test.tsx (created)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 173 pass
+ 0 fail
+ 366 expect() calls
+Ran 173 tests across 12 files. [7.72s]
+```
+PASSED
 
 ---
 
