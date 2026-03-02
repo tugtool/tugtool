@@ -1,4 +1,91 @@
-# Tugways Design System — Concepts and Roadmap
+# Tugways Design System — Concepts and Roadmap {#top}
+
+## Table of Contents {#toc}
+
+### Concept Areas
+
+| # | Concept | Status | Anchor |
+|---|---------|--------|--------|
+| 1 | Theme Architecture: Loadable Resources | DESIGNED | [#c01-theme](#c01-theme) |
+| 2 | Tugways Design System Definition | DESIGNED | [#c02-tugways](#c02-tugways) |
+| 3 | TugButton: The Test Case | DESIGNED | [#c03-tugbutton](#c03-tugbutton) |
+| 4 | The Responder Chain | DESIGNED | [#c04-responder](#c04-responder) |
+| 5 | Controlled Mutation vs. React State | DESIGNED | [#c05-mutation](#c05-mutation) |
+| 6 | Tugcard: The Common Base Component | DESIGNED | [#c06-tugcard](#c06-tugcard) |
+| 7 | Feed Abstraction | DESIGNED | [#c07-feed](#c07-feed) |
+| 8 | Skeleton and Loading States | OPEN | [#c08-skeleton](#c08-skeleton) |
+| 9 | Alert and Dialog System | OPEN | [#c09-dialog](#c09-dialog) |
+| 10 | Card Title Bar Enhancements | OPEN | [#c10-titlebar](#c10-titlebar) |
+| 11 | Dock Redesign | OPEN | [#c11-dock](#c11-dock) |
+| 12 | Keybindings View | OPEN | [#c12-keybindings](#c12-keybindings) |
+| 13 | Brio Theme Revision | OPEN | [#c13-brio](#c13-brio) |
+| 14 | UI-Flash Prevention | OPEN | [#c14-flash](#c14-flash) |
+
+### Cross-Cutting Design Decisions
+
+| ID | Decision | Defined In | Anchor |
+|----|----------|------------|--------|
+| [D01] | Theme format is CSS, not JSON | Concept 1 | [#d01-css-format](#d01-css-format) |
+| [D02] | Prefix rename `--tl-` → `--tways-` | Concept 1 | [#d02-tways-prefix](#d02-tways-prefix) |
+| [D03] | Stylesheet injection replaces body classes | Concept 1 | [#d03-stylesheet-injection](#d03-stylesheet-injection) |
+| [D04] | Optional palette entries with `var()` fallbacks | Concept 1 | [#d04-optional-palette](#d04-optional-palette) |
+| [D05] | Three component kinds: wrappers, compositions, originals | Concept 2 | [#d05-component-kinds](#d05-component-kinds) |
+| [D06] | `components/tugways/` is public, `components/ui/` is private | Concept 2 | [#d06-file-org](#d06-file-org) |
+| [D07] | Module-scope components, compose via JSX nesting | Concept 3 | [#d07-composition-model](#d07-composition-model) |
+| [D08] | Two button modes: direct-action and chain-action | Concept 3 | [#d08-button-modes](#d08-button-modes) |
+| [D09] | Responder chain operates outside React state | Concept 4 | [#d09-chain-outside-react](#d09-chain-outside-react) |
+| [D10] | Four-stage key processing pipeline | Concept 4 | [#d10-key-pipeline](#d10-key-pipeline) |
+| [D11] | Two-level action validation (`canHandle` + `validateAction`) | Concept 4 | [#d11-action-validation](#d11-action-validation) |
+| [D12] | Three-zone mutation model (appearance, local data, structure) | Concept 5 | [#d12-three-zones](#d12-three-zones) |
+| [D13] | DOM utility hooks for appearance zone | Concept 5 | [#d13-dom-hooks](#d13-dom-hooks) |
+| [D14] | Five structure-zone rules | Concept 5 | [#d14-structure-rules](#d14-structure-rules) |
+| [D15] | Tugcard is composition, not inheritance | Concept 6 | [#d15-tugcard-composition](#d15-tugcard-composition) |
+| [D16] | Hooks for data (`useTugcardData`), not render props | Concept 6 | [#d16-hooks-not-render-props](#d16-hooks-not-render-props) |
+| [D17] | Dynamic min-size based on content | Concept 6 | [#d17-dynamic-minsize](#d17-dynamic-minsize) |
+| [D18] | Clean cutover migration for all 8 cards | Concept 6 | [#d18-clean-cutover](#d18-clean-cutover) |
+| [D19] | Transport is tugcast, not a separate server | Concept 7 | [#d19-tugcast-transport](#d19-tugcast-transport) |
+| [D20] | Three accumulation patterns (snapshot, append-stream, raw stream) | Concept 7 | [#d20-accumulation-patterns](#d20-accumulation-patterns) |
+| [D21] | Interface-first: define types, mock backend, implement frontend | Concept 7 | [#d21-interface-first](#d21-interface-first) |
+| [D22] | Component inventory: TS interfaces, gallery card, design doc | Concept 3 | [#d22-component-inventory](#d22-component-inventory) |
+
+### Key Architectural Patterns
+
+| Pattern | Description | Anchor |
+|---------|-------------|--------|
+| Component containment hierarchy | How components nest: CardFrame → Tugcard → content → leaf components | [#containment-hierarchy](#containment-hierarchy) |
+| The three-zone model | Appearance (CSS, zero re-renders), Local data (targeted), Structure (subtree) | [#d12-three-zones](#d12-three-zones) |
+| Responder chain structure | Component → card content → Tugcard → DeckCanvas → TugApp | [#chain-structure](#chain-structure) |
+| Action vocabulary | ~25 standard actions across 8 categories | [#action-vocabulary](#action-vocabulary) |
+| Feed accumulation helpers | `useFeedBuffer` (ring buffer) and `useFeedStore` (indexed store) | [#accumulation-helpers](#accumulation-helpers) |
+| DOM utility hooks | `useCSSVar`, `useDOMClass`, `useDOMStyle` for appearance-zone mutations | [#d13-dom-hooks](#d13-dom-hooks) |
+| Accessibility layering | Inherit native element baseline, extend with ARIA for non-standard states | [#tugbutton-a11y](#tugbutton-a11y) |
+
+### External References
+
+| Document | Purpose |
+|----------|---------|
+| `roadmap/tug-feed.md` | Tug-feed backend architecture (hooks, correlation, schema) |
+| `roadmap/eliminate-frontend-flash.md` | UI-flash root cause analysis and three-layer fix |
+| `roadmap/tuglook-style-system-redesign.txt` | Prior art for theme system |
+| `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions |
+
+### Discussion Log
+
+| Entry | Topic | Date | Anchor |
+|-------|-------|------|--------|
+| 1 | Project Kickoff | 2026-03-01 | [#log-1](#log-1) |
+| 2 | Theme Architecture — Initial Design | 2026-03-01 | [#log-2](#log-2) |
+| 3 | Theme Architecture — Format Revised to CSS | 2026-03-01 | [#log-3](#log-3) |
+| 4 | Tugways Design System Designed | 2026-03-01 | [#log-4](#log-4) |
+| 5 | Responder Chain Drafted | 2026-03-01 | [#log-5](#log-5) |
+| 6 | Controlled Mutation Designed | 2026-03-01 | [#log-6](#log-6) |
+| 7 | Concept 5 Deepened — Specific Machinery | 2026-03-01 | [#log-7](#log-7) |
+| 8 | Excalidraw Deep Study | 2026-03-01 | [#log-8](#log-8) |
+| 9 | Tugcard Base Component Designed | 2026-03-01 | [#log-9](#log-9) |
+| 10 | Feed Abstraction + UI-Flash Prevention | 2026-03-01 | [#log-10](#log-10) |
+| 11 | TugButton Designed — Composition Model | 2026-03-02 | [#log-11](#log-11) |
+
+---
 
 ## Kickoff
 
@@ -77,7 +164,7 @@ There is also apprehension about React, since simple uses of it tend to accrete 
 
 The work breaks down into several interconnected concept areas. Each needs discussion and design before implementation. They are listed here roughly in dependency order — later items build on earlier ones.
 
-### 1. Theme Architecture: Loadable Resources
+### 1. Theme Architecture: Loadable Resources {#c01-theme}
 
 **Status: DESIGNED** (2026-03-01)
 
@@ -85,9 +172,9 @@ The work breaks down into several interconnected concept areas. Each needs discu
 
 #### Decisions
 
-**Prefix rename: `--tl-` → `--tways-`.** The old `--tl-` prefix (from "tuglook") is renamed to `--tways-` (for "tugways"). This avoids any potential conflict with Tailwind's `--tw-` internal prefix, and there's no reason the prefix needs to be two letters. `--tways-` is distinctive and self-documenting. The semantic tier keeps its `--td-` prefix (for "tugdeck" — the application's purpose-driven mappings, distinct from the design system's palette).
+**Prefix rename: `--tl-` → `--tways-`.** {#d02-tways-prefix} The old `--tl-` prefix (from "tuglook") is renamed to `--tways-` (for "tugways"). This avoids any potential conflict with Tailwind's `--tw-` internal prefix, and there's no reason the prefix needs to be two letters. `--tways-` is distinctive and self-documenting. The semantic tier keeps its `--td-` prefix (for "tugdeck" — the application's purpose-driven mappings, distinct from the design system's palette).
 
-**Format: CSS.** A theme file is a CSS file containing custom property declarations — because that's literally what theme values are. CSS custom properties can hold any CSS value natively: colors, shadows, gradients, complex expressions. No translation, no escaping, no special cases. A structured comment header provides metadata (name, description).
+**Format: CSS.** {#d01-css-format} A theme file is a CSS file containing custom property declarations — because that's literally what theme values are. CSS custom properties can hold any CSS value natively: colors, shadows, gradients, complex expressions. No translation, no escaping, no special cases. A structured comment header provides metadata (name, description).
 
 Example theme file (`bluenote.css`):
 ```css
@@ -148,13 +235,13 @@ Theme files contain palette values (including complex CSS values like shadows an
 
 **Themes specify palette only.** Theme files contain only Tier 1 palette values (`--tways-*`). The Tier 2 semantic layer (`--td-*: var(--tways-*)`) and the Tier 3 component layer remain in `tokens.css` as permanent `var()` references — they derive automatically when palette values change. This eliminates the current duplication where Bluenote and Harmony each redundantly specify ~80 values.
 
-**Optional palette entries for per-theme semantic overrides.** Some tokens like `canvas`, `header-active`, `header-inactive`, `icon-active`, and `grid-color` currently vary per theme but are semantic-tier, not palette. The solution: make them optional palette entries (`--tways-canvas`, `--tways-header-active`, etc.) that themes can specify if they want to diverge from the default derivation. The semantic tier derives them from other palette values by default (e.g., `--td-canvas: var(--tways-canvas, var(--tways-bg))`). No special mechanism — just CSS `var()` with fallback.
+**Optional palette entries for per-theme semantic overrides.** {#d04-optional-palette} Some tokens like `canvas`, `header-active`, `header-inactive`, `icon-active`, and `grid-color` currently vary per theme but are semantic-tier, not palette. The solution: make them optional palette entries (`--tways-canvas`, `--tways-header-active`, etc.) that themes can specify if they want to diverge from the default derivation. The semantic tier derives them from other palette values by default (e.g., `--td-canvas: var(--tways-canvas, var(--tways-bg))`). No special mechanism — just CSS `var()` with fallback.
 
 **Brio is the blessed default.** Brio's palette values are defined in `tokens.css` as CSS defaults on `body`. When applying a different theme, the theme's CSS overrides palette properties. Missing keys automatically fall back to Brio because the CSS defaults were never overridden.
 
 **Tailwind interaction: works unchanged.** The full chain is: Tailwind utility class (e.g. `bg-primary`) → `@theme` var in `globals.css` (`--color-primary: var(--primary)`) → legacy alias in `tokens.css` (`--primary: var(--td-accent)`) → semantic token (`--td-accent: var(--tways-accent)`) → palette value. Changing palette values at runtime cascades through the entire chain. Tailwind generates utility classes at build time referencing CSS variables; the variables resolve at runtime. No Tailwind involvement in theme switching.
 
-#### Theme Application Mechanism
+#### Theme Application Mechanism {#d03-stylesheet-injection}
 
 Replace the current body-class approach with stylesheet injection:
 
@@ -185,7 +272,7 @@ Replace the current body-class approach with stylesheet injection:
 
 When loading a theme (bundled or external), validate against Brio's palette as the canonical key set. For each key in Brio that is missing from the loaded theme, the Brio CSS default persists — no explicit fallback code needed. For external themes in the future, we may want to log warnings for missing keys.
 
-### 2. Tugways: The Design System
+### 2. Tugways: The Design System {#c02-tugways}
 
 **Status: DESIGNED** (2026-03-01)
 
@@ -209,7 +296,7 @@ When loading a theme (bundled or external), validate against Brio's palette as t
 
 **Tugways components carry strong opinions.** shadcn's variant model (primary/secondary/danger/ghost) is a starting point, not the final vocabulary. Tugways components define their own variant sets that reflect the actual needs of the app — including subtypes, states, and semantic color mappings. The variants should cover the full range of what the component needs to express, not just what shadcn happens to offer.
 
-**Three kinds of tugways components:**
+**Three kinds of tugways components:** {#d05-component-kinds}
 
 1. **Wrappers** — a shadcn primitive wrapped with tugways opinions. The shadcn component is the internal implementation; the Tug component is the public API. Examples: TugButton (wraps Button), TugInput (wraps Input), TugSelect (wraps Select).
 
@@ -230,7 +317,7 @@ components/
     ...
 ```
 
-**The rule: app code imports from `components/tugways/`, never from `components/ui/`.** The `ui/` directory is kept as-is (for easy shadcn updates) but is consumed only by tugways wrappers. This gives us the best of both worlds: shadcn's accessible primitives and Radix behavior under the hood, with our own opinions, subtypes, and conventions on top. We don't reinvent — we customize. And when we need something shadcn doesn't offer, we build it as an original.
+**The rule: app code imports from `components/tugways/`, never from `components/ui/`.** {#d06-file-org} The `ui/` directory is kept as-is (for easy shadcn updates) but is consumed only by tugways wrappers. This gives us the best of both worlds: shadcn's accessible primitives and Radix behavior under the hood, with our own opinions, subtypes, and conventions on top. We don't reinvent — we customize. And when we need something shadcn doesn't offer, we build it as an original.
 
 #### Component Priority
 
@@ -262,21 +349,225 @@ Single component with a subtype prop is the default approach. For example, `<Tug
 
 The `components/tugways/` directory is the inventory. If a `Tug`-prefixed component file exists, it's wrapped. If it doesn't, it's still raw. No manifest file needed.
 
-### 3. TugButton: The Test Case
+### 3. TugButton: The Test Case {#c03-tugbutton}
 
-**The problem.** We need a concrete first component to establish the pattern for all tugways components.
+**Status: DESIGNED** (2026-03-02)
 
-**What TugButton needs to demonstrate:**
-- How a tugways component wraps a shadcn primitive
-- How it connects to the theme system (responds to theme changes without re-rendering)
-- How it participates in the responder chain (see below)
-- How it handles focus, keyboard interaction, accessibility
-- How its variants are defined and selected
-- How it's documented and inventoried
+**The problem.** We need a concrete first component to establish the pattern for all tugways components. But a button never exists in isolation — it's always inside a card, a toolbar, a dialog, a section. Before we can design TugButton, we need to answer: **how does the component containment hierarchy work?**
 
-**Design exercise:** Take shadcn's `Button` component (which uses CVA for variant management) and design the `TugButton` wrapper. What does the wrapper add? What does it restrict? What API does it expose?
+#### The Composition Model {#d07-composition-model}
 
-### 4. The Responder Chain
+The rule from concept 5 ([#d14-structure-rules](#d14-structure-rules)) says "never define components inside components." This means:
+
+```tsx
+// WRONG — defines a new component function inside another component.
+// Creates a brand-new component identity on every render.
+// React unmounts and remounts it each time. State is lost. DOM is rebuilt.
+function SettingsContent() {
+  const ThemeRow = () => <div>...</div>;
+  return <ThemeRow />;
+}
+```
+
+This does **not** mean you can't *use* components inside other components. That's literally what React is — composition through nesting. Every tugways component is a standalone function defined at module scope (in its own file). You compose them by importing and nesting JSX:
+
+```tsx
+// RIGHT — every component is a module-scope definition
+
+// tug-button.tsx
+export function TugButton({ subtype, onClick, children }) { ... }
+
+// theme-section.tsx
+import { TugButton } from "../tugways/tug-button";
+export function ThemeSection() {
+  return (
+    <div>
+      <TugButton subtype="push" onClick={applyBrio}>Brio</TugButton>
+      <TugButton subtype="push" onClick={applyBluenote}>Bluenote</TugButton>
+    </div>
+  );
+}
+
+// settings-content.tsx
+import { ThemeSection } from "./theme-section";
+import { SourceTreeSection } from "./source-tree-section";
+export function SettingsContent() {
+  return (
+    <div>
+      <ThemeSection />
+      <SourceTreeSection />
+    </div>
+  );
+}
+```
+
+#### The Containment Hierarchy {#containment-hierarchy}
+
+The full component tree for a card with buttons, showing how concepts 3, 4, 5, and 6 connect:
+
+```
+CardFrame                          ← pixel position, size, drag, resize (concept 6)
+  └─ Tugcard                       ← chrome, responder node, feed, loading/error (concept 6)
+       ├─ CardHeader               ← title bar — internal to Tugcard
+       ├─ Accessory slot           ← find bar, etc.
+       └─ SettingsContent          ← the unique card content
+            ├─ ThemeSection
+            │    ├─ TugButton "Brio"
+            │    ├─ TugButton "Bluenote"
+            │    └─ TugButton "Harmony"
+            ├─ SourceTreeSection
+            │    └─ TugButton "Choose..."
+            └─ DeveloperSection
+                 └─ TugSwitch
+```
+
+Every box in that tree is a separate module-level component. There is no tight coupling between layers. They connect through three ambient mechanisms:
+
+1. **CSS custom properties** — theme flows through the DOM, not through React props. TugButton's colors come from `var(--td-*)` tokens. Theme changes update the tokens via stylesheet injection ([#c01-theme](#c01-theme)); TugButton picks up the new values at paint time. Zero re-renders.
+
+2. **React context** — the responder chain ([#c04-responder](#c04-responder)) is provided via nested context. Any component anywhere in the tree can participate by calling `useResponder`. TugButton doesn't need to know it's inside a Tugcard — it finds the nearest chain node automatically.
+
+3. **Props and callbacks** — standard React data flow. `onClick`, `subtype`, `disabled`, `children`. Nothing exotic.
+
+The principle: **components are standalone pieces defined at module scope. You snap them together by nesting JSX. The responder chain, theme system, and mutation model are ambient infrastructure that any component can tap into without knowing the specific tree it lives in.**
+
+#### Two Button Modes {#d08-button-modes}
+
+TugButton has two modes of operation:
+
+**Direct-action buttons** — they have an `onClick` handler and just do their thing. The responder chain is not involved. Most buttons are this type:
+
+```tsx
+// Direct-action — no chain involvement
+<TugButton subtype="push" onClick={() => clearScrollback()}>
+  Clear
+</TugButton>
+```
+
+**Chain-action buttons** — they dispatch an action into the responder chain ([#action-vocabulary](#action-vocabulary)). The button doesn't know *who* handles the action — it dispatches, and the chain routes. These buttons need the chain for two things: *validation* (should I be enabled?) and *dispatch* (fire the action when clicked).
+
+```tsx
+// Chain-action — queries the chain for validation, dispatches on click
+<TugButton subtype="push" action="find">
+  Find
+</TugButton>
+```
+
+For chain-action buttons, TugButton internally calls `validateAction("find")` from the responder chain to determine if it should be enabled or disabled. This mirrors Apple's `NSMenuItem` — menu items validate themselves against the responder chain before drawing ([#d11-action-validation](#d11-action-validation)). When clicked, TugButton dispatches `"find"` into the chain, and whoever handles it (the focused card's text content, presumably) responds.
+
+A chain-action button is *visible* if someone in the chain can handle the action (`canHandle`), and *enabled* if that handler says it's currently valid (`validateAction`). For example, a "Copy" button is visible whenever a text-bearing card is focused, but only enabled when text is selected.
+
+#### Mutation Zone Assignment {#tugbutton-zones}
+
+TugButton maps to all three zones from concept 5 ([#d12-three-zones](#d12-three-zones)):
+
+**Appearance zone (zero re-renders):**
+- Hover, focus ring, active/pressed states — all CSS pseudo-classes (`:hover`, `:focus-visible`, `:active`). No React state.
+- Theme colors from `var(--td-*)` tokens. Theme changes flow through CSS variables — zero re-renders.
+- Disabled visual state (opacity, cursor) — CSS class toggled based on the `disabled` prop or chain validation.
+
+**Local data zone (targeted re-renders):**
+- For chain-action buttons, the enabled/disabled state comes from responder chain validation. The chain is an external store; TugButton subscribes to its validation result for the specific action via `useSyncExternalStore`. Only this button re-renders when its validation state changes — not the entire toolbar, not the card, not the deck.
+
+**Structure zone (subtree re-renders):**
+- Whether the button exists at all is determined by its parent's React state. The parent conditionally renders `<TugButton>` or not.
+
+#### TugButton API
+
+```tsx
+interface TugButtonProps {
+  subtype?: "push" | "icon" | "icon-text" | "three-state";  // default: "push"
+  variant?: "primary" | "secondary" | "ghost" | "destructive";  // default: "secondary"
+  size?: "sm" | "md" | "lg";  // default: "md"
+
+  // Direct-action mode
+  onClick?: () => void;
+
+  // Chain-action mode (mutually exclusive with onClick)
+  action?: string;  // action name from the vocabulary (#action-vocabulary)
+
+  // Standard
+  disabled?: boolean;  // overrides chain validation if set explicitly
+  loading?: boolean;   // shows spinner, disables interaction
+  children?: React.ReactNode;
+
+  // Icon support
+  icon?: React.ReactNode;  // Lucide icon for "icon" and "icon-text" subtypes
+
+  // Three-state support
+  state?: "on" | "off" | "mixed";  // for "three-state" subtype
+  onStateChange?: (state: "on" | "off") => void;
+}
+```
+
+#### What the Wrapper Adds Over shadcn Button
+
+shadcn's `Button` provides: Radix slot support, CVA variant management (`variant`, `size`), basic styles, `asChild` prop, `ref` forwarding.
+
+TugButton adds:
+
+1. **Subtypes** — `push`, `icon`, `icon-text`, `three-state`. shadcn has no concept of button subtypes. Each subtype adjusts layout (icon-only has square aspect ratio, icon-text has icon + label layout, three-state toggles through on/off/mixed).
+2. **Chain-action mode** — the `action` prop connects the button to the responder chain for validation and dispatch. shadcn has no event system integration.
+3. **Loading state** — a `loading` prop that shows a spinner overlay and disables interaction. shadcn has no loading state.
+4. **Theme-responsive colors** — variant colors reference `var(--td-*)` semantic tokens, not hardcoded Tailwind classes. Theme switches are free.
+5. **Restricted API** — shadcn's `asChild` and some variants are not exposed. TugButton's API is opinionated — it expresses what tugdeck needs, not every possible button variation.
+
+#### Focus, Keyboard, and Accessibility {#tugbutton-a11y}
+
+TugButton renders a native `<button>` element (via shadcn's `Button`). This gives us the browser's built-in accessibility baseline for free: focusable via Tab, activates on Enter and Space, announced as "button" by screen readers, and participates in the accessibility tree without extra work. TugButton's job is to *not break* any of that, and to extend it for the subtypes and modes that go beyond a plain button.
+
+**What the native `<button>` provides (inherited, not reimplemented):**
+- Tab/Shift+Tab focus navigation
+- Enter and Space to activate
+- `role="button"` implicit in the element
+- `disabled` attribute prevents focus and interaction
+- Focus ring via `:focus-visible` (styled by shadcn's `focus-visible:ring-2`)
+
+**What TugButton adds:**
+
+| Concern | Subtype / Mode | Implementation |
+|---------|---------------|----------------|
+| `aria-pressed` | `three-state` | Set to `"true"`, `"false"`, or `"mixed"` matching the `state` prop. Screen readers announce "toggle button, pressed/not pressed/mixed." |
+| `aria-label` | `icon` (no visible text) | Required when `children` is absent. Icon-only buttons have no visible label; `aria-label` provides the accessible name. TugButton warns in dev mode if an `icon` subtype has neither `children` nor `aria-label`. |
+| `aria-disabled` vs `disabled` | chain-action | When a chain-action button is disabled by validation (not by an explicit `disabled` prop), use `aria-disabled="true"` instead of the HTML `disabled` attribute. This keeps the button in the tab order so keyboard users can discover it, while preventing activation. The visual disabled treatment (opacity, cursor) is applied via CSS class, not the attribute. |
+| Loading announcement | all (when `loading`) | When `loading` is true, add `aria-busy="true"` and an `aria-label` suffix like "Loading" so screen readers don't just see a spinner. |
+
+**Keyboard interaction beyond activation:**
+- **Three-state buttons** — Space toggles between on and off (skipping mixed — mixed is a programmatic state, not a user-toggled one). This matches the WAI-ARIA tri-state checkbox pattern.
+- **Chain-action buttons** — Enter/Space dispatches the action into the responder chain, same as `onClick` for direct-action buttons. No additional keyboard behavior.
+- **Icon-text and push** — standard button behavior. No custom key handling.
+
+**Focus and the responder chain:**
+A TugButton does not register itself as a responder node. Buttons are leaf controls — they activate actions but don't *handle* routed actions. The responder chain operates at a higher level (card content, Tugcard, DeckCanvas). When a TugButton has DOM focus and the user presses a key that isn't Enter/Space, the key event bubbles up through the DOM and reaches the responder chain's key listener, which routes it through the chain as usual. TugButton doesn't intercept or consume arbitrary keys.
+
+#### Component Inventory and Documentation {#d22-component-inventory}
+
+Every tugways component must be discoverable, visually demonstrable, and API-documented. Without a catalog, components get reinvented, variants drift, and the design system exists only in the heads of whoever wrote it.
+
+**The inventory approach — three layers:**
+
+1. **TypeScript interfaces are the API reference.** The `TugButtonProps` interface (and its equivalents for every tugways component) is the canonical documentation of what a component accepts. Type comments document semantics — e.g., "mutually exclusive with onClick" for the `action` prop. No separate API doc is generated; the types *are* the docs. IDE tooling (hover, autocomplete) makes these instantly accessible to developers writing card content.
+
+2. **A component gallery card in tugdeck.** Tugdeck is a card-based dashboard — the natural place to showcase components is a card. A `ComponentGalleryCard` renders every tugways component in all its subtype/variant/state combinations, live, inside the running app. This is the visual inventory: you open the card and see every button subtype, every variant, every size, in both enabled and disabled states, in the current theme. Theme switches update the gallery in real time. This dogfoods the theme system and composition model — the gallery card is itself built from tugways components.
+
+3. **A components manifest in the design document.** This document (design-system-concepts.md) serves as the architectural inventory. Each concept section that defines a component includes: the props interface, subtype/variant matrix, mutation zone assignment, accessibility notes, and the pattern it demonstrates. The TOC's concept list ([#concepts](#concepts)) is the master index.
+
+**What we explicitly skip:** Storybook. It's a heavyweight tool designed for teams sharing a component library across multiple apps. Tugdeck is one app with one frontend. The component gallery card gives us the same visual browsing experience without the build infrastructure, and it runs in the actual app context (themes, responder chain, WebSocket connection) rather than an isolated sandbox.
+
+#### What TugButton Demonstrates for All Tugways Components
+
+TugButton establishes the pattern every tugways component follows:
+
+1. **Module-scope definition** in `components/tugways/tug-button.tsx`. Imported by app code. Never defined inline.
+2. **Wraps shadcn** internally — the `<Button>` from `components/ui/button` is the implementation. TugButton is the public API.
+3. **Theme via CSS variables** — appearance-zone only. No React state for visual theming.
+4. **Responder chain via context** — chain-action mode for components that dispatch or validate actions. Most components will have a direct-action mode only; chain-action is for toolbar/menu scenarios.
+5. **Mutation zones are explicit** — appearance (CSS), local data (chain validation subscription), structure (conditional rendering by parent). Documented for each component.
+6. **Subtypes via prop** — a single component handles a family of related controls. Break into separate components only when the single-component API becomes unwieldy.
+7. **Accessibility layered on the native element** — inherit the browser baseline, add ARIA attributes for non-standard states (`aria-pressed`, `aria-disabled`, `aria-busy`), warn in dev when accessible names are missing ([#tugbutton-a11y](#tugbutton-a11y)).
+8. **Inventoried in three places** — TypeScript interface (API), component gallery card (visual), design document (architectural). Every tugways component gets the same treatment ([#d22-component-inventory](#d22-component-inventory)).
+
+### 4. The Responder Chain {#c04-responder}
 
 **This is the architectural keystone.** Get this right and everything else — keyboard handling, focus management, action dispatch, theme response — falls into place. Get it wrong and we build the same ad-hoc wiring mess we're trying to escape.
 
@@ -312,7 +603,7 @@ This separation into stages is crucial. Global shortcuts take priority over card
 
 **Menu/action validation** — the chain is queried lazily (when a menu opens, not continuously). Each responder answers "can I handle this action?" and "should it be enabled right now?" This decouples controls from handlers completely.
 
-#### How This Maps to Tugdeck
+#### How This Maps to Tugdeck {#chain-structure}
 
 **The chain structure for tugdeck:**
 ```
@@ -332,7 +623,7 @@ Each level in the chain corresponds to a real architectural boundary:
 
 **First responder = focused card.** Tugdeck has one focused card at a time. That card's chain is the active chain for key events and actions. The card's internal components form the bottom of the chain; the card itself is in the middle; the app is at the top.
 
-**Key processing pipeline for tugdeck** (adapted from Apple's four stages):
+**Key processing pipeline for tugdeck** {#d10-key-pipeline} (adapted from Apple's four stages):
 
 | Stage | Scope | Examples | Direction |
 |-------|-------|----------|-----------|
@@ -351,7 +642,7 @@ Each level in the chain corresponds to a real architectural boundary:
 - A card with searchable text would say yes; a terminal card might say no.
 - This drives enabling/disabling of dock buttons and menu items dynamically.
 
-#### Implementation Approach
+#### Implementation Approach {#d09-chain-outside-react}
 
 **The chain operates outside React state.** This is the critical design decision. The responder chain is an imperative system — components register and unregister, actions are dispatched and handled, first responder status is acquired and resigned — all without triggering React re-renders.
 
@@ -395,7 +686,7 @@ The manager tracks which card is first responder and starts chain traversal from
 
 **Focus model: the responder chain is the focus model.** The deck-manager informs the responder chain when card focus changes (via `makeFirstResponder`), but the responder chain is the single authority on focus. There is no separate focus system.
 
-#### Action Vocabulary
+#### Action Vocabulary {#action-vocabulary}
 
 The action vocabulary is a defined set of action names, organized by category. Actions are strings (not an enum) to allow card-specific extensions, but the standard set is documented here. Modeled on Apple's NSResponder/UIResponder standard actions, filtered to what tugdeck actually needs.
 
@@ -471,13 +762,13 @@ This vocabulary will grow as we build out the app. The key principle from Apple:
 
 **Keybinding map: deferred to concept 12.** The responder chain only knows about actions, not keys. Adding keybindings later that dispatch actions into the chain can be done without changing the chain architecture.
 
-**Action validation: two-level, following Apple's model.** Adopt Apple's battle-tested two-level validation:
+**Action validation: two-level, following Apple's model.** {#d11-action-validation} Adopt Apple's battle-tested two-level validation:
 1. **`canHandle(action)`** — capability query. "Does any responder in the chain implement this action?" Returns boolean. Analogous to `responds(to:)`.
 2. **`validateAction(action)`** — enabled-state query. "I implement this action, but is it currently available?" Returns boolean (or could return metadata). Analogous to `validateMenuItem:`. Called on the responder that `canHandle` found.
 
 This drives dynamic UI: a dock button or menu item is *visible* if someone in the chain can handle the action, and *enabled* if that handler says it's currently valid. For example, `copy` is visible whenever a text-bearing card is focused, but only enabled when text is selected.
 
-### 5. Controlled Mutation vs. React State
+### 5. Controlled Mutation vs. React State {#c05-mutation}
 
 **Status: DESIGNED** (2026-03-01)
 
@@ -496,7 +787,7 @@ But we've already been designing systems that operate outside React state:
 
 The pattern is already clear. The principle is: use React for what it's good at (rendering UI from data), and use the DOM directly for what React isn't needed for (visual state that the browser handles natively via CSS).
 
-#### Three Zones of Change
+#### Three Zones of Change {#d12-three-zones}
 
 Every change in the app falls into one of three zones. Each zone has a different mechanism and a different re-render profile:
 
@@ -579,7 +870,7 @@ When a developer adds a new feature to tugdeck, the question is never "should I 
 
 The three-zone model makes the answer mechanical, not a judgment call. And critically: **the appearance zone — the biggest source of cascade re-renders in typical React apps — never touches React at all.**
 
-#### Specific Machinery for Each Zone
+#### Specific Machinery for Each Zone {#d13-dom-hooks}
 
 **Appearance Zone — the DOM utility layer.** We need a small set of hooks that make it ergonomic to do CSS/DOM mutations from React components without reaching for `useState`. These are thin wrappers around `ref.current.style.setProperty()` and `ref.current.classList.toggle()`, but having them as *named patterns* prevents developers from accidentally using React state instead:
 
@@ -677,7 +968,7 @@ function useFeed(feedId) {
 
 **Whether to use a library (Zustand, Jotai) or raw `useSyncExternalStore`:** For the feed store, raw `useSyncExternalStore` is sufficient — the pattern is simple (per-card subscription by feed ID). If we find ourselves building more complex shared state (undo/redo stacks, multi-card coordination), Zustand or Jotai would reduce boilerplate. Jotai's atomic model (each atom is its own store) is particularly clean for per-card independence. Decision: **start raw, adopt a library if/when the complexity warrants it.**
 
-**Structure Zone — React state with discipline.** This is standard React, but with rules to prevent cascade:
+**Structure Zone — React state with discipline.** {#d14-structure-rules} This is standard React, but with rules to prevent cascade:
 
 *Rule 1: State lives at the lowest common ancestor, not higher.* The deck canvas owns "which cards are open" state. A card owns its own tab state. A form owns its input values. Never lift state to a parent that doesn't need it for rendering.
 
@@ -801,7 +1092,7 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 
 4. **Don't underutilize your atomic state library.** Excalidraw's Jotai integration is minimal (two tiny files). Most state lives in the class component's `this.state`. They acknowledged this should expand. We should be intentional from the start about what goes in external stores vs. React state, rather than defaulting everything to React and migrating later.
 
-### 6. Tugcard: The Common Base Component
+### 6. Tugcard: The Common Base Component {#c06-tugcard}
 
 **The problem.** Each card is a standalone React component that implements `TugCard` via `ReactCardAdapter`. There is no shared behavior beyond what `CardContext` provides. Every card independently handles its own layout, loading state, error state, feed data decoding, and metadata management. Eight cards, eight ad-hoc implementations of the same concerns.
 
@@ -815,7 +1106,7 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 - Responder chain integration (concept 4) — the card is a responder that manages its child responders
 - Feed subscription and data decoding (standardized, not per-card ad-hoc)
 
-#### Composition, Not Inheritance
+#### Composition, Not Inheritance {#d15-tugcard-composition}
 
 React idiom strongly favors composition, and so do we. Tugcard is a wrapper component. Card authors compose their content into it:
 
@@ -825,7 +1116,7 @@ React idiom strongly favors composition, and so do we. Tugcard is a wrapper comp
 </Tugcard>
 ```
 
-Tugcard owns the chrome, the responder chain node, the feed subscription, and the loading/error states. The child component receives feed data via a `useTugcardData()` hook — not a render prop. Tugcard gates the child's mount: children don't render until feed data arrives, so the hook always returns populated data, never null. This follows the Excalidraw precedent — hooks for data access, parent handles gating logic.
+Tugcard owns the chrome, the responder chain node, the feed subscription, and the loading/error states. The child component receives feed data via a `useTugcardData()` hook — not a render prop. {#d16-hooks-not-render-props} Tugcard gates the child's mount: children don't render until feed data arrives, so the hook always returns populated data, never null. This follows the Excalidraw precedent — hooks for data access, parent handles gating logic.
 
 ```tsx
 // Inside GitCardContent — useTugcardData() is always populated because
@@ -854,7 +1145,7 @@ The existing CardHeader stays conceptually — Tugcard renders the title bar int
 
 This is a new component, a clean break from the previous card-frame/card-header pattern. When implementation begins, all 8 existing cards migrate at once. None of them do important work yet — they're sketches. We eliminate old patterns immediately rather than maintaining two systems.
 
-#### Dynamic Min-Size
+#### Dynamic Min-Size {#d17-dynamic-minsize}
 
 All card controls must be visible. Cards only ever scroll for content, and even then the scroll container's frame must be visible — just not its full content bounds. The min-size is dynamic, content-based:
 
@@ -952,11 +1243,11 @@ interface TugcardProps {
 }
 ```
 
-#### Migration: Clean Cutover
+#### Migration: Clean Cutover {#d18-clean-cutover}
 
 All 8 existing cards (Conversation, Terminal, Git, Files, Stats, Settings, Developer, About) migrate to Tugcard at once. These cards are sketches, not production features. We eliminate `ReactCardAdapter`, `CardContextProvider`, `useCardMeta`, and the per-card `useFeed` + decode pattern in a single pass. One system, not two.
 
-### 7. Feed Abstraction
+### 7. Feed Abstraction {#c07-feed}
 
 **The problem.** Two distinct feed systems need design: (a) the **per-card data feed** — each card receives raw `Uint8Array` data via `useFeed()` and decodes it independently with no shared model; and (b) the **tug-feed** — a structured, real-time progress stream reporting what skills and agents are doing as they run.
 
@@ -1014,7 +1305,7 @@ The three-zone model (concept 5) applied to the feed-progress card:
 - **Local data zone (targeted re-renders):** The feed event stream itself. A `FeedEventStore` (external mutable store, subscribed via `useSyncExternalStore`) accumulates events and exposes them by step. When a new `step_started` event arrives, only the step-list component re-renders to add the new row. When a `file_modified` event arrives, only the file-list component for that step re-renders.
 - **Structure zone (subtree re-renders):** Card mount/unmount, expanding/collapsing step detail sections, switching between summary and detail views.
 
-#### Transport: Tugcast
+#### Transport: Tugcast {#d19-tugcast-transport}
 
 Tug-feed events reach the browser through **tugcast** — the existing WebSocket server that already bridges all data feeds to tugdeck. No new transport infrastructure.
 
@@ -1028,7 +1319,7 @@ Tugcast's binary framing protocol (`[1-byte FeedId][4-byte length][payload]`) ca
 
 This makes the feed-progress card "just another Tugcard with a feedId." It benefits from tugcast's existing authentication, heartbeat, reconnection with bootstrap, and per-client state management. The tugcast `StreamFeed` trait's `broadcast` channel ensures every connected client receives every event in order, with the `BOOTSTRAP` state machine handling reconnection (re-sending recent events if a client lags).
 
-#### The Live-Tail Pattern and Accumulation
+#### The Live-Tail Pattern and Accumulation {#d20-accumulation-patterns}
 
 The feed-progress card is a live-tail viewer — events append, the view updates in place. This differs from snapshot cards (Git, Stats) that receive a latest-state replacement on each frame.
 
@@ -1042,7 +1333,7 @@ Looking at the existing cards, three accumulation patterns emerge:
 
 Accumulation is card-specific, but we should provide common support for the append-stream pattern since multiple cards use it. Two helpers:
 
-**`useFeedBuffer<T>(options)`** — a hook that maintains a capped ring buffer of decoded events. Cards that just need "recent N events in order" use this directly:
+**`useFeedBuffer<T>(options)`** {#accumulation-helpers} — a hook that maintains a capped ring buffer of decoded events. Cards that just need "recent N events in order" use this directly:
 
 ```tsx
 function FilesCardContent() {
@@ -1081,7 +1372,7 @@ Looking at all 8 existing cards through the lens of Tugcard's `feedIds`/`decode`
 
 **Conclusion: Tugcard's mechanism is sufficient.** The `feedIds`/`decode`/`useTugcardData()` pattern handles subscription and deserialization for all card types. The two accumulation helpers (`useFeedBuffer` for simple cases, `useFeedStore` for structured indexing) handle the append-stream pattern. No additional `TugFeed` abstraction is needed.
 
-#### Interface-First, Mock the Backend
+#### Interface-First, Mock the Backend {#d21-interface-first}
 
 Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13 event types from tug-feed.md Layer 3, the `FeedId.TUG_FEED` constant, and the `FeedEventStore` that indexes events by step/phase. Implement the frontend feed-progress card against these interfaces with mock data. The backend (hooks, correlation, tugcast feed implementation) comes online later at a time of our choosing.
 
@@ -1102,7 +1393,7 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - **Event batching:** Should tugcast batch multiple tug-feed events into a single WebSocket frame (JSON array), or send one frame per event? One-per-frame is simpler and matches the existing pattern. Batching reduces frame count during bursts but adds parsing complexity.
 - **`useFeedBuffer` cap policy:** When the buffer is full, drop oldest (ring buffer)? Or stop accepting? Ring buffer is the obvious default, but the conversation card may want different behavior (keep all messages, paginate).
 
-### 8. Skeleton and Loading States
+### 8. Skeleton and Loading States {#c08-skeleton}
 
 **The problem.** When a card first appears or loses its data connection, there's no standard way to show a "loading" or "empty" state. Some cards show nothing; some show stale data.
 
@@ -1112,7 +1403,7 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - Transition from skeleton → content that is smooth, not jarring
 - Error states: "failed to load", "disconnected", "no data yet"
 
-### 9. Alert and Dialog System
+### 9. Alert and Dialog System {#c09-dialog}
 
 **The problem.** We need three levels of modal interaction:
 - **App-modal:** blocks the entire application (e.g., critical error, unsaved changes confirmation)
@@ -1125,7 +1416,7 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - What is the API? `showAppModal(content)`, `card.showModal(content)`, `showNotification(content)`?
 - Does the close-confirmation for cards (feature list item) use the card-modal system, or is it simpler (a dropdown attached to the close button)?
 
-### 10. Card Title Bar Enhancements
+### 10. Card Title Bar Enhancements {#c10-titlebar}
 
 **The problem.** Several feature list items target the card title bar:
 - Add minimize/window-shade control (up/down chevron)
@@ -1137,7 +1428,7 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - How does minimized state persist? In the card's state? In the layout engine?
 - What triggers the close confirmation? Always? Only for cards with unsaved state? Only for closable cards?
 
-### 11. Dock Redesign
+### 11. Dock Redesign {#c11-dock}
 
 **The problem.** The dock needs command buttons (not just card-toggle buttons) and popout menu buttons.
 
@@ -1147,7 +1438,7 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - How does the dock interact with the responder chain? Is the dock a responder?
 - Should the dock be customizable (user can add/remove/reorder buttons)?
 
-### 12. Keybindings View
+### 12. Keybindings View {#c12-keybindings}
 
 **The problem.** Currently the only keyboard shortcut is `Control+\` for panel cycling. We need a view to display and configure keybindings.
 
@@ -1157,13 +1448,13 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - How do keybindings interact with the responder chain? The responder chain should be the mechanism that routes keyboard events to the correct handler.
 - What keybindings do we need beyond panel cycling? Card-specific shortcuts? Global shortcuts? Command palette?
 
-### 13. Brio Theme Revision
+### 13. Brio Theme Revision {#c13-brio}
 
 **The problem.** Brio's current palette is deep graphite. The request is to shift it to dark greenish.
 
 **Depends on:** Theme architecture (concept 1). If themes become loadable resources, this is just a new theme file. If themes remain in CSS, it's a token value change.
 
-### 14. UI-Flash Prevention
+### 14. UI-Flash Prevention {#c14-flash}
 
 **The problem.** Tugdeck flashes the entire UI during three scenarios: CSS edits in dev mode (full page reload instead of hot CSS swap), frontend reload (white/blank screen before UI reappears), and backend restart (if `reload_frontend` control frame follows reconnection). The goal is to never flash the entire UI during any transition.
 
@@ -1236,15 +1527,15 @@ Concepts 11–14 can proceed somewhat independently once the core stack (1-6) is
 
 *This section will capture key decisions, alternatives considered, and rationale as we work through the concept areas above.*
 
-### Entry 1: Project Kickoff (2026-03-01)
+### Entry 1: Project Kickoff {#log-1} (2026-03-01)
 
 Opened with the full feature list above. Identified 13 concept areas (later expanded to 14) that need design work before implementation. The core architectural challenge is the responder chain + mutation model (concepts 4-5), which determines how everything else gets wired together. The theme architecture (concept 1) is the stated starting point, but it pulls in the component system (concepts 2-3) and the card abstraction (concept 6) because theme changes must flow through all of those layers.
 
-### Entry 2: Theme Architecture — Initial Design (2026-03-01)
+### Entry 2: Theme Architecture — Initial Design {#log-2} (2026-03-01)
 
 Worked through all six original questions for concept 1. Initially proposed JSON as the theme format with direct property injection via `style.setProperty()`. Identified three open items: complex CSS tokens (shadows, gradients) that don't fit cleanly in flat JSON; per-theme semantic overrides (`--td-header-active`, `--td-canvas`); and the Harmony canvas color special case.
 
-### Entry 3: Theme Architecture — Format Revised to CSS (2026-03-01)
+### Entry 3: Theme Architecture — Format Revised to CSS {#log-3} (2026-03-01)
 
 The three open items from entry 2 exposed a flaw in the JSON recommendation. Complex CSS values (multi-part shadows, gradients) are native CSS — putting them in JSON means round-tripping CSS through JSON for no benefit. Revised to **CSS as the theme format**: a theme file is a CSS file with `body { --tways-*: ... }` declarations plus a structured comment header for metadata.
 
@@ -1258,7 +1549,7 @@ Additional decisions in this revision:
 
 Next: move to concept 2 (Tugways design system definition).
 
-### Entry 4: Tugways Design System Designed (2026-03-01)
+### Entry 4: Tugways Design System Designed {#log-4} (2026-03-01)
 
 Worked through all four questions for concept 2. Key decisions:
 
@@ -1272,7 +1563,7 @@ Open items resolved in follow-up: priority list of 15 components after TugButton
 
 Next: concept 3 (TugButton test case).
 
-### Entry 5: Responder Chain Drafted (2026-03-01)
+### Entry 5: Responder Chain Drafted {#log-5} (2026-03-01)
 
 Skipped concept 3 (TugButton) to design concept 4 (Responder Chain) first — TugButton's behavior depends on how the chain works. Researched Apple's NSResponder/UIResponder chain in depth. Key design decisions:
 
@@ -1289,7 +1580,7 @@ Remaining open items resolved: keybinding map deferred to concept 12 (chain only
 
 Concept 4 is fully designed. No open items.
 
-### Entry 7: Concept 5 Deepened — Specific Machinery (2026-03-01)
+### Entry 7: Concept 5 Deepened {#log-7} — Specific Machinery (2026-03-01)
 
 Requested more specifics on the exact mechanisms for the three-zone model. Researched `useSyncExternalStore` gotchas, CSS custom property patterns, refs best practices, signals landscape, React Compiler v1.0, common anti-patterns, and real-world precedents (Excalidraw, Dockview, Figma).
 
@@ -1302,7 +1593,7 @@ Key additions to concept 5:
 - **React Compiler v1.0**: removes need for manual `useMemo`/`useCallback`/`memo`, but doesn't solve state placement, context instability, or the appearance-zone problem. Safety net, not substitute.
 - **Excalidraw as architectural precedent**: React for UI chrome, imperative canvas for rendering, Scene class as mutable source of truth, Jotai for UI state, action system for user input mediation. Directly parallel to tugdeck's architecture.
 
-### Entry 8: Excalidraw Deep Study (2026-03-01)
+### Entry 8: Excalidraw Deep Study {#log-8} (2026-03-01)
 
 Conducted a thorough architectural study of Excalidraw (MIT, open source). Key findings for tugdeck:
 
@@ -1314,7 +1605,7 @@ Conducted a thorough architectural study of Excalidraw (MIT, open source). Key f
 
 The action system is the pattern most directly applicable to our responder chain design. Excalidraw's `perform`/`keyTest`/`predicate`/`PanelComponent` maps to our `actions`/keybinding map/`canHandle`+`validateAction`/tugways component.
 
-### Entry 6: Controlled Mutation vs. React State Designed (2026-03-01)
+### Entry 6: Controlled Mutation vs. React State Designed {#log-6} (2026-03-01)
 
 The fear: we're fighting an opinionated framework. The realization: we're not fighting it — we're scoping it. React is good at rendering UI from data. The DOM and CSS are good at visual state. The mistake is putting visual state in React state.
 
@@ -1330,7 +1621,7 @@ The three-zone model makes the answer to "should I use React state?" mechanical,
 
 No open items.
 
-### Entry 9: Tugcard Base Component Designed (2026-03-01)
+### Entry 9: Tugcard Base Component Designed {#log-9} (2026-03-01)
 
 Designed concept 6 after studying all 8 existing card implementations, the CardFrame/CardHeader chrome, CardContext, ReactCardAdapter, and DeckCanvas rendering hub.
 
@@ -1347,7 +1638,7 @@ Key decisions:
 
 No open items.
 
-### Entry 10: Feed Abstraction Reframed + UI-Flash Prevention Added (2026-03-01)
+### Entry 10: Feed Abstraction Reframed {#log-10} + UI-Flash Prevention Added (2026-03-01)
 
 **Concept 7 rewritten three times.** First pass: thin summary of tug-feed.md, "see the other doc." Second pass: proper frontend rendering story with event-to-visual mapping, mutation zone assignment, and transport options. Third pass incorporated critical corrections:
 
@@ -1357,3 +1648,18 @@ No open items.
 - **Interface-first implementation.** Define TypeScript types for the 13 event types, implement the frontend card with mock data, bring the backend online later.
 
 **Concept 14 added: UI-Flash Prevention.** Three scenarios cause visual flash (CSS edit, frontend reload, backend restart). Root cause analysis and three-layer fix detailed in `roadmap/eliminate-frontend-flash.md`. Layers: inline body styles (eliminate white flash), startup overlay (hide mount transition), CSS HMR boundary (prevent full reloads for CSS changes). Concept 14 is nearly independent of the core stack — it's infrastructure-level work that can be implemented at any time. The only connection to the design system is that Layer C (HMR boundary) affects how base CSS changes propagate during development; runtime theme injection (concept 1) bypasses the Vite module graph entirely.
+
+### Entry 11: TugButton Designed — Composition Model {#log-11} (2026-03-02)
+
+Designed concept 3 after a key clarification: the "never define components inside components" rule from concept 5 was causing confusion about how buttons (which are always children of larger compositions) could work. The clarification: `define` ≠ `use`. Components are standalone module-scope definitions. You compose them by importing and nesting JSX — the fundamental React pattern.
+
+Key decisions:
+
+- **[D07] Module-scope components, compose via JSX nesting.** Every component is defined at module scope (in its own file). No component functions defined inside other component functions. Composition happens through JSX nesting — `<ThemeSection>` renders `<TugButton>` elements, `<SettingsContent>` renders `<ThemeSection>`, `<Tugcard>` renders `<SettingsContent>`. The containment hierarchy is just nested imports.
+- **[D08] Two button modes: direct-action and chain-action.** Direct-action buttons have an `onClick` handler — no responder chain involvement. Chain-action buttons have an `action` prop — they dispatch into the responder chain and auto-validate via `canHandle`/`validateAction`. Most buttons are direct-action; chain-action is for toolbar and menu scenarios.
+- **Three ambient connection mechanisms.** Components connect to the system through (1) CSS custom properties for theme, (2) React context for the responder chain, (3) props and callbacks for data. No tight coupling between layers. TugButton doesn't know it's inside a Tugcard.
+- **Mutation zone assignment explicit for TugButton** — appearance (CSS pseudo-classes for hover/focus/active, theme colors from `var(--td-*)`), local data (chain validation via `useSyncExternalStore`), structure (conditional rendering by parent). This pattern will be documented for every tugways component.
+- **TugButton API designed** — subtypes (push, icon, icon-text, three-state), variants (primary, secondary, ghost, destructive), chain-action mode, loading state. Wraps shadcn's `Button` internally but exposes a restricted, opinionated API.
+- **Pattern established for all tugways components** — module-scope definition, wraps shadcn internally, theme via CSS variables, responder chain via context, mutation zones documented, subtypes via prop.
+
+No open items. Concept 3 is fully designed.
