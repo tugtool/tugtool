@@ -16,13 +16,6 @@ export interface TabItem {
   closable: boolean;
 }
 
-export interface TabNode {
-  type: "tab";
-  id: string; // crypto.randomUUID()
-  tabs: TabItem[];
-  activeTabIndex: number;
-}
-
 export interface CardState {
   id: string;
   position: { x: number; y: number };

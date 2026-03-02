@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-02T18:11:48Z
+---
+
+## step-9: Removed unused TabNode interface (6 lines) from layout-tree.ts. No test changes needed — TabNode had zero references in any surviving file.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-8
 date: 2025-03-02T18:07:13Z
 ---
