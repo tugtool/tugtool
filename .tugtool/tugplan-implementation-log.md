@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-02T17:40:09Z
+---
+
+## step-2: Deleted 26 files: card components (about, developer, files, git, settings, stats, terminal), card infrastructure (card.ts, react-card-adapter, card-context), standalone modules (card-titles, drag-state), card hooks (use-card-meta, use-feed, use-connection), and dev-notification-context
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-1
 date: 2025-03-02T17:36:22Z
 ---
