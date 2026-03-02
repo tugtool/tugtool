@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-02T17:44:11Z
+---
+
+## step-4: Deleted 8 chrome components: card-frame, card-header, card-dropdown-menu, dock, tab-bar, snap-guide-line, virtual-sash, set-flash-overlay. Preserved deck-canvas, disconnect-banner, error-boundary.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-3
 date: 2025-03-02T17:42:15Z
 ---
