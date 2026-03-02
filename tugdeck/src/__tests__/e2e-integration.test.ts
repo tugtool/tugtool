@@ -46,7 +46,7 @@ global.navigator = {
 
 // Import utilities from lib/markdown (updated from cards/conversation/message-renderer)
 import { renderMarkdown, SANITIZE_CONFIG } from "../lib/markdown";
-import { SessionCache, type StoredMessage } from "../cards/conversation/session-cache";
+import { SessionCache, type StoredMessage } from "../_archive/cards/conversation/session-cache";
 
 // ---- Performance benchmarks ----
 

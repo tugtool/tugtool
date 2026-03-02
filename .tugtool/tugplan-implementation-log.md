@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-02T17:36:22Z
+---
+
+## step-1: Archived 21 conversation files (components + logic) to _archive/cards/conversation/, updated import paths in 3 test files
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-5
 date: 2025-03-01T23:50:13Z
 ---
