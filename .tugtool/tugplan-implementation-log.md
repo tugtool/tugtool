@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-02T23:29:27Z
+---
+
+## step-3: Implement ResponderChainProvider with capture-phase global shortcuts and bubble-phase form-control guard. Add keybinding-map with Ctrl+Backquote->cyclePanel. Add useResponderChain and useRequiredResponderChain hooks. Create key-pipeline test suite (15 tests).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-2
 date: 2025-03-02T23:22:34Z
 ---
