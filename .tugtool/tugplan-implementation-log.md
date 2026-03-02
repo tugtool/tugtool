@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-02T19:27:27Z
+---
+
+## step-1: Renamed all 177 occurrences of --tl- to --tways- in tokens.css, updated header and inline comments to reference Tugways Design System instead of Tuglook
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-10
 date: 2025-03-02T18:24:31Z
 ---
