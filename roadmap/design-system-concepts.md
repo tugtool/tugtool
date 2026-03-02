@@ -13,13 +13,12 @@
 | 5 | Controlled Mutation vs. React State | DESIGNED | [#c05-mutation](#c05-mutation) |
 | 6 | Tugcard: The Common Base Component | DESIGNED | [#c06-tugcard](#c06-tugcard) |
 | 7 | Feed Abstraction | DESIGNED | [#c07-feed](#c07-feed) |
-| 8 | Skeleton and Loading States | OPEN | [#c08-skeleton](#c08-skeleton) |
+| 8 | Motion and Visual Continuity | DESIGNED | [#c08-motion](#c08-motion) |
 | 9 | Alert and Dialog System | OPEN | [#c09-dialog](#c09-dialog) |
 | 10 | Card Title Bar Enhancements | OPEN | [#c10-titlebar](#c10-titlebar) |
 | 11 | Dock Redesign | OPEN | [#c11-dock](#c11-dock) |
 | 12 | Keybindings View | OPEN | [#c12-keybindings](#c12-keybindings) |
 | 13 | Brio Theme Revision | OPEN | [#c13-brio](#c13-brio) |
-| 14 | UI-Flash Prevention | OPEN | [#c14-flash](#c14-flash) |
 
 ### Cross-Cutting Design Decisions
 
@@ -47,6 +46,8 @@
 | [D20] | Three accumulation patterns (snapshot, append-stream, raw stream) | Concept 7 | [#d20-accumulation-patterns](#d20-accumulation-patterns) |
 | [D21] | Interface-first: define types, mock backend, implement frontend | Concept 7 | [#d21-interface-first](#d21-interface-first) |
 | [D22] | Component inventory: TS interfaces, gallery card, design doc | Concept 3 | [#d22-component-inventory](#d22-component-inventory) |
+| [D23] | Motion tokens as CSS custom properties (`--td-duration-*`, `--td-easing-*`) | Concept 8 | [#d23-motion-tokens](#d23-motion-tokens) |
+| [D24] | Reduced motion via duration scalar, not removal | Concept 8 | [#d24-reduced-motion](#d24-reduced-motion) |
 
 ### Key Architectural Patterns
 
@@ -59,13 +60,16 @@
 | Feed accumulation helpers | `useFeedBuffer` (ring buffer) and `useFeedStore` (indexed store) | [#accumulation-helpers](#accumulation-helpers) |
 | DOM utility hooks | `useCSSVar`, `useDOMClass`, `useDOMStyle` for appearance-zone mutations | [#d13-dom-hooks](#d13-dom-hooks) |
 | Accessibility layering | Inherit native element baseline, extend with ARIA for non-standard states | [#tugbutton-a11y](#tugbutton-a11y) |
+| Enter/exit via Radix data-state | CSS `@keyframes` triggered by `data-state="open"/"closed"`, Presence delays unmount | [#enter-exit-transitions](#enter-exit-transitions) |
+| Skeleton shimmer | Per-card shapes, synchronized via `background-attachment: fixed`, theme-aware colors | [#skeleton-loading](#skeleton-loading) |
+| Startup three-layer continuity | Inline body styles → startup overlay → CSS HMR boundary | [#startup-continuity](#startup-continuity) |
 
 ### External References
 
 | Document | Purpose |
 |----------|---------|
 | `roadmap/tug-feed.md` | Tug-feed backend architecture (hooks, correlation, schema) |
-| `roadmap/eliminate-frontend-flash.md` | UI-flash root cause analysis and three-layer fix |
+| `roadmap/eliminate-frontend-flash.md` | UI-flash root cause analysis and three-layer fix (referenced from [#startup-continuity](#startup-continuity)) |
 | `roadmap/tuglook-style-system-redesign.txt` | Prior art for theme system |
 | `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions |
 
@@ -1393,15 +1397,213 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 - **Event batching:** Should tugcast batch multiple tug-feed events into a single WebSocket frame (JSON array), or send one frame per event? One-per-frame is simpler and matches the existing pattern. Batching reduces frame count during bursts but adds parsing complexity.
 - **`useFeedBuffer` cap policy:** When the buffer is full, drop oldest (ring buffer)? Or stop accepting? Ring buffer is the obvious default, but the conversation card may want different behavior (keep all messages, paginate).
 
-### 8. Skeleton and Loading States {#c08-skeleton}
+### 8. Motion and Visual Continuity {#c08-motion}
 
-**The problem.** When a card first appears or loses its data connection, there's no standard way to show a "loading" or "empty" state. Some cards show nothing; some show stale data.
+**Status: DESIGNED** (2026-03-02)
 
-**What we need:**
-- A skeleton component that visually indicates "content is loading" — pulsing placeholder shapes that match the expected content layout
-- Per-card skeleton definitions (a terminal skeleton looks different from a git status skeleton)
-- Transition from skeleton → content that is smooth, not jarring
-- Error states: "failed to load", "disconnected", "no data yet"
+**The problem.** Tugdeck has no coherent story for how things move, appear, disappear, or transition between states. This shows up everywhere: dialogs pop into existence with no visual cue that they're modal. Cards have no skeleton or loading state. CSS edits in dev mode flash the entire UI. If we ever add card minimization, there's no way to animate the state change. These are all symptoms of one missing piece: **a motion and visual continuity system.**
+
+This concept unifies what were previously three separate concerns — skeleton/loading states (old concept 8), UI-flash prevention (old concept 14), and the new transitions/animations story — into a single design that answers: **how does tugdeck manage visual state changes over time?**
+
+#### Motion Tokens {#d23-motion-tokens}
+
+Motion tokens are CSS custom properties, following the same `var(--td-*)` convention as theme tokens. They live in the appearance zone ([#d12-three-zones](#d12-three-zones)) — animations and transitions are visual presentation, not React state. Theme files can override motion tokens (e.g., a "calm" theme could use longer durations), but the defaults are global.
+
+**Duration tokens** — four tiers, named by magnitude:
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--td-duration-fast` | 100ms | Micro-interactions: hover feedback, toggle state, focus ring |
+| `--td-duration-moderate` | 200ms | Standard transitions: button press, panel expand/collapse |
+| `--td-duration-slow` | 350ms | Major transitions: dialog appear/dismiss, card state change |
+| `--td-duration-glacial` | 500ms | Dramatic transitions: startup overlay fade, first-paint reveal |
+
+Four durations, not sixteen. Tugdeck is a developer tool, not a consumer app. Animations should feel crisp and purposeful, never decorative. If you're reaching for `glacial`, question whether the animation is needed at all.
+
+**Easing tokens** — three curves, named by behavior:
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--td-easing-standard` | `cubic-bezier(0.2, 0, 0, 1)` | Elements already on screen changing state. Fast start, gentle land. |
+| `--td-easing-enter` | `cubic-bezier(0, 0, 0, 1)` | Elements appearing. Starts slow (from nothing), decelerates into place. |
+| `--td-easing-exit` | `cubic-bezier(0.2, 0, 1, 1)` | Elements leaving. Accelerates away, doesn't waste time at the start. |
+
+These are MD3's standard/decelerate/accelerate curves. They feel natural because they model physical objects — things at rest accelerate smoothly; things arriving decelerate.
+
+**Duration scalar** — the reduced-motion kill switch: {#d24-reduced-motion}
+
+```css
+:root {
+  --td-duration-scalar: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --td-duration-scalar: 0.001;
+  }
+}
+```
+
+Every transition and animation duration is wrapped: `calc(var(--td-duration-scalar) * var(--td-duration-moderate))`. When the user prefers reduced motion, the scalar drops to near-zero (not zero — `0.001` ensures `animationend` and `transitionend` events still fire, which Radix's Presence component depends on for unmount timing).
+
+**Apple's "replace, don't remove" principle:** When reduced motion is active, spatial animations (translate, scale) should be replaced with opacity fades, not eliminated entirely. The UI still needs to communicate state changes — a dialog should still fade in to signal modality, even if it doesn't scale up. This means components that animate `transform` should have a reduced-motion alternative that animates `opacity` instead.
+
+**Where tokens live:** In `tokens.css` alongside the theme tokens, within a `/* Motion */` section. They are not theme-specific by default — all themes share the same motion timing. A theme *can* override them (e.g., `--td-duration-moderate: 300ms` for a more relaxed feel), but this is the exception, not the norm.
+
+#### Enter/Exit Transitions {#enter-exit-transitions}
+
+Enter/exit is the hardest animation problem in React: when a component unmounts, its DOM node vanishes instantly, leaving no time for an exit animation. Tugdeck's approach uses **Radix's data-state mechanism + CSS `@keyframes`**, which is already in our stack via shadcn.
+
+**How it works:**
+
+1. Radix components (Dialog, Popover, etc.) set `data-state="open"` when visible and `data-state="closed"` just before unmounting.
+2. Radix's `Presence` component delays DOM removal — it keeps the node alive in an `unmountSuspended` state and listens for the `animationend` event.
+3. CSS `@keyframes` drive the actual animation, triggered by `data-state` selectors.
+4. When `animationend` fires, Radix removes the node.
+
+**The CSS pattern** (using `tw-animate-css` utilities already in the project):
+
+```css
+/* Dialog overlay — fade */
+[data-state="open"]  { animation: enter var(--td-duration-slow) var(--td-easing-enter); }
+[data-state="closed"] { animation: exit var(--td-duration-slow) var(--td-easing-exit); }
+
+/* Dialog content — fade + scale */
+[data-state="open"]  { --tw-enter-opacity: 0; --tw-enter-scale: 0.95; }
+[data-state="closed"] { --tw-exit-opacity: 0; --tw-exit-scale: 0.95; }
+```
+
+The `tw-animate-css` package provides the `enter` and `exit` keyframes that read from `--tw-enter-*` / `--tw-exit-*` CSS variables. We set those variables to define what the animation does; the keyframes do the interpolation.
+
+**Critical constraint: CSS `@keyframes` only.** Radix's Presence listens for `animationend`, not `transitionend`. CSS `transition` properties will not delay unmount. This is a known Radix limitation (issue #996, closed as wont-fix). All enter/exit animations must use `@keyframes`, which the `tw-animate-css` pattern already provides.
+
+**What uses enter/exit transitions:**
+
+| Component | Enter | Exit | Notes |
+|-----------|-------|------|-------|
+| Dialog overlay | Fade in | Fade out | Communicates modality |
+| Dialog content | Fade + scale up from 95% | Fade + scale down to 95% | Focuses attention |
+| Popover / dropdown | Fade + slide from anchor edge | Fade + slide back | Direction depends on placement |
+| Toast / notification | Slide in from edge | Slide out + fade | Non-blocking, so exit can be faster |
+| Card minimize (future) | Scale down to icon size | Scale up from icon | FLIP technique — see below |
+
+**Card state transitions (minimize/iconify):** This is a layout animation, not a simple enter/exit. The card changes size and position. The FLIP technique (First, Last, Invert, Play) handles this: measure the card's current bounds, apply the layout change instantly, compute the delta, then animate only `transform` (compositor-friendly) to bridge the visual gap. If we add card minimization, we'd implement a `useFlipAnimation` hook that wraps `getBoundingClientRect` + `requestAnimationFrame` + transform animation. No JS animation library needed — the browser's Web Animations API can handle the interpolation.
+
+**Reduced motion for enter/exit:** Replace scale+fade with fade-only. The dialog still signals modality (it fades in over a dimmed backdrop), but the spatial movement is removed:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  [data-state="open"]  { --tw-enter-scale: 1; }  /* no scale, fade only */
+  [data-state="closed"] { --tw-exit-scale: 1; }
+}
+```
+
+#### Skeleton and Loading States {#skeleton-loading}
+
+When a card first appears or loses its data connection, it needs a visual language for "data is arriving" that is smooth, theme-aware, and consistent across all cards.
+
+**Skeleton shimmer — pure CSS, synchronized:**
+
+```css
+.td-skeleton {
+  background: linear-gradient(90deg,
+    var(--td-skeleton-base) 25%,
+    var(--td-skeleton-highlight) 50%,
+    var(--td-skeleton-base) 75%);
+  background-size: 200% 100%;
+  background-attachment: fixed;  /* all skeletons shimmer in sync */
+  animation: td-shimmer calc(var(--td-duration-scalar) * 1.5s) ease-in-out infinite;
+  border-radius: var(--td-radius-sm);
+}
+
+@keyframes td-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+```
+
+Key details:
+- **`background-attachment: fixed`** — all skeleton elements on screen shimmer in unison, not independently. This looks intentional rather than chaotic.
+- **Theme-aware colors** — `--td-skeleton-base` and `--td-skeleton-highlight` are semantic tokens derived from the theme's background. Brio: dark gray → slightly lighter gray. Harmony: warm tan → slightly lighter tan. The shimmer is always subtle.
+- **Duration scalar applies** — when reduced motion is active, shimmer duration drops to near-instant (effectively a static placeholder with no movement).
+
+**Per-card skeleton shapes:**
+
+Each card type defines its own skeleton layout — a terminal skeleton has rectangular text-line placeholders; a git-status skeleton has a tree-like structure with branch lines. Skeletons are not generic gray boxes. They preview the card's actual content structure so the transition to real content feels like "filling in" rather than "replacing."
+
+Tugcard ([#c06-tugcard](#c06-tugcard)) already gates child mounting: when feed data hasn't arrived, the card renders its skeleton. Card content components provide a static `skeleton` property (a React component) that Tugcard renders in place of the content:
+
+```tsx
+function TerminalCardContent() { /* ... actual content ... */ }
+TerminalCardContent.skeleton = () => (
+  <div className="td-skeleton-group">
+    <div className="td-skeleton" style={{ width: "60%", height: 14 }} />
+    <div className="td-skeleton" style={{ width: "80%", height: 14 }} />
+    <div className="td-skeleton" style={{ width: "45%", height: 14 }} />
+  </div>
+);
+```
+
+**Skeleton → content transition:**
+
+When data arrives, the skeleton crossfades to the actual content. This is an appearance-zone animation — no React state for the animation itself:
+
+1. Tugcard renders the real content alongside the skeleton (both in the DOM).
+2. The skeleton has `opacity: 1`; the content has `opacity: 0`.
+3. On data arrival, a CSS class swap triggers: skeleton fades out (`opacity: 0`, duration `--td-duration-moderate`), content fades in (`opacity: 1`, same duration).
+4. After `transitionend`, the skeleton is removed from the DOM.
+
+This crossfade is subtle and fast — the user barely notices it. What they *do* notice is that the card was never blank.
+
+**Error and disconnected states:**
+
+- **"No data yet"** — the skeleton keeps shimmering. No timeout. The skeleton *is* the "waiting" indicator.
+- **"Disconnected"** — the `DisconnectBanner` (already implemented) renders a yellow bar at the top of the deck. Cards retain their last data (from `DeckManager.lastPayload`). Skeletons don't reappear — showing stale data is better than showing a loading state for a temporary disconnection.
+- **"Failed to load"** — Tugcard renders an error state (icon + message) in place of content. This is a structure-zone change (conditional rendering), not an animation. The error state appears immediately — no transition, because errors should not be softened.
+
+#### Startup Continuity {#startup-continuity}
+
+Startup continuity prevents the visible flash during full page reloads (browser refresh, `reload_frontend` control frame, backend restart + reload). The three-layer approach from `roadmap/eliminate-frontend-flash.md`:
+
+**Layer A — Inline body styles** (eliminates the white flash):
+
+```html
+<body style="margin:0;padding:0;overflow:hidden;background-color:#1c1e22">
+```
+
+The value `#1c1e22` is Brio's canvas color. Applied during HTML parse, before any CSS loads. For non-Brio users, there's a brief shift from Brio's dark to the actual theme color when CSS loads — far less jarring than white → dark. The pragmatic default.
+
+**Layer B — Startup overlay** (hides the mount transition):
+
+```html
+<div id="deck-startup-overlay"
+     style="position:fixed;inset:0;background:#1c1e22;z-index:99999;
+            transition:opacity var(--td-duration-glacial, 500ms) var(--td-easing-standard, ease-out);
+            pointer-events:none"></div>
+```
+
+The overlay covers the viewport from first paint. It hides the empty `deck-container` during settings-fetch and React-mount phases. After first React paint, the overlay fades out using motion tokens (with hardcoded fallbacks since tokens aren't loaded yet during startup). The double `requestAnimationFrame` pattern ensures React has committed at least one paint before the fade begins.
+
+Note: the overlay and Tugcard skeletons operate at different levels. The overlay covers the *entire viewport* during app bootstrap. Skeletons cover *individual cards* once mounted. The sequence is: overlay fades out → deck with skeleton cards is revealed → cards crossfade to real content as data arrives.
+
+**Layer C — CSS HMR boundary** (dev mode only — prevents full reloads for CSS changes):
+
+A dedicated `css-imports.ts` module that imports all CSS files and has `import.meta.hot.accept()`. CSS invalidations stop at this boundary instead of propagating to `main.tsx`. CSS edits hot-swap `<style>` tags without full page reload. This is a Vite dev-server concern — `import.meta.hot` is tree-shaken in production builds.
+
+**Relationship to theme system:** When themes become loadable resources ([#c01-theme](#c01-theme)), the stylesheet injection mechanism bypasses Vite's module graph entirely — injected `<style>` elements are runtime DOM mutations, not module imports. Layer C is only needed for base `tokens.css` and `globals.css` changes that go through Vite's build pipeline.
+
+**See:** `roadmap/eliminate-frontend-flash.md` for the full root cause analysis, module graph walkthrough, and implementation plan.
+
+#### What Concept 8 Demonstrates {#c08-demonstrates}
+
+This concept establishes the pattern for all visual continuity in tugdeck:
+
+1. **Motion is tokenized** — durations and easings are CSS custom properties, not magic numbers scattered across components. Change `--td-duration-moderate` once, every transition in the app updates. ([#d23-motion-tokens](#d23-motion-tokens))
+2. **Motion lives in the appearance zone** — animations are CSS `@keyframes` and `transition` properties, not React state. Theme changes, reduced motion, and timing adjustments are free — zero re-renders. ([#d12-three-zones](#d12-three-zones))
+3. **Reduced motion is a scalar, not a kill switch** — spatial animations become opacity fades, not nothing. The UI still communicates state changes. ([#d24-reduced-motion](#d24-reduced-motion))
+4. **Enter/exit uses Radix's data-state + CSS keyframes** — no JS animation library for standard component transitions. The stack we already have (Radix + tw-animate-css) handles it. ([#enter-exit-transitions](#enter-exit-transitions))
+5. **Skeletons are per-card, synchronized, and theme-aware** — each card defines its skeleton shape. All skeletons shimmer in unison. Colors come from theme tokens. ([#skeleton-loading](#skeleton-loading))
+6. **Startup is a special case with its own three-layer solution** — inline styles, overlay, HMR boundary. Operates at the viewport level, above the component system. ([#startup-continuity](#startup-continuity))
 
 ### 9. Alert and Dialog System {#c09-dialog}
 
@@ -1454,29 +1656,6 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
 
 **Depends on:** Theme architecture (concept 1). If themes become loadable resources, this is just a new theme file. If themes remain in CSS, it's a token value change.
 
-### 14. UI-Flash Prevention {#c14-flash}
-
-**The problem.** Tugdeck flashes the entire UI during three scenarios: CSS edits in dev mode (full page reload instead of hot CSS swap), frontend reload (white/blank screen before UI reappears), and backend restart (if `reload_frontend` control frame follows reconnection). The goal is to never flash the entire UI during any transition.
-
-**See:** `roadmap/eliminate-frontend-flash.md` for the full root cause analysis and three-layer fix.
-
-**Root causes:**
-- **CSS edit flash**: The `@tailwindcss/vite` plugin recompiles `globals.css` when `tokens.css` changes. This invalidation propagates up the module graph to `main.tsx`, which has no `import.meta.hot.accept()` handler, so Vite falls back to a full page reload.
-- **Reload flash**: `index.html` has a bare `<body>` with no inline styles. During reload, there's a 20–50ms window where the body has its default white background before CSS loads, then another gap before React mounts.
-- **Backend restart flash**: Only flashes if a `reload_frontend` control frame triggers `location.reload()`. The WebSocket reconnection itself is graceful — the React tree stays mounted, card content remains visible.
-
-**Three-layer fix:**
-1. **Layer A — Inline body styles.** Add `style="background-color:#1c1e22"` (Brio default) to `<body>` in `index.html`. Eliminates the white flash during HTML parse, before CSS loads.
-2. **Layer B — Startup overlay.** A full-screen overlay div in `index.html` that covers the viewport with the background color. Hides the empty deck-container during settings-fetch and React-mount phases. Removed with a 150ms fade-out after first React paint via double `requestAnimationFrame`.
-3. **Layer C — CSS HMR boundary.** A dedicated `css-imports.ts` module that imports all CSS files and has `import.meta.hot.accept()`. CSS invalidations stop at this boundary instead of propagating to `main.tsx`. CSS edits hot-swap `<style>` tags without full page reload.
-
-**Relationship to the design system:** Layer C directly affects how theme CSS changes propagate during development. When themes become loadable resources (concept 1), the stylesheet injection mechanism bypasses the Vite module graph entirely — injected `<style>` elements are runtime DOM mutations, not module imports. Layer C is only needed for changes to the base `tokens.css` and `globals.css` that go through Vite's build pipeline.
-
-**Questions to resolve:**
-- Should we inline the grid pattern (`background-image`) in the body style, or is the solid color sufficient? The grid appearing ~20ms later may be imperceptible.
-- For non-Brio users, there's a brief color shift from Brio's `#1c1e22` to the actual theme color when CSS loads. Worth adding an inline `<script>` that reads localStorage to set the correct color immediately? Or is the Brio default pragmatically good enough?
-- Does the startup overlay interact with the Tugcard skeleton system (concept 8)? The overlay covers the *entire* viewport during app bootstrap; skeletons cover *individual cards* once mounted. They operate at different levels.
-
 ---
 
 ## Dependency Map
@@ -1509,17 +1688,18 @@ Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13
         ┌─────────────┼─────────────┬─────────────┐
         │             │             │             │
    ┌────▼────┐  ┌─────▼─────┐  ┌───▼───┐  ┌─────▼─────┐
-   │ 7. Feed │  │ 8. Skele- │  │ 9. Di-│  │10. Title  │
-   │ Abstrac.│  │    tons   │  │ alogs │  │    Bar    │
-   └─────────┘  └───────────┘  └───────┘  └───────────┘
+   │ 7. Feed │  │ 8. Motion │  │ 9. Di-│  │10. Title  │
+   │ Abstrac.│  │ & Visual  │  │ alogs │  │    Bar    │
+   └─────────┘  │ Continuity│  └───────┘  └───────────┘
+                └───────────┘
 
-   ┌─────────┐  ┌───────────┐  ┌─────────────┐  ┌───────────────┐
-   │11. Dock │  │12. Key-   │  │13. Brio     │  │14. UI-Flash   │
-   │ Redesign│  │  bindings │  │  Revision   │  │  Prevention   │
-   └─────────┘  └───────────┘  └─────────────┘  └───────────────┘
+   ┌─────────┐  ┌───────────┐  ┌─────────────┐
+   │11. Dock │  │12. Key-   │  │13. Brio     │
+   │ Redesign│  │  bindings │  │  Revision   │
+   └─────────┘  └───────────┘  └─────────────┘
 ```
 
-Concepts 11–14 can proceed somewhat independently once the core stack (1-6) is designed. Concept 14 has minimal dependencies — it's infrastructure-level (Vite HMR, inline styles) and can be implemented at any time.
+Concepts 11–13 can proceed somewhat independently once the core stack (1-6) is designed.
 
 ---
 
@@ -1663,3 +1843,23 @@ Key decisions:
 - **Pattern established for all tugways components** — module-scope definition, wraps shadcn internally, theme via CSS variables, responder chain via context, mutation zones documented, subtypes via prop.
 
 No open items. Concept 3 is fully designed.
+
+### Entry 12: Concept 8 Unified — Motion and Visual Continuity {#log-12} (2026-03-02)
+
+Merged three previously separate concerns — skeleton/loading states (old concept 8), UI-flash prevention (old concept 14), and a new transitions/animations story — into a single unified concept. The unifying insight: these are all aspects of **how tugdeck manages visual state changes over time.**
+
+Researched motion systems across Material Design 3, Carbon (IBM), Norton DS, Cloudscape (AWS), Apple HIG, Radix, and shadcn/ui. Key findings that shaped the design:
+
+- **MD3 and Carbon publish motion tokens as structured values** (duration tiers, easing curves by behavior type). We adopted this as CSS custom properties following our `--td-*` convention.
+- **Norton DS's duration scalar pattern** — a single `--td-duration-scalar` multiplier that zeros out all durations for `prefers-reduced-motion`. Elegant: one variable swap, all motion stops. We use `0.001` instead of `0` so Radix's `animationend` events still fire.
+- **Radix's `data-state` + CSS `@keyframes`** is already in our stack via shadcn. No need for Framer Motion or React Spring for standard component transitions. Critical constraint: Radix's Presence component listens for `animationend`, not `transitionend` — exit animations must use `@keyframes`.
+- **Apple's "replace, don't remove" principle** for reduced motion — spatial animations become opacity fades, not nothing.
+
+Key decisions:
+- **[D23] Motion tokens as CSS custom properties.** Four durations (fast/moderate/slow/glacial) and three easings (standard/enter/exit). Intentionally minimal — tugdeck is a dev tool, not a consumer app.
+- **[D24] Reduced motion via scalar, not removal.** `calc(var(--td-duration-scalar) * var(--td-duration-*))` pattern. Spatial animations replaced with opacity fades when scalar is active.
+- **Skeleton shimmer uses `background-attachment: fixed`** so all skeleton elements shimmer in unison across the viewport.
+- **Skeleton → content crossfade** is an appearance-zone animation (CSS class swap, opacity transition). No React state for the animation itself.
+- **Old concept 14 absorbed** — the three-layer startup continuity approach (inline body styles, startup overlay, CSS HMR boundary) is now a subsection of concept 8 rather than a standalone concept.
+
+Concept count reduced from 14 to 13. No open items in concept 8.
