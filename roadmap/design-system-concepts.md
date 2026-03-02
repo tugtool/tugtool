@@ -15,10 +15,10 @@
 | 7 | Feed Abstraction | DESIGNED | [#c07-feed](#c07-feed) |
 | 8 | Motion and Visual Continuity | DESIGNED | [#c08-motion](#c08-motion) |
 | 9 | Alert and Dialog System | DESIGNED | [#c09-dialog](#c09-dialog) |
-| 10 | Card Title Bar Enhancements | OPEN | [#c10-titlebar](#c10-titlebar) |
-| 11 | Dock Redesign | OPEN | [#c11-dock](#c11-dock) |
-| 12 | Keybindings View | OPEN | [#c12-keybindings](#c12-keybindings) |
-| 13 | Brio Theme Revision | OPEN | [#c13-brio](#c13-brio) |
+| 10 | Card Title Bar Enhancements | DESIGNED | [#c10-titlebar](#c10-titlebar) |
+| 11 | Dock Redesign | DESIGNED | [#c11-dock](#c11-dock) |
+| 12 | Keybindings View | DEFERRED | [#c12-keybindings](#c12-keybindings) |
+| 13 | Brio Theme Revision | DEFERRED | [#c13-brio](#c13-brio) |
 
 ### Cross-Cutting Design Decisions
 
@@ -50,6 +50,9 @@
 | [D24] | Reduced motion via duration scalar, not removal | Concept 8 | [#d24-reduced-motion](#d24-reduced-motion) |
 | [D25] | Four modal categories: alert, sheet, confirm-popover, toast | Concept 9 | [#d25-four-modal-categories](#d25-four-modal-categories) |
 | [D26] | Button-confirmation via popover, not sheet or alert | Concept 9 | [#d26-confirm-popover](#d26-confirm-popover) |
+| [D27] | Window-shade collapse to title bar, state in CardState | Concept 10 | [#d27-window-shade](#d27-window-shade) |
+| [D28] | Three dock button types: card toggle, command, popout menu | Concept 11 | [#d28-dock-button-types](#d28-dock-button-types) |
+| [D29] | Dock placement on any edge (right default) | Concept 11 | [#d29-dock-placement](#d29-dock-placement) |
 
 ### Key Architectural Patterns
 
@@ -1845,37 +1848,214 @@ This is the standard React pattern for imperative-over-declarative APIs (same pa
 
 ### 10. Card Title Bar Enhancements {#c10-titlebar}
 
-**The problem.** Several feature list items target the card title bar:
-- Add minimize/window-shade control (up/down chevron)
-- Add confirmation dropdown to close button
-- Rotate hamburger menu icon 90 degrees
+**Status: DESIGNED** (2026-03-02)
 
-**Questions to resolve:**
-- What does minimize/window-shade mean exactly? Collapse to title bar only (showing just the header)? Collapse to an icon in the dock? Collapse to a small floating chip?
-- How does minimized state persist? In the card's state? In the layout engine?
-- What triggers the close confirmation? Always? Only for cards with unsaved state? Only for closable cards?
+**The problem.** The card title bar needs three changes: a window-shade collapse control, a close confirmation, and a menu icon rotation. These are small individually, but they establish patterns for how the title bar evolves.
+
+The good news: the existing `CardHeader` component (`card-header.tsx`) already has the plumbing for all three — `showCollapse` prop with `onCollapse` callback, `onClose` callback, and the `EllipsisVertical` menu icon. The work is connecting these to the right behaviors.
+
+#### Window-Shade Collapse {#d27-window-shade}
+
+**What it is:** Collapse the card to its title bar only — the content area disappears, leaving just the 28px header strip. Click again (or click the same chevron) to expand back to full size. This is the classic Mac OS "window shade" from System 7 through Mac OS 9.
+
+**State:** The collapsed/expanded state is stored in `CardState` (the layout tree's per-card state object). It persists across re-renders and is included in layout serialization so the deck remembers which cards are collapsed on reload.
+
+```ts
+// Addition to CardState in layout-tree.ts
+interface CardState {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  collapsed: boolean;  // ← new
+}
+```
+
+**Control:** A chevron button in the title bar (between the menu button and close button, replacing the current `Minus` icon). The chevron points down when expanded (indicating "collapse available") and up when collapsed (indicating "expand available"). The existing `showCollapse` prop and `onCollapse` callback on `CardHeader` already support this — `showCollapse` just needs to default to `true` instead of `false`.
+
+```
+Expanded:  [icon] TERMINAL    [☰] [▾] [✕]
+Collapsed: [icon] TERMINAL    [☰] [▴] [✕]
+```
+
+Use `ChevronDown` / `ChevronUp` from lucide-react. The current `Minus` icon for collapse is ambiguous — it could mean minimize, close, or subtract. Chevrons clearly communicate directionality.
+
+**CardFrame behavior when collapsed:**
+
+1. Height animates from current `size.height` to `CARD_TITLE_BAR_HEIGHT` (28px) + border. Uses `--td-duration-moderate` and `--td-easing-standard` from concept 8's motion tokens ([#d23-motion-tokens](#d23-motion-tokens)).
+2. Content area has `overflow: hidden` and its height goes to 0. No content is unmounted — it's hidden, not removed. This means the card's internal state (terminal session, scroll position, form values) is preserved.
+3. Resize handles are hidden when collapsed — there's nothing to resize. Drag remains active (you can reposition a collapsed card).
+4. The card's position doesn't change — it collapses downward in place (the top edge stays where it is, the bottom edge moves up).
+
+**Mutation zone:** The collapse animation is appearance-zone (CSS `height` transition on the card frame, `overflow: hidden` on content). The collapsed state itself is local data (persisted in `CardState` via DeckManager). The chevron icon swap is a structure-zone change (conditional rendering of the icon based on `collapsed`).
+
+**Double-click on header:** As a secondary gesture, double-clicking the title bar toggles collapse — matching macOS behavior (System Preferences → Dock → "Double-click a window's title bar to minimize"). This is a convenience, not the primary control.
+
+#### Close Confirmation {#close-confirmation}
+
+**Trigger: always.** Every closable card gets a confirmation popover when the close button is clicked. This uses the TugConfirmPopover pattern from concept 9 ([#d26-confirm-popover](#d26-confirm-popover)).
+
+**Implementation:** Replace the current direct `onClose` call in `CardHeader`'s close button with a `TugConfirmPopover` wrapper:
+
+```tsx
+{meta.closable && (
+  <TugConfirmPopover
+    onConfirm={onClose}
+    message={`Close ${meta.title}?`}
+    confirmLabel="Close"
+    confirmVariant="destructive"
+  >
+    <button className="card-header-btn ..." aria-label="Close card" type="button">
+      <X width={14} height={14} />
+    </button>
+  </TugConfirmPopover>
+)}
+```
+
+The popover anchors to the X button. Click X → popover appears below → click "Close" or press Enter → card closes. Click away or press Escape → nothing happens. This matches the pattern described in concept 9 — snappy, button-local, no responder chain impact.
+
+**Future refinement:** The "always confirm" rule is a safe starting point. Later, we may differentiate — cards with unsaved state always confirm, cards without unsaved state close immediately. But that requires a notion of "unsaved state" in the card model, which doesn't exist yet. Always-confirm is the pragmatic default.
+
+#### Menu Icon Rotation {#menu-icon-rotation}
+
+**Change:** Rotate the hamburger menu icon 90 degrees so the three dots are horizontal (`EllipsisVertical` → stays vertical but the dots should read as a more standard vertical kebab menu icon). Actually, the current `EllipsisVertical` is already a vertical three-dot icon. The request is to rotate it to horizontal — use `Ellipsis` (horizontal three-dot) from lucide-react instead.
+
+Wait — re-reading the original request: "Rotate hamburger menu icon 90 degrees." The current icon is `EllipsisVertical` (⋮). Rotating 90° would make it horizontal (⋯). This is a one-line change:
+
+```tsx
+// Before
+import { EllipsisVertical } from "lucide-react";
+
+// After
+import { Ellipsis } from "lucide-react";
+```
+
+This is a purely cosmetic change. `Ellipsis` (⋯) reads as "more options" in the same way `EllipsisVertical` (⋮) does — both are standard menu trigger icons. The horizontal variant is arguably more common on the web.
+
+#### Title Bar Button Order {#titlebar-button-order}
+
+The current order is: `[menu] [collapse] [close]`, right-aligned. This matches macOS window button ordering convention (left-to-right: close, minimize, maximize on Mac — but our buttons are right-aligned, so the order inverts). For consistency with web conventions (where the close button is rightmost):
+
+```
+[icon] CARD TITLE    [⋯] [▾/▴] [✕]
+         menu ─────────┘    │     └── close (always rightmost)
+         collapse ──────────┘
+```
+
+This order is already correct in the existing `CardHeader` implementation. No change needed.
+
+#### What Concept 10 Establishes {#c10-demonstrates}
+
+1. **Window-shade collapse persists in CardState** — layout serialization remembers collapsed cards. Content is hidden (CSS), not unmounted (React). State preserved. ([#d27-window-shade](#d27-window-shade))
+2. **Close confirmation uses TugConfirmPopover** — the title bar is the first real consumer of concept 9's button-confirmation pattern. Always-confirm for now; differentiable later. ([#close-confirmation](#close-confirmation))
+3. **Title bar animations use motion tokens** — collapse/expand height transition uses `--td-duration-moderate` + `--td-easing-standard`. Appearance zone, zero unnecessary re-renders. ([#d23-motion-tokens](#d23-motion-tokens))
 
 ### 11. Dock Redesign {#c11-dock}
 
-**The problem.** The dock needs command buttons (not just card-toggle buttons) and popout menu buttons.
+**Status: DESIGNED** (2026-03-02)
 
-**Questions to resolve:**
-- What commands belong in the dock? Reset layout, restart server, and reload frontend are currently in a settings dropdown. Should they move to dedicated buttons?
-- What are "popout menu buttons"? Buttons that open a floating menu anchored to the dock?
-- How does the dock interact with the responder chain? Is the dock a responder?
-- Should the dock be customizable (user can add/remove/reorder buttons)?
+**The problem.** The dock currently has one kind of button: card-toggle buttons that show/focus a card. It needs two additional kinds: command buttons (that trigger an action directly) and popout menu buttons (that open a floating menu anchored to the dock). It also needs positional flexibility and hover tooltips.
+
+The existing dock (`dock.tsx`) is a fixed 48px vertical rail on the right edge with six card buttons, a settings dropdown, and a logo. The redesign adds button types and flexibility without fundamentally changing the structure.
+
+#### Three Button Types {#d28-dock-button-types}
+
+The dock has three kinds of buttons, each rendered with the same visual treatment (32×32 icon button) but with different click behavior:
+
+| Type | Click behavior | Visual indicator | Example |
+|------|---------------|-----------------|---------|
+| **Card toggle** | Show/focus/toggle a card | Badge count (existing) | Terminal, Git, Files |
+| **Command** | Execute an action directly | None (or brief flash) | Future test-case buttons |
+| **Popout menu** | Open a floating menu anchored to the button | Caret/chevron indicator | Settings (existing), future grouped commands |
+
+**Card toggle buttons** — unchanged from current behavior. Click shows the card if hidden, focuses it if visible but not key, or toggles it off if already key. Badge counts display notification state. These are the top group in the dock.
+
+**Command buttons** — direct-action buttons for the dock. Click fires a callback immediately. No popover, no menu, no confirmation (unless the command wraps in `TugConfirmPopover` from concept 9). These will be added as we implement tugways components and need test-case triggers. They live in the same button group as card toggles, below them.
+
+**Popout menu buttons** — buttons that open a floating menu anchored to the dock. The settings gear icon is already this type (it uses `CardDropdownMenu`). The menu uses Radix DropdownMenu, positioned to the side of the dock opposite its edge (e.g., if dock is on the right, menus open to the left). The menu's `side` and `align` props adjust automatically based on dock placement.
+
+#### Dock Placement {#d29-dock-placement}
+
+The dock can be placed on any edge: **right** (default), left, top, or bottom. The placement is a setting stored in the settings API (same mechanism as theme).
+
+| Placement | Layout | Menu direction |
+|-----------|--------|---------------|
+| Right | Vertical, 48px wide, fixed to right edge | Menus open left |
+| Left | Vertical, 48px wide, fixed to left edge | Menus open right |
+| Top | Horizontal, 48px tall, fixed to top edge | Menus open below |
+| Bottom | Horizontal, 48px tall, fixed to bottom edge | Menus open above |
+
+The dock is always a flexbox — `flex-col` for vertical placements (left/right), `flex-row` for horizontal (top/bottom). Icons rotate or stay the same — lucide icons are symmetrical, so no rotation needed. The canvas area (`DeckCanvas`) adjusts its inset to account for the dock's position and width/height.
+
+**Implementation note:** The current dock is hardcoded as `fixed top-0 right-0 bottom-0 w-12 flex-col`. Placement support means parameterizing these: position props come from a `dockPlacement` setting, and the CSS classes are computed from it. The `side` prop on `CardDropdownMenu` flips based on placement.
+
+#### Tooltips {#dock-tooltips}
+
+Every dock button shows a tooltip on hover, displaying the button's label. The tooltip appears on the side opposite the dock edge (e.g., dock on the right → tooltips appear to the left). Radix Tooltip is already in the project (`components/ui/tooltip.tsx`) with enter/exit animations.
+
+```tsx
+<Tooltip>
+  <TooltipTrigger asChild>
+    <IconButton Icon={Terminal} label="Terminal" onClick={...} />
+  </TooltipTrigger>
+  <TooltipContent side={tooltipSide}>
+    Terminal
+  </TooltipContent>
+</Tooltip>
+```
+
+The `tooltipSide` is derived from dock placement: right dock → `"left"`, left dock → `"right"`, top dock → `"bottom"`, bottom dock → `"top"`.
+
+A `TooltipProvider` wraps the entire dock to configure shared delay settings — `delayDuration={400}` (standard hover delay before showing), `skipDelayDuration={100}` (after one tooltip shows, subsequent ones appear faster as the user scans).
+
+#### Responder Chain: The Dock Is Not a Responder {#dock-chain}
+
+The dock does not participate in the responder chain. It never receives keyboard events via the chain. It never handles routed actions. It is purely a direct-interaction surface — you click a button, it fires a callback.
+
+This is intentional. The dock is chrome, not content. It doesn't need action validation (no `canHandle`/`validateAction`). It doesn't need to participate in focus management. Its buttons are always visible and always enabled (badge counts and button presence are controlled by the card registry, not the chain).
+
+The dock *triggers* things that interact with the chain — clicking a card toggle may change which card is first responder, and a popout menu might fire an action that eventually reaches the chain — but the dock itself is outside the chain.
+
+#### Dock Configuration Shape {#dock-config}
+
+```ts
+interface DockConfig {
+  placement: "right" | "left" | "top" | "bottom";  // default: "right"
+  buttons: DockButtonConfig[];  // ordered list of buttons
+}
+
+type DockButtonConfig =
+  | { type: "card-toggle"; cardType: string; icon: string; label: string }
+  | { type: "command"; icon: string; label: string; action: string }
+  | { type: "popout-menu"; icon: string; label: string; menuId: string }
+  | { type: "spacer" }
+  | { type: "logo" };
+```
+
+The button list is declarative — the dock renders whatever buttons the config specifies, in order. The default config matches the current dock: six card toggles, a spacer, the settings popout menu, and the logo. Future changes (adding test-case command buttons, reordering) are config changes, not component changes.
+
+The `menuId` on popout-menu buttons references a menu definition registered elsewhere (the settings menu is built in `Dock` today; in the redesign it would be registered by ID so other menus can be added without modifying the dock component).
+
+#### What Concept 11 Establishes {#c11-demonstrates}
+
+1. **Three dock button types** — card toggle, command, popout menu. Same visual, different click behavior. Declared in config, not hardcoded. ([#d28-dock-button-types](#d28-dock-button-types))
+2. **Dock placement** — right/left/top/bottom. Canvas inset adjusts. Menu direction and tooltip side flip automatically. ([#d29-dock-placement](#d29-dock-placement))
+3. **Dock is outside the responder chain** — pure direct-interaction chrome. No `useResponder`, no action validation, no focus management. ([#dock-chain](#dock-chain))
+4. **Tooltips via Radix Tooltip** — already in the project. Consistent delay, auto-positioned opposite the dock edge. ([#dock-tooltips](#dock-tooltips))
 
 ### 12. Keybindings View {#c12-keybindings}
 
+**Status: DEFERRED**
+
 **The problem.** Currently the only keyboard shortcut is `Control+\` for panel cycling. We need a view to display and configure keybindings.
 
-**Questions to resolve:**
+**Questions to resolve (when revisited):**
 - Is this a card (like settings) or a modal dialog?
 - Can users customize keybindings, or is this display-only?
 - How do keybindings interact with the responder chain? The responder chain should be the mechanism that routes keyboard events to the correct handler.
 - What keybindings do we need beyond panel cycling? Card-specific shortcuts? Global shortcuts? Command palette?
 
 ### 13. Brio Theme Revision {#c13-brio}
+
+**Status: DEFERRED**
 
 **The problem.** Brio's current palette is deep graphite. The request is to shift it to dark greenish.
 
@@ -1898,10 +2078,10 @@ This is the standard React pattern for imperative-over-declarative APIs (same pa
                                │
               ┌────────────────┼────────────────┐
               │                │                │
-   ┌──────────▼──────┐  ┌─────▼──────┐  ┌──────▼──────────┐
+   ┌──────────▼──────┐  ┌──────▼──────┐  ┌──────▼──────────┐
    │ 4. Responder    │  │ 5. Mutation │  │ 3. TugButton    │
    │    Chain        │  │    Model    │  │    (test case)  │
-   └──────────┬──────┘  └─────┬──────┘  └─────────────────┘
+   └──────────┬──────┘  └─────┬───────┘  └─────────────────┘
               │               │
               └───────┬───────┘
                       │
@@ -2107,3 +2287,31 @@ Key decisions:
 Card-modal scoping (TugSheet) is the most complex implementation: Radix doesn't support subtree-scoped modality natively. We diverge from Radix defaults here, applying `inert` to the card's content area only and rendering the portal inside the card container. This is justified because cards are independent workspaces — blocking the entire app for a card-level concern violates the model.
 
 No open items. Concept 9 is fully designed.
+
+### Entry 14: Concept 10 Designed — Card Title Bar Enhancements {#log-14} (2026-03-02)
+
+Three small, well-scoped changes with straightforward designs. Read the existing `card-header.tsx` and `card-frame.tsx` to confirm the plumbing is already in place — `showCollapse`, `onCollapse`, `collapsible` all exist but are currently inactive.
+
+Key decisions:
+
+- **[D27] Window-shade collapse to title bar.** Content hidden via CSS (`overflow: hidden`, height transition to 0), not unmounted. Card internal state (terminal session, scroll position, form values) preserved. `collapsed: boolean` added to `CardState` for persistence. Chevron icon (ChevronDown/ChevronUp) replaces the ambiguous Minus icon. Double-click on header as secondary gesture.
+- **Close confirmation uses TugConfirmPopover** from concept 9 — first real consumer of the button-confirmation pattern. Always-confirm for now; can differentiate by unsaved-state later.
+- **Menu icon: `EllipsisVertical` → `Ellipsis`** — one-line import change. Horizontal three-dot is more standard on web.
+
+Collapse animation uses concept 8's motion tokens (`--td-duration-moderate`, `--td-easing-standard`). Title bar button order confirmed: [menu] [collapse] [close] — already correct in existing code.
+
+No open items. Concept 10 is fully designed.
+
+### Entry 15: Concept 11 Designed — Dock Redesign {#log-15} (2026-03-02)
+
+Read the existing `dock.tsx` to understand the current structure. The dock is already well-structured — six card toggle buttons, a settings dropdown (which is already a popout menu), a spacer, and a logo. The redesign formalizes what's there and adds flexibility.
+
+Key decisions:
+
+- **[D28] Three button types: card toggle, command, popout menu.** Same 32×32 visual treatment, different click behavior. Declared in a config array, not hardcoded. Command buttons are for future test-case triggers.
+- **[D29] Dock placement on any edge.** Right (default), left, top, bottom. Canvas inset adjusts. Menu direction and tooltip side auto-flip based on placement. Flexbox direction switches between `flex-col` (vertical) and `flex-row` (horizontal).
+- **Dock is not a responder.** Never participates in the chain. No `useResponder`, no action validation. Pure direct-interaction chrome. Triggers chain-affecting actions indirectly (e.g., card toggle changes first responder).
+- **Tooltips on every button.** Radix Tooltip already in project. `delayDuration={400}`, `skipDelayDuration={100}`. Side opposite dock edge.
+- **Commands stay in settings dropdown.** Reset layout, restart server, reload frontend remain where they are. No dedicated dock buttons for these.
+
+No open items. Concept 11 is fully designed.
