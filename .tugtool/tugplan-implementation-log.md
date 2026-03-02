@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-02T17:47:12Z
+---
+
+## step-5: Rewrote deck-canvas.tsx from 581 lines to 38-line minimal shell per Spec S03. Renders only DisconnectBanner, exports empty DeckCanvasHandle and simplified DeckCanvasProps.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-4
 date: 2025-03-02T17:44:11Z
 ---
