@@ -146,6 +146,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
 
+        // Theme submenu
+        let themeMenuItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        themeMenuItem.submenu = themeMenu
+        themeMenu.addItem(NSMenuItem(title: "Brio", action: #selector(setThemeBrio(_:)), keyEquivalent: ""))
+        themeMenu.addItem(NSMenuItem(title: "Bluenote", action: #selector(setThemeBluenote(_:)), keyEquivalent: ""))
+        themeMenu.addItem(NSMenuItem(title: "Harmony", action: #selector(setThemeHarmony(_:)), keyEquivalent: ""))
+        appMenu.addItem(themeMenuItem)
+        appMenu.addItem(NSMenuItem.separator())
+
         // Services submenu
         let servicesMenuItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu(title: "Services")
@@ -260,6 +270,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showAbout(_ sender: Any?) {
         sendControl("show-card", params: ["component": "about"])
+    }
+
+    @objc private func setThemeBrio(_ sender: Any) {
+        sendControl("set-theme", params: ["theme": "brio"])
+    }
+
+    @objc private func setThemeBluenote(_ sender: Any) {
+        sendControl("set-theme", params: ["theme": "bluenote"])
+    }
+
+    @objc private func setThemeHarmony(_ sender: Any) {
+        sendControl("set-theme", params: ["theme": "harmony"])
     }
 
     @objc func openProjectHome(_ sender: Any?) {

@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-02T20:07:07Z
+---
+
+## step-8: Added Theme submenu with Brio/Bluenote/Harmony items to app menu, each sending set-theme control frame via sendControl. Items always enabled.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-7
+date: 2025-03-02T20:02:08Z
+---
+
+## step-7: Added set-theme handler in initActionDispatch with theme validation and themeSetterRef dispatch, updated _resetForTest to clear themeSetterRef, added 6 new tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-6
+date: 2025-03-02T19:57:35Z
+---
+
+## step-6: Replaced body-class theme mechanism with stylesheet injection in main.tsx, wrapped React tree with TugThemeProvider in DeckManager, updated readCurrentThemeFromDOM to use style element data-theme attribute
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-5
+date: 2025-03-02T19:50:24Z
+---
+
+## step-5: Created TugThemeProvider context with stylesheet injection, raw CSS imports, localStorage persistence, settings API sync, Swift bridge canvas color. Created vite-env.d.ts. Deleted use-theme.ts. Added registerThemeSetter to action-dispatch.ts.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-4
+date: 2025-03-02T19:43:19Z
+---
+
+## step-4: Created tugdeck/src/components/tugways/ directory with .gitkeep placeholder for future tugways design system components
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-3
+date: 2025-03-02T19:41:09Z
+---
+
+## step-3: Created brio.css, bluenote.css, harmony.css with --tways-* palette tokens; updated 5 semantic tokens with var() fallbacks; removed body.td-theme-bluenote and body.td-theme-harmony blocks from tokens.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-2
+date: 2025-03-02T19:32:05Z
+---
+
+## step-2: Added motion tokens section with 4 duration tokens, 3 easing tokens, duration scalar, and @media prefers-reduced-motion block with 0.001 scalar
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
+step: step-1
+date: 2025-03-02T19:27:27Z
+---
+
+## step-1: Renamed all 177 occurrences of --tl- to --tways- in tokens.css, updated header and inline comments to reference Tugways Design System instead of Tuglook
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-10
 date: 2025-03-02T18:24:31Z
 ---

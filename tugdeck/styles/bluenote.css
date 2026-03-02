@@ -1,0 +1,55 @@
+/**
+ * @theme-name Bluenote
+ * @theme-description Cool dark blue-steel theme
+ *
+ * Contains only Tier 1 palette tokens (--tways-*).
+ * Semantic tokens (--td-*) derive via var() chain in tokens.css.
+ * Optional palette entries override specific semantic tokens where
+ * this theme diverges from the default (Brio) derivation.
+ */
+body {
+  /* Tier 1: Palette */
+  --tways-bg: #2a3136;
+  --tways-bg-soft: #363e43;
+  --tways-bg-line: rgba(255, 255, 255, 0.018);
+  --tways-panel: #3a454c;
+  --tways-panel-soft: #313b43;
+  --tways-panel-ink: #d9e0e4;
+  --tways-surface-1: #3b4348;
+  --tways-surface-2: #343c41;
+  --tways-surface-3: #30373c;
+  --tways-surface-4: #2a3237;
+  --tways-surface-screen: #5c6871;
+  --tways-surface-screen-ink: #edf2f5;
+  --tways-text: #dde4e8;
+  --tways-text-soft: #a8b6bf;
+  --tways-text-inverse: #edf1f3;
+  --tways-accent: #ff8434;
+  --tways-accent-strong: #f27024;
+  --tways-accent-cool: #4bbde8;
+  --tways-accent-1: #ff8434;
+  --tways-accent-2: #4bbde8;
+  --tways-accent-3: #ab7ee4;
+  --tways-accent-4: #ff5162;
+  --tways-accent-5: #73c382;
+  --tways-accent-6: #ffe465;
+  --tways-accent-7: #ec76c9;
+  --tways-accent-8: #ff9a72;
+  --tways-border: #5b6871;
+  --tways-border-soft: #79858d;
+  --tways-shadow-mid: #11191f;
+  --tways-shadow-soft: rgba(0, 0, 0, 0.44);
+  --tways-track-bg: repeating-linear-gradient(
+    to bottom,
+    #6c7b85 0px,
+    #6c7b85 1px,
+    #84939c 2px,
+    #84939c 4px
+  );
+
+  /* Optional palette entries: semantic overrides where Bluenote diverges from default derivation */
+  --tways-canvas: #2a3136;
+  --tways-header-active: #344f5e;
+  --tways-header-inactive: #2a3a44;
+  --tways-grid-color: rgba(255, 255, 255, 0.04);
+}

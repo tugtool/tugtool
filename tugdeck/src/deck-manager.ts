@@ -17,6 +17,7 @@ import type { Root } from "react-dom/client";
 import { DeckCanvas, type DeckCanvasHandle } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { postSettings } from "./settings-api";
+import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -46,10 +47,14 @@ export class DeckManager {
    */
   private initialLayout: object | null;
 
-  constructor(container: HTMLElement, connection: TugConnection, initialLayout?: object) {
+  /** Active theme at construction time — passed to TugThemeProvider as initialTheme. */
+  private initialTheme: ThemeName;
+
+  constructor(container: HTMLElement, connection: TugConnection, initialLayout?: object, initialTheme?: ThemeName) {
     this.container = container;
     this.connection = connection;
     this.initialLayout = initialLayout ?? null;
+    this.initialTheme = initialTheme ?? "brio";
 
     // Canvas container needs position:relative for absolutely-positioned children
     container.style.position = "relative";
@@ -77,12 +82,16 @@ export class DeckManager {
 
     this.reactRoot.render(
       React.createElement(
-        ErrorBoundary,
-        null,
-        React.createElement(DeckCanvas, {
-          ref: this.deckCanvasRef,
-          connection: this.connection,
-        })
+        TugThemeProvider,
+        { initialTheme: this.initialTheme },
+        React.createElement(
+          ErrorBoundary,
+          null,
+          React.createElement(DeckCanvas, {
+            ref: this.deckCanvasRef,
+            connection: this.connection,
+          })
+        )
       )
     );
   }
@@ -169,17 +178,15 @@ export class DeckManager {
   }
 
   /**
-   * Read the active theme from document.body.classList.
+   * Read the active theme from the injected stylesheet element.
+   *
+   * TugThemeProvider injects <style id="tug-theme-override" data-theme="...">
+   * for non-Brio themes. Absence of the element means Brio is active.
    */
   private readCurrentThemeFromDOM(): string {
     if (typeof document === "undefined") return "brio";
-    const prefix = "td-theme-";
-    for (const cls of Array.from(document.body.classList)) {
-      if (cls.startsWith(prefix)) {
-        return cls.slice(prefix.length);
-      }
-    }
-    return "brio";
+    const el = document.getElementById("tug-theme-override");
+    return el?.getAttribute("data-theme") ?? "brio";
   }
 
   private scheduleSave(): void {

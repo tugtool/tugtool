@@ -21,6 +21,26 @@ const handlers = new Map<string, ActionHandler>();
 /** Module-level flag to prevent duplicate reload_frontend calls */
 let reloadPending = false;
 
+/** Module-level reference to the theme setter, populated by TugThemeProvider on mount. */
+let themeSetterRef: ((theme: string) => void) | null = null;
+
+/**
+ * Register the theme setter function from TugThemeProvider.
+ * Called by TugThemeProvider on mount so the set-theme action handler
+ * can call it when a Theme submenu item is selected.
+ */
+export function registerThemeSetter(setter: (theme: string) => void): void {
+  themeSetterRef = setter;
+}
+
+/**
+ * Get the registered theme setter (used by the set-theme action handler).
+ * Returns null if TugThemeProvider has not yet mounted.
+ */
+export function getThemeSetter(): ((theme: string) => void) | null {
+  return themeSetterRef;
+}
+
 /** TextDecoder for UTF-8 payload decoding */
 const textDecoder = new TextDecoder();
 
@@ -38,6 +58,7 @@ export function registerAction(action: string, handler: ActionHandler): void {
 export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
+  themeSetterRef = null;
 }
 
 /**
@@ -110,6 +131,20 @@ export function initActionDispatch(
       (messageHandlers.setDevMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
     } else {
       console.info("set-dev-mode: WKScriptMessageHandler bridge not available");
+    }
+  });
+
+  // set-theme: Switch the active theme via TugThemeProvider
+  registerAction("set-theme", (payload) => {
+    const theme = payload.theme;
+    if (typeof theme !== "string" || !["brio", "bluenote", "harmony"].includes(theme)) {
+      console.warn("set-theme: invalid theme", payload);
+      return;
+    }
+    if (themeSetterRef) {
+      themeSetterRef(theme);
+    } else {
+      console.warn("set-theme: theme setter not registered yet");
     }
   });
 
