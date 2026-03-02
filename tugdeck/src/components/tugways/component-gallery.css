@@ -1,0 +1,197 @@
+/**
+ * Component Gallery styles -- panel positioning, layout grid, section styles.
+ *
+ * All colors use var(--td-*) semantic tokens exclusively.
+ * Panel is absolute-positioned per Spec S04 (#s04-gallery-panel).
+ *
+ * [D03] Gallery as absolute-positioned div
+ * [D04] Semantic tokens exclusively
+ * Spec S04 (#s04-gallery-panel)
+ */
+
+/* ============================================================================
+   Panel Container
+   ========================================================================= */
+
+.cg-panel {
+  position: absolute;
+  top: 64px;
+  left: 64px;
+  width: 640px;
+  max-height: calc(100vh - 128px);
+  background-color: var(--td-bg);
+  border: 1px solid var(--td-border);
+  border-radius: var(--radius);
+  overflow-y: auto;
+  /* Above canvas grid, below DisconnectBanner */
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--td-font-sans);
+  color: var(--td-text);
+  box-shadow: 0 8px 32px var(--td-shadow-soft);
+}
+
+/* ============================================================================
+   Title Bar
+   ========================================================================= */
+
+.cg-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 12px 20px;
+  border-bottom: 1px solid var(--td-border);
+  background-color: var(--td-card);
+  /* Sticky so it stays visible while scrolling content */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-radius: var(--radius) var(--radius) 0 0;
+  flex-shrink: 0;
+}
+
+.cg-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--td-text);
+  user-select: none;
+}
+
+/* ============================================================================
+   Scrollable Content Area
+   ========================================================================= */
+
+.cg-content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+   Section
+   ========================================================================= */
+
+.cg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cg-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--td-text-soft);
+  user-select: none;
+}
+
+/* ============================================================================
+   Controls Bar (interactive toggles)
+   ========================================================================= */
+
+.cg-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  flex-wrap: wrap;
+}
+
+.cg-control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cg-control-label {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.cg-control-select {
+  font-size: 12px;
+  font-family: var(--td-font-sans);
+  color: var(--td-text);
+  background-color: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  padding: 2px 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.cg-control-select:focus {
+  border-color: var(--td-accent-cool);
+}
+
+.cg-control-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--td-accent);
+  cursor: pointer;
+}
+
+/* ============================================================================
+   Button Grid (full matrix: subtype x variant x size)
+   ========================================================================= */
+
+.cg-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cg-subtype-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cg-subtype-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--td-text-soft);
+  font-style: italic;
+  user-select: none;
+}
+
+.cg-variant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cg-variant-label {
+  font-size: 10px;
+  color: var(--td-text-soft);
+  width: 76px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.cg-size-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================================================
+   Separator between sections
+   ========================================================================= */
+
+.cg-divider {
+  height: 1px;
+  background-color: var(--td-border);
+  margin: 4px 0;
+}

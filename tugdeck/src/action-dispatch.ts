@@ -5,9 +5,12 @@
  * and dispatched based on the action string in Control frame payloads.
  *
  * Phase 0: DevNotificationRef dependency removed, card handlers removed.
+ * Phase 2: Added gallerySetterRef and show-component-gallery handler.
  * Spec S04 (#s04-action-dispatch-shape), [D04] Gut action-dispatch
+ * Spec S05 (#s05-gallery-action)
  */
 
+import type React from "react";
 import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
 import { FeedId } from "./protocol";
@@ -25,6 +28,17 @@ let reloadPending = false;
 let themeSetterRef: ((theme: string) => void) | null = null;
 
 /**
+ * Module-level reference to the gallery visibility setter, populated by DeckCanvas on mount.
+ *
+ * Typed as React.Dispatch<React.SetStateAction<boolean>> to support the toggle-via-callback
+ * pattern: gallerySetterRef((prev) => !prev). This differs from themeSetterRef which accepts
+ * a direct value -- the dispatch type is needed so the toggle can read the previous state.
+ *
+ * Spec S05 (#s05-gallery-action)
+ */
+let gallerySetterRef: React.Dispatch<React.SetStateAction<boolean>> | null = null;
+
+/**
  * Register the theme setter function from TugThemeProvider.
  * Called by TugThemeProvider on mount so the set-theme action handler
  * can call it when a Theme submenu item is selected.
@@ -39,6 +53,21 @@ export function registerThemeSetter(setter: (theme: string) => void): void {
  */
 export function getThemeSetter(): ((theme: string) => void) | null {
   return themeSetterRef;
+}
+
+/**
+ * Register the gallery visibility setter from DeckCanvas.
+ * Called by DeckCanvas on mount so the show-component-gallery action handler
+ * can toggle gallery visibility when the Mac Developer menu item is selected.
+ *
+ * Last-registration-wins: calling again replaces the previous setter.
+ *
+ * Spec S05 (#s05-gallery-action)
+ */
+export function registerGallerySetter(
+  setter: React.Dispatch<React.SetStateAction<boolean>>
+): void {
+  gallerySetterRef = setter;
 }
 
 /** TextDecoder for UTF-8 payload decoding */
@@ -59,6 +88,7 @@ export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
   themeSetterRef = null;
+  gallerySetterRef = null;
 }
 
 /**
@@ -145,6 +175,15 @@ export function initActionDispatch(
       themeSetterRef(theme);
     } else {
       console.warn("set-theme: theme setter not registered yet");
+    }
+  });
+
+  // show-component-gallery: Toggle Component Gallery visibility via DeckCanvas state
+  registerAction("show-component-gallery", () => {
+    if (gallerySetterRef) {
+      gallerySetterRef((prev: boolean) => !prev);
+    } else {
+      console.warn("show-component-gallery: gallery setter not registered yet");
     }
   });
 
