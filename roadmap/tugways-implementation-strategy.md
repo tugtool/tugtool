@@ -130,9 +130,9 @@ no design system dependencies — it just works on rectangles.
 subscribers, those frames are silently dropped by `connection.ts` (it just won't
 find any registered callbacks). This is fine — no errors, no crashes.
 
-### Phase 1: Theme Foundation + Snap Sets (Concepts 1, 2, 13)
+### Phase 1: Theme Foundation (Concepts 1, 2)
 
-**Goal**: Loadable theme architecture. `components/tugways/` directory exists. Card snapping is modifier-gated.
+**Goal**: Loadable theme architecture. `components/tugways/` directory exists.
 
 **What to do**:
 1. Rename token prefix `--tl-` → `--tways-` throughout `tokens.css` and all CSS references ([D02])
@@ -142,11 +142,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
 5. Create `components/tugways/` directory ([D06])
 6. Implement `TugThemeProvider` (React context for current theme name + setter)
 7. Wire Mac menu "Settings > Theme" to switch themes via control frame
-8. Gate snap behavior on Option (Alt) modifier ([D32]): in DeckManager's drag handler, only call `computeSnap` and show guides when `event.altKey` is true. Free drag is the default.
-9. Verify set-move still works without modifier once a set is formed ([D33])
-10. Verify break-out behavior: drag a set member away to detach, then Option+drag to snap elsewhere
 
-**Result**: Themes load as CSS files. Motion tokens exist. Directory structure ready. Card snapping requires Option key — casual drags are free movement.
+**Result**: Themes load as CSS files. Motion tokens exist. Directory structure ready.
 
 ### Phase 2: First Component + Gallery (Concept 3)
 
@@ -174,7 +171,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 4. Implement action validation: `canHandle` + `validateAction` ([D11])
 5. Wire DeckCanvas as a responder (receives canvas-level actions)
 6. Wire the gallery panel as a responder (test basic key routing)
-7. Move keyboard shortcuts (currently `keydownHandler` in DeckManager) into the chain
+7. Implement keyboard shortcuts (e.g., panel cycling) in the responder chain key pipeline
 
 **Result**: Actions flow through the responder chain. Focus is chain-managed, not DeckManager-managed.
 
@@ -188,9 +185,10 @@ find any registered callbacks). This is fine — no errors, no crashes.
 3. Implement `useDOMStyle` hook — set inline styles without re-render
 4. Document the three zones: appearance (CSS, zero re-renders), local data (targeted setState), structure (subtree re-render) ([D12])
 5. Apply the five structure-zone rules ([D14])
-6. Retrofit DeckManager's existing ref-based style mutation during drag as a formal appearance-zone operation
 
 **Result**: Components can mutate appearance without React re-renders. The mutation discipline is established.
+
+**Note**: DeckManager's existing ref-based style mutation during drag is a natural appearance-zone operation. Formalizing it with the new hooks happens in Phase 5 when the DeckManager orchestrator is rebuilt and cards exist to test with.
 
 ### Phase 5: Tugcard Base (Concept 6)
 
@@ -224,6 +222,19 @@ find any registered callbacks). This is fine — no errors, no crashes.
 **Result**: A card can host multiple tabs. Switching tabs changes the visible content and the active responder. The tab bar is invisible for the common single-tab case.
 
 **Note**: Drag-to-merge and drag-to-detach tab gestures are stretch goals for a later phase. This phase covers click-based tab management only.
+
+### Phase 5c: Card Snapping (Concept 13)
+
+**Goal**: Snap-to-edge and set formation require the Option (Alt) modifier. Free drag is the default.
+
+**What to do**:
+1. Gate snap behavior on Option (Alt) modifier ([D32]): in DeckManager's drag handler, only call `computeSnap` and show guides when `event.altKey` is true. Free drag is the default.
+2. Support mid-drag modifier toggle: pressing/releasing Option during a drag immediately shows/hides guides and snaps/unsnaps
+3. Verify set-move still works without modifier once a set is formed ([D33])
+4. Verify break-out behavior: drag a set member away to detach, then Option+drag to snap elsewhere
+5. Test with multiple cards: create cards via menu, Option+drag to snap, verify set formation and set-move
+
+**Result**: Casual drags are free movement. Option+drag activates snap guides and set formation. Existing set-move and break-out behavior preserved.
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -300,7 +311,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 Phase 0: Demolition
     │
     ▼
-Phase 1: Theme Foundation + Snap Sets ─────────────────┐
+Phase 1: Theme Foundation ─────────────────────────────┐
     │                                                    │
     ▼                                                    │
 Phase 2: First Component + Gallery                       │
@@ -314,35 +325,37 @@ Responder Chain  Mutation Model                          │
              ▼                                           │
          Phase 5: Tugcard Base                           │
              │                                           │
-             ├────────────────┬──────────────┐           │
-             ▼                ▼              ▼           ▼
-         Phase 5b:        Phase 6:       Phase 7: Motion
-         Card Tabs        Feed Abstraction   ◄── (uses tokens from Phase 1)
-             │                │              │
-             └────────┬───────┴──────────────┘
-                      ▼
-                  Phase 8: Alerts + Title Bar + Dock
-                      │
-                      ▼
+             ├──────────┬──────────┬──────────┬──────┐   │
+             ▼          ▼          ▼          ▼      ▼   ▼
+         Phase 5b:  Phase 5c:  Phase 6:  Phase 7:  Phase 8:
+         Card Tabs  Card Snap  Feed Abs. Motion    Chrome
+                                         ◄── (tokens from Phase 1)
+             │          │          │         │       │
+             └──────────┴──────┬───┴─────────┴───────┘
+                               ▼
                   Phase 9: Card Rebuild
 ```
 
-Phases 3 and 4 can run in parallel. Phase 5b, 6, and 7 can all start as soon as
-Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 5b (Card Tabs)
-is independent of Phase 6 (Feed Abstraction) — tabs are a structural feature, feeds
-are a data feature. Phase 6 needs Phase 5 (Tugcard) to have something to feed data into.
+Phases 3 and 4 can run in parallel. Phases 5b, 5c, 6, 7, and 8 can all start as soon
+as Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 8 (Alerts +
+Title Bar + Dock) only needs Tugcard (Phase 5) and the responder chain (Phase 3, already
+done) — it does not depend on feeds, motion, tabs, or snapping. Phase 9 (Card Rebuild)
+is the true convergence point: rebuilt cards need feeds (Phase 6) for data, motion
+(Phase 7) for skeleton/transitions, and chrome (Phase 8) for title bar and dock. Phases
+5b and 5c are enhancements that can land before, during, or after Phase 9.
 
 ## Estimated Scope
 
 | Phase | New/Modified Files | Rough Size |
 |-------|-------------------|------------|
 | 0 | -40 files deleted, 3 gutted | Net reduction: ~8000 lines |
-| 1 | ~6 files | ~350 lines |
+| 1 | ~5 files | ~300 lines |
 | 2 | ~3 files | ~400 lines |
 | 3 | ~4 files | ~500 lines |
 | 4 | ~3 files | ~200 lines |
 | 5 | ~8 files | ~1200 lines |
 | 5b | ~3 files | ~350 lines |
+| 5c | ~1 file | ~50 lines |
 | 6 | ~4 files | ~400 lines |
 | 7 | ~3 files | ~200 lines |
 | 8 | ~8 files | ~1000 lines |
@@ -364,16 +377,17 @@ Each phase becomes one tugplan. The phases are designed to be:
 The suggested plan sequence:
 
 1. `tugways-phase-0-demolition` — tear down, verify empty canvas
-2. `tugways-phase-1-theme-and-snap` — tokens, theme loading, directory structure, modifier-gated snap
+2. `tugways-phase-1-theme` — tokens, theme loading, directory structure
 3. `tugways-phase-2-first-component` — TugButton + gallery
 4. `tugways-phase-3-responder-chain` — event routing
 5. `tugways-phase-4-mutation-model` — DOM hooks, three-zone discipline
 6. `tugways-phase-5-tugcard` — card base component, new DeckManager
 7. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
-8. `tugways-phase-6-feed` — feed hooks, data flow
-9. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-10. `tugways-phase-8-chrome` — alerts, title bar, dock
-11. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+8. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+9. `tugways-phase-6-feed` — feed hooks, data flow
+10. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+11. `tugways-phase-8-chrome` — alerts, title bar, dock
+12. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
@@ -391,8 +405,9 @@ The suggested plan sequence:
    (`0x50`) for the tug-feed progress stream — a new feature, not a change to
    existing feeds, and explicitly designed to come later per [D21].
 
-3. **Incremental usability**: Mac menu commands are acceptable for phases 0–7.
-   The dock arrives in Phase 8. No minimal dock needed before then.
+3. **Incremental usability**: Mac menu commands are acceptable until the dock
+   is built (Phase 8). Phase 8 can start right after Phase 5 — it doesn't
+   need to wait for feeds, motion, tabs, or snapping.
 
 4. **Test strategy**: Per-phase. Write tests for each new component as it's
    built, not as a batch sweep at the end.
