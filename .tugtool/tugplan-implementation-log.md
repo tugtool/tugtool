@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-02T23:37:19Z
+---
+
+## step-4: Add chain-action mode to TugButton via action prop. Uses useResponderChain + useSyncExternalStore for reactive validation. canHandle controls visibility, validateAction controls aria-disabled state. Click dispatches via manager.dispatch. CSS gains aria-disabled rules. Create chain-action-button test suite (18 tests).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-3
 date: 2025-03-02T23:29:27Z
 ---
