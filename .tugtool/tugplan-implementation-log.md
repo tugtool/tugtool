@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-02T19:57:35Z
+---
+
+## step-6: Replaced body-class theme mechanism with stylesheet injection in main.tsx, wrapped React tree with TugThemeProvider in DeckManager, updated readCurrentThemeFromDOM to use style element data-theme attribute
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-5
 date: 2025-03-02T19:50:24Z
 ---

@@ -6,6 +6,11 @@ import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { fetchSettingsWithRetry } from "./settings-api";
+import {
+  applyInitialTheme,
+  sendCanvasColor,
+  type ThemeName,
+} from "./contexts/theme-provider";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -24,22 +29,21 @@ if (!container) {
 (async () => {
   const serverSettings = await fetchSettingsWithRetry("/api/settings");
 
-  // Apply theme to document.body before DeckManager construction.
-  const THEME_CLASS_PREFIX = "td-theme-";
-  for (const cls of Array.from(document.body.classList)) {
-    if (cls.startsWith(THEME_CLASS_PREFIX)) {
-      document.body.classList.remove(cls);
-    }
-  }
-  if (serverSettings.theme && serverSettings.theme !== "brio") {
-    document.body.classList.add(`${THEME_CLASS_PREFIX}${serverSettings.theme}`);
-  }
+  // Apply the initial theme via stylesheet injection before DeckManager construction
+  // so the correct colors are visible before React renders.
+  const initialTheme = (serverSettings.theme as ThemeName) ?? "brio";
+  applyInitialTheme(initialTheme);
 
-  // Create deck manager with the pre-fetched layout.
+  // Sync canvas color to Swift bridge so UserDefaults gets the correct
+  // background color on startup before the user switches themes.
+  sendCanvasColor();
+
+  // Create deck manager with the pre-fetched layout and initial theme.
   const deck = new DeckManager(
     container,
     connection,
-    serverSettings.layout ?? undefined
+    serverSettings.layout ?? undefined,
+    initialTheme
   );
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).

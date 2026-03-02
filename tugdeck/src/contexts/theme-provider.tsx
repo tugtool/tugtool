@@ -157,7 +157,7 @@ export function TugThemeProvider({
   children,
   initialTheme = "brio",
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   initialTheme?: ThemeName;
 }): React.JSX.Element {
   const [theme, setThemeState] = useState<ThemeName>(initialTheme);
