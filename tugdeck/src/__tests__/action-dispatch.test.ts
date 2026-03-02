@@ -1,385 +1,268 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { initActionDispatch, dispatchAction, _resetForTest } from "../action-dispatch";
-import type { DevNotificationRef } from "../contexts/dev-notification-context";
+import {
+  initActionDispatch,
+  dispatchAction,
+  registerAction,
+  _resetForTest,
+} from "../action-dispatch";
+import { FeedId } from "../protocol";
 
-// Mock DeckManager that records method calls
+// Minimal mock DeckManager -- initActionDispatch accepts DeckManager but does
+// not call any methods on it in Phase 0.
 function createMockDeckManager() {
-  const calls: { method: string; args: any[] }[] = [];
-  const cardRegistry = new Map<string, any>();
-  return {
-    calls,
-    cardRegistry,
-    addNewCard(componentId: string) {
-      calls.push({ method: "addNewCard", args: [componentId] });
-    },
-    findPanelByComponent(_componentId: string) {
-      // Return based on test setup (controlled per test)
-      return (this as any)._panelResult ?? null;
-    },
-    focusPanel(panelId: string) {
-      calls.push({ method: "focusPanel", args: [panelId] });
-    },
-    closePanelByComponent(componentId: string) {
-      calls.push({ method: "closePanelByComponent", args: [componentId] });
-    },
-    getDeckState() {
-      return (this as any)._deckState ?? { cards: [] };
-    },
-    getCardRegistry() {
-      return this.cardRegistry;
-    },
-    // Allow tests to set return values
-    _panelResult: null as any,
-    _deckState: { cards: [] } as any,
-  };
+  return {};
 }
 
-// Mock TugConnection (initActionDispatch registers onFrame callback)
+// Mock TugConnection -- initActionDispatch registers one onFrame callback.
 function createMockConnection() {
+  const frameCallbacks = new Map<number, (payload: Uint8Array) => void>();
   return {
-    onFrame(_feedId: number, _cb: (payload: Uint8Array) => void): void {},
-  };
-}
-
-// Mock DevNotificationRef for verifying context-based notification flow
-function createMockDevNotificationRef() {
-  const calls: { method: string; args: any[] }[] = [];
-  const ref: { current: DevNotificationRef | null } = {
-    current: {
-      notify: (payload: Record<string, unknown>) => {
-        calls.push({ method: "notify", args: [payload] });
-      },
-      updateBuildProgress: (payload: Record<string, unknown>) => {
-        calls.push({ method: "updateBuildProgress", args: [payload] });
-      },
-      setBadge: (componentId: string, count: number) => {
-        calls.push({ method: "setBadge", args: [componentId, count] });
-      },
+    onFrame(feedId: number, cb: (payload: Uint8Array) => void): void {
+      frameCallbacks.set(feedId, cb);
+    },
+    // Simulate a received Control frame for testing dispatchAction wiring.
+    simulateFrame(feedId: number, payload: Uint8Array): void {
+      frameCallbacks.get(feedId)?.(payload);
     },
   };
-  return { ref, calls };
 }
 
-describe("action-dispatch: show-card", () => {
-  let mockDeck: ReturnType<typeof createMockDeckManager>;
+// ---- registerAction / dispatchAction ----
 
+describe("registerAction / dispatchAction", () => {
   beforeEach(() => {
     _resetForTest();
-    mockDeck = createMockDeckManager();
-    const mockConn = createMockConnection();
-    const mockDevRef = createMockDevNotificationRef();
-    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
-  it("should call addNewCard when no card exists", () => {
-    mockDeck._panelResult = null;
-    dispatchAction({ action: "show-card", component: "test" });
-    expect(mockDeck.calls).toContainEqual({ method: "addNewCard", args: ["test"] });
+  it("dispatches to a registered handler", () => {
+    const calls: Record<string, unknown>[] = [];
+    registerAction("my-action", (payload) => calls.push(payload));
+
+    dispatchAction({ action: "my-action", value: 42 });
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toMatchObject({ action: "my-action", value: 42 });
   });
 
-  it("should call closePanelByComponent when card is topmost (toggle off)", () => {
-    const panel = {
-      id: "p1",
-      tabs: [],
-      activeTabId: "",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-    };
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = { cards: [panel] }; // Only card -> it's topmost (last in array)
-    dispatchAction({ action: "show-card", component: "test" });
-    expect(mockDeck.calls).toContainEqual({ method: "closePanelByComponent", args: ["test"] });
+  it("warns and does nothing for an unknown action", () => {
+    // Should not throw
+    expect(() => dispatchAction({ action: "no-such-action" })).not.toThrow();
   });
 
-  it("should call focusPanel when card exists but is not topmost", () => {
-    const panel = {
-      id: "p1",
-      tabs: [],
-      activeTabId: "",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-    };
-    const other = {
-      id: "p2",
-      tabs: [],
-      activeTabId: "",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-    };
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = { cards: [panel, other] }; // panel is NOT last -> not topmost
-    dispatchAction({ action: "show-card", component: "test" });
-    expect(mockDeck.calls).toContainEqual({ method: "focusPanel", args: ["p1"] });
+  it("warns and does nothing when action field is missing", () => {
+    expect(() => dispatchAction({ notAction: "oops" })).not.toThrow();
+  });
+
+  it("last registration wins for duplicate action names", () => {
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    registerAction("dup", () => first.push(1));
+    registerAction("dup", () => second.push(2));
+
+    dispatchAction({ action: "dup" });
+
+    expect(first.length).toBe(0);
+    expect(second.length).toBe(1);
   });
 });
 
-describe("action-dispatch: close-card", () => {
-  let mockDeck: ReturnType<typeof createMockDeckManager>;
+// ---- _resetForTest ----
 
-  beforeEach(() => {
+describe("_resetForTest", () => {
+  it("clears all registered handlers", () => {
+    registerAction("to-be-cleared", () => {});
     _resetForTest();
-    mockDeck = createMockDeckManager();
-    const mockConn = createMockConnection();
-    const mockDevRef = createMockDevNotificationRef();
-    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
-  });
 
-  it("should call closePanelByComponent when card exists", () => {
-    dispatchAction({ action: "close-card", component: "test" });
-    expect(mockDeck.calls).toContainEqual({ method: "closePanelByComponent", args: ["test"] });
-  });
-
-  it("should not throw when component does not exist", () => {
-    // closePanelByComponent is a no-op internally when panel not found
-    expect(() => dispatchAction({ action: "close-card", component: "nonexistent" })).not.toThrow();
+    // After reset, dispatching should warn (no handler) but not throw
+    expect(() => dispatchAction({ action: "to-be-cleared" })).not.toThrow();
   });
 });
 
-describe("action-dispatch: dev_notification", () => {
-  let mockDeck: ReturnType<typeof createMockDeckManager>;
-  let mockDevRef: ReturnType<typeof createMockDevNotificationRef>;
+// ---- initActionDispatch: Control frame wiring ----
 
+describe("initActionDispatch: Control frame wiring", () => {
   beforeEach(() => {
     _resetForTest();
-    mockDeck = createMockDeckManager();
-    mockDevRef = createMockDevNotificationRef();
-    const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
-  it("should route to card.update() when developer card is open (vanilla card)", () => {
-    const mockCard = {
-      update: (payload: any) => {
-        (mockCard as any).lastUpdate = payload;
+  it("registers a CONTROL frame callback that dispatches actions", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: Record<string, unknown>[] = [];
+    registerAction("test-wired", (p) => received.push(p));
+
+    const payload = new TextEncoder().encode(JSON.stringify({ action: "test-wired", x: 1 }));
+    conn.simulateFrame(FeedId.CONTROL, payload);
+
+    expect(received.length).toBe(1);
+    expect(received[0]).toMatchObject({ action: "test-wired", x: 1 });
+  });
+
+  it("does not throw on malformed Control frame JSON", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const bad = new TextEncoder().encode("not json {{");
+    expect(() => conn.simulateFrame(FeedId.CONTROL, bad)).not.toThrow();
+  });
+});
+
+// ---- reload_frontend handler ----
+
+describe("initActionDispatch: reload_frontend", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("calls location.reload() once", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+
+    // Stub location.reload
+    const originalReload = globalThis.location?.reload;
+    let reloadCount = 0;
+    Object.defineProperty(globalThis, "location", {
+      value: { reload: () => { reloadCount++; } },
+      writable: true,
+      configurable: true,
+    });
+
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "reload_frontend" });
+
+    expect(reloadCount).toBe(1);
+
+    // Restore
+    Object.defineProperty(globalThis, "location", {
+      value: { reload: originalReload },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it("deduplicates: second reload_frontend is ignored", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+
+    let reloadCount = 0;
+    Object.defineProperty(globalThis, "location", {
+      value: { reload: () => { reloadCount++; } },
+      writable: true,
+      configurable: true,
+    });
+
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "reload_frontend" });
+    dispatchAction({ action: "reload_frontend" });
+
+    expect(reloadCount).toBe(1);
+  });
+});
+
+// ---- reset handler ----
+
+describe("initActionDispatch: reset", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("calls localStorage.clear()", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+
+    let clearCalled = false;
+    const origClear = globalThis.localStorage?.clear;
+    Object.defineProperty(globalThis, "localStorage", {
+      value: { clear: () => { clearCalled = true; }, getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      writable: true,
+      configurable: true,
+    });
+
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "reset" });
+
+    expect(clearCalled).toBe(true);
+  });
+});
+
+// ---- set-dev-mode handler ----
+
+describe("initActionDispatch: set-dev-mode", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("does not throw when webkit bridge is absent", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "set-dev-mode", enabled: true })).not.toThrow();
+  });
+
+  it("warns and does not throw when enabled is not a boolean", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "set-dev-mode", enabled: "yes" })).not.toThrow();
+  });
+
+  it("calls webkit bridge when present", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const posted: unknown[] = [];
+    (globalThis as Record<string, unknown>).webkit = {
+      messageHandlers: {
+        setDevMode: { postMessage: (v: unknown) => posted.push(v) },
       },
     };
 
-    // Setup panel and card state
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
+    dispatchAction({ action: "set-dev-mode", enabled: false });
 
-    dispatchAction({
-      action: "dev_notification",
-      type: "restart_available",
-      count: 3,
-    });
+    expect(posted.length).toBe(1);
+    expect(posted[0]).toMatchObject({ enabled: false });
 
-    expect((mockCard as any).lastUpdate).toEqual({
-      action: "dev_notification",
-      type: "restart_available",
-      count: 3,
-    });
-  });
-
-  it("should call devNotificationRef.notify() when React card is open (no update method)", () => {
-    const mockCard = {}; // React card adapter: no update method
-
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
-
-    dispatchAction({
-      action: "dev_notification",
-      type: "restart_available",
-      count: 3,
-    });
-
-    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
-    expect(notifyCalls.length).toBe(1);
-    expect(notifyCalls[0].args[0]).toMatchObject({ type: "restart_available", count: 3 });
-  });
-
-  it("should call devNotificationRef.notify() and setBadge() when card closed and type is restart_available", () => {
-    mockDeck._panelResult = null; // Card closed
-
-    dispatchAction({
-      action: "dev_notification",
-      type: "restart_available",
-      count: 5,
-    });
-
-    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
-    expect(notifyCalls.length).toBe(1);
-
-    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
-    expect(badgeCalls.length).toBe(1);
-    expect(badgeCalls[0].args).toEqual(["developer", 5]);
-  });
-
-  it("should call devNotificationRef.notify() and setBadge() when card closed and type is relaunch_available", () => {
-    mockDeck._panelResult = null; // Card closed
-
-    dispatchAction({
-      action: "dev_notification",
-      type: "relaunch_available",
-      count: 2,
-    });
-
-    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
-    expect(badgeCalls.length).toBe(1);
-    expect(badgeCalls[0].args).toEqual(["developer", 2]);
-  });
-
-  it("should call notify() but not setBadge() when card closed and type is unknown", () => {
-    mockDeck._panelResult = null; // Card closed
-
-    dispatchAction({
-      action: "dev_notification",
-      type: "unknown_type",
-    });
-
-    // Unknown notification types should not set a dock badge
-    const badgeCalls = mockDevRef.calls.filter((c) => c.method === "setBadge");
-    expect(badgeCalls.length).toBe(0);
-
-    // But notify() should still be called
-    const notifyCalls = mockDevRef.calls.filter((c) => c.method === "notify");
-    expect(notifyCalls.length).toBe(1);
-  });
-
-  it("should not crash when card exists but has no update method", () => {
-    const mockCard = {}; // No update method
-
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
-
-    expect(() => {
-      dispatchAction({
-        action: "dev_notification",
-        type: "restart_available",
-        count: 1,
-      });
-    }).not.toThrow();
+    delete (globalThis as Record<string, unknown>).webkit;
   });
 });
 
-describe("action-dispatch: dev_build_progress", () => {
-  let mockDeck: ReturnType<typeof createMockDeckManager>;
-  let mockDevRef: ReturnType<typeof createMockDevNotificationRef>;
+// ---- choose-source-tree handler ----
 
+describe("initActionDispatch: choose-source-tree", () => {
   beforeEach(() => {
     _resetForTest();
-    mockDeck = createMockDeckManager();
-    mockDevRef = createMockDevNotificationRef();
-    const mockConn = createMockConnection();
-    initActionDispatch(mockConn as any, mockDeck as any, mockDevRef.ref);
   });
 
-  it("should route to card.updateBuildProgress() when developer card is open (vanilla card)", () => {
-    const mockCard = {
-      updateBuildProgress: (payload: any) => {
-        (mockCard as any).lastBuildProgress = payload;
+  it("does not throw when webkit bridge is absent", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "choose-source-tree" })).not.toThrow();
+  });
+
+  it("calls webkit bridge when present", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const posted: unknown[] = [];
+    (globalThis as Record<string, unknown>).webkit = {
+      messageHandlers: {
+        chooseSourceTree: { postMessage: (v: unknown) => posted.push(v) },
       },
     };
 
-    // Setup panel and card state
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
+    dispatchAction({ action: "choose-source-tree" });
 
-    dispatchAction({
-      action: "dev_build_progress",
-      stage: "compile",
-      status: "running",
-    });
+    expect(posted.length).toBe(1);
 
-    expect((mockCard as any).lastBuildProgress).toEqual({
-      action: "dev_build_progress",
-      stage: "compile",
-      status: "running",
-    });
-  });
-
-  it("should call devNotificationRef.updateBuildProgress() when React card is open (no updateBuildProgress method)", () => {
-    const mockCard = {}; // React card: no updateBuildProgress method
-
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
-
-    dispatchAction({
-      action: "dev_build_progress",
-      stage: "compile",
-      status: "running",
-    });
-
-    const progressCalls = mockDevRef.calls.filter((c) => c.method === "updateBuildProgress");
-    expect(progressCalls.length).toBe(1);
-    expect(progressCalls[0].args[0]).toMatchObject({ stage: "compile", status: "running" });
-  });
-
-  it("should call devNotificationRef.updateBuildProgress() when developer card is closed", () => {
-    mockDeck._panelResult = null; // Card closed
-
-    expect(() => {
-      dispatchAction({
-        action: "dev_build_progress",
-        stage: "compile",
-        status: "done",
-      });
-    }).not.toThrow();
-
-    const progressCalls = mockDevRef.calls.filter((c) => c.method === "updateBuildProgress");
-    expect(progressCalls.length).toBe(1);
-  });
-
-  it("should not crash when card exists but has no updateBuildProgress method", () => {
-    const mockCard = {}; // No updateBuildProgress method
-
-    const panel = { id: "p1" };
-    const tabId = "tab1";
-    mockDeck._panelResult = panel;
-    mockDeck._deckState = {
-      cards: [{
-        id: "p1",
-        tabs: [{ id: tabId, componentId: "developer" }],
-      }],
-    };
-    mockDeck.cardRegistry.set(tabId, mockCard);
-
-    expect(() => {
-      dispatchAction({
-        action: "dev_build_progress",
-        stage: "test",
-        status: "running",
-      });
-    }).not.toThrow();
+    delete (globalThis as Record<string, unknown>).webkit;
   });
 });

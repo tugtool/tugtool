@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-02T18:04:21Z
+---
+
+## step-7: Rewrote action-dispatch.test.ts for gutted module: 15 tests covering surviving handlers (reload_frontend, reset, set-dev-mode, choose-source-tree) and core registry. Removed all tests for deleted handlers. Fixed window->globalThis for testability.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-6
 date: 2025-03-02T17:59:36Z
 ---

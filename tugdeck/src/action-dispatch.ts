@@ -104,7 +104,7 @@ export function initActionDispatch(
 
     console.info(`set-dev-mode: enabled=${enabled}`);
 
-    const webkit = (window as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
+    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
     const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
     if (messageHandlers?.setDevMode) {
       (messageHandlers.setDevMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
@@ -117,7 +117,7 @@ export function initActionDispatch(
   registerAction("choose-source-tree", () => {
     console.info("choose-source-tree: triggering source tree picker");
 
-    const webkit = (window as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
+    const webkit = (globalThis as unknown as Record<string, unknown>).webkit as Record<string, unknown> | undefined;
     const messageHandlers = webkit?.messageHandlers as Record<string, unknown> | undefined;
     if (messageHandlers?.chooseSourceTree) {
       (messageHandlers.chooseSourceTree as { postMessage: (v: unknown) => void }).postMessage({});
