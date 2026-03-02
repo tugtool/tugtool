@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-02T23:51:02Z
+---
+
+## step-6: Wire ComponentGallery as responder component-gallery with empty actions. Add makeFirstResponder on mount and auto-promote parent deck-canvas on unmount. Update existing tests to wrap in provider. Add responder lifecycle tests (5 new tests).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-5
 date: 2025-03-02T23:44:11Z
 ---
