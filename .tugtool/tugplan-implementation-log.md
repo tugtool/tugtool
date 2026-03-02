@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-02T21:10:51Z
+---
+
+## step-2: Added gallerySetterRef and registerGallerySetter to action-dispatch.ts, registered show-component-gallery action handler with toggle-via-callback pattern, cleared in _resetForTest. Created 9 integration tests in component-gallery-action.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
 step: step-1
 date: 2025-03-02T21:05:45Z
 ---
@@ -17,6 +29,55 @@ date: 2025-03-02T21:05:45Z
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
+step: step-2
+plan: tugways-phase-2-first-component
+date: 2026-03-02T21:30:00Z
+---
+
+## step-2: Added gallerySetterRef and registerGallerySetter to action-dispatch, registered show-component-gallery handler, wrote integration tests
+
+**Files changed:**
+- tugdeck/src/action-dispatch.ts (modified -- added gallerySetterRef, registerGallerySetter, show-component-gallery handler, gallerySetterRef reset in _resetForTest)
+- tugdeck/src/__tests__/component-gallery-action.test.ts (created)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test src/__tests__/component-gallery-action.test.ts`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 9 pass
+ 0 fail
+ 14 expect() calls
+Ran 9 tests across 1 file. [52.00ms]
+```
+PASSED
+
+Checkpoint 2: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test src/__tests__/action-dispatch.test.ts`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 21 pass
+ 0 fail
+ 28 expect() calls
+Ran 21 tests across 1 file. [50.00ms]
+```
+PASSED
+
+Checkpoint 3: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 170 pass
+ 0 fail
+ 361 expect() calls
+Ran 170 tests across 11 files. [7.70s]
+```
+PASSED
 
 ---
 
