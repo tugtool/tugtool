@@ -1,0 +1,57 @@
+/**
+ * @theme-name Harmony
+ * @theme-description Light warm-neutral theme
+ *
+ * Contains only Tier 1 palette tokens (--tways-*).
+ * Semantic tokens (--td-*) derive via var() chain in tokens.css.
+ * Optional palette entries override specific semantic tokens where
+ * this theme diverges from the default (Brio) derivation.
+ */
+body {
+  /* Tier 1: Palette */
+  --tways-bg: #3f474c;
+  --tways-bg-soft: #4c555a;
+  --tways-bg-line: rgba(255, 255, 255, 0.02);
+  --tways-panel: #dad6cc;
+  --tways-panel-soft: #c6c2b8;
+  --tways-panel-ink: #29343c;
+  --tways-surface-1: #f4f1ea;
+  --tways-surface-2: #ece7dc;
+  --tways-surface-3: #e4ded1;
+  --tways-surface-4: #fcf9f2;
+  --tways-surface-screen: #d1dbe0;
+  --tways-surface-screen-ink: #23333b;
+  --tways-text: #26333b;
+  --tways-text-soft: #41525c;
+  --tways-text-inverse: #f4f7f8;
+  --tways-accent: #ff7f2a;
+  --tways-accent-strong: #f26d1f;
+  --tways-accent-cool: #42b8e6;
+  --tways-accent-1: #ff7f2a;
+  --tways-accent-2: #42b8e6;
+  --tways-accent-3: #a77ae0;
+  --tways-accent-4: #ff4458;
+  --tways-accent-5: #68bf78;
+  --tways-accent-6: #ffe15a;
+  --tways-accent-7: #e56ac0;
+  --tways-accent-8: #ff8f66;
+  --tways-border: #7f796a;
+  --tways-border-soft: #a29b8a;
+  --tways-shadow-hard: #1f2b33;
+  --tways-shadow-mid: #2a3841;
+  --tways-shadow-soft: rgba(0, 0, 0, 0.24);
+  --tways-glow: rgba(142, 183, 190, 0.24);
+  --tways-track-bg: repeating-linear-gradient(
+    to bottom,
+    #bdc3c8 0px,
+    #bdc3c8 1px,
+    #d8dde0 2px,
+    #d8dde0 4px
+  );
+
+  /* Optional palette entries: semantic overrides where Harmony diverges from default derivation */
+  --tways-canvas: #b0ab9f;
+  --tways-header-active: #d4b888;
+  --tways-header-inactive: #c8c0b0;
+  --tways-grid-color: rgba(0, 0, 0, 0.06);
+}

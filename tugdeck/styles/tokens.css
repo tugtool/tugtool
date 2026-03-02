@@ -7,9 +7,9 @@
  * - Tier 3: Component tokens (--td-card-*, --td-tab-*, etc. in component CSS)
  *
  * Theme system:
- * - Brio (deep graphite): Default theme in :root, no body class required
- * - Bluenote (cool dark): Activated via body.td-theme-bluenote
- * - Harmony (light): Activated via body.td-theme-harmony
+ * - Brio (deep graphite): Default theme, palette in body {}
+ * - Bluenote (cool dark): Injected via <style id="tug-theme-override"> (styles/bluenote.css)
+ * - Harmony (light): Injected via <style id="tug-theme-override"> (styles/harmony.css)
  *
  * Components MUST use only --td-* semantic tokens, never --tways-* or raw values.
  */
@@ -161,7 +161,7 @@ body {
   --td-surface-content: var(--tways-surface-4);
 
   /* Canvas token (viewport background, distinct from --td-bg for light themes) */
-  --td-canvas: var(--td-bg);
+  --td-canvas: var(--tways-canvas, var(--tways-bg));
 
   /* Text tokens (Table T02) */
   --td-text: var(--tways-text);
@@ -192,10 +192,10 @@ body {
   --td-chart-5: var(--td-accent-3);  /* reserved - purple */
 
   /* Titlebar and icon tokens */
-  --td-header-active: #44474C;
-  --td-header-inactive: #34373c;
-  --td-icon-active: var(--td-accent-2);
-  --td-grid-color: rgba(255, 255, 255, 0.05);
+  --td-header-active: var(--tways-header-active, #44474C);
+  --td-header-inactive: var(--tways-header-inactive, #34373c);
+  --td-icon-active: var(--tways-icon-active, var(--td-accent-2));
+  --td-grid-color: var(--tways-grid-color, rgba(255, 255, 255, 0.05));
 
   /* Border, depth, utility tokens (Table T04) */
   --td-border: var(--tways-border);
@@ -307,206 +307,6 @@ body {
   body {
     --td-duration-scalar: 0.001;
   }
-}
-
-/* ============================================================================
-   Bluenote Theme (Cool Dark)
-   ========================================================================= */
-
-body.td-theme-bluenote {
-  /* Palette overrides (--tways-* tugways palette) */
-  --tways-bg: #2a3136;
-  --tways-bg-soft: #363e43;
-  --tways-bg-line: rgba(255, 255, 255, 0.018);
-  --tways-panel: #3a454c;
-  --tways-panel-soft: #313b43;
-  --tways-panel-ink: #d9e0e4;
-  --tways-surface-1: #3b4348;
-  --tways-surface-2: #343c41;
-  --tways-surface-3: #30373c;
-  --tways-surface-4: #2a3237;
-  --tways-surface-screen: #5c6871;
-  --tways-surface-screen-ink: #edf2f5;
-  --tways-text: #dde4e8;
-  --tways-text-soft: #a8b6bf;
-  --tways-text-inverse: #edf1f3;
-  --tways-accent: #ff8434;
-  --tways-accent-strong: #f27024;
-  --tways-accent-cool: #4bbde8;
-  --tways-accent-1: #ff8434;
-  --tways-accent-2: #4bbde8;
-  --tways-accent-3: #ab7ee4;
-  --tways-accent-4: #ff5162;
-  --tways-accent-5: #73c382;
-  --tways-accent-6: #ffe465;
-  --tways-accent-7: #ec76c9;
-  --tways-accent-8: #ff9a72;
-  --tways-border: #5b6871;
-  --tways-border-soft: #79858d;
-  --tways-shadow-mid: #11191f;
-  --tways-shadow-soft: rgba(0, 0, 0, 0.44);
-  --tways-track-bg: repeating-linear-gradient(
-    to bottom,
-    #6c7b85 0px,
-    #6c7b85 1px,
-    #84939c 2px,
-    #84939c 4px
-  );
-
-  /* Semantic token overrides (resolved values for reliable theme switching) */
-  --td-bg: #2a3136;
-  --td-bg-soft: #363e43;
-  --td-canvas: #2a3136;
-  --td-card: #3a454c;
-  --td-card-soft: #313b43;
-  --td-surface: #3b4348;
-  --td-surface-tab: #343c41;
-  --td-surface-control: #30373c;
-  --td-surface-content: #2a3237;
-  --td-text: #dde4e8;
-  --td-text-soft: #a8b6bf;
-  --td-text-inverse: #edf1f3;
-  --td-accent: #ff8434;
-  --td-accent-cool: #4bbde8;
-  --td-accent-1: #ff8434;
-  --td-accent-2: #4bbde8;
-  --td-accent-3: #ab7ee4;
-  --td-accent-4: #ff5162;
-  --td-accent-5: #73c382;
-  --td-accent-6: #ffe465;
-  --td-accent-7: #ec76c9;
-  --td-accent-8: #ff9a72;
-  --td-success: #73c382;
-  --td-warning: #ffe465;
-  --td-danger: #ff5162;
-  --td-info: #4bbde8;
-  --td-chart-1: #73c382;
-  --td-chart-2: #4bbde8;
-  --td-chart-3: #ffe465;
-  --td-chart-4: #ff5162;
-  --td-chart-5: #ab7ee4;
-  --td-border: #5b6871;
-  --td-border-soft: #79858d;
-  --td-shadow-soft: rgba(0, 0, 0, 0.44);
-  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.44);
-  --td-header-active: #344f5e;
-  --td-header-inactive: #2a3a44;
-  --td-icon-active: #4bbde8;
-  --td-grid-color: rgba(255, 255, 255, 0.04);
-  --td-syntax-keyword: #4bbde8;
-  --td-syntax-string: #ff9a72;
-  --td-syntax-number: #73c382;
-  --td-syntax-function: #ffe465;
-  --td-syntax-type: #73c382;
-  --td-syntax-variable: #4bbde8;
-  --td-syntax-comment: #a8b6bf;
-  --td-syntax-operator: #dde4e8;
-  --td-syntax-punctuation: #dde4e8;
-  --td-syntax-constant: #4bbde8;
-  --td-syntax-decorator: #ab7ee4;
-  --td-syntax-tag: #4bbde8;
-  --td-syntax-attribute: #4bbde8;
-}
-
-/* ============================================================================
-   Harmony Theme (Light)
-   ========================================================================= */
-
-body.td-theme-harmony {
-  /* Palette overrides (--tways-* tugways palette) */
-  --tways-bg: #3f474c;
-  --tways-bg-soft: #4c555a;
-  --tways-bg-line: rgba(255, 255, 255, 0.02);
-  --tways-panel: #dad6cc;
-  --tways-panel-soft: #c6c2b8;
-  --tways-panel-ink: #29343c;
-  --tways-surface-1: #f4f1ea;
-  --tways-surface-2: #ece7dc;
-  --tways-surface-3: #e4ded1;
-  --tways-surface-4: #fcf9f2;
-  --tways-surface-screen: #d1dbe0;
-  --tways-surface-screen-ink: #23333b;
-  --tways-text: #26333b;
-  --tways-text-soft: #41525c;
-  --tways-text-inverse: #f4f7f8;
-  --tways-accent: #ff7f2a;
-  --tways-accent-strong: #f26d1f;
-  --tways-accent-cool: #42b8e6;
-  --tways-accent-1: #ff7f2a;
-  --tways-accent-2: #42b8e6;
-  --tways-accent-3: #a77ae0;
-  --tways-accent-4: #ff4458;
-  --tways-accent-5: #68bf78;
-  --tways-accent-6: #ffe15a;
-  --tways-accent-7: #e56ac0;
-  --tways-accent-8: #ff8f66;
-  --tways-border: #7f796a;
-  --tways-border-soft: #a29b8a;
-  --tways-shadow-hard: #1f2b33;
-  --tways-shadow-mid: #2a3841;
-  --tways-shadow-soft: rgba(0, 0, 0, 0.24);
-  --tways-glow: rgba(142, 183, 190, 0.24);
-  --tways-track-bg: repeating-linear-gradient(
-    to bottom,
-    #bdc3c8 0px,
-    #bdc3c8 1px,
-    #d8dde0 2px,
-    #d8dde0 4px
-  );
-
-  /* Semantic token overrides (resolved values for reliable theme switching) */
-  --td-bg: #3f474c;
-  --td-bg-soft: #4c555a;
-  --td-canvas: #b0ab9f;
-  --td-card: #dad6cc;
-  --td-card-soft: #c6c2b8;
-  --td-surface: #f4f1ea;
-  --td-surface-tab: #ece7dc;
-  --td-surface-control: #e4ded1;
-  --td-surface-content: #fcf9f2;
-  --td-text: #26333b;
-  --td-text-soft: #41525c;
-  --td-text-inverse: #f4f7f8;
-  --td-accent: #ff7f2a;
-  --td-accent-cool: #42b8e6;
-  --td-accent-1: #ff7f2a;
-  --td-accent-2: #42b8e6;
-  --td-accent-3: #a77ae0;
-  --td-accent-4: #ff4458;
-  --td-accent-5: #68bf78;
-  --td-accent-6: #ffe15a;
-  --td-accent-7: #e56ac0;
-  --td-accent-8: #ff8f66;
-  --td-success: #68bf78;
-  --td-warning: #ffe15a;
-  --td-danger: #ff4458;
-  --td-info: #42b8e6;
-  --td-chart-1: #68bf78;
-  --td-chart-2: #42b8e6;
-  --td-chart-3: #ffe15a;
-  --td-chart-4: #ff4458;
-  --td-chart-5: #a77ae0;
-  --td-border: #7f796a;
-  --td-border-soft: #a29b8a;
-  --td-shadow-soft: rgba(0, 0, 0, 0.24);
-  --td-depth-raise: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px rgba(0, 0, 0, 0.24);
-  --td-header-active: #d4b888;
-  --td-header-inactive: #c8c0b0;
-  --td-icon-active: #42b8e6;
-  --td-grid-color: rgba(0, 0, 0, 0.06);
-  --td-syntax-keyword: #42b8e6;
-  --td-syntax-string: #ff8f66;
-  --td-syntax-number: #68bf78;
-  --td-syntax-function: #ffe15a;
-  --td-syntax-type: #68bf78;
-  --td-syntax-variable: #42b8e6;
-  --td-syntax-comment: #41525c;
-  --td-syntax-operator: #26333b;
-  --td-syntax-punctuation: #26333b;
-  --td-syntax-constant: #42b8e6;
-  --td-syntax-decorator: #a77ae0;
-  --td-syntax-tag: #42b8e6;
-  --td-syntax-attribute: #42b8e6;
 }
 
 /* ============================================================================

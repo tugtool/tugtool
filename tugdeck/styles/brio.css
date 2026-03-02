@@ -1,0 +1,9 @@
+/**
+ * @theme-name Brio
+ * @theme-description Default dark graphite theme
+ *
+ * Brio's palette values are defined as defaults in tokens.css (body { --tways-* }).
+ * This file exists for symmetry with other theme files and future override capability.
+ */
+body {
+}

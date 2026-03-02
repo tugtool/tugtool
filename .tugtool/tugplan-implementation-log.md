@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-02T19:41:09Z
+---
+
+## step-3: Created brio.css, bluenote.css, harmony.css with --tways-* palette tokens; updated 5 semantic tokens with var() fallbacks; removed body.td-theme-bluenote and body.td-theme-harmony blocks from tokens.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-2
 date: 2025-03-02T19:32:05Z
 ---
