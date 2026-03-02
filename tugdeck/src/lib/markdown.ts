@@ -102,7 +102,7 @@ export function renderMarkdown(text: string): string {
  */
 export async function enhanceCodeBlocks(container: HTMLElement): Promise<void> {
   const { getHighlighter, normalizeLanguage } = await import(
-    "../cards/conversation/code-block-utils"
+    "../_archive/cards/conversation/code-block-utils"
   );
 
   const codeElements = container.querySelectorAll("pre > code");

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-02T17:59:36Z
+---
+
+## step-6: Gutted deck-manager.ts from 1817 to 215 lines per Spec S02. Fixed serialization.ts to inline CARD_TITLES. Also stripped main.tsx (58 lines, Spec S01) and action-dispatch.ts to satisfy tsc compilation gate. Added _archive exclusion to tsconfig.json and fixed markdown.ts archive import path. TypeScript compilation passes with zero errors.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-0-demolition.md
+
+---
+
+---
 step: step-5
 date: 2025-03-02T17:47:12Z
 ---
