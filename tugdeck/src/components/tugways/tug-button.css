@@ -1,0 +1,137 @@
+/**
+ * TugButton styles -- tugways-specific CSS using var(--td-*) tokens.
+ *
+ * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * hex values, no raw Tailwind color classes. Theme switches update CSS
+ * variables at the DOM level -- TugButton re-paints without React re-renders.
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Ghost Variant Override
+   ========================================================================= */
+
+/*
+ * shadcn's ghost variant uses hover:bg-accent which resolves to
+ * var(--td-accent-cool) (cyan) via the shadcn bridge. Override to use
+ * var(--td-surface-control) per Table T02.
+ */
+.tug-btn-ghost:hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+/* ============================================================================
+   Icon Subtype: Square Aspect Ratio
+   ========================================================================= */
+
+/*
+ * Icon subtype buttons use square aspect ratio.
+ * shadcn size icon = h-10 w-10, but we need all three sizes.
+ */
+.tug-btn-icon-sm {
+  width: 2.25rem; /* h-9 = 36px */
+  height: 2.25rem;
+  padding: 0;
+}
+
+.tug-btn-icon-md {
+  width: 2.5rem; /* h-10 = 40px */
+  height: 2.5rem;
+  padding: 0;
+}
+
+.tug-btn-icon-lg {
+  width: 2.75rem; /* h-11 = 44px */
+  height: 2.75rem;
+  padding: 0;
+}
+
+/* ============================================================================
+   Three-State Subtype: State Indicator
+   ========================================================================= */
+
+.tug-btn-three-state {
+  position: relative;
+}
+
+/*
+ * State indicator dot: appears at bottom-right of the button
+ * to visually indicate on/off/mixed state.
+ */
+.tug-btn-state-indicator {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.tug-btn-state-on .tug-btn-state-indicator {
+  background-color: var(--td-accent);
+}
+
+.tug-btn-state-off .tug-btn-state-indicator {
+  background-color: var(--td-border);
+}
+
+.tug-btn-state-mixed .tug-btn-state-indicator {
+  background-color: var(--td-text-soft);
+}
+
+/* ============================================================================
+   Loading State
+   ========================================================================= */
+
+.tug-btn-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.tug-btn-spinner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+}
+
+.tug-btn-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: tug-btn-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
+  /* Respect reduced-motion preference via the scalar token */
+  animation-duration: calc(var(--td-duration-moderate) / var(--td-duration-scalar, 1));
+}
+
+@keyframes tug-btn-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tug-btn-loading-content {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Icon + Text Layout
+   ========================================================================= */
+
+.tug-btn-icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}

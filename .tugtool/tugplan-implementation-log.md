@@ -9,6 +9,58 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-02T21:05:45Z
+---
+
+## step-1: Created TugButton component wrapping shadcn Button with push/icon/icon-text/three-state subtypes, primary/secondary/ghost/destructive variants, sm/md/lg sizes, loading state with CSS spinner, and comprehensive test suite (36 tests). Removed .gitkeep placeholder.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
+step: step-1
+plan: tugways-phase-2-first-component
+date: 2026-03-02T21:00:00Z
+---
+
+## step-1: Created TugButton component wrapping shadcn Button with tugways API, four subtypes, four variants, three sizes, loading state, and unit tests
+
+**Files changed:**
+- tugdeck/src/components/tugways/tug-button.tsx (created)
+- tugdeck/src/components/tugways/tug-button.css (created)
+- tugdeck/src/__tests__/tug-button.test.tsx (created)
+- tugdeck/src/components/tugways/.gitkeep (deleted -- real files now exist)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test src/__tests__/tug-button.test.tsx`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 36 pass
+ 0 fail
+ 43 expect() calls
+Ran 36 tests across 1 file. [135.00ms]
+```
+PASSED
+
+Checkpoint 2: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 161 pass
+ 0 fail
+ 347 expect() calls
+Ran 161 tests across 10 files. [7.72s]
+```
+PASSED
+
+---
+
+---
 step: step-8
 date: 2025-03-02T20:07:07Z
 ---
