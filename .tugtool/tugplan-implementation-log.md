@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-02T21:27:01Z
+---
+
+## step-5: Added Show Component Gallery menu item to Developer menu in AppDelegate.swift between post-Web-Inspector separator and source tree section. Added showComponentGallery action method calling sendControl('show-component-gallery'). Xcode build succeeds.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
 step: step-4
 date: 2025-03-02T21:22:38Z
 ---
@@ -53,6 +65,30 @@ date: 2025-03-02T21:05:45Z
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
+step: step-5
+plan: tugways-phase-2-first-component
+date: 2026-03-02T23:00:00Z
+---
+
+## step-5: Added Show Component Gallery menu item to Developer menu in AppDelegate.swift
+
+**Files changed:**
+- tugapp/Sources/AppDelegate.swift (modified -- added showComponentGallery action method and NSMenuItem in devMenu)
+
+**Checkpoint results:**
+
+Checkpoint 1: Xcode build
+```
+xcodebuild -project Tug.xcodeproj -scheme Tug -configuration Debug build
+** BUILD SUCCEEDED **
+```
+PASSED
+
+Checkpoint 2 (manual -- deferred to runtime verification): Developer menu shows "Show Component Gallery" item when dev mode is on. The menu item is placed after the post-Web-Inspector separator and before the source tree display section, inheriting the Developer menu's devModeEnabled visibility gate.
 
 ---
 
