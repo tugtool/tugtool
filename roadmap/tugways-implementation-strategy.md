@@ -11,6 +11,58 @@ isolation, see them visually, iterate, integrate. The app itself becomes the
 proving ground. Mac-native menu commands (via `sendControl` WebSocket frames)
 are the initial mechanism for triggering UI creation before the dock exists.
 
+## Retronow Design Reference
+
+The `roadmap/retronow/` directory contains the canonical design mockups and
+style references for the tugways design system. **All future phase plans must
+consult these resources** when designing components, layouts, and visual
+treatments.
+
+### Resource Inventory
+
+| Resource | Path | What It Provides |
+|----------|------|------------------|
+| **Component Pack Page** | `components/retronow/RetronowComponentPackPage.tsx` | Full-page mockup showing wrapper-style component interactions end-to-end: tabs, dialogs, buttons, sliders, inputs, textareas, selects, radio groups, checkboxes, card canvas, toasts, and the ArcGauge custom component. This is the primary reference for component gallery layout and interactive controls. |
+| **Control Pack** | `components/retronow/RetronowControlPack.tsx` | Compact control showcase covering input, textarea, combo, button, slider, radio, checkbox, and address bar patterns. Reference for control layout and grouping. |
+| **Deck Canvas** | `components/retronow/RetronowDeckCanvas.tsx` | React card deck canvas with drag, resize, and snap behavior. Reference for card frame, header, and canvas layout patterns. |
+| **Class Recipes** | `components/retronow/retronow-classes.ts` | Central class recipes for all controls: `shell`, `panel`, `button`, `buttonSecondary`, `input`, `textarea`, `tabs`, `card`, `cardHeader`, `cardBody`, `cardCanvas`. Reference for consistent styling patterns. |
+| **Component CSS** | `styles/retronow-components.css` | Full CSS for all retronow controls: titlebar, tabs, buttons, fields, sliders, panels, popups, screens, gauges, scrollbars, dialog, toast, typography. Three theme variants (light, dark/bluenote, brio). Reference for CSS structure and theme-aware styling. |
+| **Deck CSS** | `styles/retronow-deck.css` | Card/canvas system styles: visible grid, snap affordances, resize handles, card frames. |
+| **Design Tokens** | `styles/retronow-tokens.css` | Three-theme token system (`--rn-*`): surfaces, text, accents (8-color palette), borders, shadows, spacing, radii, fonts, depths. Reference for token naming and palette structure. |
+| **Unified Review** | `mockups/retronow-unified-review.html` | Browser-openable all-in-one review page. Open directly in a browser to see the full visual language across all themes. |
+| **Style Mockup** | `mockups/retronow-style-mockup.html` | Standalone style exploration mockup. |
+| **Component Pack Mockup** | `mockups/retronow-component-pack-mockup.html` | Browser-openable component pack preview. |
+
+### How to Use These References
+
+**When planning new components:** Consult `RetronowComponentPackPage.tsx` and
+`RetronowControlPack.tsx` for layout patterns, interactive control grouping,
+and the wrapper-style component approach. The retronow "AppButton wraps shadcn
+Button" pattern is exactly the pattern tugways follows (TugButton wraps shadcn
+Button, etc.).
+
+**When designing the Component Gallery:** The retronow component pack page is
+the direct inspiration for the tugways Component Gallery. Its tabbed layout
+(controls, workspace, diagnostics, custom gauges), panel grouping, and
+interactive toggle patterns should guide gallery expansion as new components
+are added in later phases.
+
+**When creating CSS for components:** Consult `retronow-components.css` for
+the CSS structure — how controls are themed across light/dark/brio variants,
+how gradients, borders, and shadows are applied, and how theme-specific
+overrides are organized. The tugways equivalent uses `var(--td-*)` semantic
+tokens instead of `var(--rn-*)`, but the structural patterns are the same.
+
+**When defining tokens for new components:** Consult `retronow-tokens.css` for
+the token naming scheme and palette structure. The 8-accent-color system
+(orange, cyan, purple, red, green, yellow, magenta, coral) and surface
+layering (surface-1 through surface-4) directly informed the tugways token
+design.
+
+**When building card frames and canvas layout:** Consult
+`RetronowDeckCanvas.tsx`, `retronow-deck.css`, and the class recipes for card
+shell, header, and body patterns.
+
 ## What We Have Today
 
 The current tugdeck frontend is ~60 source files across:
@@ -158,6 +210,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: Visible proof that the design system works. A live environment for testing components.
 
+**Design reference**: The retronow `RetronowComponentPackPage.tsx` is the direct model for the Component Gallery. As new components are added in later phases, the gallery should grow to match the retronow pack's tabbed layout, panel grouping, and interactive toggle patterns. See [Retronow Design Reference](#retronow-design-reference) for the full inventory.
+
 **Note on the gallery**: This is not a card in the old sense — it doesn't need the Tugcard infrastructure from concept 6. It's a simple React component rendered in a basic frame on the canvas. It exists to prove the component system before the card system is rebuilt.
 
 ### Phase 3: Responder Chain (Concept 4)
@@ -287,6 +341,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
    - Add Radix Tooltip hover labels
    - Wire dock button actions through responder chain
 
+**Design reference**: Retronow's titlebar, tabs, dialog, toast, popup, and button patterns (`retronow-components.css`, `RetronowComponentPackPage.tsx`) are the visual models for alerts, title bar, and dock. See [Retronow Design Reference](#retronow-design-reference).
+
 **Result**: The dock replaces Mac menu commands as the primary UI for creating and managing cards. Chrome is complete.
 
 ### Phase 9: Card Rebuild
@@ -302,6 +358,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
 6. **Settings card** — rebuild on Tugcard. Uses theme provider.
 7. **Developer card** — rebuild on Tugcard. Dev-mode features.
 8. **About card** — rebuild on Tugcard. Static content.
+
+**Design reference**: Retronow's card frame, header, and canvas patterns (`RetronowDeckCanvas.tsx`, `retronow-deck.css`, `retronow-classes.ts`) are the visual models for card chrome and layout. See [Retronow Design Reference](#retronow-design-reference).
 
 **Result**: Full app restored with new infrastructure. Every card uses Tugcard composition, feed hooks, responder chain, and the three-zone mutation model.
 
