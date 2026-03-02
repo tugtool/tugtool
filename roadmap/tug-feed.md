@@ -271,9 +271,13 @@ A Rust CLI command that tails `feed.jsonl` and renders a live progress view:
 [step-5] Tests                           PENDING
 ```
 
-#### 4b. Web Dashboard (tugdeck)
+#### 4b. Web Dashboard (tugdeck via tugcast)
 
-Feed events pushed to the web frontend via WebSocket or SSE. The dashboard can render:
+Feed events reach the tugdeck frontend through **tugcast** — the existing WebSocket server that already bridges all data feeds (terminal, git, filesystem, stats, agent messages) to the browser. Tugcast uses a binary framing protocol (`[1-byte FeedId][4-byte length][payload]`) over a single WebSocket connection. A new `FeedId` (e.g., `TugFeed = 0x50`) carries tug-feed events as JSON payloads through the same infrastructure.
+
+The feed-capture process (Layer 2) writes to `.tugtool/feed/feed.jsonl`. A new tugcast feed implementation (a `SnapshotFeed` or `StreamFeed` depending on the delivery pattern) tails that file and publishes events as frames. Tugdeck's feed-progress card subscribes to this feed ID via the standard `TugConnection.onFrame()` mechanism — no new transport layer needed.
+
+The dashboard card can render:
 
 - Live step-by-step progress bars
 - Agent activity timeline
@@ -340,13 +344,17 @@ Feed events can trigger notifications:
 
 **What this gives you:** Full assistant text, thinking blocks, and detailed tool I/O that hooks don't surface. Useful for post-hoc reports and debugging.
 
-### Phase 4: Live Dashboard
+### Phase 4: Live Dashboard via Tugcast
 
-**What:** Real-time feed consumption via WebSocket/SSE for the web dashboard.
+**What:** Real-time feed consumption in the tugdeck web dashboard.
 
 **How:**
-1. `tugcode feed serve` command that watches `feed.jsonl` and broadcasts via WebSocket
-2. tugdeck connects and renders live
+1. Add a new `TugFeedFeed` implementation in tugcast (either `StreamFeed` using `broadcast` for append-stream delivery, or `SnapshotFeed` using `watch` for latest-state snapshots — likely `StreamFeed` since events are append-only and consumers need the full sequence)
+2. The feed implementation tails `.tugtool/feed/feed.jsonl` using `notify` file watcher (same pattern as `FilesystemFeed`) and publishes each new event as a frame with a new `FeedId::TugFeed` (`0x50`)
+3. Register the new feed ID in `tugcast-core/src/protocol.rs` (Rust) and `tugdeck/src/protocol.ts` (TypeScript)
+4. Tugdeck's feed-progress card subscribes via the standard `TugConnection.onFrame(FeedId.TUG_FEED, cb)` mechanism — same as every other card
+
+**No new transport infrastructure.** Tugcast already provides authenticated WebSocket connections, binary framing, heartbeat, reconnection with bootstrap, and per-client state management. The tug-feed is just another feed.
 
 ## Key Design Decisions
 

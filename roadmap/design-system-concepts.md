@@ -803,7 +803,7 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 
 ### 6. Tugcard: The Common Base Component
 
-**The problem.** Each card is a standalone React component that implements `TugCard` via `ReactCardAdapter`. There is no shared behavior beyond what `CardContext` provides. Every card independently handles its own layout, loading state, error state, feed data decoding, and metadata management.
+**The problem.** Each card is a standalone React component that implements `TugCard` via `ReactCardAdapter`. There is no shared behavior beyond what `CardContext` provides. Every card independently handles its own layout, loading state, error state, feed data decoding, and metadata management. Eight cards, eight ad-hoc implementations of the same concerns.
 
 **What tugcard should provide:**
 - Standard card chrome (title bar, menu, close/minimize controls)
@@ -815,28 +815,292 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 - Responder chain integration (concept 4) — the card is a responder that manages its child responders
 - Feed subscription and data decoding (standardized, not per-card ad-hoc)
 
-**Questions to resolve:**
-- Is tugcard a React component that other cards extend (inheritance)? A wrapper that other cards compose into (composition)? A set of hooks and utilities? React idiom strongly favors composition.
-- How does min-size work? Does tugcard measure its content? Does each card declare its min-size? Is it dynamic (changes with content) or static (fixed per card type)?
-- What accessory views do we need? Find-in-text is the first case. What others? A status bar? An input area?
-- How does tugcard relate to the existing `card-frame.tsx` and `card-header.tsx` chrome components?
+#### Composition, Not Inheritance
+
+React idiom strongly favors composition, and so do we. Tugcard is a wrapper component. Card authors compose their content into it:
+
+```tsx
+<Tugcard meta={meta} feedIds={[FeedId.GIT]}>
+  <GitCardContent />
+</Tugcard>
+```
+
+Tugcard owns the chrome, the responder chain node, the feed subscription, and the loading/error states. The child component receives feed data via a `useTugcardData()` hook — not a render prop. Tugcard gates the child's mount: children don't render until feed data arrives, so the hook always returns populated data, never null. This follows the Excalidraw precedent — hooks for data access, parent handles gating logic.
+
+```tsx
+// Inside GitCardContent — useTugcardData() is always populated because
+// Tugcard only mounts children after the first feed frame arrives.
+function GitCardContent() {
+  const data = useTugcardData<GitStatus>();
+  return <div>{data.branch}</div>;
+}
+```
+
+For feedless cards (AboutCard, SettingsCard), `feedIds={[]}` means the gate is always open — children mount immediately, `useTugcardData()` returns null, and the child simply never calls it.
+
+#### Relationship to CardFrame
+
+CardFrame stays. It is the positioning/sizing/drag/resize shell — it knows about pixels, z-index, pointer capture, and canvas bounds. Tugcard lives *inside* CardFrame and replaces the current pattern where each card component independently manages its own header, feed subscription, and state. Clean separation:
+
+```
+CardFrame (position, size, drag, resize, z-index)
+  └─ Tugcard (chrome, responder, feed, loading/error, accessories)
+       └─ card content (the part unique to each card type)
+```
+
+CardFrame doesn't know what a feed is or what a responder chain is. Tugcard doesn't know about pixel positions or drag handles.
+
+The existing CardHeader stays conceptually — Tugcard renders the title bar internally using the same visual design (28px height, icon, title, menu, close/minimize controls). But the header gets its metadata directly from Tugcard's props rather than going through the `useCardMeta` → context → DeckCanvas → props round-trip. The header is an implementation detail of Tugcard, not something card authors interact with.
+
+This is a new component, a clean break from the previous card-frame/card-header pattern. When implementation begins, all 8 existing cards migrate at once. None of them do important work yet — they're sketches. We eliminate old patterns immediately rather than maintaining two systems.
+
+#### Dynamic Min-Size
+
+All card controls must be visible. Cards only ever scroll for content, and even then the scroll container's frame must be visible — just not its full content bounds. The min-size is dynamic, content-based:
+
+1. **Tugcard measures its non-scrollable regions**: header height (28px) + accessory slot heights (variable) + any fixed controls the child declares.
+2. **The child declares a `minContentSize`**: the minimum dimensions the scroll container needs to be usable — not to show all content, just to have a visible frame (typically 60–80px).
+3. **Tugcard's total min-size** = header + accessories + child's minContentSize.
+4. **Dynamic recalculation**: when a find bar opens, min-size grows by the bar's height. When the child adds or removes fixed controls, min-size adjusts.
+5. **CardFrame reads the min-size**: Tugcard exposes its computed minimum via a ref or callback. CardFrame already clamps resize — it just reads Tugcard's computed minimum instead of its current hardcoded `MIN_SIZE_PX = 100`.
+
+```tsx
+// Card author declares minimum content area size
+<Tugcard meta={meta} feedIds={[FeedId.GIT]} minContentSize={{ width: 200, height: 80 }}>
+  <GitCardContent />
+</Tugcard>
+```
+
+#### Accessory View Slot
+
+One slot: a top accessory that sits between the header and the content area. Find-in-text lives here.
+
+```tsx
+<Tugcard
+  meta={meta}
+  feedIds={[FeedId.CODE_OUTPUT]}
+  accessory={showFind ? <FindBar onClose={() => setShowFind(false)} /> : null}
+>
+  <ConversationContent />
+</Tugcard>
+```
+
+When the accessory is null, the slot collapses to zero height and the min-size shrinks accordingly. One slot is enough. If we need a bottom accessory later, we add it then.
+
+The visual stack inside Tugcard:
+
+```
+┌─────────────────────────────┐
+│  CardHeader (28px)          │  ← title, icon, menu, close/minimize
+├─────────────────────────────┤
+│  Accessory slot (0px–Npx)   │  ← find bar, or collapsed to nothing
+├─────────────────────────────┤
+│                             │
+│  Content area               │  ← child component renders here
+│  (scrollable if needed)     │
+│                             │
+└─────────────────────────────┘
+```
+
+#### Loading and Error States
+
+**Loading.** Before any feed frame arrives, Tugcard renders a skeleton state in the content area (below the header). The child component is not mounted until data exists. The skeleton is a standard Tugcard visual — card authors don't design their own loading states.
+
+**Error.** Tugcard wraps the child in an error boundary. If the child throws during render, Tugcard catches it and shows an error state in the content area. The header stays functional — close button works, card is still draggable. Card authors get error handling for free.
+
+#### Responder Chain Integration
+
+Tugcard is a responder node (concept 4). It sits between DeckCanvas and the card content in the chain:
+
+```
+DeckCanvas (app-level responder)
+  └─ Tugcard (card-level responder)
+       └─ card content responder (card-specific actions)
+```
+
+Tugcard handles standard card actions: `close`, `minimize`, `toggleMenu`, `find`. It delegates everything else down to the child content's responder. When a Tugcard becomes the "key" card (focused), it becomes the active node in the responder chain, and its children become eligible first responders.
+
+#### Theme-Responsive Behavior
+
+Per concept 5, appearance-zone only. Tugcard does not re-render on theme change. Its chrome uses CSS custom properties (`var(--td-header-active)`, `var(--td-panel)`, etc.) that resolve at paint time. The stylesheet injection mechanism from concept 1 updates the underlying `--tways-*` palette values; Tugcard's semantic tokens derive from those; everything updates for free. Zero re-renders.
+
+#### Feed Subscription
+
+Tugcard subscribes to the declared `feedIds` and holds the latest payload per feed. It decodes the raw `Uint8Array` via a `decode` prop (defaulting to JSON parse). The decoded data is what `useTugcardData()` returns to the child. This standardizes the subscription pattern and eliminates the per-card `useFeed` + `useEffect` decode boilerplate.
+
+```tsx
+// For cards that need custom decoding (e.g., terminal receives raw bytes):
+<Tugcard
+  meta={meta}
+  feedIds={[FeedId.TERMINAL_OUTPUT]}
+  decode={(feedId, bytes) => bytes}  // pass through raw
+>
+  <TerminalContent />
+</Tugcard>
+```
+
+#### Tugcard Props Summary
+
+```tsx
+interface TugcardProps {
+  meta: TugCardMeta;                           // title, icon, closable, menuItems
+  feedIds: readonly FeedIdValue[];             // feeds to subscribe to
+  decode?: (feedId: FeedIdValue, bytes: Uint8Array) => unknown;  // default: JSON parse
+  minContentSize?: { width: number; height: number };            // default: { width: 100, height: 60 }
+  accessory?: React.ReactNode | null;          // top accessory slot (find bar, etc.)
+  children: React.ReactNode;                   // card content
+}
+```
+
+#### Migration: Clean Cutover
+
+All 8 existing cards (Conversation, Terminal, Git, Files, Stats, Settings, Developer, About) migrate to Tugcard at once. These cards are sketches, not production features. We eliminate `ReactCardAdapter`, `CardContextProvider`, `useCardMeta`, and the per-card `useFeed` + decode pattern in a single pass. One system, not two.
 
 ### 7. Feed Abstraction
 
-**The problem.** Each card receives raw `Uint8Array` data via `useFeed()` and decodes it independently. There is no shared model for how feed data is structured, decoded, buffered, or refreshed.
+**The problem.** Two distinct feed systems need design: (a) the **per-card data feed** — each card receives raw `Uint8Array` data via `useFeed()` and decodes it independently with no shared model; and (b) the **tug-feed** — a structured, real-time progress stream reporting what skills and agents are doing as they run.
 
-**Current reality (per card):**
+**Backend architecture:** `roadmap/tug-feed.md` contains the complete tug-feed design — hooks-first event capture, correlation chain, feed event schema, four-phase implementation strategy, and risk analysis. This concept covers the **frontend rendering side**: how tug-feed events become visible UI through the design system's machinery, and how per-card data feeds relate to Tugcard.
+
+#### Per-Card Data Feeds
+
+Each card handles its own feed subscription ad-hoc:
 - Terminal card: passes raw bytes to xterm.js
 - Git card: decodes binary to text, parses as structured data
 - Files card: same pattern, different structure
 - Stats card: subscribes to four different feeds, decodes each differently
 - Conversation card: complex message protocol with streaming
 
-**Questions to resolve:**
-- Is a uniform TugFeed abstraction even desirable? The feeds are genuinely different (raw terminal bytes vs. structured JSON vs. streaming messages).
-- If yes, what does TugFeed provide? Common decode/encode? Buffering? Refresh logic? Connection state?
-- How does TugFeed relate to the task-feed (multiplexed skill/agent output)? Is the task-feed just another feed type, or does it have fundamentally different characteristics?
-- See the `tug-feed.md` roadmap for the hooks-based semantic feed proposal. How does that architectural layer connect to the per-card feed rendering layer?
+Tugcard (concept 6) standardizes the subscription and decode pattern: `feedIds` declares subscriptions, `decode` handles deserialization, `useTugcardData()` provides typed access. But the per-card feeds are genuinely different — raw bytes vs. structured JSON vs. streaming messages. A uniform `TugFeed` abstraction may not be desirable beyond what Tugcard already provides.
+
+#### Tug-Feed: The Frontend Rendering Story
+
+The tug-feed backend (designed in `tug-feed.md`) produces a stream of semantically-enriched events. Four architectural layers handle capture and correlation:
+
+- **Layer 1 (Event Capture):** Async plugin hooks on `PreToolUse(Task)`, `SubagentStart`, `SubagentStop`, `PostToolUse(Task)` — pure observation, no orchestrator changes. Agent-scoped hooks on `PostToolUse(Edit|Write|Bash)` for file and command detail within agents.
+- **Layer 2 (Feed-Capture Process):** Shell handlers that correlate hook events into semantic records. A `PreToolUse(Task)` stashes orchestrator context (step_anchor, plan_path, agent_role) keyed by `(session_id, agent_type)`. `SubagentStart` associates that context with `agent_id`. `SubagentStop` enriches with agent results. Correlation state lives in `.tugtool/feed/.pending-agents.json`.
+- **Layer 3 (Feed Event Schema):** Typed JSON events written to `.tugtool/feed/feed.jsonl`. Each event carries `version`, `timestamp`, `session_id`, `event_type`, `plan_path`, `step_anchor`, `agent_role`, `workflow_phase`, and type-specific `data`. Thirteen event types: `agent_started`, `agent_completed`, `phase_changed`, `step_started`, `step_completed`, `file_modified`, `command_ran`, `build_result`, `test_result`, `review_verdict`, `drift_detected`, `commit_created`, `error`.
+- **Layer 4 (Consumers):** CLI viewer (`tugcode feed tail`), **web dashboard card** (tugdeck — this is where the design system concepts apply), post-hoc report generator, notification sink.
+
+The web dashboard consumer is a feed-progress card in tugdeck. This is where the design system intersects:
+
+#### Event-to-Visual Mapping
+
+Each of the 13 tug-feed event types needs a rendering strategy in the dashboard card:
+
+| Event Type | Visual Representation |
+|-----------|----------------------|
+| `agent_started` | Animated spinner with agent role label (architect, coder, reviewer) |
+| `agent_completed` | Spinner → checkmark/X with duration badge |
+| `phase_changed` | Phase indicator updates (architect → code → review) |
+| `step_started` | New step row appears in progress list with title and index (e.g., "Step 3 of 5") |
+| `step_completed` | Progress bar segment fills, duration shown |
+| `file_modified` | File path appended to a collapsible change list under the active step |
+| `command_ran` | Command description with exit-code indicator (green check / red X) |
+| `build_result` | Build status badge: passing (green) / failing (red with error count) |
+| `test_result` | Test summary: "12 passed, 0 failed, 2 skipped" |
+| `review_verdict` | APPROVE (green badge) / REVISE (amber badge with finding count) |
+| `drift_detected` | Warning indicator with severity and unexpected file list |
+| `commit_created` | Short SHA + message, linked to the step it belongs to |
+| `error` | Red error banner with tool name and message |
+
+These visual representations are Tugways components (concept 2) — badges, progress bars, spinners, status indicators. They follow the tugways naming convention and theme-responsive behavior.
+
+#### Mutation Zone Assignment
+
+The three-zone model (concept 5) applied to the feed-progress card:
+
+- **Appearance zone (zero re-renders):** Animated spinners, progress bar fills, elapsed-time counters, phase indicator transitions. These are CSS transitions and `requestAnimationFrame` updates. A new `agent_started` event triggers a CSS class toggle on the step row — the spinner appears via CSS animation, no React state change. Progress bar width is set via `useDOMStyle` (concept 5 DOM utility hook). Elapsed time ticks via `requestAnimationFrame` updating a ref'd element's text content.
+- **Local data zone (targeted re-renders):** The feed event stream itself. A `FeedEventStore` (external mutable store, subscribed via `useSyncExternalStore`) accumulates events and exposes them by step. When a new `step_started` event arrives, only the step-list component re-renders to add the new row. When a `file_modified` event arrives, only the file-list component for that step re-renders.
+- **Structure zone (subtree re-renders):** Card mount/unmount, expanding/collapsing step detail sections, switching between summary and detail views.
+
+#### Transport: Tugcast
+
+Tug-feed events reach the browser through **tugcast** — the existing WebSocket server that already bridges all data feeds to tugdeck. No new transport infrastructure.
+
+Tugcast's binary framing protocol (`[1-byte FeedId][4-byte length][payload]`) carries every feed over a single WebSocket connection. Terminal I/O, git status, filesystem events, stats, agent messages — all flow through this same pipe. The tug-feed is just another feed.
+
+**How it works:**
+1. The feed-capture process (tug-feed.md Layer 2) writes enriched events to `.tugtool/feed/feed.jsonl`.
+2. A new tugcast feed implementation (a `StreamFeed` using `broadcast`, since events are append-only and consumers need the full sequence) tails that JSONL file using `notify` (same pattern as `FilesystemFeed`) and publishes each new event as a frame with `FeedId::TugFeed` (`0x50`).
+3. Register the new feed ID in `tugcast-core/src/protocol.rs` (Rust) and `tugdeck/src/protocol.ts` (TypeScript).
+4. The feed-progress card subscribes via `TugConnection.onFrame(FeedId.TUG_FEED, cb)` — the standard mechanism every card already uses.
+
+This makes the feed-progress card "just another Tugcard with a feedId." It benefits from tugcast's existing authentication, heartbeat, reconnection with bootstrap, and per-client state management. The tugcast `StreamFeed` trait's `broadcast` channel ensures every connected client receives every event in order, with the `BOOTSTRAP` state machine handling reconnection (re-sending recent events if a client lags).
+
+#### The Live-Tail Pattern and Accumulation
+
+The feed-progress card is a live-tail viewer — events append, the view updates in place. This differs from snapshot cards (Git, Stats) that receive a latest-state replacement on each frame.
+
+Looking at the existing cards, three accumulation patterns emerge:
+
+**Pattern 1: Snapshot (latest value wins).** Git card, stats cards. Each frame replaces the previous. No accumulation. `useTugcardData()` returns the current snapshot directly.
+
+**Pattern 2: Append-stream (events accumulate into a buffer).** Files card (capped event list), conversation card (message history), and the new feed-progress card. Each frame adds to a growing data structure. The card manages its own buffer — this is inherently card-specific because the buffer structure, cap, and indexing vary (files card caps at 50/100/200 entries; conversation card has complex message ordering and streaming; feed-progress card indexes by step/phase).
+
+**Pattern 3: Raw stream (pass-through to an external renderer).** Terminal card. Raw bytes go directly to xterm.js, which manages its own scroll buffer. The card doesn't accumulate — xterm does.
+
+Accumulation is card-specific, but we should provide common support for the append-stream pattern since multiple cards use it. Two helpers:
+
+**`useFeedBuffer<T>(options)`** — a hook that maintains a capped ring buffer of decoded events. Cards that just need "recent N events in order" use this directly:
+
+```tsx
+function FilesCardContent() {
+  const events = useFeedBuffer<FsEvent>({ maxSize: 200 });
+  return <EventList items={events} />;
+}
+```
+
+**`useFeedStore<T, S>(store)`** — a hook that feeds each decoded event into an external mutable store (the `FeedEventStore` pattern from the mutation zone discussion). Cards that need structured indexing — grouping events by step, tracking phase transitions, maintaining running totals — build a custom store and subscribe to slices via `useSyncExternalStore`:
+
+```tsx
+// Feed-progress card uses a custom store that indexes events by step
+const feedStore = createFeedEventStore();
+
+function FeedProgressContent() {
+  const latestEvent = useTugcardData<FeedEvent>();
+  // Each new event feeds into the store
+  useFeedStore(feedStore, latestEvent);
+  // Components subscribe to store slices
+  const steps = useSyncExternalStore(feedStore.subscribe, feedStore.getSteps);
+  return <StepList steps={steps} />;
+}
+```
+
+Both helpers live in `tugways/hooks/` alongside the DOM utility hooks from concept 5.
+
+#### Per-Card Data Feeds: Is Tugcard Enough?
+
+Looking at all 8 existing cards through the lens of Tugcard's `feedIds`/`decode`/`useTugcardData()`:
+
+- **Git, Files, Stats (snapshot cards):** `decode` parses JSON, `useTugcardData()` returns the latest snapshot. Tugcard is sufficient.
+- **Terminal (raw stream):** `decode` passes bytes through, the child hands them to xterm.js. Tugcard is sufficient.
+- **Conversation (append-stream with complex protocol):** `decode` parses each JSON-line message. Accumulation into message history is card-specific (ordering buffer, streaming chunks, tool-use/result pairing). Tugcard + `useFeedStore` covers this.
+- **Stats (multi-feed):** Subscribes to 4 feed IDs (`Stats`, `StatsProcessInfo`, `StatsTokenUsage`, `StatsBuildStatus`). Tugcard already supports multiple `feedIds` — `useTugcardData()` keyed by feed ID.
+- **Feed-progress (new, append-stream):** `decode` parses each event. `useFeedStore` with a step-indexed store. Tugcard + `useFeedStore` covers this.
+
+**Conclusion: Tugcard's mechanism is sufficient.** The `feedIds`/`decode`/`useTugcardData()` pattern handles subscription and deserialization for all card types. The two accumulation helpers (`useFeedBuffer` for simple cases, `useFeedStore` for structured indexing) handle the append-stream pattern. No additional `TugFeed` abstraction is needed.
+
+#### Interface-First, Mock the Backend
+
+Define the interfaces clearly: the `FeedEvent` TypeScript types mirroring the 13 event types from tug-feed.md Layer 3, the `FeedId.TUG_FEED` constant, and the `FeedEventStore` that indexes events by step/phase. Implement the frontend feed-progress card against these interfaces with mock data. The backend (hooks, correlation, tugcast feed implementation) comes online later at a time of our choosing.
+
+```tsx
+// The feed-progress card — same pattern as every other card
+<Tugcard
+  meta={{ title: "Progress", icon: "Activity", closable: true, menuItems: [] }}
+  feedIds={[FeedId.TUG_FEED]}
+  decode={(feedId, bytes) => JSON.parse(new TextDecoder().decode(bytes)) as FeedEvent}
+>
+  <FeedProgressContent />
+</Tugcard>
+```
+
+#### Questions to Resolve
+
+- **Tugcast feed type:** `StreamFeed` (broadcast, every event in order) seems right for append-only events. But should the feed also provide a bootstrap snapshot (recent event history) on reconnection, like the terminal feed does via `tmux capture-pane`? If so, the implementation needs to read the tail of `feed.jsonl` on client connect.
+- **Event batching:** Should tugcast batch multiple tug-feed events into a single WebSocket frame (JSON array), or send one frame per event? One-per-frame is simpler and matches the existing pattern. Batching reduces frame count during bursts but adds parsing complexity.
+- **`useFeedBuffer` cap policy:** When the buffer is full, drop oldest (ring buffer)? Or stop accepting? Ring buffer is the obvious default, but the conversation card may want different behavior (keep all messages, paginate).
 
 ### 8. Skeleton and Loading States
 
@@ -885,7 +1149,7 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 
 ### 12. Keybindings View
 
-**The problem.** Currently the only keyboard shortcut is `Control+\`` for panel cycling. We need a view to display and configure keybindings.
+**The problem.** Currently the only keyboard shortcut is `Control+\` for panel cycling. We need a view to display and configure keybindings.
 
 **Questions to resolve:**
 - Is this a card (like settings) or a modal dialog?
@@ -898,6 +1162,29 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 **The problem.** Brio's current palette is deep graphite. The request is to shift it to dark greenish.
 
 **Depends on:** Theme architecture (concept 1). If themes become loadable resources, this is just a new theme file. If themes remain in CSS, it's a token value change.
+
+### 14. UI-Flash Prevention
+
+**The problem.** Tugdeck flashes the entire UI during three scenarios: CSS edits in dev mode (full page reload instead of hot CSS swap), frontend reload (white/blank screen before UI reappears), and backend restart (if `reload_frontend` control frame follows reconnection). The goal is to never flash the entire UI during any transition.
+
+**See:** `roadmap/eliminate-frontend-flash.md` for the full root cause analysis and three-layer fix.
+
+**Root causes:**
+- **CSS edit flash**: The `@tailwindcss/vite` plugin recompiles `globals.css` when `tokens.css` changes. This invalidation propagates up the module graph to `main.tsx`, which has no `import.meta.hot.accept()` handler, so Vite falls back to a full page reload.
+- **Reload flash**: `index.html` has a bare `<body>` with no inline styles. During reload, there's a 20–50ms window where the body has its default white background before CSS loads, then another gap before React mounts.
+- **Backend restart flash**: Only flashes if a `reload_frontend` control frame triggers `location.reload()`. The WebSocket reconnection itself is graceful — the React tree stays mounted, card content remains visible.
+
+**Three-layer fix:**
+1. **Layer A — Inline body styles.** Add `style="background-color:#1c1e22"` (Brio default) to `<body>` in `index.html`. Eliminates the white flash during HTML parse, before CSS loads.
+2. **Layer B — Startup overlay.** A full-screen overlay div in `index.html` that covers the viewport with the background color. Hides the empty deck-container during settings-fetch and React-mount phases. Removed with a 150ms fade-out after first React paint via double `requestAnimationFrame`.
+3. **Layer C — CSS HMR boundary.** A dedicated `css-imports.ts` module that imports all CSS files and has `import.meta.hot.accept()`. CSS invalidations stop at this boundary instead of propagating to `main.tsx`. CSS edits hot-swap `<style>` tags without full page reload.
+
+**Relationship to the design system:** Layer C directly affects how theme CSS changes propagate during development. When themes become loadable resources (concept 1), the stylesheet injection mechanism bypasses the Vite module graph entirely — injected `<style>` elements are runtime DOM mutations, not module imports. Layer C is only needed for changes to the base `tokens.css` and `globals.css` that go through Vite's build pipeline.
+
+**Questions to resolve:**
+- Should we inline the grid pattern (`background-image`) in the body style, or is the solid color sufficient? The grid appearing ~20ms later may be imperceptible.
+- For non-Brio users, there's a brief color shift from Brio's `#1c1e22` to the actual theme color when CSS loads. Worth adding an inline `<script>` that reads localStorage to set the correct color immediately? Or is the Brio default pragmatically good enough?
+- Does the startup overlay interact with the Tugcard skeleton system (concept 8)? The overlay covers the *entire* viewport during app bootstrap; skeletons cover *individual cards* once mounted. They operate at different levels.
 
 ---
 
@@ -935,13 +1222,13 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
    │ Abstrac.│  │    tons   │  │ alogs │  │    Bar    │
    └─────────┘  └───────────┘  └───────┘  └───────────┘
 
-   ┌─────────┐  ┌───────────┐  ┌─────────────┐
-   │11. Dock │  │12. Key-   │  │13. Brio     │
-   │ Redesign│  │  bindings │  │  Revision   │
-   └─────────┘  └───────────┘  └─────────────┘
+   ┌─────────┐  ┌───────────┐  ┌─────────────┐  ┌───────────────┐
+   │11. Dock │  │12. Key-   │  │13. Brio     │  │14. UI-Flash   │
+   │ Redesign│  │  bindings │  │  Revision   │  │  Prevention   │
+   └─────────┘  └───────────┘  └─────────────┘  └───────────────┘
 ```
 
-Concepts 11-13 can proceed somewhat independently once the core stack (1-6) is designed.
+Concepts 11–14 can proceed somewhat independently once the core stack (1-6) is designed. Concept 14 has minimal dependencies — it's infrastructure-level (Vite HMR, inline styles) and can be implemented at any time.
 
 ---
 
@@ -951,7 +1238,7 @@ Concepts 11-13 can proceed somewhat independently once the core stack (1-6) is d
 
 ### Entry 1: Project Kickoff (2026-03-01)
 
-Opened with the full feature list above. Identified 13 concept areas that need design work before implementation. The core architectural challenge is the responder chain + mutation model (concepts 4-5), which determines how everything else gets wired together. The theme architecture (concept 1) is the stated starting point, but it pulls in the component system (concepts 2-3) and the card abstraction (concept 6) because theme changes must flow through all of those layers.
+Opened with the full feature list above. Identified 13 concept areas (later expanded to 14) that need design work before implementation. The core architectural challenge is the responder chain + mutation model (concepts 4-5), which determines how everything else gets wired together. The theme architecture (concept 1) is the stated starting point, but it pulls in the component system (concepts 2-3) and the card abstraction (concept 6) because theme changes must flow through all of those layers.
 
 ### Entry 2: Theme Architecture — Initial Design (2026-03-01)
 
@@ -1042,3 +1329,31 @@ The three-zone model makes the answer to "should I use React state?" mechanical,
 `useSyncExternalStore` is the key React-sanctioned pattern for the local data zone: external mutable stores with selective subscriptions. Feed data, responder chain validation, connection status — all fit this pattern. Each consumer subscribes to its slice. Only affected components re-render.
 
 No open items.
+
+### Entry 9: Tugcard Base Component Designed (2026-03-01)
+
+Designed concept 6 after studying all 8 existing card implementations, the CardFrame/CardHeader chrome, CardContext, ReactCardAdapter, and DeckCanvas rendering hub.
+
+Key decisions:
+
+- **Composition pattern.** Tugcard is a wrapper component, not a base class. Card authors compose their content into `<Tugcard>` as children.
+- **Hooks for data, not render props.** The Excalidraw study confirmed hooks over render props. Tugcard gates the child mount — children only render after feed data arrives, so `useTugcardData()` always returns populated data, never null. Feedless cards (`feedIds={[]}`) mount immediately; `useTugcardData()` returns null but those cards never call it.
+- **CardFrame stays.** It handles positioning, sizing, drag, resize, z-index. Tugcard lives inside CardFrame and handles chrome, responder chain, feed, loading/error, accessories. Clean separation — neither knows about the other's domain.
+- **Dynamic min-size.** Header + accessories + child's declared `minContentSize`. Recalculates when accessories appear/disappear. CardFrame reads Tugcard's computed minimum instead of its hardcoded `MIN_SIZE_PX = 100`.
+- **One accessory slot.** Top, between header and content area. Find-in-text is the first use case. Collapses to zero height when null.
+- **Tugcard is a responder node.** Handles standard card actions (close, minimize, toggleMenu, find). Delegates card-specific actions to the child's responder.
+- **Loading and error handled by Tugcard.** Skeleton until first feed frame; error boundary wraps child. Card authors get both for free.
+- **Clean cutover migration.** All 8 existing cards are sketches. Migrate all at once, eliminate `ReactCardAdapter`, `CardContextProvider`, `useCardMeta`, and per-card `useFeed` + decode boilerplate in a single pass.
+
+No open items.
+
+### Entry 10: Feed Abstraction Reframed + UI-Flash Prevention Added (2026-03-01)
+
+**Concept 7 rewritten three times.** First pass: thin summary of tug-feed.md, "see the other doc." Second pass: proper frontend rendering story with event-to-visual mapping, mutation zone assignment, and transport options. Third pass incorporated critical corrections:
+
+- **Transport: tugcast, not a new server.** The second pass proposed `tugcode feed serve` or a "separate WebSocket/SSE channel" — both nonsensical given that tugcast already exists as the single WebSocket server bridging all feeds to tugdeck. Tugcast's binary framing protocol, authentication, heartbeat, reconnection, and per-client state management are all in place. The tug-feed is just another `FeedId` (`0x50`) registered in the protocol, with a `StreamFeed` implementation that tails `feed.jsonl`. Fixed in both `design-system-concepts.md` and `tug-feed.md` (Phase 4 rewritten to reference tugcast).
+- **Three accumulation patterns identified.** Snapshot (latest value wins — Git, Stats), append-stream (events accumulate — Files, Conversation, feed-progress), and raw stream (pass-through — Terminal). Accumulation is card-specific, but two helpers support the append-stream pattern: `useFeedBuffer` (capped ring buffer for simple cases) and `useFeedStore` (external mutable store with structured indexing for complex cases like the feed-progress card).
+- **Per-card data feeds: Tugcard is sufficient.** Reviewed all 8 existing cards through Tugcard's `feedIds`/`decode`/`useTugcardData()` lens. Every card type is covered — no additional `TugFeed` abstraction needed.
+- **Interface-first implementation.** Define TypeScript types for the 13 event types, implement the frontend card with mock data, bring the backend online later.
+
+**Concept 14 added: UI-Flash Prevention.** Three scenarios cause visual flash (CSS edit, frontend reload, backend restart). Root cause analysis and three-layer fix detailed in `roadmap/eliminate-frontend-flash.md`. Layers: inline body styles (eliminate white flash), startup overlay (hide mount transition), CSS HMR boundary (prevent full reloads for CSS changes). Concept 14 is nearly independent of the core stack — it's infrastructure-level work that can be implemented at any time. The only connection to the design system is that Layer C (HMR boundary) affects how base CSS changes propagate during development; runtime theme injection (concept 1) bypasses the Vite module graph entirely.
