@@ -3,6 +3,7 @@ import {
   initActionDispatch,
   dispatchAction,
   registerAction,
+  registerThemeSetter,
   _resetForTest,
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
@@ -264,5 +265,87 @@ describe("initActionDispatch: choose-source-tree", () => {
     expect(posted.length).toBe(1);
 
     delete (globalThis as Record<string, unknown>).webkit;
+  });
+});
+
+// ---- set-theme handler ----
+
+describe("initActionDispatch: set-theme", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("calls the registered theme setter with a valid theme name", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+
+    dispatchAction({ action: "set-theme", theme: "bluenote" });
+
+    expect(received.length).toBe(1);
+    expect(received[0]).toBe("bluenote");
+  });
+
+  it("calls the setter for each valid theme name", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+
+    dispatchAction({ action: "set-theme", theme: "brio" });
+    dispatchAction({ action: "set-theme", theme: "bluenote" });
+    dispatchAction({ action: "set-theme", theme: "harmony" });
+
+    expect(received).toEqual(["brio", "bluenote", "harmony"]);
+  });
+
+  it("warns and does not throw when theme is invalid", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const received: string[] = [];
+    registerThemeSetter((theme) => received.push(theme));
+
+    expect(() => dispatchAction({ action: "set-theme", theme: "dark-mode" })).not.toThrow();
+    expect(received.length).toBe(0);
+  });
+
+  it("warns and does not throw when theme field is missing", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "set-theme" })).not.toThrow();
+  });
+
+  it("warns and does not throw when setter is not yet registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    // No registerThemeSetter call — themeSetterRef is null after _resetForTest
+    expect(() => dispatchAction({ action: "set-theme", theme: "harmony" })).not.toThrow();
+  });
+
+  it("uses the latest setter after re-registration", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const first: string[] = [];
+    const second: string[] = [];
+    registerThemeSetter((theme) => first.push(theme));
+    registerThemeSetter((theme) => second.push(theme));
+
+    dispatchAction({ action: "set-theme", theme: "harmony" });
+
+    expect(first.length).toBe(0);
+    expect(second).toEqual(["harmony"]);
   });
 });

@@ -58,6 +58,7 @@ export function registerAction(action: string, handler: ActionHandler): void {
 export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
+  themeSetterRef = null;
 }
 
 /**
@@ -130,6 +131,20 @@ export function initActionDispatch(
       (messageHandlers.setDevMode as { postMessage: (v: unknown) => void }).postMessage({ enabled });
     } else {
       console.info("set-dev-mode: WKScriptMessageHandler bridge not available");
+    }
+  });
+
+  // set-theme: Switch the active theme via TugThemeProvider
+  registerAction("set-theme", (payload) => {
+    const theme = payload.theme;
+    if (typeof theme !== "string" || !["brio", "bluenote", "harmony"].includes(theme)) {
+      console.warn("set-theme: invalid theme", payload);
+      return;
+    }
+    if (themeSetterRef) {
+      themeSetterRef(theme);
+    } else {
+      console.warn("set-theme: theme setter not registered yet");
     }
   });
 
