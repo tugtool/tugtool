@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-02T21:22:38Z
+---
+
+## step-4: Added gallery visibility state to DeckCanvas, registered setter with registerGallerySetter on mount, conditionally renders ComponentGallery when show-component-gallery action is dispatched. Close callback hides the panel.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
 step: step-3
 date: 2025-03-02T21:16:32Z
 ---
@@ -41,6 +53,45 @@ date: 2025-03-02T21:05:45Z
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-2-first-component.md
+
+---
+
+---
+step: step-4
+plan: tugways-phase-2-first-component
+date: 2026-03-02T22:30:00Z
+---
+
+## step-4: Wired ComponentGallery toggle into DeckCanvas via registerGallerySetter and useState
+
+**Files changed:**
+- tugdeck/src/components/chrome/deck-canvas.tsx (modified -- added gallery state, registerGallerySetter on mount, conditional ComponentGallery render)
+
+**Checkpoint results:**
+
+Checkpoint 1: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun test`
+```
+bun test v1.3.9 (cf6cdbbb)
+
+ 173 pass
+ 0 fail
+ 366 expect() calls
+Ran 173 tests across 12 files. [7.75s]
+```
+PASSED
+
+Checkpoint 2: `cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-2-first-component-20250302-205032/tugdeck && bun run build`
+```
+vite v7.3.1 building client environment for production...
+transforming...
+✓ 1750 modules transformed.
+dist/index.html                   0.73 kB │ gzip:  0.41 kB
+dist/assets/index-DYOlUi3X.css   40.92 kB │ gzip:  8.60 kB
+dist/assets/index-xXFEZ6-O.js    54.61 kB │ gzip: 18.17 kB
+dist/assets/vendor-BvKEF7s2.js  192.88 kB │ gzip: 60.48 kB
+✓ built in 705ms
+```
+PASSED
 
 ---
 
