@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-02T19:50:24Z
+---
+
+## step-5: Created TugThemeProvider context with stylesheet injection, raw CSS imports, localStorage persistence, settings API sync, Swift bridge canvas color. Created vite-env.d.ts. Deleted use-theme.ts. Added registerThemeSetter to action-dispatch.ts.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-1-theme.md
+
+---
+
+---
 step: step-4
 date: 2025-03-02T19:43:19Z
 ---
