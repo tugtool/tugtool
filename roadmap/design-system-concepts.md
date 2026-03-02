@@ -17,8 +17,10 @@
 | 9 | Alert and Dialog System | DESIGNED | [#c09-dialog](#c09-dialog) |
 | 10 | Card Title Bar Enhancements | DESIGNED | [#c10-titlebar](#c10-titlebar) |
 | 11 | Dock Redesign | DESIGNED | [#c11-dock](#c11-dock) |
-| 12 | Keybindings View | DEFERRED | [#c12-keybindings](#c12-keybindings) |
-| 13 | Brio Theme Revision | DEFERRED | [#c13-brio](#c13-brio) |
+| 12 | Card Tabs | DESIGNED | [#c12-tabs](#c12-tabs) |
+| 13 | Card Snap Sets | DESIGNED | [#c13-snap-sets](#c13-snap-sets) |
+| 14 | Keybindings View | DEFERRED | [#c14-keybindings](#c14-keybindings) |
+| 15 | Brio Theme Revision | DEFERRED | [#c15-brio](#c15-brio) |
 
 ### Cross-Cutting Design Decisions
 
@@ -53,6 +55,10 @@
 | [D27] | Window-shade collapse to title bar, state in CardState | Concept 10 | [#d27-window-shade](#d27-window-shade) |
 | [D28] | Three dock button types: card toggle, command, popout menu | Concept 11 | [#d28-dock-button-types](#d28-dock-button-types) |
 | [D29] | Dock placement on any edge (right default) | Concept 11 | [#d29-dock-placement](#d29-dock-placement) |
+| [D30] | Tab bar visible only when card has multiple tabs | Concept 12 | [#d30-tab-visibility](#d30-tab-visibility) |
+| [D31] | Tabs are a Tugcard composition feature, not a frame feature | Concept 12 | [#d31-tabs-in-tugcard](#d31-tabs-in-tugcard) |
+| [D32] | Snap requires Option (Alt) modifier during drag | Concept 13 | [#d32-modifier-snap](#d32-modifier-snap) |
+| [D33] | Set-move is always active once a set is formed | Concept 13 | [#d33-set-move-always](#d33-set-move-always) |
 
 ### Key Architectural Patterns
 
@@ -94,6 +100,7 @@
 | 9 | Tugcard Base Component Designed | 2026-03-01 | [#log-9](#log-9) |
 | 10 | Feed Abstraction + UI-Flash Prevention | 2026-03-01 | [#log-10](#log-10) |
 | 11 | TugButton Designed — Composition Model | 2026-03-02 | [#log-11](#log-11) |
+| 12 | Concepts 12-13: Card Tabs and Snap Sets | 2026-03-02 | [#log-12](#log-12) |
 
 ---
 
@@ -2041,7 +2048,198 @@ The `menuId` on popout-menu buttons references a menu definition registered else
 3. **Dock is outside the responder chain** — pure direct-interaction chrome. No `useResponder`, no action validation, no focus management. ([#dock-chain](#dock-chain))
 4. **Tooltips via Radix Tooltip** — already in the project. Consistent delay, auto-positioned opposite the dock edge. ([#dock-tooltips](#dock-tooltips))
 
-### 12. Keybindings View {#c12-keybindings}
+### 12. Card Tabs {#c12-tabs}
+
+**Status: DESIGNED** (2026-03-02)
+
+**The problem.** Cards need to share a single frame. A terminal card and a code card should be able to coexist in one panel, switched via tabs at the top. The data model already has `TabItem[]` and `activeTabId` in `CardState`, and a `tab-bar.tsx` exists — but the current implementation is entangled with the old card infrastructure (`ReactCardAdapter`, `TugCard` interface) that gets demolished in Phase 0. Tabs need to be rebuilt as a first-class Tugcard composition feature.
+
+#### When Tabs Appear {#d30-tab-visibility}
+
+The tab bar is **hidden for single-tab cards**. Most cards are single-tab — terminal, git, files, stats, settings, developer, about. The tab bar only renders when `tabs.length > 1`. This keeps the common case clean: no visual overhead for cards that don't use tabs.
+
+When a second tab is added to a card (via dock command, drag-onto-card gesture, or programmatic API), the tab bar appears between the title bar and the content area. When tabs are reduced back to one, the tab bar disappears.
+
+```
+┌─────────────────────────────┐
+│ [≡] Terminal           [–][×]│  ← title bar (always present)
+├─────────────────────────────┤
+│ [Terminal 1] [Code ▾]  [+]  │  ← tab bar (only when tabs.length > 1)
+├─────────────────────────────┤
+│                             │
+│         content area        │  ← active tab's Tugcard content
+│                             │
+└─────────────────────────────┘
+```
+
+The title bar displays the **active tab's title**. The card frame's identity follows the active tab.
+
+#### Tabs Are a Tugcard Feature {#d31-tabs-in-tugcard}
+
+Tabs live inside the Tugcard composition layer, not in CardFrame. CardFrame handles positioning, sizing, drag, resize, z-index — it doesn't know about tabs. Tugcard manages:
+
+- The `tabs` array and `activeTabId` state
+- Rendering the tab bar component (when `tabs.length > 1`)
+- Mounting/unmounting tab content (active tab is mounted, inactive tabs are unmounted to save resources — terminal cards may opt into keeping their tab mounted to preserve session state)
+- Reporting the active tab's minimum content size to CardFrame via the dynamic min-size mechanism ([D17])
+
+This separation means CardFrame stays simple — it wraps one Tugcard, which internally manages however many tabs it has.
+
+#### Tab Types
+
+Tabs can be **same-type** (two terminal tabs in one frame) or **mixed-type** (a terminal tab and a code tab sharing a frame). Each tab is a `TabItem` with its own `componentId` and `id`:
+
+```ts
+interface TabItem {
+  id: string;          // unique instance ID (crypto.randomUUID())
+  componentId: string; // card type: "terminal", "code", "git", etc.
+  title: string;       // display title in tab bar
+  closable: boolean;   // whether the tab shows a close button
+}
+```
+
+This is the existing `TabItem` interface from `layout-tree.ts` — unchanged. The data model is already correct.
+
+#### Tab Gestures
+
+| Gesture | Action |
+|---------|--------|
+| Click tab | Switch to that tab |
+| Click tab close (×) | Close that tab (with confirmation if configured) |
+| Click [+] button | Add a new tab (same type as active tab by default) |
+| Drag tab within bar | Reorder tabs |
+| Drag tab out of bar | Detach into a new card frame |
+| Drag card onto another card's tab bar | Merge as a new tab |
+
+The drag-to-merge and drag-to-detach gestures are the primary way users create and break apart tabbed cards. These are stretch goals — click-based tab management is the initial implementation.
+
+#### Responder Chain Integration
+
+The active tab's content is the active responder node within the card's position in the chain. Switching tabs changes which content view receives actions:
+
+```
+DeckCanvas
+  └── Tugcard (card-level responder)
+        └── [active tab's content responder]  ← switches when tab changes
+```
+
+Inactive tabs have no responder registration. When a tab switch occurs, the old tab's content responder is unregistered and the new tab's content responder is registered in its place. This is automatic via `useResponder` — when the inactive tab's content unmounts, its responder deregisters; when the new tab's content mounts, it registers.
+
+#### Tab Bar Component
+
+The tab bar is a simple horizontal strip:
+
+```tsx
+<TugTabBar
+  tabs={tabs}
+  activeTabId={activeTabId}
+  onTabSelect={(tabId) => setActiveTabId(tabId)}
+  onTabClose={(tabId) => removeTab(tabId)}
+  onTabAdd={() => addTab()}
+  onTabReorder={(fromIndex, toIndex) => reorderTabs(fromIndex, toIndex)}
+/>
+```
+
+Styled with `--td-*` tokens. Active tab has a bottom border accent. Inactive tabs are muted. Close buttons appear on hover. The [+] button is at the end. Overflow scrolls horizontally (no wrapping — tabs are a horizontal rail).
+
+#### Persistence
+
+Tab state is already persisted in `CardState.tabs` and `CardState.activeTabId`. The serialization format (v5) already handles this. No changes to `serialization.ts` are needed for the basic tab feature.
+
+#### What Concept 12 Establishes {#c12-demonstrates}
+
+1. **Tab bar visibility gated on count** — hidden for single-tab cards, visible for multi-tab. No visual overhead in the common case. ([#d30-tab-visibility](#d30-tab-visibility))
+2. **Tabs are a Tugcard composition feature** — CardFrame is unaware. Tugcard manages tab state, tab bar rendering, and content switching internally. ([#d31-tabs-in-tugcard](#d31-tabs-in-tugcard))
+3. **Same data model** — `TabItem`, `CardState.tabs`, `CardState.activeTabId` are unchanged from the existing `layout-tree.ts`. The infrastructure was designed for tabs from the start; only the UI layer needs rebuilding.
+4. **Responder chain follows the active tab** — tab switching is a chain reconfiguration, handled automatically by mount/unmount of content responders.
+
+### 13. Card Snap Sets {#c13-snap-sets}
+
+**Status: DESIGNED** (2026-03-02)
+
+**The problem.** The current card snap system is always-on: every drag operation shows snap guides and snaps cards to edges. This is useful for organizing layouts but gets in the way of quick, casual card repositioning. The snap behavior should be opt-in via a modifier key, so users can freely drag cards without unintended snapping.
+
+The geometric engine (`snap.ts`) is solid — ~500 lines of spatial math for shared-edge detection, set computation, sash groups, and docked corner rendering. The behavior change is in **when** that engine is consulted, not in **how** it works.
+
+#### Modifier-Gated Snapping {#d32-modifier-snap}
+
+Snap guides and snap-to-edge behavior activate **only when the user holds Option (Alt) during drag**. Without the modifier:
+
+| Modifier held? | During drag | On drop |
+|----------------|------------|---------|
+| **No** | Free movement, no guides, no snap | Card lands at cursor position, no set formed |
+| **Yes (Option)** | Snap guides appear, card snaps to nearby edges | If snapped, a set is formed with the adjacent card(s) |
+
+The modifier is checked continuously during drag — the user can press Option mid-drag to activate snapping, or release it to return to free movement. This provides a fluid, discoverable experience:
+
+1. Start dragging a card (free movement)
+2. Move near another card — nothing happens
+3. Press Option — snap guides appear, card snaps to the nearby edge
+4. Release Option — card unsnaps, returns to cursor position
+5. Press Option again, release mouse — card snaps and a set is formed
+
+The visual feedback is immediate: guides appear/disappear as the modifier is pressed/released. There is no latency or mode-switch delay.
+
+#### Implementation: Where the Gate Lives
+
+The modifier gate is in `DeckManager`'s drag handler, not in `snap.ts`. The snap module remains a pure geometry library — it computes snap positions given rectangles. The caller decides whether to use those positions:
+
+```ts
+// In DeckManager drag handler (simplified)
+function onDragMove(cardId: string, cursorX: number, cursorY: number, event: MouseEvent) {
+  if (event.altKey) {
+    // Option held: compute snap and apply
+    const snapResult = computeSnap(dragRect, otherRects, SNAP_THRESHOLD_PX);
+    applyPosition(cardId, snapResult.x ?? cursorX, snapResult.y ?? cursorY);
+    showGuides(snapResult.guides);
+  } else {
+    // No modifier: free movement
+    applyPosition(cardId, cursorX, cursorY);
+    hideGuides();
+  }
+}
+```
+
+The existing `computeSnap`, `findSharedEdges`, `computeSets` functions in `snap.ts` are untouched. The only change is the conditional call site.
+
+#### Set-Move Is Always Active {#d33-set-move-always}
+
+Once a set is formed (cards are snapped together), **set-move is always active**. Dragging any member of a set moves the entire group — no modifier needed. This is the current behavior and it stays.
+
+The rationale: sets are intentional structures. The user opted into the set by holding Option during snap. Once formed, the set should behave as a unit. Requiring Option for every set-move would be tedious.
+
+| Scenario | Behavior |
+|----------|----------|
+| Drag a card that's in a set (no modifier) | Entire set moves together |
+| Drag a card that's in a set (with Option) | Entire set moves together (same behavior) |
+| Drag a card far enough from its set (no modifier) | Card breaks out of the set, moves freely |
+| Option+drag a breakaway card near another card | Snap guides appear, card can join a new set |
+
+#### Break-Out Behavior
+
+Breaking a card out of a set works as it does today: drag a set member far enough away from the group (beyond the snap threshold) and it detaches. The card becomes a free-floating panel again.
+
+The existing break-out detection in `DeckManager` (measuring drag distance from the set's bounding box) remains unchanged. The only addition: after break-out, if Option is held, the detached card can immediately snap to a different card to form a new set.
+
+#### Visual Feedback
+
+| State | Visual |
+|-------|--------|
+| Free drag (no Option) | Card follows cursor, no guides, no highlighting |
+| Option held during drag | Snap guides appear (existing blue/accent lines), target edges highlight |
+| Card snaps to edge | 1px overlap applied, docked corners computed (square at shared edge, rounded elsewhere) |
+| Set formed | Sash handles appear at shared edges (existing behavior) |
+
+The snap guides, docked corner computation, 1px overlap, and sash rendering are all existing visual features. The only change is their activation condition.
+
+#### What Concept 13 Establishes {#c13-demonstrates}
+
+1. **Snap is modifier-gated** — Option (Alt) activates snap guides and snap-to-edge during drag. Free drag is the default. ([#d32-modifier-snap](#d32-modifier-snap))
+2. **Set-move is always active** — once a set is formed, dragging any member moves the group. No modifier needed for set operations. ([#d33-set-move-always](#d33-set-move-always))
+3. **Geometric engine untouched** — `snap.ts` remains a pure geometry library. The modifier gate lives in the drag handler, not the math.
+4. **Fluid modifier interaction** — Option can be pressed/released mid-drag with immediate visual feedback. No mode switches, no state machines.
+
+### 14. Keybindings View {#c14-keybindings}
 
 **Status: DEFERRED**
 
@@ -2053,7 +2251,7 @@ The `menuId` on popout-menu buttons references a menu definition registered else
 - How do keybindings interact with the responder chain? The responder chain should be the mechanism that routes keyboard events to the correct handler.
 - What keybindings do we need beyond panel cycling? Card-specific shortcuts? Global shortcuts? Command palette?
 
-### 13. Brio Theme Revision {#c13-brio}
+### 15. Brio Theme Revision {#c15-brio}
 
 **Status: DEFERRED**
 
@@ -2098,13 +2296,20 @@ The `menuId` on popout-menu buttons references a menu definition registered else
    └─────────┘  │ Continuity│  └───────┘  └───────────┘
                 └───────────┘
 
-   ┌─────────┐  ┌───────────┐  ┌─────────────┐
-   │11. Dock │  │12. Key-   │  │13. Brio     │
-   │ Redesign│  │  bindings │  │  Revision   │
-   └─────────┘  └───────────┘  └─────────────┘
+   ┌─────────┐  ┌───────────┐
+   │11. Dock │  │12. Card   │
+   │ Redesign│  │    Tabs   │
+   └─────────┘  └───────────┘
+
+   ┌─────────────┐  ┌───────────┐  ┌─────────────┐
+   │13. Card Snap│  │14. Key-   │  │15. Brio     │
+   │    Sets     │  │  bindings │  │  Revision   │
+   └─────────────┘  └───────────┘  └─────────────┘
 ```
 
-Concepts 11–13 can proceed somewhat independently once the core stack (1-6) is designed.
+Concepts 12 (Card Tabs) depends on concept 6 (Tugcard). Concept 13 (Card Snap Sets) is
+independent — it modifies the geometric engine's activation, not the design system stack.
+Concepts 14–15 can proceed independently once the core stack (1-6) is designed.
 
 ---
 
@@ -2161,7 +2366,7 @@ Skipped concept 3 (TugButton) to design concept 4 (Responder Chain) first — Tu
 
 Open questions resolved in follow-up: `useResponder` finds parent via nested context; mouse events excluded (hit-testing only, per Apple's model); the responder chain IS the focus model (deck-manager informs it, doesn't compete with it); action vocabulary designed from Apple's standard actions, filtered to tugdeck needs (~25 standard actions across 8 categories, plus extensibility for card-specific actions).
 
-Remaining open items resolved: keybinding map deferred to concept 12 (chain only knows actions, not keys); action validation adopts Apple's two-level model (`canHandle` for capability, `validateAction` for enabled state) — decades of battle-tested usage.
+Remaining open items resolved: keybinding map deferred to concept 14 (chain only knows actions, not keys); action validation adopts Apple's two-level model (`canHandle` for capability, `validateAction` for enabled state) — decades of battle-tested usage.
 
 Concept 4 is fully designed. No open items.
 
@@ -2315,3 +2520,22 @@ Key decisions:
 - **Commands stay in settings dropdown.** Reset layout, restart server, reload frontend remain where they are. No dedicated dock buttons for these.
 
 No open items. Concept 11 is fully designed.
+
+### Entry 16: Concepts 12-13 Designed — Card Tabs and Snap Sets {#log-12} (2026-03-02)
+
+Two missing concepts identified and designed:
+
+**Concept 12: Card Tabs.** The data model (`TabItem`, `CardState.tabs`, `CardState.activeTabId`) already exists in `layout-tree.ts` and a `tab-bar.tsx` already renders tabs — but both are entangled with the old `ReactCardAdapter`/`TugCard` infrastructure demolished in Phase 0. The redesign makes tabs a Tugcard composition feature:
+
+- **[D30] Tab bar hidden for single-tab cards.** Most cards are single-tab. The tab bar only appears when `tabs.length > 1`. No visual overhead in the common case.
+- **[D31] Tabs are a Tugcard feature, not a CardFrame feature.** Tugcard manages tab state, renders the tab bar, and switches content. CardFrame is unaware — it wraps one Tugcard that internally manages however many tabs it has.
+- **Responder chain follows active tab.** Tab switching is automatic via mount/unmount — old tab's content responder deregisters, new tab's content responder registers.
+- **Same-type and mixed-type tabs supported.** Two terminals in one frame, or a terminal + code card sharing a frame. Each tab is a `TabItem` with its own `componentId`.
+
+**Concept 13: Card Snap Sets.** The geometric engine (`snap.ts`) is solid. The behavioral change: snapping is no longer always-on.
+
+- **[D32] Snap requires Option (Alt) modifier during drag.** Without the modifier: free drag, no guides, no snapping. With the modifier: snap guides appear, cards snap to edges, sets form on drop. The modifier can be pressed/released mid-drag with immediate visual feedback.
+- **[D33] Set-move is always active once formed.** Sets are intentional structures — requiring Option for every set-move would be tedious. The modifier is only for *forming* sets.
+- **Geometric engine untouched.** The modifier gate lives in `DeckManager`'s drag handler, not in `snap.ts`. Pure geometry library stays pure.
+
+Deferred concepts renumbered: Keybindings View → 14, Brio Theme Revision → 15. Concept count is now 15.

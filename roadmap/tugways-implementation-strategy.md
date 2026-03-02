@@ -130,9 +130,9 @@ no design system dependencies — it just works on rectangles.
 subscribers, those frames are silently dropped by `connection.ts` (it just won't
 find any registered callbacks). This is fine — no errors, no crashes.
 
-### Phase 1: Theme Foundation (Concepts 1, 2)
+### Phase 1: Theme Foundation + Snap Sets (Concepts 1, 2, 13)
 
-**Goal**: Loadable theme architecture. `components/tugways/` directory exists.
+**Goal**: Loadable theme architecture. `components/tugways/` directory exists. Card snapping is modifier-gated.
 
 **What to do**:
 1. Rename token prefix `--tl-` → `--tways-` throughout `tokens.css` and all CSS references ([D02])
@@ -142,8 +142,11 @@ find any registered callbacks). This is fine — no errors, no crashes.
 5. Create `components/tugways/` directory ([D06])
 6. Implement `TugThemeProvider` (React context for current theme name + setter)
 7. Wire Mac menu "Settings > Theme" to switch themes via control frame
+8. Gate snap behavior on Option (Alt) modifier ([D32]): in DeckManager's drag handler, only call `computeSnap` and show guides when `event.altKey` is true. Free drag is the default.
+9. Verify set-move still works without modifier once a set is formed ([D33])
+10. Verify break-out behavior: drag a set member away to detach, then Option+drag to snap elsewhere
 
-**Result**: Themes load as CSS files. Motion tokens exist. Directory structure ready.
+**Result**: Themes load as CSS files. Motion tokens exist. Directory structure ready. Card snapping requires Option key — casual drags are free movement.
 
 ### Phase 2: First Component + Gallery (Concept 3)
 
@@ -204,6 +207,23 @@ find any registered callbacks). This is fine — no errors, no crashes.
 8. Build one test card (maybe a simple "hello world" card) to prove the pipeline end-to-end
 
 **Result**: A card appears on the canvas when triggered from the Mac menu. It has a title bar, can be dragged, resized, snapped, and docked. The old infrastructure is fully replaced.
+
+### Phase 5b: Card Tabs (Concept 12)
+
+**Goal**: Cards support multiple tabs. Tab bar appears when a card has more than one tab.
+
+**What to do**:
+1. Implement `TugTabBar` component — horizontal tab strip with tab select, close, add, and reorder ([D30])
+2. Wire tab state into Tugcard: `tabs` array, `activeTabId`, content switching ([D31])
+3. Tab bar renders only when `tabs.length > 1` — single-tab cards show no tab bar
+4. Active tab's content mounts; inactive tabs unmount (responder chain follows automatically)
+5. Wire Mac menu command to add a tab to the focused card (for testing)
+6. Verify tab persistence via existing `CardState.tabs` / `CardState.activeTabId` in serialization
+7. Add TugTabBar to the Component Gallery
+
+**Result**: A card can host multiple tabs. Switching tabs changes the visible content and the active responder. The tab bar is invisible for the common single-tab case.
+
+**Note**: Drag-to-merge and drag-to-detach tab gestures are stretch goals for a later phase. This phase covers click-based tab management only.
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -280,7 +300,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 Phase 0: Demolition
     │
     ▼
-Phase 1: Theme Foundation ──────────────────────────────┐
+Phase 1: Theme Foundation + Snap Sets ─────────────────┐
     │                                                    │
     ▼                                                    │
 Phase 2: First Component + Gallery                       │
@@ -294,12 +314,12 @@ Responder Chain  Mutation Model                          │
              ▼                                           │
          Phase 5: Tugcard Base                           │
              │                                           │
-             ├────────────────┐                          │
-             ▼                ▼                          ▼
-         Phase 6:         Phase 7: Motion ◄─── (uses tokens from Phase 1)
-         Feed Abstraction
-             │                │
-             └────────┬───────┘
+             ├────────────────┬──────────────┐           │
+             ▼                ▼              ▼           ▼
+         Phase 5b:        Phase 6:       Phase 7: Motion
+         Card Tabs        Feed Abstraction   ◄── (uses tokens from Phase 1)
+             │                │              │
+             └────────┬───────┴──────────────┘
                       ▼
                   Phase 8: Alerts + Title Bar + Dock
                       │
@@ -307,27 +327,28 @@ Responder Chain  Mutation Model                          │
                   Phase 9: Card Rebuild
 ```
 
-Phases 3 and 4 can run in parallel. Phase 7 can start as soon as Phase 1 is
-done (the motion tokens), though it integrates with Phase 5/6 for skeleton
-states. Phase 6 (Feed Abstraction) needs Phase 5 (Tugcard) to have something
-to feed data into.
+Phases 3 and 4 can run in parallel. Phase 5b, 6, and 7 can all start as soon as
+Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 5b (Card Tabs)
+is independent of Phase 6 (Feed Abstraction) — tabs are a structural feature, feeds
+are a data feature. Phase 6 needs Phase 5 (Tugcard) to have something to feed data into.
 
 ## Estimated Scope
 
 | Phase | New/Modified Files | Rough Size |
 |-------|-------------------|------------|
 | 0 | -40 files deleted, 3 gutted | Net reduction: ~8000 lines |
-| 1 | ~5 files | ~300 lines |
+| 1 | ~6 files | ~350 lines |
 | 2 | ~3 files | ~400 lines |
 | 3 | ~4 files | ~500 lines |
 | 4 | ~3 files | ~200 lines |
 | 5 | ~8 files | ~1200 lines |
+| 5b | ~3 files | ~350 lines |
 | 6 | ~4 files | ~400 lines |
 | 7 | ~3 files | ~200 lines |
 | 8 | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~7200 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~7600 lines** replacing the current ~9700 lines. The new
 codebase is smaller because the triple-registration redundancy is gone, the
 adapter layer is gone, and the component abstractions do more with less code.
 
@@ -343,15 +364,16 @@ Each phase becomes one tugplan. The phases are designed to be:
 The suggested plan sequence:
 
 1. `tugways-phase-0-demolition` — tear down, verify empty canvas
-2. `tugways-phase-1-theme-foundation` — tokens, theme loading, directory structure
+2. `tugways-phase-1-theme-and-snap` — tokens, theme loading, directory structure, modifier-gated snap
 3. `tugways-phase-2-first-component` — TugButton + gallery
 4. `tugways-phase-3-responder-chain` — event routing
 5. `tugways-phase-4-mutation-model` — DOM hooks, three-zone discipline
 6. `tugways-phase-5-tugcard` — card base component, new DeckManager
-7. `tugways-phase-6-feed` — feed hooks, data flow
-8. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-9. `tugways-phase-8-chrome` — alerts, title bar, dock
-10. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+7. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
+8. `tugways-phase-6-feed` — feed hooks, data flow
+9. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+10. `tugways-phase-8-chrome` — alerts, title bar, dock
+11. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
