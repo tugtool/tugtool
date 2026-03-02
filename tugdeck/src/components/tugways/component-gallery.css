@@ -19,7 +19,7 @@
   left: 64px;
   width: 640px;
   max-height: calc(100vh - 128px);
-  background-color: var(--td-bg);
+  background-color: var(--td-card);
   border: 1px solid var(--td-border);
   border-radius: var(--radius);
   overflow-y: auto;

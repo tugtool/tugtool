@@ -83,7 +83,7 @@ describe("TugButton – icon subtype", () => {
       <TugButton subtype="icon" size="sm" icon={<span>X</span>} aria-label="Close" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-icon-sm");
+    expect(btn?.className).toContain("tug-button-icon-sm");
   });
 
   it("applies square aspect ratio class for md size", () => {
@@ -91,7 +91,7 @@ describe("TugButton – icon subtype", () => {
       <TugButton subtype="icon" size="md" icon={<span>X</span>} aria-label="Close" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-icon-md");
+    expect(btn?.className).toContain("tug-button-icon-md");
   });
 
   it("applies square aspect ratio class for lg size", () => {
@@ -99,7 +99,7 @@ describe("TugButton – icon subtype", () => {
       <TugButton subtype="icon" size="lg" icon={<span>X</span>} aria-label="Close" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-icon-lg");
+    expect(btn?.className).toContain("tug-button-icon-lg");
   });
 
   it("logs dev warning when aria-label and children are missing", () => {
@@ -132,7 +132,7 @@ describe("TugButton – icon-text subtype", () => {
       </TugButton>
     );
     const btn = container.querySelector("button");
-    expect(btn?.querySelector(".tug-btn-icon-text")).not.toBeNull();
+    expect(btn?.querySelector(".tug-button-icon-text")).not.toBeNull();
   });
 });
 
@@ -164,8 +164,8 @@ describe("TugButton – three-state subtype", () => {
     expect(btn.getAttribute("aria-pressed")).toBe("mixed");
   });
 
-  it("toggles from off to on and calls onStateChange", async () => {
-    const onChange = mock((_state: "on" | "off") => {});
+  it("cycles from off to on and calls onStateChange", async () => {
+    const onChange = mock((_state: string) => {});
     const { container } = render(
       <TugButton subtype="three-state" state="off" onStateChange={onChange}>
         Toggle
@@ -179,10 +179,25 @@ describe("TugButton – three-state subtype", () => {
     expect(onChange.mock.calls[0][0]).toBe("on");
   });
 
-  it("toggles from on to off and calls onStateChange", async () => {
-    const onChange = mock((_state: "on" | "off") => {});
+  it("cycles from on to mixed and calls onStateChange", async () => {
+    const onChange = mock((_state: string) => {});
     const { container } = render(
       <TugButton subtype="three-state" state="on" onStateChange={onChange}>
+        Toggle
+      </TugButton>
+    );
+    const btn = container.querySelector("button")!;
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toBe("mixed");
+  });
+
+  it("cycles from mixed to off and calls onStateChange", async () => {
+    const onChange = mock((_state: string) => {});
+    const { container } = render(
+      <TugButton subtype="three-state" state="mixed" onStateChange={onChange}>
         Toggle
       </TugButton>
     );
@@ -198,32 +213,32 @@ describe("TugButton – three-state subtype", () => {
     const { container } = render(
       <TugButton subtype="three-state" state="off" children="Toggle" />
     );
-    const indicator = container.querySelector(".tug-btn-state-indicator");
+    const indicator = container.querySelector(".tug-button-state-indicator");
     expect(indicator).not.toBeNull();
   });
 
-  it("applies state CSS classes: tug-btn-state-on", () => {
+  it("applies state CSS classes: tug-button-state-on", () => {
     const { container } = render(
       <TugButton subtype="three-state" state="on" children="Toggle" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-state-on");
+    expect(btn?.className).toContain("tug-button-state-on");
   });
 
-  it("applies state CSS classes: tug-btn-state-off", () => {
+  it("applies state CSS classes: tug-button-state-off", () => {
     const { container } = render(
       <TugButton subtype="three-state" state="off" children="Toggle" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-state-off");
+    expect(btn?.className).toContain("tug-button-state-off");
   });
 
-  it("applies state CSS classes: tug-btn-state-mixed", () => {
+  it("applies state CSS classes: tug-button-state-mixed", () => {
     const { container } = render(
       <TugButton subtype="three-state" state="mixed" children="Toggle" />
     );
     const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-btn-state-mixed");
+    expect(btn?.className).toContain("tug-button-state-mixed");
   });
 });
 
@@ -232,25 +247,31 @@ describe("TugButton – three-state subtype", () => {
 // ============================================================================
 
 describe("TugButton – variants", () => {
-  it("primary variant: maps to shadcn default (no additional class)", () => {
+  it("primary variant: maps to shadcn default and applies variant class", () => {
     const btn = renderButton({ variant: "primary", children: "Primary" });
-    // shadcn's default variant applies bg-primary
     expect(btn.className).toContain("bg-primary");
+    expect(btn.className).toContain("tug-button-primary");
+    expect(btn.className).toContain("tug-button-bordered");
   });
 
-  it("secondary variant: maps to shadcn secondary", () => {
+  it("secondary variant: maps to shadcn secondary and applies variant class", () => {
     const btn = renderButton({ variant: "secondary", children: "Secondary" });
     expect(btn.className).toContain("bg-secondary");
+    expect(btn.className).toContain("tug-button-secondary");
+    expect(btn.className).toContain("tug-button-bordered");
   });
 
-  it("ghost variant: applies tug-btn-ghost class for hover override", () => {
+  it("ghost variant: applies tug-button-ghost class, no border", () => {
     const btn = renderButton({ variant: "ghost", children: "Ghost" });
-    expect(btn.className).toContain("tug-btn-ghost");
+    expect(btn.className).toContain("tug-button-ghost");
+    expect(btn.className).not.toContain("tug-button-bordered");
   });
 
-  it("destructive variant: maps to shadcn destructive", () => {
+  it("destructive variant: maps to shadcn destructive and applies variant class", () => {
     const btn = renderButton({ variant: "destructive", children: "Delete" });
     expect(btn.className).toContain("bg-destructive");
+    expect(btn.className).toContain("tug-button-destructive");
+    expect(btn.className).toContain("tug-button-bordered");
   });
 });
 
@@ -292,13 +313,13 @@ describe("TugButton – loading state", () => {
 
   it("renders spinner element when loading", () => {
     const { container } = render(<TugButton loading={true}>Saving</TugButton>);
-    const spinner = container.querySelector(".tug-btn-spinner");
+    const spinner = container.querySelector(".tug-button-spinner");
     expect(spinner).not.toBeNull();
   });
 
-  it("applies tug-btn-loading class when loading", () => {
+  it("applies tug-button-loading class when loading", () => {
     const btn = renderButton({ loading: true, children: "Saving" });
-    expect(btn.className).toContain("tug-btn-loading");
+    expect(btn.className).toContain("tug-button-loading");
   });
 
   it("button is disabled when loading (pointer-events disabled via HTML disabled)", () => {

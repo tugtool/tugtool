@@ -32,6 +32,9 @@ export type TugButtonSize = "sm" | "md" | "lg";
 /** TugButton subtype names (Spec S01, Table T01) */
 export type TugButtonSubtype = "push" | "icon" | "icon-text" | "three-state";
 
+/** TugButton border-radius tokens (proportional, rem-based like Tailwind) */
+export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
+
 /**
  * TugButton props interface -- Phase 2 (Spec S01).
  *
@@ -61,11 +64,14 @@ export interface TugButtonProps {
 
   /** Current state for "three-state" subtype. Default: "off" */
   state?: TugButtonState;
-  /** Callback when three-state button is clicked (on <-> off toggle; mixed is programmatic) */
-  onStateChange?: (state: "on" | "off") => void;
+  /** Callback when three-state button is clicked (cycles: off → on → mixed → off) */
+  onStateChange?: (state: TugButtonState) => void;
 
   /** Accessibility label (required for "icon" subtype without visible text) */
   "aria-label"?: string;
+
+  /** Border radius token. Default is size-proportional (sm→"sm", md→"md", lg→"lg"). */
+  rounded?: TugButtonRounded;
 
   /** Additional CSS class names */
   className?: string;
@@ -92,12 +98,29 @@ const SIZE_MAP: Record<TugButtonSize, ShadcnSize> = {
   lg: "lg",
 };
 
+// ---- Border-radius tokens (rem-based, Tailwind-proportional) ----
+
+const ROUNDED_MAP: Record<TugButtonRounded, string> = {
+  none: "0",
+  sm: "0.25rem",   // 4px — Tailwind rounded
+  md: "0.375rem",  // 6px — Tailwind rounded-md
+  lg: "0.5rem",    // 8px — Tailwind rounded-lg
+  full: "9999px",  // pill
+};
+
+/** Size-proportional default: each button size maps to a radius token */
+const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
+  sm: "sm",
+  md: "md",
+  lg: "lg",
+};
+
 // ---- Spinner component ----
 
 function Spinner() {
   return (
-    <span className="tug-btn-spinner-overlay" aria-hidden="true">
-      <span className="tug-btn-spinner" />
+    <span className="tug-button-spinner-overlay" aria-hidden="true">
+      <span className="tug-button-spinner" />
     </span>
   );
 }
@@ -124,6 +147,7 @@ export function TugButton({
   icon,
   state = "off",
   onStateChange,
+  rounded,
   "aria-label": ariaLabel,
   className,
 }: TugButtonProps) {
@@ -149,6 +173,9 @@ export function TugButton({
     }
   }, [subtype, ariaLabel, children]);
 
+  // Border radius: explicit token wins, otherwise size-proportional default
+  const resolvedRadius = ROUNDED_MAP[rounded ?? SIZE_ROUNDED_DEFAULT[size]];
+
   // Shadcn variant and size
   const shadcnVariant = VARIANT_MAP[variant];
   const shadcnSize = SIZE_MAP[size];
@@ -162,8 +189,13 @@ export function TugButton({
     if (disabled || loading) return;
 
     if (subtype === "three-state") {
-      // Toggle on <-> off (mixed is programmatic only)
-      const newState: "on" | "off" = internalState === "on" ? "off" : "on";
+      // Cycle: off → on → mixed → off
+      const nextMap: Record<TugButtonState, TugButtonState> = {
+        off: "on",
+        on: "mixed",
+        mixed: "off",
+      };
+      const newState = nextMap[internalState];
       setInternalState(newState);
       onStateChange?.(newState);
     } else {
@@ -180,18 +212,21 @@ export function TugButton({
       : undefined;
 
   // CSS class composition
+  const variantClass = `tug-button-${variant}`;
   const buttonClassName = cn(
-    // Ghost variant hover override
-    variant === "ghost" && "tug-btn-ghost",
+    // Variant class for hover/active/transition styles
+    variantClass,
+    // Border for non-ghost variants
+    variant !== "ghost" && "tug-button-bordered",
     // Icon subtype size classes (square aspect ratio per Table T03)
-    subtype === "icon" && size === "sm" && "tug-btn-icon-sm",
-    subtype === "icon" && size === "md" && "tug-btn-icon-md",
-    subtype === "icon" && size === "lg" && "tug-btn-icon-lg",
+    subtype === "icon" && size === "sm" && "tug-button-icon-sm",
+    subtype === "icon" && size === "md" && "tug-button-icon-md",
+    subtype === "icon" && size === "lg" && "tug-button-icon-lg",
     // Three-state subtype classes
-    subtype === "three-state" && "tug-btn-three-state",
-    subtype === "three-state" && `tug-btn-state-${internalState}`,
+    subtype === "three-state" && "tug-button-three-state",
+    subtype === "three-state" && `tug-button-state-${internalState}`,
     // Loading state
-    loading && "tug-btn-loading",
+    loading && "tug-button-loading",
     className
   );
 
@@ -200,7 +235,7 @@ export function TugButton({
     if (loading) {
       return (
         <>
-          <span className="tug-btn-loading-content" aria-hidden="true">
+          <span className="tug-button-loading-content" aria-hidden="true">
             {renderSubtypeContent()}
           </span>
           <Spinner />
@@ -217,7 +252,7 @@ export function TugButton({
 
       case "icon-text":
         return (
-          <span className="tug-btn-icon-text">
+          <span className="tug-button-icon-text">
             {icon}
             {children}
           </span>
@@ -227,7 +262,7 @@ export function TugButton({
         return (
           <>
             {children}
-            <span className="tug-btn-state-indicator" aria-hidden="true" />
+            <span className="tug-button-state-indicator" aria-hidden="true" />
           </>
         );
 
@@ -247,6 +282,7 @@ export function TugButton({
       aria-busy={loading ? "true" : undefined}
       onClick={handleClick}
       className={buttonClassName}
+      style={{ borderRadius: resolvedRadius }}
     >
       {renderContent()}
     </Button>

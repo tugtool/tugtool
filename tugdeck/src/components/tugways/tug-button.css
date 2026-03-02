@@ -9,17 +9,90 @@
  */
 
 /* ============================================================================
-   Ghost Variant Override
+   Variant Borders
    ========================================================================= */
 
 /*
- * shadcn's ghost variant uses hover:bg-accent which resolves to
- * var(--td-accent-cool) (cyan) via the shadcn bridge. Override to use
- * var(--td-surface-control) per Table T02.
+ * shadcn button variants (default, secondary, destructive) don't include
+ * borders. Add a subtle border for definition against panel backgrounds.
+ * Ghost variant intentionally has no border.
  */
-.tug-btn-ghost:hover {
+.tug-button-bordered {
+  border: 1px solid var(--td-border);
+}
+
+/* Ghost variant: invisible border so it occupies the same space as bordered variants */
+.tug-button-ghost {
+  border: 1px solid transparent;
+}
+
+/* Destructive variant: red-tinted border to communicate caution */
+.tug-button-destructive.tug-button-bordered {
+  border-color: var(--td-danger);
+}
+
+/* ============================================================================
+   Hover States
+   ========================================================================= */
+
+/*
+ * shadcn's Tailwind hover classes (hover:bg-primary/90) don't work reliably
+ * with CSS custom property color values. Override with explicit hover styles
+ * using semantic tokens.
+ *
+ * Ghost variant uses var(--td-surface-control) instead of shadcn's
+ * hover:bg-accent (which resolves to --td-accent-cool cyan via the bridge).
+ */
+.tug-button-primary:hover:not(:disabled) {
+  filter: brightness(1.25) saturate(1.1);
+  border-color: var(--td-border-soft);
+}
+
+.tug-button-secondary:hover:not(:disabled) {
+  background-color: var(--td-surface);
+  border-color: var(--td-border-soft);
+}
+
+.tug-button-ghost:hover:not(:disabled) {
   background-color: var(--td-surface-control);
   color: var(--td-text);
+}
+
+.tug-button-destructive:hover:not(:disabled) {
+  filter: brightness(1.25) saturate(1.1);
+  border-color: var(--td-danger);
+}
+
+/* ============================================================================
+   Pressed / Active States
+   ========================================================================= */
+
+.tug-button-primary:active:not(:disabled) {
+  filter: brightness(0.8) saturate(1.2);
+}
+
+.tug-button-secondary:active:not(:disabled) {
+  background-color: var(--td-surface-control);
+  border-color: var(--td-border);
+}
+
+.tug-button-ghost:active:not(:disabled) {
+  background-color: var(--td-surface);
+}
+
+.tug-button-destructive:active:not(:disabled) {
+  filter: brightness(0.8) saturate(1.2);
+}
+
+/* Transition for smooth hover/active */
+.tug-button-primary,
+.tug-button-secondary,
+.tug-button-ghost,
+.tug-button-destructive {
+  transition:
+    background-color var(--td-duration-fast) var(--td-easing-standard),
+    border-color var(--td-duration-fast) var(--td-easing-standard),
+    filter var(--td-duration-fast) var(--td-easing-standard);
 }
 
 /* ============================================================================
@@ -30,19 +103,19 @@
  * Icon subtype buttons use square aspect ratio.
  * shadcn size icon = h-10 w-10, but we need all three sizes.
  */
-.tug-btn-icon-sm {
+.tug-button-icon-sm {
   width: 2.25rem; /* h-9 = 36px */
   height: 2.25rem;
   padding: 0;
 }
 
-.tug-btn-icon-md {
+.tug-button-icon-md {
   width: 2.5rem; /* h-10 = 40px */
   height: 2.5rem;
   padding: 0;
 }
 
-.tug-btn-icon-lg {
+.tug-button-icon-lg {
   width: 2.75rem; /* h-11 = 44px */
   height: 2.75rem;
   padding: 0;
@@ -52,7 +125,7 @@
    Three-State Subtype: State Indicator
    ========================================================================= */
 
-.tug-btn-three-state {
+.tug-button-three-state {
   position: relative;
 }
 
@@ -60,7 +133,7 @@
  * State indicator dot: appears at bottom-right of the button
  * to visually indicate on/off/mixed state.
  */
-.tug-btn-state-indicator {
+.tug-button-state-indicator {
   position: absolute;
   bottom: 3px;
   right: 3px;
@@ -70,15 +143,15 @@
   pointer-events: none;
 }
 
-.tug-btn-state-on .tug-btn-state-indicator {
+.tug-button-state-on .tug-button-state-indicator {
   background-color: var(--td-accent);
 }
 
-.tug-btn-state-off .tug-btn-state-indicator {
+.tug-button-state-off .tug-button-state-indicator {
   background-color: var(--td-border);
 }
 
-.tug-btn-state-mixed .tug-btn-state-indicator {
+.tug-button-state-mixed .tug-button-state-indicator {
   background-color: var(--td-text-soft);
 }
 
@@ -86,13 +159,13 @@
    Loading State
    ========================================================================= */
 
-.tug-btn-loading {
+.tug-button-loading {
   position: relative;
   pointer-events: none;
   opacity: 0.75;
 }
 
-.tug-btn-spinner-overlay {
+.tug-button-spinner-overlay {
   position: absolute;
   inset: 0;
   display: flex;
@@ -101,18 +174,18 @@
   border-radius: inherit;
 }
 
-.tug-btn-spinner {
+.tug-button-spinner {
   width: 1em;
   height: 1em;
   border: 2px solid transparent;
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: tug-btn-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
+  animation: tug-button-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
   /* Respect reduced-motion preference via the scalar token */
   animation-duration: calc(var(--td-duration-moderate) / var(--td-duration-scalar, 1));
 }
 
-@keyframes tug-btn-spin {
+@keyframes tug-button-spin {
   from {
     transform: rotate(0deg);
   }
@@ -121,7 +194,7 @@
   }
 }
 
-.tug-btn-loading-content {
+.tug-button-loading-content {
   opacity: 0;
   pointer-events: none;
 }
@@ -130,7 +203,7 @@
    Icon + Text Layout
    ========================================================================= */
 
-.tug-btn-icon-text {
+.tug-button-icon-text {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
