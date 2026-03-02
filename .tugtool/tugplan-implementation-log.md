@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-02T23:44:11Z
+---
+
+## step-5: Wire DeckCanvas as root responder with id deck-canvas. Insert ResponderChainProvider in DeckManager render tree. Register four action handlers (cyclePanel stub, resetLayout stub, showSettings stub, showComponentGallery toggle). Wrap JSX in ResponderScope. Create deck-canvas responder test suite (8 tests).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-4
 date: 2025-03-02T23:37:19Z
 ---
