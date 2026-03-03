@@ -33,32 +33,35 @@ Web research (documented in design-system-concepts.md Concept 14) confirmed that
 - Provide a `useSelectionBoundary` hook so Tugcard auto-registers its content area with SelectionGuard -- card authors never interact with the guard directly.
 - Wire a `selectAll` responder action in Tugcard so Cmd+A selects within the focused card only, using a `preventDefaultOnMatch` flag on the keybinding to prevent the browser default.
 - Add semantic tokens for selection styling and CSS rules for the `data-td-select` attribute API.
-- Defer custom autoscroll timing to Phase 9 -- rely on native browser autoscroll for now, add a RAF fallback only if testing reveals it is needed.
+- Implement RAF-based autoscroll in SelectionGuard: pointer-clamping breaks native browser autoscroll (the browser never sees the pointer leave the scrollable area), so SelectionGuard implements distance-based autoscroll via `requestAnimationFrame` during clamped selection drag, re-extending the selection after each scroll tick.
+- Add `saveSelection`/`restoreSelection` methods to SelectionGuard for per-card selection persistence. Phase 5b tab switching uses these to retain selection across tab changes.
+- Verify `data-td-select="custom"` works correctly with contenteditable regions -- the guard must not interfere with contenteditable's native selection, while still preventing selection from escaping the card.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - Drag selection starting in a card's content area cannot visually extend beyond that card's boundary (manual test: drag pointer outside card, selection stays clamped at edge)
 - Title bars, accessory slots, resize handles, snap guides, and canvas background are never selectable (manual test: attempt to select each area, no selection highlight appears)
 - Cmd+A with a focused card selects only that card's content, not the entire document (automated test: dispatch selectAll action, verify selection is within card content div)
-- `data-td-select="none"` prevents selection, `data-td-select="all"` produces atomic selection, `data-td-select="custom"` defers to child component (automated tests via bun:test)
+- `data-td-select="none"` prevents selection, `data-td-select="all"` produces atomic selection, `data-td-select="custom"` defers to child component including contenteditable (automated tests via bun:test)
+- RAF-based autoscroll works during clamped selection drag in cards with overflow content (manual test: drag-select past the bottom edge of a scrollable card, content scrolls and selection extends)
+- `saveSelection`/`restoreSelection` round-trip correctly: save selection state, clear it, restore it, verify same range (automated test)
 - All existing tugcard.test.tsx and responder-chain tests continue to pass
 
 #### Scope {#scope}
 
 1. CSS `user-select` baseline on body and opt-in on card content areas
-2. SelectionGuard singleton with pointer-clamped clipping and selectionchange safety net
-3. `useSelectionBoundary` hook for automatic card content area registration
-4. `data-td-select` attribute API with four modes (default, none, all, custom)
-5. Cmd+A scoped to focused card via `selectAll` responder action with `preventDefaultOnMatch` keybinding
-6. `--td-selection-bg` and `--td-selection-text` semantic tokens, `::selection` CSS rule
-7. `overscroll-behavior: contain` on card content area
+2. SelectionGuard singleton with pointer-clamped clipping, selectionchange safety net, and RAF-based autoscroll
+3. `saveSelection`/`restoreSelection` methods on SelectionGuard for per-card selection persistence
+4. `useSelectionBoundary` hook for automatic card content area registration
+5. `data-td-select` attribute API with four modes (default, none, all, custom) — including explicit contenteditable verification
+6. Cmd+A scoped to focused card via `selectAll` responder action with `preventDefaultOnMatch` keybinding
+7. `--td-selection-bg` and `--td-selection-text` semantic tokens, `::selection` CSS rule
+8. `overscroll-behavior: contain` on card content area
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Custom RAF-based autoscroll during selection drag (deferred to Phase 9 per user answer; native browser autoscroll suffices for now)
-- Selection across tabs within the same card (Phase 5b adds tabs; selection is already card-scoped so tab switching naturally clears selection)
-- Rich text selection or contenteditable integration (Phase 9 card rebuilds may need this for code/conversation cards)
-- Cross-card copy/paste coordination (each card manages its own clipboard interaction)
+- Tab switching integration: Phase 5a provides `saveSelection`/`restoreSelection` infrastructure on SelectionGuard, but the actual save-before-unmount / restore-after-mount wiring is Phase 5b's responsibility (tabs don't exist yet)
+- Rich text editing features: contenteditable works as a selection boundary via `data-td-select="custom"`, but rich text toolbar integration, formatting commands, and collaborative editing features are Phase 9 card rebuild concerns
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -224,6 +227,14 @@ All headings that will be referenced use explicit anchors in kebab-case. Decisio
 **Spec S01: SelectionGuard public interface** {#s01-selectionguard-interface}
 
 ```typescript
+/** Serialized selection state for save/restore across tab switches. */
+interface SavedSelection {
+  anchorPath: number[];   // index path from content root to anchor node
+  anchorOffset: number;
+  focusPath: number[];    // index path from content root to focus node
+  focusOffset: number;
+}
+
 class SelectionGuard {
   /** Register a card content area as a selection boundary. */
   registerBoundary(cardId: string, element: HTMLElement): void;
@@ -236,6 +247,21 @@ class SelectionGuard {
 
   /** Remove document-level event listeners. Called on teardown. */
   detach(): void;
+
+  /**
+   * Save the current selection state for a card. Returns null if the card
+   * does not own the active selection. Used by Phase 5b tab switching to
+   * save selection before unmounting a tab's content.
+   */
+  saveSelection(cardId: string): SavedSelection | null;
+
+  /**
+   * Restore a previously saved selection state for a card. The card's
+   * boundary element must be registered and its content DOM must match
+   * the structure at save time (same content, re-mounted). Used by
+   * Phase 5b tab switching to restore selection after remounting a tab.
+   */
+  restoreSelection(cardId: string, saved: SavedSelection): void;
 
   /** Reset all state (for testing). */
   reset(): void;
@@ -327,7 +353,7 @@ function caretPositionFromPointCompat(
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/components/tugways/selection-guard.ts` | SelectionGuard singleton: boundary registration, pointer-clamped clipping, selectionchange safety net, caretPositionFromPoint compat |
+| `tugdeck/src/components/tugways/selection-guard.ts` | SelectionGuard singleton: boundary registration, pointer-clamped clipping, selectionchange safety net, RAF autoscroll, save/restore selection, caretPositionFromPoint compat |
 | `tugdeck/src/components/tugways/hooks/use-selection-boundary.ts` | Hook for Tugcard to register content area with SelectionGuard |
 | `tugdeck/src/__tests__/selection-guard.test.ts` | Unit tests for SelectionGuard singleton |
 | `tugdeck/src/__tests__/use-selection-boundary.test.tsx` | Unit tests for useSelectionBoundary hook (register/unregister lifecycle) |
@@ -337,8 +363,9 @@ function caretPositionFromPointCompat(
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `SelectionGuard` | class | `selection-guard.ts` | Module-level singleton, registers boundaries, clips selection |
+| `SelectionGuard` | class | `selection-guard.ts` | Module-level singleton, registers boundaries, clips selection, autoscrolls, saves/restores selection |
 | `selectionGuard` | const (singleton) | `selection-guard.ts` | Exported singleton instance |
+| `SavedSelection` | interface | `selection-guard.ts` | Serialized selection state: anchorPath, anchorOffset, focusPath, focusOffset |
 | `caretPositionFromPointCompat` | fn | `selection-guard.ts` | Runtime feature detect: caretPositionFromPoint with caretRangeFromPoint fallback |
 | `useSelectionBoundary` | fn (hook) | `hooks/use-selection-boundary.ts` | Registers/unregisters card content area with SelectionGuard |
 | `preventDefaultOnMatch` | field | `keybinding-map.ts` `KeyBinding` | Optional boolean; pipeline calls preventDefault when true |
@@ -355,7 +382,9 @@ function caretPositionFromPointCompat(
 
 - [ ] Add JSDoc header to `selection-guard.ts` citing D34-D38 from design-system-concepts.md and this plan's decisions
 - [ ] Add JSDoc header to `use-selection-boundary.ts` explaining that card authors do not interact with SelectionGuard directly
-- [ ] Document `data-td-select` attribute API in `selection-guard.ts` JSDoc (table of four modes)
+- [ ] Document `data-td-select` attribute API in `selection-guard.ts` JSDoc (table of four modes, including contenteditable with `custom`)
+- [ ] Document `SavedSelection` interface and `saveSelection`/`restoreSelection` usage for Phase 5b tab switching
+- [ ] Document RAF-based autoscroll behavior: why it's required (pointer-clamping breaks native autoscroll), edge zone sizing, speed curve
 
 ---
 
@@ -365,8 +394,8 @@ function caretPositionFromPointCompat(
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test SelectionGuard boundary registration, clamping math, caretPositionFromPoint compat | Core guard logic, edge cases |
-| **Integration** | Test Tugcard + SelectionGuard integration via useSelectionBoundary, Cmd+A scoping | End-to-end selection containment |
+| **Unit** | Test SelectionGuard boundary registration, clamping math, caretPositionFromPoint compat, save/restore round-trip | Core guard logic, edge cases |
+| **Integration** | Test Tugcard + SelectionGuard integration via useSelectionBoundary, Cmd+A scoping, contenteditable with data-td-select="custom" | End-to-end selection containment |
 | **Regression** | Verify existing Tugcard and responder chain tests pass after keybinding changes | Backward compatibility |
 
 ---
@@ -456,29 +485,36 @@ function caretPositionFromPointCompat(
 - New `tugdeck/src/__tests__/selection-guard.test.ts`
 
 **Tasks:**
-- [ ] Create `selection-guard.ts` with the `SelectionGuard` class implementing Spec S01
+- [ ] Create `selection-guard.ts` with the `SelectionGuard` class implementing Spec S01, including `SavedSelection` interface
 - [ ] Implement `registerBoundary(cardId, element)` -- stores cardId-to-element mapping
 - [ ] Implement `unregisterBoundary(cardId)` -- removes mapping
 - [ ] Implement `attach()` -- installs document-level `pointerdown`, `pointermove`, `pointerup`, and `selectionchange` listeners
 - [ ] Implement `detach()` -- removes all document-level listeners
-- [ ] Implement `reset()` -- clears all boundaries and internal state (for testing)
+- [ ] Implement `reset()` -- clears all boundaries, saved selections, and internal state (for testing)
 - [ ] Implement `caretPositionFromPointCompat(x, y)` as a private method or module-level function: try `document.caretPositionFromPoint(x, y)`, fall back to `document.caretRangeFromPoint(x, y)`, return `{ node, offset }` or null
 - [ ] Implement pointer-clamped clipping logic:
   - On `pointerdown`: check if `event.target` is contained within a registered boundary element using `element.contains(event.target)`. Only begin tracking if the target is inside a registered card content area (this prevents resize handles, title bars, and canvas clicks from starting selection tracking).
   - On `pointermove` while tracking: if pointer exits the boundary rect, clamp coordinates to boundary edge, call `caretPositionFromPointCompat` with clamped coords, call `selection.extend()` to pin the focus
-  - On `pointerup`: stop tracking
+  - On `pointerup`: stop tracking, cancel any active autoscroll RAF
+- [ ] Implement RAF-based autoscroll: when the pointer is outside the card content area's scroll viewport during a clamped selection drag, compute scroll velocity proportional to distance from the nearest edge (EDGE_SIZE_PX = 40, MAX_SCROLL_SPEED = 20), scroll via `requestAnimationFrame`, and re-extend the selection after each scroll tick to track newly visible content. The RAF loop continues as long as the pointer stays outside the scroll viewport, even if the pointer stops moving.
 - [ ] Implement `selectionchange` safety net: on each event, check if selection anchor and focus are within the same registered boundary. If selection spans multiple boundaries or escapes entirely, collapse to the originating boundary.
-- [ ] Check for `data-td-select="custom"` on ancestor nodes -- when found, skip clipping for that subtree
-- [ ] Export the `selectionGuard` singleton instance
+- [ ] Check for `data-td-select="custom"` on ancestor nodes -- when found, skip clipping for that subtree (this includes contenteditable regions)
+- [ ] Implement `saveSelection(cardId)`: if the card owns the active selection, serialize anchor/focus as DOM tree index paths (array of child indices from the boundary element to the node) and offsets. Return `SavedSelection` or null.
+- [ ] Implement `restoreSelection(cardId, saved)`: walk the saved index paths from the card's boundary element to resolve anchor/focus nodes, then call `selection.setBaseAndExtent()`. No-op if the boundary is not registered or nodes cannot be resolved (DOM structure changed).
+- [ ] Export the `selectionGuard` singleton instance and the `SavedSelection` interface
 - [ ] Write unit tests for boundary registration/unregistration
 - [ ] Write unit tests for clamping math (pure geometry: given boundary rect and pointer position, compute clamped coords)
 - [ ] Write unit tests for reset behavior
+- [ ] Write unit tests for saveSelection/restoreSelection round-trip
 
 **Tests:**
 - [ ] T08: registerBoundary stores cardId-to-element mapping; unregisterBoundary removes it
-- [ ] T09: reset clears all boundaries
+- [ ] T09: reset clears all boundaries and saved selections
 - [ ] T10: Clamping function clamps pointer coordinates to boundary rect edges (pure math test)
-- [ ] T11: Guard skips clipping when ancestor has data-td-select="custom"
+- [ ] T11: Guard skips clipping when ancestor has data-td-select="custom" (including contenteditable)
+- [ ] T11a: saveSelection returns null when card does not own active selection
+- [ ] T11b: saveSelection/restoreSelection round-trip: save, collapse selection, restore, verify same range
+- [ ] T11c: restoreSelection is a no-op when boundary is not registered (no error thrown)
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test src/__tests__/selection-guard.test.ts`
@@ -531,11 +567,13 @@ function caretPositionFromPointCompat(
 - [ ] Add `selectAll` action to the Tugcard responder actions map: calls `window.getSelection()?.selectAllChildren(contentRef.current!)` when the content ref is available. Note: the selectAll callback captures `contentRef` (a stable React ref object), so it always reads the current `.current` value at call time -- this is safe because `useResponder` reads `optionsRef.current` inside `useEffect`, and the options ref is updated on every render
 - [ ] Write integration test: render Tugcard, dispatch selectAll, verify selection is within content area
 - [ ] Write integration test: verify Tugcard registers as responder with selectAll action (extends T15 from existing test)
+- [ ] Write integration test: render Tugcard with a `<div contenteditable data-td-select="custom">` inside content area, verify SelectionGuard does not interfere with contenteditable selection, and verify selection cannot escape the card boundary even when contenteditable tries to extend it
 
 **Tests:**
 - [ ] T13: Tugcard registers selectAll action in responder chain (canHandle('selectAll') returns true)
 - [ ] T14: Dispatching selectAll through the chain calls selectAllChildren on the content area
 - [ ] T15: Tugcard content area is registered with SelectionGuard on mount
+- [ ] T15a: Contenteditable region with data-td-select="custom" inside card content receives full selection autonomy (guard does not clip within the custom region)
 - [ ] T16: Existing tugcard.test.tsx passes (no regressions)
 
 **Checkpoint:**
@@ -594,35 +632,38 @@ function caretPositionFromPointCompat(
 
 > This is the single place we define "done" for the phase. Keep it crisp and testable.
 
-**Deliverable:** Selection is fully contained within card boundaries. Title bars, accessory slots, canvas background, and resize handles are never selectable. Drag selection clamps at card edges. Cmd+A selects within the focused card only. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed via `data-td-select`.
+**Deliverable:** Selection is fully contained within card boundaries. Title bars, accessory slots, canvas background, and resize handles are never selectable. Drag selection clamps at card edges with RAF-based autoscroll for overflow content. Cmd+A selects within the focused card only. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed (including contenteditable) via `data-td-select`. Selection persistence infrastructure (`saveSelection`/`restoreSelection`) is ready for Phase 5b tab switching.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] `user-select: none` is on body; card content areas have `user-select: text` (CSS inspection)
 - [ ] SelectionGuard singleton is attached at app startup and registers card content boundaries (code review)
 - [ ] Pointer-clamped selection clipping prevents drag selection from escaping card boundaries (manual test)
+- [ ] RAF-based autoscroll works during clamped selection drag in cards with overflow content (manual test: drag-select past edge, content scrolls, selection extends)
 - [ ] selectionchange safety net clips keyboard-driven selection extension at card edges (manual test)
 - [ ] Cmd+A dispatches selectAll to the focused card, selecting only its content (automated test T14)
-- [ ] `data-td-select` attribute controls selectability in four modes (automated tests T11, CSS rules present)
+- [ ] `data-td-select` attribute controls selectability in four modes, including contenteditable with `custom` (automated tests T11, T15a, CSS rules present)
+- [ ] `saveSelection`/`restoreSelection` round-trip correctly (automated tests T11a-T11c)
 - [ ] `--td-selection-bg` and `--td-selection-text` tokens exist and `::selection` rule uses them (CSS inspection)
 - [ ] `overscroll-behavior: contain` is on card content area (CSS inspection)
 - [ ] All tugdeck tests pass (`bun test`)
 
 **Acceptance tests:**
 - [ ] T14: Dispatching selectAll through the chain selects content within the focused card only
-- [ ] T11: SelectionGuard skips clipping for `data-td-select="custom"` subtrees
+- [ ] T11: SelectionGuard skips clipping for `data-td-select="custom"` subtrees (including contenteditable)
+- [ ] T11b: saveSelection/restoreSelection round-trip preserves selection state
+- [ ] T15a: Contenteditable region with data-td-select="custom" receives full selection autonomy
 - [ ] T19: Full tugdeck test suite passes
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Custom RAF-based autoscroll fallback if native browser autoscroll proves insufficient during Phase 9 card rebuilds
-- [ ] Selection containment refinements for contenteditable regions (Phase 9 conversation card)
-- [ ] Selection persistence across tab switches within a card (Phase 5b card tabs)
-- [ ] Multi-card clipboard coordination for cross-card copy operations
+- [ ] Phase 5b wires save-before-unmount / restore-after-mount tab switching using the `saveSelection`/`restoreSelection` infrastructure delivered in this phase
+- [ ] Rich text editing features (formatting toolbar, collaborative editing) for contenteditable regions in Phase 9 card rebuilds — the selection containment model handles contenteditable correctly via `data-td-select="custom"`, but editing-specific features are card-level concerns
 
 | Checkpoint | Verification |
 |------------|--------------|
 | CSS baseline applied | `user-select: none` on body, `user-select: text` on `.tugcard-content` visible in computed styles |
-| SelectionGuard operational | Card boundaries registered on mount, clipping fires on pointer exit |
+| SelectionGuard operational | Card boundaries registered on mount, clipping fires on pointer exit, autoscroll works in overflow content |
 | Cmd+A scoped | `bun test src/__tests__/selection-model.test.tsx` |
+| Selection persistence | `bun test src/__tests__/selection-guard.test.ts` (T11a-T11c) |
 | Full regression | `cd tugdeck && bun test` |

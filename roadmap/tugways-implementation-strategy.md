@@ -266,17 +266,18 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **What to do**:
 1. Add `user-select: none` to canvas background, card frames, accessory slots, and resize handles. Add explicit `user-select: text` to card content areas. Title bar header already has `user-select: none` from Phase 5.
-2. Implement `SelectionGuard` singleton — registers card content areas as selection boundaries, tracks which card owns the active selection, clips selection when it escapes the originating card.
+2. Implement `SelectionGuard` singleton — registers card content areas as selection boundaries, tracks which card owns the active selection, clips selection when it escapes the originating card. Includes `saveSelection`/`restoreSelection` methods for per-card selection persistence (used by Phase 5b tab switching).
 3. Implement `useSelectionBoundary` hook — called by Tugcard on its content area div to register/unregister with SelectionGuard. Card authors never interact with the guard directly.
 4. Implement pointer-clamped selection clipping ([D36]): during drag selection, when the pointer exits the card boundary, clamp coordinates to the boundary edge and use `document.caretPositionFromPoint()` to find the nearest text position. Call `selection.extend()` to pin the selection focus at the edge. Zero visual flash.
-5. Implement `selectionchange` safety net for keyboard-driven selection extension (Shift+arrow).
-6. Implement `data-td-select` attribute API ([D37]) with four modes: default (text), `none`, `all`, `custom`. Wire via CSS rules and SelectionGuard awareness.
-7. Wire `selectAll` responder action in Tugcard ([D38]) to call `selectAllChildren` on the card's content area. Cmd+A now selects within the focused card only.
-8. Add `--td-selection-bg` and `--td-selection-text` semantic tokens to `tokens.css`. Add `::selection` rule to `tugcard.css`.
-9. Add `overscroll-behavior: contain` to card content area CSS to prevent scroll chaining during selection drag.
-10. Test: selection cannot cross card boundaries, chrome is never selectable, Cmd+A is card-scoped, autoscroll works in overflow content.
+5. Implement RAF-based autoscroll in SelectionGuard: pointer-clamping breaks native browser autoscroll (the browser never sees the pointer leave the scrollable area), so SelectionGuard must implement distance-based autoscroll via `requestAnimationFrame` during clamped selection drag. After each scroll tick, re-clamp and re-extend the selection to track newly visible content.
+6. Implement `selectionchange` safety net for keyboard-driven selection extension (Shift+arrow).
+7. Implement `data-td-select` attribute API ([D37]) with four modes: default (text), `none`, `all`, `custom`. Wire via CSS rules and SelectionGuard awareness. The `custom` mode explicitly handles contenteditable regions — verify with a contenteditable test div that selection containment works correctly when contenteditable's native behavior tries to extend selection beyond the card.
+8. Wire `selectAll` responder action in Tugcard ([D38]) to call `selectAllChildren` on the card's content area. Cmd+A now selects within the focused card only.
+9. Add `--td-selection-bg` and `--td-selection-text` semantic tokens to `tokens.css`. Add `::selection` rule to `tugcard.css`.
+10. Add `overscroll-behavior: contain` to card content area CSS to prevent scroll chaining during selection drag.
+11. Test: selection cannot cross card boundaries, chrome is never selectable, Cmd+A is card-scoped, autoscroll works in overflow content, contenteditable regions work correctly with `data-td-select="custom"`, save/restore selection round-trips correctly.
 
-**Result**: Selection is fully contained within card boundaries. Title bars, accessory slots, canvas gaps, and resize handles are never selectable. Drag selection clamps smoothly at card edges. Cmd+A selects within the focused card. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed via `data-td-select`.
+**Result**: Selection is fully contained within card boundaries. Title bars, accessory slots, canvas gaps, and resize handles are never selectable. Drag selection clamps smoothly at card edges with RAF-based autoscroll for overflow content. Cmd+A selects within the focused card. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed (including contenteditable) via `data-td-select`. Selection persistence infrastructure is ready for Phase 5b tab switching.
 
 ### Phase 5b: Card Tabs (Concept 12)
 

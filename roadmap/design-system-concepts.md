@@ -2375,19 +2375,25 @@ SelectionGuard is a plain TypeScript singleton (not React state, not a hook — 
 
 ```typescript
 class SelectionGuard {
-  private boundaries: Set<HTMLElement>;          // registered content areas
+  private boundaries: Map<string, HTMLElement>;  // cardId → content area element
   private activeBoundary: HTMLElement | null;    // card that owns the current selection
   private isSelecting: boolean;                  // pointer is down and dragging
+  private savedSelections: Map<string, SavedSelection>; // per-card saved selections
 
   // Called by useSelectionBoundary hook in Tugcard
-  register(element: HTMLElement): void;
-  unregister(element: HTMLElement): void;
+  register(cardId: string, element: HTMLElement): void;
+  unregister(cardId: string): void;
+
+  // Selection persistence (used by Phase 5b tab switching)
+  saveSelection(cardId: string): SavedSelection | null;
+  restoreSelection(cardId: string, saved: SavedSelection): void;
 
   // Internal — attached to document
   private handleSelectStart(event: Event): void;
   private handleSelectionChange(): void;
   private handlePointerMove(event: PointerEvent): void;
   private handlePointerUp(event: PointerEvent): void;
+  private autoScrollTick(boundary: HTMLElement, pointerY: number): void;
 }
 ```
 
@@ -2395,13 +2401,13 @@ class SelectionGuard {
 
 ```typescript
 // Used once inside Tugcard, on the content area div
-function useSelectionBoundary(contentRef: RefObject<HTMLElement>): void {
+function useSelectionBoundary(cardId: string, contentRef: RefObject<HTMLElement>): void {
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    selectionGuard.register(el);
-    return () => selectionGuard.unregister(el);
-  }, [contentRef]);
+    selectionGuard.register(cardId, el);
+    return () => selectionGuard.unregister(cardId);
+  }, [cardId, contentRef]);
 }
 ```
 
@@ -2451,7 +2457,7 @@ Card content authors control selectability within their content areas using a `d
 
 - **`none`**: Applied via CSS rule `[data-td-select="none"] { user-select: none; }`. Pure CSS, no JS involvement.
 - **`all`**: Applied via CSS rule `[data-td-select="all"] { user-select: all; }`. The browser handles atomic selection natively.
-- **`custom`**: SelectionGuard checks whether the selection anchor is within a `data-td-select="custom"` element. If so, the guard does not clip — the embedded component (xterm.js, CodeMirror) manages selection independently. The containment boundary effectively shrinks to the custom region: selection still cannot escape the card, but within the custom region, the embedded component has full control.
+- **`custom`**: SelectionGuard checks whether the selection anchor is within a `data-td-select="custom"` element. If so, the guard does not clip — the embedded component (xterm.js, CodeMirror, contenteditable) manages selection independently. The containment boundary effectively shrinks to the custom region: selection still cannot escape the card, but within the custom region, the embedded component has full control. This includes contenteditable regions — a `<div contenteditable data-td-select="custom">` receives full selection autonomy, with the guard verifying that selection cannot escape the card even when contenteditable's native behavior tries to extend it.
 
 **Example usage in a code card:**
 
@@ -2498,14 +2504,14 @@ When a card's content area has `overflow: auto` and the user drags to select tex
 
 **Native behavior:** The browser provides autoscrolling for `overflow: auto` containers natively — when the user drags to select near the top or bottom edge, the container scrolls automatically. This works in WebKit/Safari and is the preferred mechanism.
 
-**Enhancements for reliability:**
+**Required implementation:**
 
 1. **`overscroll-behavior: contain`** on the card content area — prevents scroll from chaining to the parent (canvas), which would cause the entire canvas to scroll when the user drags past the bottom of a card's content.
 
-2. **Custom autoscroll fallback.** If native autoscroll proves insufficient (testing will determine this), implement a `requestAnimationFrame`-based autoscroll:
+2. **RAF-based autoscroll in SelectionGuard.** Pointer-clamped clipping actively breaks native browser autoscroll: when SelectionGuard clamps the pointer to the card boundary and calls `selection.extend()`, the browser never sees the pointer leave the scrollable area, so it never triggers its native autoscroll. Since we break it, we must replace it. SelectionGuard implements a `requestAnimationFrame`-based autoscroll during clamped selection drag:
 
 ```typescript
-// SelectionGuard autoscroll (only activated if native autoscroll is inadequate)
+// SelectionGuard autoscroll — required because pointer clamping breaks native autoscroll
 const EDGE_SIZE_PX = 40;
 const MAX_SCROLL_SPEED = 20;
 
@@ -2524,7 +2530,7 @@ function autoScrollTick(boundary: HTMLElement, pointerY: number) {
 }
 ```
 
-The autoscroll uses distance-based acceleration: scroll speed increases as the pointer gets closer to the edge. The RAF loop continues as long as the pointer stays in the edge zone, even if the pointer stops moving.
+The autoscroll uses distance-based acceleration: scroll speed increases as the pointer gets closer to the edge. The RAF loop continues as long as the pointer stays in the edge zone, even if the pointer stops moving. After each scroll tick, SelectionGuard re-clamps and re-extends the selection to track the newly visible content.
 
 #### Selection Styling {#selection-styling}
 
@@ -2576,9 +2582,10 @@ No React state is involved in any selection operation. Selection is entirely an 
 
 1. **Three-layer selection containment** — CSS prevention for non-content areas, JavaScript SelectionGuard for runtime clipping, developer API for fine-grained content control. No single web platform feature solves selection containment; the three layers together provide complete coverage. ([#d34-three-layer-selection](#d34-three-layer-selection))
 2. **SelectionGuard is a singleton outside React** — follows the same imperative pattern as ResponderChainManager. High-frequency selection events are handled synchronously without React re-renders. Selection is purely an appearance-zone concern. ([#d35-guard-singleton](#d35-guard-singleton))
-3. **Pointer-clamped clipping for zero-flash containment** — during drag selection, pointer coordinates are clamped to the card boundary and `caretPositionFromPoint` finds the nearest text position at the edge. This provides smooth, continuous containment without visual flash. ([#d36-pointer-clamping](#d36-pointer-clamping))
-4. **Four select modes** — `text` (default), `none` (non-selectable), `all` (atomic), `custom` (embedded component manages selection). Card authors declare intent via `data-td-select` attributes. ([#d37-select-modes](#d37-select-modes))
+3. **Pointer-clamped clipping for zero-flash containment** — during drag selection, pointer coordinates are clamped to the card boundary and `caretPositionFromPoint` finds the nearest text position at the edge. This provides smooth, continuous containment without visual flash. RAF-based autoscroll replaces the native autoscroll that pointer-clamping breaks. ([#d36-pointer-clamping](#d36-pointer-clamping))
+4. **Four select modes** — `text` (default), `none` (non-selectable), `all` (atomic), `custom` (embedded component manages selection, including contenteditable). Card authors declare intent via `data-td-select` attributes. The `custom` mode is explicitly verified with contenteditable regions. ([#d37-select-modes](#d37-select-modes))
 5. **Cmd+A scoped via responder chain** — `selectAll` routes through the key pipeline to the focused card's responder, which calls `selectAllChildren` on the card's content area. Integrated with existing copy/cut/find actions. ([#d38-scoped-selectall](#d38-scoped-selectall))
+6. **Selection persistence infrastructure** — `saveSelection` and `restoreSelection` methods on SelectionGuard serialize and restore selection state per card via DOM tree paths and offsets. Phase 5b tab switching uses this to retain selection across tab changes. ([#d35-guard-singleton](#d35-guard-singleton))
 
 ### 15. Keybindings View {#c15-keybindings}
 
@@ -2898,6 +2905,6 @@ The viable approach is a three-layer system built on the JavaScript Selection AP
 - **[D37] Four select modes.** `data-td-select` attribute with values: default (text), `none` (non-selectable controls), `all` (atomic selection for code blocks), `custom` (embedded component like xterm.js or CodeMirror manages its own selection). The guard respects these modes.
 - **[D38] Cmd+A scoped to focused card.** The `selectAll` responder action calls `selectAllChildren` on the focused card's content area. Integrated with existing copy/cut/find actions in the responder chain action vocabulary.
 
-Also designed: theme-aware selection styling via `--td-selection-bg` and `--td-selection-text` tokens, autoscroll for overflow content areas during selection drag, and `overscroll-behavior: contain` to prevent scroll chaining.
+Also designed: theme-aware selection styling via `--td-selection-bg` and `--td-selection-text` tokens, RAF-based autoscroll (required because pointer-clamping breaks native autoscroll), `overscroll-behavior: contain` to prevent scroll chaining, and `saveSelection`/`restoreSelection` methods on SelectionGuard for tab switch persistence (Phase 5b). The `custom` select mode explicitly covers contenteditable regions. Multi-card clipboard coordination is a non-issue — the platform clipboard handles cross-card copy/paste natively.
 
 Deferred concepts renumbered: Keybindings View → 15, Brio Theme Revision → 16. Concept count is now 16.
