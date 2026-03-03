@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-03T16:14:01Z
+---
+
+## step-6: Added selectionGuard.attach() and detach() to ResponderChainProvider useEffect, co-locating guard's document-level listeners with key pipeline listeners.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-5
 date: 2025-03-03T16:10:14Z
 ---
