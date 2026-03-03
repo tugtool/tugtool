@@ -16,6 +16,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { DeckCanvas, type DeckCanvasHandle } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
+import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { postSettings } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 
@@ -87,10 +88,14 @@ export class DeckManager {
         React.createElement(
           ErrorBoundary,
           null,
-          React.createElement(DeckCanvas, {
-            ref: this.deckCanvasRef,
-            connection: this.connection,
-          })
+          React.createElement(
+            ResponderChainProvider,
+            null,
+            React.createElement(DeckCanvas, {
+              ref: this.deckCanvasRef,
+              connection: this.connection,
+            })
+          )
         )
       )
     );

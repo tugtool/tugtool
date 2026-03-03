@@ -42,23 +42,26 @@
  *
  * Ghost variant uses var(--td-surface-control) instead of shadcn's
  * hover:bg-accent (which resolves to --td-accent-cool cyan via the bridge).
+ *
+ * [aria-disabled='true'] guard: chain-action disabled buttons stay visually
+ * inert on hover -- no filter, background, or border-color changes.
  */
-.tug-button-primary:hover:not(:disabled) {
+.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.25) saturate(1.1);
   border-color: var(--td-border-soft);
 }
 
-.tug-button-secondary:hover:not(:disabled) {
+.tug-button-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--td-surface);
   border-color: var(--td-border-soft);
 }
 
-.tug-button-ghost:hover:not(:disabled) {
+.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--td-surface-control);
   color: var(--td-text);
 }
 
-.tug-button-destructive:hover:not(:disabled) {
+.tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.25) saturate(1.1);
   border-color: var(--td-danger);
 }
@@ -67,20 +70,20 @@
    Pressed / Active States
    ========================================================================= */
 
-.tug-button-primary:active:not(:disabled) {
+.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.8) saturate(1.2);
 }
 
-.tug-button-secondary:active:not(:disabled) {
+.tug-button-secondary:active:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--td-surface-control);
   border-color: var(--td-border);
 }
 
-.tug-button-ghost:active:not(:disabled) {
+.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--td-surface);
 }
 
-.tug-button-destructive:active:not(:disabled) {
+.tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.8) saturate(1.2);
 }
 
@@ -93,6 +96,31 @@
     background-color var(--td-duration-fast) var(--td-easing-standard),
     border-color var(--td-duration-fast) var(--td-easing-standard),
     filter var(--td-duration-fast) var(--td-easing-standard);
+}
+
+/* ============================================================================
+   Chain-Action Disabled State ([aria-disabled='true'])
+   ========================================================================= */
+
+/*
+ * Chain-action disabled buttons use aria-disabled="true" rather than the HTML
+ * disabled attribute so they remain in the tab order (keyboard accessible).
+ *
+ * Visual treatment mirrors the native :disabled state:
+ *   - reduced opacity (matches shadcn's disabled:opacity-50)
+ *   - cursor: not-allowed
+ *   - pointer-events: none to suppress browser hover state flicker
+ *
+ * Hover and active rules above already exclude [aria-disabled='true'] via
+ * :not([aria-disabled='true']) guards, so no extra override rules are needed.
+ */
+[aria-disabled="true"].tug-button-primary,
+[aria-disabled="true"].tug-button-secondary,
+[aria-disabled="true"].tug-button-ghost,
+[aria-disabled="true"].tug-button-destructive {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ============================================================================

@@ -4,19 +4,33 @@
  * Wraps shadcn's Button as a private implementation detail.
  * App code imports TugButton; never imports from components/ui/button directly.
  *
- * Phase 2: Direct-action mode only (onClick). Chain-action mode deferred to Phase 3.
+ * Phase 2: Direct-action mode (onClick) and all four subtypes.
+ * Phase 3: Chain-action mode added via `action` prop.
+ *   - When `action` is set, TugButton subscribes to the responder chain via
+ *     useSyncExternalStore. canHandle/validateAction determine visibility and
+ *     enabled state. Click dispatches through the chain instead of calling onClick.
+ *   - When `action` is undefined or no ResponderChainProvider is in the tree,
+ *     TugButton falls through to direct-action mode (existing onClick behavior).
  *
  * [D01] TugButton wraps shadcn Button as a private implementation detail
- * [D02] Direct-action only in Phase 2
+ * [D05] Two-level action validation drives chain-action enabled state
+ * [D06] Chain-action TugButton uses useSyncExternalStore for validation
  * [D04] TugButton CSS uses semantic tokens exclusively
- * [D05] All four subtypes implemented in Phase 2
- * Spec S01, S02, S03, Table T01, T02, T03
+ * Spec S01, S02, S03, S04, Table T01, T02, T03
  */
 
-import React, { useState } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useResponderChain } from "./responder-chain-provider";
 import "./tug-button.css";
+
+// ---- No-op constants for useSyncExternalStore when chain is inactive ----
+// Module-level stable references prevent React from seeing new function
+// identities and triggering unnecessary re-subscriptions.
+
+const NOOP_SUBSCRIBE = (_cb: () => void): (() => void) => () => {};
+const NOOP_SNAPSHOT = (): number => 0;
 
 // ---- Types ----
 
@@ -36,10 +50,7 @@ export type TugButtonSubtype = "push" | "icon" | "icon-text" | "three-state";
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
 /**
- * TugButton props interface -- Phase 2 (Spec S01).
- *
- * Note: the `action` prop for chain-action mode is omitted per [D02].
- * Phase 3 will extend TugButtonProps to add `action`.
+ * TugButton props interface -- Phase 3 (Spec S01, S04).
  */
 export interface TugButtonProps {
   /** Button rendering subtype. Default: "push" */
@@ -49,8 +60,17 @@ export interface TugButtonProps {
   /** Size variant. Default: "md" */
   size?: TugButtonSize;
 
-  /** Direct-action mode click handler */
+  /** Direct-action mode click handler. Mutually exclusive with `action`. */
   onClick?: () => void;
+
+  /**
+   * Chain-action mode: action name to dispatch via the responder chain.
+   * Mutually exclusive with `onClick`.
+   * When set, TugButton subscribes to canHandle/validateAction on the chain.
+   * If canHandle returns false, the button is hidden (returns null).
+   * If validateAction returns false, the button is visually disabled (aria-disabled).
+   */
+  action?: string;
 
   /** Disable the button */
   disabled?: boolean;
@@ -132,7 +152,7 @@ function Spinner() {
  *
  * Supports four subtypes (push, icon, icon-text, three-state), four variants
  * (primary, secondary, ghost, destructive), three sizes (sm, md, lg),
- * loading state, and direct-action mode.
+ * loading state, direct-action mode (onClick), and chain-action mode (action).
  *
  * All colors use var(--td-*) semantic tokens for zero-re-render theme switching.
  */
@@ -141,6 +161,7 @@ export function TugButton({
   variant = "secondary",
   size = "md",
   onClick,
+  action,
   disabled = false,
   loading = false,
   children,
@@ -173,6 +194,49 @@ export function TugButton({
     }
   }, [subtype, ariaLabel, children]);
 
+  // Dev-mode warning when both action and onClick are set (mutually exclusive)
+  React.useEffect(() => {
+    if (action !== undefined && onClick !== undefined && process.env.NODE_ENV !== "production") {
+      console.warn(
+        "TugButton: `action` and `onClick` are mutually exclusive. " +
+        "When `action` is set, the chain dispatches on click; `onClick` is ignored."
+      );
+    }
+  }, [action, onClick]);
+
+  // ---- Chain-action mode: unconditional hook calls (React rules of hooks) ----
+
+  // useResponderChain() returns the manager or null (safe outside provider).
+  const manager = useResponderChain();
+
+  // useSyncExternalStore() called unconditionally on every render.
+  // When the chain is inactive (no manager, or no action prop), use the
+  // module-level NOOP constants so React sees stable function references
+  // and never triggers unnecessary re-subscriptions.
+  const chainActive = manager !== null && action !== undefined;
+  const subscribe = chainActive ? manager.subscribe.bind(manager) : NOOP_SUBSCRIBE;
+  const getSnapshot = chainActive ? manager.getValidationVersion.bind(manager) : NOOP_SNAPSHOT;
+  useSyncExternalStore(subscribe, getSnapshot);
+
+  // ---- Chain-action validation (computed from hook results) ----
+
+  // When chain-action is active, query the manager for capability and state.
+  // These are derived from the useSyncExternalStore snapshot version above,
+  // so they update whenever the validation version increments.
+  const chainCanHandle = chainActive ? manager.canHandle(action) : false;
+  const chainValidated = chainActive ? manager.validateAction(action) : false;
+
+  // isChainDisabled: action is handled but currently disabled (validateAction = false).
+  // Used by handleClick to guard against clicks on aria-disabled buttons.
+  const isChainDisabled = chainActive && chainCanHandle && !chainValidated;
+
+  // If chain-action is active but no responder can handle the action, hide the button.
+  if (chainActive && !chainCanHandle) {
+    return null;
+  }
+
+  // ---- Layout helpers ----
+
   // Border radius: explicit token wins, otherwise size-proportional default
   const resolvedRadius = ROUNDED_MAP[rounded ?? SIZE_ROUNDED_DEFAULT[size]];
 
@@ -184,9 +248,20 @@ export function TugButton({
   const resolvedShadcnSize: ShadcnSize =
     subtype === "icon" ? "icon" : shadcnSize;
 
-  // Click handler
+  // ---- Click handler ----
+
   const handleClick = () => {
     if (disabled || loading) return;
+
+    // Chain-action disabled guard: aria-disabled buttons still receive click
+    // events (unlike HTML disabled). Return early without dispatching.
+    if (isChainDisabled) return;
+
+    if (chainActive && chainCanHandle) {
+      // Chain-action mode: dispatch through the responder chain.
+      manager.dispatch(action);
+      return;
+    }
 
     if (subtype === "three-state") {
       // Cycle: off → on → mixed → off
@@ -210,6 +285,10 @@ export function TugButton({
         ? "mixed"
         : internalState === "on"
       : undefined;
+
+  // aria-disabled for chain-action disabled state.
+  // Use aria-disabled (not HTML disabled) so the button stays in the tab order.
+  const ariaDisabled = isChainDisabled ? "true" : undefined;
 
   // CSS class composition
   const variantClass = `tug-button-${variant}`;
@@ -280,6 +359,7 @@ export function TugButton({
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
       aria-busy={loading ? "true" : undefined}
+      aria-disabled={ariaDisabled}
       onClick={handleClick}
       className={buttonClassName}
       style={{ borderRadius: resolvedRadius }}
