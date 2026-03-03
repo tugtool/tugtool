@@ -1,0 +1,78 @@
+/**
+ * TugDropdown styles -- tugways-specific CSS using var(--td-*) tokens.
+ *
+ * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * hex values, no raw Tailwind color classes. Theme switches update CSS
+ * variables at the DOM level -- TugDropdown re-paints without React re-renders.
+ *
+ * **Authoritative references:**
+ * - [D02] TugDropdown wraps shadcn DropdownMenu
+ * - Spec S04: TugDropdownProps
+ */
+
+/* ============================================================================
+   Dropdown Content Panel
+   ========================================================================= */
+
+/*
+ * Override shadcn's Tailwind-based bg-popover / border with semantic tokens.
+ * The content renders in a Radix portal at the document root, so z-index
+ * conflicts with CardFrame are not an issue.
+ */
+.tug-dropdown-content {
+  background-color: var(--td-surface-raised);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-md);
+  box-shadow: var(--td-shadow-md);
+  color: var(--td-text);
+}
+
+/* ============================================================================
+   Dropdown Items
+   ========================================================================= */
+
+.tug-dropdown-item {
+  color: var(--td-text);
+  border-radius: var(--td-radius-sm, 4px);
+  cursor: default;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/*
+ * Hover / focus state: use --td-surface-control rather than shadcn's
+ * focus:bg-accent (which resolves to the accent cyan token).
+ */
+.tug-dropdown-item:hover:not([data-disabled]),
+.tug-dropdown-item[data-highlighted]:not([data-disabled]) {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+/* Disabled items: reduced opacity, no pointer interaction */
+.tug-dropdown-item[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Item Icon + Label Layout
+   ========================================================================= */
+
+.tug-dropdown-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+}
+
+.tug-dropdown-item-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

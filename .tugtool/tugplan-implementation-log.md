@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-03T23:44:29Z
+---
+
+## step-2: Created TugDropdown component with TugDropdownItem/TugDropdownProps interfaces. Wraps shadcn DropdownMenu with --td-* token styling. Exports trigger, items, onSelect API.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-1
 date: 2025-03-03T23:39:41Z
 ---
