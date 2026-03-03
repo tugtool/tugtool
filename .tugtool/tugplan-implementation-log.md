@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-03T04:56:19Z
+---
+
+## step-7: Created HelloCardContent component and registerHelloCard function. Wired into main.tsx before DeckManager construction. First concrete card type proving full pipeline. 7 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-6
 date: 2025-03-03T04:47:09Z
 ---
