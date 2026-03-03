@@ -1,20 +1,35 @@
 /**
- * DeckManager — empty canvas shell for Phase 0.
+ * DeckManager -- orchestrates card state and the React render pipeline.
  *
- * Owns a DeckState (empty cards array), renders an empty DeckCanvas with only
- * the DisconnectBanner. No panels, no card registration, no geometric pipeline.
+ * Phase 5: Rebuilt with card registry integration, addCard / removeCard /
+ * moveCard / focusCard, stable bound callbacks, and cascade positioning.
  *
- * Spec S02 (#s02-deckmanager-shape), [D05] Strip DeckManager to empty shell
- * Phase 5 will re-integrate snap.ts geometry and rebuild the rendering pipeline.
+ * **Authoritative references:**
+ * - [D04] Single-call registration, [D08] DeckManager stays a plain class
+ * - Spec S05: DeckManager new methods
+ * - Spec S06: DeckCanvasProps for Phase 5
+ *
+ * ## Design notes
+ *
+ * - `render()` passes `deckState` and stable bound callbacks to DeckCanvas.
+ *   Callbacks are bound once in the constructor so `render()` never creates
+ *   new function objects.
+ * - Each state-mutating method assigns `this.deckState = { ...this.deckState }`
+ *   (shallow copy) before calling `render()` so React sees a new reference.
+ * - `deckCanvasRef` is removed -- DeckManager drives DeckCanvas via props.
+ * - Card positions cascade: each new card offsets (30, 30) from the previous.
+ *   When the card's right or bottom edge would exceed canvas bounds, the
+ *   cascade counter resets to 0.
  */
 
-import { type DeckState } from "./layout-tree";
+import { type DeckState, type CardState, type TabItem } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
+import { getRegistration } from "./card-registry";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { DeckCanvas, type DeckCanvasHandle } from "./components/chrome/deck-canvas";
+import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { postSettings } from "./settings-api";
@@ -26,11 +41,18 @@ const LAYOUT_STORAGE_KEY = "tugdeck-layout";
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
 
+/** Default card size for new cards (Spec S05) */
+const DEFAULT_CARD_WIDTH = 400;
+const DEFAULT_CARD_HEIGHT = 300;
+
+/** Cascade step between consecutive new cards (pixels) */
+const CASCADE_STEP = 30;
+
 export class DeckManager {
   private container: HTMLElement;
   private connection: TugConnection;
 
-  /** Current canvas state (empty in Phase 0) */
+  /** Current canvas state */
   private deckState: DeckState;
 
   /** Debounce timer for layout saves */
@@ -39,19 +61,37 @@ export class DeckManager {
   /** Single React root for the canvas */
   private reactRoot: Root | null = null;
 
-  /** Ref to DeckCanvas imperative handle (empty in Phase 0) */
-  private deckCanvasRef: React.RefObject<DeckCanvasHandle | null>;
-
   /**
    * Pre-fetched layout from the settings API (passed in from main.tsx).
    * Consumed once by loadLayout(); null thereafter.
    */
   private initialLayout: object | null;
 
-  /** Active theme at construction time — passed to TugThemeProvider as initialTheme. */
+  /** Active theme at construction time -- passed to TugThemeProvider as initialTheme. */
   private initialTheme: ThemeName;
 
-  constructor(container: HTMLElement, connection: TugConnection, initialLayout?: object, initialTheme?: ThemeName) {
+  /**
+   * Cascade index for new card positioning. Incremented by 1 on each addCard
+   * call. Reset to 0 when the next cascaded position would overflow canvas bounds.
+   */
+  private cascadeIndex: number = 0;
+
+  // ---- Stable bound callbacks (bound once in constructor) ----
+
+  private handleCardMoved: (
+    id: string,
+    position: { x: number; y: number },
+    size: { width: number; height: number },
+  ) => void;
+  private handleCardClosed: (id: string) => void;
+  private handleCardFocused: (id: string) => void;
+
+  constructor(
+    container: HTMLElement,
+    connection: TugConnection,
+    initialLayout?: object,
+    initialTheme?: ThemeName,
+  ) {
     this.container = container;
     this.connection = connection;
     this.initialLayout = initialLayout ?? null;
@@ -60,11 +100,13 @@ export class DeckManager {
     // Canvas container needs position:relative for absolutely-positioned children
     container.style.position = "relative";
 
-    // Initialize React root and ref
-    this.deckCanvasRef = React.createRef<DeckCanvasHandle | null>();
-
     // Create the single React root
     this.reactRoot = createRoot(container);
+
+    // Bind callbacks once so render() never creates new function objects.
+    this.handleCardMoved = this.moveCard.bind(this);
+    this.handleCardClosed = this.removeCard.bind(this);
+    this.handleCardFocused = this.focusCard.bind(this);
 
     // Load or build the initial canvas state
     this.deckState = this.loadLayout();
@@ -92,12 +134,15 @@ export class DeckManager {
             ResponderChainProvider,
             null,
             React.createElement(DeckCanvas, {
-              ref: this.deckCanvasRef,
               connection: this.connection,
-            })
-          )
-        )
-      )
+              deckState: this.deckState,
+              onCardMoved: this.handleCardMoved,
+              onCardClosed: this.handleCardClosed,
+              onCardFocused: this.handleCardFocused,
+            }),
+          ),
+        ),
+      ),
     );
   }
 
@@ -122,14 +167,133 @@ export class DeckManager {
     this.connection.sendControlFrame(action, params);
   }
 
+  // ---- Card management (Spec S05) ----
+
+  /**
+   * Add a new card from the registry.
+   *
+   * Looks up `componentId` in the card registry. If not found, logs a warning
+   * and returns null. Otherwise creates a new CardState with a cascaded position
+   * and default 400×300 size, appends it to deckState, re-renders, and schedules
+   * a save.
+   *
+   * @returns The generated card ID, or null if the component is not registered.
+   */
+  addCard(componentId: string): string | null {
+    const registration = getRegistration(componentId);
+    if (!registration) {
+      console.warn(
+        `[DeckManager] addCard: no registration found for componentId "${componentId}". ` +
+          `Call registerCard() before addCard().`,
+      );
+      return null;
+    }
+
+    const cardId = crypto.randomUUID();
+    const tabId = crypto.randomUUID();
+
+    const tab: TabItem = {
+      id: tabId,
+      componentId,
+      title: registration.defaultMeta.title,
+      closable: registration.defaultMeta.closable !== false,
+    };
+
+    const position = this.nextCascadePosition();
+
+    const card: CardState = {
+      id: cardId,
+      position,
+      size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
+      tabs: [tab],
+      activeTabId: tabId,
+    };
+
+    this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
+    this.render();
+    this.scheduleSave();
+    return cardId;
+  }
+
+  /**
+   * Remove a card from the canvas by card ID.
+   */
+  removeCard(cardId: string): void {
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.filter((c) => c.id !== cardId),
+    };
+    this.render();
+    this.scheduleSave();
+  }
+
+  /**
+   * Update a card's position and size (called on drag-end / resize-end).
+   */
+  moveCard(
+    id: string,
+    position: { x: number; y: number },
+    size: { width: number; height: number },
+  ): void {
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) =>
+        c.id === id ? { ...c, position, size } : c,
+      ),
+    };
+    this.render();
+    this.scheduleSave();
+  }
+
+  /**
+   * Bring a card to front by moving it to the end of the cards array.
+   * End-of-array = highest z-index by render order.
+   */
+  focusCard(cardId: string): void {
+    const idx = this.deckState.cards.findIndex((c) => c.id === cardId);
+    if (idx === -1 || idx === this.deckState.cards.length - 1) {
+      // Card not found or already the top-most -- no-op.
+      return;
+    }
+    const cards = [...this.deckState.cards];
+    const [focused] = cards.splice(idx, 1);
+    cards.push(focused);
+    this.deckState = { ...this.deckState, cards };
+    this.render();
+  }
+
+  // ---- Cascade positioning ----
+
+  /**
+   * Compute the next cascade position for a new card.
+   *
+   * Offsets by (CASCADE_STEP * cascadeIndex, CASCADE_STEP * cascadeIndex).
+   * If the card's right or bottom edge would exceed canvas bounds, resets
+   * the cascade counter to 0 and returns (0, 0).
+   */
+  private nextCascadePosition(): { x: number; y: number } {
+    const canvasWidth = this.container.clientWidth || 800;
+    const canvasHeight = this.container.clientHeight || 600;
+
+    const x = CASCADE_STEP * this.cascadeIndex;
+    const y = CASCADE_STEP * this.cascadeIndex;
+
+    if (x + DEFAULT_CARD_WIDTH > canvasWidth || y + DEFAULT_CARD_HEIGHT > canvasHeight) {
+      this.cascadeIndex = 0;
+      return { x: 0, y: 0 };
+    }
+
+    this.cascadeIndex += 1;
+    return { x, y };
+  }
+
   // ---- Resize Handling ----
 
   /**
    * Called on reconnect (connection.onOpen) and window resize.
-   * No-op in Phase 0 (no panels to resize).
    */
   handleResize(): void {
-    // No panels in Phase 0; kept for connection.onOpen() compatibility.
+    // Kept for connection.onOpen() compatibility.
   }
 
   // ---- Layout Persistence ----

@@ -44,8 +44,26 @@ export interface DeckCanvasHandle {
 
 // ---- DeckCanvasProps ----
 
+/**
+ * DeckCanvasProps for Phase 5 (Spec S06).
+ *
+ * New props are optional with sensible defaults so existing test call sites
+ * that pass only `connection={null}` continue to work unchanged.
+ */
 export interface DeckCanvasProps {
   connection: TugConnection | null;
+  /** Cards to render. Default: empty cards array. Wired by DeckManager in Phase 5. */
+  deckState?: import("@/layout-tree").DeckState;
+  /** Called on card drag-end / resize-end. Default: no-op. */
+  onCardMoved?: (
+    id: string,
+    position: { x: number; y: number },
+    size: { width: number; height: number },
+  ) => void;
+  /** Called when a card's close action fires. Default: no-op. */
+  onCardClosed?: (id: string) => void;
+  /** Called on pointer-down in a card frame to bring it to front. Default: no-op. */
+  onCardFocused?: (id: string) => void;
 }
 
 // ---- DeckCanvas ----

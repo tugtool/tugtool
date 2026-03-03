@@ -99,82 +99,23 @@ export function deserialize(
   }
 }
 
-// ---- Default Layout (Spec S03) ----
-
-const GAP = 12;
-const LEFT_FRACTION = 0.6;
+// ---- Default Layout ----
 
 /**
- * Helper to construct a CardState with a single tab.
- */
-function makeCardState(
-  componentId: string,
-  title: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): CardState {
-  const tabId = crypto.randomUUID();
-  return {
-    id: crypto.randomUUID(),
-    position: { x, y },
-    size: { width, height },
-    tabs: [{ id: tabId, componentId, title, closable: true }],
-    activeTabId: tabId,
-  };
-}
-
-/**
- * Build the default five-card canvas layout.
+ * Build the default canvas layout.
  *
- * Layout (Spec S03):
- *   Code card: left column, 60% width
- *   Terminal / Git / Files / Stats: right column, equal height, 12px gaps
+ * Phase 5: returns an empty DeckState. The pre-Phase-5 five-card default
+ * layout used component IDs ("code", "terminal", "git", "files", "stats")
+ * that are not registered in Phase 5. An empty canvas is the correct default
+ * until Phase 9 registers real cards.
  *
- * All cards use 12px margins from canvas edges and 12px gaps between cards.
+ * The `canvasWidth` and `canvasHeight` parameters are retained for API
+ * compatibility with call sites that pass canvas dimensions.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function buildDefaultLayout(
-  canvasWidth: number,
-  canvasHeight: number
+  _canvasWidth: number,
+  _canvasHeight: number
 ): DeckState {
-  const codeWidth = (canvasWidth - 3 * GAP) * LEFT_FRACTION;
-  const codeHeight = canvasHeight - 2 * GAP;
-
-  const rightX = GAP + codeWidth + GAP;
-  const rightWidth = canvasWidth - rightX - GAP;
-  const cardHeight = (canvasHeight - 2 * GAP - 3 * GAP) / 4;
-
-  const code = makeCardState(
-    "code",
-    "Conversation",
-    GAP,
-    GAP,
-    codeWidth,
-    codeHeight
-  );
-
-  const rightTitles: Record<string, string> = {
-    terminal: "Terminal",
-    git: "Git",
-    files: "Files",
-    stats: "Stats",
-  };
-
-  const rightCards = (
-    ["terminal", "git", "files", "stats"] as const
-  ).map((componentId, i) => {
-    return makeCardState(
-      componentId,
-      rightTitles[componentId],
-      rightX,
-      GAP + i * (cardHeight + GAP),
-      rightWidth,
-      cardHeight
-    );
-  });
-
-  return {
-    cards: [code, ...rightCards],
-  };
+  return { cards: [] };
 }

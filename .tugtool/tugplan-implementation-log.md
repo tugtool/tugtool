@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-03T04:36:53Z
+---
+
+## step-5: Rebuilt DeckManager with addCard/removeCard/moveCard/focusCard, cascade positioning, stable bound callbacks. Updated buildDefaultLayout to empty DeckState. Updated 4 layout-tree tests. 17 deck-manager tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-4
 date: 2025-03-03T04:27:06Z
 ---
