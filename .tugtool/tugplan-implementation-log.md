@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-03T16:17:16Z
+---
+
+## step-7: Integration checkpoint: full tugdeck test suite passes (405 tests, 0 failures, 31 files). All Phase 5a selection model artifacts verified working together.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-6
 date: 2025-03-03T16:14:01Z
 ---
