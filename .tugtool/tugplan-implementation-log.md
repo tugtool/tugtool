@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-03T05:00:19Z
+---
+
+## step-8: Added show-card action handler to initActionDispatch. Extracts component string from payload, validates, calls deckManager.addCard. Removed void deckManager suppression. 5 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-7
 date: 2025-03-03T04:56:19Z
 ---
