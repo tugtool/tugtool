@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-03T04:47:09Z
+---
+
+## step-6: Rebuilt DeckCanvas as plain function component rendering CardFrame for each card via registry factory lookup. Removed forwardRef/DeckCanvasHandle. Z-index by array position, gallery above all cards. 14 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-5
 date: 2025-03-03T04:36:53Z
 ---
