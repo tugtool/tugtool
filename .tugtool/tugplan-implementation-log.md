@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-03T02:06:05Z
+---
+
+## step-6: Refined hooks/index.ts JSDoc with authoritative reference, usage example, and T02/T03 table labels
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
 step: step-5
 date: 2025-03-03T02:02:50Z
 ---
