@@ -24,6 +24,8 @@
  * - `subscribe`, `getSnapshot`, and `getVersion` are arrow properties for
  *   stable identity and auto-bound `this` -- safe to pass directly to
  *   `useSyncExternalStore` without `.bind()`.
+ * - The constructor calls `this.reactRoot.render()` exactly once, wrapping the
+ *   tree with `DeckManagerContext.Provider`. There is no private `render()` method.
  * - Card positions cascade: each new card offsets (30, 30) from the previous.
  *   When the card's right or bottom edge would exceed canvas bounds, the
  *   cascade counter resets to 0.
@@ -42,6 +44,7 @@ import { ResponderChainProvider } from "./components/tugways/responder-chain-pro
 import { postSettings } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
+import { DeckManagerContext } from "./deck-manager-context";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -92,7 +95,7 @@ export class DeckManager implements IDeckManagerStore {
   /** Monotonically increasing state version, incremented on every notify(). */
   private stateVersion: number = 0;
 
-  // ---- Stable bound callbacks (bound once in constructor) ----
+  // ---- Stable bound callbacks (bound once in constructor, never recreated) ----
 
   /** Stable bound callback: update card position/size on drag-end/resize-end. */
   public handleCardMoved: (
@@ -149,16 +152,42 @@ export class DeckManager implements IDeckManagerStore {
     // Create the single React root
     this.reactRoot = createRoot(container);
 
-    // Bind callbacks once so render() never creates new function objects.
+    // Bind callbacks once -- stable identity, safe to pass directly to the store interface.
     this.handleCardMoved = this.moveCard.bind(this);
     this.handleCardClosed = this.removeCard.bind(this);
     this.handleCardFocused = this.focusCard.bind(this);
 
-    // Load or build the initial canvas state
+    // Load or build the initial canvas state.
+    // subscribers, stateVersion, handleCard*, and deckState must all be initialized
+    // before root.render() executes: React may synchronously flush the first render
+    // and call subscribe/getSnapshot during it.
     this.deckState = this.loadLayout();
 
-    // Initial render
-    this.render();
+    // Single root.render() -- the only call that ever executes.
+    // DeckManagerContext.Provider wraps DeckCanvas so it can access the store
+    // via useDeckManager(). DeckCanvas no longer receives deckState/callback props;
+    // it reads them from the store via useSyncExternalStore.
+    this.reactRoot.render(
+      React.createElement(
+        TugThemeProvider,
+        { initialTheme: this.initialTheme },
+        React.createElement(
+          ErrorBoundary,
+          null,
+          React.createElement(
+            ResponderChainProvider,
+            null,
+            React.createElement(
+              DeckManagerContext.Provider,
+              { value: this },
+              React.createElement(DeckCanvas, {
+                connection: this.connection,
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
 
     // Listen for window resize (kept for future phases)
     window.addEventListener("resize", () => this.handleResize());
@@ -178,40 +207,13 @@ export class DeckManager implements IDeckManagerStore {
     this.subscribers.forEach((cb) => cb());
   }
 
-  // ---- Rendering ----
-
-  private render(): void {
-    if (!this.reactRoot) return;
-
-    this.reactRoot.render(
-      React.createElement(
-        TugThemeProvider,
-        { initialTheme: this.initialTheme },
-        React.createElement(
-          ErrorBoundary,
-          null,
-          React.createElement(
-            ResponderChainProvider,
-            null,
-            React.createElement(DeckCanvas, {
-              connection: this.connection,
-              deckState: this.deckState,
-              onCardMoved: this.handleCardMoved,
-              onCardClosed: this.handleCardClosed,
-              onCardFocused: this.handleCardFocused,
-            }),
-          ),
-        ),
-      ),
-    );
-  }
-
   /**
-   * Re-render to pick up any state changes.
+   * Notify subscribers to pick up any external state changes.
+   * The private render() method is gone -- all state changes flow
+   * through notify() -> useSyncExternalStore -> synchronous React update.
    */
   refresh(): void {
     this.notify();
-    this.render();
   }
 
   /**
@@ -274,7 +276,6 @@ export class DeckManager implements IDeckManagerStore {
 
     this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
     this.notify();
-    this.render();
     this.scheduleSave();
     return cardId;
   }
@@ -288,7 +289,6 @@ export class DeckManager implements IDeckManagerStore {
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
     };
     this.notify();
-    this.render();
     this.scheduleSave();
   }
 
@@ -307,7 +307,6 @@ export class DeckManager implements IDeckManagerStore {
       ),
     };
     this.notify();
-    this.render();
     this.scheduleSave();
   }
 
@@ -326,7 +325,6 @@ export class DeckManager implements IDeckManagerStore {
     cards.push(focused);
     this.deckState = { ...this.deckState, cards };
     this.notify();
-    this.render();
   }
 
   // ---- Cascade positioning ----
@@ -441,7 +439,6 @@ export class DeckManager implements IDeckManagerStore {
   applyLayout(deckState: DeckState): void {
     this.deckState = deckState;
     this.notify();
-    this.render();
     this.scheduleSave();
   }
 

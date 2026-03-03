@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-03T19:36:27Z
+---
+
+## step-4: Constructor now has single root.render() wrapping tree with DeckManagerContext.Provider. All this.render() calls replaced by this.notify(). Private render() method deleted.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-3
 date: 2025-03-03T19:30:33Z
 ---
