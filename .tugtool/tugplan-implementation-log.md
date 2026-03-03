@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-03T02:06:05Z
+---
+
+## step-6: Refined hooks/index.ts JSDoc with authoritative reference, usage example, and T02/T03 table labels
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
+step: step-5
+date: 2025-03-03T02:02:50Z
+---
+
+## step-5: Added MutationModelDemo section to Component Gallery with toggle buttons driving useCSSVar, useDOMClass, and useDOMStyle hooks on a demo box, plus 3 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
+step: step-4
+date: 2025-03-03T01:57:11Z
+---
+
+## step-4: Verification-only step: confirmed all 17 hook tests pass together and 285 full suite tests pass with no regressions
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
+step: step-3
+date: 2025-03-03T01:54:46Z
+---
+
+## step-3: Added useDOMStyle hook with empty-string removal pattern, updated barrel export, and 6 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
+step: step-2
+date: 2025-03-03T01:51:20Z
+---
+
+## step-2: Added useDOMClass hook with classList.toggle() implementation, updated barrel export, and 6 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
+step: step-1
+date: 2025-03-03T01:48:03Z
+---
+
+## step-1: Created hooks/ subdirectory under tugways/ with useCSSVar hook implementation, barrel export index.ts, and 5 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
 step: step-8
 date: 2025-03-03T00:01:30Z
 ---
