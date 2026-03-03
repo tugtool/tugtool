@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-03T02:02:50Z
+---
+
+## step-5: Added MutationModelDemo section to Component Gallery with toggle buttons driving useCSSVar, useDOMClass, and useDOMStyle hooks on a demo box, plus 3 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
 step: step-4
 date: 2025-03-03T01:57:11Z
 ---

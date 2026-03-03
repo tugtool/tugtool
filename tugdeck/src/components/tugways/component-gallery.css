@@ -195,3 +195,32 @@
   background-color: var(--td-border);
   margin: 4px 0;
 }
+
+/* ============================================================================
+   Mutation Model Demo (Phase 4)
+   ========================================================================= */
+
+.cg-mutation-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/**
+ * Demo box: base styling uses --td-* semantic tokens exclusively.
+ * --demo-bg is set by useCSSVar (appearance-zone hook) to swap background.
+ * .demo-highlighted is toggled by useDOMClass to add a highlight outline.
+ * border-width is set by useDOMStyle to swap between 1px and 3px.
+ */
+.cg-mutation-box {
+  width: 120px;
+  height: 60px;
+  background-color: var(--demo-bg, var(--td-surface));
+  border: 1px solid var(--td-accent-cool);
+  border-radius: var(--td-radius-sm);
+}
+
+.cg-mutation-box.demo-highlighted {
+  outline: 2px solid var(--td-accent-warm);
+  outline-offset: 2px;
+}

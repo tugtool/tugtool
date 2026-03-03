@@ -26,12 +26,13 @@
  * Spec S02, Spec S04 (#s04-gallery-panel)
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Star } from "lucide-react";
 import { TugButton } from "./tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "./tug-button";
 import { useResponder } from "./use-responder";
 import { useRequiredResponderChain } from "./responder-chain-provider";
+import { useCSSVar, useDOMClass, useDOMStyle } from "@/components/tugways/hooks";
 import "./component-gallery.css";
 
 // ---- Types ----
@@ -274,6 +275,26 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
             </div>
           </div>
 
+          <div className="cg-divider" />
+
+          {/* ---- Mutation Model Demo Section ---- */}
+          {/*
+           * Demonstrates the three-zone mutation model (Phase 4).
+           *
+           * MutationModelDemo is defined outside ComponentGallery per
+           * structure-zone Rule 4 (no components defined inside components).
+           *
+           * Each toggle button uses useState for a boolean, which re-renders
+           * MutationModelDemo. The hooks consume the new value and apply DOM
+           * mutations directly -- no extra React state needed for the visual
+           * change itself. In production (Phase 5+), the values would come
+           * from imperative sources with no re-render at all.
+           */}
+          <div className="cg-section">
+            <div className="cg-section-title">Mutation Model</div>
+            <MutationModelDemo />
+          </div>
+
         </div>
       </div>
     </ResponderScope>
@@ -338,4 +359,77 @@ function SubtypeButton({
     default:
       return null;
   }
+}
+
+// ---- MutationModelDemo ----
+
+/**
+ * MutationModelDemo -- Phase 4 proof-of-concept for the three-zone mutation model.
+ *
+ * Renders a colored box and three toggle buttons. Each button uses useState for
+ * a boolean toggle (causing a local re-render), then passes the new value into
+ * one of the three appearance-zone hooks, which applies the DOM mutation directly
+ * without further React reconciliation.
+ *
+ * Hooks used:
+ * - useCSSVar: swaps --demo-bg between two --td-* color tokens
+ * - useDOMClass: adds/removes the "demo-highlighted" class
+ * - useDOMStyle: swaps border-width between "1px" and "3px"
+ *
+ * [D01] Three mutation zones
+ * [D06] Minimal gallery demo section
+ * Spec S01, S02, S03 (#public-api)
+ */
+export function MutationModelDemo() {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const [varOn, setVarOn] = useState(false);
+  const [classOn, setClassOn] = useState(false);
+  const [styleOn, setStyleOn] = useState(false);
+
+  // Appearance-zone mutations -- each hook writes directly to the DOM.
+  useCSSVar(
+    boxRef,
+    "--demo-bg",
+    varOn ? "var(--td-accent-warm)" : "var(--td-surface)"
+  );
+  useDOMClass(boxRef, "demo-highlighted", classOn);
+  useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");
+
+  return (
+    <div className="cg-mutation-demo">
+      <div
+        ref={boxRef}
+        className="cg-mutation-box"
+        data-testid="mutation-demo-box"
+        aria-label="Mutation model demo box"
+      />
+      <div className="cg-variant-row">
+        <TugButton
+          subtype="push"
+          variant="secondary"
+          size="sm"
+          onClick={() => setVarOn((v) => !v)}
+        >
+          Toggle CSS Var
+        </TugButton>
+        <TugButton
+          subtype="push"
+          variant="secondary"
+          size="sm"
+          onClick={() => setClassOn((v) => !v)}
+        >
+          Toggle Class
+        </TugButton>
+        <TugButton
+          subtype="push"
+          variant="secondary"
+          size="sm"
+          onClick={() => setStyleOn((v) => !v)}
+        >
+          Toggle Style
+        </TugButton>
+      </div>
+    </div>
+  );
 }
