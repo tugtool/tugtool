@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-03T01:51:20Z
+---
+
+## step-2: Added useDOMClass hook with classList.toggle() implementation, updated barrel export, and 6 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
 step: step-1
 date: 2025-03-03T01:48:03Z
 ---

@@ -32,3 +32,4 @@
  */
 
 export { useCSSVar } from "./use-css-var";
+export { useDOMClass } from "./use-dom-class";
