@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-03T04:17:50Z
+---
+
+## step-3: Created Tugcard component with header (title/icon/close), accessory slot, content area, responder chain registration, TugcardDataProvider wrapping, min-size reporting, and feed-gating. 13 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-2
 date: 2025-03-03T04:09:06Z
 ---
