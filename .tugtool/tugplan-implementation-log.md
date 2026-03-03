@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-03T19:16:17Z
+---
+
+## step-1: Created tugdeck/src/deck-manager-store.ts with IDeckManagerStore interface defining useSyncExternalStore contract and stable callback methods
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-7
 date: 2025-03-03T16:17:16Z
 ---
