@@ -25,6 +25,7 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { CardState, DeckState } from "@/layout-tree";
+import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -474,5 +475,59 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown-card"));
 
     warnSpy.mockRestore();
+  });
+});
+
+// ---- onClose wiring: DeckCanvas injects onClose via cloneElement ----
+
+describe("DeckCanvas – onClose wired from factory through cloneElement to onCardClosed", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("calling onClose on the produced element invokes onCardClosed with the card id", () => {
+    // Factory produces a component that exposes onClose via a test button.
+    // DeckCanvas injects the real onClose via React.cloneElement.
+    function Closeable({ onClose }: { onClose?: () => void }) {
+      return React.createElement(
+        "button",
+        { "data-testid": "close-trigger", onClick: onClose },
+        "close"
+      );
+    }
+
+    registerCard({
+      componentId: "closeable-card",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement(Closeable, {}),
+      defaultMeta: { title: "Closeable", closable: true },
+    });
+
+    const closedIds: string[] = [];
+    const card = makeCardState("target-card", "closeable-card");
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <DeckCanvas
+            connection={null}
+            deckState={makeDeckState([card])}
+            onCardClosed={(id) => closedIds.push(id)}
+          />
+        </ResponderChainProvider>
+      ));
+    });
+
+    // Click the test button which fires onClose (injected by DeckCanvas)
+    const btn = container.querySelector("[data-testid='close-trigger']");
+    expect(btn).not.toBeNull();
+
+    act(() => {
+      (btn as HTMLButtonElement).click();
+    });
+
+    // onCardClosed should have been called with the card's id
+    expect(closedIds.length).toBe(1);
+    expect(closedIds[0]).toBe("target-card");
   });
 });

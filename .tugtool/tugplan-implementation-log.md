@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-03T05:15:36Z
+---
+
+## audit-fix: Audit fix: DeckCanvas renderContent now uses React.cloneElement to inject onClose prop into Tugcard, wiring the close button to onCardClosed(cardState.id). Added test verifying close wiring.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-10
 date: 2025-03-03T05:07:36Z
 ---

@@ -175,7 +175,16 @@ export function DeckCanvas({
             onCardMoved={handleCardMoved}
             onCardClosed={handleCardClosed}
             onCardFocused={handleCardFocused}
-            renderContent={(injected) => registration.factory(cardState.id, injected)}
+            renderContent={(injected) => {
+              // DeckCanvas is the only layer that knows onCardClosed(id), so it
+              // injects onClose into the Tugcard element produced by the factory.
+              // The factory's injected parameter (CardFrameInjectedProps) carries
+              // only onDragStart and onMinSizeChange -- onClose is not part of it.
+              const element = registration.factory(cardState.id, injected);
+              return React.cloneElement(element, {
+                onClose: () => handleCardClosed(cardState.id),
+              });
+            }}
           />
         );
       })}
