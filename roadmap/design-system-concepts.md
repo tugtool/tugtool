@@ -65,6 +65,7 @@
 | [D36] | Pointer-clamped selection clipping via caretPositionFromPoint | Concept 14 | [#d36-pointer-clamping](#d36-pointer-clamping) |
 | [D37] | Four select modes for card content regions | Concept 14 | [#d37-select-modes](#d37-select-modes) |
 | [D38] | Cmd+A scoped to focused card via responder chain | Concept 14 | [#d38-scoped-selectall](#d38-scoped-selectall) |
+| [D39] | Default button: Enter key routes to designated button via responder chain | Concept 3 | [#d39-default-button](#d39-default-button) |
 
 ### Key Architectural Patterns
 
@@ -82,6 +83,7 @@
 | Startup three-layer continuity | Inline body styles → startup overlay → CSS HMR boundary | [#startup-continuity](#startup-continuity) |
 | Imperative-over-declarative alerts | `tugAlert()` returns Promise; host component renders AlertDialog | [#alert-architecture](#alert-architecture) |
 | Selection containment | CSS prevention + JS SelectionGuard + `data-td-select` developer API | [#d34-three-layer-selection](#d34-three-layer-selection) |
+| Default button | Responder chain designates one button per scope; Enter key activates it | [#d39-default-button](#d39-default-button) |
 
 ### External References
 
@@ -109,6 +111,7 @@
 | 11 | TugButton Designed — Composition Model | 2026-03-02 | [#log-11](#log-11) |
 | 12 | Concepts 12-13: Card Tabs and Snap Sets | 2026-03-02 | [#log-12](#log-12) |
 | 13 | Concept 14: Selection Model | 2026-03-03 | [#log-13](#log-13) |
+| 18 | Default Button Mechanism | 2026-03-02 | [#log-18](#log-18) |
 
 ---
 
@@ -551,6 +554,33 @@ For chain-action buttons, TugButton internally calls `validateAction("find")` fr
 
 A chain-action button is *visible* if someone in the chain can handle the action (`canHandle`), and *enabled* if that handler says it's currently valid (`validateAction`). For example, a "Copy" button is visible whenever a text-bearing card is focused, but only enabled when text is selected.
 
+#### Default Button {#d39-default-button}
+
+In dialogs, alerts, sheets, and popovers, one button is the **default button** — the button activated by the Enter key. This is a fundamental interaction pattern from Apple's HIG: the default button is visually prominent and responds to Return/Enter as a keyboard shortcut, even when focus is on another control within the dialog.
+
+**Visual treatment: `primary` variant = default button.** The `primary` variant's accent fill (`--td-accent` via `--primary`) serves as the default button visual. When a container (alert, sheet, popover) designates a default button, that button uses `variant="primary"`. All other buttons in the group use `secondary` or `ghost`. The accent fill is the affordance that communicates "this is what Enter will do."
+
+**Responder chain integration:** The default button mechanism lives in the responder chain's stage-2 key processing (keyboard navigation). A container registers its default button via `setDefaultButton(buttonRef)` on the `ResponderChainManager`. When Enter is pressed:
+
+1. If a native `<button>` has DOM focus, the browser's default behavior fires (Enter activates the focused button). The responder chain does not interfere — the focused button wins.
+2. If a text input or textarea has DOM focus, Enter is consumed by the input. The responder chain does not interfere.
+3. Otherwise, the responder chain checks for a registered default button. If one exists, Enter activates it via a synthetic click.
+
+This matches Apple's behavior exactly: Enter activates the default button unless focus is on a control that consumes Enter (text field, focused button). The default button registration is scoped — an app-modal alert's default button takes priority over anything behind it, a card-modal sheet's default button takes priority within the card's scope.
+
+**Registration API:**
+
+```tsx
+// Container registers its default button on mount, clears on unmount.
+// Only one default button per modal scope (app-modal, card-modal, or popover).
+responderChain.setDefaultButton(buttonRef);   // register
+responderChain.clearDefaultButton(buttonRef); // unregister (idempotent)
+```
+
+**Destructive variant visual treatment:** The `destructive` variant must be visually unmistakable — a bold danger fill, not a subtle tint. The fill color is `--td-danger` (`--tways-accent-4`, a deep red) with `--td-text-inverse` (white/near-white) text. The current shadcn wiring (`bg-destructive text-destructive-foreground`) provides the class hooks, but tug-button.css must ensure the fill reads clearly across all three themes — explicitly setting `background-color: var(--td-danger)` and `color: var(--td-text-inverse)` so the destructive button is never confused with secondary or ghost. Hover and active states use the same `filter: brightness()` pattern as primary. The destructive button is always visually distinct from the default button (`primary` = accent fill, `destructive` = danger fill).
+
+**Interaction with alert button roles:** The `"cancel"` role in `tugAlert` and `tugSheet` ([#c09-dialog](#c09-dialog)) maps to the default button when a `"destructive"` button is present — Cancel gets `variant="primary"` and is registered as the default button. When no destructive button is present, the affirmative action button is the default. The `"destructive"` role never becomes the default button. This matches Apple's HIG: when confirming a destructive action, Enter should cancel (the safe choice), not confirm.
+
 #### Mutation Zone Assignment {#tugbutton-zones}
 
 TugButton maps to all three zones from concept 5 ([#d12-three-zones](#d12-three-zones)):
@@ -722,7 +752,7 @@ Each level in the chain corresponds to a real architectural boundary:
 | Stage | Scope | Examples | Direction |
 |-------|-------|----------|-----------|
 | 1. Global shortcuts | App-wide, always active | Cmd+N (new card), Cmd+W (close card), Cmd+, (settings) | Top-down: checked before the chain |
-| 2. Keyboard navigation | Focus management | Tab (next control), Shift+Tab (prev), Escape (dismiss), Enter (confirm) | System-level |
+| 2. Keyboard navigation | Focus management | Tab (next control), Shift+Tab (prev), Escape (dismiss), Enter (activate default button — [#d39-default-button](#d39-default-button)) | System-level |
 | 3. Action dispatch | Semantic actions via chain | Copy, paste, find, card-specific commands | Bottom-up: chain walks from first responder to app |
 | 4. Text input | First responder only | Typing into an input field | Delivered to first responder |
 
@@ -1758,11 +1788,11 @@ const response = await tugAlert({
 The imperative API wraps a declarative React component internally. A `TugAlertHost` component (rendered once, at the app root) listens for alert requests and manages the AlertDialog state. The `tugAlert()` function posts a request and returns a Promise that resolves when the user clicks a button.
 
 **Button roles** (modeled on `UIAlertAction.Style` and Apple HIG):
-- `"destructive"` — red text. Signals danger. Never the default button.
-- `"cancel"` — bold text. The safe choice. Responds to Enter key and Escape. There is exactly one cancel button.
-- `"default"` — standard text. For non-destructive, non-cancel actions.
+- `"destructive"` — red text, `variant="destructive"`. Signals danger. Never the default button.
+- `"cancel"` — the safe choice. Responds to Escape. When a `"destructive"` button is present, Cancel becomes the default button: `variant="primary"` (accent fill), registered with the responder chain via `setDefaultButton`, responds to Enter ([#d39-default-button](#d39-default-button)). There is exactly one cancel button.
+- `"default"` — the affirmative action. When no `"destructive"` button is present, this is the default button: `variant="primary"`, registered via `setDefaultButton`, responds to Enter. When a `"destructive"` button *is* present, the `"default"` role uses `variant="secondary"` (not the default button — Cancel takes priority).
 
-Apple's HIG guidance: when the alert confirms a destructive action that the user explicitly initiated, make Cancel the default (bold) button so Enter cancels rather than confirms. `tugAlert` follows this — `"cancel"` is always the default when a `"destructive"` button is present.
+Apple's HIG guidance: when the alert confirms a destructive action that the user explicitly initiated, make Cancel the default button so Enter cancels rather than confirms. `tugAlert` follows this — `"cancel"` is always the default button when a `"destructive"` button is present. The `primary` variant's accent fill (`--td-accent`) is the visual affordance that communicates which button Enter will activate ([#d39-default-button](#d39-default-button)).
 
 **Alert styles** (modeled on `NSAlert.Style`):
 - `"informational"` — app icon. Notice about a current or impending event.
@@ -1816,7 +1846,7 @@ A small popover graphically tied to a button that compels the user to move their
 
 **Responder chain:** No impact. The chain is unaffected. The popover is just UI — the underlying button enters a "pending confirmation" visual state while the popover is open, but no chain nodes are suspended or blocked.
 
-**Focus:** Focus moves to the popover on open (the confirm button receives focus, so Enter confirms). Escape closes the popover and returns focus to the trigger. The popover does not trap focus — Tab can move out of it, which closes it (matching `NSPopover.Behavior.transient`). This is intentional: the popover is lightweight. Moving focus away is equivalent to clicking away — a soft cancel.
+**Focus:** Focus moves to the popover on open. The confirm button is registered as the default button via `setDefaultButton` ([#d39-default-button](#d39-default-button)), so Enter activates it even if focus is elsewhere within the popover. Escape closes the popover and returns focus to the trigger. The popover does not trap focus — Tab can move out of it, which closes it (matching `NSPopover.Behavior.transient`). This is intentional: the popover is lightweight. Moving focus away is equivalent to clicking away — a soft cancel.
 
 **Visual treatment:** Radix Popover anchored to the trigger button. Arrow pointing to the trigger. Positioned via `side`/`align` props with collision avoidance. Enter/exit animation using the `data-state` + CSS `@keyframes` pattern from [#enter-exit-transitions](#enter-exit-transitions). Fast timing — `--td-duration-fast` — because this is a micro-interaction, not a major state change.
 
@@ -2908,3 +2938,18 @@ The viable approach is a three-layer system built on the JavaScript Selection AP
 Also designed: theme-aware selection styling via `--td-selection-bg` and `--td-selection-text` tokens, RAF-based autoscroll (required because pointer-clamping breaks native autoscroll), `overscroll-behavior: contain` to prevent scroll chaining, and `saveSelection`/`restoreSelection` methods on SelectionGuard for tab switch persistence (Phase 5b). The `custom` select mode explicitly covers contenteditable regions. Multi-card clipboard coordination is a non-issue — the platform clipboard handles cross-card copy/paste natively.
 
 Deferred concepts renumbered: Keybindings View → 15, Brio Theme Revision → 16. Concept count is now 16.
+
+### Entry 18: Default Button Mechanism {#log-18} (2026-03-02)
+
+Added [D39] to concept 3 (TugButton). The default button pattern draws together TugButton's `primary` variant, the responder chain's stage-2 key pipeline, and the alert/dialog button role system into a cohesive mechanism.
+
+Key decisions:
+
+- **[D39] Default button via responder chain.** A container (alert, sheet, popover) registers one button as the default button via `setDefaultButton(buttonRef)` on the ResponderChainManager. Enter at stage 2 of the key pipeline activates the default button unless a native button or text input has DOM focus. Registration is scoped — app-modal scope takes priority over card-modal scope.
+- **`primary` variant = default button visual.** The accent fill (`--td-accent` via `--primary`) communicates which button Enter will activate. This formalizes the existing color mapping: `primary` was already the accent-filled variant, now it has explicit semantic meaning as the default button affordance.
+- **Alert button roles updated.** The `"cancel"` and `"default"` roles now explicitly reference D39. When a destructive button is present, Cancel gets `variant="primary"` and becomes the default button (Enter cancels). When no destructive button is present, the affirmative action gets `variant="primary"` and becomes the default button. The `"destructive"` role never becomes the default button.
+- **Key pipeline stage 2 updated.** The "Enter (confirm)" entry now references D39 as the formal mechanism.
+
+- **Destructive variant visual fix.** The `destructive` variant must show a bold danger fill (`--td-danger`, deep red) with inverse text (`--td-text-inverse`, white/near-white). The shadcn wiring provides the class hooks but the actual fill was not visually distinct. Phase 5d adds explicit `background-color` and `color` rules to `tug-button.css` to ensure destructive buttons are unmistakable across all themes.
+
+No new concepts. D39 is an addition to concept 3 that ties together concepts 3, 4, and 9.

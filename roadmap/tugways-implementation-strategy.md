@@ -309,6 +309,24 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: Casual drags are free movement. Option+drag activates snap guides and set formation. Existing set-move and break-out behavior preserved.
 
+### Phase 5d: Default Button (Concept 3, [D39])
+
+**Goal**: Dialogs, alerts, sheets, and popovers can designate a default button. Enter activates it. The `primary` variant is the visual affordance.
+
+**What to do**:
+1. Add `setDefaultButton(buttonRef)` and `clearDefaultButton(buttonRef)` methods to `ResponderChainManager` — registers/unregisters a default button for the current modal scope
+2. Extend the stage-2 key pipeline handler to check for a registered default button when Enter is pressed: if no native `<button>` or text input has DOM focus, activate the default button via synthetic click
+3. Confirm `primary` variant styling uses `--td-accent` fill as the default button visual — already wired via `--primary: var(--td-accent)` in `tokens.css`, verify it reads clearly in all three themes
+4. Fix `destructive` variant styling in `tug-button.css` — the destructive button currently looks indistinguishable from other variants. Add explicit `background-color: var(--td-danger)` and `color: var(--td-text-inverse)` to `.tug-button-destructive` so destructive buttons have a bold red fill with white text across all three themes. Verify in the Component Gallery that primary (accent fill) and destructive (danger fill) are clearly distinct
+5. Update TugConfirmPopover to register its confirm button as the default button on open, clear on close
+6. Wire alert button role logic in `TugAlertHost`: when a `"destructive"` button is present, the `"cancel"` button gets `variant="primary"` and is registered as the default button; when no destructive button is present, the `"default"` role button gets `variant="primary"` and is registered as the default button
+7. Wire the same role logic in `TugSheetHost`
+8. Test: Enter activates the default button in alerts, sheets, and popovers; Enter does not interfere when a native button or text input has focus; destructive actions have Cancel as the default button; destructive buttons are visually distinct (bold red fill, white text) from primary buttons (accent fill)
+
+**Result**: The default button pattern works end-to-end. Enter activates the accent-filled `primary` button in any modal context. The responder chain manages scoping so nested modals (sheet inside a card while an alert is open) route Enter correctly.
+
+**Note**: Phase 5d depends on Phase 3 (responder chain exists) and Phase 5 (Tugcard base, where alerts and sheets are first consumed). It does not depend on Phase 8a (which builds TugAlert/TugSheet/TugConfirmPopover) — rather, Phase 8a depends on Phase 5d for the default button registration mechanism. Phase 5d establishes the responder chain extension and key pipeline wiring; Phase 8a wires it into the concrete alert/sheet/popover components.
+
 ### Phase 6: Feed Abstraction (Concept 7)
 
 **Goal**: Cards receive typed, accumulated data from backend feeds.
@@ -476,34 +494,40 @@ Responder Chain  Mutation Model                              │
              │                                               │
              ├──────────┬──────────┬──────────┬──────┐       │
              ▼          ▼          ▼          ▼      ▼       ▼
-         Phase 5b:  Phase 5c:  Phase 6:  Phase 7:  Phase 8a:
-         Card Tabs  Card Snap  Feed Abs. Motion    Chrome
-                                         ◄── (tokens from Phase 1)
-                                                     │
-                                          Phase 8b: Form Controls
-                                                     │
-                                          Phase 8c: Display & Nav
-                                                     │
-                                          Phase 8d: Data Viz & Compound
-             │          │          │         │       │
-             └──────────┴──────┬───┴─────────┴───────┘
-                               ▼
-                  Phase 9: Card Rebuild
+         Phase 5b:  Phase 5c:  Phase 5d:  Phase 6:  Phase 7:
+         Card Tabs  Card Snap  Default    Feed Abs. Motion
+                               Button               ◄── (tokens from Phase 1)
+                                  │
+                                  ▼
+                               Phase 8a:
+                               Chrome
+                                  │
+                               Phase 8b: Form Controls
+                                  │
+                               Phase 8c: Display & Nav
+                                  │
+                               Phase 8d: Data Viz & Compound
+             │          │                    │         │       │
+             └──────────┴────────────────┬───┴─────────┴───────┘
+                                         ▼
+                            Phase 9: Card Rebuild
 ```
 
 Phases 3 and 4 can run in parallel. Phase 5a (Selection Model) depends on Phase 5 and
-should be completed before Phases 5b, 5c, 6, 7, and 8a — card content in all subsequent
-phases needs correct selection behavior from the start. Phases 5b, 5c, 6, 7, and 8a can
+should be completed before Phases 5b, 5c, 5d, 6, 7, and 8a — card content in all subsequent
+phases needs correct selection behavior from the start. Phases 5b, 5c, 5d, 6, and 7 can
 all start as soon as Phase 5a completes (Phase 7 also needs Phase 1's motion tokens).
-Phase 8a (Alerts + Title Bar + Dock) only needs Tugcard (Phase 5) and the responder chain
-(Phase 3, already done) — it does not depend on feeds, motion, tabs, or snapping. Phases
-8b–8d are sequential (each wave builds on the previous) and depend on Phase 2 (Component
-Gallery exists) and Phase 4 (mutation model hooks). They can run in parallel with Phases
-5b, 5c, 6, and 7. Phase 9 (Card Rebuild) is the true convergence point: rebuilt cards
-need feeds (Phase 6) for data, motion (Phase 7) for skeleton/transitions, chrome (Phase
-8a) for title bar and dock, and the component library (Phases 8b–8d) for form controls,
-data display, and visualization. Phases 5b and 5c are enhancements that can land before,
-during, or after Phase 9.
+Phase 5d (Default Button) adds `setDefaultButton`/`clearDefaultButton` to the responder
+chain and wires Enter at stage 2 of the key pipeline — a prerequisite for Phase 8a's
+alert, sheet, and popover components, which register their default buttons on mount.
+Phase 8a (Alerts + Title Bar + Dock) depends on Phase 5d for the default button mechanism.
+Phases 8b–8d are sequential (each wave builds on the previous) and depend on Phase 2
+(Component Gallery exists) and Phase 4 (mutation model hooks). They can run in parallel
+with Phases 5b, 5c, 6, and 7. Phase 9 (Card Rebuild) is the true convergence point:
+rebuilt cards need feeds (Phase 6) for data, motion (Phase 7) for skeleton/transitions,
+chrome (Phase 8a) for title bar and dock, and the component library (Phases 8b–8d) for
+form controls, data display, and visualization. Phases 5b, 5c, and 5d are enhancements
+that can land before, during, or after Phase 9.
 
 ## Estimated Scope
 
@@ -518,6 +542,7 @@ during, or after Phase 9.
 | 5a | ~5 files | ~400 lines |
 | 5b | ~3 files | ~350 lines |
 | 5c | ~1 file | ~50 lines |
+| 5d | ~3 files | ~150 lines |
 | 6 | ~4 files | ~400 lines |
 | 7 | ~3 files | ~200 lines |
 | 8a | ~8 files | ~1000 lines |
@@ -526,7 +551,7 @@ during, or after Phase 9.
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~10,500 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~10,650 lines** replacing the current ~9700 lines. The new
 codebase is modestly larger because the 28-component library (Phases 8a–8d)
 adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
 triple-registration redundancy is gone, the adapter layer is gone, and the
@@ -552,13 +577,14 @@ The suggested plan sequence:
 7. `tugways-phase-5a-selection-model` — selection containment, SelectionGuard, developer API
 8. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
 9. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
-10. `tugways-phase-6-feed` — feed hooks, data flow
-11. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-12. `tugways-phase-8a-chrome` — alerts, title bar, dock
-13. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-14. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-15. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-16. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+10. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
+11. `tugways-phase-6-feed` — feed hooks, data flow
+12. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+13. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+14. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+15. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+16. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+17. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
