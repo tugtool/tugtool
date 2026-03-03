@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-03T19:18:46Z
+---
+
+## audit-fix: Fix pre-existing TypeScript error: type CardRegistration.factory return as ReactElement<{ onClose?: () => void }> so React.cloneElement in deck-canvas.tsx passes type checking
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-1
 date: 2025-03-03T19:16:17Z
 ---

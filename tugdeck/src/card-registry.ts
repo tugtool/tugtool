@@ -62,12 +62,22 @@ export interface TugcardMeta {
  * and `onMinSizeChange` to the Tugcard it creates. DeckCanvas calls
  * `registration.factory(card.id, injectedProps)` inside the `renderContent`
  * function it passes to CardFrame.
+ *
+ * The factory return type includes `onClose` so DeckCanvas can inject it via
+ * `React.cloneElement` without a TypeScript type error.
  */
 export interface CardRegistration {
   /** Unique identifier for this card type. e.g. "hello", "terminal", "git". */
   componentId: string;
-  /** Creates a Tugcard React element with the given card instance ID and injected callbacks. */
-  factory: (cardId: string, injected: CardFrameInjectedProps) => React.ReactElement;
+  /**
+   * Creates a Tugcard React element with the given card instance ID and injected
+   * callbacks. The return type is typed to include `onClose` so DeckCanvas can
+   * inject it via `React.cloneElement(element, { onClose: ... })`.
+   */
+  factory: (
+    cardId: string,
+    injected: CardFrameInjectedProps,
+  ) => React.ReactElement<{ onClose?: () => void }>;
   /** Default title, icon, and closable for this card type. */
   defaultMeta: TugcardMeta;
 }
