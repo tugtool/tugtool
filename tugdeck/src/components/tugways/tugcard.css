@@ -42,12 +42,24 @@
   flex-shrink: 0;
 }
 
+/* Prevent selection highlight from appearing in the header even when a
+   content-area selection range spans through it (WebKit renders ::selection
+   in user-select: none regions that fall within an active range). */
+.tugcard-header ::selection {
+  background: transparent;
+  color: inherit;
+}
+.tugcard-header::selection {
+  background: transparent;
+  color: inherit;
+}
+
 /*
  * When the card is focused (active), the header background switches to the
- * active color. CardFrame sets data-focused="true" on the Tugcard root when
- * the card is the focused card.
+ * active color. CardFrame sets data-focused="true" on its container div,
+ * which is the ancestor of the Tugcard.
  */
-.tugcard[data-focused="true"] .tugcard-header {
+.card-frame[data-focused="true"] .tugcard-header {
   background-color: var(--td-header-active);
 }
 
@@ -68,6 +80,28 @@
   font-weight: 500;
   color: var(--td-text);
   pointer-events: none;
+}
+
+/* ============================================================================
+   Header icon
+   ============================================================================ */
+
+.tugcard-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.card-frame[data-focused="true"] .tugcard-icon {
+  color: var(--td-icon-active);
+}
+
+.card-frame[data-focused="false"] .tugcard-icon {
+  color: var(--td-icon-inactive);
 }
 
 /* ============================================================================

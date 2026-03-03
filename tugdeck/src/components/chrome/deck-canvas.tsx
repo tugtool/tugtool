@@ -39,15 +39,16 @@
  * Table T01: cyclePanel, resetLayout, showSettings, showComponentGallery
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import type { TugConnection } from "@/connection";
 import { registerGallerySetter } from "@/action-dispatch";
 import { useResponder } from "@/components/tugways/use-responder";
+import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { DisconnectBanner } from "./disconnect-banner";
 import { ComponentGallery } from "@/components/tugways/component-gallery";
 import { CardFrame } from "./card-frame";
 import { getRegistration } from "@/card-registry";
-import type { DeckState } from "@/layout-tree";
+import type { DeckState, CardState } from "@/layout-tree";
 
 // ---- DeckCanvasProps (Spec S06) ----
 
@@ -102,25 +103,80 @@ export function DeckCanvas({
   const cards = deckState?.cards ?? [];
   const handleCardMoved = onCardMoved ?? (() => {});
   const handleCardClosed = onCardClosed ?? (() => {});
-  const handleCardFocused = onCardFocused ?? (() => {});
 
-  // Hook order (Phase 3): useState -> useResponder -> useEffect
+  // ---------------------------------------------------------------------------
+  // Visual focus
+  // ---------------------------------------------------------------------------
+  // Focus is derived from z-order: the last card in the array is the focused
+  // card. A `deselected` flag allows explicitly clearing focus (canvas click)
+  // without changing z-order. This avoids sync issues between DeckManager's
+  // root.render() and React component state.
+
+  const [deselected, setDeselected] = useState(false);
+
+  // Focused card: last in array (highest z-index), unless explicitly deselected.
+  const focusedCardId = deselected ? null : (cards.length > 0 ? cards[cards.length - 1].id : null);
+
+  // ---------------------------------------------------------------------------
+  // Refs for cyclePanel closure (registered once on mount via useResponder)
+  // ---------------------------------------------------------------------------
+  // cyclePanel is captured at mount time and never re-registered. All mutable
+  // state it accesses must be via refs or stable React state setters.
+
+  const cardsRef = useRef<readonly CardState[]>(cards);
+  cardsRef.current = cards;
+
+  const onCardFocusedRef = useRef(onCardFocused);
+  onCardFocusedRef.current = onCardFocused;
+
+  // Responder chain manager (stable singleton, safe in mount-time closure).
+  const manager = useRequiredResponderChain();
+
+  // Bring card to front (z-order via DeckManager) and clear deselect flag.
+  const handleCardFocused = useCallback(
+    (id: string) => {
+      onCardFocused?.(id);
+      setDeselected(false);
+    },
+    [onCardFocused],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Canvas background click: deselect all cards
+  // ---------------------------------------------------------------------------
+
+  const handleCanvasPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      // Only deselect when clicking the canvas background itself, not a card.
+      if (e.target === e.currentTarget) {
+        setDeselected(true);
+        manager.makeFirstResponder("deck-canvas");
+      }
+    },
+    [manager],
+  );
+
+  // Hook order: useState -> useRef -> useRequiredResponderChain -> useCallback
+  //             -> useState -> useResponder -> useEffect
 
   // Gallery visibility state -- toggled by show-component-gallery action via
   // action-dispatch (Mac menu) and by the showComponentGallery responder action.
   const [galleryVisible, setGalleryVisible] = useState<boolean>(false);
 
   // Register DeckCanvas as the root responder node.
-  // Action handlers close over setGalleryVisible (stable React setter identity).
-  // DeckCanvas auto-becomes first responder on mount because parentId is null
-  // and no first responder is set yet (Spec S01 auto-first-responder rule).
+  // Action handlers close over stable values only: refs, React state setters,
+  // and the manager singleton. DeckCanvas auto-becomes first responder on mount
+  // because parentId is null and no first responder is set yet.
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
       cyclePanel: () => {
-        // Phase 3 stub: no real panels to cycle yet. Log for observability.
-        // Phase 5 will replace this with focusNextCard/focusPreviousCard.
-        console.log("cyclePanel: stub -- no panels in Phase 3");
+        const c = cardsRef.current;
+        if (c.length < 2) return;
+        const nextId = c[0].id; // bottom card rotates to top
+        onCardFocusedRef.current?.(nextId); // z-order update (via ref, always fresh)
+        setDeselected(false); // clear deselect flag (stable state setter)
+        manager.makeFirstResponder(nextId); // responder chain focus
       },
       resetLayout: () => {
         // Phase 5 will reset card positions.
@@ -145,6 +201,14 @@ export function DeckCanvas({
 
   return (
     <ResponderScope>
+      {/* Canvas background click target for deselecting cards */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div
+        data-testid="deck-canvas-bg"
+        onPointerDown={handleCanvasPointerDown}
+        style={{ position: "absolute", inset: 0, zIndex: 0 }}
+      />
+
       <DisconnectBanner connection={connection} />
 
       {/* CardFrames (Spec S06, S07): one per card in deckState.cards.
@@ -172,6 +236,7 @@ export function DeckCanvas({
             key={cardState.id}
             cardState={cardState}
             zIndex={CARD_ZINDEX_BASE + index}
+            isFocused={cardState.id === focusedCardId}
             onCardMoved={handleCardMoved}
             onCardClosed={handleCardClosed}
             onCardFocused={handleCardFocused}

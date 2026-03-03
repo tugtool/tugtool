@@ -195,7 +195,12 @@ body {
   --td-header-active: var(--tways-header-active, #44474C);
   --td-header-inactive: var(--tways-header-inactive, #34373c);
   --td-icon-active: var(--tways-icon-active, var(--td-accent-2));
+  --td-icon-inactive: var(--tways-icon-inactive, #7b828c);
   --td-grid-color: var(--tways-grid-color, rgba(255, 255, 255, 0.05));
+
+  /* Card focus tokens */
+  --td-card-shadow-active: var(--tways-card-shadow-active, 0 2px 8px rgba(0, 0, 0, 0.4));
+  --td-card-dim-overlay: var(--tways-card-dim-overlay, rgba(0, 0, 0, 0.15));
 
   /* Selection tokens (Phase 5a) */
   --td-selection-bg: color-mix(in srgb, var(--td-accent-cool) 40%, transparent);

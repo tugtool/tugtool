@@ -33,9 +33,11 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedIdValue } from "../../protocol";
+import { icons } from "lucide-react";
 import { useResponder } from "./use-responder";
 import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
+import { useRequiredResponderChain } from "./responder-chain-provider";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -128,6 +130,14 @@ export function Tugcard({
   //     selection is contained within card boundaries ([D02], [D03])
   //   - selectAll action: calls selectAllChildren on this element ([D06])
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Make this card the first responder when clicked anywhere on the card.
+  // This ensures the responder chain dispatches actions (e.g. Cmd+A selectAll)
+  // to the correct card, not just the visually focused one.
+  const manager = useRequiredResponderChain();
+  const handleCardPointerDown = useCallback(() => {
+    manager.makeFirstResponder(cardId);
+  }, [manager, cardId]);
 
   // Register the content area as a selection boundary with SelectionGuard.
   // Unregisters automatically on unmount via the hook's cleanup. ([D02], Spec S02)
@@ -250,13 +260,18 @@ export function Tugcard({
   const closable = meta.closable !== false; // default true
 
   return (
-    <div className="tugcard" data-card-id={cardId}>
+    <div className="tugcard" data-card-id={cardId} onPointerDown={handleCardPointerDown}>
       {/* CardHeader: 28px, title + icon + close button */}
       <div
         className="tugcard-header"
         onPointerDown={handleHeaderPointerDown}
         data-testid="tugcard-header"
       >
+        {meta.icon && icons[meta.icon as keyof typeof icons] && (
+          <span className="tugcard-icon" data-testid="tugcard-icon">
+            {React.createElement(icons[meta.icon as keyof typeof icons], { size: 14 })}
+          </span>
+        )}
         <span className="tugcard-title" data-testid="tugcard-title">
           {meta.title}
         </span>

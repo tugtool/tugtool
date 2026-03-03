@@ -75,6 +75,8 @@ export interface CardFrameProps {
   onCardFocused: (id: string) => void;
   /** CSS z-index for stacking order. */
   zIndex: number;
+  /** Whether this card is the focused (topmost) card. Drives visual focus styles. */
+  isFocused: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +100,7 @@ export function CardFrame({
   onCardMoved,
   onCardFocused,
   zIndex,
+  isFocused,
 }: CardFrameProps) {
   const { id, position, size } = cardState;
 
@@ -318,8 +321,10 @@ export function CardFrame({
   return (
     <div
       ref={frameRef}
+      className="card-frame"
       data-testid="card-frame"
       data-card-id={id}
+      data-focused={isFocused ? "true" : "false"}
       onPointerDown={handleFramePointerDown}
       style={{
         position: "absolute",

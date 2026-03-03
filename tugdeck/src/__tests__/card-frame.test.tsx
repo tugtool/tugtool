@@ -68,6 +68,7 @@ const defaultProps = {
   onCardClosed: mock(() => {}),
   onCardFocused: mock(() => {}),
   zIndex: 1,
+  isFocused: false,
 };
 
 // ---------------------------------------------------------------------------

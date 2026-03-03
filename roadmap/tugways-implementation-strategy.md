@@ -279,6 +279,31 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: Selection is fully contained within card boundaries. Title bars, accessory slots, canvas gaps, and resize handles are never selectable. Drag selection clamps smoothly at card edges with RAF-based autoscroll for overflow content. Cmd+A selects within the focused card. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed (including contenteditable) via `data-td-select`. Selection persistence infrastructure is ready for Phase 5b tab switching.
 
+### Phase 5a2: DeckManager Store Migration (Concept 5, [D40]-[D42])
+
+**Goal**: DeckManager becomes a subscribable store. One `root.render()` at construction time. All subsequent state changes flow through `useSyncExternalStore`. Responder registration uses `useLayoutEffect`. The async render gap that causes timing bugs between imperative state and React rendering is eliminated.
+
+**Background**: React 19's `createRoot().render()` is asynchronous — it schedules work via `queueMicrotask()` and returns immediately. DeckManager currently calls `root.render()` on every state mutation (10+ call sites), creating a timing gap where imperative code (like `makeFirstResponder`) runs before React has processed the render. This manifests as responder chain bugs (Ctrl+` cycling fails) and will affect any future feature that combines imperative state mutations with React rendering.
+
+**What to do**:
+1. Add `subscribe`/`getSnapshot`/`getVersion` methods to DeckManager following the `useSyncExternalStore` contract. Add a `notify()` private method that increments the version and fires subscriber callbacks.
+2. Create `DeckManagerContext` (`createContext<DeckManager | null>(null)`) and `useDeckManager()` convenience hook in a new `deck-manager-context.tsx` module.
+3. Modify DeckManager constructor: wrap the single `root.render()` call with a `<DeckManagerContext.Provider value={this}>` around the existing component tree. This is the only `root.render()` call that will ever execute.
+4. Replace all `this.render()` calls in DeckManager's mutating methods (`addCard`, `removeCard`, `moveCard`, `focusCard`, `applyLayout`, `refresh`) with `this.notify()`. Remove the `private render()` method entirely.
+5. DeckCanvas reads `deckState` from DeckManager via `useSyncExternalStore(manager.subscribe, manager.getSnapshot)` instead of receiving it as a prop. Remove `deckState` from `DeckCanvasProps`. Read `onCardMoved`, `onCardClosed`, `onCardFocused` callbacks from the DeckManager instance (accessed via context) instead of props.
+6. Switch `useResponder` registration from `useEffect` to `useLayoutEffect`. This ensures responder nodes register during the commit phase (before paint), not after. Responder chain is always consistent before the next browser event fires.
+7. Verify: Ctrl+` cycling works end-to-end, card focus visuals update correctly, add/remove cards works via Mac menu, layout persistence works (save/load), drag/resize works (onCardMoved), close button works (onCardClosed), all existing tests pass.
+
+**Files modified**:
+1. `tugdeck/src/deck-manager.ts` — subscribe/getSnapshot/notify API, remove repeated render() calls
+2. `tugdeck/src/deck-manager-context.tsx` — new module: DeckManagerContext + useDeckManager hook
+3. `tugdeck/src/components/chrome/deck-canvas.tsx` — read from store via useSyncExternalStore, remove deckState/callback props
+4. `tugdeck/src/components/tugways/use-responder.tsx` — useEffect → useLayoutEffect for registration
+
+**Result**: DeckManager state changes are deterministic. The async render gap is eliminated. The responder chain is always consistent. Future features that combine imperative mutations with React rendering (tab switching, card snapping, dock actions, modal dialogs) inherit these guarantees automatically.
+
+**Note**: This phase is a focused infrastructure change — it does not add new user-facing features. It fixes the architectural root cause of timing bugs between DeckManager and React, establishing a reliable foundation for all subsequent phases.
+
 ### Phase 5b: Card Tabs (Concept 12)
 
 **Goal**: Cards support multiple tabs. Tab bar appears when a card has more than one tab.
@@ -492,6 +517,9 @@ Responder Chain  Mutation Model                              │
              ▼                                               │
          Phase 5a: Selection Model                           │
              │                                               │
+             ▼                                               │
+         Phase 5a2: DeckManager Store Migration              │
+             │                                               │
              ├──────────┬──────────┬──────────┬──────┐       │
              ▼          ▼          ▼          ▼      ▼       ▼
          Phase 5b:  Phase 5c:  Phase 5d:  Phase 6:  Phase 7:
@@ -514,20 +542,22 @@ Responder Chain  Mutation Model                              │
 ```
 
 Phases 3 and 4 can run in parallel. Phase 5a (Selection Model) depends on Phase 5 and
-should be completed before Phases 5b, 5c, 5d, 6, 7, and 8a — card content in all subsequent
-phases needs correct selection behavior from the start. Phases 5b, 5c, 5d, 6, and 7 can
-all start as soon as Phase 5a completes (Phase 7 also needs Phase 1's motion tokens).
-Phase 5d (Default Button) adds `setDefaultButton`/`clearDefaultButton` to the responder
-chain and wires Enter at stage 2 of the key pipeline — a prerequisite for Phase 8a's
-alert, sheet, and popover components, which register their default buttons on mount.
-Phase 8a (Alerts + Title Bar + Dock) depends on Phase 5d for the default button mechanism.
-Phases 8b–8d are sequential (each wave builds on the previous) and depend on Phase 2
-(Component Gallery exists) and Phase 4 (mutation model hooks). They can run in parallel
-with Phases 5b, 5c, 6, and 7. Phase 9 (Card Rebuild) is the true convergence point:
-rebuilt cards need feeds (Phase 6) for data, motion (Phase 7) for skeleton/transitions,
-chrome (Phase 8a) for title bar and dock, and the component library (Phases 8b–8d) for
-form controls, data display, and visualization. Phases 5b, 5c, and 5d are enhancements
-that can land before, during, or after Phase 9.
+should be completed before Phase 5a2 and all subsequent phases — card content in all
+subsequent phases needs correct selection behavior from the start. Phase 5a2 (DeckManager
+Store Migration) depends on Phase 5a and must complete before Phases 5b, 5c, 5d, 6, 7,
+and 8a — all subsequent phases inherit the deterministic event flow guarantees established
+by the store migration. Phases 5b, 5c, 5d, 6, and 7 can all start as soon as Phase 5a2
+completes (Phase 7 also needs Phase 1's motion tokens). Phase 5d (Default Button) adds
+`setDefaultButton`/`clearDefaultButton` to the responder chain and wires Enter at stage 2
+of the key pipeline — a prerequisite for Phase 8a's alert, sheet, and popover components,
+which register their default buttons on mount. Phase 8a (Alerts + Title Bar + Dock)
+depends on Phase 5d for the default button mechanism. Phases 8b–8d are sequential (each
+wave builds on the previous) and depend on Phase 2 (Component Gallery exists) and Phase 4
+(mutation model hooks). They can run in parallel with Phases 5b, 5c, 6, and 7. Phase 9
+(Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
+motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
+the component library (Phases 8b–8d) for form controls, data display, and visualization.
+Phases 5b, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
 
 ## Estimated Scope
 
@@ -540,6 +570,7 @@ that can land before, during, or after Phase 9.
 | 4 | ~3 files | ~200 lines |
 | 5 | ~8 files | ~1200 lines |
 | 5a | ~5 files | ~400 lines |
+| 5a2 | ~4 files | ~200 lines |
 | 5b | ~3 files | ~350 lines |
 | 5c | ~1 file | ~50 lines |
 | 5d | ~3 files | ~150 lines |
@@ -551,7 +582,7 @@ that can land before, during, or after Phase 9.
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~10,650 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~10,850 lines** replacing the current ~9700 lines. The new
 codebase is modestly larger because the 28-component library (Phases 8a–8d)
 adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
 triple-registration redundancy is gone, the adapter layer is gone, and the
@@ -575,16 +606,17 @@ The suggested plan sequence:
 5. `tugways-phase-4-mutation-model` — DOM hooks, three-zone discipline
 6. `tugways-phase-5-tugcard` — card base component, new DeckManager
 7. `tugways-phase-5a-selection-model` — selection containment, SelectionGuard, developer API
-8. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
-9. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
-10. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-11. `tugways-phase-6-feed` — feed hooks, data flow
-12. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-13. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-14. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-15. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-16. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-17. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+8. `tugways-phase-5a2-deckmanager-store` — subscribable store, eliminate root.render() calls, useLayoutEffect registration
+9. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
+10. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+11. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
+12. `tugways-phase-6-feed` — feed hooks, data flow
+13. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+14. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+15. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+16. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+17. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+18. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
