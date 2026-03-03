@@ -420,7 +420,7 @@ export class DeckManager implements IDeckManagerStore {
    *
    * Called by loadLayout() and applyLayout() so that deckState.cards only
    * contains renderable cards. This is the single filtering gate -- downstream
-   * code (DeckCanvas, cyclePanel, responder chain) can trust that every card
+   * code (DeckCanvas, cycleCard, responder chain) can trust that every card
    * in deckState has a registered factory.
    */
   private filterRegisteredCards(state: DeckState): DeckState {

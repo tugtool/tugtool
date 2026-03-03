@@ -5,7 +5,7 @@
  * in a grid, with interactive controls for variant, size, disabled, and loading.
  *
  * Phase 3 (Step 6): Registers as responder "component-gallery" via useResponder.
- * Phase 3 (Step 7): Adds "Chain-Action Buttons" demo section with cyclePanel,
+ * Phase 3 (Step 7): Adds "Chain-Action Buttons" demo section with cycleCard,
  *   showComponentGallery, and a nonexistentAction button (demonstrates hidden state).
  *   - parentId is inherited from ResponderParentContext (set by DeckCanvas's
  *     ResponderScope, so parentId = "deck-canvas").
@@ -253,7 +253,7 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
           {/*
            * Demonstrates chain-action TugButton mode (Phase 3, Step 7).
            *
-           * - "Cycle Panel": dispatches cyclePanel (handled by DeckCanvas parent).
+           * - "Cycle Card": dispatches cycleCard (handled by DeckCanvas parent).
            *   Visible and enabled whenever a DeckCanvas responder is in the chain.
            * - "Toggle Gallery": dispatches showComponentGallery (handled by DeckCanvas).
            *   Clicking it while the gallery is open will close the gallery.
@@ -263,8 +263,8 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
           <div className="cg-section">
             <div className="cg-section-title">Chain-Action Buttons</div>
             <div className="cg-variant-row">
-              <TugButton action="cyclePanel">
-                Cycle Panel
+              <TugButton action="cycleCard">
+                Cycle Card
               </TugButton>
               <TugButton action="showComponentGallery">
                 Toggle Gallery

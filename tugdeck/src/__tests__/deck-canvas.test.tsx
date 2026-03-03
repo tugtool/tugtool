@@ -16,9 +16,9 @@
  * Tests cover:
  * - DeckCanvas registers as responder "deck-canvas" on mount
  * - DeckCanvas is auto-promoted to first responder (root node, no prior first responder)
- * - DeckCanvas responder handles cyclePanel action
+ * - DeckCanvas responder handles cycleCard action
  * - DeckCanvas responder handles showComponentGallery action
- * - Ctrl+` keyboard shortcut triggers cyclePanel via key pipeline (integration)
+ * - Ctrl+` keyboard shortcut triggers cycleCard via key pipeline (integration)
  * - T25: DeckCanvas renders cards from store-provided deckState
  * - T26: DeckCanvas with empty store renders no cards
  * - T27: DeckCanvas skips cards with unregistered componentIds (warning logged)
@@ -196,16 +196,16 @@ describe("DeckCanvas – responder registration", () => {
       );
     });
 
-    expect(manager!.canHandle("cyclePanel")).toBe(true);
+    expect(manager!.canHandle("cycleCard")).toBe(true);
   });
 });
 
 // ============================================================================
-// Action handlers: cyclePanel
+// Action handlers: cycleCard
 // ============================================================================
 
-describe("DeckCanvas – cyclePanel action", () => {
-  it("handles cyclePanel action (dispatch returns true)", () => {
+describe("DeckCanvas – cycleCard action", () => {
+  it("handles cycleCard action (dispatch returns true)", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -227,12 +227,12 @@ describe("DeckCanvas – cyclePanel action", () => {
     });
 
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const handled = manager!.dispatch("cyclePanel");
+    const handled = manager!.dispatch("cycleCard");
     expect(handled).toBe(true);
     logSpy.mockRestore();
   });
 
-  it("cyclePanel with no cards is a silent no-op", () => {
+  it("cycleCard with no cards is a silent no-op", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -253,7 +253,7 @@ describe("DeckCanvas – cyclePanel action", () => {
       );
     });
 
-    const handled = manager!.dispatch("cyclePanel");
+    const handled = manager!.dispatch("cycleCard");
     expect(handled).toBe(true);
   });
 });
@@ -328,11 +328,11 @@ describe("DeckCanvas – showComponentGallery action", () => {
 });
 
 // ============================================================================
-// Integration: Ctrl+` key pipeline triggers cyclePanel
+// Integration: Ctrl+` key pipeline triggers cycleCard
 // ============================================================================
 
 describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
-  it("Ctrl+` fires cyclePanel through the key pipeline", () => {
+  it("Ctrl+` fires cycleCard through the key pipeline", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -353,7 +353,7 @@ describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
       );
     });
 
-    expect(manager!.canHandle("cyclePanel")).toBe(true);
+    expect(manager!.canHandle("cycleCard")).toBe(true);
 
     act(() => {
       fireKeydown({ code: "Backquote", ctrlKey: true });

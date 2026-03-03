@@ -12,14 +12,14 @@
  * Tests cover:
  * - Integration test 1: render DeckCanvas with providers, show gallery, verify
  *   full chain structure (gallery -> deck-canvas -> null), press Ctrl+`, verify
- *   cyclePanel dispatched end-to-end.
+ *   cycleCard dispatched end-to-end.
  * - Integration test 2: render chain-action TugButton, change first responder,
  *   verify button re-renders with updated validation state.
  *
  * Verification tasks (all confirmed by tests below):
  * - Render tree: ResponderChainProvider > DeckManagerContext.Provider > DeckCanvas
  * - Chain tree: component-gallery -> deck-canvas -> null (verified here)
- * - Ctrl+` triggers cyclePanel end-to-end (verified here)
+ * - Ctrl+` triggers cycleCard end-to-end (verified here)
  * - Chain-action TugButton shows correct enabled/disabled state (verified here)
  * - Gallery focus lifecycle: show -> gallery first responder -> hide -> deck-canvas
  *   first responder (verified here)
@@ -98,7 +98,7 @@ function ManagerCapture({
 // ============================================================================
 
 describe("Responder chain E2E – full chain + key pipeline", () => {
-  it("shows gallery, verifies chain structure, then Ctrl+` dispatches cyclePanel", () => {
+  it("shows gallery, verifies chain structure, then Ctrl+` dispatches cycleCard", () => {
     const managerRef = { current: null as ResponderChainManager | null };
 
     let container!: HTMLElement;
@@ -120,7 +120,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     // Verify initial chain state: deck-canvas is root and first responder
     expect(manager.getFirstResponder()).toBe("deck-canvas");
-    expect(manager.canHandle("cyclePanel")).toBe(true);
+    expect(manager.canHandle("cycleCard")).toBe(true);
     expect(manager.canHandle("showComponentGallery")).toBe(true);
     expect(container.querySelector(".cg-panel")).toBeNull();
 
@@ -136,11 +136,11 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
     expect(manager.getFirstResponder()).toBe("component-gallery");
 
     // Chain tree: component-gallery -> deck-canvas -> null
-    // canHandle("cyclePanel") walks up from gallery to deck-canvas and finds it
-    expect(manager.canHandle("cyclePanel")).toBe(true);
+    // canHandle("cycleCard") walks up from gallery to deck-canvas and finds it
+    expect(manager.canHandle("cycleCard")).toBe(true);
 
-    // ---- Ctrl+` fires cyclePanel through the full key pipeline ----
-    // Stage 1 (capture): matchKeybinding returns "cyclePanel", dispatch returns true
+    // ---- Ctrl+` fires cycleCard through the full key pipeline ----
+    // Stage 1 (capture): matchKeybinding returns "cycleCard", dispatch returns true
     // With no cards, the handler is a silent no-op -- we verify the dispatch path
     // works by confirming the action is still handleable after the keydown fires.
     act(() => {
@@ -153,8 +153,8 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
       }));
     });
 
-    // cyclePanel is still handleable (chain didn't break)
-    expect(manager.canHandle("cyclePanel")).toBe(true);
+    // cycleCard is still handleable (chain didn't break)
+    expect(manager.canHandle("cycleCard")).toBe(true);
 
     // ---- Hide gallery: first responder auto-promotes back to deck-canvas ----
     act(() => {

@@ -48,11 +48,11 @@ export interface KeyBinding {
  * Extensible: later phases add entries here without changing pipeline logic.
  *
  * Table T02:
- * | Ctrl+`       | cyclePanel | stage 1 (global shortcut)          |
+ * | Ctrl+`       | cycleCard | stage 1 (global shortcut)          |
  * | Cmd+A (Meta) | selectAll  | stage 1 + preventDefaultOnMatch    |
  */
 export const KEYBINDINGS: KeyBinding[] = [
-  { key: "Backquote", ctrl: true, action: "cyclePanel" },
+  { key: "Backquote", ctrl: true, action: "cycleCard" },
   { key: "KeyA", meta: true, action: "selectAll", preventDefaultOnMatch: true },
 ];
 

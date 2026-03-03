@@ -11,7 +11,7 @@
  * - Gallery registers as responder "component-gallery" on mount
  * - Gallery calls makeFirstResponder on mount
  * - Gallery unregisters on unmount, first responder auto-promotes to "deck-canvas"
- * - With gallery focused: canHandle("cyclePanel") returns true (walks up to DeckCanvas)
+ * - With gallery focused: canHandle("cycleCard") returns true (walks up to DeckCanvas)
  * - Key pipeline dispatches work correctly when gallery is the first responder
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -43,7 +43,7 @@ function FakeDeckCanvas({ children }: { children?: React.ReactNode }) {
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
-      cyclePanel: () => {},
+      cycleCard: () => {},
       resetLayout: () => {},
       showSettings: () => {},
       showComponentGallery: () => {},
@@ -141,7 +141,7 @@ describe("ComponentGallery – responder registration", () => {
     });
 
     expect(managerRef.current).not.toBeNull();
-    // Gallery is registered -- its parent (deck-canvas) handles cyclePanel,
+    // Gallery is registered -- its parent (deck-canvas) handles cycleCard,
     // so canHandle from gallery's position returns true.
     expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
   });
@@ -194,7 +194,7 @@ describe("ComponentGallery – responder registration", () => {
 // ============================================================================
 
 describe("ComponentGallery – chain walk when focused", () => {
-  it("canHandle('cyclePanel') returns true when gallery is first responder (walks up to DeckCanvas)", () => {
+  it("canHandle('cycleCard') returns true when gallery is first responder (walks up to DeckCanvas)", () => {
     const managerRef = { current: null as ResponderChainManager | null };
     const onClose = mock(() => {});
 
@@ -202,9 +202,9 @@ describe("ComponentGallery – chain walk when focused", () => {
       render(<GalleryWrapper onClose={onClose} managerRef={managerRef} />);
     });
 
-    // Gallery is first responder; cyclePanel is in deck-canvas (parent) actions map.
+    // Gallery is first responder; cycleCard is in deck-canvas (parent) actions map.
     expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
-    expect(managerRef.current!.canHandle("cyclePanel")).toBe(true);
+    expect(managerRef.current!.canHandle("cycleCard")).toBe(true);
   });
 });
 
@@ -213,14 +213,14 @@ describe("ComponentGallery – chain walk when focused", () => {
 // ============================================================================
 
 describe("ComponentGallery – key pipeline with gallery focused", () => {
-  it("Ctrl+` dispatches cyclePanel through chain when gallery is first responder", () => {
-    let cyclePanelCalled = false;
+  it("Ctrl+` dispatches cycleCard through chain when gallery is first responder", () => {
+    let cycleCardCalled = false;
 
     function TestWrapper() {
       const { ResponderScope } = useResponder({
         id: "deck-canvas",
         actions: {
-          cyclePanel: () => { cyclePanelCalled = true; },
+          cycleCard: () => { cycleCardCalled = true; },
           resetLayout: () => {},
           showSettings: () => {},
           showComponentGallery: () => {},
@@ -251,7 +251,7 @@ describe("ComponentGallery – key pipeline with gallery focused", () => {
       }));
     });
 
-    expect(cyclePanelCalled).toBe(true);
+    expect(cycleCardCalled).toBe(true);
   });
 });
 
@@ -260,7 +260,7 @@ describe("ComponentGallery – key pipeline with gallery focused", () => {
 // ============================================================================
 
 describe("ComponentGallery – chain-action button demo section", () => {
-  it("'Cycle Panel' button is visible and enabled when DeckCanvas responder is registered", () => {
+  it("'Cycle Card' button is visible and enabled when DeckCanvas responder is registered", () => {
     const managerRef = { current: null as ResponderChainManager | null };
     const onClose = mock(() => {});
 
@@ -271,13 +271,13 @@ describe("ComponentGallery – chain-action button demo section", () => {
       ));
     });
 
-    // Find all buttons whose text content includes "Cycle Panel"
+    // Find all buttons whose text content includes "Cycle Card"
     const buttons = Array.from(container.querySelectorAll("button"));
-    const cyclePanelBtn = buttons.find((b) => b.textContent?.includes("Cycle Panel"));
-    expect(cyclePanelBtn).not.toBeUndefined();
+    const cycleCardBtn = buttons.find((b) => b.textContent?.includes("Cycle Card"));
+    expect(cycleCardBtn).not.toBeUndefined();
     // Should be enabled (no aria-disabled, no HTML disabled)
-    expect(cyclePanelBtn!.getAttribute("aria-disabled")).toBeNull();
-    expect(cyclePanelBtn!.disabled).toBe(false);
+    expect(cycleCardBtn!.getAttribute("aria-disabled")).toBeNull();
+    expect(cycleCardBtn!.disabled).toBe(false);
   });
 
   it("'nonexistentAction' button is hidden (TugButton returns null)", () => {
@@ -298,14 +298,14 @@ describe("ComponentGallery – chain-action button demo section", () => {
     expect(hiddenBtn).toBeUndefined();
   });
 
-  it("clicking 'Cycle Panel' dispatches the cyclePanel action", () => {
-    let cyclePanelCalled = false;
+  it("clicking 'Cycle Card' dispatches the cycleCard action", () => {
+    let cycleCardCalled = false;
 
     function TestWrapper() {
       const { ResponderScope } = useResponder({
         id: "deck-canvas",
         actions: {
-          cyclePanel: () => { cyclePanelCalled = true; },
+          cycleCard: () => { cycleCardCalled = true; },
           resetLayout: () => {},
           showSettings: () => {},
           showComponentGallery: () => {},
@@ -328,11 +328,11 @@ describe("ComponentGallery – chain-action button demo section", () => {
     });
 
     const buttons = Array.from(container.querySelectorAll("button"));
-    const cyclePanelBtn = buttons.find((b) => b.textContent?.includes("Cycle Panel"));
-    expect(cyclePanelBtn).not.toBeUndefined();
+    const cycleCardBtn = buttons.find((b) => b.textContent?.includes("Cycle Card"));
+    expect(cycleCardBtn).not.toBeUndefined();
 
-    act(() => { fireEvent.click(cyclePanelBtn!); });
+    act(() => { fireEvent.click(cycleCardBtn!); });
 
-    expect(cyclePanelCalled).toBe(true);
+    expect(cycleCardCalled).toBe(true);
   });
 });

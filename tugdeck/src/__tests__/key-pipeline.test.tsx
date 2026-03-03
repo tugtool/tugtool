@@ -6,7 +6,7 @@
  * - useResponderChain() returns the manager inside the provider
  * - useResponderChain() returns null outside the provider (does not throw)
  * - useRequiredResponderChain() throws outside the provider
- * - Key pipeline: Ctrl+` triggers cyclePanel via capture-phase and calls
+ * - Key pipeline: Ctrl+` triggers cycleCard via capture-phase and calls
  *   preventDefault + stopImmediatePropagation when dispatch returns true
  * - Key pipeline: matched keybinding where dispatch returns false does not
  *   call preventDefault and event reaches bubble-phase listener
@@ -184,8 +184,8 @@ describe("useRequiredResponderChain", () => {
 // ============================================================================
 
 describe("key pipeline – capture-phase (stage 1)", () => {
-  it("Ctrl+` dispatches cyclePanel and calls preventDefault + stopImmediatePropagation when handler is registered", () => {
-    let cyclePanelCalled = false;
+  it("Ctrl+` dispatches cycleCard and calls preventDefault + stopImmediatePropagation when handler is registered", () => {
+    let cycleCardCalled = false;
     let manager!: ResponderChainManager;
 
     function Setup() {
@@ -204,11 +204,11 @@ describe("key pipeline – capture-phase (stage 1)", () => {
       );
     });
 
-    // Register a cyclePanel handler
+    // Register a cycleCard handler
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cyclePanel: () => { cyclePanelCalled = true; } },
+      actions: { cycleCard: () => { cycleCardCalled = true; } },
     });
 
     let preventDefaultCalled = false;
@@ -238,13 +238,13 @@ describe("key pipeline – capture-phase (stage 1)", () => {
     KeyboardEvent.prototype.preventDefault = origPreventDefault;
     KeyboardEvent.prototype.stopImmediatePropagation = origStopImmediate;
 
-    expect(cyclePanelCalled).toBe(true);
+    expect(cycleCardCalled).toBe(true);
     expect(preventDefaultCalled).toBe(true);
     expect(stopImmediatePropagationCalled).toBe(true);
   });
 
   it("matched keybinding where dispatch returns false does NOT call preventDefault", () => {
-    // No handler registered for cyclePanel -- dispatch returns false.
+    // No handler registered for cycleCard -- dispatch returns false.
     let preventDefaultCalled = false;
     let bubbleListenerFired = false;
 
@@ -256,7 +256,7 @@ describe("key pipeline – capture-phase (stage 1)", () => {
       );
     });
 
-    // The provider's manager has no handlers, so dispatch("cyclePanel") returns false.
+    // The provider's manager has no handlers, so dispatch("cycleCard") returns false.
     // The event should continue normally and reach bubble-phase listeners.
     const bubbleListener = () => { bubbleListenerFired = true; };
     document.addEventListener("keydown", bubbleListener);
@@ -346,8 +346,8 @@ describe("key pipeline – bubble-phase input guard", () => {
     expect(dispatchSpy).not.toHaveBeenCalled();
   });
 
-  it("Ctrl+` still triggers cyclePanel when an input element is focused (stage 1 capture takes priority)", () => {
-    let cyclePanelCalled = false;
+  it("Ctrl+` still triggers cycleCard when an input element is focused (stage 1 capture takes priority)", () => {
+    let cycleCardCalled = false;
     let manager!: ResponderChainManager;
 
     function Setup() {
@@ -369,7 +369,7 @@ describe("key pipeline – bubble-phase input guard", () => {
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cyclePanel: () => { cyclePanelCalled = true; } },
+      actions: { cycleCard: () => { cycleCardCalled = true; } },
     });
 
     const input = getByTestId("text-input");
@@ -379,7 +379,7 @@ describe("key pipeline – bubble-phase input guard", () => {
       fireKeydown({ code: "Backquote", ctrlKey: true, target: input });
     });
 
-    expect(cyclePanelCalled).toBe(true);
+    expect(cycleCardCalled).toBe(true);
   });
 });
 
@@ -401,9 +401,9 @@ describe("matchKeybinding", () => {
     });
   }
 
-  it("returns full KeyBinding object for Ctrl+Backquote (cyclePanel)", () => {
+  it("returns full KeyBinding object for Ctrl+Backquote (cycleCard)", () => {
     const event = makeEvent("Backquote", { ctrlKey: true });
-    expect(matchKeybinding(event)?.action).toBe("cyclePanel");
+    expect(matchKeybinding(event)?.action).toBe("cycleCard");
   });
 
   it("returns full KeyBinding object for Cmd+A (selectAll) with preventDefaultOnMatch", () => {
@@ -413,11 +413,11 @@ describe("matchKeybinding", () => {
     expect(binding?.preventDefaultOnMatch).toBe(true);
   });
 
-  it("returns full KeyBinding object for Ctrl+Backquote (backward compat: cyclePanel)", () => {
+  it("returns full KeyBinding object for Ctrl+Backquote (backward compat: cycleCard)", () => {
     const event = makeEvent("Backquote", { ctrlKey: true });
     const binding = matchKeybinding(event);
     expect(binding).not.toBeNull();
-    expect(binding?.action).toBe("cyclePanel");
+    expect(binding?.action).toBe("cycleCard");
     expect(binding?.preventDefaultOnMatch).toBeUndefined();
   });
 

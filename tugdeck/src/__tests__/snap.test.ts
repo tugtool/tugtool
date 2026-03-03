@@ -21,14 +21,14 @@ import type { CardState } from "../layout-tree";
 
 describe("cardToRect", () => {
   test("converts CardState to Rect correctly", () => {
-    const panel: CardState = {
+    const card: CardState = {
       id: "p1",
       position: { x: 10, y: 20 },
       size: { width: 200, height: 300 },
       tabs: [],
       activeTabId: "",
     };
-    const rect = cardToRect(panel);
+    const rect = cardToRect(card);
     expect(rect.x).toBe(10);
     expect(rect.y).toBe(20);
     expect(rect.width).toBe(200);
@@ -47,7 +47,7 @@ describe("SNAP_THRESHOLD_PX", () => {
 // ---- computeSnap ----
 
 describe("computeSnap", () => {
-  // Acceptance criterion (a): moving panel right edge within 8px of stationary left edge snaps to it.
+  // Acceptance criterion (a): moving card right edge within 8px of stationary left edge snaps to it.
   // Moving: x=200, width=200 → right edge at 400.
   // Stationary: x=405, width=200 → left edge at 405.
   // Distance = 5, within threshold. Snap x so right=405 → new x = 405 - 200 = 205.
@@ -67,7 +67,7 @@ describe("computeSnap", () => {
   });
 
   // Acceptance criterion (b): beyond 8px → no snap.
-  test("does not snap when moving panel is beyond 8px", () => {
+  test("does not snap when moving card is beyond 8px", () => {
     const moving: Rect = { x: 200, y: 0, width: 200, height: 300 };
     // Nearest x edge: stationary.left = 420, moving.right = 400, distance = 20 > 8.
     // Nearest y edge: stationary.top = 500, moving.bottom = 300, distance = 200 > 8.
@@ -128,8 +128,8 @@ describe("computeSnap", () => {
 // ---- computeResizeSnap ----
 
 describe("computeResizeSnap", () => {
-  // Acceptance criterion (d): right edge at 398, other panel left at 400 → snaps right to 400.
-  test("snaps right edge to another panel left edge within threshold", () => {
+  // Acceptance criterion (d): right edge at 398, other card left at 400 → snaps right to 400.
+  test("snaps right edge to another card left edge within threshold", () => {
     const resizingEdges = { right: 398 };
     const other: Rect = { x: 400, y: 0, width: 200, height: 300 };
 
@@ -167,7 +167,7 @@ describe("computeResizeSnap", () => {
     expect(result.right).toBe(400);
   });
 
-  test("snaps left edge to other panel right edge", () => {
+  test("snaps left edge to other card right edge", () => {
     const resizingEdges = { left: 203 };
     const other: Rect = { x: 0, y: 0, width: 200, height: 300 };
     // other.right = 200, dist from 203 = 3
@@ -194,12 +194,12 @@ describe("findSharedEdges", () => {
   // Acceptance criterion (e): A at (0,0,200,300), B at (200,50,200,300) → vertical shared edge.
   // A.right = 200, B.left = 200 → exact alignment (dist=0). Overlap: max(0,50)=50..min(300,350)=300.
   test("detects vertical shared edge when A.right == B.left with overlap", () => {
-    const panels = [
+    const cards = [
       { id: "a", rect: { x: 0, y: 0, width: 200, height: 300 } },
       { id: "b", rect: { x: 200, y: 50, width: 200, height: 300 } },
     ];
 
-    const edges = findSharedEdges(panels);
+    const edges = findSharedEdges(cards);
 
     // Should find at least one vertical edge between A and B
     const vertEdge = edges.find(
@@ -214,12 +214,12 @@ describe("findSharedEdges", () => {
   // Acceptance criterion (f): A at (0,0,200,300), B at (50,300,200,300) → horizontal shared edge.
   // A.bottom = 300, B.top = 300 → exact alignment. Overlap: max(0,50)=50..min(200,250)=200.
   test("detects horizontal shared edge when A.bottom == B.top with overlap", () => {
-    const panels = [
+    const cards = [
       { id: "a", rect: { x: 0, y: 0, width: 200, height: 300 } },
       { id: "b", rect: { x: 50, y: 300, width: 200, height: 300 } },
     ];
 
-    const edges = findSharedEdges(panels);
+    const edges = findSharedEdges(cards);
 
     const horizEdge = edges.find(
       (e) => e.axis === "horizontal" && e.cardAId === "a" && e.cardBId === "b"
@@ -232,15 +232,15 @@ describe("findSharedEdges", () => {
 
   // Acceptance criterion (g): A at (0,0,200,200), B at (200,300,200,200) → edges align (A.right=200=B.left)
   // but no vertical overlap → empty.
-  test("returns empty when edges align but panels have no perpendicular overlap", () => {
-    const panels = [
+  test("returns empty when edges align but cards have no perpendicular overlap", () => {
+    const cards = [
       { id: "a", rect: { x: 0, y: 0, width: 200, height: 200 } },
       { id: "b", rect: { x: 200, y: 300, width: 200, height: 200 } },
     ];
     // A: top=0, bottom=200; B: top=300, bottom=500
     // Overlap: max(0,300)=300..min(200,500)=200 → 300 >= 200 → no overlap
 
-    const edges = findSharedEdges(panels);
+    const edges = findSharedEdges(cards);
 
     const vertEdge = edges.find((e) => e.axis === "vertical");
     expect(vertEdge).toBeUndefined();
@@ -249,13 +249,13 @@ describe("findSharedEdges", () => {
 
   // Acceptance criterion (h): A at (0,0,200,300), B at (205,50,200,300) → gap of 5px (within 8px) → detected.
   test("detects vertical shared edge within 8px gap tolerance", () => {
-    const panels = [
+    const cards = [
       { id: "a", rect: { x: 0, y: 0, width: 200, height: 300 } },
       { id: "b", rect: { x: 205, y: 50, width: 200, height: 300 } },
     ];
     // A.right = 200, B.left = 205 → dist=5 <= 8
 
-    const edges = findSharedEdges(panels);
+    const edges = findSharedEdges(cards);
 
     const vertEdge = edges.find(
       (e) => e.axis === "vertical" && e.cardAId === "a" && e.cardBId === "b"
@@ -266,23 +266,23 @@ describe("findSharedEdges", () => {
     expect(vertEdge!.boundaryPosition).toBe(202.5); // (200+205)/2
   });
 
-  test("returns empty for two panels with no edge proximity", () => {
-    const panels = [
+  test("returns empty for two cards with no edge proximity", () => {
+    const cards = [
       { id: "a", rect: { x: 0, y: 0, width: 100, height: 100 } },
       { id: "b", rect: { x: 500, y: 500, width: 100, height: 100 } },
     ];
 
-    const edges = findSharedEdges(panels);
+    const edges = findSharedEdges(cards);
     expect(edges.length).toBe(0);
   });
 
-  test("returns empty for single panel", () => {
-    const panels = [{ id: "a", rect: { x: 0, y: 0, width: 200, height: 200 } }];
-    const edges = findSharedEdges(panels);
+  test("returns empty for single card", () => {
+    const cards = [{ id: "a", rect: { x: 0, y: 0, width: 200, height: 200 } }];
+    const edges = findSharedEdges(cards);
     expect(edges.length).toBe(0);
   });
 
-  test("returns empty for zero panels", () => {
+  test("returns empty for zero cards", () => {
     const edges = findSharedEdges([]);
     expect(edges.length).toBe(0);
   });
@@ -291,8 +291,8 @@ describe("findSharedEdges", () => {
 // ---- computeSets ----
 
 describe("computeSets", () => {
-  // Acceptance criterion (i): two panels sharing an edge → one set with both IDs.
-  test("groups two panels sharing an edge into one set", () => {
+  // Acceptance criterion (i): two cards sharing an edge → one set with both IDs.
+  test("groups two cards sharing an edge into one set", () => {
     const cardIds = ["a", "b"];
     const sharedEdge: SharedEdge = {
       cardAId: "a",
@@ -309,7 +309,7 @@ describe("computeSets", () => {
     expect(sets[0].cardIds.sort()).toEqual(["a", "b"]);
   });
 
-  // Acceptance criterion (j): two groups of 2 panels, not connected → two separate sets.
+  // Acceptance criterion (j): two groups of 2 cards, not connected → two separate sets.
   test("returns separate sets for disconnected groups", () => {
     const cardIds = ["a", "b", "c", "d"];
     const sharedEdges: SharedEdge[] = [
@@ -339,13 +339,13 @@ describe("computeSets", () => {
   });
 
   // Acceptance criterion (k): no shared edges → empty array.
-  test("returns empty array for panels with no shared edges", () => {
+  test("returns empty array for cards with no shared edges", () => {
     const cardIds = ["a", "b", "c"];
     const sets = computeSets(cardIds, []);
     expect(sets).toEqual([]);
   });
 
-  test("handles three panels all connected in a chain", () => {
+  test("handles three cards all connected in a chain", () => {
     const cardIds = ["a", "b", "c"];
     const sharedEdges: SharedEdge[] = [
       {

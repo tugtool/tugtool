@@ -1,5 +1,5 @@
 /**
- * Snap geometry module for the canvas panel system.
+ * Snap geometry module for the canvas card system.
  *
  * Pure functions with no DOM or state dependencies.
  * Handles snap-during-move, snap-during-resize, shared-edge detection,
@@ -36,9 +36,9 @@ export interface SnapResult {
 }
 
 /**
- * A shared edge between two panels.
- * axis: "vertical" means the panels share a vertical boundary (one panel's right ~ other's left).
- * axis: "horizontal" means the panels share a horizontal boundary (one panel's bottom ~ other's top).
+ * A shared edge between two cards.
+ * axis: "vertical" means the cards share a vertical boundary (one card's right ~ other's left).
+ * axis: "horizontal" means the cards share a horizontal boundary (one card's bottom ~ other's top).
  * overlapStart/overlapEnd: the perpendicular range of the overlap.
  * boundaryPosition: the coordinate of the shared boundary line.
  */
@@ -60,7 +60,7 @@ export interface CardSet {
 export const SNAP_THRESHOLD_PX = 8;
 
 /**
- * Minimum fraction of an edge that must be visible (not occluded by higher-z panels)
+ * Minimum fraction of an edge that must be visible (not occluded by higher-z cards)
  * for a snap to activate. 1.0 = full edge must be visible. Lower values are more
  * permissive (e.g. 0.3 = at least 30% of the edge visible).
  */
@@ -89,12 +89,12 @@ export type EdgeValidator = (
 /**
  * Convert a CardState to a Rect for use in snap computations.
  */
-export function cardToRect(panel: CardState): Rect {
+export function cardToRect(card: CardState): Rect {
   return {
-    x: panel.position.x,
-    y: panel.position.y,
-    width: panel.size.width,
-    height: panel.size.height,
+    x: card.position.x,
+    y: card.position.y,
+    width: card.size.width,
+    height: card.size.height,
   };
 }
 
@@ -291,24 +291,24 @@ export function computeResizeSnap(
 // ---- findSharedEdges ----
 
 /**
- * Detect shared edges between all pairs of panels.
+ * Detect shared edges between all pairs of cards.
  *
- * A shared vertical edge exists when one panel's right edge is within SNAP_THRESHOLD_PX
- * of another panel's left edge, AND the panels have overlapping perpendicular ranges (top-to-bottom).
+ * A shared vertical edge exists when one card's right edge is within SNAP_THRESHOLD_PX
+ * of another card's left edge, AND the cards have overlapping perpendicular ranges (top-to-bottom).
  *
- * A shared horizontal edge exists when one panel's bottom edge is within SNAP_THRESHOLD_PX
- * of another panel's top edge, AND the panels have overlapping perpendicular ranges (left-to-right).
+ * A shared horizontal edge exists when one card's bottom edge is within SNAP_THRESHOLD_PX
+ * of another card's top edge, AND the cards have overlapping perpendicular ranges (left-to-right).
  *
  * Pairwise check (i < j) avoids duplicates per pair. Each direction is checked
  * separately — A.right~B.left and B.right~A.left are different boundaries.
  */
-export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdge[] {
+export function findSharedEdges(cards: { id: string; rect: Rect }[]): SharedEdge[] {
   const edges: SharedEdge[] = [];
 
-  for (let i = 0; i < panels.length; i++) {
-    for (let j = i + 1; j < panels.length; j++) {
-      const a = panels[i];
-      const b = panels[j];
+  for (let i = 0; i < cards.length; i++) {
+    for (let j = i + 1; j < cards.length; j++) {
+      const a = cards[i];
+      const b = cards[j];
 
       const aLeft = a.rect.x;
       const aRight = a.rect.x + a.rect.width;
@@ -392,10 +392,10 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
 // ---- computeSets ----
 
 /**
- * Compute connected components (sets) of panels sharing edges.
+ * Compute connected components (sets) of cards sharing edges.
  *
  * Uses union-find with path compression.
- * Returns only sets with 2+ panels — singletons are not included.
+ * Returns only sets with 2+ cards — singletons are not included.
  */
 export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardSet[] {
   // Union-find parent map
@@ -422,7 +422,7 @@ export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardS
   }
 
   for (const edge of sharedEdges) {
-    // Only union panels that are in our cardIds list
+    // Only union cards that are in our cardIds list
     if (parent.has(edge.cardAId) && parent.has(edge.cardBId)) {
       union(edge.cardAId, edge.cardBId);
     }
@@ -454,7 +454,7 @@ export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardS
 // ---- computeEdgeVisibility ----
 
 /**
- * Compute what fraction of an edge segment is visible (not occluded by higher-z panels).
+ * Compute what fraction of an edge segment is visible (not occluded by higher-z cards).
  *
  * Checks a line segment along one axis (vertical edge at a given x, or horizontal
  * edge at a given y) and determines how much of it is covered by occluder rects.

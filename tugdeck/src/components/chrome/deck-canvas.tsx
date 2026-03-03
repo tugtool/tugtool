@@ -8,7 +8,7 @@
  *          the module-level gallerySetterRef.
  *
  * Phase 3: Registers as root responder "deck-canvas" via useResponder.
- *          Handles canvas-level actions: cyclePanel, resetLayout, showSettings,
+ *          Handles canvas-level actions: cycleCard, resetLayout, showSettings,
  *          showComponentGallery. DeckCanvas auto-becomes the first responder when
  *          it registers as a root node (parentId null, per Spec S01 auto-first-
  *          responder behavior), so Ctrl+` works immediately after mount with no
@@ -49,7 +49,7 @@
  * [D01] DeckManager is a subscribable store with one root.render() at mount
  * [D04] DeckCanvas reads state from store, not props
  * [D07] ResponderChainProvider wraps DeckCanvas only
- * Table T01: cyclePanel, resetLayout, showSettings, showComponentGallery
+ * Table T01: cycleCard, resetLayout, showSettings, showComponentGallery
  */
 
 import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from "react";
@@ -120,9 +120,9 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const focusedCardId = deselected ? null : (cards.length > 0 ? cards[cards.length - 1].id : null);
 
   // ---------------------------------------------------------------------------
-  // Refs for cyclePanel closure (registered once on mount via useResponder)
+  // Refs for cycleCard closure (registered once on mount via useResponder)
   // ---------------------------------------------------------------------------
-  // cyclePanel is captured at mount time and never re-registered. All mutable
+  // cycleCard is captured at mount time and never re-registered. All mutable
   // state it accesses must be via refs or stable values.
   // store.handleCardFocused is stable (bound once in DeckManager constructor),
   // so it can be called directly from the closure without a ref.
@@ -175,7 +175,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
-      cyclePanel: () => {
+      cycleCard: () => {
         const c = cardsRef.current;
         if (c.length < 2) return;
         const nextId = c[0].id; // bottom card rotates to top
