@@ -306,20 +306,36 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 ### Phase 5b: Card Tabs (Concept 12)
 
-**Goal**: Cards support multiple tabs. Tab bar appears when a card has more than one tab.
+**Goal**: Cards support multiple tabs with click-based management. Tab bar appears when a card has more than one tab.
 
 **What to do**:
-1. Implement `TugTabBar` component — horizontal tab strip with tab select, close, add, and reorder ([D30])
+1. Implement `TugTabBar` component — horizontal tab strip with tab select, close, and add ([D30])
 2. Wire tab state into Tugcard: `tabs` array, `activeTabId`, content switching ([D31])
 3. Tab bar renders only when `tabs.length > 1` — single-tab cards show no tab bar
-4. Active tab's content mounts; inactive tabs unmount (responder chain follows automatically)
-5. Wire Mac menu command to add a tab to the focused card (for testing)
-6. Verify tab persistence via existing `CardState.tabs` / `CardState.activeTabId` in serialization
-7. Add TugTabBar to the Component Gallery
+4. Tab icons — each tab displays its card type icon from `getRegistration(tab.componentId).defaultMeta.icon`. Same icon source for title bar (single-tab) and tab bar (multi-tab)
+5. Active/inactive tab visual states — active tab has bottom border accent, inactive tabs are muted, close buttons appear on hover
+6. [+] button with type picker dropdown — lists all registered card types (icon + title) from `getAllRegistrations()`. Selecting a type adds a new tab of that type. Mixed-type tabs fully supported — no card type restrictions
+7. Active tab's content mounts; inactive tabs unmount (responder chain follows automatically)
+8. Register `previousTab` and `nextTab` responder actions on Tugcard — switch tabs via the responder chain (no-op for single-tab cards). Keyboard bindings wired in a later phase
+9. Wire Mac menu command to add a tab to the focused card (for testing)
+9. Verify tab persistence via existing `CardState.tabs` / `CardState.activeTabId` in serialization
+10. Add TugTabBar to the Component Gallery
 
-**Result**: A card can host multiple tabs. Switching tabs changes the visible content and the active responder. The tab bar is invisible for the common single-tab case.
+**Result**: A card can host multiple tabs of any type. Switching tabs changes the visible content and the active responder. The tab bar is invisible for the common single-tab case. Tab icons provide visual identity, especially for mixed-type cards.
 
-**Note**: Drag-to-merge and drag-to-detach tab gestures are stretch goals for a later phase. This phase covers click-based tab management only.
+### Phase 5b2: Tab Drag Gestures (Concept 12)
+
+**Goal**: Tabs can be reordered, detached, and merged via drag gestures.
+
+**What to do**:
+1. Drag-to-reorder — drag a tab within its tab bar to change position. Pointer-capture on the tab element, hit-test against tab positions, animated insertion indicator
+2. Drag-to-detach — drag a tab out of the tab bar onto the canvas to create a new single-tab card. Hit-test against the tab bar boundary; once outside, create a new CardState with the detached tab and remove it from the source card
+3. Drag-to-merge — drag a tab from one card onto another card's tab bar to add it as a new tab. Hit-test against all visible tab bars. Works regardless of card type (mixed-type tabs supported)
+4. Visual feedback during drag — ghost tab follows pointer, insertion indicator shows drop position, tab bar highlights as valid drop target
+
+**Result**: Users can freely reorganize tabs between cards via direct manipulation. Combined with Phase 5b's click-based management, tabs are a fully interactive composition feature.
+
+**Note**: Phase 5b2 depends on Phase 5b (tab bar component and tab state management must exist). It does not block any other phase.
 
 ### Phase 5c: Card Snapping (Concept 13)
 
@@ -524,11 +540,11 @@ Responder Chain  Mutation Model                              │
              ▼          ▼          ▼          ▼      ▼       ▼
          Phase 5b:  Phase 5c:  Phase 5d:  Phase 6:  Phase 7:
          Card Tabs  Card Snap  Default    Feed Abs. Motion
-                               Button               ◄── (tokens from Phase 1)
-                                  │
-                                  ▼
-                               Phase 8a:
-                               Chrome
+             │                 Button               ◄── (tokens from Phase 1)
+             ▼                    │
+         Phase 5b2:               ▼
+         Tab Drag              Phase 8a:
+         Gestures              Chrome
                                   │
                                Phase 8b: Form Controls
                                   │
@@ -557,7 +573,8 @@ wave builds on the previous) and depend on Phase 2 (Component Gallery exists) an
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
 motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
 the component library (Phases 8b–8d) for form controls, data display, and visualization.
-Phases 5b, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
+Phases 5b, 5b2, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
+Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab state must exist).
 
 ## Estimated Scope
 
@@ -571,7 +588,8 @@ Phases 5b, 5c, and 5d are enhancements that can land before, during, or after Ph
 | 5 | ~8 files | ~1200 lines |
 | 5a | ~5 files | ~400 lines |
 | 5a2 | ~4 files | ~200 lines |
-| 5b | ~3 files | ~350 lines |
+| 5b | ~4 files | ~400 lines |
+| 5b2 | ~3 files | ~300 lines |
 | 5c | ~1 file | ~50 lines |
 | 5d | ~3 files | ~150 lines |
 | 6 | ~4 files | ~400 lines |
@@ -582,7 +600,7 @@ Phases 5b, 5c, and 5d are enhancements that can land before, during, or after Ph
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~10,850 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~11,200 lines** replacing the current ~9700 lines. The new
 codebase is modestly larger because the 28-component library (Phases 8a–8d)
 adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
 triple-registration redundancy is gone, the adapter layer is gone, and the
@@ -607,16 +625,17 @@ The suggested plan sequence:
 6. `tugways-phase-5-tugcard` — card base component, new DeckManager
 7. `tugways-phase-5a-selection-model` — selection containment, SelectionGuard, developer API
 8. `tugways-phase-5a2-deckmanager-store` — subscribable store, eliminate root.render() calls, useLayoutEffect registration
-9. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
-10. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
-11. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-12. `tugways-phase-6-feed` — feed hooks, data flow
-13. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-14. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-15. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-16. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-17. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-18. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+9. `tugways-phase-5b-card-tabs` — tab bar, icons, type picker, tab switching, active/inactive states
+10. `tugways-phase-5b2-tab-drag-gestures` — reorder, detach to new card, merge into existing card
+11. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+12. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
+13. `tugways-phase-6-feed` — feed hooks, data flow
+14. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+15. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+16. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+17. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+18. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+19. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 

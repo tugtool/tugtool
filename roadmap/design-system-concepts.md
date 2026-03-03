@@ -130,6 +130,7 @@
 | 12 | Concepts 12-13: Card Tabs and Snap Sets | 2026-03-02 | [#log-12](#log-12) |
 | 13 | Concept 14: Selection Model | 2026-03-03 | [#log-13](#log-13) |
 | 18 | Default Button Mechanism | 2026-03-02 | [#log-18](#log-18) |
+| 21 | Concept 12 Revised — Tab Icons, Type Picker, Phase Split | 2026-03-03 | [#log-21](#log-21) |
 
 ---
 
@@ -2360,7 +2361,13 @@ When a second tab is added to a card (via dock command, drag-onto-card gesture, 
 └─────────────────────────────┘
 ```
 
-The title bar displays the **active tab's title**. The card frame's identity follows the active tab.
+The title bar displays the **active tab's title and icon**. The card frame's identity follows the active tab.
+
+#### Tab Icons
+
+Each tab displays an **icon from its card type registration**. The icon is a property of the card type (`TugcardMeta.icon`), not stored on `TabItem`. Both the title bar (single-tab cards) and the tab bar (multi-tab cards) pull from the same source: `getRegistration(tab.componentId).defaultMeta.icon`.
+
+In single-tab cards, the icon appears in the title bar. When a second tab is added, each tab in the tab bar shows its type icon alongside its title. This is especially important for mixed-type tabs — the icon is the quickest way to distinguish a terminal tab from a code tab in the same card.
 
 #### Tabs Are a Tugcard Feature {#d31-tabs-in-tugcard}
 
@@ -2375,7 +2382,7 @@ This separation means CardFrame stays simple — it wraps one Tugcard, which int
 
 #### Tab Types
 
-Tabs can be **same-type** (two terminal tabs in one frame) or **mixed-type** (a terminal tab and a code tab sharing a frame). Each tab is a `TabItem` with its own `componentId` and `id`:
+Tabs can be **same-type** (two terminal tabs in one frame) or **mixed-type** (a terminal tab and a code tab sharing a frame). There is no restriction on mixing card types — CardFrame doesn't care what it contains, and each tab carries its own `componentId` for independent content rendering. Each tab is a `TabItem` with its own `componentId` and `id`:
 
 ```ts
 interface TabItem {
@@ -2390,16 +2397,25 @@ This is the existing `TabItem` interface from `layout-tree.ts` — unchanged. Th
 
 #### Tab Gestures
 
+**Click-based gestures (Phase 5b):**
+
 | Gesture | Action |
 |---------|--------|
 | Click tab | Switch to that tab |
 | Click tab close (×) | Close that tab (with confirmation if configured) |
-| Click [+] button | Add a new tab (same type as active tab by default) |
+| Click [+] button | Open type picker dropdown, then add a tab of the selected type |
+
+The [+] button opens a **type picker dropdown** listing all registered card types (from `getAllRegistrations()`). Each entry shows the card type's icon and title. Selecting a type adds a new tab of that type to the card. This supports mixed-type tabs naturally — the user picks any card type, not just the active tab's type.
+
+**Drag gestures (Phase 5b2):**
+
+| Gesture | Action |
+|---------|--------|
 | Drag tab within bar | Reorder tabs |
 | Drag tab out of bar | Detach into a new card frame |
-| Drag card onto another card's tab bar | Merge as a new tab |
+| Drag tab from one card onto another card's tab bar | Merge as a new tab (any card type) |
 
-The drag-to-merge and drag-to-detach gestures are the primary way users create and break apart tabbed cards. These are stretch goals — click-based tab management is the initial implementation.
+The drag gestures are the primary way users reorganize tabbed cards. They build on the click-based tab infrastructure from Phase 5b and add pointer-capture and hit-testing mechanics.
 
 #### Responder Chain Integration
 
@@ -2413,6 +2429,15 @@ DeckCanvas
 
 Inactive tabs have no responder registration. When a tab switch occurs, the old tab's content responder is unregistered and the new tab's content responder is registered in its place. This is automatic via `useResponder` — when the inactive tab's content unmounts, its responder deregisters; when the new tab's content mounts, it registers.
 
+Tugcard registers two card-level responder actions for tab navigation:
+
+| Action | Behavior |
+|--------|----------|
+| `previousTab` | Switch to the previous tab (wraps to last) |
+| `nextTab` | Switch to the next tab (wraps to first) |
+
+These are no-ops for single-tab cards. Keyboard bindings (e.g., Ctrl+Shift+Tab / Ctrl+Tab) are wired in a later phase — Phase 5b establishes the actions so the responder chain infrastructure is ready.
+
 #### Tab Bar Component
 
 The tab bar is a simple horizontal strip:
@@ -2423,12 +2448,11 @@ The tab bar is a simple horizontal strip:
   activeTabId={activeTabId}
   onTabSelect={(tabId) => setActiveTabId(tabId)}
   onTabClose={(tabId) => removeTab(tabId)}
-  onTabAdd={() => addTab()}
-  onTabReorder={(fromIndex, toIndex) => reorderTabs(fromIndex, toIndex)}
+  onTabAdd={(componentId) => addTab(componentId)}
 />
 ```
 
-Styled with `--td-*` tokens. Active tab has a bottom border accent. Inactive tabs are muted. Close buttons appear on hover. The [+] button is at the end. Overflow scrolls horizontally (no wrapping — tabs are a horizontal rail).
+Each tab renders its **icon** (from `getRegistration(tab.componentId).defaultMeta.icon`) alongside its title. Styled with `--td-*` tokens. Active tab has a bottom border accent. Inactive tabs are muted. Close buttons appear on hover. The [+] button at the end opens a type picker dropdown. Overflow scrolls horizontally (no wrapping — tabs are a horizontal rail).
 
 #### Persistence
 
@@ -2440,6 +2464,9 @@ Tab state is already persisted in `CardState.tabs` and `CardState.activeTabId`. 
 2. **Tabs are a Tugcard composition feature** — CardFrame is unaware. Tugcard manages tab state, tab bar rendering, and content switching internally. ([#d31-tabs-in-tugcard](#d31-tabs-in-tugcard))
 3. **Same data model** — `TabItem`, `CardState.tabs`, `CardState.activeTabId` are unchanged from the existing `layout-tree.ts`. The infrastructure was designed for tabs from the start; only the UI layer needs rebuilding.
 4. **Responder chain follows the active tab** — tab switching is a chain reconfiguration, handled automatically by mount/unmount of content responders.
+5. **Tab icons from card registration** — each tab displays its card type icon from `TugcardMeta.icon`. The icon is a property of the card type, shared between the title bar (single-tab) and the tab bar (multi-tab).
+6. **Mixed-type tabs without restriction** — any card type can share a frame with any other. CardFrame is type-agnostic; each tab carries its own `componentId`.
+7. **Two-phase implementation** — Phase 5b covers click-based tab management (create, switch, close, type picker, icons). Phase 5b2 adds drag gestures (reorder, detach, merge).
 
 ### 13. Card Snap Sets {#c13-snap-sets}
 
@@ -3156,3 +3183,12 @@ New phase **5a2: DeckManager Store Migration** added to the implementation strat
 ### Entry 20: Rules of Tug {#log-20} (2026-03-03)
 
 Added the "Rules of Tug" section at the very top of this document (before the Table of Contents). Eight hard invariants distilled from existing design decisions [D01]-[D42], phrased as prohibitions and imperatives that can be mechanically verified during implementation. The rules exist because the D40-D42 investigation revealed that correct design principles in Concept 5 were not followed during implementation — DeckManager diverged from the subscribable store pattern. Short, scannable rules at the top of the document prevent this class of drift. Referenced from CLAUDE.md so AI agents see the critical rules every session.
+
+### Entry 21: Concept 12 Revised — Tab Icons, Type Picker, Phase Split {#log-21} (2026-03-03)
+
+Revised Concept 12 (Card Tabs) with three additions and a phase split:
+
+- **Tab icons**: Each tab displays its card type icon from `TugcardMeta.icon` (already present in the registration interface). The icon appears in the title bar for single-tab cards and in the tab bar for multi-tab cards. Same source: `getRegistration(tab.componentId).defaultMeta.icon`.
+- **[+] type picker**: The add-tab button opens a dropdown listing all registered card types (icon + title). Selecting a type adds a new tab of that type, enabling mixed-type tabs through normal UI flow.
+- **Mixed-type tabs without restriction**: Strengthened the mixed-type support language. CardFrame is type-agnostic; there is no reason to restrict which card types can share a frame.
+- **Phase split**: Implementation split into Phase 5b (click-based: create, switch, close, icons, type picker, active/inactive states) and Phase 5b2 (drag gestures: reorder within bar, detach to new card, merge into existing card). This keeps 5b focused on data flow and component rendering while 5b2 handles pointer-capture and hit-testing mechanics.
