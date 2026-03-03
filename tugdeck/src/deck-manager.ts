@@ -209,7 +209,7 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Notify subscribers to pick up any external state changes.
-   * The private render() method is gone -- all state changes flow
+   * There is no render() method -- all state changes flow
    * through notify() -> useSyncExternalStore -> synchronous React update.
    */
   refresh(): void {

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-03T19:55:34Z
+---
+
+## step-7: End-to-end verification: all exit criteria confirmed — 422 tests pass, tsc clean, DeckManager is subscribable store with single root.render(), DeckCanvas reads from store, useResponder uses useLayoutEffect.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-6
 date: 2025-03-03T19:49:42Z
 ---
