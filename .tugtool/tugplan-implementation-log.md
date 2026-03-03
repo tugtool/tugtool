@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-03T16:04:26Z
+---
+
+## step-4: Created useSelectionBoundary hook that registers card content areas with SelectionGuard singleton via useEffect. Added barrel export and 5 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-3
 date: 2025-03-03T15:59:39Z
 ---
