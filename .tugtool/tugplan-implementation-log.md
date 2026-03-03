@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-03T04:27:06Z
+---
+
+## step-4: Created CardFrame geometry shell with absolute positioning, RAF-driven drag, 8-handle resize with min-size clamping, focus-on-click, and renderContent injection pattern. 10 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-3
 date: 2025-03-03T04:17:50Z
 ---
