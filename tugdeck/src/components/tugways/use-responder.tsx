@@ -6,11 +6,20 @@
  * node on mount, unregisters on unmount. Returns a stable ResponderScope
  * component that provides this node's ID as the parent context for children.
  *
+ * Registration uses useLayoutEffect ([D41], Rule of Tug #3) so the node is
+ * registered during the commit phase (after DOM mutations, before paint).
+ * Combined with useSyncExternalStore-driven SyncLane renders ([D01]), this
+ * guarantees all responder registrations complete before the next browser
+ * event fires, eliminating the timing gap between imperative state mutations
+ * and React rendering.
+ *
  * [D02] Nested context for parent discovery
+ * [D03] useResponder uses useLayoutEffect for registration
+ * [D41] Use useLayoutEffect for registrations that events depend on
  * Spec S02
  */
 
-import React, { createContext, useContext, useEffect, useRef } from "react";
+import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
 import { ResponderChainContext } from "./responder-chain";
 
 // ---- ResponderParentContext ----
@@ -74,12 +83,16 @@ export function useResponder(options: UseResponderOptions): {
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
-  // Register on mount, unregister on unmount.
+  // Register during the commit phase (useLayoutEffect), unregister on unmount.
+  // useLayoutEffect fires synchronously after all DOM mutations but before the
+  // browser paints, ensuring the responder is registered before any keyboard or
+  // pointer event handler can fire. This is the Rule of Tug #3 / [D41] contract.
+  //
   // manager and parentId are stable references:
   //   - manager is the singleton from context, never replaced.
   //   - parentId changes only if an ancestor re-registers with a new ID,
   //     which is not a normal runtime condition.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const { id, actions = {}, canHandle, validateAction } = optionsRef.current;
     manager.register({ id, parentId, actions, canHandle, validateAction });
     return () => {

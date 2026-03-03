@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-03T19:49:42Z
+---
+
+## step-6: useResponder hook now uses useLayoutEffect for registration, ensuring responder chain is consistent during commit phase before browser paints. All 422 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-5
 date: 2025-03-03T19:45:45Z
 ---
