@@ -391,7 +391,7 @@ export function MutationModelDemo() {
   useCSSVar(
     boxRef,
     "--demo-bg",
-    varOn ? "var(--td-accent-warm)" : "var(--td-surface)"
+    varOn ? "var(--td-accent)" : "var(--td-surface)"
   );
   useDOMClass(boxRef, "demo-highlighted", classOn);
   useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");

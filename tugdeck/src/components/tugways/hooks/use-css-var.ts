@@ -25,7 +25,7 @@
  *
  * ```tsx
  * const ref = useRef<HTMLDivElement>(null);
- * useCSSVar(ref, "--td-accent", isActive ? "var(--td-accent-warm)" : "var(--td-accent-cool)");
+ * useCSSVar(ref, "--td-accent", isActive ? "var(--td-accent)" : "var(--td-accent-cool)");
  * ```
  *
  * @module hooks/use-css-var
@@ -49,7 +49,7 @@ import { useEffect } from "react";
  *
  * @param ref   - React ref to the target DOM element
  * @param name  - CSS custom property name (e.g., "--td-accent")
- * @param value - CSS value string (e.g., "var(--td-accent-warm)")
+ * @param value - CSS value string (e.g., "var(--td-accent)")
  */
 export function useCSSVar(
   ref: React.RefObject<HTMLElement | null>,
