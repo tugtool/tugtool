@@ -260,6 +260,24 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: A card appears on the canvas when triggered from the Mac menu. It has a title bar, can be dragged, resized, snapped, and docked. The old infrastructure is fully replaced.
 
+### Phase 5a: Tugcard Selection Model (Concept 14)
+
+**Goal**: Selection is contained within card boundaries. Card chrome is never selectable. Cmd+A is scoped to the focused card.
+
+**What to do**:
+1. Add `user-select: none` to canvas background, card frames, accessory slots, and resize handles. Add explicit `user-select: text` to card content areas. Title bar header already has `user-select: none` from Phase 5.
+2. Implement `SelectionGuard` singleton — registers card content areas as selection boundaries, tracks which card owns the active selection, clips selection when it escapes the originating card.
+3. Implement `useSelectionBoundary` hook — called by Tugcard on its content area div to register/unregister with SelectionGuard. Card authors never interact with the guard directly.
+4. Implement pointer-clamped selection clipping ([D36]): during drag selection, when the pointer exits the card boundary, clamp coordinates to the boundary edge and use `document.caretPositionFromPoint()` to find the nearest text position. Call `selection.extend()` to pin the selection focus at the edge. Zero visual flash.
+5. Implement `selectionchange` safety net for keyboard-driven selection extension (Shift+arrow).
+6. Implement `data-td-select` attribute API ([D37]) with four modes: default (text), `none`, `all`, `custom`. Wire via CSS rules and SelectionGuard awareness.
+7. Wire `selectAll` responder action in Tugcard ([D38]) to call `selectAllChildren` on the card's content area. Cmd+A now selects within the focused card only.
+8. Add `--td-selection-bg` and `--td-selection-text` semantic tokens to `tokens.css`. Add `::selection` rule to `tugcard.css`.
+9. Add `overscroll-behavior: contain` to card content area CSS to prevent scroll chaining during selection drag.
+10. Test: selection cannot cross card boundaries, chrome is never selectable, Cmd+A is card-scoped, autoscroll works in overflow content.
+
+**Result**: Selection is fully contained within card boundaries. Title bars, accessory slots, canvas gaps, and resize handles are never selectable. Drag selection clamps smoothly at card edges. Cmd+A selects within the focused card. Card authors can mark regions as non-selectable, atomic-selectable, or custom-managed via `data-td-select`.
+
 ### Phase 5b: Card Tabs (Concept 12)
 
 **Goal**: Cards support multiple tabs. Tab bar appears when a card has more than one tab.
@@ -452,6 +470,9 @@ Responder Chain  Mutation Model                              │
              ▼                                               │
          Phase 5: Tugcard Base                               │
              │                                               │
+             ▼                                               │
+         Phase 5a: Selection Model                           │
+             │                                               │
              ├──────────┬──────────┬──────────┬──────┐       │
              ▼          ▼          ▼          ▼      ▼       ▼
          Phase 5b:  Phase 5c:  Phase 6:  Phase 7:  Phase 8a:
@@ -469,16 +490,18 @@ Responder Chain  Mutation Model                              │
                   Phase 9: Card Rebuild
 ```
 
-Phases 3 and 4 can run in parallel. Phases 5b, 5c, 6, 7, and 8a can all start as soon
-as Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 8a (Alerts +
-Title Bar + Dock) only needs Tugcard (Phase 5) and the responder chain (Phase 3, already
-done) — it does not depend on feeds, motion, tabs, or snapping. Phases 8b–8d are
-sequential (each wave builds on the previous) and depend on Phase 2 (Component Gallery
-exists) and Phase 4 (mutation model hooks). They can run in parallel with Phases 5b, 5c,
-6, and 7. Phase 9 (Card Rebuild) is the true convergence point: rebuilt cards need feeds
-(Phase 6) for data, motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for
-title bar and dock, and the component library (Phases 8b–8d) for form controls, data
-display, and visualization. Phases 5b and 5c are enhancements that can land before,
+Phases 3 and 4 can run in parallel. Phase 5a (Selection Model) depends on Phase 5 and
+should be completed before Phases 5b, 5c, 6, 7, and 8a — card content in all subsequent
+phases needs correct selection behavior from the start. Phases 5b, 5c, 6, 7, and 8a can
+all start as soon as Phase 5a completes (Phase 7 also needs Phase 1's motion tokens).
+Phase 8a (Alerts + Title Bar + Dock) only needs Tugcard (Phase 5) and the responder chain
+(Phase 3, already done) — it does not depend on feeds, motion, tabs, or snapping. Phases
+8b–8d are sequential (each wave builds on the previous) and depend on Phase 2 (Component
+Gallery exists) and Phase 4 (mutation model hooks). They can run in parallel with Phases
+5b, 5c, 6, and 7. Phase 9 (Card Rebuild) is the true convergence point: rebuilt cards
+need feeds (Phase 6) for data, motion (Phase 7) for skeleton/transitions, chrome (Phase
+8a) for title bar and dock, and the component library (Phases 8b–8d) for form controls,
+data display, and visualization. Phases 5b and 5c are enhancements that can land before,
 during, or after Phase 9.
 
 ## Estimated Scope
@@ -491,6 +514,7 @@ during, or after Phase 9.
 | 3 | ~4 files | ~500 lines |
 | 4 | ~3 files | ~200 lines |
 | 5 | ~8 files | ~1200 lines |
+| 5a | ~5 files | ~400 lines |
 | 5b | ~3 files | ~350 lines |
 | 5c | ~1 file | ~50 lines |
 | 6 | ~4 files | ~400 lines |
@@ -501,7 +525,7 @@ during, or after Phase 9.
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~10,100 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~10,500 lines** replacing the current ~9700 lines. The new
 codebase is modestly larger because the 28-component library (Phases 8a–8d)
 adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
 triple-registration redundancy is gone, the adapter layer is gone, and the
@@ -524,15 +548,16 @@ The suggested plan sequence:
 4. `tugways-phase-3-responder-chain` — event routing
 5. `tugways-phase-4-mutation-model` — DOM hooks, three-zone discipline
 6. `tugways-phase-5-tugcard` — card base component, new DeckManager
-7. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
-8. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
-9. `tugways-phase-6-feed` — feed hooks, data flow
-10. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-11. `tugways-phase-8a-chrome` — alerts, title bar, dock
-12. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-13. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-14. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-15. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+7. `tugways-phase-5a-selection-model` — selection containment, SelectionGuard, developer API
+8. `tugways-phase-5b-card-tabs` — tab bar, tab switching, multi-tab cards
+9. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+10. `tugways-phase-6-feed` — feed hooks, data flow
+11. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+12. `tugways-phase-8a-chrome` — alerts, title bar, dock
+13. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+14. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+15. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+16. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
