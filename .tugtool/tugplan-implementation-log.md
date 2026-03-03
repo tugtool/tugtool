@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-03T16:10:14Z
+---
+
+## step-5: Integrated SelectionGuard into Tugcard: added contentRef to content div, useSelectionBoundary hook call, and selectAll responder action using selectAllChildren. Created 12 integration tests in selection-model.test.tsx.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-4
 date: 2025-03-03T16:04:26Z
 ---
