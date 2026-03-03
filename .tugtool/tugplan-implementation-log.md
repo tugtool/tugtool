@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-03T05:03:52Z
+---
+
+## step-9: Added Show Test Card NSMenuItem to Developer menu and showTestCard action method calling sendControl('show-card', params: ['component': 'hello']). Swift build succeeded.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-8
 date: 2025-03-03T05:00:19Z
 ---
