@@ -111,6 +111,15 @@ export class DeckManager implements IDeckManagerStore {
   /** Stable bound callback: bring a card to front. */
   public handleCardFocused: (id: string) => void;
 
+  /** Stable bound callback: add a tab to an existing card. */
+  public addTab: (cardId: string, componentId: string) => string | null;
+
+  /** Stable bound callback: remove a tab from a card. */
+  public removeTab: (cardId: string, tabId: string) => void;
+
+  /** Stable bound callback: set the active tab on a card. */
+  public setActiveTab: (cardId: string, tabId: string) => void;
+
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
   /**
@@ -157,6 +166,9 @@ export class DeckManager implements IDeckManagerStore {
     this.handleCardMoved = this.moveCard.bind(this);
     this.handleCardClosed = this.removeCard.bind(this);
     this.handleCardFocused = this.focusCard.bind(this);
+    this.addTab = this._addTab.bind(this);
+    this.removeTab = this._removeTab.bind(this);
+    this.setActiveTab = this._setActiveTab.bind(this);
 
     // Load or build the initial canvas state.
     // subscribers, stateVersion, handleCard*, and deckState must all be initialized
@@ -326,6 +338,118 @@ export class DeckManager implements IDeckManagerStore {
     cards.push(focused);
     this.deckState = { ...this.deckState, cards };
     this.notify();
+  }
+
+  // ---- Tab management (Spec S03) ----
+
+  /**
+   * Add a new tab to an existing card.
+   *
+   * Looks up `componentId` in the card registry. Creates a new `TabItem` with
+   * a random UUID id, appends it to the card's `tabs` array, sets it as
+   * `activeTabId`, shallow-copies `deckState`, notifies subscribers, and
+   * schedules a save.
+   *
+   * @returns The new tab id, or null if the card or registration is not found.
+   */
+  private _addTab(cardId: string, componentId: string): string | null {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) {
+      console.warn(
+        `[DeckManager] addTab: card "${cardId}" not found.`,
+      );
+      return null;
+    }
+    const registration = getRegistration(componentId);
+    if (!registration) {
+      console.warn(
+        `[DeckManager] addTab: no registration found for componentId "${componentId}".`,
+      );
+      return null;
+    }
+
+    const tabId = crypto.randomUUID();
+    const tab: TabItem = {
+      id: tabId,
+      componentId,
+      title: registration.defaultMeta.title,
+      closable: registration.defaultMeta.closable !== false,
+    };
+
+    const updatedCard = {
+      ...card,
+      tabs: [...card.tabs, tab],
+      activeTabId: tabId,
+    };
+
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+    };
+    this.notify();
+    this.scheduleSave();
+    return tabId;
+  }
+
+  /**
+   * Remove a tab from a card.
+   *
+   * If the removed tab was active, activates the previous tab (or first tab if
+   * the removed tab was first). If only one tab remains after removal, the card
+   * stays with that tab. If the last tab is removed, the card is removed entirely.
+   */
+  private _removeTab(cardId: string, tabId: string): void {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    const tabIndex = card.tabs.findIndex((t) => t.id === tabId);
+    if (tabIndex === -1) return;
+
+    // If this is the last tab, remove the card entirely.
+    if (card.tabs.length === 1) {
+      this.removeCard(cardId);
+      return;
+    }
+
+    const newTabs = card.tabs.filter((t) => t.id !== tabId);
+
+    // Determine the new active tab.
+    let newActiveTabId = card.activeTabId;
+    if (card.activeTabId === tabId) {
+      // Activate previous tab, or first tab if removed was first.
+      const newIndex = tabIndex > 0 ? tabIndex - 1 : 0;
+      newActiveTabId = newTabs[newIndex].id;
+    }
+
+    const updatedCard = { ...card, tabs: newTabs, activeTabId: newActiveTabId };
+
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+    };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  /**
+   * Set the active tab on a card.
+   *
+   * No-op if the tabId is not in the card's tabs array.
+   */
+  private _setActiveTab(cardId: string, tabId: string): void {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) return;
+    if (!card.tabs.some((t) => t.id === tabId)) return;
+    if (card.activeTabId === tabId) return;
+
+    const updatedCard = { ...card, activeTabId: tabId };
+
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+    };
+    this.notify();
+    this.scheduleSave();
   }
 
   // ---- Cascade positioning ----

@@ -80,6 +80,21 @@ export interface CardRegistration {
   ) => React.ReactElement<{ onClose?: () => void }>;
   /** Default title, icon, and closable for this card type. */
   defaultMeta: TugcardMeta;
+  /**
+   * Returns just the content component (e.g. `<HelloCardContent />`) without
+   * the Tugcard chrome. Used by the multi-tab rendering path in DeckCanvas so
+   * a single Tugcard element can swap content on tab switch without nesting.
+   *
+   * **Authoritative reference:** Spec S05, [D08] contentFactory.
+   */
+  contentFactory?: (cardId: string) => React.ReactNode;
+  /**
+   * Feed IDs for the multi-tab rendering path. Defaults to `[]` when omitted.
+   * DeckCanvas reads `registration.defaultFeedIds ?? []` when constructing a
+   * multi-tab Tugcard directly. Forward-compatible hook for Phase 6 feed-aware
+   * card types.
+   */
+  defaultFeedIds?: string[];
 }
 
 /** Module-level registry map. Keyed by componentId. */
