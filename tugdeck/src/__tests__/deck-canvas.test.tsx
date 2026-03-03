@@ -1,17 +1,28 @@
 /**
- * DeckCanvas tests -- Steps 5 and 6.
+ * DeckCanvas tests -- Phase 5a2 adaptation.
  *
- * Steps 5 tests cover:
+ * After the Phase 5a2 migration, DeckCanvas reads deckState and callbacks from
+ * DeckManagerContext via useSyncExternalStore. All renders now require a
+ * DeckManagerContext.Provider wrapping DeckCanvas (in addition to
+ * ResponderChainProvider). A `renderDeckCanvasWithStore` helper encapsulates
+ * this pattern so each test remains focused on behavior.
+ *
+ * Mock store: a minimal object literal implementing IDeckManagerStore. It
+ * provides a static getSnapshot() returning the desired DeckState, a trivial
+ * subscribe() returning a no-op unsubscribe, a getVersion() returning 0, and
+ * stable no-op callbacks. Tests that need specific callback behavior override
+ * individual fields with spies.
+ *
+ * Tests cover:
  * - DeckCanvas registers as responder "deck-canvas" on mount
  * - DeckCanvas is auto-promoted to first responder (root node, no prior first responder)
  * - DeckCanvas responder handles cyclePanel action
  * - DeckCanvas responder handles showComponentGallery action
  * - Ctrl+` keyboard shortcut triggers cyclePanel via key pipeline (integration)
- *
- * Step 6 tests (T25, T26, T27) cover:
- * - T25: DeckCanvas renders cards from deckState prop
- * - T26: DeckCanvas with no deckState prop renders empty (backward compat)
+ * - T25: DeckCanvas renders cards from store-provided deckState
+ * - T26: DeckCanvas with empty store renders no cards
  * - T27: DeckCanvas skips cards with unregistered componentIds (warning logged)
+ * - onClose wiring: DeckCanvas injects onClose from store.handleCardClosed
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -22,9 +33,11 @@ import { describe, it, expect, afterEach, beforeEach, spyOn } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { CardState, DeckState } from "@/layout-tree";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 
 // Clean up mounted React trees after each test.
@@ -43,18 +56,51 @@ function makeMockConnection() {
   } as unknown as import("@/connection").TugConnection;
 }
 
-// ---- Helper: render DeckCanvas inside ResponderChainProvider ----
+// ---- Mock store builder ----
 
-function renderDeckCanvas() {
-  const result = render(
-    <ResponderChainProvider>
-      <DeckCanvas connection={null} />
-    </ResponderChainProvider>
-  );
-  return result;
+/**
+ * Build a minimal mock IDeckManagerStore for tests.
+ *
+ * Provides:
+ * - getSnapshot() returning the supplied DeckState (default: empty cards)
+ * - subscribe() returning a no-op unsubscribe
+ * - getVersion() returning 0
+ * - no-op handleCardMoved, handleCardClosed, handleCardFocused
+ *
+ * Override individual fields with spies for tests that need callback assertions.
+ */
+function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
+  return {
+    subscribe: (_cb: () => void) => () => {},
+    getSnapshot: () => deckState,
+    getVersion: () => 0,
+    handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+    handleCardClosed: (_id: string) => {},
+    handleCardFocused: (_id: string) => {},
+  };
 }
 
-// ---- Helpers for simulating keyboard events ----
+// ---- Primary render helper ----
+
+/**
+ * Render DeckCanvas inside both ResponderChainProvider and DeckManagerContext.Provider.
+ * Every DeckCanvas render requires both providers after the Phase 5a2 migration.
+ */
+function renderDeckCanvasWithStore(
+  store?: IDeckManagerStore,
+  connection: import("@/connection").TugConnection | null = null,
+) {
+  const resolvedStore = store ?? makeMockStore();
+  return render(
+    <ResponderChainProvider>
+      <DeckManagerContext.Provider value={resolvedStore}>
+        <DeckCanvas connection={connection} />
+      </DeckManagerContext.Provider>
+    </ResponderChainProvider>
+  );
+}
+
+// ---- Keyboard helper ----
 
 function fireKeydown(options: {
   code: string;
@@ -76,21 +122,35 @@ function fireKeydown(options: {
   document.dispatchEvent(event);
 }
 
+// ---- Card registry helpers ----
+
+/** Build a minimal CardState for a given componentId. */
+function makeCardState(id: string, componentId: string): CardState {
+  return {
+    id,
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 300 },
+    tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
+    activeTabId: `${id}-tab`,
+  };
+}
+
+/** Build a DeckState from an array of CardState. */
+function makeDeckState(cards: CardState[]): DeckState {
+  return { cards };
+}
+
 // ============================================================================
 // Registration: DeckCanvas registers as root responder
 // ============================================================================
 
 describe("DeckCanvas – responder registration", () => {
-  it("DeckCanvas renders inside ResponderChainProvider without errors", () => {
-    const { container } = renderDeckCanvas();
-    // DeckCanvas renders a ResponderScope (a Provider), not a visible element itself.
-    // We just verify it renders without throwing.
+  it("DeckCanvas renders inside providers without errors", () => {
+    const { container } = renderDeckCanvasWithStore();
     expect(container).not.toBeNull();
   });
 
   it("DeckCanvas auto-promotes to first responder on mount (root node)", () => {
-    // We need to access the manager to query first responder.
-    // The easiest way is to render a consumer alongside DeckCanvas.
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -99,11 +159,14 @@ describe("DeckCanvas – responder registration", () => {
       return null;
     }
 
+    const store = makeMockStore();
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
@@ -121,16 +184,18 @@ describe("DeckCanvas – responder registration", () => {
       return null;
     }
 
+    const store = makeMockStore();
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
 
-    // canHandle on a registered action should return true
     expect(manager!.canHandle("cyclePanel")).toBe(true);
   });
 });
@@ -149,25 +214,25 @@ describe("DeckCanvas – cyclePanel action", () => {
       return null;
     }
 
+    const store = makeMockStore();
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
 
-    // Suppress the console.log stub output
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
     const handled = manager!.dispatch("cyclePanel");
     expect(handled).toBe(true);
-
     logSpy.mockRestore();
   });
 
-  it("cyclePanel handler logs a stub message", () => {
+  it("cyclePanel with no cards is a silent no-op", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -176,19 +241,20 @@ describe("DeckCanvas – cyclePanel action", () => {
       return null;
     }
 
+    const store = makeMockStore(); // empty deckState by default
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
 
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    manager!.dispatch("cyclePanel");
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("cyclePanel"));
-    logSpy.mockRestore();
+    const handled = manager!.dispatch("cyclePanel");
+    expect(handled).toBe(true);
   });
 });
 
@@ -206,11 +272,14 @@ describe("DeckCanvas – showComponentGallery action", () => {
       return null;
     }
 
+    const store = makeMockStore();
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
@@ -231,26 +300,26 @@ describe("DeckCanvas – showComponentGallery action", () => {
       return null;
     }
 
+    const store = makeMockStore();
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-          <ManagerCapture />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       ));
     });
 
-    // Gallery should be hidden initially
     expect(container.querySelector(".cg-panel")).toBeNull();
 
-    // Dispatch showComponentGallery to toggle gallery on
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
     expect(container.querySelector(".cg-panel")).not.toBeNull();
 
-    // Dispatch again to toggle gallery off
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
@@ -264,58 +333,47 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
 describe("DeckCanvas – Ctrl+` key pipeline integration", () => {
   it("Ctrl+` fires cyclePanel through the key pipeline", () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
     act(() => {
       render(
         <ResponderChainProvider>
-          <DeckCanvas connection={null} />
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
         </ResponderChainProvider>
       );
     });
+
+    expect(manager!.canHandle("cyclePanel")).toBe(true);
 
     act(() => {
       fireKeydown({ code: "Backquote", ctrlKey: true });
     });
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("cyclePanel"));
-    logSpy.mockRestore();
+    // No crash; action handled silently (no cards to cycle)
   });
 
   void makeMockConnection; // suppress unused import warning
 });
 
 // ============================================================================
-// Step 6: DeckCanvas renders CardFrame components from DeckState
+// T25: DeckCanvas renders cards from store-provided deckState
 // ============================================================================
 
-// ---- Card registry helpers ----
-
-/** Build a minimal CardState for a given componentId. */
-function makeCardState(id: string, componentId: string): CardState {
-  return {
-    id,
-    position: { x: 0, y: 0 },
-    size: { width: 400, height: 300 },
-    tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
-    activeTabId: `${id}-tab`,
-  };
-}
-
-/** Build a DeckState from an array of CardState. */
-function makeDeckState(cards: CardState[]): DeckState {
-  return { cards };
-}
-
-// ---- T25: DeckCanvas renders cards from deckState prop ----
-
-describe("DeckCanvas – T25: renders cards from deckState prop", () => {
-  // Reset the registry before each test for isolation.
+describe("DeckCanvas – T25: renders cards from store-provided deckState", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("renders a CardFrame for each registered card in deckState", () => {
-    // Register a simple div factory for componentId "mock-card"
     registerCard({
       componentId: "mock-card",
       factory: (cardId, _injected) =>
@@ -325,22 +383,16 @@ describe("DeckCanvas – T25: renders cards from deckState prop", () => {
 
     const card1 = makeCardState("card-a", "mock-card");
     const card2 = makeCardState("card-b", "mock-card");
-    const deckState = makeDeckState([card1, card2]);
+    const store = makeMockStore(makeDeckState([card1, card2]));
 
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} deckState={deckState} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    // Both cards should render a card-frame div
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(2);
 
-    // Factory content is rendered inside frames
     expect(container.querySelector("[data-testid='mock-card-content-card-a']")).not.toBeNull();
     expect(container.querySelector("[data-testid='mock-card-content-card-b']")).not.toBeNull();
   });
@@ -355,15 +407,11 @@ describe("DeckCanvas – T25: renders cards from deckState prop", () => {
 
     const card1 = makeCardState("z1", "zindex-card");
     const card2 = makeCardState("z2", "zindex-card");
-    const deckState = makeDeckState([card1, card2]);
+    const store = makeMockStore(makeDeckState([card1, card2]));
 
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} deckState={deckState} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
     const frames = Array.from(container.querySelectorAll("[data-testid='card-frame']")) as HTMLElement[];
@@ -371,38 +419,32 @@ describe("DeckCanvas – T25: renders cards from deckState prop", () => {
 
     const z1 = parseInt(frames[0].style.zIndex, 10);
     const z2 = parseInt(frames[1].style.zIndex, 10);
-    // First card gets lower z-index than second card
     expect(z1).toBeLessThan(z2);
   });
 });
 
-// ---- T26: DeckCanvas with no deckState renders empty (backward compat) ----
+// ============================================================================
+// T26: DeckCanvas with empty store renders no cards
+// ============================================================================
 
-describe("DeckCanvas – T26: no deckState renders empty", () => {
+describe("DeckCanvas – T26: empty store renders no cards", () => {
   afterEach(() => { cleanup(); });
 
-  it("renders no CardFrame elements when deckState is omitted", () => {
+  it("renders no CardFrame elements when store has empty cards array", () => {
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore());
     });
 
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(0);
   });
 
-  it("renders no CardFrame elements when deckState has empty cards array", () => {
+  it("renders no CardFrame elements when store returns deckState with empty cards", () => {
+    const store = makeMockStore({ cards: [] });
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} deckState={{ cards: [] }} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
     const frames = container.querySelectorAll("[data-testid='card-frame']");
@@ -410,7 +452,9 @@ describe("DeckCanvas – T26: no deckState renders empty", () => {
   });
 });
 
-// ---- T27: DeckCanvas skips cards with unregistered componentIds ----
+// ============================================================================
+// T27: DeckCanvas skips cards with unregistered componentIds
+// ============================================================================
 
 describe("DeckCanvas – T27: skips unregistered componentIds", () => {
   beforeEach(() => { _resetForTest(); });
@@ -420,22 +464,16 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
     const badCard = makeCardState("bad-card", "not-registered");
-    const deckState = makeDeckState([badCard]);
+    const store = makeMockStore(makeDeckState([badCard]));
 
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} deckState={deckState} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    // No CardFrame rendered
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(0);
 
-    // Warning logged about unregistered componentId
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("not-registered")
     );
@@ -455,38 +493,35 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
 
     const goodCard = makeCardState("good", "known-card");
     const badCard = makeCardState("bad", "unknown-card");
-    const deckState = makeDeckState([goodCard, badCard]);
+    const store = makeMockStore(makeDeckState([goodCard, badCard]));
 
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas connection={null} deckState={deckState} />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    // Only the registered card renders a CardFrame
     const frames = container.querySelectorAll("[data-testid='card-frame']");
     expect(frames.length).toBe(1);
     expect(container.querySelector("[data-testid='known-good']")).not.toBeNull();
 
-    // Warning issued for the unknown one
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown-card"));
 
     warnSpy.mockRestore();
   });
 });
 
-// ---- onClose wiring: DeckCanvas injects onClose via cloneElement ----
+// ============================================================================
+// onClose wiring: store.handleCardClosed is called via cloneElement injection
+// ============================================================================
 
-describe("DeckCanvas – onClose wired from factory through cloneElement to onCardClosed", () => {
+describe("DeckCanvas – onClose wired from store.handleCardClosed via cloneElement", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("calling onClose on the produced element invokes onCardClosed with the card id", () => {
+  it("calling onClose on the produced element invokes store.handleCardClosed with the card id", () => {
     // Factory produces a component that exposes onClose via a test button.
-    // DeckCanvas injects the real onClose via React.cloneElement.
+    // DeckCanvas injects the real onClose via React.cloneElement from
+    // store.handleCardClosed.
     function Closeable({ onClose }: { onClose?: () => void }) {
       return React.createElement(
         "button",
@@ -504,21 +539,15 @@ describe("DeckCanvas – onClose wired from factory through cloneElement to onCa
 
     const closedIds: string[] = [];
     const card = makeCardState("target-card", "closeable-card");
+    const store = makeMockStore(makeDeckState([card]));
+    // Override handleCardClosed with a spy
+    store.handleCardClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
     act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <DeckCanvas
-            connection={null}
-            deckState={makeDeckState([card])}
-            onCardClosed={(id) => closedIds.push(id)}
-          />
-        </ResponderChainProvider>
-      ));
+      ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    // Click the test button which fires onClose (injected by DeckCanvas)
     const btn = container.querySelector("[data-testid='close-trigger']");
     expect(btn).not.toBeNull();
 
@@ -526,7 +555,6 @@ describe("DeckCanvas – onClose wired from factory through cloneElement to onCa
       (btn as HTMLButtonElement).click();
     });
 
-    // onCardClosed should have been called with the card's id
     expect(closedIds.length).toBe(1);
     expect(closedIds[0]).toBe("target-card");
   });

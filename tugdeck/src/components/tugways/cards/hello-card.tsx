@@ -81,7 +81,7 @@ export function registerHelloCard(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "Hello", closable: true }}
+        meta={{ title: "Hello", icon: "Star", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -89,6 +89,6 @@ export function registerHelloCard(): void {
         <HelloCardContent />
       </Tugcard>
     ),
-    defaultMeta: { title: "Hello", closable: true },
+    defaultMeta: { title: "Hello", icon: "Star", closable: true },
   });
 }

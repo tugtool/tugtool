@@ -374,3 +374,188 @@ describe("DeckManager.getDeckState", () => {
     expect(manager.getDeckState().cards.length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5a2 store API tests
+// ---------------------------------------------------------------------------
+
+describe("DeckManager store API – subscribe / unsubscribe", () => {
+  it("subscribe returns an unsubscribe function; calling it removes the listener", () => {
+    registerCard(makeRegistration("hello"));
+
+    let callCount = 0;
+    const unsubscribe = manager.subscribe(() => {
+      callCount += 1;
+    });
+
+    // Trigger a notification via addCard
+    manager.addCard("hello");
+    expect(callCount).toBe(1);
+
+    // Unsubscribe and trigger again -- callback must not fire
+    unsubscribe();
+    manager.addCard("hello");
+    expect(callCount).toBe(1);
+  });
+
+  it("multiple subscribers each receive the callback on notify", () => {
+    registerCard(makeRegistration("hello"));
+
+    let callsA = 0;
+    let callsB = 0;
+    const unsubA = manager.subscribe(() => { callsA += 1; });
+    const unsubB = manager.subscribe(() => { callsB += 1; });
+
+    manager.addCard("hello");
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+
+    // Unsubscribe A; only B should fire on the next mutation
+    unsubA();
+    manager.addCard("hello");
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(2);
+
+    unsubB();
+  });
+});
+
+describe("DeckManager store API – getSnapshot", () => {
+  it("getSnapshot() returns current deckState", () => {
+    const snapshot = manager.getSnapshot();
+    expect(snapshot).toBeDefined();
+    expect(Array.isArray(snapshot.cards)).toBe(true);
+  });
+
+  it("after addCard(), getSnapshot() reflects the new card", () => {
+    registerCard(makeRegistration("hello"));
+    const before = manager.getSnapshot();
+    expect(before.cards.length).toBe(0);
+
+    manager.addCard("hello");
+
+    const after = manager.getSnapshot();
+    expect(after.cards.length).toBe(1);
+    // New object reference after mutation (shallow copy invariant)
+    expect(after).not.toBe(before);
+  });
+
+  it("getDeckState() returns the same value as getSnapshot()", () => {
+    registerCard(makeRegistration("hello"));
+    manager.addCard("hello");
+    expect(manager.getDeckState()).toBe(manager.getSnapshot());
+  });
+});
+
+describe("DeckManager store API – getVersion", () => {
+  it("initial version is 0", () => {
+    expect(manager.getVersion()).toBe(0);
+  });
+
+  it("getVersion() increments after addCard()", () => {
+    registerCard(makeRegistration("hello"));
+    const v0 = manager.getVersion();
+    manager.addCard("hello");
+    expect(manager.getVersion()).toBe(v0 + 1);
+  });
+
+  it("getVersion() increments after removeCard()", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const v1 = manager.getVersion();
+    manager.removeCard(cardId);
+    expect(manager.getVersion()).toBe(v1 + 1);
+  });
+
+  it("getVersion() increments after moveCard()", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    const v1 = manager.getVersion();
+    manager.moveCard(cardId, { x: 10, y: 20 }, { width: 300, height: 200 });
+    expect(manager.getVersion()).toBe(v1 + 1);
+  });
+
+  it("getVersion() increments after focusCard() that moves the card", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const id1 = manager.addCard("hello") as string;
+    manager.addCard("terminal");
+    const vBefore = manager.getVersion();
+    // id1 is not at the end, so focusCard should fire notify
+    manager.focusCard(id1);
+    expect(manager.getVersion()).toBe(vBefore + 1);
+  });
+
+  it("getVersion() does NOT increment for focusCard() no-op (already top-most)", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    manager.addCard("hello");
+    const id2 = manager.addCard("terminal") as string;
+    const vBefore = manager.getVersion();
+    // id2 is already last -- focusCard is a no-op, no notify
+    manager.focusCard(id2);
+    expect(manager.getVersion()).toBe(vBefore);
+  });
+
+  it("version increments monotonically across multiple mutations", () => {
+    registerCard(makeRegistration("hello"));
+    const v0 = manager.getVersion();
+    manager.addCard("hello");
+    const v1 = manager.getVersion();
+    manager.addCard("hello");
+    const v2 = manager.getVersion();
+    expect(v1).toBeGreaterThan(v0);
+    expect(v2).toBeGreaterThan(v1);
+  });
+});
+
+describe("DeckManager store API – subscriber callback timing", () => {
+  it("subscriber fires on addCard()", () => {
+    registerCard(makeRegistration("hello"));
+    let fired = false;
+    manager.subscribe(() => { fired = true; });
+    manager.addCard("hello");
+    expect(fired).toBe(true);
+  });
+
+  it("subscriber fires on removeCard()", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    let fired = false;
+    manager.subscribe(() => { fired = true; });
+    manager.removeCard(cardId);
+    expect(fired).toBe(true);
+  });
+
+  it("subscriber fires on moveCard()", () => {
+    registerCard(makeRegistration("hello"));
+    const cardId = manager.addCard("hello") as string;
+    let fired = false;
+    manager.subscribe(() => { fired = true; });
+    manager.moveCard(cardId, { x: 5, y: 10 }, { width: 300, height: 200 });
+    expect(fired).toBe(true);
+  });
+
+  it("subscriber fires on focusCard() that reorders cards", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    const id1 = manager.addCard("hello") as string;
+    manager.addCard("terminal");
+    let fired = false;
+    manager.subscribe(() => { fired = true; });
+    manager.focusCard(id1);
+    expect(fired).toBe(true);
+  });
+
+  it("subscriber does NOT fire on focusCard() no-op", () => {
+    registerCard(makeRegistration("hello"));
+    registerCard(makeRegistration("terminal"));
+    manager.addCard("hello");
+    const id2 = manager.addCard("terminal") as string;
+    let fired = false;
+    manager.subscribe(() => { fired = true; });
+    // id2 is already last -- no-op, no notify
+    manager.focusCard(id2);
+    expect(fired).toBe(false);
+  });
+});

@@ -53,5 +53,8 @@ body {
   --tways-canvas: #b0ab9f;
   --tways-header-active: #d4b888;
   --tways-header-inactive: #c8c0b0;
+  --tways-icon-inactive: #a29b8a;
   --tways-grid-color: rgba(0, 0, 0, 0.06);
+  --tways-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --tways-card-dim-overlay: rgba(0, 0, 0, 0.08);
 }

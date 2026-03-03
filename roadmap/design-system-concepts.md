@@ -1,5 +1,20 @@
 # Tugways Design System — Concepts and Roadmap {#top}
 
+## Rules of Tug {#rules-of-tug}
+
+*Invariants for tugways implementation. Every rule traces to a design decision. Violating any rule requires updating the design decision first — never silently diverge.*
+
+1. **Never call `root.render()` after initial mount.** All state changes flow through subscribable stores or direct DOM manipulation. [D40, D42]
+2. **Read external state with `useSyncExternalStore` only.** No `useState` + manual sync. No `useEffect` that copies external values into React state. [D40]
+3. **Use `useLayoutEffect` for registrations that must be complete before events fire.** Responder nodes, selection boundaries, and any setup that keyboard/pointer handlers depend on. [D41]
+4. **Appearance changes go through CSS and DOM, never React state.** Class toggles, attribute changes, and style mutations that don't affect React's subtree are free. Use them. [D08, D09]
+5. **Every action handler must access current state through refs or stable singletons, never stale closures.** `useResponder` registers actions once at mount. If your handler reads a variable that changes over time, it must go through a ref. [D07]
+6. **Selection stays inside card boundaries.** `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D02, D03]
+7. **Tugcard composes chrome; CardFrame owns geometry.** Cards never set their own position, size, or z-index. CardFrame handles drag, resize, and stacking. Tugcard handles header, icon, accessory, and content. [D01, D03]
+8. **One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to components. CardFrame owns geometry. Tugcard owns chrome. Card content owns domain logic. Don't reach across layers. [D01, D03, D05]
+
+---
+
 ## Table of Contents {#toc}
 
 ### Concept Areas
@@ -66,6 +81,9 @@
 | [D37] | Four select modes for card content regions | Concept 14 | [#d37-select-modes](#d37-select-modes) |
 | [D38] | Cmd+A scoped to focused card via responder chain | Concept 14 | [#d38-scoped-selectall](#d38-scoped-selectall) |
 | [D39] | Default button: Enter key routes to designated button via responder chain | Concept 3 | [#d39-default-button](#d39-default-button) |
+| [D40] | DeckManager is a subscribable store — one `root.render()` at mount | Concept 5 | [#d40-deckmanager-store](#d40-deckmanager-store) |
+| [D41] | `useResponder` uses `useLayoutEffect` for registration | Concept 5 | [#d41-layout-effect-registration](#d41-layout-effect-registration) |
+| [D42] | No repeated `root.render()` from external code | Concept 5 | [#d42-no-repeated-root-render](#d42-no-repeated-root-render) |
 
 ### Key Architectural Patterns
 
@@ -1215,6 +1233,169 @@ Excalidraw (MIT licensed, github.com/excalidraw/excalidraw) is the closest open-
 3. **Soft-delete, don't remove.** Excalidraw never removes elements from arrays — deletion sets `isDeleted: true`. This simplifies undo/redo and prevents array index invalidation during iteration. We should consider similar patterns for card state and feed data.
 
 4. **Don't underutilize your atomic state library.** Excalidraw's Jotai integration is minimal (two tiny files). Most state lives in the class component's `this.state`. They acknowledged this should expand. We should be intentional from the start about what goes in external stores vs. React state, rather than defaulting everything to React and migrating later.
+
+#### React 19 Rendering Model and External State {#react19-rendering-model}
+
+The three-zone model (D12) and the Excalidraw precedent establish the *principle*: imperative systems like DeckManager and ResponderChainManager operate outside React state. But the principle alone is not enough — we must also understand how React 19's rendering pipeline interacts with external state, because getting this wrong produces timing bugs that are invisible in tests and devastating in practice.
+
+##### The `createRoot().render()` Timing Trap
+
+In React 19, **`createRoot().render()` is asynchronous.** It schedules work via `queueMicrotask()` and returns immediately. When the call returns:
+
+- No components have re-rendered
+- No DOM mutations have occurred
+- No `useEffect` or `useLayoutEffect` callbacks have fired
+- No `useSyncExternalStore` subscriptions have been notified
+
+This is confirmed by the React team ([GitHub #32811](https://github.com/facebook/react/issues/32811)): *"Once we start rendering, it's synchronous. But the actual `render()` call is not and always runs in the next microtask."*
+
+The danger: if an external class calls `root.render()` and then immediately performs imperative operations that depend on the rendered state, those operations see a stale React tree. The render hasn't happened yet.
+
+##### The Concrete Bug
+
+DeckManager calls `this.reactRoot.render()` on every state mutation — `addCard`, `removeCard`, `moveCard`, `focusCard`, `applyLayout`, etc. When the responder chain's `cyclePanel` handler runs:
+
+```
+Time 0:   cyclePanel calls DeckManager.focusCard(nextId)
+          → DeckManager reorders cards, calls root.render()
+          → root.render() schedules microtask, RETURNS IMMEDIATELY
+          → DeckManager.focusCard() returns
+
+Time 0+:  cyclePanel calls manager.makeFirstResponder(nextId)
+          → Sets firstResponderId to nextId (synchronous, immediate)
+          → React tree has NOT re-rendered — effects have NOT fired
+
+Microtask: React processes the render
+           → Components see new props
+           → useEffect registrations fire (if any deps changed)
+```
+
+This creates a dual-update-path problem: some state flows through `root.render()` (async), component state flows through `setState` (batched), and imperative mutations happen synchronously — three different timing guarantees in one handler. Even when the individual operations are correct, the different timing can produce inconsistencies.
+
+##### The Excalidraw Solution
+
+Excalidraw faces the same tension — imperative canvas state + React UI — and solves it definitively:
+
+1. **Never calls `root.render()` from outside React.** One initial mount, then all updates flow through `this.setState()` or store subscriptions. This is the single most important architectural decision.
+2. **Scene class as a subscribable store.** Elements live in a plain `Scene` class (not React state). When elements change, `Scene.triggerUpdate()` fires callbacks, which call `this.setState({})` to trigger re-renders. Components read fresh data from `Scene` during render.
+3. **ActionManager receives getter functions.** Instead of capturing values in closures, event handlers access state via `() => this.state` — always fresh.
+
+The lesson: the async render gap disappears when you stop calling `root.render()` from imperative code. External stores notify React through `useSyncExternalStore`, which triggers `SyncLane` (synchronous) renders — no microtask delay, no gap.
+
+##### Design Decisions {#d40-deckmanager-store}
+
+**[D40] DeckManager is a subscribable store — one `root.render()` at mount.** DeckManager gains `subscribe`/`getSnapshot` methods following the `useSyncExternalStore` contract. The constructor calls `root.render()` exactly once to mount the React tree. All subsequent state changes mutate `this.deckState`, increment a version counter, and notify subscribers. DeckCanvas reads deckState via `useSyncExternalStore(manager.subscribe, manager.getSnapshot)` instead of receiving it as props from `root.render()`.
+
+This eliminates the async render gap entirely: `useSyncExternalStore` forces `SyncLane` updates (always synchronous, no concurrent interleaving), preventing tearing between store state and rendered UI.
+
+```typescript
+// DeckManager — subscribable store pattern
+class DeckManager {
+  private subscribers = new Set<() => void>();
+  private stateVersion = 0;
+
+  subscribe = (callback: () => void): (() => void) => {
+    this.subscribers.add(callback);
+    return () => this.subscribers.delete(callback);
+  };
+
+  getSnapshot = (): DeckState => this.deckState;
+
+  private notify(): void {
+    this.stateVersion++;
+    for (const cb of this.subscribers) cb();
+  }
+
+  focusCard(cardId: string): void {
+    // ... reorder cards ...
+    this.deckState = { ...this.deckState, cards };
+    this.notify();  // NOT this.render()
+  }
+}
+
+// Constructor — ONE root.render(), ever:
+this.reactRoot.render(
+  <DeckManagerContext.Provider value={this}>
+    <TugThemeProvider initialTheme={this.initialTheme}>
+      <ErrorBoundary>
+        <ResponderChainProvider>
+          <DeckCanvas connection={this.connection} />
+        </ResponderChainProvider>
+      </ErrorBoundary>
+    </TugThemeProvider>
+  </DeckManagerContext.Provider>
+);
+```
+
+**[D41] `useResponder` uses `useLayoutEffect` for registration.** {#d41-layout-effect-registration} Responder chain registration switches from `useEffect` to `useLayoutEffect`. `useLayoutEffect` runs synchronously during the commit phase — after DOM mutations but before the browser processes the next event. This ensures responder nodes are always registered before any keyboard or pointer event can fire.
+
+Combined with D40 (`useSyncExternalStore` forces `SyncLane` renders), this guarantees: when a store notification triggers a re-render, all responder registrations complete in the same synchronous commit phase, before the browser returns to the event loop.
+
+```typescript
+// use-responder.tsx — registration in commit phase
+useLayoutEffect(() => {
+  const { id, actions = {}, canHandle, validateAction } = optionsRef.current;
+  manager.register({ id, parentId, actions, canHandle, validateAction });
+  return () => { manager.unregister(id); };
+}, [manager, parentId]);
+```
+
+**[D42] No repeated `root.render()` from external code.** {#d42-no-repeated-root-render} After the initial mount, external-to-React code never calls `root.render()`. All state changes flow through subscribable stores (`useSyncExternalStore`) or imperative DOM manipulation (appearance zone). This eliminates the async render gap — the source of timing bugs when imperative operations run between `root.render()` and the actual render.
+
+The one exception: `DeckManager.destroy()` calls `reactRoot.unmount()` on teardown.
+
+##### Timing Guarantees
+
+With D40 + D41 + D42, the event flow for `cyclePanel` becomes deterministic:
+
+```
+Time 0:   cyclePanel calls DeckManager.focusCard(nextId)
+          → DeckManager reorders cards, calls this.notify()
+          → Subscriber callbacks fire synchronously
+          → useSyncExternalStore detects version change
+
+Time 0+:  cyclePanel calls setDeselected(false)
+          → React setState (batched with the SyncLane update)
+
+Time 0++: cyclePanel calls manager.makeFirstResponder(nextId)
+          → Imperative, immediate
+
+Time 0+++: cyclePanel returns, captureListener returns
+
+Microtask: React processes the batched SyncLane render
+           → DeckCanvas re-renders with new deckState (from store)
+           → New deselected state applied
+           → useLayoutEffect: responder registrations updated
+           → Commit complete — all state consistent
+
+Next event: Ctrl+` fires
+           → dispatch("cyclePanel") walks: card → deck-canvas → found
+           → Responder chain is fully consistent
+```
+
+The key guarantee: by the time the next keyboard event fires, React has committed, `useLayoutEffect` has run, and the responder chain is fully up-to-date.
+
+##### When `flushSync` Is and Isn't Needed
+
+`flushSync` forces React to render synchronously within the current call stack. We do NOT need it for the subscribable store pattern — `useSyncExternalStore` already triggers `SyncLane` renders, which React processes at the next microtask drain point.
+
+`flushSync` would be needed only if imperative code must see the rendered DOM *within the same synchronous call stack* — for example, measuring an element's dimensions immediately after a state change. This is rare in our architecture because:
+- Card positioning is appearance-zone (direct DOM manipulation, no React)
+- Responder registration uses `useLayoutEffect` (fires during commit)
+- Feed data flows through `useSyncExternalStore` (targeted re-renders)
+
+If a future need arises, `flushSync` is the escape hatch, but it should be treated as a code smell indicating that the zone boundaries may need adjustment.
+
+##### Relationship to Existing Patterns
+
+This section extends the three-zone model (D12) with specific machinery for the boundary between imperative systems and React:
+
+| System | Zone | Before (broken) | After (D40-D42) |
+|--------|------|------------------|------------------|
+| Card state (position, z-order) | Appearance → Structure | `root.render()` on every mutation (async gap) | `useSyncExternalStore` (SyncLane, no gap) |
+| Responder registration | Appearance | `useEffect` (deferred, after paint) | `useLayoutEffect` (commit phase, before paint) |
+| Focus change | Appearance | `root.render()` + `makeFirstResponder` (timing race) | `notify()` + `makeFirstResponder` (deterministic) |
+| Card add/remove | Structure | `root.render()` with new props (async gap) | Store subscription triggers mount/unmount (SyncLane) |
 
 ### 6. Tugcard: The Common Base Component {#c06-tugcard}
 
@@ -2953,3 +3134,25 @@ Key decisions:
 - **Destructive variant visual fix.** The `destructive` variant must show a bold danger fill (`--td-danger`, deep red) with inverse text (`--td-text-inverse`, white/near-white). The shadcn wiring provides the class hooks but the actual fill was not visually distinct. Phase 5d adds explicit `background-color` and `color` rules to `tug-button.css` to ensure destructive buttons are unmistakable across all themes.
 
 No new concepts. D39 is an addition to concept 3 that ties together concepts 3, 4, and 9.
+
+### Entry 19: React 19 Rendering Model and DeckManager Store Migration {#log-19} (2026-03-03)
+
+Phase 5a implementation exposed a fundamental timing bug: the responder chain's `cyclePanel` handler calls `DeckManager.focusCard()` → `root.render()` (async in React 19) → `makeFirstResponder()` (synchronous), creating a race between React's deferred render and the imperative responder chain state. The bug manifests as Ctrl+` cycling failing — the first press deselects the focused card, subsequent presses produce a system beep because `dispatch()` returns false.
+
+Deep investigation into React 19's `createRoot().render()` behavior confirmed: `root.render()` schedules work via `queueMicrotask()` and returns immediately. No components re-render, no effects fire, no DOM updates when the call returns. This is an intentional React 19 design — unlike the old `ReactDOM.render()` which was synchronous.
+
+Study of Excalidraw's architecture (the closest open-source precedent) revealed their solution: **never call `root.render()` from outside React.** Their Scene class is a subscribable store; React reads from it during render. One initial mount, then all updates flow through store subscriptions.
+
+Three new design decisions added to Concept 5:
+
+- **[D40] DeckManager is a subscribable store.** One `root.render()` at construction time. All subsequent state mutations call `notify()` instead of `render()`. DeckCanvas reads deckState via `useSyncExternalStore`. This eliminates the async render gap entirely — `useSyncExternalStore` forces `SyncLane` (synchronous) renders.
+- **[D41] `useResponder` uses `useLayoutEffect` for registration.** Responder nodes register during the commit phase (before paint), not in a deferred `useEffect`. Combined with D40's `SyncLane` renders, registration is always complete before the next browser event.
+- **[D42] No repeated `root.render()` from external code.** After the initial mount, external code never calls `root.render()`. State changes flow through subscribable stores or direct DOM manipulation (appearance zone).
+
+These decisions formalize what Concept 5 already prescribed: DeckManager operates imperatively, React subscribes to external stores. The implementation had diverged from the design — DeckManager was calling `root.render()` on every mutation instead of notifying subscribers. D40-D42 close that gap.
+
+New phase **5a2: DeckManager Store Migration** added to the implementation strategy between Phase 5a (Selection Model) and Phase 5b (Card Tabs).
+
+### Entry 20: Rules of Tug {#log-20} (2026-03-03)
+
+Added the "Rules of Tug" section at the very top of this document (before the Table of Contents). Eight hard invariants distilled from existing design decisions [D01]-[D42], phrased as prohibitions and imperatives that can be mechanically verified during implementation. The rules exist because the D40-D42 investigation revealed that correct design principles in Concept 5 were not followed during implementation — DeckManager diverged from the subscribable store pattern. Short, scannable rules at the top of the document prevent this class of drift. Referenced from CLAUDE.md so AI agents see the critical rules every session.

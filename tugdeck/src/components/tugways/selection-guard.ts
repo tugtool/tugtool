@@ -222,12 +222,14 @@ class SelectionGuard {
   private boundPointerMove: (e: PointerEvent) => void;
   private boundPointerUp: (e: PointerEvent) => void;
   private boundSelectionChange: () => void;
+  private boundSelectStart: (e: Event) => void;
 
   constructor() {
     this.boundPointerDown = this.handlePointerDown.bind(this);
     this.boundPointerMove = this.handlePointerMove.bind(this);
     this.boundPointerUp = this.handlePointerUp.bind(this);
     this.boundSelectionChange = this.handleSelectionChange.bind(this);
+    this.boundSelectStart = this.handleSelectStart.bind(this);
   }
 
   // ---- Boundary registration ----
@@ -262,6 +264,7 @@ class SelectionGuard {
     document.addEventListener("pointermove", this.boundPointerMove, { capture: true });
     document.addEventListener("pointerup", this.boundPointerUp, { capture: true });
     document.addEventListener("selectionchange", this.boundSelectionChange);
+    document.addEventListener("selectstart", this.boundSelectStart, { capture: true });
   }
 
   /**
@@ -273,6 +276,7 @@ class SelectionGuard {
     document.removeEventListener("pointermove", this.boundPointerMove, { capture: true });
     document.removeEventListener("pointerup", this.boundPointerUp, { capture: true });
     document.removeEventListener("selectionchange", this.boundSelectionChange);
+    document.removeEventListener("selectstart", this.boundSelectStart, { capture: true });
     this.stopAutoscroll();
   }
 
@@ -362,6 +366,31 @@ class SelectionGuard {
     this.activeCardId = null;
   }
 
+  // ---- selectstart gate ----
+
+  /**
+   * Block text selection from starting outside card content areas.
+   *
+   * `user-select: none` on body prevents selection from *visually* starting
+   * in chrome, but WebKit still allows a drag originating in a `user-select:
+   * none` region to extend into `user-select: text` children. Preventing the
+   * `selectstart` event stops the selection from being created at all.
+   */
+  private handleSelectStart(event: Event): void {
+    const target = event.target as Node | null;
+    if (!target) return;
+
+    // Allow selection to start inside any registered card content boundary
+    for (const [, element] of this.boundaries) {
+      if (element.contains(target)) {
+        return;
+      }
+    }
+
+    // Selection is starting outside all card content areas — block it
+    event.preventDefault();
+  }
+
   // ---- Pointer event handlers ----
 
   private handlePointerDown(event: PointerEvent): void {
@@ -423,24 +452,61 @@ class SelectionGuard {
   // ---- selectionchange safety net ([D04]) ----
 
   private handleSelectionChange(): void {
-    if (!this.isTracking || this.activeCardId === null) return;
-
-    const boundary = this.boundaries.get(this.activeCardId);
-    if (!boundary) return;
-
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
 
+    const anchorNode = selection.anchorNode;
     const focusNode = selection.focusNode;
-    if (!focusNode) return;
+    if (!anchorNode || !focusNode) return;
+
+    // Find the boundary that contains the anchor (the selection origin).
+    // This works for both pointer-driven and keyboard-driven selection.
+    let boundary: HTMLElement | null = null;
+    for (const [, element] of this.boundaries) {
+      if (element.contains(anchorNode)) {
+        boundary = element;
+        break;
+      }
+    }
+    if (!boundary) {
+      // Anchor is outside all registered card content areas. If the focus
+      // landed inside a card (drag from canvas into card content), clear the
+      // selection entirely — selections must originate inside a card.
+      for (const [, element] of this.boundaries) {
+        if (element.contains(focusNode)) {
+          selection.removeAllRanges();
+          return;
+        }
+      }
+      return;
+    }
+
+    // If focus is inside the same boundary, nothing to clip
+    if (boundary.contains(focusNode)) return;
 
     // Check for data-td-select="custom" — skip clipping for custom subtrees
-    if (hasCustomSelectAncestor(focusNode, boundary)) return;
+    if (hasCustomSelectAncestor(anchorNode, boundary)) return;
 
-    // If focus escaped the boundary, clip back to the boundary edge
-    if (!boundary.contains(focusNode)) {
-      const rect = boundary.getBoundingClientRect();
-      this.clampSelectionToRect(rect, boundary);
+    // Focus escaped the boundary. Clip the selection to the boundary edge.
+    // Use setBaseAndExtent to forcibly pin the focus inside the boundary,
+    // overriding the browser's native selection extension.
+    try {
+      if (this.isTracking && this.lastPointerY < boundary.getBoundingClientRect().top) {
+        // Dragging upward — pin focus to start of boundary
+        selection.setBaseAndExtent(
+          anchorNode, selection.anchorOffset,
+          boundary, 0
+        );
+      } else {
+        // Dragging downward or keyboard — pin focus to end of boundary
+        selection.setBaseAndExtent(
+          anchorNode, selection.anchorOffset,
+          boundary, boundary.childNodes.length
+        );
+      }
+    } catch {
+      // Last resort: collapse to anchor
+      selection.collapse(anchorNode, selection.anchorOffset);
     }
   }
 
@@ -465,6 +531,11 @@ class SelectionGuard {
 
     const pos = caretPositionFromPointCompat(x, y);
     if (!pos) return;
+
+    // Verify the resolved node is actually inside the boundary. At rect
+    // edges, caretPositionFromPoint can resolve to an adjacent sibling
+    // (e.g. the header element sitting right above the content area).
+    if (!boundary.contains(pos.node)) return;
 
     // Pin the selection focus at the clamped edge position
     try {

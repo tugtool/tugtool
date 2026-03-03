@@ -10,6 +10,102 @@ Entries are sorted newest-first.
 
 ---
 step: step-7
+date: 2025-03-03T19:55:34Z
+---
+
+## step-7: End-to-end verification: all exit criteria confirmed — 422 tests pass, tsc clean, DeckManager is subscribable store with single root.render(), DeckCanvas reads from store, useResponder uses useLayoutEffect.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-6
+date: 2025-03-03T19:49:42Z
+---
+
+## step-6: useResponder hook now uses useLayoutEffect for registration, ensuring responder chain is consistent during commit phase before browser paints. All 422 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-5
+date: 2025-03-03T19:45:45Z
+---
+
+## step-5: DeckCanvas now reads deckState via useSyncExternalStore and callbacks from DeckManagerContext. DeckCanvasProps reduced to connection only. Tests adapted with mock store provider. 422 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-4
+date: 2025-03-03T19:36:27Z
+---
+
+## step-4: Constructor now has single root.render() wrapping tree with DeckManagerContext.Provider. All this.render() calls replaced by this.notify(). Private render() method deleted.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-3
+date: 2025-03-03T19:30:33Z
+---
+
+## step-3: DeckManager now implements IDeckManagerStore with subscribable store API: subscribe, getSnapshot, getVersion, notify. Callbacks changed to public. New store API unit tests added (422 tests pass).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-2
+date: 2025-03-03T19:23:45Z
+---
+
+## step-2: Created tugdeck/src/deck-manager-context.tsx with DeckManagerContext typed as IDeckManagerStore | null and useDeckManager convenience hook with null check
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: audit-fix
+date: 2025-03-03T19:18:46Z
+---
+
+## audit-fix: Fix pre-existing TypeScript error: type CardRegistration.factory return as ReactElement<{ onClose?: () => void }> so React.cloneElement in deck-canvas.tsx passes type checking
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-1
+date: 2025-03-03T19:16:17Z
+---
+
+## step-1: Created tugdeck/src/deck-manager-store.ts with IDeckManagerStore interface defining useSyncExternalStore contract and stable callback methods
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
+step: step-7
 date: 2025-03-03T16:17:16Z
 ---
 

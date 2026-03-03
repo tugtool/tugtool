@@ -38,3 +38,12 @@ Run tugcode tests with:
 ```bash
 cd tugcode && cargo nextest run
 ```
+
+## Tugdeck — Rules of Tug
+
+Before implementing any tugways/tugdeck code, verify against the full [Rules of Tug](roadmap/design-system-concepts.md#rules-of-tug) in design-system-concepts.md. Critical rules:
+
+1. **Never call `root.render()` after initial mount.** State changes flow through subscribable stores or direct DOM manipulation. [D40, D42]
+2. **Read external state with `useSyncExternalStore` only.** No `useState` + manual sync. [D40]
+3. **Use `useLayoutEffect` for registrations that events depend on.** [D41]
+4. **Appearance changes go through CSS and DOM, never React state.** [D08, D09]
