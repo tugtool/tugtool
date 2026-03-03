@@ -52,7 +52,7 @@
  * Table T01: cycleCard, resetLayout, showSettings, showComponentGallery
  */
 
-import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import type { TugConnection } from "@/connection";
 import { registerGallerySetter } from "@/action-dispatch";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -106,6 +106,26 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const store = useDeckManager();
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const cards = deckState.cards;
+
+  // ---------------------------------------------------------------------------
+  // Stable render order
+  // ---------------------------------------------------------------------------
+  // Cards are rendered in a stable order (sorted by ID) so that focusCard
+  // reordering the store array only changes z-index values — React never
+  // calls insertBefore to move DOM nodes. This preserves the browser's
+  // pointer→click event sequence when clicking interactive elements on
+  // unfocused cards (the synchronous onCardFocused on pointerdown updates
+  // z-index before click fires, so the card is already focused).
+  //
+  // Z-index comes from each card's position in the *store* array (focus
+  // order), not from the stable render order.
+
+  const { sortedCards, zIndexMap } = useMemo(() => {
+    const map = new Map<string, number>();
+    cards.forEach((card, i) => map.set(card.id, CARD_ZINDEX_BASE + i));
+    const sorted = [...cards].sort((a, b) => a.id.localeCompare(b.id));
+    return { sortedCards: sorted, zIndexMap: map };
+  }, [cards]);
 
   // ---------------------------------------------------------------------------
   // Visual focus
@@ -217,9 +237,10 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
       <DisconnectBanner connection={connection} />
 
       {/* CardFrames (Spec S06, S07): one per card in deckState.cards.
-          Z-index by array position (first = lowest). Cards with unregistered
-          componentIds are skipped with a warning. */}
-      {cards.map((cardState, index) => {
+          Rendered in stable ID order (no DOM reordering on focus change).
+          Z-index from store array position (first = lowest). Cards with
+          unregistered componentIds are skipped with a warning. */}
+      {sortedCards.map((cardState) => {
         const componentId = cardState.tabs[0]?.componentId;
         if (!componentId) {
           console.warn(
@@ -240,7 +261,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           <CardFrame
             key={cardState.id}
             cardState={cardState}
-            zIndex={CARD_ZINDEX_BASE + index}
+            zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}
             onCardMoved={store.handleCardMoved}
             onCardClosed={store.handleCardClosed}

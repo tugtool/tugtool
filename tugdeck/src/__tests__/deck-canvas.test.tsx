@@ -397,7 +397,7 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
     expect(container.querySelector("[data-testid='mock-card-content-card-b']")).not.toBeNull();
   });
 
-  it("assigns ascending z-index by array position", () => {
+  it("assigns ascending z-index by store array position", () => {
     registerCard({
       componentId: "zindex-card",
       factory: (cardId, _injected) =>
@@ -405,6 +405,7 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
       defaultMeta: { title: "Z Card", closable: true },
     });
 
+    // Store array order: z1 first (lowest z-index), z2 second (highest).
     const card1 = makeCardState("z1", "zindex-card");
     const card2 = makeCardState("z2", "zindex-card");
     const store = makeMockStore(makeDeckState([card1, card2]));
@@ -414,11 +415,14 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
       ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    const frames = Array.from(container.querySelectorAll("[data-testid='card-frame']")) as HTMLElement[];
-    expect(frames.length).toBe(2);
+    // Look up frames by card ID (DOM order is stable by ID, not store order).
+    const frameZ1 = container.querySelector("[data-card-id='z1']") as HTMLElement;
+    const frameZ2 = container.querySelector("[data-card-id='z2']") as HTMLElement;
+    expect(frameZ1).not.toBeNull();
+    expect(frameZ2).not.toBeNull();
 
-    const z1 = parseInt(frames[0].style.zIndex, 10);
-    const z2 = parseInt(frames[1].style.zIndex, 10);
+    const z1 = parseInt(frameZ1.style.zIndex, 10);
+    const z2 = parseInt(frameZ2.style.zIndex, 10);
     expect(z1).toBeLessThan(z2);
   });
 });
