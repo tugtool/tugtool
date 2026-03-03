@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-03T03:59:41Z
+---
+
+## step-1: Created card-registry.ts with CardRegistration interface, registerCard/getRegistration/getAllRegistrations functions, and comprehensive test suite (6 tests)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-6
 date: 2025-03-03T02:06:05Z
 ---
