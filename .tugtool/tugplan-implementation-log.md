@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-03T05:07:36Z
+---
+
+## step-10: Integration checkpoint: 359/359 tests pass, production build clean (1764 modules, zero warnings). Manual tests deferred for human verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-9
 date: 2025-03-03T05:03:52Z
 ---
