@@ -10,7 +10,7 @@ import { type DeckState, type CardState, type TabItem } from "./layout-tree";
 // ---- Serialize ----
 
 /**
- * Serialize a DeckState to the v5 format for localStorage storage.
+ * Serialize a DeckState to the v5 format for settings API persistence.
  *
  * Returns a plain object. Caller should JSON.stringify before writing.
  */
@@ -31,7 +31,7 @@ export function serialize(deckState: DeckState): object {
  *
  * Enforces 100px minimum sizes and clamps card positions to canvas bounds.
  *
- * @param json - JSON string from localStorage
+ * @param json - JSON string from the settings API
  * @param canvasWidth - Canvas width for position clamping
  * @param canvasHeight - Canvas height for position clamping
  */

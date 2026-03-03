@@ -138,6 +138,7 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         // Flash fix: reveal the webView now that the page has finished loading.
         // Keeping it hidden until this point eliminates the startup FOUC.
         webView.isHidden = false
+        self.makeFirstResponder(webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

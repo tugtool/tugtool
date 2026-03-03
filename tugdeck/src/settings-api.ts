@@ -67,7 +67,7 @@ export async function fetchSettingsWithRetry(
  * - Fields set to null delete the corresponding stored field.
  *
  * Errors are logged to console.warn and otherwise ignored — save failures
- * are non-fatal since localStorage still holds a local cache.
+ * are non-fatal.
  */
 export function postSettings(settings: Partial<ServerSettings>): void {
   fetch("/api/settings", {

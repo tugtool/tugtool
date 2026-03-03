@@ -29,6 +29,10 @@
  * - Card positions cascade: each new card offsets (30, 30) from the previous.
  *   When the card's right or bottom edge would exceed canvas bounds, the
  *   cascade counter resets to 0.
+ * - Layout persistence uses the settings API only. No localStorage.
+ * - Cards with unregistered componentIds are filtered out at load time
+ *   (in loadLayout and applyLayout). deckState.cards contains only
+ *   renderable cards that have registered factories in the card registry.
  */
 
 import { type DeckState, type CardState, type TabItem } from "./layout-tree";
@@ -45,9 +49,6 @@ import { postSettings } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
-
-/** localStorage key for layout persistence */
-const LAYOUT_STORAGE_KEY = "tugdeck-layout";
 
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
@@ -367,48 +368,29 @@ export class DeckManager implements IDeckManagerStore {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
 
-    // Try pre-fetched layout from the settings API first.
+    let state: DeckState | null = null;
+
+    // Use pre-fetched layout from the settings API if available.
     if (this.initialLayout !== null) {
       try {
         const json = JSON.stringify(this.initialLayout);
-        const state = deserialize(json, canvasWidth, canvasHeight);
-        // Cache to localStorage so subsequent loads are fast.
-        try {
-          localStorage.setItem(LAYOUT_STORAGE_KEY, json);
-        } catch {
-          // localStorage may be unavailable
-        }
-        this.initialLayout = null;
-        return state;
+        state = deserialize(json, canvasWidth, canvasHeight);
       } catch (e) {
         console.warn("DeckManager: failed to deserialize initialLayout from API, falling back", e);
       }
       this.initialLayout = null;
     }
 
-    // Fall back to localStorage.
-    try {
-      const json = localStorage.getItem(LAYOUT_STORAGE_KEY);
-      if (json) {
-        return deserialize(json, canvasWidth, canvasHeight);
-      }
-    } catch (e) {
-      console.warn("DeckManager: failed to load layout from localStorage", e);
+    if (state === null) {
+      state = buildDefaultLayout(canvasWidth, canvasHeight);
     }
 
-    return buildDefaultLayout(canvasWidth, canvasHeight);
+    return this.filterRegisteredCards(state);
   }
 
   private saveLayout(): void {
-    try {
-      const serialized = serialize(this.deckState);
-      const json = JSON.stringify(serialized);
-      localStorage.setItem(LAYOUT_STORAGE_KEY, json);
-      // Persist to API (fire-and-forget).
-      postSettings({ layout: serialized, theme: this.readCurrentThemeFromDOM() });
-    } catch (e) {
-      console.warn("DeckManager: failed to save layout to localStorage", e);
-    }
+    const serialized = serialize(this.deckState);
+    postSettings({ layout: serialized, theme: this.readCurrentThemeFromDOM() });
   }
 
   /**
@@ -434,10 +416,37 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Apply an external DeckState, re-render, and schedule a save.
+   * Filter out cards whose componentId is not registered in the card registry.
+   *
+   * Called by loadLayout() and applyLayout() so that deckState.cards only
+   * contains renderable cards. This is the single filtering gate -- downstream
+   * code (DeckCanvas, cyclePanel, responder chain) can trust that every card
+   * in deckState has a registered factory.
+   */
+  private filterRegisteredCards(state: DeckState): DeckState {
+    const filtered = state.cards.filter((card) => {
+      const componentId = card.tabs[0]?.componentId;
+      if (!componentId || !getRegistration(componentId)) {
+        console.warn(
+          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" ` +
+            `with unregistered componentId "${componentId ?? "(none)"}".`,
+        );
+        return false;
+      }
+      return true;
+    });
+    if (filtered.length !== state.cards.length) {
+      return { ...state, cards: filtered };
+    }
+    return state;
+  }
+
+  /**
+   * Apply an external DeckState, notify subscribers, and schedule a save.
+   * Cards with unregistered componentIds are filtered out.
    */
   applyLayout(deckState: DeckState): void {
-    this.deckState = deckState;
+    this.deckState = this.filterRegisteredCards(deckState);
     this.notify();
     this.scheduleSave();
   }

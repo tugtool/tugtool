@@ -21,19 +21,6 @@ import "./setup-rtl";
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 
-// Stub localStorage -- not provided by happy-dom in this worker context.
-// DeckManager.loadLayout() catches the ReferenceError and falls back to
-// buildDefaultLayout, but the warning is noisy in test output. Stubbing here
-// suppresses the warning and makes the test environment more realistic.
-if (typeof (globalThis as Record<string, unknown>)["localStorage"] === "undefined") {
-  (globalThis as Record<string, unknown>)["localStorage"] = {
-    getItem: (_key: string) => null,
-    setItem: (_key: string, _value: string) => {},
-    removeItem: (_key: string) => {},
-    clear: () => {},
-  };
-}
-
 import { DeckManager } from "../deck-manager";
 import { registerCard, _resetForTest } from "../card-registry";
 import type { CardRegistration } from "../card-registry";
