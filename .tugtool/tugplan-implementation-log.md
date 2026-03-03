@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-03T00:01:30Z
+---
+
+## step-8: Integration checkpoint: add e2e responder chain tests covering full lifecycle (DeckCanvas -> gallery -> chain walk -> Ctrl+backtick dispatch), chain-action button reactive validation, and no re-render cascade verification. 268 tests pass across 18 files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-3-responder-chain.md
+
+---
+
+---
 step: step-7
 date: 2025-03-02T23:55:44Z
 ---
