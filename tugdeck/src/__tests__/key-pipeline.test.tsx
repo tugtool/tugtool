@@ -401,9 +401,24 @@ describe("matchKeybinding", () => {
     });
   }
 
-  it("returns 'cyclePanel' for Ctrl+Backquote", () => {
+  it("returns full KeyBinding object for Ctrl+Backquote (cyclePanel)", () => {
     const event = makeEvent("Backquote", { ctrlKey: true });
-    expect(matchKeybinding(event)).toBe("cyclePanel");
+    expect(matchKeybinding(event)?.action).toBe("cyclePanel");
+  });
+
+  it("returns full KeyBinding object for Cmd+A (selectAll) with preventDefaultOnMatch", () => {
+    const event = makeEvent("KeyA", { metaKey: true });
+    const binding = matchKeybinding(event);
+    expect(binding?.action).toBe("selectAll");
+    expect(binding?.preventDefaultOnMatch).toBe(true);
+  });
+
+  it("returns full KeyBinding object for Ctrl+Backquote (backward compat: cyclePanel)", () => {
+    const event = makeEvent("Backquote", { ctrlKey: true });
+    const binding = matchKeybinding(event);
+    expect(binding).not.toBeNull();
+    expect(binding?.action).toBe("cyclePanel");
+    expect(binding?.preventDefaultOnMatch).toBeUndefined();
   });
 
   it("returns null for Backquote without Ctrl", () => {

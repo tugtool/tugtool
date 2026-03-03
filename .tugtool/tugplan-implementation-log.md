@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-03T15:47:39Z
+---
+
+## step-2: Extended KeyBinding interface with preventDefaultOnMatch flag, changed matchKeybinding return type to KeyBinding|null, added Cmd+A selectAll binding, updated capture listener for early preventDefault, updated tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-1
 date: 2025-03-03T15:42:18Z
 ---

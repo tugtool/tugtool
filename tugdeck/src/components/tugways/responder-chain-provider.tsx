@@ -41,9 +41,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {
-      const action = matchKeybinding(event);
-      if (action === null) return;
-      const handled = manager.dispatch(action);
+      const binding = matchKeybinding(event);
+      if (binding === null) return;
+      // [D06] preventDefaultOnMatch: suppress browser default on match (e.g.
+      // Cmd+A native select-all) before dispatching to the responder chain.
+      if (binding.preventDefaultOnMatch) {
+        event.preventDefault();
+      }
+      const handled = manager.dispatch(binding.action);
       if (handled) {
         event.preventDefault();
         event.stopImmediatePropagation();
