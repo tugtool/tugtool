@@ -35,6 +35,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import type { FeedIdValue } from "../../protocol";
 import { useResponder } from "./use-responder";
 import { TugcardDataProvider } from "./hooks/use-tugcard-data";
+import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,20 @@ export function Tugcard({
   children,
 }: TugcardProps) {
   // ---------------------------------------------------------------------------
+  // Content area ref (Phase 5a: selection boundary + selectAll action)
+  // ---------------------------------------------------------------------------
+
+  // Ref to the content area div. Used by:
+  //   - useSelectionBoundary: registers this element with SelectionGuard so
+  //     selection is contained within card boundaries ([D02], [D03])
+  //   - selectAll action: calls selectAllChildren on this element ([D06])
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Register the content area as a selection boundary with SelectionGuard.
+  // Unregisters automatically on unmount via the hook's cleanup. ([D02], Spec S02)
+  useSelectionBoundary(cardId, contentRef);
+
+  // ---------------------------------------------------------------------------
   // Responder registration (D07)
   // ---------------------------------------------------------------------------
 
@@ -127,10 +142,20 @@ export function Tugcard({
     onClose?.();
   }, [onClose]);
 
+  // selectAll: scope Cmd+A to this card's content area. ([D06], Spec S01)
+  // contentRef is a stable React ref object — reading .current inside the
+  // callback always gives the current element without needing it in deps.
+  const handleSelectAll = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    window.getSelection()?.selectAllChildren(el);
+  }, []);
+
   const { ResponderScope } = useResponder({
     id: cardId,
     actions: {
       close: handleClose,
+      selectAll: handleSelectAll,
       // Phase 5 stubs: minimize, toggleMenu, find are no-ops until later phases
       minimize: () => {},
       toggleMenu: () => {},
@@ -259,7 +284,7 @@ export function Tugcard({
       </div>
 
       {/* Content area: flex-grow, overflow auto */}
-      <div className="tugcard-content" data-testid="tugcard-content">
+      <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
         <TugcardDataProvider feedData={emptyFeedData.current}>
           <ResponderScope>
             {feedsReady ? children : (

@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-03T16:17:16Z
+---
+
+## step-7: Integration checkpoint: full tugdeck test suite passes (405 tests, 0 failures, 31 files). All Phase 5a selection model artifacts verified working together.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-6
+date: 2025-03-03T16:14:01Z
+---
+
+## step-6: Added selectionGuard.attach() and detach() to ResponderChainProvider useEffect, co-locating guard's document-level listeners with key pipeline listeners.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-5
+date: 2025-03-03T16:10:14Z
+---
+
+## step-5: Integrated SelectionGuard into Tugcard: added contentRef to content div, useSelectionBoundary hook call, and selectAll responder action using selectAllChildren. Created 12 integration tests in selection-model.test.tsx.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-4
+date: 2025-03-03T16:04:26Z
+---
+
+## step-4: Created useSelectionBoundary hook that registers card content areas with SelectionGuard singleton via useEffect. Added barrel export and 5 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-3
+date: 2025-03-03T15:59:39Z
+---
+
+## step-3: Created SelectionGuard singleton module with card content boundary registration, pointer-clamped selection clipping, selectionchange safety net, RAF autoscroll, data-td-select=custom support, and save/restore selection. Added 26 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-2
+date: 2025-03-03T15:47:39Z
+---
+
+## step-2: Extended KeyBinding interface with preventDefaultOnMatch flag, changed matchKeybinding return type to KeyBinding|null, added Cmd+A selectAll binding, updated capture listener for early preventDefault, updated tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
+step: step-1
+date: 2025-03-03T15:42:18Z
+---
+
+## step-1: Added user-select: none to body in globals.css, selection tokens to tokens.css, selection containment styles to tugcard.css, and user-select: none to card-frame-resize in chrome.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-03T05:15:36Z
 ---

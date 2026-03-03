@@ -52,3 +52,4 @@ export { useCSSVar } from "./use-css-var";
 export { useDOMClass } from "./use-dom-class";
 export { useDOMStyle } from "./use-dom-style";
 export { useTugcardData } from "./use-tugcard-data";
+export { useSelectionBoundary } from "./use-selection-boundary";

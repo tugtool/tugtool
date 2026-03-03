@@ -4,9 +4,10 @@
  * Maps key combinations to action names. Stage 1 of the key pipeline
  * (capture-phase listener) consults this map.
  *
- * Format: { key: KeyboardEvent.code, ctrl?, meta?, shift?, alt?, action }
+ * Format: { key: KeyboardEvent.code, ctrl?, meta?, shift?, alt?, action, preventDefaultOnMatch? }
  *
  * [D04] Minimal static keybinding map for Phase 3
+ * [D06] preventDefaultOnMatch added in Phase 5a for Cmd+A scoping (Spec S03)
  * Spec S05, Table T02
  */
 
@@ -27,20 +28,32 @@ export interface KeyBinding {
   alt?: boolean;
   /** Action name to dispatch when the binding matches */
   action: string;
+  /**
+   * When true, the pipeline calls preventDefault on the event when this
+   * binding matches, before dispatching to the responder chain. This allows
+   * browser-default behaviors (e.g. Cmd+A select-all) to be suppressed even
+   * when no responder handles the action.
+   *
+   * [D06] Phase 5a: used for the Cmd+A selectAll binding so the browser's
+   * native select-all is always suppressed when the keybinding matches.
+   */
+  preventDefaultOnMatch?: boolean;
 }
 
-// ---- Phase 3 keybindings (Table T02) ----
+// ---- Keybindings ----
 
 /**
- * Static keybinding map for Phase 3.
+ * Static keybinding map.
  *
  * Extensible: later phases add entries here without changing pipeline logic.
  *
  * Table T02:
- * | Ctrl+`  | cyclePanel | stage 1 (global shortcut) |
+ * | Ctrl+`       | cyclePanel | stage 1 (global shortcut)          |
+ * | Cmd+A (Meta) | selectAll  | stage 1 + preventDefaultOnMatch    |
  */
 export const KEYBINDINGS: KeyBinding[] = [
   { key: "Backquote", ctrl: true, action: "cyclePanel" },
+  { key: "KeyA", meta: true, action: "selectAll", preventDefaultOnMatch: true },
 ];
 
 // ---- matchKeybinding ----
@@ -48,10 +61,12 @@ export const KEYBINDINGS: KeyBinding[] = [
 /**
  * Match a KeyboardEvent against the keybinding map.
  *
- * Returns the action name if a binding matches, or null if no match.
+ * Returns the full KeyBinding object if a binding matches, or null if no match.
  * Uses KeyboardEvent.code (layout-independent) for the key field.
+ *
+ * [D06] Returns the full binding so callers can inspect preventDefaultOnMatch.
  */
-export function matchKeybinding(event: KeyboardEvent): string | null {
+export function matchKeybinding(event: KeyboardEvent): KeyBinding | null {
   for (const binding of KEYBINDINGS) {
     if (
       event.code === binding.key &&
@@ -60,7 +75,7 @@ export function matchKeybinding(event: KeyboardEvent): string | null {
       !!event.shiftKey === (binding.shift ?? false) &&
       !!event.altKey === (binding.alt ?? false)
     ) {
-      return binding.action;
+      return binding;
     }
   }
   return null;

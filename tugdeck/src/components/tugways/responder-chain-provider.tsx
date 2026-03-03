@@ -13,6 +13,7 @@
  *   useResponderChain()         -- returns manager | null (safe outside provider)
  *   useRequiredResponderChain() -- returns manager, throws outside provider
  *
+ * [D02] SelectionGuard attached here so its lifecycle matches the key pipeline
  * [D03] Four-stage key pipeline with global keydown listener
  * [D07] ResponderChainProvider wraps DeckCanvas only
  * Spec S03, Spec S08
@@ -21,6 +22,7 @@
 import React, { useContext, useEffect, useRef } from "react";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { matchKeybinding } from "./keybinding-map";
+import { selectionGuard } from "./selection-guard";
 
 // ---- ResponderChainProvider ----
 
@@ -39,11 +41,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
   const manager = managerRef.current;
 
   useEffect(() => {
+    // ---- SelectionGuard lifecycle ----
+    // Attach the SelectionGuard document-level listeners alongside the key
+    // pipeline. Both are document-level event systems that live for the
+    // duration of the provider. Co-locating them here ensures they are always
+    // installed and removed together. ([D02])
+    selectionGuard.attach();
+
     // ---- Stage 1: capture-phase listener (global shortcuts) ----
     function captureListener(event: KeyboardEvent): void {
-      const action = matchKeybinding(event);
-      if (action === null) return;
-      const handled = manager.dispatch(action);
+      const binding = matchKeybinding(event);
+      if (binding === null) return;
+      // [D06] preventDefaultOnMatch: suppress browser default on match (e.g.
+      // Cmd+A native select-all) before dispatching to the responder chain.
+      if (binding.preventDefaultOnMatch) {
+        event.preventDefault();
+      }
+      const handled = manager.dispatch(binding.action);
       if (handled) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -82,6 +96,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     return () => {
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
+      selectionGuard.detach();
     };
   }, [manager]);
 
