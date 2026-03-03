@@ -227,6 +227,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem(title: "Open Web Inspector", action: #selector(openWebInspector(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: ""))
 
         // Source tree display item
         if let path = sourceTreePath {
@@ -319,6 +320,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showComponentGallery(_ sender: Any?) {
         sendControl("show-component-gallery")
+    }
+
+    @objc private func showTestCard(_ sender: Any) {
+        sendControl("show-card", params: ["component": "hello"])
     }
 
     @objc private func chooseSourceTree(_ sender: Any) {

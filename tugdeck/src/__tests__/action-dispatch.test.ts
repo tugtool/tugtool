@@ -8,10 +8,17 @@ import {
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
 
-// Minimal mock DeckManager -- initActionDispatch accepts DeckManager but does
-// not call any methods on it in Phase 0.
+// Minimal mock DeckManager.
+// addCard is a stub that records calls; other methods are omitted.
 function createMockDeckManager() {
-  return {};
+  const addCardCalls: string[] = [];
+  return {
+    addCard(componentId: string): string | null {
+      addCardCalls.push(componentId);
+      return null;
+    },
+    _addCardCalls: addCardCalls,
+  };
 }
 
 // Mock TugConnection -- initActionDispatch registers one onFrame callback.
@@ -347,5 +354,68 @@ describe("initActionDispatch: set-theme", () => {
 
     expect(first.length).toBe(0);
     expect(second).toEqual(["harmony"]);
+  });
+});
+
+// ---- show-card handler (T23, T24) ----
+
+describe("initActionDispatch: show-card – T23: calls deckManager.addCard", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("calls deckManager.addCard with the component value", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({ action: "show-card", component: "hello" });
+
+    expect(deck._addCardCalls.length).toBe(1);
+    expect(deck._addCardCalls[0]).toBe("hello");
+  });
+
+  it("calls addCard with any string component value (not just registered ids)", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({ action: "show-card", component: "settings" });
+    dispatchAction({ action: "show-card", component: "about" });
+
+    expect(deck._addCardCalls).toEqual(["settings", "about"]);
+  });
+});
+
+describe("initActionDispatch: show-card – T24: missing component logs warning", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("warns and does not call addCard when component field is missing", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "show-card" })).not.toThrow();
+    expect(deck._addCardCalls.length).toBe(0);
+  });
+
+  it("warns and does not call addCard when component is not a string", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "show-card", component: 42 })).not.toThrow();
+    expect(deck._addCardCalls.length).toBe(0);
+  });
+
+  it("warns and does not call addCard when component is null", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    expect(() => dispatchAction({ action: "show-card", component: null })).not.toThrow();
+    expect(deck._addCardCalls.length).toBe(0);
   });
 });

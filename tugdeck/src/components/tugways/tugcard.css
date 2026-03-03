@@ -1,0 +1,146 @@
+/**
+ * Tugcard styles.
+ *
+ * All colors use verified --td-* semantic tokens from tokens.css.
+ * No hardcoded hex values, no raw Tailwind color classes.
+ *
+ * Spec S07: Tugcard internal layout (flex column).
+ * Step 3 task: header-active/inactive, text, surface, border, radius.
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Tugcard root
+   ============================================================================ */
+
+.tugcard {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-md);
+  overflow: hidden;
+}
+
+/* ============================================================================
+   CardHeader (28px)
+   ============================================================================ */
+
+.tugcard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  background-color: var(--td-header-inactive);
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/*
+ * When the card is focused (active), the header background switches to the
+ * active color. CardFrame sets data-focused="true" on the Tugcard root when
+ * the card is the focused card.
+ */
+.tugcard[data-focused="true"] .tugcard-header {
+  background-color: var(--td-header-active);
+}
+
+.tugcard-header:active {
+  cursor: grabbing;
+}
+
+/* ============================================================================
+   Header title
+   ============================================================================ */
+
+.tugcard-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text);
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Close button
+   ============================================================================ */
+
+.tugcard-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: 4px;
+  background: none;
+  border: none;
+  border-radius: var(--td-radius-sm);
+  color: var(--td-text-soft);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--td-duration-fast) var(--td-easing-standard),
+              color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+.tugcard-close-btn:hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+.tugcard-close-btn:active {
+  background-color: var(--td-surface);
+}
+
+/* ============================================================================
+   Accessory slot
+   ============================================================================ */
+
+/*
+ * Collapses to 0 when null (height:0, overflow:hidden applied via inline style
+ * in the component). When an accessory is present it sizes to fit content.
+ */
+.tugcard-accessory {
+  flex-shrink: 0;
+  background-color: var(--td-surface);
+  border-bottom: 1px solid var(--td-border);
+}
+
+.tugcard-accessory:empty {
+  border-bottom: none;
+}
+
+/* ============================================================================
+   Content area (flex-grow, overflow auto)
+   ============================================================================ */
+
+.tugcard-content {
+  flex: 1;
+  overflow: auto;
+  background-color: var(--td-surface);
+  min-height: 0; /* needed for flex children to allow scroll */
+}
+
+/* ============================================================================
+   Loading placeholder (Phase 5 -- feeds not yet wired)
+   ============================================================================ */
+
+.tugcard-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--td-text-soft);
+  font-size: 12px;
+}

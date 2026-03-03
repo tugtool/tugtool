@@ -200,6 +200,16 @@ export function initActionDispatch(
     }
   });
 
-  // Suppress unused variable warning -- deckManager retained for future phases
-  void deckManager;
+  // show-card: Add a card by componentId (Spec S08)
+  // The AppDelegate already sends show-card with component: "settings" and
+  // component: "about" -- those will log a warning and return null from addCard
+  // until Phase 9 registers those card types. This is correct behavior.
+  registerAction("show-card", (payload) => {
+    const component = payload.component;
+    if (typeof component !== "string") {
+      console.warn("show-card: missing or invalid component parameter", payload);
+      return;
+    }
+    deckManager.addCard(component);
+  });
 }

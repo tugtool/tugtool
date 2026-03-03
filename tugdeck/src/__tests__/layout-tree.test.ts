@@ -86,43 +86,18 @@ describe("CardState", () => {
 // ---- buildDefaultLayout tests ----
 
 describe("buildDefaultLayout", () => {
-  test("buildDefaultLayout(1200, 800) returns 5 panels with correct positions and 12px gaps", () => {
+  test("buildDefaultLayout(1200, 800) returns empty DeckState (Phase 5: no pre-registered cards)", () => {
+    // T28: Phase 5 buildDefaultLayout returns { cards: [] }.
+    // The old five-card default used componentIds that are not registered in Phase 5.
     const result = buildDefaultLayout(1200, 800);
-
-    expect(result.cards.length).toBe(5);
-
-    // Component IDs in order
-    const componentIds = result.cards.map((p) => p.tabs[0].componentId);
-    expect(componentIds).toEqual(["code", "terminal", "git", "files", "stats"]);
-
-    // Conversation panel geometry
-    const conv = result.cards[0];
-    expect(conv.position.x).toBe(12);
-    expect(conv.position.y).toBe(12);
-    // width = (1200 - 36) * 0.6 = 698.4
-    expect(conv.size.width).toBeCloseTo(698.4, 3);
-    // height = 800 - 24 = 776
-    expect(conv.size.height).toBe(776);
-
-    // Right column panels: same x, same width
-    const rightPanels = result.cards.slice(1);
-    const firstRight = rightPanels[0];
-    rightPanels.forEach((p) => {
-      expect(p.position.x).toBeCloseTo(firstRight.position.x, 3);
-      expect(p.size.width).toBeCloseTo(firstRight.size.width, 3);
-    });
-
-    // 12px gaps between right panels
-    for (let i = 0; i < rightPanels.length - 1; i++) {
-      const gap = rightPanels[i + 1].position.y - rightPanels[i].position.y - rightPanels[i].size.height;
-      expect(gap).toBeCloseTo(12, 3);
-    }
+    expect(result.cards.length).toBe(0);
   });
 
-  test("buildDefaultLayout panels have non-overlapping bounding boxes", () => {
+  test("buildDefaultLayout panels have non-overlapping bounding boxes (trivially true for empty layout)", () => {
+    // With an empty cards array there are no panels to overlap.
     const result = buildDefaultLayout(1200, 800);
     const panels = result.cards;
-
+    // Empty array: no pair (i,j) with i < j exists, so the loop is vacuously true.
     for (let i = 0; i < panels.length; i++) {
       for (let j = i + 1; j < panels.length; j++) {
         const a = panels[i];
@@ -135,6 +110,7 @@ describe("buildDefaultLayout", () => {
         expect(noOverlap).toBe(true);
       }
     }
+    expect(panels.length).toBe(0);
   });
 });
 
@@ -175,14 +151,16 @@ describe("serialize and deserialize", () => {
   });
 
   test("deserialize with version:3 data falls back to buildDefaultLayout", () => {
+    // T29: buildDefaultLayout now returns { cards: [] } in Phase 5.
     const json = JSON.stringify({ version: 3, root: {}, floating: [] });
     const result = deserialize(json, 1200, 800);
-    expect(result.cards.length).toBe(5);
+    expect(result.cards.length).toBe(0);
   });
 
   test("deserialize with corrupt JSON falls back to buildDefaultLayout", () => {
+    // T29: buildDefaultLayout now returns { cards: [] } in Phase 5.
     const result = deserialize("not-valid-json{{{", 1200, 800);
-    expect(result.cards.length).toBe(5);
+    expect(result.cards.length).toBe(0);
   });
 
   test("deserialize clamps panel positions to canvas bounds", () => {

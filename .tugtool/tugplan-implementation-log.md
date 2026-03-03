@@ -9,6 +9,138 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-03T05:15:36Z
+---
+
+## audit-fix: Audit fix: DeckCanvas renderContent now uses React.cloneElement to inject onClose prop into Tugcard, wiring the close button to onCardClosed(cardState.id). Added test verifying close wiring.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-10
+date: 2025-03-03T05:07:36Z
+---
+
+## step-10: Integration checkpoint: 359/359 tests pass, production build clean (1764 modules, zero warnings). Manual tests deferred for human verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-9
+date: 2025-03-03T05:03:52Z
+---
+
+## step-9: Added Show Test Card NSMenuItem to Developer menu and showTestCard action method calling sendControl('show-card', params: ['component': 'hello']). Swift build succeeded.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-8
+date: 2025-03-03T05:00:19Z
+---
+
+## step-8: Added show-card action handler to initActionDispatch. Extracts component string from payload, validates, calls deckManager.addCard. Removed void deckManager suppression. 5 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-7
+date: 2025-03-03T04:56:19Z
+---
+
+## step-7: Created HelloCardContent component and registerHelloCard function. Wired into main.tsx before DeckManager construction. First concrete card type proving full pipeline. 7 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-6
+date: 2025-03-03T04:47:09Z
+---
+
+## step-6: Rebuilt DeckCanvas as plain function component rendering CardFrame for each card via registry factory lookup. Removed forwardRef/DeckCanvasHandle. Z-index by array position, gallery above all cards. 14 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-5
+date: 2025-03-03T04:36:53Z
+---
+
+## step-5: Rebuilt DeckManager with addCard/removeCard/moveCard/focusCard, cascade positioning, stable bound callbacks. Updated buildDefaultLayout to empty DeckState. Updated 4 layout-tree tests. 17 deck-manager tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-4
+date: 2025-03-03T04:27:06Z
+---
+
+## step-4: Created CardFrame geometry shell with absolute positioning, RAF-driven drag, 8-handle resize with min-size clamping, focus-on-click, and renderContent injection pattern. 10 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-3
+date: 2025-03-03T04:17:50Z
+---
+
+## step-3: Created Tugcard component with header (title/icon/close), accessory slot, content area, responder chain registration, TugcardDataProvider wrapping, min-size reporting, and feed-gating. 13 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-2
+date: 2025-03-03T04:09:06Z
+---
+
+## step-2: Created useTugcardData hook with typed single-feed convenience and TugcardDataProvider. Updated barrel exports. 7 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
+step: step-1
+date: 2025-03-03T03:59:41Z
+---
+
+## step-1: Created card-registry.ts with CardRegistration interface, registerCard/getRegistration/getAllRegistrations functions, and comprehensive test suite (6 tests)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-6
 date: 2025-03-03T02:06:05Z
 ---
