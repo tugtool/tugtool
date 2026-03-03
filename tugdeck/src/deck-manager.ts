@@ -4,19 +4,26 @@
  * Phase 5: Rebuilt with card registry integration, addCard / removeCard /
  * moveCard / focusCard, stable bound callbacks, and cascade positioning.
  *
+ * Phase 5a2: DeckManager is now a subscribable store conforming to the
+ * useSyncExternalStore contract. One root.render() at construction time;
+ * all subsequent state changes call notify() instead of render().
+ *
  * **Authoritative references:**
+ * - [D01] DeckManager is a subscribable store with one root.render() at mount
+ * - [D02] Extract IDeckManagerStore interface to break circular imports
  * - [D04] Single-call registration, [D08] DeckManager stays a plain class
+ * - Spec S03: DeckManager store API additions
  * - Spec S05: DeckManager new methods
- * - Spec S06: DeckCanvasProps for Phase 5
  *
  * ## Design notes
  *
- * - `render()` passes `deckState` and stable bound callbacks to DeckCanvas.
- *   Callbacks are bound once in the constructor so `render()` never creates
- *   new function objects.
+ * - `notify()` fires all subscriber callbacks after each state mutation.
+ *   `useSyncExternalStore` forces SyncLane updates (always synchronous).
  * - Each state-mutating method assigns `this.deckState = { ...this.deckState }`
- *   (shallow copy) before calling `render()` so React sees a new reference.
- * - `deckCanvasRef` is removed -- DeckManager drives DeckCanvas via props.
+ *   (shallow copy) before calling `notify()` so React sees a new reference.
+ * - `subscribe`, `getSnapshot`, and `getVersion` are arrow properties for
+ *   stable identity and auto-bound `this` -- safe to pass directly to
+ *   `useSyncExternalStore` without `.bind()`.
  * - Card positions cascade: each new card offsets (30, 30) from the previous.
  *   When the card's right or bottom edge would exceed canvas bounds, the
  *   cascade counter resets to 0.
@@ -34,6 +41,7 @@ import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { postSettings } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
+import type { IDeckManagerStore } from "./deck-manager-store";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -48,7 +56,7 @@ const DEFAULT_CARD_HEIGHT = 300;
 /** Cascade step between consecutive new cards (pixels) */
 const CASCADE_STEP = 30;
 
-export class DeckManager {
+export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
 
@@ -76,15 +84,53 @@ export class DeckManager {
    */
   private cascadeIndex: number = 0;
 
+  // ---- Subscribable store state (useSyncExternalStore contract) ----
+
+  /** Set of subscriber callbacks registered via subscribe(). */
+  private subscribers: Set<() => void> = new Set();
+
+  /** Monotonically increasing state version, incremented on every notify(). */
+  private stateVersion: number = 0;
+
   // ---- Stable bound callbacks (bound once in constructor) ----
 
-  private handleCardMoved: (
+  /** Stable bound callback: update card position/size on drag-end/resize-end. */
+  public handleCardMoved: (
     id: string,
     position: { x: number; y: number },
     size: { width: number; height: number },
   ) => void;
-  private handleCardClosed: (id: string) => void;
-  private handleCardFocused: (id: string) => void;
+
+  /** Stable bound callback: remove a card. */
+  public handleCardClosed: (id: string) => void;
+
+  /** Stable bound callback: bring a card to front. */
+  public handleCardFocused: (id: string) => void;
+
+  // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
+
+  /**
+   * Subscribe to state changes. Returns an unsubscribe function.
+   * Arrow property for stable identity and auto-bound `this`.
+   */
+  public subscribe = (callback: () => void): (() => void) => {
+    this.subscribers.add(callback);
+    return () => {
+      this.subscribers.delete(callback);
+    };
+  };
+
+  /**
+   * Return the current DeckState snapshot.
+   * Arrow property for stable identity and auto-bound `this`.
+   */
+  public getSnapshot = (): DeckState => this.deckState;
+
+  /**
+   * Return the current state version (monotonically increasing integer).
+   * Arrow property for stable identity and auto-bound `this`.
+   */
+  public getVersion = (): number => this.stateVersion;
 
   constructor(
     container: HTMLElement,
@@ -116,6 +162,20 @@ export class DeckManager {
 
     // Listen for window resize (kept for future phases)
     window.addEventListener("resize", () => this.handleResize());
+  }
+
+  // ---- Store notification ----
+
+  /**
+   * Increment stateVersion and fire all subscriber callbacks.
+   *
+   * Called by every state-mutating method after updating this.deckState.
+   * The shallow copy of deckState is always performed by the calling method
+   * before notify() runs -- notify() does not copy again.
+   */
+  private notify(): void {
+    this.stateVersion += 1;
+    this.subscribers.forEach((cb) => cb());
   }
 
   // ---- Rendering ----
@@ -150,14 +210,17 @@ export class DeckManager {
    * Re-render to pick up any state changes.
    */
   refresh(): void {
+    this.notify();
     this.render();
   }
 
   /**
    * Return the current canvas state.
+   * Convenience alias for getSnapshot() -- kept for backward compatibility
+   * with action-dispatch.ts and existing tests.
    */
   getDeckState(): DeckState {
-    return this.deckState;
+    return this.getSnapshot();
   }
 
   /**
@@ -210,6 +273,7 @@ export class DeckManager {
     };
 
     this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
+    this.notify();
     this.render();
     this.scheduleSave();
     return cardId;
@@ -223,6 +287,7 @@ export class DeckManager {
       ...this.deckState,
       cards: this.deckState.cards.filter((c) => c.id !== cardId),
     };
+    this.notify();
     this.render();
     this.scheduleSave();
   }
@@ -241,6 +306,7 @@ export class DeckManager {
         c.id === id ? { ...c, position, size } : c,
       ),
     };
+    this.notify();
     this.render();
     this.scheduleSave();
   }
@@ -259,6 +325,7 @@ export class DeckManager {
     const [focused] = cards.splice(idx, 1);
     cards.push(focused);
     this.deckState = { ...this.deckState, cards };
+    this.notify();
     this.render();
   }
 
@@ -373,6 +440,7 @@ export class DeckManager {
    */
   applyLayout(deckState: DeckState): void {
     this.deckState = deckState;
+    this.notify();
     this.render();
     this.scheduleSave();
   }

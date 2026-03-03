@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-03T19:30:33Z
+---
+
+## step-3: DeckManager now implements IDeckManagerStore with subscribable store API: subscribe, getSnapshot, getVersion, notify. Callbacks changed to public. New store API unit tests added (422 tests pass).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-2
 date: 2025-03-03T19:23:45Z
 ---
