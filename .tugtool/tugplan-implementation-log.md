@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-03T04:09:06Z
+---
+
+## step-2: Created useTugcardData hook with typed single-feed convenience and TugcardDataProvider. Updated barrel exports. 7 tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5-tugcard.md
+
+---
+
+---
 step: step-1
 date: 2025-03-03T03:59:41Z
 ---
