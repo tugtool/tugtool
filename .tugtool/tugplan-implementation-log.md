@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-03T19:45:45Z
+---
+
+## step-5: DeckCanvas now reads deckState via useSyncExternalStore and callbacks from DeckManagerContext. DeckCanvasProps reduced to connection only. Tests adapted with mock store provider. 422 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a2-deckmanager-store.md
+
+---
+
+---
 step: step-4
 date: 2025-03-03T19:36:27Z
 ---

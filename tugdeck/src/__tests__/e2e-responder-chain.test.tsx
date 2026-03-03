@@ -5,15 +5,19 @@
  *   ResponderChainManager + useResponder + ResponderChainProvider +
  *   key pipeline + chain-action TugButton + DeckCanvas + ComponentGallery
  *
+ * Phase 5a2 adaptation: DeckCanvas now requires a DeckManagerContext.Provider
+ * because useDeckManager() throws if context is null. All DeckCanvas renders
+ * are wrapped with a mock store provider via the wrapWithStore helper.
+ *
  * Tests cover:
- * - Integration test 1: render DeckCanvas with ResponderChainProvider, show
- *   gallery, verify full chain structure (gallery -> deck-canvas -> null),
- *   press Ctrl+`, verify cyclePanel dispatched end-to-end.
+ * - Integration test 1: render DeckCanvas with providers, show gallery, verify
+ *   full chain structure (gallery -> deck-canvas -> null), press Ctrl+`, verify
+ *   cyclePanel dispatched end-to-end.
  * - Integration test 2: render chain-action TugButton, change first responder,
  *   verify button re-renders with updated validation state.
  *
  * Verification tasks (all confirmed by tests below):
- * - Render tree: ResponderChainProvider > DeckCanvas (tested in step 5)
+ * - Render tree: ResponderChainProvider > DeckManagerContext.Provider > DeckCanvas
  * - Chain tree: component-gallery -> deck-canvas -> null (verified here)
  * - Ctrl+` triggers cyclePanel end-to-end (verified here)
  * - Chain-action TugButton shows correct enabled/disabled state (verified here)
@@ -35,10 +39,43 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { ResponderChainManager } from "@/components/tugways/responder-chain";
 import { TugButton } from "@/components/tugways/tug-button";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
+import { DeckManagerContext } from "@/deck-manager-context";
+import type { IDeckManagerStore } from "@/deck-manager-store";
+import type { DeckState } from "@/layout-tree";
 
 afterEach(() => {
   cleanup();
 });
+
+// ---- Mock store ----
+
+/**
+ * Build a minimal mock IDeckManagerStore for e2e tests.
+ * DeckCanvas requires a DeckManagerContext.Provider since Phase 5a2.
+ */
+function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore {
+  return {
+    subscribe: (_cb: () => void) => () => {},
+    getSnapshot: () => deckState,
+    getVersion: () => 0,
+    handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
+    handleCardClosed: (_id: string) => {},
+    handleCardFocused: (_id: string) => {},
+  };
+}
+
+/**
+ * Wrap children with DeckManagerContext.Provider using a mock store.
+ * Used wherever DeckCanvas is rendered.
+ */
+function WithMockStore({ children, deckState }: { children: React.ReactNode; deckState?: DeckState }) {
+  const store = makeMockStore(deckState);
+  return (
+    <DeckManagerContext.Provider value={store}>
+      {children}
+    </DeckManagerContext.Provider>
+  );
+}
 
 // ---- Shared helper ----
 
@@ -71,7 +108,9 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
       ({ container } = render(
         <ResponderChainProvider>
           <ManagerCapture managerRef={managerRef} />
-          <DeckCanvas connection={null} />
+          <WithMockStore>
+            <DeckCanvas connection={null} />
+          </WithMockStore>
         </ResponderChainProvider>
       ));
     });
@@ -102,7 +141,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     // ---- Ctrl+` fires cyclePanel through the full key pipeline ----
     // Stage 1 (capture): matchKeybinding returns "cyclePanel", dispatch returns true
-    // With no cards, the handler is a silent no-op — we verify the dispatch path
+    // With no cards, the handler is a silent no-op -- we verify the dispatch path
     // works by confirming the action is still handleable after the keydown fires.
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -124,7 +163,6 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     expect(container.querySelector(".cg-panel")).toBeNull();
     expect(manager.getFirstResponder()).toBe("deck-canvas");
-
   });
 });
 
@@ -269,3 +307,6 @@ describe("Responder chain E2E – chain-action TugButton validation subscription
     expect(siblingRenderCount).toBe(renderCountAfterMount);
   });
 });
+
+// Suppress unused import warning for useRef (used only in the type annotation above)
+void useRef;

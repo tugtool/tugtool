@@ -26,20 +26,33 @@
  *          Gallery renders above all cards (highest z-index).
  *          forwardRef / DeckCanvasHandle removed -- DeckManager drives via props.
  *
- * Hook order (Phase 3, rules-of-hooks compliant):
- *   useState(galleryVisible) -> useResponder -> useEffect
+ * Phase 5a2 (Spec S04, [D01], [D04]):
+ *          DeckCanvas reads deckState via useSyncExternalStore from the
+ *          DeckManagerContext store. Props deckState / onCardMoved /
+ *          onCardClosed / onCardFocused are removed. DeckCanvasProps now
+ *          contains only `connection`. The store variable is named `store`
+ *          (not `manager`) to avoid collision with the existing `manager`
+ *          variable used for the ResponderChainManager via
+ *          useRequiredResponderChain().
+ *
+ * Hook order (rules-of-hooks compliant):
+ *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
+ *   useRequiredResponderChain -> useCallback -> useState -> useResponder ->
+ *   useEffect
  *
  * The canvas div with grid background is provided by #deck-container in
  * index.html and styled by globals.css. DeckCanvas renders inside it.
  *
  * Spec S03 (#s03-deckcanvas-shape), [D03] Keep disconnect banner
- * Spec S04 (#s04-gallery-panel), Spec S05 (#s05-gallery-action)
+ * Spec S04 (#s04-canvas-props), Spec S04 (#s04-gallery-panel), Spec S05 (#s05-gallery-action)
  * Spec S06 (#deckcanvas-props), Spec S07 (#tugcard-visual-stack)
+ * [D01] DeckManager is a subscribable store with one root.render() at mount
+ * [D04] DeckCanvas reads state from store, not props
  * [D07] ResponderChainProvider wraps DeckCanvas only
  * Table T01: cyclePanel, resetLayout, showSettings, showComponentGallery
  */
 
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import type { TugConnection } from "@/connection";
 import { registerGallerySetter } from "@/action-dispatch";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -48,30 +61,20 @@ import { DisconnectBanner } from "./disconnect-banner";
 import { ComponentGallery } from "@/components/tugways/component-gallery";
 import { CardFrame } from "./card-frame";
 import { getRegistration } from "@/card-registry";
-import type { DeckState, CardState } from "@/layout-tree";
+import type { CardState } from "@/layout-tree";
+import { useDeckManager } from "@/deck-manager-context";
 
-// ---- DeckCanvasProps (Spec S06) ----
+// ---- DeckCanvasProps (Spec S04) ----
 
 /**
- * DeckCanvasProps for Phase 5 (Spec S06).
+ * DeckCanvasProps after Phase 5a2 migration (Spec S04).
  *
- * New props are optional with sensible defaults so existing test call sites
- * that pass only `connection={null}` continue to work unchanged.
+ * deckState, onCardMoved, onCardClosed, and onCardFocused are removed --
+ * DeckCanvas reads them from the DeckManagerContext store via
+ * useSyncExternalStore. Only `connection` remains as a prop (for DisconnectBanner).
  */
 export interface DeckCanvasProps {
   connection: TugConnection | null;
-  /** Cards to render. Default: empty cards array. Wired by DeckManager in Phase 5. */
-  deckState?: DeckState;
-  /** Called on card drag-end / resize-end. Default: no-op. */
-  onCardMoved?: (
-    id: string,
-    position: { x: number; y: number },
-    size: { width: number; height: number },
-  ) => void;
-  /** Called when a card's close action fires. Default: no-op. */
-  onCardClosed?: (id: string) => void;
-  /** Called on pointer-down in a card frame to bring it to front. Default: no-op. */
-  onCardFocused?: (id: string) => void;
 }
 
 // ---- Gallery z-index base ----
@@ -91,26 +94,25 @@ const GALLERY_ZINDEX = 1000;
  *
  * Renders the responder-chain root, the disconnect banner, the optional
  * component gallery, and one CardFrame per card in deckState.
+ *
+ * State is read from DeckManagerContext via useSyncExternalStore -- no
+ * deckState prop. The variable `store` holds the IDeckManagerStore instance;
+ * `manager` continues to hold the ResponderChainManager (unchanged).
  */
-export function DeckCanvas({
-  connection,
-  deckState,
-  onCardMoved,
-  onCardClosed,
-  onCardFocused,
-}: DeckCanvasProps) {
-  // Resolved defaults -- callers that omit new Phase 5 props get no-op behavior.
-  const cards = deckState?.cards ?? [];
-  const handleCardMoved = onCardMoved ?? (() => {});
-  const handleCardClosed = onCardClosed ?? (() => {});
+export function DeckCanvas({ connection }: DeckCanvasProps) {
+  // ---- Store subscription ([D04], Spec S04) ----
+  // Named `store` (not `manager`) to avoid collision with the ResponderChainManager
+  // variable below.
+  const store = useDeckManager();
+  const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const cards = deckState.cards;
 
   // ---------------------------------------------------------------------------
   // Visual focus
   // ---------------------------------------------------------------------------
   // Focus is derived from z-order: the last card in the array is the focused
   // card. A `deselected` flag allows explicitly clearing focus (canvas click)
-  // without changing z-order. This avoids sync issues between DeckManager's
-  // root.render() and React component state.
+  // without changing z-order.
 
   const [deselected, setDeselected] = useState(false);
 
@@ -121,24 +123,25 @@ export function DeckCanvas({
   // Refs for cyclePanel closure (registered once on mount via useResponder)
   // ---------------------------------------------------------------------------
   // cyclePanel is captured at mount time and never re-registered. All mutable
-  // state it accesses must be via refs or stable React state setters.
+  // state it accesses must be via refs or stable values.
+  // store.handleCardFocused is stable (bound once in DeckManager constructor),
+  // so it can be called directly from the closure without a ref.
 
   const cardsRef = useRef<readonly CardState[]>(cards);
   cardsRef.current = cards;
 
-  const onCardFocusedRef = useRef(onCardFocused);
-  onCardFocusedRef.current = onCardFocused;
-
   // Responder chain manager (stable singleton, safe in mount-time closure).
+  // Named `manager` as before -- distinct from `store` (IDeckManagerStore).
   const manager = useRequiredResponderChain();
 
-  // Bring card to front (z-order via DeckManager) and clear deselect flag.
+  // Bring card to front (z-order via store) and clear deselect flag.
+  // Dependency is `store` -- a stable singleton from context.
   const handleCardFocused = useCallback(
     (id: string) => {
-      onCardFocused?.(id);
+      store.handleCardFocused(id);
       setDeselected(false);
     },
-    [onCardFocused],
+    [store],
   );
 
   // ---------------------------------------------------------------------------
@@ -156,8 +159,9 @@ export function DeckCanvas({
     [manager],
   );
 
-  // Hook order: useState -> useRef -> useRequiredResponderChain -> useCallback
-  //             -> useState -> useResponder -> useEffect
+  // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
+  //             useRequiredResponderChain -> useCallback -> useState ->
+  //             useResponder -> useEffect
 
   // Gallery visibility state -- toggled by show-component-gallery action via
   // action-dispatch (Mac menu) and by the showComponentGallery responder action.
@@ -165,8 +169,9 @@ export function DeckCanvas({
 
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
-  // and the manager singleton. DeckCanvas auto-becomes first responder on mount
-  // because parentId is null and no first responder is set yet.
+  // store instance (stable singleton), and the manager singleton.
+  // DeckCanvas auto-becomes first responder on mount because parentId is null
+  // and no first responder is set yet.
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
@@ -174,7 +179,7 @@ export function DeckCanvas({
         const c = cardsRef.current;
         if (c.length < 2) return;
         const nextId = c[0].id; // bottom card rotates to top
-        onCardFocusedRef.current?.(nextId); // z-order update (via ref, always fresh)
+        store.handleCardFocused(nextId); // z-order update (stable store method)
         setDeselected(false); // clear deselect flag (stable state setter)
         manager.makeFirstResponder(nextId); // responder chain focus
       },
@@ -237,8 +242,8 @@ export function DeckCanvas({
             cardState={cardState}
             zIndex={CARD_ZINDEX_BASE + index}
             isFocused={cardState.id === focusedCardId}
-            onCardMoved={handleCardMoved}
-            onCardClosed={handleCardClosed}
+            onCardMoved={store.handleCardMoved}
+            onCardClosed={store.handleCardClosed}
             onCardFocused={handleCardFocused}
             renderContent={(injected) => {
               // DeckCanvas is the only layer that knows onCardClosed(id), so it
@@ -247,7 +252,7 @@ export function DeckCanvas({
               // only onDragStart and onMinSizeChange -- onClose is not part of it.
               const element = registration.factory(cardState.id, injected);
               return React.cloneElement(element, {
-                onClose: () => handleCardClosed(cardState.id),
+                onClose: () => store.handleCardClosed(cardState.id),
               });
             }}
           />
