@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-03T15:59:39Z
+---
+
+## step-3: Created SelectionGuard singleton module with card content boundary registration, pointer-clamped selection clipping, selectionchange safety net, RAF autoscroll, data-td-select=custom support, and save/restore selection. Added 26 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: step-2
 date: 2025-03-03T15:47:39Z
 ---
