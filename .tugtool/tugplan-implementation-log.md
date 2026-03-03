@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-03T01:48:03Z
+---
+
+## step-1: Created hooks/ subdirectory under tugways/ with useCSSVar hook implementation, barrel export index.ts, and 5 passing tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-4-mutation-model.md
+
+---
+
+---
 step: step-8
 date: 2025-03-03T00:01:30Z
 ---
