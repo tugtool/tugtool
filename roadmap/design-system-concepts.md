@@ -336,27 +336,96 @@ components/
 
 **The rule: app code imports from `components/tugways/`, never from `components/ui/`.** {#d06-file-org} The `ui/` directory is kept as-is (for easy shadcn updates) but is consumed only by tugways wrappers. This gives us the best of both worlds: shadcn's accessible primitives and Radix behavior under the hood, with our own opinions, subtypes, and conventions on top. We don't reinvent — we customize. And when we need something shadcn doesn't offer, we build it as an original.
 
-#### Component Priority
+#### Component Library Inventory {#d34-component-library}
 
-After TugButton (concept 3), the rollout order is:
+The full tugways component library, organized by tier. TugButton (concept 3) is
+already built. Alerts, sheets, toasts, and confirm popovers are covered by
+concept 9 (Phase 8a). Everything below ships in Phases 8b–8d.
 
-1. TugSelect
-2. TugBadge
-3. TugLabel
-4. TugCheckbox
-5. TugRadioGroup
-6. TugSpinner
-7. TugSlider
-8. TugSwitch
-9. TugAvatar
-10. TugProgress
-11. TugButtonGroup
-12. TugInput
-13. TugTextarea
-14. TugDialog
-15. TugAlertDialog
+**Tier 1 — Form Controls** (8 wrappers)
 
-Note: some of these (Badge, Spinner, Avatar, Progress, ButtonGroup) don't have shadcn equivalents and will be originals or compositions.
+| Component | Kind | Wraps | What it adds |
+|-----------|------|-------|-------------|
+| TugInput | Wrapper | Input | Validation states, error styling, `--td-*` tokens |
+| TugTextarea | Wrapper | Textarea | Auto-resize option, char count, error state |
+| TugSelect | Wrapper | Select | Tugways variants, token-based styling |
+| TugCheckbox | Wrapper | Checkbox | Label integration, mixed state, `--td-accent` |
+| TugRadioGroup | Wrapper | RadioGroup | Group label, horizontal/vertical layout |
+| TugSwitch | Wrapper | Switch | Label position, size variants |
+| TugSlider | Wrapper | Slider | Value display, range labels, tick marks |
+| TugLabel | Wrapper | Label | Required indicator, helper text slot |
+
+**Tier 2 — Display & Feedback** (7 components)
+
+| Component | Kind | Wraps | Notes |
+|-----------|------|-------|-------|
+| TugBadge | Original | — | Tone variants (good/warn/alert/info), pill shape, count mode |
+| TugSpinner | Original | — | Size variants, replaces loading prop visuals |
+| TugProgress | Original | — | Horizontal bar, percentage, indeterminate mode |
+| TugSkeleton | Original | — | Shimmer placeholder, `background-attachment: fixed` sync |
+| TugSeparator | Wrapper | Separator | Horizontal/vertical, label slot |
+| TugKbd | Original | — | Keyboard shortcut chip display |
+| TugAvatar | Original | — | Image + fallback initials, size variants |
+
+**Tier 3 — Navigation & Overlay** (4 wrappers)
+
+| Component | Kind | Wraps | Notes |
+|-----------|------|-------|-------|
+| TugTooltip | Wrapper | Tooltip | Hover labels, kbd shortcut display |
+| TugDropdownMenu | Wrapper | DropdownMenu | Kbd shortcuts in items, tone icons |
+| TugScrollArea | Wrapper | ScrollArea | Themed scrollbar, autohide |
+| TugContextMenu | Wrapper | ContextMenu | Right-click menus for cards |
+
+**Tier 4 — Data Display** (4 components)
+
+| Component | Kind | Wraps | Notes |
+|-----------|------|-------|-------|
+| TugTable | Wrapper | Table | Header/row/cell, sortable columns, stripe option |
+| TugStatCard | Original | — | Key-value metric display (label + number + trend) |
+| TugStatusIndicator | Original | — | Tone-colored dot + text (good/warn/alert/info) |
+| TugDialog | Wrapper | Dialog | General-purpose dialog (not alert/sheet) |
+
+**Tier 5 — Data Visualization** (3 originals)
+
+| Component | Kind | Notes |
+|-----------|------|-------|
+| TugSparkline | Original | SVG inline chart; area, line, column, bar variants |
+| TugLinearGauge | Original | Horizontal gauge with needle, thresholds, tick marks |
+| TugArcGauge | Original | Radial gauge with needle, center readout |
+
+**Tier 6 — Compound Components** (2 compositions)
+
+| Component | Kind | Composes | Notes |
+|-----------|------|----------|-------|
+| TugButtonGroup | Composition | TugButton × N | Connected button row, shared border radius |
+| TugChatInput | Composition | TugTextarea + TugButton × 2 | Submit + attachment buttons, Enter to submit |
+
+**Total: 28 components** (12 wrappers, 13 originals, 3 compositions) across
+three phases (8b–8d).
+
+**What Phase 9 cards need from this library:**
+
+| Card | Key components required |
+|------|----------------------|
+| Terminal | TugScrollArea, TugSpinner |
+| Conversation | TugScrollArea, TugChatInput, TugBadge, TugSpinner |
+| Git | TugTable, TugBadge, TugStatusIndicator, TugScrollArea |
+| Files | TugTable, TugScrollArea, TugContextMenu |
+| Stats | TugProgress, TugSparkline, TugLinearGauge, TugArcGauge, TugStatCard, TugBadge |
+| Settings | TugSelect, TugInput, TugCheckbox, TugRadioGroup, TugSwitch, TugSlider, TugLabel, TugSeparator |
+| Developer | TugCheckbox, TugSwitch, TugBadge, TugKbd |
+| About | TugAvatar, TugSeparator |
+
+**Excluded:** TugAlertDialog (= TugAlert, Phase 8a), TugPopover (internal to
+TugConfirmPopover), TugTabBar (Phase 5b), TugCollapsible (Tugcard handles
+collapse), TugCommand (post-Phase 9), calendar/date picker/carousel/pagination/
+breadcrumb/sidebar/menubar/navigation menu (not needed for tugdeck's card UI).
+
+**Design references:** The retronow mockups (`retronow-unified-review.html`,
+`RetronowComponentPackPage.tsx`, `retronow-components.css`) are the visual
+models for all components. Sparklines, linear gauges, and arc gauges are drawn
+directly from retronow's custom instruments. See
+[Retronow Design Reference](tugways-implementation-strategy.md#retronow-design-reference).
 
 #### Subtype Naming
 

@@ -318,7 +318,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: Visual transitions are smooth. No jarring state changes.
 
-### Phase 8: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
+### Phase 8a: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
 
 **Goal**: Full chrome layer.
 
@@ -345,6 +345,75 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: The dock replaces Mac menu commands as the primary UI for creating and managing cards. Chrome is complete.
 
+### Phase 8b: Form Controls + Core Display ([D34])
+
+**Goal**: Settings card has all the form controls it needs. Core display primitives available to all cards.
+
+**What to do**:
+1. Install shadcn primitives not yet present: `slider`, `label`, `separator`
+2. Implement 8 form control wrappers:
+   - `TugInput` — wraps Input, adds validation states, error styling, `--td-*` tokens
+   - `TugTextarea` — wraps Textarea, adds auto-resize option, char count, error state
+   - `TugSelect` — wraps Select, adds tugways variants, token-based styling
+   - `TugCheckbox` — wraps Checkbox, adds label integration, mixed state
+   - `TugRadioGroup` — wraps RadioGroup, adds group label, horizontal/vertical layout
+   - `TugSwitch` — wraps Switch, adds label position, size variants
+   - `TugSlider` — wraps Slider, adds value display, range labels, tick marks
+   - `TugLabel` — wraps Label, adds required indicator, helper text slot
+3. Implement `TugSeparator` wrapper — horizontal/vertical, label slot
+4. Add all 9 components to the Component Gallery with interactive controls
+5. Write tests for each component following the established hook test pattern
+
+**Result**: All form controls exist. The Settings card can be built.
+
+### Phase 8c: Display, Feedback & Navigation ([D34])
+
+**Goal**: Loading states, status display, menus, and scroll areas available to all cards.
+
+**What to do**:
+1. Install shadcn primitives not yet present: `context-menu`
+2. Implement 7 display and feedback components:
+   - `TugBadge` (original) — tone variants (good/warn/alert/info), pill shape, count mode
+   - `TugSpinner` (original) — size variants, standalone loading indicator
+   - `TugProgress` (original) — horizontal bar, percentage, indeterminate mode
+   - `TugSkeleton` (original) — shimmer placeholder, `background-attachment: fixed` sync ([D23])
+   - `TugKbd` (original) — keyboard shortcut chip display
+   - `TugAvatar` (original) — image + fallback initials, size variants
+   - `TugStatusIndicator` (original) — tone-colored dot + text (good/warn/alert/info)
+3. Implement 4 navigation and overlay wrappers:
+   - `TugTooltip` — wraps Tooltip, hover labels, kbd shortcut display
+   - `TugDropdownMenu` — wraps DropdownMenu, kbd shortcuts in items, tone icons
+   - `TugScrollArea` — wraps ScrollArea, themed scrollbar, autohide
+   - `TugContextMenu` — wraps ContextMenu, right-click menus for cards
+4. Add all 11 components to the Component Gallery
+5. Write tests for each component
+
+**Result**: Cards have loading states, status badges, scrollable areas, and context menus. Every card type has the display primitives it needs.
+
+### Phase 8d: Data Display, Visualization & Compound Components ([D34])
+
+**Goal**: Data-heavy cards (Stats, Git, Files, Conversation) have their specialized components.
+
+**What to do**:
+1. Install shadcn primitive not yet present: `table`
+2. Implement 4 data display components:
+   - `TugTable` (wrapper) — wraps Table, adds sortable columns, stripe option
+   - `TugStatCard` (original) — key-value metric display (label + large number + trend)
+   - `TugDialog` (wrapper) — wraps Dialog, general-purpose (not alert/sheet)
+   - `TugButtonGroup` (composition) — connected button row, shared border radius
+3. Implement 3 data visualization originals (from retronow custom instruments):
+   - `TugSparkline` — SVG inline chart with 4 variants: area, line, column, bar
+   - `TugLinearGauge` — horizontal gauge with needle, thresholds, major/minor tick marks
+   - `TugArcGauge` — radial gauge with needle, arc fill, center readout
+4. Implement 1 compound component:
+   - `TugChatInput` (composition) — TugTextarea + submit button + file attachment button, Shift+Enter for newline, Enter to submit
+5. Add all 8 components to the Component Gallery with interactive controls
+6. Write tests for each component
+
+**Design reference**: Sparklines and gauges are drawn directly from the retronow custom instruments (`retronow-unified-review.html`). The gauge configuration controls (scale, tick counts, format units, accent colors) serve as the reference for prop design. See [Retronow Design Reference](#retronow-design-reference).
+
+**Result**: The full 28-component library is complete. The Component Gallery is a comprehensive design system showcase. Phase 9 card rebuilds can begin.
+
 ### Phase 9: Card Rebuild
 
 **Goal**: All card content rebuilt on new infrastructure.
@@ -369,38 +438,48 @@ find any registered callbacks). This is fine — no errors, no crashes.
 Phase 0: Demolition
     │
     ▼
-Phase 1: Theme Foundation ─────────────────────────────┐
-    │                                                    │
-    ▼                                                    │
-Phase 2: First Component + Gallery                       │
-    │                                                    │
-    ├────────────────┐                                   │
-    ▼                ▼                                   │
-Phase 3:         Phase 4:                                │
-Responder Chain  Mutation Model                          │
-    │                │                                   │
-    └────────┬───────┘                                   │
-             ▼                                           │
-         Phase 5: Tugcard Base                           │
-             │                                           │
-             ├──────────┬──────────┬──────────┬──────┐   │
-             ▼          ▼          ▼          ▼      ▼   ▼
-         Phase 5b:  Phase 5c:  Phase 6:  Phase 7:  Phase 8:
+Phase 1: Theme Foundation ──────────────────────────────────┐
+    │                                                        │
+    ▼                                                        │
+Phase 2: First Component + Gallery                           │
+    │                                                        │
+    ├────────────────┐                                       │
+    ▼                ▼                                       │
+Phase 3:         Phase 4:                                    │
+Responder Chain  Mutation Model                              │
+    │                │                                       │
+    └────────┬───────┘                                       │
+             ▼                                               │
+         Phase 5: Tugcard Base                               │
+             │                                               │
+             ├──────────┬──────────┬──────────┬──────┐       │
+             ▼          ▼          ▼          ▼      ▼       ▼
+         Phase 5b:  Phase 5c:  Phase 6:  Phase 7:  Phase 8a:
          Card Tabs  Card Snap  Feed Abs. Motion    Chrome
                                          ◄── (tokens from Phase 1)
+                                                     │
+                                          Phase 8b: Form Controls
+                                                     │
+                                          Phase 8c: Display & Nav
+                                                     │
+                                          Phase 8d: Data Viz & Compound
              │          │          │         │       │
              └──────────┴──────┬───┴─────────┴───────┘
                                ▼
                   Phase 9: Card Rebuild
 ```
 
-Phases 3 and 4 can run in parallel. Phases 5b, 5c, 6, 7, and 8 can all start as soon
-as Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 8 (Alerts +
+Phases 3 and 4 can run in parallel. Phases 5b, 5c, 6, 7, and 8a can all start as soon
+as Phase 5 completes (Phase 7 also needs Phase 1's motion tokens). Phase 8a (Alerts +
 Title Bar + Dock) only needs Tugcard (Phase 5) and the responder chain (Phase 3, already
-done) — it does not depend on feeds, motion, tabs, or snapping. Phase 9 (Card Rebuild)
-is the true convergence point: rebuilt cards need feeds (Phase 6) for data, motion
-(Phase 7) for skeleton/transitions, and chrome (Phase 8) for title bar and dock. Phases
-5b and 5c are enhancements that can land before, during, or after Phase 9.
+done) — it does not depend on feeds, motion, tabs, or snapping. Phases 8b–8d are
+sequential (each wave builds on the previous) and depend on Phase 2 (Component Gallery
+exists) and Phase 4 (mutation model hooks). They can run in parallel with Phases 5b, 5c,
+6, and 7. Phase 9 (Card Rebuild) is the true convergence point: rebuilt cards need feeds
+(Phase 6) for data, motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for
+title bar and dock, and the component library (Phases 8b–8d) for form controls, data
+display, and visualization. Phases 5b and 5c are enhancements that can land before,
+during, or after Phase 9.
 
 ## Estimated Scope
 
@@ -416,12 +495,17 @@ is the true convergence point: rebuilt cards need feeds (Phase 6) for data, moti
 | 5c | ~1 file | ~50 lines |
 | 6 | ~4 files | ~400 lines |
 | 7 | ~3 files | ~200 lines |
-| 8 | ~8 files | ~1000 lines |
+| 8a | ~8 files | ~1000 lines |
+| 8b | ~9 files | ~800 lines |
+| 8c | ~11 files | ~700 lines |
+| 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~7600 lines** replacing the current ~9700 lines. The new
-codebase is smaller because the triple-registration redundancy is gone, the
-adapter layer is gone, and the component abstractions do more with less code.
+**Total rebuild: ~10,100 lines** replacing the current ~9700 lines. The new
+codebase is modestly larger because the 28-component library (Phases 8a–8d)
+adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
+triple-registration redundancy is gone, the adapter layer is gone, and the
+component abstractions do more with less code.
 
 ## How This Drives Tugplan Creation
 
@@ -444,8 +528,11 @@ The suggested plan sequence:
 8. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
 9. `tugways-phase-6-feed` — feed hooks, data flow
 10. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-11. `tugways-phase-8-chrome` — alerts, title bar, dock
-12. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+11. `tugways-phase-8a-chrome` — alerts, title bar, dock
+12. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+13. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+14. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+15. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
