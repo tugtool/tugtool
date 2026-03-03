@@ -197,6 +197,10 @@ body {
   --td-icon-active: var(--tways-icon-active, var(--td-accent-2));
   --td-grid-color: var(--tways-grid-color, rgba(255, 255, 255, 0.05));
 
+  /* Selection tokens (Phase 5a) */
+  --td-selection-bg: color-mix(in srgb, var(--td-accent-cool) 40%, transparent);
+  --td-selection-text: var(--td-text);
+
   /* Border, depth, utility tokens (Table T04) */
   --td-border: var(--tways-border);
   --td-border-soft: var(--tways-border-soft);

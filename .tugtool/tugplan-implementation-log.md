@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-03T15:42:18Z
+---
+
+## step-1: Added user-select: none to body in globals.css, selection tokens to tokens.css, selection containment styles to tugcard.css, and user-select: none to card-frame-resize in chrome.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5a-selection-model.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-03T05:15:36Z
 ---

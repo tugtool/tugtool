@@ -7,7 +7,7 @@
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
-.card-frame-resize { position: absolute; z-index: 1; }
+.card-frame-resize { position: absolute; z-index: 1; user-select: none; }
 .card-frame-resize-n  { top: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
 .card-frame-resize-s  { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: ns-resize; }
 .card-frame-resize-e  { right: -4px; top: 8px; bottom: 8px; width: 8px; cursor: ew-resize; }

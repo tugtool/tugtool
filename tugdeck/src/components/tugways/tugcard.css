@@ -130,6 +130,21 @@
   overflow: auto;
   background-color: var(--td-surface);
   min-height: 0; /* needed for flex children to allow scroll */
+  user-select: text;
+  overscroll-behavior: contain;
+}
+
+.tugcard-content ::selection {
+  background-color: var(--td-selection-bg);
+  color: var(--td-selection-text);
+}
+
+[data-td-select="none"] {
+  user-select: none;
+}
+
+[data-td-select="all"] {
+  user-select: all;
 }
 
 /* ============================================================================
