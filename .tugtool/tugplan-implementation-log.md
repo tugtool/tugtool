@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-03T23:51:52Z
+---
+
+## step-3: Created TugTabBar presentational component with tabs, active state via data-active attribute, close buttons, [+] type picker via TugDropdown, and 13 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-2
 date: 2025-03-03T23:44:29Z
 ---
