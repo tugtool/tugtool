@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-04T19:01:33Z
+---
+
+## step-8: Final verification: 600 tests pass, build clean, all 9 exit criteria met across 8 implementation steps
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-7
 date: 2025-03-04T18:58:21Z
 ---
