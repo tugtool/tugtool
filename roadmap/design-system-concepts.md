@@ -84,6 +84,8 @@
 | [D40] | DeckManager is a subscribable store — one `root.render()` at mount | Concept 5 | [#d40-deckmanager-store](#d40-deckmanager-store) |
 | [D41] | `useResponder` uses `useLayoutEffect` for registration | Concept 5 | [#d41-layout-effect-registration](#d41-layout-effect-registration) |
 | [D42] | No repeated `root.render()` from external code | Concept 5 | [#d42-no-repeated-root-render](#d42-no-repeated-root-render) |
+| [D43] | Component Gallery is a proper card with tabs, not a floating panel | Concept 3 | [#d43-gallery-card](#d43-gallery-card) |
+| [D44] | Progressive tab overflow: icon-only collapse, then overflow dropdown | Concept 12 | [#d44-tab-overflow](#d44-tab-overflow) |
 
 ### Key Architectural Patterns
 
@@ -696,6 +698,22 @@ Every tugways component must be discoverable, visually demonstrable, and API-doc
 3. **A components manifest in the design document.** This document (design-system-concepts.md) serves as the architectural inventory. Each concept section that defines a component includes: the props interface, subtype/variant matrix, mutation zone assignment, accessibility notes, and the pattern it demonstrates. The TOC's concept list ([#concepts](#concepts)) is the master index.
 
 **What we explicitly skip:** Storybook. It's a heavyweight tool designed for teams sharing a component library across multiple apps. Tugdeck is one app with one frontend. The component gallery card gives us the same visual browsing experience without the build infrastructure, and it runs in the actual app context (themes, responder chain, WebSocket connection) rather than an isolated sandbox.
+
+#### Component Gallery as a Proper Card {#d43-gallery-card}
+
+The Component Gallery starts as a floating absolute-positioned panel (Phase 2) but graduates to a proper registered card with tabs (Phase 5b3). The gallery registers as a card type (`"component-gallery"`) with its own `CardRegistration`, lives in the deck like any other card, and uses five tabs to organize its demo sections:
+
+| Tab | Content |
+|-----|---------|
+| TugButton | Interactive preview controls + full subtype × variant × size matrix |
+| Chain-Action | Chain-action button demos (cycleCard, showSettings, etc.) |
+| Mutation Model | Appearance-zone, local-data-zone, and structure-zone demos |
+| TugTabBar | Tab bar demo with sample tabs |
+| TugDropdown | Dropdown demo with trigger button |
+
+This conversion dogfoods the card and tab systems — the gallery is itself a multi-tab card built from tugways components. It eliminates the z-index hacks needed for the floating panel approach (dropdown portals no longer fight with a z-index:100 overlay). The gallery card is toggled via the same `show-component-gallery` action from the Mac Developer menu; the action now creates/focuses the gallery card in the deck rather than toggling a floating panel.
+
+The gallery card is a developer tool — it appears in the deck and persists across sessions like any card, but it is not a user-facing feature. It does not appear in the dock. Card type registration makes it available from the [+] type picker in any tab bar, which is useful during development.
 
 #### What TugButton Demonstrates for All Tugways Components
 
@@ -2452,7 +2470,32 @@ The tab bar is a simple horizontal strip:
 />
 ```
 
-Each tab renders its **icon** (from `getRegistration(tab.componentId).defaultMeta.icon`) alongside its title. Styled with `--td-*` tokens. Active tab has a bottom border accent. Inactive tabs are muted. Close buttons appear on hover. The [+] button at the end opens a type picker dropdown. Overflow scrolls horizontally (no wrapping — tabs are a horizontal rail).
+Each tab renders its **icon** (from `getRegistration(tab.componentId).defaultMeta.icon`) alongside its title. Styled with `--td-*` tokens. Active tab has a bottom border accent. Inactive tabs are muted. Close buttons appear on hover. The [+] button at the end opens a type picker dropdown. Overflow is handled by progressive collapse (Phase 5b4, [#d44-tab-overflow](#d44-tab-overflow)).
+
+#### Tab Overflow — Progressive Collapse {#d44-tab-overflow}
+
+When tabs exceed the display width of their card, the tab bar collapses progressively rather than scrolling or wrapping:
+
+**Stage 1: Icon-only collapse.** Inactive tabs collapse from icon+label to icon-only. The active tab always shows its full icon+label. This reclaims the label width for every inactive tab, often enough to fit all tabs.
+
+**Stage 2: Overflow dropdown.** If icon-only collapse still doesn't fit all tabs, excess tabs move into an overflow dropdown anchored at the right end of the tab bar (before the [+] button). The dropdown shows the full icon+label for each overflow tab. Selecting a tab from the dropdown makes it the active tab and moves it into the rightmost visible position in the tab strip — the previously rightmost visible tab shifts into the overflow dropdown.
+
+**Measurement:** A `ResizeObserver` on the tab bar container drives the collapse logic. When the container width changes (card resize, tab add/remove), the bar recalculates which tabs fit:
+
+1. Measure total width needed for all tabs at full size (icon+label)
+2. If it fits → Stage 0 (all tabs at full size)
+3. If not → collapse inactive tabs to icon-only, re-measure
+4. If it still doesn't fit → compute how many icon-only tabs fit, put the rest in the overflow dropdown
+
+**Active tab visibility rule:** The active tab is always visible in the tab strip, never hidden in the overflow dropdown. When the user selects a tab from the overflow dropdown, that tab moves to the rightmost visible slot, displacing the tab that was there into the overflow. The [+] type picker and overflow dropdown button are always visible.
+
+**Interaction with drag gestures (Phase 5b2):** Dragging a tab into a card that is already overflowing adds the tab to the logical tab list. The overflow calculation re-runs, and the new tab may land in the overflow dropdown if it doesn't fit. Dragging a tab out of an overflowing card removes it from the list and may promote an overflow tab back into the visible strip.
+
+| State | Active tab | Inactive tabs | Overflow button |
+|-------|-----------|---------------|-----------------|
+| All fit (full size) | icon + label | icon + label | hidden |
+| All fit (icon-only inactive) | icon + label | icon only | hidden |
+| Overflow | icon + label | icon only (visible) or in dropdown (hidden) | visible, shows count |
 
 #### Persistence
 
@@ -2466,7 +2509,7 @@ Tab state is already persisted in `CardState.tabs` and `CardState.activeTabId`. 
 4. **Responder chain follows the active tab** — tab switching is a chain reconfiguration, handled automatically by mount/unmount of content responders.
 5. **Tab icons from card registration** — each tab displays its card type icon from `TugcardMeta.icon`. The icon is a property of the card type, shared between the title bar (single-tab) and the tab bar (multi-tab).
 6. **Mixed-type tabs without restriction** — any card type can share a frame with any other. CardFrame is type-agnostic; each tab carries its own `componentId`.
-7. **Two-phase implementation** — Phase 5b covers click-based tab management (create, switch, close, type picker, icons). Phase 5b2 adds drag gestures (reorder, detach, merge).
+7. **Four-phase implementation** — Phase 5b covers click-based tab management (create, switch, close, type picker, icons). Phase 5b2 adds drag gestures (reorder, detach, merge). Phase 5b3 converts the Component Gallery from a floating panel to a proper tabbed card ([#d43-gallery-card](#d43-gallery-card)). Phase 5b4 adds progressive tab overflow ([#d44-tab-overflow](#d44-tab-overflow)).
 
 ### 13. Card Snap Sets {#c13-snap-sets}
 
@@ -3192,3 +3235,11 @@ Revised Concept 12 (Card Tabs) with three additions and a phase split:
 - **[+] type picker**: The add-tab button opens a dropdown listing all registered card types (icon + title). Selecting a type adds a new tab of that type, enabling mixed-type tabs through normal UI flow.
 - **Mixed-type tabs without restriction**: Strengthened the mixed-type support language. CardFrame is type-agnostic; there is no reason to restrict which card types can share a frame.
 - **Phase split**: Implementation split into Phase 5b (click-based: create, switch, close, icons, type picker, active/inactive states) and Phase 5b2 (drag gestures: reorder within bar, detach to new card, merge into existing card). This keeps 5b focused on data flow and component rendering while 5b2 handles pointer-capture and hit-testing mechanics.
+
+### Entry 22: Gallery Card and Tab Overflow — Phases 5b3, 5b4 {#log-22} (2026-03-03)
+
+Post-Phase 5b implementation review led to two new phases:
+
+- **[D43] Component Gallery as a proper card.** The gallery started as an absolute-positioned floating panel (Phase 2). Now that cards and tabs exist, the gallery should dogfood them. Phase 5b3 converts it to a registered card type with five tabs (TugButton, Chain-Action, Mutation Model, TugTabBar, TugDropdown). This eliminates z-index hacks (dropdown portals fought with the panel's z-index:100), gives the gallery proper card lifecycle (persistence, deck membership), and validates the tab system with a real multi-tab card.
+- **[D44] Progressive tab overflow.** Phase 5b's tab bar scrolled horizontally on overflow — functional but not ideal. Phase 5b4 adds three-stage progressive collapse: (1) inactive tabs collapse to icon-only, (2) remaining overflow tabs move into a dropdown. The active tab is always visible in the strip. A ResizeObserver drives the collapse measurement. This interacts with Phase 5b2's drag gestures — dragging a tab into an overflowing card triggers re-measurement and may route the new tab to the overflow dropdown.
+- **Phase count**: Concept 12 now has four implementation phases (5b, 5b2, 5b3, 5b4). Phase 5b3 depends on Phase 5b (tab system must exist). Phase 5b4 depends on Phase 5b (tab bar component must exist) but not on 5b2 or 5b3.

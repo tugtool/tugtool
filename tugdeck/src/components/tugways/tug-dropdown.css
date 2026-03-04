@@ -20,11 +20,13 @@
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
-  background-color: var(--td-surface-raised);
+  background-color: var(--td-surface-control);
   border: 1px solid var(--td-border);
   border-radius: var(--td-radius-md);
-  box-shadow: var(--td-shadow-md);
+  box-shadow: var(--td-shadow-soft);
   color: var(--td-text);
+  /* Must exceed .cg-panel z-index:100 so dropdown renders above the gallery */
+  z-index: 200;
 }
 
 /* ============================================================================

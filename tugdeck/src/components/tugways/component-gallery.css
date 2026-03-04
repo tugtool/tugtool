@@ -260,7 +260,7 @@
 }
 
 .cg-demo-trigger:hover {
-  background-color: var(--td-surface-raised);
+  background-color: var(--td-surface);
 }
 
 /* Shared status line for both demos */
