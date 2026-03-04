@@ -37,6 +37,8 @@
 | 14 | Selection Model | DESIGNED | [#c14-selection](#c14-selection) |
 | 15 | Keybindings View | DEFERRED | [#c15-keybindings](#c15-keybindings) |
 | 16 | Brio Theme Revision | DEFERRED | [#c16-brio](#c16-brio) |
+| 17 | Tugbank: Persistent Defaults Store | DESIGNED | [#c17-tugbank](#c17-tugbank) |
+| 18 | Inactive State Preservation | DESIGNED | [#c18-inactive-state](#c18-inactive-state) |
 
 ### Cross-Cutting Design Decisions
 
@@ -87,6 +89,13 @@
 | [D43] | Component Gallery is a proper card with tabs, not a floating panel | Concept 3 | [#d43-gallery-card](#d43-gallery-card) |
 | [D44] | Progressive tab overflow: icon-only collapse, then overflow dropdown | Concept 12 | [#d44-tab-overflow](#d44-tab-overflow) |
 | [D45] | Card-as-tab merge: dropping a card onto another card's tab bar merges it | Concept 12 | [#d45-card-as-tab-merge](#d45-card-as-tab-merge) |
+| [D46] | Tugbank replaces settings API with SQLite-backed typed defaults | Concept 17 | [#d46-tugbank](#d46-tugbank) |
+| [D47] | Per-domain key-value storage with CAS concurrency | Concept 17 | [#d47-tugbank-domains](#d47-tugbank-domains) |
+| [D48] | Frontend reads/writes tugbank via HTTP bridge, same endpoints | Concept 17 | [#d48-tugbank-bridge](#d48-tugbank-bridge) |
+| [D49] | Per-tab state bag: scroll position, selection, card-content state | Concept 18 | [#d49-tab-state-bag](#d49-tab-state-bag) |
+| [D50] | `useTugcardPersistence` hook for card content state save/restore | Concept 18 | [#d50-persistence-hook](#d50-persistence-hook) |
+| [D51] | Focused card ID persisted in DeckState for reload restoration | Concept 18 | [#d51-focused-card](#d51-focused-card) |
+| [D52] | Collapsed state persisted in CardState | Concept 18 | [#d52-collapsed-state](#d52-collapsed-state) |
 
 ### Key Architectural Patterns
 
@@ -105,6 +114,8 @@
 | Imperative-over-declarative alerts | `tugAlert()` returns Promise; host component renders AlertDialog | [#alert-architecture](#alert-architecture) |
 | Selection containment | CSS prevention + JS SelectionGuard + `data-td-select` developer API | [#d34-three-layer-selection](#d34-three-layer-selection) |
 | Default button | Responder chain designates one button per scope; Enter key activates it | [#d39-default-button](#d39-default-button) |
+| Tugbank defaults store | SQLite-backed typed key-value persistence with domain separation and CAS | [#d46-tugbank](#d46-tugbank) |
+| Per-tab state preservation | Scroll, selection, and card-content state saved/restored across tab switch and app reload | [#d49-tab-state-bag](#d49-tab-state-bag) |
 
 ### External References
 
@@ -114,6 +125,7 @@
 | `roadmap/eliminate-frontend-flash.md` | UI-flash root cause analysis and three-layer fix (referenced from [#startup-continuity](#startup-continuity)) |
 | `roadmap/tuglook-style-system-redesign.txt` | Prior art for theme system |
 | `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions |
+| `roadmap/tugbank-proposal.md` | Tugbank SQLite-backed defaults store design (schema, API, CLI, concurrency model) |
 
 ### Discussion Log
 
@@ -134,6 +146,8 @@
 | 13 | Concept 14: Selection Model | 2026-03-03 | [#log-13](#log-13) |
 | 18 | Default Button Mechanism | 2026-03-02 | [#log-18](#log-18) |
 | 21 | Concept 12 Revised — Tab Icons, Type Picker, Phase Split | 2026-03-03 | [#log-21](#log-21) |
+| 24 | Tugbank Defaults Store — Concept 17 | 2026-03-04 | [#log-24](#log-24) |
+| 25 | Inactive State Preservation — Concept 18 | 2026-03-04 | [#log-25](#log-25) |
 
 ---
 
@@ -2893,6 +2907,146 @@ No React state is involved in any selection operation. Selection is entirely an 
 
 **Depends on:** Theme architecture (concept 1). If themes become loadable resources, this is just a new theme file. If themes remain in CSS, it's a token value change.
 
+### 17. Tugbank: Persistent Defaults Store {#c17-tugbank}
+
+**Status: DESIGNED** (2026-03-04)
+
+**The problem.** The current persistence path for deck state is `settings-api.ts` → HTTP POST → tugcast Rust backend → flat file. This works for the simple case (one layout blob, one theme string), but as the design system matures, the frontend needs to persist increasingly granular state: per-tab scroll positions, per-tab selections, card collapse flags, per-card content state blobs, focused card identity, and future user preferences. A flat JSON blob POSTed on every mutation is the wrong tool for this — it lacks typing, domain separation, granular writes, and multi-process safety.
+
+**The solution.** Tugbank is a SQLite-backed typed defaults store, modeled after Apple's `UserDefaults`/`defaults`. It provides domain-separated key-value storage with typed values (bool, i64, f64, string, bytes, JSON), WAL-mode concurrent access, and compare-and-swap concurrency control. The full design is in `roadmap/tugbank-proposal.md`.
+
+#### Tugbank Replaces Settings API {#d46-tugbank}
+
+**[D46] Tugbank replaces settings API with SQLite-backed typed defaults.**
+
+The current `settings-api.ts` uses two HTTP endpoints (`GET /api/settings`, `POST /api/settings`) backed by a flat file. Tugbank replaces this storage layer:
+
+- **Backend**: The tugcast Rust server gains a `DefaultsStore` (from the `tugbank-core` crate) opened at startup. The existing `/api/settings` endpoints are rewritten to read/write tugbank domains instead of the flat file.
+- **Frontend**: `settings-api.ts` is updated to use the new endpoints. The HTTP interface (fetch/post) is preserved — the frontend does not link tugbank directly.
+- **Migration**: On first startup with tugbank, if a legacy flat settings file exists, migrate its contents into the `dev.tugtool.deck` domain and remove the flat file.
+
+#### Domain Separation {#d47-tugbank-domains}
+
+**[D47] Per-domain key-value storage with CAS concurrency.**
+
+Tugbank organizes data by domain (reverse-URL strings). The tugways frontend uses these domains:
+
+| Domain | Keys | Value Types |
+|--------|------|-------------|
+| `dev.tugtool.deck.layout` | `cards` (the DeckState blob) | JSON |
+| `dev.tugtool.deck.state` | `focusedCardId`, `collapsed.<cardId>` | string, bool |
+| `dev.tugtool.deck.tabstate` | `<tabId>.scroll`, `<tabId>.selection`, `<tabId>.content` | JSON |
+| `dev.tugtool.app` | `theme`, `devMode` | string, bool |
+
+Domain separation means writing a card's scroll position does not require re-serializing the entire layout blob. Each key can be written independently.
+
+#### HTTP Bridge {#d48-tugbank-bridge}
+
+**[D48] Frontend reads/writes tugbank via HTTP bridge, same endpoints.**
+
+The frontend does not link the tugbank Rust crate directly. Instead, tugcast exposes HTTP endpoints that bridge to tugbank:
+
+- `GET /api/defaults/<domain>` — read all keys in a domain
+- `GET /api/defaults/<domain>/<key>` — read a single key
+- `PUT /api/defaults/<domain>/<key>` — write a single key
+- `DELETE /api/defaults/<domain>/<key>` — delete a single key
+
+The existing `GET /api/settings` and `POST /api/settings` endpoints are preserved as compatibility shims during migration, then removed.
+
+#### Implementation Notes
+
+- **Rust crate**: `tugbank-core` is a library crate in the tugtool workspace. It wraps `rusqlite` with the schema, value encoding, domain CRUD, and CAS logic from the tugbank proposal.
+- **CLI**: `tugbank` is a binary crate providing a `defaults`-like CLI for debugging and scripting.
+- **Testing**: Unit tests for value roundtrip, SQL mapping, CAS conflict detection. Integration tests for two-process writer contention.
+
+### 18. Inactive State Preservation {#c18-inactive-state}
+
+**Status: DESIGNED** (2026-03-04)
+
+**The problem.** When a tab becomes inactive (the user switches to another tab in the same card), the inactive tab's content component unmounts. When the app reloads, all ephemeral DOM state is lost. In both cases, the user loses:
+
+- **Text selection** — whatever text was highlighted disappears
+- **Scroll position** — scrollable content areas jump back to the top
+- **Card content state** — form input values, tree expand/collapse, search filters, sort orders, cursor positions in editable fields
+- **Focused card identity** — which card had keyboard focus
+- **Collapse state** — which cards were window-shaded
+
+The Phase 5a selection guard already saves/restores selections across tab switches (in-memory), but this state does not survive app reload. Scroll positions are never captured at all. Card content state is entirely unmanaged.
+
+**The solution.** A two-layer state preservation system: Tugcard-managed state (scroll, selection, collapse, focus) that Tugcard captures automatically, and card-content-managed state that card content components opt into via a hook.
+
+#### Per-Tab State Bag {#d49-tab-state-bag}
+
+**[D49] Per-tab state bag: scroll position, selection, card-content state.**
+
+Each tab gets an associated state bag that survives both tab switches and app reload. The state bag is stored in tugbank under the `dev.tugtool.deck.tabstate` domain, keyed by tab ID.
+
+**Tugcard-managed state** (captured automatically by Tugcard on deactivation):
+
+| Field | Type | Captured From |
+|-------|------|---------------|
+| `scroll` | `{ x: number; y: number }` | `contentArea.scrollLeft`, `contentArea.scrollTop` |
+| `selection` | `SavedSelection \| null` | `SelectionGuard.saveSelection(cardId)` — the existing index-path encoding |
+
+**Card-content-managed state** (opted in via `useTugcardPersistence`):
+
+| Field | Type | Captured From |
+|-------|------|---------------|
+| `content` | `unknown` (opaque JSON) | Card content component's `onSave` callback |
+
+**Lifecycle:**
+
+1. **Tab deactivation** (switching away): Tugcard reads scroll position from the content area DOM, calls `SelectionGuard.saveSelection()`, calls the card content's `onSave` callback. Writes the state bag to tugbank.
+2. **Tab activation** (switching to): Tugcard reads the state bag from tugbank (or in-memory cache). Sets scroll position on the content area after mount. Calls `SelectionGuard.restoreSelection()`. Calls the card content's `onRestore` callback.
+3. **App save** (debounced on mutation): State bags are already in tugbank — no extra work needed.
+4. **App reload**: Tugcard reads state bags from tugbank during mount. Same restore path as tab activation.
+
+**In-memory cache:** During a session, state bags are cached in memory (a `Map<tabId, TabStateBag>` on DeckManager or a dedicated store). Tugbank is the durable backing store; the in-memory cache avoids HTTP round-trips on every tab switch.
+
+#### Persistence Hook for Card Content {#d50-persistence-hook}
+
+**[D50] `useTugcardPersistence` hook for card content state save/restore.**
+
+Card content components opt into state persistence by calling a hook:
+
+```typescript
+function useTugcardPersistence<T>(options: {
+  onSave: () => T;
+  onRestore: (state: T) => void;
+}): void;
+```
+
+**How it works:**
+- `onSave` is called by Tugcard when the tab deactivates or the app saves. The card content returns whatever state it wants to persist (form values, tree expand state, sort order, etc.). The returned value must be JSON-serializable.
+- `onRestore` is called by Tugcard when the tab activates and a saved state exists. The card content receives its previously-saved state and applies it.
+
+**Contract:**
+- The hook registers callbacks with Tugcard via context. Tugcard calls them at the right lifecycle points.
+- Card content owns the schema of its persisted state. Tugcard treats it as opaque JSON.
+- If no saved state exists on restore (first mount, or state was cleared), `onRestore` is not called.
+
+**Examples of card-content state:**
+
+| Card Type | Persisted State |
+|-----------|----------------|
+| Files card | `{ expandedPaths: string[], sortColumn: string, sortDir: "asc" \| "desc" }` |
+| Git card | `{ activeSection: string, filter: string }` |
+| Settings card | `{ unsavedChanges: Record<string, unknown> }` |
+| Code card | `{ cursorLine: number, cursorColumn: number }` |
+| Terminal card | *(deferred — xterm.js has its own buffer model)* |
+
+#### Focused Card Persistence {#d51-focused-card}
+
+**[D51] Focused card ID persisted in DeckState for reload restoration.**
+
+The currently-focused card ID is written to tugbank under `dev.tugtool.deck.state` → `focusedCardId`. On reload, after all cards are mounted, DeckManager calls `makeFirstResponder` on the restored card ID (if it still exists in the deck).
+
+#### Collapsed State Persistence {#d52-collapsed-state}
+
+**[D52] Collapsed state persisted in CardState.**
+
+Add `collapsed?: boolean` to `CardState` in `layout-tree.ts`. This field is serialized with the layout and restored on reload. When `true`, the card renders in window-shade mode (title bar only, content hidden). The collapse UI itself is built in Phase 8a (title bar enhancements), but the data field and persistence are established here so that Phase 8a can simply read/write it.
+
 ---
 
 ## Dependency Map
@@ -2939,6 +3093,11 @@ No React state is involved in any selection operation. Selection is entirely an 
    │13. Card Snap│  │15. Key-   │  │16. Brio     │
    │    Sets     │  │  bindings │  │  Revision   │
    └─────────────┘  └───────────┘  └─────────────┘
+
+   ┌─────────────────┐       ┌─────────────────────┐
+   │17. Tugbank       │──────▶│18. Inactive State   │
+   │ (defaults store) │       │    Preservation     │
+   └─────────────────┘       └─────────────────────┘
 ```
 
 Concepts 12 (Card Tabs) depends on concept 6 (Tugcard). Concept 13 (Card Snap Sets) is
@@ -2947,6 +3106,10 @@ Concept 14 (Selection Model) depends on concepts 4 (Responder Chain), 5 (Mutatio
 and 6 (Tugcard) — the selection guard uses appearance-zone mutation patterns, integrates with
 the responder chain for `selectAll`/`copy`/`cut` actions, and is wired into Tugcard via a hook.
 Concepts 15–16 can proceed independently once the core stack (1-6) is designed.
+Concept 17 (Tugbank) is infrastructure — it depends on the tugcast backend but not on the
+frontend design system stack. Concept 18 (Inactive State Preservation) depends on concepts 6
+(Tugcard), 12 (Card Tabs), 14 (Selection Model), and 17 (Tugbank) — it uses the selection
+guard's save/restore API, extends Tugcard with lifecycle hooks, and persists state via tugbank.
 
 ---
 
@@ -3256,3 +3419,22 @@ Post-Phase 5b2 implementation review identified a gap in tab composition: single
 - **[D45] Card-as-tab merge.** Dropping a card onto another card's tab bar merges it as a new tab. This uses drop target detection on the existing CardFrame drag path — on pointer up, check if the drop position is over a tab bar. If so, call `mergeTab` instead of completing the card move. Reuses the `data-card-id` hit-test infrastructure from Phase 5b2.
 - **Phase 5b5: Tab Refinements.** A collection phase for tab-related refinements discovered during implementation. Card-as-tab merge is the first item. Additional refinements may be added as Phases 5b3 and 5b4 are implemented.
 - **Phase count**: Concept 12 now has five implementation phases (5b, 5b2, 5b3, 5b4, 5b5). Phase 5b5 depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist).
+
+### Entry 24: Tugbank Defaults Store — Concept 17 {#log-24} (2026-03-04)
+
+As the design system matures, the flat JSON blob persistence model (`settings-api.ts` → HTTP POST → flat file) becomes inadequate. Per-tab scroll positions, selections, card content state, collapse flags, and focused card identity all need granular, typed persistence. Rather than bolt increasingly complex state onto the existing flat-file system, we adopt tugbank — a SQLite-backed defaults store modeled after Apple's `UserDefaults`.
+
+- **[D46] Tugbank replaces the settings API** as the backend storage layer. The frontend HTTP interface is preserved (new REST endpoints), but the backend switches from flat file to SQLite with WAL-mode concurrency.
+- **[D47] Domain separation** organizes state by concern: `dev.tugtool.deck.layout` for card geometry, `dev.tugtool.deck.tabstate` for per-tab ephemeral state, `dev.tugtool.app` for user preferences. Granular writes mean changing one card's scroll position doesn't re-serialize the entire layout.
+- **[D48] HTTP bridge** keeps the frontend decoupled from the Rust crate — tugcast exposes RESTful endpoints that map to tugbank operations.
+- **Phase 5e**: Implementation phase. Builds the `tugbank-core` Rust crate, the `tugbank` CLI, the tugcast HTTP bridge, and migrates `settings-api.ts` to the new endpoints. This is infrastructure that Phase 5f (state preservation) builds on.
+
+### Entry 25: Inactive State Preservation — Concept 18 {#log-25} (2026-03-04)
+
+Cards and tabs lose ephemeral state in two scenarios: tab switch (inactive tab unmounts) and app reload (all DOM state lost). The Phase 5a selection guard already saves/restores selections in memory across tab switches, but scroll position is never captured, card content state is unmanaged, and nothing survives app reload.
+
+- **[D49] Per-tab state bag** defines the three categories of state each tab preserves: scroll position (Tugcard-managed, automatic), selection (Tugcard-managed, via SelectionGuard), and card content state (opt-in via hook).
+- **[D50] `useTugcardPersistence` hook** gives card content components a clean opt-in API. Card content provides `onSave`/`onRestore` callbacks; Tugcard calls them at the right lifecycle points. The state blob is opaque JSON — card content owns the schema.
+- **[D51] Focused card persistence** writes the focused card ID to tugbank. On reload, keyboard focus is restored to the correct card.
+- **[D52] Collapsed state** adds `collapsed?: boolean` to `CardState`. The field persists with the layout; the collapse UI is Phase 8a's responsibility.
+- **Phase 5f**: Implementation phase. Depends on Phase 5e (tugbank) for durable storage and Phase 5b (tabs) for the tab state lifecycle. Builds the state bag, persistence hook, scroll/selection capture, collapse field, and focused card restoration.

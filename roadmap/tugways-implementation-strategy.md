@@ -383,6 +383,55 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Note**: Phase 5b5 depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist). Additional refinement items may be added as Phases 5b3 and 5b4 are implemented.
 
+### Phase 5e: Tugbank Defaults Store (Concept 17, [D46]-[D48])
+
+**Goal**: Replace the flat-file settings backend with a SQLite-backed typed defaults store. Establish the persistence infrastructure that Phase 5f (state preservation) and all future state-heavy features build on.
+
+**What to do**:
+1. Create `tugbank-core` library crate in the tugtool workspace — SQLite schema bootstrap, `Value` enum (null, bool, i64, f64, string, bytes, json), domain CRUD, CAS concurrency via generation counters, `DomainHandle` API
+2. Create `tugbank` binary crate — `clap`-based CLI modeled after macOS `defaults` (domains, read, write, delete, keys, cas-write, generation)
+3. Add `DefaultsStore` to tugcast's Rust backend — open tugbank SQLite DB at startup (path: `~/.config/tug/defaults.db` or configurable)
+4. Implement HTTP bridge endpoints in tugcast: `GET /api/defaults/<domain>`, `GET /api/defaults/<domain>/<key>`, `PUT /api/defaults/<domain>/<key>`, `DELETE /api/defaults/<domain>/<key>`
+5. Migrate existing settings: on first startup, if legacy flat settings file exists, read its contents and write them into `dev.tugtool.deck.layout` (cards JSON) and `dev.tugtool.app` (theme) domains, then remove the flat file
+6. Update `settings-api.ts` to use the new `/api/defaults/` endpoints for layout and theme reads/writes. Preserve the debounced save pattern.
+7. Verify: app loads layout from tugbank, theme persists across reload, `tugbank` CLI can read/write values, two-process CAS tests pass
+
+**Files created/modified**:
+1. `tugcode/tugbank-core/` — new library crate (schema, value, domain, store)
+2. `tugcode/tugbank/` — new binary crate (CLI)
+3. `tugcode/tugcast/` — DefaultsStore integration, HTTP bridge endpoints
+4. `tugdeck/src/settings-api.ts` — new endpoint URLs, domain-aware reads/writes
+
+**Result**: All persistence flows through tugbank. The flat settings file is gone. The `tugbank` CLI provides debugging and scripting access. Domain separation (`dev.tugtool.deck.layout`, `dev.tugtool.deck.state`, `dev.tugtool.deck.tabstate`, `dev.tugtool.app`) is established for Phase 5f and beyond.
+
+**Note**: Phase 5e is primarily Rust/backend work. The frontend change is limited to updating `settings-api.ts` endpoint URLs and response parsing. No new UI features.
+
+### Phase 5f: Inactive State Preservation (Concept 18, [D49]-[D52])
+
+**Goal**: Card and tab state survives both tab switching and app reload. Selections, scroll positions, collapse state, focused card identity, and card content state are all preserved.
+
+**What to do**:
+1. Add `collapsed?: boolean` to `CardState` in `layout-tree.ts` ([D52]). Update serialization to read/write it. No UI yet — Phase 8a builds the collapse toggle.
+2. Add `focusedCardId?: string` to `DeckState` in `layout-tree.ts` ([D51]). DeckManager writes it to tugbank (`dev.tugtool.deck.state` → `focusedCardId`) on focus change. On reload, call `makeFirstResponder` on the restored card ID after mount.
+3. Implement `TabStateBag` type — `{ scroll?: { x: number; y: number }; selection?: SavedSelection | null; content?: unknown }`. Create an in-memory cache (`Map<string, TabStateBag>`) on DeckManager for fast tab-switch access.
+4. Implement Tugcard deactivation capture: on tab switch away, read `contentArea.scrollLeft`/`scrollTop`, call `SelectionGuard.saveSelection()`, call the card content's `onSave` callback (if registered). Write the state bag to the in-memory cache and debounce-write to tugbank (`dev.tugtool.deck.tabstate` domain, keyed by tab ID).
+5. Implement Tugcard activation restore: on tab switch to, read the state bag from the in-memory cache (falling back to tugbank on cache miss). After mount, set `contentArea.scrollLeft`/`scrollTop`. Call `SelectionGuard.restoreSelection()`. Call the card content's `onRestore` callback (if registered).
+6. Implement `useTugcardPersistence` hook ([D50]) — card content components call `useTugcardPersistence({ onSave: () => T, onRestore: (state: T) => void })`. The hook registers callbacks with Tugcard via context. Tugcard calls `onSave` on deactivation and `onRestore` on activation.
+7. On app reload: DeckManager reads all tab state bags from tugbank during initialization. Passes them to Tugcard instances. Each Tugcard restores its active tab's state on first mount.
+8. Verify: switch tabs → scroll position restored, selection restored. Reload app → scroll position restored, selection restored, focused card restored, collapsed state restored. Card content state round-trips via `useTugcardPersistence`.
+
+**Files created/modified**:
+1. `tugdeck/src/layout-tree.ts` — add `collapsed` to CardState, `focusedCardId` to DeckState
+2. `tugdeck/src/serialization.ts` — serialize/deserialize new fields
+3. `tugdeck/src/deck-manager.ts` — tab state cache, focus persistence, tugbank writes
+4. `tugdeck/src/components/tugways/tugcard.tsx` — deactivation capture, activation restore lifecycle
+5. `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` — new hook
+6. `tugdeck/src/selection-guard.ts` — ensure save/restore works with the new lifecycle (may need no changes if the API is already correct)
+
+**Result**: Tab state survives both tab switches and app reload. Card content components can opt into state persistence via a simple hook. The selection guard's existing save/restore mechanism is extended from in-memory-only to durable persistence via tugbank. The `collapsed` field is ready for Phase 8a's UI. The focused card is restored on reload.
+
+**Note**: Terminal buffer persistence is explicitly deferred to Phase 9's terminal card work. The `useTugcardPersistence` hook provides the mechanism; the terminal card will implement its own `onSave`/`onRestore` for xterm.js buffer state when the time comes.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Goal**: Snap-to-edge and set formation require the Option (Alt) modifier. Free drag is the default.
@@ -603,6 +652,13 @@ Responder Chain  Mutation Model                              │
          Tab          │                    │         │       │
          Refinements  │                    │         │       │
              │        │                    │         │       │
+             │     Phase 5e: ◄─────────────┤         │       │
+             │     Tugbank                 │         │       │
+             │        │                    │         │       │
+             │     Phase 5f: ◄─── (5b + 5e)│         │       │
+             │     State                   │         │       │
+             │     Preservation            │         │       │
+             │        │                    │         │       │
              └────────┴────────────────┬───┴─────────┴───────┘
                                        ▼
                           Phase 9: Card Rebuild
@@ -629,6 +685,8 @@ Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab sta
 Phase 5b3 (Gallery Card) depends on Phase 5b (tab system must exist). It does not depend on Phase 5b2.
 Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not depend on Phase 5b2 or 5b3, though both benefit from overflow handling.
 Phase 5b5 (Tab Refinements) depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist). It is a collection phase — additional items may be added during 5b3/5b4 implementation.
+Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
+Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 
 ## Estimated Scope
 
@@ -649,6 +707,8 @@ Phase 5b5 (Tab Refinements) depends on Phase 5b2 (drag coordinator and hit-test 
 | 5b5 | ~2 files | ~100 lines |
 | 5c | ~1 file | ~50 lines |
 | 5d | ~3 files | ~150 lines |
+| 5e | ~10 files | ~1500 lines |
+| 5f | ~6 files | ~500 lines |
 | 6 | ~4 files | ~400 lines |
 | 7 | ~3 files | ~200 lines |
 | 8a | ~8 files | ~1000 lines |
@@ -657,11 +717,12 @@ Phase 5b5 (Tab Refinements) depends on Phase 5b2 (drag coordinator and hit-test 
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~12,000 lines** replacing the current ~9700 lines. The new
-codebase is modestly larger because the 28-component library (Phases 8a–8d)
-adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
-triple-registration redundancy is gone, the adapter layer is gone, and the
-component abstractions do more with less code.
+**Total rebuild: ~14,000 lines** replacing the current ~9700 lines. The new
+codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
+lines of reusable UI primitives, and tugbank (Phase 5e) adds ~1500 lines of
+Rust infrastructure for typed persistence. The triple-registration redundancy
+is gone, the adapter layer is gone, and the component abstractions do more
+with less code.
 
 ## How This Drives Tugplan Creation
 
@@ -689,13 +750,15 @@ The suggested plan sequence:
 13. `tugways-phase-5b5-tab-refinements` — card-as-tab merge, additional refinements
 14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
 15. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-16. `tugways-phase-6-feed` — feed hooks, data flow
-17. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-18. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-19. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-20. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-21. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-22. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+16. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
+17. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
+18. `tugways-phase-6-feed` — feed hooks, data flow
+19. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+20. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+21. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+22. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+23. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+24. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
