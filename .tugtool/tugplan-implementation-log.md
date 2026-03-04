@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-04T00:42:56Z
+---
+
+## step-10: Added TugTabBarDemo with 3 interactive sample tabs and TugDropdownDemo with trigger button and sample items to the Component Gallery. Styled with --td-* tokens.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-9
 date: 2025-03-04T00:37:12Z
 ---

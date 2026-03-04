@@ -30,9 +30,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { X, Star } from "lucide-react";
 import { TugButton } from "./tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "./tug-button";
+import { TugTabBar } from "./tug-tab-bar";
+import { TugDropdown } from "./tug-dropdown";
+import type { TugDropdownItem } from "./tug-dropdown";
 import { useResponder } from "./use-responder";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { useCSSVar, useDOMClass, useDOMStyle } from "@/components/tugways/hooks";
+import type { TabItem } from "@/layout-tree";
 import "./component-gallery.css";
 
 // ---- Types ----
@@ -295,6 +299,41 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
             <MutationModelDemo />
           </div>
 
+          <div className="cg-divider" />
+
+          {/* ---- TugTabBar Demo Section (Phase 5b) ---- */}
+          {/*
+           * Demonstrates TugTabBar in isolation (Step 10).
+           *
+           * TugTabBarDemo is defined outside ComponentGallery per the
+           * structure-zone rule (no components defined inside components).
+           *
+           * Renders a standalone TugTabBar with 3 sample tabs. Local state
+           * drives the active tab, close, and add operations so all tab
+           * interactions are interactive and visible in the gallery.
+           */}
+          <div className="cg-section">
+            <div className="cg-section-title">TugTabBar</div>
+            <TugTabBarDemo />
+          </div>
+
+          <div className="cg-divider" />
+
+          {/* ---- TugDropdown Demo Section (Phase 5b) ---- */}
+          {/*
+           * Demonstrates TugDropdown in isolation (Step 10).
+           *
+           * TugDropdownDemo is defined outside ComponentGallery per the
+           * structure-zone rule (no components defined inside components).
+           *
+           * Renders a standalone TugDropdown with sample items (icon + label)
+           * to show the trigger button, portal-rendered menu, and item selection.
+           */}
+          <div className="cg-section">
+            <div className="cg-section-title">TugDropdown</div>
+            <TugDropdownDemo />
+          </div>
+
         </div>
       </div>
     </ResponderScope>
@@ -359,6 +398,129 @@ function SubtypeButton({
     default:
       return null;
   }
+}
+
+// ---- TugTabBarDemo ----
+
+/**
+ * Seed tabs used by the TugTabBar gallery demo.
+ *
+ * Defined at module scope so they are not recreated on each render.
+ * These three tabs use componentId "hello" (the only registered card type in
+ * Phase 5) for icon and title lookup. The titles are distinct so the demo
+ * clearly shows which tab is active.
+ */
+const DEMO_INITIAL_TABS: readonly TabItem[] = [
+  { id: "demo-tab-1", componentId: "hello", title: "Hello", closable: true },
+  { id: "demo-tab-2", componentId: "hello", title: "World", closable: true },
+  { id: "demo-tab-3", componentId: "hello", title: "Tugways", closable: true },
+];
+
+/**
+ * TugTabBarDemo -- Phase 5b gallery demo for TugTabBar.
+ *
+ * Renders a standalone TugTabBar with 3 sample tabs. Tab select, close, and
+ * add operations are wired to local state so the demo is fully interactive.
+ * Adding a new tab appends a placeholder "hello" tab with an incrementing title.
+ *
+ * Defined outside ComponentGallery per the structure-zone rule (no components
+ * defined inside components).
+ */
+export function TugTabBarDemo() {
+  const [tabs, setTabs] = useState<TabItem[]>(() => DEMO_INITIAL_TABS.map((t) => ({ ...t })));
+  const [activeTabId, setActiveTabId] = useState<string>(DEMO_INITIAL_TABS[0].id);
+  const [lastSelected, setLastSelected] = useState<string | null>(null);
+  const nextTabIndexRef = useRef(DEMO_INITIAL_TABS.length + 1);
+
+  const handleTabSelect = (tabId: string) => {
+    setActiveTabId(tabId);
+    setLastSelected(tabId);
+  };
+
+  const handleTabClose = (tabId: string) => {
+    setTabs((prev) => {
+      const remaining = prev.filter((t) => t.id !== tabId);
+      if (remaining.length === 0) return prev; // keep at least one tab in demo
+      // If the closed tab was active, activate the adjacent tab.
+      if (activeTabId === tabId) {
+        const closedIndex = prev.findIndex((t) => t.id === tabId);
+        const newIndex = closedIndex > 0 ? closedIndex - 1 : 0;
+        setActiveTabId(remaining[newIndex].id);
+      }
+      return remaining;
+    });
+  };
+
+  const handleTabAdd = (_componentId: string) => {
+    const n = nextTabIndexRef.current++;
+    const newTab: TabItem = {
+      id: `demo-tab-new-${n}`,
+      componentId: "hello",
+      title: `Tab ${n}`,
+      closable: true,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
+  return (
+    <div className="cg-tab-bar-demo">
+      <TugTabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onTabSelect={handleTabSelect}
+        onTabClose={handleTabClose}
+        onTabAdd={handleTabAdd}
+      />
+      {lastSelected !== null && (
+        <div className="cg-demo-status">
+          Last selected: <code>{lastSelected}</code>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- TugDropdownDemo ----
+
+/** Sample items for the TugDropdown gallery demo. Module-scope to avoid recreation. */
+const DEMO_DROPDOWN_ITEMS: TugDropdownItem[] = [
+  { id: "option-alpha", label: "Alpha", icon: <Star size={12} /> },
+  { id: "option-beta", label: "Beta", icon: <Star size={12} /> },
+  { id: "option-gamma", label: "Gamma (disabled)", disabled: true },
+];
+
+/**
+ * TugDropdownDemo -- Phase 5b gallery demo for TugDropdown.
+ *
+ * Renders a standalone TugDropdown with a sample trigger button and three items
+ * (two enabled with icons, one disabled). Selecting an item updates status text
+ * so the selection feedback is visible.
+ *
+ * Defined outside ComponentGallery per the structure-zone rule (no components
+ * defined inside components).
+ */
+export function TugDropdownDemo() {
+  const [lastSelected, setLastSelected] = useState<string | null>(null);
+
+  return (
+    <div className="cg-dropdown-demo">
+      <TugDropdown
+        trigger={
+          <button type="button" className="cg-demo-trigger">
+            Open Dropdown
+          </button>
+        }
+        items={DEMO_DROPDOWN_ITEMS}
+        onSelect={(id) => setLastSelected(id)}
+      />
+      {lastSelected !== null && (
+        <div className="cg-demo-status">
+          Selected: <code>{lastSelected}</code>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---- MutationModelDemo ----
