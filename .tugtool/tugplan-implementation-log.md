@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T23:16:25Z
+---
+
+## step-7: Integration checkpoint: 37 snap tests pass, TypeScript type check clean, production build clean. All four visual refinements (border collapse, corner squaring, set flash, break-out restore) verified end-to-end.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-6
 date: 2025-03-04T23:13:33Z
 ---
