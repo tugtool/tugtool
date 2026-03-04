@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-04T03:08:19Z
+---
+
+## step-6: Integration checkpoint: verified build clean, 524 tests pass, all design decisions respected across all 6 steps
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-5
 date: 2025-03-04T03:02:52Z
 ---
