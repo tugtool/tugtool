@@ -733,6 +733,8 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
             { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
           ],
           activeTabId: helloTabId,
+          title: "",
+          acceptsFamilies: ["standard"],
         },
       ],
     });
@@ -763,6 +765,8 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
             { id: tabId, componentId: "totally-unknown", title: "Unknown", closable: true },
           ],
           activeTabId: tabId,
+          title: "",
+          acceptsFamilies: ["standard"],
         },
       ],
     });
@@ -793,6 +797,8 @@ describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
             { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
           ],
           activeTabId: ghostTabId,
+          title: "",
+          acceptsFamilies: ["standard"],
         },
       ],
     });
@@ -1039,6 +1045,104 @@ describe("DeckManager.detachTab", () => {
     // Position should be clamped: canvasWidth - DEFAULT_CARD_WIDTH = 1280 - 400 = 880
     expect(newCard.position.x).toBe(1280 - 400);
     expect(newCard.position.y).toBe(800 - 300);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5b3 Step 1: addCard with defaultTabs, title, acceptsFamilies
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.addCard – defaultTabs registration", () => {
+  it("addCard with defaultTabs creates a card with all specified tabs (fresh UUIDs, not template IDs)", () => {
+    const templateTabId1 = "tmpl-id-1";
+    const templateTabId2 = "tmpl-id-2";
+    registerCard({
+      componentId: "gallery-host",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Gallery Host", closable: true },
+      defaultTabs: [
+        { id: templateTabId1, componentId: "gallery-buttons", title: "Buttons", closable: false },
+        { id: templateTabId2, componentId: "gallery-chain-actions", title: "Chain Actions", closable: false },
+      ],
+      defaultTitle: "Component Gallery",
+      acceptsFamilies: ["developer"],
+    });
+    // Register the tab component types too (needed for filterRegisteredCards)
+    registerCard({
+      componentId: "gallery-buttons",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Buttons", closable: false },
+    });
+    registerCard({
+      componentId: "gallery-chain-actions",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Chain Actions", closable: false },
+    });
+
+    const cardId = manager.addCard("gallery-host");
+    expect(cardId).not.toBeNull();
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card).toBeDefined();
+
+    // Should have 2 tabs matching the defaultTabs templates
+    expect(card.tabs.length).toBe(2);
+    expect(card.tabs[0].componentId).toBe("gallery-buttons");
+    expect(card.tabs[0].title).toBe("Buttons");
+    expect(card.tabs[0].closable).toBe(false);
+    expect(card.tabs[1].componentId).toBe("gallery-chain-actions");
+    expect(card.tabs[1].title).toBe("Chain Actions");
+
+    // Tab IDs must be fresh UUIDs, NOT the template IDs
+    expect(card.tabs[0].id).not.toBe(templateTabId1);
+    expect(card.tabs[1].id).not.toBe(templateTabId2);
+    // UUIDs are non-empty strings
+    expect(card.tabs[0].id.length).toBeGreaterThan(0);
+    expect(card.tabs[1].id.length).toBeGreaterThan(0);
+
+    // activeTabId should be the first generated tab's ID
+    expect(card.activeTabId).toBe(card.tabs[0].id);
+
+    // title and acceptsFamilies from registration
+    expect(card.title).toBe("Component Gallery");
+    expect(card.acceptsFamilies).toEqual(["developer"]);
+  });
+
+  it("addCard without defaultTabs creates single-tab card with title: empty string", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const cardId = manager.addCard("hello");
+    expect(cardId).not.toBeNull();
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.tabs.length).toBe(1);
+    expect(card.title).toBe("");
+    expect(card.acceptsFamilies).toEqual(["standard"]);
+  });
+
+  it("detachTab on a card with acceptsFamilies: [developer] creates a new card that inherits acceptsFamilies", () => {
+    registerCard({
+      componentId: "gallery-host",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Gallery Host", closable: true },
+      acceptsFamilies: ["developer"],
+    });
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const cardId = manager.addCard("gallery-host") as string;
+
+    // Add a second tab so we can detach (last-tab guard)
+    const tab2Id = manager.addTab(cardId, "hello") as string;
+
+    const newCardId = manager.detachTab(cardId, tab2Id, { x: 50, y: 50 });
+    expect(newCardId).not.toBeNull();
+
+    const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
+    expect(newCard).toBeDefined();
+    // Detached card loses the card-level title
+    expect(newCard.title).toBe("");
+    // Inherits acceptsFamilies from source card
+    expect(newCard.acceptsFamilies).toEqual(["developer"]);
   });
 });
 

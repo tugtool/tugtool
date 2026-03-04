@@ -78,6 +78,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     handleCardFocused: (_id: string) => {},
+    addCard: (_componentId: string) => null,
     addTab: (_cardId: string, _componentId: string) => null,
     removeTab: (_cardId: string, _tabId: string) => {},
     setActiveTab: (_cardId: string, _tabId: string) => {},
@@ -139,6 +140,8 @@ function makeCardState(id: string, componentId: string): CardState {
     size: { width: 400, height: 300 },
     tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
     activeTabId: `${id}-tab`,
+    title: "",
+    acceptsFamilies: ["standard"],
   };
 }
 
@@ -557,6 +560,7 @@ class ReactiveStore implements IDeckManagerStore {
   handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
   handleCardFocused = (_id: string): void => {};
+  addCard = (_componentId: string): string | null => null;
   addTab = (_cardId: string, _componentId: string): string | null => null;
   removeTab = (_cardId: string, _tabId: string): void => {};
   setActiveTab = (_cardId: string, _tabId: string): void => {};
@@ -597,6 +601,8 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       size: { width: 400, height: 300 },
       tabs: [tab1],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [singleTabCard] });
@@ -663,6 +669,8 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [multiTabCard] });
@@ -724,6 +732,8 @@ describe("DeckCanvas – Step 5: single-tab card uses existing factory path", ()
       size: { width: 400, height: 300 },
       tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [singleTabCard] });
@@ -767,6 +777,8 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const closedIds: string[] = [];
@@ -1090,6 +1102,8 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
       size: { width: 400, height: 300 },
       tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = makeMockStore(makeDeckState([singleTabCard]));
@@ -1135,6 +1149,8 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
         { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = makeMockStore(makeDeckState([multiTabCard]));

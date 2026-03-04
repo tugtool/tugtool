@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-04T16:16:40Z
+---
+
+## step-1: Added family, acceptsFamilies, defaultTabs, defaultTitle to CardRegistration; title and acceptsFamilies to CardState; addCard to IDeckManagerStore; updated DeckManager.addCard with defaultTabs template support; updated serialization deserialize; updated all test files with new required fields and mock store methods
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-04T03:16:12Z
 ---

@@ -280,23 +280,40 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     const cardId = crypto.randomUUID();
-    const tabId = crypto.randomUUID();
-
-    const tab: TabItem = {
-      id: tabId,
-      componentId,
-      title: registration.defaultMeta.title,
-      closable: registration.defaultMeta.closable !== false,
-    };
-
     const position = this.nextCascadePosition();
+
+    let tabs: TabItem[];
+    let activeTabId: string;
+
+    if (registration.defaultTabs && registration.defaultTabs.length > 0) {
+      // Use defaultTabs as templates: copy componentId, title, closable but assign fresh UUIDs.
+      tabs = registration.defaultTabs.map((template) => ({
+        id: crypto.randomUUID(),
+        componentId: template.componentId,
+        title: template.title,
+        closable: template.closable,
+      }));
+      activeTabId = tabs[0].id;
+    } else {
+      const tabId = crypto.randomUUID();
+      const tab: TabItem = {
+        id: tabId,
+        componentId,
+        title: registration.defaultMeta.title,
+        closable: registration.defaultMeta.closable !== false,
+      };
+      tabs = [tab];
+      activeTabId = tabId;
+    }
 
     const card: CardState = {
       id: cardId,
       position,
       size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
-      tabs: [tab],
-      activeTabId: tabId,
+      tabs,
+      activeTabId,
+      title: registration.defaultTitle ?? "",
+      acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
     };
 
     this.deckState = { ...this.deckState, cards: [...this.deckState.cards, card] };
@@ -588,6 +605,11 @@ export class DeckManager implements IDeckManagerStore {
       size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
       tabs: [removedTab],
       activeTabId: removedTab.id,
+      // Detached cards lose the card-level title (they are generic containers).
+      title: "",
+      // Inherit acceptsFamilies from the source card so the type picker shows
+      // the correct families (e.g. a detached gallery tab keeps ["developer"]).
+      acceptsFamilies: card.acceptsFamilies,
     };
 
     // Append new card to end (highest z-index).

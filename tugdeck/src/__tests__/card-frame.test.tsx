@@ -31,6 +31,8 @@ function makeCardState(overrides: Partial<CardState> = {}): CardState {
     size: { width: 400, height: 300 },
     tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
     activeTabId: "tab-1",
+    title: "",
+    acceptsFamilies: ["standard"],
     ...overrides,
   };
 }

@@ -31,6 +31,8 @@ describe("CardState", () => {
       size: { width: 800, height: 600 },
       tabs: [tab],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     expect(card.id).toBe("card-1");
@@ -68,6 +70,8 @@ describe("CardState", () => {
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2, tab3],
       activeTabId: "tab-b",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     expect(card.tabs.length).toBe(3);
@@ -130,6 +134,8 @@ describe("serialize and deserialize", () => {
       size: { width: 400, height: 300 },
       tabs: [tab],
       activeTabId: "tab-known-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
     const canvasState: DeckState = { cards: [card] };
 
@@ -162,6 +168,8 @@ describe("serialize and deserialize", () => {
       size: { width: 500, height: 400 },
       tabs: [tab1, tab2, tab3],
       activeTabId: "tab-mt-2",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
     const canvasState: DeckState = { cards: [card] };
 
@@ -234,6 +242,8 @@ describe("serialize and deserialize", () => {
         { id: "a-tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
       activeTabId: "a-tab-2",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
     const cardB: CardState = {
       id: "card-b",
@@ -245,6 +255,8 @@ describe("serialize and deserialize", () => {
         { id: "b-tab-3", componentId: "hello", title: "Tab 3", closable: true },
       ],
       activeTabId: "b-tab-3",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const json = JSON.stringify(serialize({ cards: [cardA, cardB] }));
@@ -342,6 +354,8 @@ function makeCard(componentId: string): CardState {
     size: { width: 400, height: 300 },
     tabs: [{ id: tabId, componentId, title: componentId, closable: true }],
     activeTabId: tabId,
+    title: "",
+    acceptsFamilies: ["standard"],
   };
 }
 
@@ -398,6 +412,8 @@ describe("addNewCard data model (D01)", () => {
       size: { width: CARD_W, height: CARD_H },
       tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: tabId,
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     canvasState.cards.push(newCard);
@@ -441,6 +457,8 @@ describe("removeCard data model (D01)", () => {
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "t1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
     const canvasState: DeckState = { cards: [card] };
 
@@ -474,6 +492,8 @@ describe("addNewTab data model (D01)", () => {
       size: { width: 400, height: 300 },
       tabs: [{ id: existingTabId, componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: existingTabId,
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const newTabId = crypto.randomUUID();
@@ -493,6 +513,8 @@ describe("addNewTab data model (D01)", () => {
       size: { width: 400, height: 300 },
       tabs: [{ id: "t1", componentId: "terminal", title: "Terminal", closable: true }],
       activeTabId: "t1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     // Verify same-componentId check logic

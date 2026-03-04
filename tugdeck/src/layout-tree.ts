@@ -22,6 +22,10 @@ export interface CardState {
   size: { width: number; height: number };
   tabs: TabItem[];
   activeTabId: string;
+  /** Card-level display title (e.g. "Component Gallery"). Empty string for generic cards. */
+  title: string;
+  /** Families of card types this card can host in its type picker. Defaults to ["standard"]. */
+  acceptsFamilies: readonly string[];
 }
 
 export interface DeckState {

@@ -113,3 +113,64 @@ describe("_resetForTest", () => {
     expect(getRegistration("bar")).toBeUndefined();
   });
 });
+
+// ---- Phase 5b3 Step 1: family, acceptsFamilies, defaultTabs, defaultTitle fields ----
+
+describe("CardRegistration – family, acceptsFamilies, defaultTabs, defaultTitle", () => {
+  it("registers a card with family and getRegistration returns it", () => {
+    registerCard({
+      ...makeRegistration("gallery-buttons"),
+      family: "developer",
+    });
+    const reg = getRegistration("gallery-buttons");
+    expect(reg).toBeDefined();
+    expect(reg!.family).toBe("developer");
+  });
+
+  it("registers a card with acceptsFamilies and getRegistration returns it", () => {
+    registerCard({
+      ...makeRegistration("gallery-host"),
+      acceptsFamilies: ["developer"],
+    });
+    const reg = getRegistration("gallery-host");
+    expect(reg).toBeDefined();
+    expect(reg!.acceptsFamilies).toEqual(["developer"]);
+  });
+
+  it("registers a card with defaultTitle and getRegistration returns it", () => {
+    registerCard({
+      ...makeRegistration("component-gallery"),
+      defaultTitle: "Component Gallery",
+    });
+    const reg = getRegistration("component-gallery");
+    expect(reg).toBeDefined();
+    expect(reg!.defaultTitle).toBe("Component Gallery");
+  });
+
+  it("registers a card with defaultTabs and getRegistration returns them", () => {
+    const defaultTabs = [
+      { id: "tmpl-1", componentId: "gallery-buttons", title: "Buttons", closable: false },
+      { id: "tmpl-2", componentId: "gallery-chain-actions", title: "Chain Actions", closable: false },
+    ] as const;
+    registerCard({
+      ...makeRegistration("gallery-host-tabs"),
+      defaultTabs,
+    });
+    const reg = getRegistration("gallery-host-tabs");
+    expect(reg).toBeDefined();
+    expect(reg!.defaultTabs).toBeDefined();
+    expect(reg!.defaultTabs!.length).toBe(2);
+    expect(reg!.defaultTabs![0].componentId).toBe("gallery-buttons");
+    expect(reg!.defaultTabs![1].componentId).toBe("gallery-chain-actions");
+  });
+
+  it("fields are all optional: registration without them is valid", () => {
+    registerCard(makeRegistration("plain-card"));
+    const reg = getRegistration("plain-card");
+    expect(reg).toBeDefined();
+    expect(reg!.family).toBeUndefined();
+    expect(reg!.acceptsFamilies).toBeUndefined();
+    expect(reg!.defaultTabs).toBeUndefined();
+    expect(reg!.defaultTitle).toBeUndefined();
+  });
+});

@@ -51,6 +51,12 @@ export interface IDeckManagerStore {
   handleCardFocused: (id: string) => void;
 
   /**
+   * Add a new card from the registry.
+   * Returns the generated card ID, or null if no registration is found for componentId.
+   */
+  addCard: (componentId: string) => string | null;
+
+  /**
    * Add a new tab to an existing card.
    * Returns the new tab id, or null if the card or registration is not found.
    */
