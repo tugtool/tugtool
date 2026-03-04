@@ -159,18 +159,18 @@ export function computeSnap(
         xCandidates.push({ dist, delta: otherLeft - movingLeft, guide: otherLeft });
       }
     }
-    // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward +bw)
+    // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward -bw)
     {
       const dist = Math.abs(movingLeft - otherRight);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherRight - movingLeft + bw, guide: otherRight });
+        xCandidates.push({ dist, delta: otherRight - movingLeft - bw, guide: otherRight });
       }
     }
-    // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward -bw)
+    // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward +bw)
     {
       const dist = Math.abs(movingRight - otherLeft);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherLeft - movingRight - bw, guide: otherLeft });
+        xCandidates.push({ dist, delta: otherLeft - movingRight + bw, guide: otherLeft });
       }
     }
     // movingRight vs otherRight (same-edge, no offset)
@@ -203,18 +203,18 @@ export function computeSnap(
         yCandidates.push({ dist, delta: otherTop - movingTop, guide: otherTop });
       }
     }
-    // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward +bw)
+    // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward -bw)
     {
       const dist = Math.abs(movingTop - otherBottom);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherBottom - movingTop + bw, guide: otherBottom });
+        yCandidates.push({ dist, delta: otherBottom - movingTop - bw, guide: otherBottom });
       }
     }
-    // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward -bw)
+    // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward +bw)
     {
       const dist = Math.abs(movingBottom - otherTop);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherTop - movingBottom - bw, guide: otherTop });
+        yCandidates.push({ dist, delta: otherTop - movingBottom + bw, guide: otherTop });
       }
     }
     // movingBottom vs otherBottom (same-edge, no offset)

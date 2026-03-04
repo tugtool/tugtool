@@ -202,6 +202,18 @@ export function CardFrame({
   // Computed border width of the .tugcard element, read once at drag-start. [D56]
   // Passed to computeSnap so adjacent card borders collapse into a single visual line.
   const dragBorderWidth = useRef(0);
+  // Set member IDs at drag-start (including this card if in a set). Used at drop
+  // to detect whether the card has newly joined a set (flash only on new membership). [D54]
+  const dragSetMemberIdsAtDragStart = useRef<string[]>([]);
+  // Bounding-box extension of the set beyond the dragged card at drag-start. [D02]
+  // Stored as { left, top, right, bottom } offsets (non-negative px amounts) so the
+  // clamp logic can use the full set bounding box when constraining to canvas bounds.
+  const dragSetBBoxOffset = useRef<{ left: number; top: number; right: number; bottom: number }>({
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  });
 
   /**
    * Set a tab bar element as the current drag drop target (appearance-zone).
@@ -344,8 +356,11 @@ export function CardFrame({
       // Find the set this card belongs to (if any).
       dragSetMembers.current = [];
       dragSetOrigins.current = [];
+      dragSetMemberIdsAtDragStart.current = [];
       for (const cardSet of sets) {
         if (cardSet.cardIds.includes(id) && cardSet.cardIds.length >= 2) {
+          // Snapshot the full set membership at drag-start (including this card). [D54]
+          dragSetMemberIdsAtDragStart.current = cardSet.cardIds.slice();
           for (const memberId of cardSet.cardIds) {
             if (memberId === id) continue;
             const memberEl = document.querySelector<HTMLElement>(
@@ -361,6 +376,38 @@ export function CardFrame({
           }
           break;
         }
+      }
+
+      // Compute the bounding-box extension of the set relative to the dragged card. [D02]
+      // This measures how far the set extends beyond the card's own edges so that
+      // clampedPosition can use the full set bounding box during set-move clamping.
+      {
+        const cardLeft = position.x;
+        const cardTop = position.y;
+        const cardRight = position.x + frame.offsetWidth;
+        const cardBottom = position.y + frame.offsetHeight;
+        let setBBoxLeft = cardLeft;
+        let setBBoxTop = cardTop;
+        let setBBoxRight = cardRight;
+        let setBBoxBottom = cardBottom;
+        for (const origin of dragSetOrigins.current) {
+          // member frame dimensions from the DOM element (already pushed into dragSetMembers)
+          const memberIdx = dragSetOrigins.current.indexOf(origin);
+          const memberEl = dragSetMembers.current[memberIdx]?.el;
+          if (!memberEl) continue;
+          const mRight = origin.x + memberEl.offsetWidth;
+          const mBottom = origin.y + memberEl.offsetHeight;
+          if (origin.x < setBBoxLeft) setBBoxLeft = origin.x;
+          if (origin.y < setBBoxTop) setBBoxTop = origin.y;
+          if (mRight > setBBoxRight) setBBoxRight = mRight;
+          if (mBottom > setBBoxBottom) setBBoxBottom = mBottom;
+        }
+        dragSetBBoxOffset.current = {
+          left: cardLeft - setBBoxLeft,
+          top: cardTop - setBBoxTop,
+          right: setBBoxRight - cardRight,
+          bottom: setBBoxBottom - cardBottom,
+        };
       }
 
       // Read .tugcard computed border width once at drag-start for border collapse. [D56]
@@ -382,13 +429,43 @@ export function CardFrame({
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
-        const pos = clampedPosition(
-          latestDragPointer.current,
-          dragStartPointer.current,
-          dragStartPosition.current,
-          dragCanvasBounds.current,
-          { width: frame.offsetWidth, height: frame.offsetHeight },
-        );
+        // During set-move, clamp using the full set bounding box so no set member
+        // can be dragged outside the canvas. During solo drag, use just the frame size. [D02]
+        //
+        // clampedPosition returns the card top-left after clamping. For set-move we
+        // instead clamp the set bounding box top-left (= card pos - bbo.{left,top}), then
+        // add bbo.{left,top} back to recover the card position.
+        const bbo = dragSetBBoxOffset.current;
+        const setMoveActive = dragSetMembers.current.length > 0 && !latestSnapModifier.current;
+        let pos: { x: number; y: number };
+        if (setMoveActive) {
+          // Shift the effective start position to the set's top-left corner, clamp the full
+          // set bounding box within the canvas, then restore the card's position within the set.
+          const setBBoxStart = {
+            x: dragStartPosition.current.x - bbo.left,
+            y: dragStartPosition.current.y - bbo.top,
+          };
+          const setBBoxSize = {
+            width: frame.offsetWidth + bbo.left + bbo.right,
+            height: frame.offsetHeight + bbo.top + bbo.bottom,
+          };
+          const setPos = clampedPosition(
+            latestDragPointer.current,
+            dragStartPointer.current,
+            setBBoxStart,
+            dragCanvasBounds.current,
+            setBBoxSize,
+          );
+          pos = { x: setPos.x + bbo.left, y: setPos.y + bbo.top };
+        } else {
+          pos = clampedPosition(
+            latestDragPointer.current,
+            dragStartPointer.current,
+            dragStartPosition.current,
+            dragCanvasBounds.current,
+            { width: frame.offsetWidth, height: frame.offsetHeight },
+          );
+        }
 
         // Break-out detection: snap modifier pressed during set-move. [D05]
         // If modifier transitions false->true while set members exist, detach.
@@ -444,7 +521,7 @@ export function CardFrame({
             if (remainingSets.length > 0) {
               // Remaining members still form a set — recompute their corners.
               for (const rSet of remainingSets) {
-                applySetCorners(rSet.cardIds, remainingSharedEdges, "var(--td-radius-md)");
+                applySetCorners(rSet.cardIds, remainingSharedEdges, "var(--td-radius-md)", dragCanvasBounds.current);
               }
             } else {
               // Remaining members are now singletons — restore fully rounded corners on each.
@@ -567,6 +644,8 @@ export function CardFrame({
               dragOtherRects.current = [];
               dragSetMembers.current = [];
               dragSetOrigins.current = [];
+              dragSetMemberIdsAtDragStart.current = [];
+              dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
@@ -578,13 +657,36 @@ export function CardFrame({
         dragTabBarCache.current = [];
 
         // Compute final position for the dragged card. [S03]
-        const clampedPos = clampedPosition(
-          { x: e.clientX, y: e.clientY },
-          dragStartPointer.current,
-          dragStartPosition.current,
-          dragCanvasBounds.current,
-          { width: frame.offsetWidth, height: frame.offsetHeight },
-        );
+        // During set-move, clamp using the full set bounding box (same logic as applyDragFrame). [D02]
+        const bboUp = dragSetBBoxOffset.current;
+        const setMoveActiveUp = dragSetMembers.current.length > 0;
+        let clampedPos: { x: number; y: number };
+        if (setMoveActiveUp) {
+          const setBBoxStart = {
+            x: dragStartPosition.current.x - bboUp.left,
+            y: dragStartPosition.current.y - bboUp.top,
+          };
+          const setBBoxSize = {
+            width: frame.offsetWidth + bboUp.left + bboUp.right,
+            height: frame.offsetHeight + bboUp.top + bboUp.bottom,
+          };
+          const setPos = clampedPosition(
+            { x: e.clientX, y: e.clientY },
+            dragStartPointer.current,
+            setBBoxStart,
+            dragCanvasBounds.current,
+            setBBoxSize,
+          );
+          clampedPos = { x: setPos.x + bboUp.left, y: setPos.y + bboUp.top };
+        } else {
+          clampedPos = clampedPosition(
+            { x: e.clientX, y: e.clientY },
+            dragStartPointer.current,
+            dragStartPosition.current,
+            dragCanvasBounds.current,
+            { width: frame.offsetWidth, height: frame.offsetHeight },
+          );
+        }
 
         // Apply snapped position if snap was active at drop. [S03 priority 2]
         const snapResult = lastSnapResult.current;
@@ -640,8 +742,19 @@ export function CardFrame({
           if (mySet) {
             // Card is in a set: square internal corners first, then flash perimeter. [D53, D54]
             // Corners must be applied before flash so the overlay reads the correct radius. [Risk R01]
-            applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)");
-            flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
+            applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)", dragCanvasBounds.current);
+            // Only flash when the card has newly joined a set or the set membership changed. [D54]
+            // Compare post-drop set members against the snapshotted drag-start set membership.
+            // If both sets are identical (same card IDs, regardless of order), the set is unchanged
+            // (e.g. a set-move that landed without snapping in a new card) — skip the flash.
+            const startIds = dragSetMemberIdsAtDragStart.current.slice().sort();
+            const endIds = mySet.cardIds.slice().sort();
+            const setChanged =
+              startIds.length !== endIds.length ||
+              startIds.some((sid, i) => sid !== endIds[i]);
+            if (setChanged) {
+              flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
+            }
           } else {
             // Card is not in a set: ensure it has fully rounded corners.
             resetCorners(frame);
@@ -652,6 +765,8 @@ export function CardFrame({
         dragOtherRects.current = [];
         dragSetMembers.current = [];
         dragSetOrigins.current = [];
+        dragSetMemberIdsAtDragStart.current = [];
+        dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
         latestSnapModifier.current = false;
         prevSnapModifier.current = false;
         lastSnapResult.current = null;
@@ -883,68 +998,112 @@ function resizeDelta(
 /**
  * Compute per-corner border-radius values for a card in a set.
  *
- * Uses directional SharedEdge matching per Spec S02:
+ * Uses directional SharedEdge matching with per-corner geometric tests (Option B):
  * - right edge has neighbor: vertical edge where cardAId === cardId
  * - left edge has neighbor: vertical edge where cardBId === cardId
  * - bottom edge has neighbor: horizontal edge where cardAId === cardId
  * - top edge has neighbor: horizontal edge where cardBId === cardId
  *
- * Corner squaring uses OR logic: a corner is squared if EITHER forming edge
- * has a neighbor. See Spec S02 for rationale.
+ * Corner squaring uses per-corner geometric tests: a corner is only squared if
+ * the neighboring card's edge actually extends to or past that corner point.
+ * For example, the top-right corner is squared only if:
+ * - A right neighbor's shared-edge overlap includes the card's top edge, OR
+ * - A top neighbor's shared-edge overlap includes the card's right edge.
+ *
+ * This requires the card's own rect so we can compare corner coordinates against
+ * each edge's overlap range.
  *
  * @param cardId - The card whose corners to compute.
+ * @param cardRect - The card's own rect (canvas-relative position and size).
  * @param sharedEdges - All shared edges among the set's cards.
  * @param radiusValue - CSS value for rounded corners (e.g. "6px" or "var(--td-radius-md)").
  * @returns Per-corner radius strings (topLeft, topRight, bottomRight, bottomLeft).
  */
 export function computeCornerRadii(
   cardId: string,
+  cardRect: Rect,
   sharedEdges: SharedEdge[],
   radiusValue: string,
 ): { topLeft: string; topRight: string; bottomRight: string; bottomLeft: string } {
-  // Determine which edges of this card have a neighbor.
-  // right edge: this card is on the left (cardAId) of a vertical shared edge
-  const hasRightNeighbor = sharedEdges.some(
-    (e) => e.axis === "vertical" && e.cardAId === cardId,
-  );
-  // left edge: this card is on the right (cardBId) of a vertical shared edge
-  const hasLeftNeighbor = sharedEdges.some(
-    (e) => e.axis === "vertical" && e.cardBId === cardId,
-  );
-  // bottom edge: this card is on top (cardAId) of a horizontal shared edge
-  const hasBottomNeighbor = sharedEdges.some(
-    (e) => e.axis === "horizontal" && e.cardAId === cardId,
-  );
-  // top edge: this card is on bottom (cardBId) of a horizontal shared edge
-  const hasTopNeighbor = sharedEdges.some(
-    (e) => e.axis === "horizontal" && e.cardBId === cardId,
-  );
+  const cardTop = cardRect.y;
+  const cardBottom = cardRect.y + cardRect.height;
+  const cardLeft = cardRect.x;
+  const cardRight = cardRect.x + cardRect.width;
 
-  // Square a corner if either forming edge has a neighbor (OR logic per Spec S02).
-  const topLeft = hasTopNeighbor || hasLeftNeighbor ? "0" : radiusValue;
-  const topRight = hasTopNeighbor || hasRightNeighbor ? "0" : radiusValue;
-  const bottomRight = hasBottomNeighbor || hasRightNeighbor ? "0" : radiusValue;
-  const bottomLeft = hasBottomNeighbor || hasLeftNeighbor ? "0" : radiusValue;
+  // For each corner, check if a neighboring card's edge extends to or past that corner.
+  //
+  // Vertical shared edge (right neighbor, cardAId === cardId):
+  //   overlapStart/End is the y-range where the cards share that vertical boundary.
+  //   Top-right corner is covered if overlapStart <= cardTop (neighbor extends up to/past card top).
+  //   Bottom-right corner is covered if overlapEnd >= cardBottom (neighbor extends down to/past card bottom).
+  //
+  // Vertical shared edge (left neighbor, cardBId === cardId):
+  //   Top-left corner is covered if overlapStart <= cardTop.
+  //   Bottom-left corner is covered if overlapEnd >= cardBottom.
+  //
+  // Horizontal shared edge (bottom neighbor, cardAId === cardId):
+  //   overlapStart/End is the x-range where the cards share that horizontal boundary.
+  //   Bottom-right corner is covered if overlapEnd >= cardRight (neighbor extends right to/past card right).
+  //   Bottom-left corner is covered if overlapStart <= cardLeft (neighbor extends left to/past card left).
+  //
+  // Horizontal shared edge (top neighbor, cardBId === cardId):
+  //   Top-right corner is covered if overlapEnd >= cardRight.
+  //   Top-left corner is covered if overlapStart <= cardLeft.
 
-  return { topLeft, topRight, bottomRight, bottomLeft };
+  let squareTopLeft = false;
+  let squareTopRight = false;
+  let squareBottomRight = false;
+  let squareBottomLeft = false;
+
+  for (const e of sharedEdges) {
+    if (e.axis === "vertical" && e.cardAId === cardId) {
+      // Right neighbor
+      if (e.overlapStart <= cardTop) squareTopRight = true;
+      if (e.overlapEnd >= cardBottom) squareBottomRight = true;
+    } else if (e.axis === "vertical" && e.cardBId === cardId) {
+      // Left neighbor
+      if (e.overlapStart <= cardTop) squareTopLeft = true;
+      if (e.overlapEnd >= cardBottom) squareBottomLeft = true;
+    } else if (e.axis === "horizontal" && e.cardAId === cardId) {
+      // Bottom neighbor
+      if (e.overlapEnd >= cardRight) squareBottomRight = true;
+      if (e.overlapStart <= cardLeft) squareBottomLeft = true;
+    } else if (e.axis === "horizontal" && e.cardBId === cardId) {
+      // Top neighbor
+      if (e.overlapEnd >= cardRight) squareTopRight = true;
+      if (e.overlapStart <= cardLeft) squareTopLeft = true;
+    }
+  }
+
+  return {
+    topLeft: squareTopLeft ? "0" : radiusValue,
+    topRight: squareTopRight ? "0" : radiusValue,
+    bottomRight: squareBottomRight ? "0" : radiusValue,
+    bottomLeft: squareBottomLeft ? "0" : radiusValue,
+  };
 }
 
 /**
  * Apply per-corner border-radius squaring to all .tugcard elements in a set.
  *
  * For each card in setCardIds, finds its .tugcard via
- * `.card-frame[data-card-id] .tugcard`, computes corner radii using
- * computeCornerRadii, and applies via style.borderRadius shorthand
+ * `.card-frame[data-card-id] .tugcard`, reads the card's current DOM rect,
+ * computes corner radii using computeCornerRadii (geometric per-corner test),
+ * and applies via style.borderRadius shorthand
  * (CSS order: top-left top-right bottom-right bottom-left). [D53, Spec S02]
  *
  * @param setCardIds - IDs of all cards in the set.
  * @param sharedEdges - All shared edges among the set's cards.
  * @param radiusValue - CSS value for rounded corners (e.g. "6px").
+ * @param canvasBounds - Optional canvas DOMRect for converting DOM coords to canvas-relative.
+ *   When provided, card rects are adjusted to canvas-relative coordinates.
+ *   When null, DOM getBoundingClientRect values are used directly.
  */
 export function applySetCorners(
   setCardIds: string[],
   sharedEdges: SharedEdge[],
   radiusValue: string,
+  canvasBounds?: DOMRect | null,
 ): void {
   for (const cardId of setCardIds) {
     const frameEl = document.querySelector<HTMLElement>(
@@ -953,7 +1112,15 @@ export function applySetCorners(
     if (!frameEl) continue;
     const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
     if (!tugcardEl) continue;
-    const radii = computeCornerRadii(cardId, sharedEdges, radiusValue);
+    // Read the card's current DOM rect and convert to canvas-relative coords.
+    const domRect = frameEl.getBoundingClientRect();
+    const cardRect: Rect = {
+      x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+      y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+      width: domRect.width,
+      height: domRect.height,
+    };
+    const radii = computeCornerRadii(cardId, cardRect, sharedEdges, radiusValue);
     // CSS shorthand order: top-left top-right bottom-right bottom-left
     tugcardEl.style.borderRadius =
       `${radii.topLeft} ${radii.topRight} ${radii.bottomRight} ${radii.bottomLeft}`;

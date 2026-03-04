@@ -125,6 +125,58 @@ describe("computeSnap", () => {
     // Should snap to 403 (dist=3 < dist=7)
     expect(result.x).toBe(203); // 200 + (403 - 400) = 203
   });
+
+  // borderWidth overlap: adjacent edges should overlap by bw, not gap by bw.
+  test("movingRight→otherLeft with borderWidth overlaps cards by bw (no gap)", () => {
+    // Moving: x=200, width=200 → right edge at 400.
+    // Stationary: x=402, width=200 → left edge at 402. dist=2 ≤ 8.
+    // borderWidth=1: the snap should produce right=402, i.e. new x = 402-200+1 = 203
+    // (overlap by 1px so borders collapse into a single visual line).
+    const moving: Rect = { x: 200, y: 0, width: 200, height: 100 };
+    const stationary: Rect = { x: 402, y: 0, width: 200, height: 100 };
+
+    const result = computeSnap(moving, [stationary], undefined, 1);
+
+    // delta = otherLeft - movingRight + bw = 402 - 400 + 1 = 3 → new x = 203
+    expect(result.x).toBe(203);
+  });
+
+  test("movingLeft→otherRight with borderWidth overlaps cards by bw (no gap)", () => {
+    // Moving: x=198, width=200 → left edge at 198.
+    // Stationary: x=0, width=200 → right edge at 200. dist=2 ≤ 8.
+    // borderWidth=1: snap produces left=200-1=199 → delta = 200-198-1=1 → new x=199
+    const moving: Rect = { x: 198, y: 0, width: 200, height: 100 };
+    const stationary: Rect = { x: 0, y: 0, width: 200, height: 100 };
+
+    const result = computeSnap(moving, [stationary], undefined, 1);
+
+    // delta = otherRight - movingLeft - bw = 200 - 198 - 1 = 1 → new x = 199
+    expect(result.x).toBe(199);
+  });
+
+  test("movingBottom→otherTop with borderWidth overlaps cards by bw (no gap)", () => {
+    // Moving: y=100, height=200 → bottom edge at 300.
+    // Stationary: y=302 → top edge at 302. dist=2 ≤ 8.
+    // borderWidth=1: delta = otherTop - movingBottom + bw = 302 - 300 + 1 = 3 → new y=103
+    const moving: Rect = { x: 0, y: 100, width: 100, height: 200 };
+    const stationary: Rect = { x: 0, y: 302, width: 100, height: 200 };
+
+    const result = computeSnap(moving, [stationary], undefined, 1);
+
+    expect(result.y).toBe(103);
+  });
+
+  test("movingTop→otherBottom with borderWidth overlaps cards by bw (no gap)", () => {
+    // Moving: y=298, height=200 → top edge at 298.
+    // Stationary: y=0, height=300 → bottom edge at 300. dist=2 ≤ 8.
+    // borderWidth=1: delta = otherBottom - movingTop - bw = 300 - 298 - 1 = 1 → new y=299
+    const moving: Rect = { x: 0, y: 298, width: 100, height: 200 };
+    const stationary: Rect = { x: 0, y: 0, width: 100, height: 300 };
+
+    const result = computeSnap(moving, [stationary], undefined, 1);
+
+    expect(result.y).toBe(299);
+  });
 });
 
 // ---- computeResizeSnap ----
