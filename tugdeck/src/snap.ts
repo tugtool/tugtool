@@ -109,12 +109,24 @@ export function cardToRect(card: CardState): Rect {
  * Returns the new top-left position (x, y) for the moving rect after snapping,
  * or null per axis if no snap is within threshold.
  * Also returns guide positions for each active snap axis.
+ *
+ * @param borderWidth - Optional border width in pixels (default 0). When > 0, adjacent-edge
+ *   snaps are offset inward by this amount so that card borders overlap into a single visual line.
+ *   Same-edge snaps (left-to-left, right-to-right, etc.) are not offset. Pass 0 or omit for
+ *   backward-compatible behavior.
  */
-export function computeSnap(moving: Rect, others: Rect[], validate?: EdgeValidator): SnapResult {
+export function computeSnap(
+  moving: Rect,
+  others: Rect[],
+  validate?: EdgeValidator,
+  borderWidth?: number
+): SnapResult {
   const movingLeft = moving.x;
   const movingRight = moving.x + moving.width;
   const movingTop = moving.y;
   const movingBottom = moving.y + moving.height;
+
+  const bw = borderWidth ?? 0;
 
   // Best snap per axis: { delta, guidePosition }
   // delta = amount to shift the rect's top-left so the snapping edges align
@@ -135,37 +147,91 @@ export function computeSnap(moving: Rect, others: Rect[], validate?: EdgeValidat
     const otherTop = other.y;
     const otherBottom = other.y + other.height;
 
-    // X-axis: compare moving left/right against other left/right
-    const xMovingEdges = [movingLeft, movingRight];
-    const xOtherEdges = [otherLeft, otherRight];
+    // X-axis: four explicit named-edge comparisons to preserve offset directionality.
+    // Same-edge pairs (left-to-left, right-to-right): no border offset.
+    // Adjacent-edge pairs (moving-right to other-left, moving-left to other-right): apply offset.
+    const xCandidates: Array<{ dist: number; delta: number; guide: number }> = [];
 
-    for (const movingEdge of xMovingEdges) {
-      for (const otherEdge of xOtherEdges) {
-        const dist = Math.abs(movingEdge - otherEdge);
-        if (dist <= SNAP_THRESHOLD_PX && dist < bestXDist) {
-          if (validate && !validate("x", otherEdge, other, otherIdx)) continue;
-          bestXDist = dist;
-          bestXDelta = otherEdge - movingEdge;
-          bestXGuide = otherEdge;
-          snapX = true;
-        }
+    // movingLeft vs otherLeft (same-edge, no offset)
+    {
+      const dist = Math.abs(movingLeft - otherLeft);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        xCandidates.push({ dist, delta: otherLeft - movingLeft, guide: otherLeft });
+      }
+    }
+    // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward +bw)
+    {
+      const dist = Math.abs(movingLeft - otherRight);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        xCandidates.push({ dist, delta: otherRight - movingLeft + bw, guide: otherRight });
+      }
+    }
+    // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward -bw)
+    {
+      const dist = Math.abs(movingRight - otherLeft);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        xCandidates.push({ dist, delta: otherLeft - movingRight - bw, guide: otherLeft });
+      }
+    }
+    // movingRight vs otherRight (same-edge, no offset)
+    {
+      const dist = Math.abs(movingRight - otherRight);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        xCandidates.push({ dist, delta: otherRight - movingRight, guide: otherRight });
       }
     }
 
-    // Y-axis: compare moving top/bottom against other top/bottom
-    const yMovingEdges = [movingTop, movingBottom];
-    const yOtherEdges = [otherTop, otherBottom];
+    for (const candidate of xCandidates) {
+      if (candidate.dist < bestXDist) {
+        if (validate && !validate("x", candidate.guide, other, otherIdx)) continue;
+        bestXDist = candidate.dist;
+        bestXDelta = candidate.delta;
+        bestXGuide = candidate.guide;
+        snapX = true;
+      }
+    }
 
-    for (const movingEdge of yMovingEdges) {
-      for (const otherEdge of yOtherEdges) {
-        const dist = Math.abs(movingEdge - otherEdge);
-        if (dist <= SNAP_THRESHOLD_PX && dist < bestYDist) {
-          if (validate && !validate("y", otherEdge, other, otherIdx)) continue;
-          bestYDist = dist;
-          bestYDelta = otherEdge - movingEdge;
-          bestYGuide = otherEdge;
-          snapY = true;
-        }
+    // Y-axis: four explicit named-edge comparisons to preserve offset directionality.
+    // Same-edge pairs (top-to-top, bottom-to-bottom): no border offset.
+    // Adjacent-edge pairs (moving-bottom to other-top, moving-top to other-bottom): apply offset.
+    const yCandidates: Array<{ dist: number; delta: number; guide: number }> = [];
+
+    // movingTop vs otherTop (same-edge, no offset)
+    {
+      const dist = Math.abs(movingTop - otherTop);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        yCandidates.push({ dist, delta: otherTop - movingTop, guide: otherTop });
+      }
+    }
+    // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward +bw)
+    {
+      const dist = Math.abs(movingTop - otherBottom);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        yCandidates.push({ dist, delta: otherBottom - movingTop + bw, guide: otherBottom });
+      }
+    }
+    // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward -bw)
+    {
+      const dist = Math.abs(movingBottom - otherTop);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        yCandidates.push({ dist, delta: otherTop - movingBottom - bw, guide: otherTop });
+      }
+    }
+    // movingBottom vs otherBottom (same-edge, no offset)
+    {
+      const dist = Math.abs(movingBottom - otherBottom);
+      if (dist <= SNAP_THRESHOLD_PX) {
+        yCandidates.push({ dist, delta: otherBottom - movingBottom, guide: otherBottom });
+      }
+    }
+
+    for (const candidate of yCandidates) {
+      if (candidate.dist < bestYDist) {
+        if (validate && !validate("y", candidate.guide, other, otherIdx)) continue;
+        bestYDist = candidate.dist;
+        bestYDelta = candidate.delta;
+        bestYGuide = candidate.guide;
+        snapY = true;
       }
     }
   }

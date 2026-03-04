@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: step-1
+date: 2025-03-04T22:50:12Z
+---
+
+## step-1: Added optional borderWidth parameter to computeSnap, replaced nested loop with four explicit named-edge comparisons per axis applying offset only to adjacent-edge pairs
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-1
 date: 2025-03-04T21:36:38Z
 ---
 
