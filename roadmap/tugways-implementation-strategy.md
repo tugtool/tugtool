@@ -748,7 +748,7 @@ The suggested plan sequence:
 11. `tugways-phase-5b3-gallery-card` — convert Component Gallery to a proper tabbed card
 12. `tugways-phase-5b4-tab-overflow` — progressive tab collapse: icon-only, then overflow dropdown
 13. `tugways-phase-5b5-tab-refinements` — card-as-tab merge, additional refinements
-14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets, `Geometric engine` section features used
 15. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
 16. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
 17. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
