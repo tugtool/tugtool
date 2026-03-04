@@ -34,6 +34,21 @@ import type { IDeckManagerStore } from "./deck-manager-store";
  */
 export const GHOST_TAB_ZINDEX = 5000;
 
+/**
+ * CSS selector for visible tab elements within a tab bar.
+ *
+ * Excludes tabs with `data-overflow="hidden"` (tabs in the overflow dropdown),
+ * because hidden tabs have `display: none` and return zero-width bounding rects
+ * from `getBoundingClientRect()`, which would corrupt midpoint calculations and
+ * produce wrong insertion indices during drag.
+ *
+ * When no tabs have `data-overflow="hidden"` (i.e., overflow is inactive),
+ * this selector matches the same set as `.tug-tab`, so it is backward-compatible.
+ *
+ * [D07] TabDragCoordinator selectors exclude hidden overflow tabs, Risk R04
+ */
+export const VISIBLE_TAB_SELECTOR = '.tug-tab:not([data-overflow="hidden"])';
+
 /** Drag threshold in pixels before drag initiates (from startDrag entry). */
 const DRAG_THRESHOLD_PX = 5;
 
@@ -145,6 +160,17 @@ class TabDragCoordinator {
    */
   init(store: IDeckManagerStore): void {
     this.store = store;
+  }
+
+  /**
+   * Whether a tab drag is currently in progress.
+   *
+   * Used by the `useTabOverflow` hook to skip overflow recalculation while
+   * a drag gesture is active, preventing DOM attribute mutations on elements
+   * the coordinator is actively manipulating. [Risk R03]
+   */
+  get isDragging(): boolean {
+    return this.dragActive;
   }
 
   /**
@@ -495,14 +521,18 @@ class TabDragCoordinator {
   /**
    * Compute the insertion index for a tab bar given a pointer X coordinate.
    *
-   * Iterates over all .tug-tab children of the bar, comparing pointer X
-   * against each tab's midpoint. Returns the index where the tab would be
-   * inserted if dropped at this X position.
+   * Iterates over all visible .tug-tab children of the bar (excluding tabs
+   * with data-overflow="hidden"), comparing pointer X against each tab's
+   * midpoint. Returns the index where the tab would be inserted if dropped
+   * at this X position.
+   *
+   * Uses VISIBLE_TAB_SELECTOR to exclude hidden overflow tabs, which have
+   * display:none and return zero-width bounding rects. [D07, Risk R04]
    *
    * [Spec S04, Spec S06]
    */
   computeReorderIndex(barElement: HTMLElement, pointerX: number): number {
-    const tabEls = barElement.querySelectorAll<HTMLElement>(".tug-tab");
+    const tabEls = barElement.querySelectorAll<HTMLElement>(VISIBLE_TAB_SELECTOR);
     if (tabEls.length === 0) return 0;
 
     for (let i = 0; i < tabEls.length; i++) {
@@ -542,8 +572,9 @@ class TabDragCoordinator {
     }
 
     // Compute left position relative to the bar.
+    // Uses VISIBLE_TAB_SELECTOR to exclude hidden overflow tabs. [D07, Risk R04]
     const barRect = barElement.getBoundingClientRect();
-    const tabEls = barElement.querySelectorAll<HTMLElement>(".tug-tab");
+    const tabEls = barElement.querySelectorAll<HTMLElement>(VISIBLE_TAB_SELECTOR);
     let leftPx = 0;
 
     if (tabEls.length === 0) {

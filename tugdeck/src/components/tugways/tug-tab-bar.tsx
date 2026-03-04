@@ -6,21 +6,31 @@
  * through callback props to DeckManager which updates CardState.
  *
  * **Authoritative references:**
+ * - [D01] DOM measurement for full widths, fixed constant for icon-only
+ * - [D02] Overflow state split across appearance and structural zones
  * - [D03] Tab bar uses the Tugcard accessory slot
+ * - [D04] Replace overflow-x: auto with overflow-x: hidden
  * - Spec S01: TugTabBarProps
+ * - Spec S03: DOM data attributes for overflow state
  * - Spec S08: Tab drag initiation (threshold + coordinator.startDrag)
  * - Table T01: Tab visual states
  * - (#s01-tab-bar-props, #t01-tab-visual-states, #d03-tab-bar-accessory,
  *   #s08-tab-bar-drag-init, #tab-bar-drag-integration)
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
 import { TugDropdown } from "./tug-dropdown";
 import type { TugDropdownItem } from "./tug-dropdown";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
+import {
+  computeOverflow,
+  ICON_ONLY_TAB_WIDTH,
+  OVERFLOW_BUTTON_WIDTH,
+  type TabMeasurement,
+} from "@/tab-overflow";
 import "./tug-tab-bar.css";
 
 // ---- Types (Spec S01) ----
@@ -52,6 +62,13 @@ export interface TugTabBarProps {
    * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
    */
   acceptedFamilies?: readonly string[];
+  /**
+   * Optional callback invoked whenever the overflow state changes.
+   * Receives the current overflow stage and the count of overflow tabs.
+   * Intended for demo/diagnostic use (e.g., the gallery TugTabBar demo
+   * status line). Not required for production tab bar usage.
+   */
+  onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void;
 }
 
 // ---- Helpers ----
@@ -67,6 +84,243 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
   return React.createElement(IconComponent, { size: 12 });
 }
 
+// ---- useTabOverflow hook ----
+
+/**
+ * useTabOverflow -- ResizeObserver-driven tab overflow management.
+ *
+ * Attaches a ResizeObserver to the tab bar container. On each observation:
+ * 1. Guards against mutations during an active drag gesture [Risk R03].
+ * 2. Measures tab widths via getBoundingClientRect (appearance-zone reads).
+ * 3. Calls computeOverflow() to partition tabs into visible/collapsed/overflow.
+ * 4. Applies per-tab data-overflow attributes imperatively via requestAnimationFrame
+ *    (appearance-zone writes, no React state) [D02, D08, D09].
+ * 5. Updates overflowTabs React state only when the set of overflow IDs
+ *    changes (structural-zone change: controls overflow button rendering) [D02].
+ *
+ * The dependency array for the useLayoutEffect covers:
+ * - `tabs.length`: tab add/remove triggers re-measurement.
+ * - `activeTabId`: active tab change triggers re-measurement.
+ * - `titleKey`: serialised tab titles so a title rename triggers re-measurement.
+ *
+ * The ResizeObserver handles container resize automatically (card resize,
+ * window resize) via its observation of the bar element.
+ *
+ * **Authoritative references:**
+ * - [D01] DOM measurement, fixed constant for icon-only widths
+ * - [D02] Appearance-zone vs. structural boundary
+ * - Risk R01: ResizeObserver loop mitigated by requestAnimationFrame write deferral
+ * - Risk R02: Measurement timing mitigated by useLayoutEffect
+ * - Risk R03: Drag guard skips recalculation during active drag
+ *
+ * @param barRef    Ref to the tab bar container div.
+ * @param tabs      Ordered array of tab items.
+ * @param activeTabId ID of the currently active tab.
+ * @param onOverflowChange Optional callback invoked when overflow stage or count changes.
+ * @returns {{ overflowTabs: TabItem[] }} Tabs currently in the overflow dropdown.
+ */
+function useTabOverflow(
+  barRef: React.RefObject<HTMLDivElement | null>,
+  tabs: TabItem[],
+  activeTabId: string,
+  onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void,
+): { overflowTabs: TabItem[] } {
+  // overflowTabs is structural-zone state: it controls whether the overflow
+  // dropdown button is rendered and what items it contains. [D02]
+  const [overflowTabs, setOverflowTabs] = useState<TabItem[]>([]);
+
+  // Stable reference to the last overflow tab IDs string, used to avoid
+  // unnecessary React state updates when the set hasn't changed.
+  const lastOverflowIdsRef = useRef<string>("");
+
+  // Stable reference to the last overflow stage, tracked independently so
+  // onOverflowChange fires on stage transitions even when overflowIds stays
+  // empty (e.g. "none" → "collapsed": both have overflowIds = []).
+  const lastStageRef = useRef<"none" | "collapsed" | "overflow">("none");
+
+  // Stable ref for the onOverflowChange callback so the RAF closure always
+  // calls the latest version without needing it in the dependency array.
+  const onOverflowChangeRef = useRef(onOverflowChange);
+  onOverflowChangeRef.current = onOverflowChange;
+
+  // Stable reference to the pending RAF id, for cancellation on cleanup.
+  const rafIdRef = useRef<number | null>(null);
+
+  // Serialised title key for dependency tracking -- triggers re-measurement
+  // when any tab title changes.
+  const titleKey = tabs.map((t) => t.title).join("|");
+
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+
+    /**
+     * Core measurement and DOM attribute application logic.
+     * Called from the ResizeObserver callback (and immediately on first mount).
+     *
+     * Reads are synchronous; DOM attribute writes are deferred to RAF
+     * to avoid ResizeObserver loop warnings [Risk R01].
+     */
+    function runOverflow() {
+      const barEl = barRef.current;
+      if (!barEl) return;
+
+      // [Risk R03] Skip recalculation during an active drag gesture.
+      if (tabDragCoordinator.isDragging) return;
+
+      // --- Measurements (synchronous reads) ---
+
+      const containerWidth = barEl.getBoundingClientRect().width;
+
+      // Measure the [+] add button width.
+      const addBtn = barEl.querySelector<HTMLElement>(".tug-tab-add");
+      const addButtonWidth = addBtn ? addBtn.getBoundingClientRect().width : 28;
+
+      // Measure the overflow button width (if already rendered), or use
+      // the bootstrap constant for the first computation introducing overflow.
+      const overflowBtn = barEl.querySelector<HTMLElement>(".tug-tab-overflow-btn");
+      const overflowButtonWidth = overflowBtn
+        ? overflowBtn.getBoundingClientRect().width
+        : OVERFLOW_BUTTON_WIDTH;
+
+      // Build TabMeasurement array from current DOM state.
+      // Temporarily clear any data-overflow attributes so all tabs are
+      // rendered at their natural (full) widths for accurate measurement.
+      // We re-apply after computeOverflow runs.
+      const tabEls = barEl.querySelectorAll<HTMLElement>(".tug-tab");
+      const savedOverflow: Array<string | null> = [];
+
+      tabEls.forEach((el) => {
+        savedOverflow.push(el.getAttribute("data-overflow"));
+        el.removeAttribute("data-overflow");
+      });
+
+      // Read full widths now that overflow attributes are cleared.
+      const measurements: TabMeasurement[] = [];
+      tabEls.forEach((el) => {
+        const tabId = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
+        const fullWidth = el.getBoundingClientRect().width;
+        const hasIcon = el.querySelector(".tug-tab-icon") !== null;
+        measurements.push({
+          tabId,
+          fullWidth,
+          iconOnlyWidth: hasIcon ? ICON_ONLY_TAB_WIDTH : fullWidth,
+          hasIcon,
+        });
+      });
+
+      // Restore saved overflow attributes before DOM writes.
+      tabEls.forEach((el, i) => {
+        const saved = savedOverflow[i];
+        if (saved !== null) {
+          el.setAttribute("data-overflow", saved);
+        }
+      });
+
+      // --- Computation (pure, no DOM) ---
+
+      const result = computeOverflow(
+        measurements,
+        containerWidth,
+        activeTabId,
+        overflowButtonWidth,
+        addButtonWidth,
+      );
+
+      // --- DOM writes deferred to RAF [Risk R01] ---
+
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+
+        const barEl2 = barRef.current;
+        if (!barEl2) return;
+
+        // Apply data-overflow attribute to each tab element (appearance-zone).
+        const tabEls2 = barEl2.querySelectorAll<HTMLElement>(".tug-tab");
+        tabEls2.forEach((el) => {
+          const tabId = el.getAttribute("data-testid")?.replace("tug-tab-", "") ?? "";
+          if (result.overflowIds.includes(tabId)) {
+            el.setAttribute("data-overflow", "hidden");
+          } else if (result.collapsedIds.includes(tabId)) {
+            el.setAttribute("data-overflow", "collapsed");
+          } else {
+            el.removeAttribute("data-overflow");
+          }
+        });
+
+        // Apply data-overflow-active on the bar itself (appearance-zone).
+        if (result.stage !== "none") {
+          barEl2.setAttribute("data-overflow-active", "true");
+        } else {
+          barEl2.removeAttribute("data-overflow-active");
+        }
+
+        // --- Structural-zone and callback updates ---
+        //
+        // Snapshot previous values before any mutations so comparisons
+        // against "what changed" are accurate.
+        const prevOverflowIdsKey = lastOverflowIdsRef.current;
+        const prevStage = lastStageRef.current;
+
+        const newOverflowIdsKey = result.overflowIds.join(",");
+        const newOverflowCount = result.overflowIds.length;
+
+        // Update structural-zone state only when overflow tab IDs change.
+        // Joining IDs into a string gives cheap reference equality. [D02]
+        if (newOverflowIdsKey !== prevOverflowIdsKey) {
+          lastOverflowIdsRef.current = newOverflowIdsKey;
+
+          // Map overflow IDs back to TabItem objects, preserving order.
+          const overflowTabItems = result.overflowIds
+            .map((id) => tabs.find((t) => t.id === id))
+            .filter((t): t is TabItem => t !== undefined);
+
+          setOverflowTabs(overflowTabItems);
+        }
+
+        // Notify optional observer whenever stage OR overflow count changes.
+        //
+        // This check is intentionally separate from the overflowIds gate
+        // above. The "none" → "collapsed" Stage 1 transition keeps
+        // overflowIds = [] in both states, so newOverflowIdsKey stays ""
+        // and the gate above never fires for it. Tracking stage in its own
+        // ref lets us detect that transition and call onOverflowChange. [D02]
+        const prevOverflowCount = prevOverflowIdsKey.split(",").filter(Boolean).length;
+        if (result.stage !== prevStage || newOverflowCount !== prevOverflowCount) {
+          lastStageRef.current = result.stage;
+          onOverflowChangeRef.current?.(result.stage, newOverflowCount);
+        }
+      });
+    }
+
+    // Attach ResizeObserver to the bar element. The observer fires after
+    // layout (post-paint), ensuring getBoundingClientRect is accurate.
+    // [Risk R02] useLayoutEffect guarantees DOM is committed before attach.
+    const observer = new ResizeObserver(() => {
+      runOverflow();
+    });
+    observer.observe(bar);
+
+    // Run immediately for the initial measurement.
+    runOverflow();
+
+    return () => {
+      observer.disconnect();
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.length, activeTabId, titleKey]);
+
+  return { overflowTabs };
+}
+
 // ---- TugTabBar ----
 
 /**
@@ -76,6 +330,11 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
  * The active tab has `data-active="true"` set for CSS targeting (Table T01).
  * A [+] button at the end opens a TugDropdown type picker listing all
  * registered card types; selecting one calls `onTabAdd(componentId)`.
+ *
+ * Overflow handling is provided by the `useTabOverflow` hook, which attaches
+ * a ResizeObserver to the bar container and applies data-overflow attributes
+ * imperatively (appearance-zone). The overflow dropdown button is rendered
+ * conditionally based on `overflowTabs` React state (structural-zone). [D02]
  *
  * Tab drag initiation uses a 5px threshold pattern: onPointerDown registers
  * document-level listeners to track movement without acquiring pointer capture.
@@ -96,7 +355,15 @@ export function TugTabBar({
   onTabClose,
   onTabAdd,
   acceptedFamilies,
+  onOverflowChange,
 }: TugTabBarProps) {
+  // Ref for the tab bar container, used by useTabOverflow. [D02]
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // Overflow hook: attaches ResizeObserver, applies appearance-zone DOM
+  // attributes, returns structural-zone overflowTabs for dropdown rendering.
+  const { overflowTabs } = useTabOverflow(barRef, tabs, activeTabId, onOverflowChange);
+
   // Resolve effective families: default to ["standard"] when prop is omitted.
   const effectiveFamilies = acceptedFamilies ?? ["standard"];
 
@@ -112,6 +379,16 @@ export function TugTabBar({
       icon: renderIcon(reg.defaultMeta.icon),
     }));
 
+  // Build overflow dropdown items from overflowTabs (icon + label each). [D06]
+  const overflowDropdownItems: TugDropdownItem[] = overflowTabs.map((tab) => {
+    const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
+    return {
+      id: tab.id,
+      label: tab.title,
+      icon: renderIcon(iconName),
+    };
+  });
+
   // Stable handler for [+] button type picker selection.
   const handleTypeSelect = useCallback(
     (componentId: string) => {
@@ -120,8 +397,20 @@ export function TugTabBar({
     [onTabAdd],
   );
 
+  // Handler for selecting a tab from the overflow dropdown. [D05]
+  // Calls onTabSelect with the tab ID; DeckManager updates activeTabId,
+  // triggering re-render, and the ResizeObserver recomputes overflow with
+  // the new active tab visible.
+  const handleOverflowSelect = useCallback(
+    (tabId: string) => {
+      onTabSelect(tabId);
+    },
+    [onTabSelect],
+  );
+
   return (
     <div
+      ref={barRef}
       className="tug-tab-bar"
       role="tablist"
       data-testid="tug-tab-bar"
@@ -223,7 +512,26 @@ export function TugTabBar({
         );
       })}
 
-      {/* [+] type picker button */}
+      {/* Overflow dropdown button -- rendered only when tabs overflow [D06, D08].
+          Placed between the last visible tab and the [+] button. */}
+      {overflowTabs.length > 0 && (
+        <TugDropdown
+          trigger={
+            <button
+              type="button"
+              className="tug-tab-overflow-btn"
+              aria-label={`${overflowTabs.length} more tabs`}
+              data-testid="tug-tab-overflow-btn"
+            >
+              <span className="tug-tab-overflow-badge">+{overflowTabs.length}</span>
+            </button>
+          }
+          items={overflowDropdownItems}
+          onSelect={handleOverflowSelect}
+        />
+      )}
+
+      {/* [+] type picker button -- always rightmost [D08] */}
       <TugDropdown
         trigger={
           <button

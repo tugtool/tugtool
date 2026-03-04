@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-04T19:01:33Z
+---
+
+## step-8: Final verification: 600 tests pass, build clean, all 9 exit criteria met across 8 implementation steps
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-7
+date: 2025-03-04T18:58:21Z
+---
+
+## step-7: Added onOverflowChange callback to TugTabBar, expanded demo to 6 initial tabs, Add 5 Tabs button, overflow status line, and 10 new tests (600 total)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-6
+date: 2025-03-04T18:41:40Z
+---
+
+## step-6: Verification-only step: full test suite 590/590, build clean, all step 1-5 artifacts confirmed present and working together
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-5
+date: 2025-03-04T18:37:58Z
+---
+
+## step-5: Step-5 no-op: all overflow dropdown tasks were already implemented in step-4. Log-only commit.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-4
+date: 2025-03-04T18:35:25Z
+---
+
+## step-4: Added useTabOverflow hook to tug-tab-bar.tsx: ResizeObserver measurement, computeOverflow() integration, per-tab data-overflow attributes via RAF, overflow dropdown rendering with badge
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-3
+date: 2025-03-04T18:28:28Z
+---
+
+## step-3: Added VISIBLE_TAB_SELECTOR constant, updated computeReorderIndex and updateInsertionIndicator to exclude hidden tabs, added isDragging getter, plus 5 new tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-2
+date: 2025-03-04T18:24:06Z
+---
+
+## step-2: Modified tug-tab-bar.css: overflow-x hidden, removed scrollbar rules, added data-overflow collapsed/hidden rules, overflow button and badge styles, removed Phase 5b4 deferral comment
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
+step: step-1
+date: 2025-03-04T18:20:04Z
+---
+
+## step-1: Created tab-overflow.ts with TabMeasurement/OverflowResult interfaces, computeOverflow() function, and 24 unit tests covering T01-T10a
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-7
 date: 2025-03-04T16:59:30Z
 ---
