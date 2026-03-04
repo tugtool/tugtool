@@ -2,7 +2,7 @@
 
 ## Tugways Phase 5c: Card Snapping {#card-snapping}
 
-**Purpose:** Gate snap-to-edge and set formation on the Option (Alt) modifier key so free drag is the default, with mid-drag modifier toggle and snap guide rendering via direct DOM manipulation.
+**Purpose:** Gate snap-to-edge and set formation on a configurable modifier key (default: Option/Alt) so free drag is the default, with mid-drag modifier toggle and snap guide rendering via direct DOM manipulation.
 
 ---
 
@@ -23,11 +23,11 @@
 
 The snap geometry module (`snap.ts`) contains fully tested pure functions for `computeSnap`, `findSharedEdges`, and `computeSets`, but none of this code is wired into the production drag path. Currently, `card-frame.tsx`'s `handleDragStart` only calls `clampedPosition` -- every drag is free movement with no snap guides and no set formation.
 
-Phase 5c, as described in the implementation strategy, adds exactly one behavioral gate: the Option (Alt) modifier key. When held during drag, `computeSnap` is called and snap guides appear. When released, the card returns to free cursor-following. Sets form on drop when snapped. Set-move (dragging a formed set as a group) works without the modifier.
+Phase 5c, as described in the implementation strategy, adds exactly one behavioral gate: a configurable modifier key (default: Option/Alt). When held during drag, `computeSnap` is called and snap guides appear. When released, the card returns to free cursor-following. Sets form on drop when snapped. Set-move (dragging a formed set as a group) works without the modifier. The modifier key is defined once as a constant so it can be changed in a single place.
 
 #### Strategy {#strategy}
 
-- Wire `computeSnap` into the existing `applyDragFrame` rAF loop inside `card-frame.tsx`, gated on `e.altKey`
+- Wire `computeSnap` into the existing `applyDragFrame` rAF loop inside `card-frame.tsx`, gated on the snap modifier key (read via a configurable helper)
 - Read other card rects from the DOM at drag-start (snapshot approach, same pattern as the existing `dragTabBarCache`)
 - Render snap guide `<div>` elements via direct DOM manipulation (create/position/remove), consistent with Rules of Tug [D08]/[D09] -- no React state for guides
 - Compute sets transiently at drag-start via `findSharedEdges` + `computeSets` to determine if the dragged card is part of a set (for set-move)
@@ -36,16 +36,16 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- Free drag (no modifier) produces no snap guides and no snapping (verify by dragging cards near each other without Option)
-- Option+drag near another card produces visible snap guide lines and the card snaps to the nearest edge within `SNAP_THRESHOLD_PX` (8px)
-- Pressing Option mid-drag activates snapping immediately; releasing Option mid-drag deactivates snapping immediately
+- Free drag (no modifier) produces no snap guides and no snapping (verify by dragging cards near each other without the snap modifier)
+- Modifier+drag near another card produces visible snap guide lines and the card snaps to the nearest edge within `SNAP_THRESHOLD_PX` (8px)
+- Pressing the snap modifier mid-drag activates snapping immediately; releasing it mid-drag deactivates snapping immediately
 - Dropping while snapped forms a set; subsequent drag of any set member moves the entire set without requiring the modifier
-- During set-move (no Option), pressing Option detaches the dragged card from the set and enters snap mode; the detached card can then snap to a new set
+- During set-move (no modifier), pressing the snap modifier detaches the dragged card from the set and enters snap mode; the detached card can then snap to a new set
 
 #### Scope {#scope}
 
-1. Add Option-key gate to the drag path in `card-frame.tsx`
-2. Call `computeSnap` in `applyDragFrame` when `altKey` is true
+1. Define configurable snap modifier key constant and add modifier gate to the drag path in `card-frame.tsx`
+2. Call `computeSnap` in `applyDragFrame` when the snap modifier is active
 3. Render/remove snap guide DOM elements during drag
 4. Compute set membership at drag-start for set-move behavior
 5. Manual verification of snap, set-move, and break-out flows
@@ -69,30 +69,34 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 - Appearance changes go through CSS and DOM, never React state (Rules of Tug [D08], [D09])
 - Never call `root.render()` after initial mount ([D40], [D42])
 - Drag handler runs in a rAF loop -- snap computation must be fast enough for 60fps
-- PointerEvent carries `altKey` natively -- no separate `keydown`/`keyup` listener needed
+- PointerEvent carries modifier state (`altKey`, `ctrlKey`, `shiftKey`, `metaKey`) natively -- no separate `keydown`/`keyup` listener needed
+- The snap modifier key is defined once as a constant; all code reads the modifier through this single definition
 
 #### Assumptions {#assumptions}
 
 - `snap.ts` geometry functions remain untouched as pure functions
-- The `altKey` property on `PointerEvent` is read during `onPointerMove` -- since pointer events carry `altKey`, no separate keyboard listener is needed
-- Break-out from a set is triggered by pressing Option during a set-move drag -- this detaches the dragged card and enters snap mode
+- The snap modifier property on `PointerEvent` is read during `onPointerMove` via a configurable helper -- since pointer events carry modifier state, no separate keyboard listener is needed
+- Break-out from a set is triggered by pressing the snap modifier during a set-move drag -- this detaches the dragged card and enters snap mode
 - The change is ~180-220 lines in ~1 file (revised upward to account for set-move, break-out, guide management, and store commit ordering)
 
 ---
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Snap gated on Option (Alt) modifier key (DECIDED) {#d01-modifier-gate}
+#### [D01] Snap gated on a configurable modifier key (DECIDED) {#d01-modifier-gate}
 
-**Decision:** Snap-to-edge and guide rendering activate only when `event.altKey` is true during drag. Free drag is the default.
+**Decision:** Snap-to-edge and guide rendering activate only when the configured snap modifier key is held during drag. Free drag is the default. The modifier key is defined once via a `SNAP_MODIFIER_KEY` constant (a `PointerEvent` modifier property name, e.g., `"altKey"`) and a corresponding `isSnapModifier(e: PointerEvent): boolean` helper function. To change the snap modifier, update `SNAP_MODIFIER_KEY` -- all behavior follows automatically.
 
 **Rationale:**
-- Matches design-system-concepts.md [D32]: snap requires Option modifier during drag
+- Matches design-system-concepts.md [D32]: snap requires a modifier during drag
 - Casual card repositioning should not trigger unintended snapping
 - The modifier can be toggled mid-drag for fluid interaction
+- Defining the key in one place makes it trivial to switch modifiers (e.g., from Option to Shift)
 
 **Implications:**
-- The `altKey` property is read from `PointerEvent` on every `pointermove` inside the rAF loop
+- Define `const SNAP_MODIFIER_KEY: keyof Pick<PointerEvent, "altKey" | "ctrlKey" | "shiftKey" | "metaKey"> = "altKey"` and `function isSnapModifier(e: PointerEvent): boolean { return e[SNAP_MODIFIER_KEY]; }` at module scope in `card-frame.tsx`
+- All code reads the modifier through `isSnapModifier(e)` -- never directly accessing `e.altKey`
+- The `latestSnapModifier` ref (renamed from `latestAltKey`) stores the result of `isSnapModifier(e)` from `onPointerMove`
 - No separate `keydown`/`keyup` listener needed -- pointer events carry modifier state
 
 #### [D02] Set-move active without modifier once set is formed (DECIDED) {#d02-set-move-always}
@@ -115,7 +119,7 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 **Rationale:**
 - Consistent with Rules of Tug [D08]/[D09]: appearance changes go through CSS and DOM, never React state
-- Guide lifetime exactly matches the drag gesture -- create on first snap, remove on drag-end or when Option is released
+- Guide lifetime exactly matches the drag gesture -- create on first snap, remove on drag-end or when the snap modifier is released
 - No React re-renders during drag
 
 **Implications:**
@@ -138,16 +142,16 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 #### [D05] Break-out is triggered by pressing Option during set-move (DECIDED) {#d05-breakout-trigger}
 
-**Decision:** During a set-move drag (card belongs to a set, no Option held), pressing Option detaches the dragged card from the set. The other set members stop moving and remain at their current DOM positions. The detached card immediately enters snap mode (guides appear, can snap to a new target).
+**Decision:** During a set-move drag (card belongs to a set, snap modifier not held), pressing the snap modifier detaches the dragged card from the set. The other set members stop moving and remain at their current DOM positions. The detached card immediately enters snap mode (guides appear, can snap to a new target).
 
 **Rationale:**
 - Position-based break-out (comparing the card's position to the set bounding box) is fundamentally flawed during set-move: since all set members follow the dragged card by the same delta, the dragged card always stays at the same relative position within the set -- it can never "move away" from the bounding box
-- Using the Option key as the explicit break-out trigger is consistent with the overall modifier design: Option means "I want to rearrange/snap" rather than "I want to move the group"
-- The user flow is natural: drag a set (group moves), press Option to detach and snap the card elsewhere, release Option to return to free drag
+- Using the snap modifier key as the explicit break-out trigger is consistent with the overall modifier design: the snap modifier means "I want to rearrange/snap" rather than "I want to move the group"
+- The user flow is natural: drag a set (group moves), press the snap modifier to detach and snap the card elsewhere, release it to return to free drag
 
 **Implications:**
-- In `applyDragFrame`, when `latestAltKey.current` transitions from false to true while `dragSetMembers.current` is non-empty: commit each set member's current DOM position via `onCardMoved`, then clear `dragSetMembers.current` and `dragSetOrigins.current` (detach)
-- A `prevAltKey` ref tracks the previous frame's `altKey` value to detect the false-to-true transition
+- In `applyDragFrame`, when `latestSnapModifier.current` transitions from false to true while `dragSetMembers.current` is non-empty: commit each set member's current DOM position via `onCardMoved`, then clear `dragSetMembers.current` and `dragSetOrigins.current` (detach)
+- A `prevSnapModifier` ref tracks the previous frame's snap modifier value to detect the false-to-true transition
 - No `BREAK_OUT_THRESHOLD_PX` constant is needed -- break-out is purely modifier-driven
 
 #### [D06] Card merge takes priority over snap-on-drop (DECIDED) {#d06-merge-priority}
@@ -172,27 +176,27 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 | Condition | During drag | On drop |
 |-----------|------------|---------|
-| No Option key | Free movement via `clampedPosition`, no guides | Card lands at cursor position, no set formed |
-| Option key held | `computeSnap` called, guides shown, card snaps to nearest edge within 8px | If snapped, set formed with adjacent card(s) |
-| Option pressed mid-drag | Snap activates immediately on next rAF frame | N/A |
-| Option released mid-drag | Snap deactivates, guides removed, card returns to cursor position | N/A |
+| No snap modifier | Free movement via `clampedPosition`, no guides | Card lands at cursor position, no set formed |
+| Snap modifier held | `computeSnap` called, guides shown, card snaps to nearest edge within 8px | If snapped, set formed with adjacent card(s) |
+| Snap modifier pressed mid-drag | Snap activates immediately on next rAF frame | N/A |
+| Snap modifier released mid-drag | Snap deactivates, guides removed, card returns to cursor position | N/A |
 
 **Spec S02: Set-Move and Break-Out Behavior** {#s02-set-move}
 
 | Condition | Behavior |
 |-----------|----------|
-| Dragged card is in a set, no Option held | Set-move: all set members move by the same pointer displacement delta |
+| Dragged card is in a set, snap modifier not held | Set-move: all set members move by the same pointer displacement delta |
 | Dragged card is not in a set | Single-card drag (normal behavior) |
-| Option pressed during set-move (altKey transitions false-to-true) | Break-out: commit set members' current positions to the store, detach dragged card from set, enter snap mode |
-| After break-out, Option still held | Detached card snaps to nearby edges, can form a new set on drop |
-| After break-out, Option released | Detached card moves freely (no snap, no set) |
+| Snap modifier pressed during set-move (transitions false-to-true) | Break-out: commit set members' current positions to the store, detach dragged card from set, enter snap mode |
+| After break-out, snap modifier still held | Detached card snaps to nearby edges, can form a new set on drop |
+| After break-out, snap modifier released | Detached card moves freely (no snap, no set) |
 
 **Spec S03: Drop Priority** {#s03-drop-priority}
 
 | Priority | Condition | Action |
 |----------|-----------|--------|
 | 1 (highest) | Pointer over another card's tab bar ([D45]) | Merge -- existing code path, return early |
-| 2 | Option held and snap result non-null | Snap-on-drop -- commit snapped position, commit set member positions |
+| 2 | Snap modifier held and snap result non-null | Snap-on-drop -- commit snapped position, commit set member positions |
 | 3 (default) | Neither merge nor snap | Free drop -- commit clamped position |
 
 ---
@@ -205,7 +209,7 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 #### Step 1: Wire snap into card-frame.tsx drag path {#step-1}
 
-**Commit:** `feat(tugways): wire Option-gated snap into card drag path`
+**Commit:** `feat(tugways): wire modifier-gated snap into card drag path`
 
 **References:** [D01] Modifier gate, [D02] Set-move always, [D03] DOM guides, [D04] Rect snapshot, [D05] Break-out threshold, [D06] Merge priority, Spec S01, Spec S02, Spec S03, (#drag-behavior-spec, #context, #strategy)
 
@@ -213,37 +217,38 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 - Modified `tugdeck/src/components/chrome/card-frame.tsx` -- snap integration in `handleDragStart`
 
 **Tasks:**
+- [ ] Define the configurable snap modifier at module scope in `card-frame.tsx`: `const SNAP_MODIFIER_KEY: keyof Pick<PointerEvent, "altKey" | "ctrlKey" | "shiftKey" | "metaKey"> = "altKey";` and `function isSnapModifier(e: PointerEvent): boolean { return e[SNAP_MODIFIER_KEY]; }`. To change the snap modifier key, update `SNAP_MODIFIER_KEY` -- all behavior follows automatically
 - [ ] Import `computeSnap`, `findSharedEdges`, `computeSets`, and types `Rect`, `GuidePosition`, `SnapResult` from `@/snap` at top of file
 - [ ] Add a `dragOtherRects` ref (`useRef<{id: string; rect: Rect}[]>([])`) to cache other card rects during drag (keyed by id for `findSharedEdges` compatibility; extract `.rect` when calling `computeSnap`)
 - [ ] Add a `dragGuideEls` ref (`useRef<HTMLElement[]>([])`) to track active guide DOM elements
 - [ ] Add a `dragSetMembers` ref (`useRef<{id: string; el: HTMLElement}[]>([])`) to track set member card ids and frame elements (empty if not in a set). The `id` field is read from the element's `data-card-id` attribute at drag-start and used for `onCardMoved` calls. Note: cached element refs may become stale if React reconciles mid-drag, but this is safe because pointer capture prevents re-renders during drag (no state mutations until `onPointerUp`)
 - [ ] Add a `dragSetOrigins` ref (`useRef<{x: number; y: number}[]>([])`) parallel to `dragSetMembers`, populated at drag-start with each set member's `parseFloat(el.style.left)` / `parseFloat(el.style.top)`. Using original DOM positions (not CardState props) ensures set-move deltas are computed in a single coordinate space
-- [ ] Add a `latestAltKey` ref (`useRef(false)`) that is updated in `onPointerMove` from `e.altKey`
-- [ ] Add a `prevAltKey` ref (`useRef(false)`) to track the previous frame's `altKey` value for detecting the false-to-true transition that triggers break-out
+- [ ] Add a `latestSnapModifier` ref (`useRef(false)`) that is updated in `onPointerMove` via `isSnapModifier(e)`
+- [ ] Add a `prevSnapModifier` ref (`useRef(false)`) to track the previous frame's snap modifier value for detecting the false-to-true transition that triggers break-out
 - [ ] Add a `lastSnapResult` ref (`useRef<SnapResult | null>(null)`) to carry the most recent snap result from `applyDragFrame` (rAF closure) to `onPointerUp` (pointer event closure)
 - [ ] In `handleDragStart`, after building `dragTabBarCache`, snapshot other card rects: query all `.card-frame[data-card-id]` elements (excluding this card's id), read `getBoundingClientRect()`, convert to canvas-relative `Rect` objects by subtracting the canvas element's own `getBoundingClientRect()` offset (i.e., `rect.x = domRect.left - canvasBounds.left`, `rect.y = domRect.top - canvasBounds.top`; the canvas container has `position: relative` set by `DeckManager` at construction), and store in `dragOtherRects.current`
 - [ ] In `handleDragStart`, compute set membership: construct `allCardRects` by prepending this card's own `{id, rect}` entry to `dragOtherRects.current`, then call `findSharedEdges(allCardRects)` followed by `computeSets(allCardRects.map(c => c.id), sharedEdges)`; if this card belongs to a set with 2+ members, store the other set members as `{id, el}` entries in `dragSetMembers.current` -- look up each element via `document.querySelector(.card-frame[data-card-id="..."])` and read `id` from the `data-card-id` attribute; simultaneously populate `dragSetOrigins.current` with each member's `{x: parseFloat(el.style.left), y: parseFloat(el.style.top)}`
-- [ ] In `handleDragStart`, initialize `latestAltKey.current = false` and `prevAltKey.current = false`
-- [ ] In `onPointerMove`, add `latestAltKey.current = e.altKey` after updating `latestDragPointer`. This is the sole write site for `latestAltKey` -- without it, snap never activates. Known limitation: if the user releases Option while the pointer is stationary, `latestAltKey` is not updated until the next `pointermove` event, so guides may persist briefly. This is acceptable for Phase 5c; a supplementary `keyup` listener could be added in a follow-on if needed
-- [ ] In `applyDragFrame`, after computing `pos` via `clampedPosition`, implement break-out detection first: if `dragSetMembers.current` is non-empty and `latestAltKey.current` is true and `prevAltKey.current` was false (Option just pressed during set-move), then detach -- for each set member, read its current DOM position (`parseFloat(el.style.left)`, `parseFloat(el.style.top)`) and size (`el.offsetWidth`, `el.offsetHeight`) and call `onCardMoved(member.id, position, size)` to commit the in-flight positions to the store; then clear `dragSetMembers.current` and `dragSetOrigins.current`. This commits set member positions synchronously before the detached card enters snap mode
-- [ ] After break-out check, update `prevAltKey.current = latestAltKey.current` for next frame
-- [ ] In `applyDragFrame`, add the snap branch: if `latestAltKey.current` is true and `dragSetMembers.current` is empty (not in a set, or just broke out), call `computeSnap` with the moving card's rect (at `pos`, using `frame.offsetWidth`/`frame.offsetHeight` for size) against `dragOtherRects.current.map(r => r.rect)`; store the result in `lastSnapResult.current`; if snap result has non-null x/y, override `pos.x`/`pos.y`; call `syncGuides` to render guide DOM elements from `snap.guides`
-- [ ] If `latestAltKey.current` is false and `dragSetMembers.current` is empty (solo card, no Option): set `lastSnapResult.current = null` and call `clearGuides`
-- [ ] If `dragSetMembers.current` is non-empty and `latestAltKey.current` is false (set-move active, no break-out): compute pointer displacement `deltaX = latestDragPointer.current.x - dragStartPointer.current.x`, `deltaY = latestDragPointer.current.y - dragStartPointer.current.y`; apply to each set member: `el.style.left = (dragSetOrigins.current[i].x + deltaX) + 'px'`, `el.style.top = (dragSetOrigins.current[i].y + deltaY) + 'px'`. Using pointer displacement as the single delta source avoids mixing CardState position-space with DOM style-space
+- [ ] In `handleDragStart`, initialize `latestSnapModifier.current = false` and `prevSnapModifier.current = false`
+- [ ] In `onPointerMove`, add `latestSnapModifier.current = isSnapModifier(e)` after updating `latestDragPointer`. This is the sole write site for `latestSnapModifier` -- without it, snap never activates. Known limitation: if the user releases the snap modifier while the pointer is stationary, `latestSnapModifier` is not updated until the next `pointermove` event, so guides may persist briefly. This is acceptable for Phase 5c; a supplementary `keyup` listener could be added in a follow-on if needed
+- [ ] In `applyDragFrame`, after computing `pos` via `clampedPosition`, implement break-out detection first: if `dragSetMembers.current` is non-empty and `latestSnapModifier.current` is true and `prevSnapModifier.current` was false (snap modifier just pressed during set-move), then detach -- for each set member, read its current DOM position (`parseFloat(el.style.left)`, `parseFloat(el.style.top)`) and size (`el.offsetWidth`, `el.offsetHeight`) and call `onCardMoved(member.id, position, size)` to commit the in-flight positions to the store; then clear `dragSetMembers.current` and `dragSetOrigins.current`. This commits set member positions synchronously before the detached card enters snap mode
+- [ ] After break-out check, update `prevSnapModifier.current = latestSnapModifier.current` for next frame
+- [ ] In `applyDragFrame`, add the snap branch: if `latestSnapModifier.current` is true and `dragSetMembers.current` is empty (not in a set, or just broke out), call `computeSnap` with the moving card's rect (at `pos`, using `frame.offsetWidth`/`frame.offsetHeight` for size) against `dragOtherRects.current.map(r => r.rect)`; store the result in `lastSnapResult.current`; if snap result has non-null x/y, override `pos.x`/`pos.y`; call `syncGuides` to render guide DOM elements from `snap.guides`
+- [ ] If `latestSnapModifier.current` is false and `dragSetMembers.current` is empty (solo card, no snap modifier): set `lastSnapResult.current = null` and call `clearGuides`
+- [ ] If `dragSetMembers.current` is non-empty and `latestSnapModifier.current` is false (set-move active, no break-out): compute pointer displacement `deltaX = latestDragPointer.current.x - dragStartPointer.current.x`, `deltaY = latestDragPointer.current.y - dragStartPointer.current.y`; apply to each set member: `el.style.left = (dragSetOrigins.current[i].x + deltaX) + 'px'`, `el.style.top = (dragSetOrigins.current[i].y + deltaY) + 'px'`. Using pointer displacement as the single delta source avoids mixing CardState position-space with DOM style-space
 - [ ] Create helper `syncGuides(guides: GuidePosition[], container: HTMLElement)`: for each guide, create or reuse a `<div>` with `.snap-guide-line` + axis class (`.snap-guide-line-x` or `.snap-guide-line-y`), set only `style.left` (for x-axis guide) or `style.top` (for y-axis guide) -- the CSS classes already handle full extent via `top:0/bottom:0` and `left:0/right:0` respectively; append to container; remove excess guide elements; track in `dragGuideEls.current`
 - [ ] Create helper `clearGuides()`: remove all guide elements from DOM, clear `dragGuideEls.current`
 - [ ] In `onPointerUp`, call `clearGuides()` immediately after the `dragActive` check and before the merge hit-test. This ensures guides are removed from the DOM even if the merge early-return fires (otherwise guide elements would leak into the DOM on merge)
 - [ ] In `onPointerUp`, respect drop priority (Spec S03): the existing merge hit-test ([D45]) runs first and returns early if a merge target is found. After the merge check (and after `dragTabBarCache` cleanup), the existing `clampedPosition` + `onCardMoved` call handles the dragged card's final position (this code is unchanged). After that existing call, add set-member commit logic: if `lastSnapResult.current` is non-null and has non-null x/y, the dragged card's `onCardMoved` should use the snapped position instead (`lastSnapResult.current.x ?? finalPos.x`, `lastSnapResult.current.y ?? finalPos.y`). Then, if `dragSetMembers.current` is non-empty (set-move completed without break-out), call `onCardMoved(member.id, ...)` for each member using their final position from `parseFloat(el.style.left)` / `parseFloat(el.style.top)` and size from `el.offsetWidth` / `el.offsetHeight`. All `onCardMoved` calls happen synchronously before any React re-render -- each call triggers `DeckManager.notify()` which queues a `useSyncExternalStore` update, but React batches these into a single synchronous render after the event handler completes, so DOM positions written during drag are committed to the store before React overwrites `style.left`/`style.top` from props
-- [ ] In `onPointerUp`, reset `dragOtherRects.current`, `dragSetMembers.current`, `dragSetOrigins`, `latestAltKey.current`, `prevAltKey.current`, `lastSnapResult.current`
+- [ ] In `onPointerUp`, reset `dragOtherRects.current`, `dragSetMembers.current`, `dragSetOrigins`, `latestSnapModifier.current`, `prevSnapModifier.current`, `lastSnapResult.current`
 
 **Tests:**
-- [ ] Manual: create 2+ cards, drag without Option -- no guides, no snapping
-- [ ] Manual: drag with Option held near another card -- guides appear, card snaps
-- [ ] Manual: press Option mid-drag -- guides appear immediately
-- [ ] Manual: release Option mid-drag -- guides disappear, card follows cursor
-- [ ] Manual: Option+drag to snap, release pointer -- set formed, subsequent drag moves group
-- [ ] Manual: during set-move, press Option -- dragged card detaches from set, other members stop at their current positions, snap guides appear
-- [ ] Manual: after break-out with Option held, drag near another card -- snaps to new set on drop
+- [ ] Manual: create 2+ cards, drag without snap modifier -- no guides, no snapping
+- [ ] Manual: drag with snap modifier held near another card -- guides appear, card snaps
+- [ ] Manual: press snap modifier mid-drag -- guides appear immediately
+- [ ] Manual: release snap modifier mid-drag -- guides disappear, card follows cursor
+- [ ] Manual: snap modifier+drag to snap, release pointer -- set formed, subsequent drag moves group
+- [ ] Manual: during set-move, press snap modifier -- dragged card detaches from set, other members stop at their current positions, snap guides appear
+- [ ] Manual: after break-out with snap modifier held, drag near another card -- snaps to new set on drop
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run build` succeeds with no errors
@@ -254,22 +259,22 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Option-gated card snapping with snap guides, set formation, and set-move in the tugways canvas.
+**Deliverable:** Modifier-gated card snapping with snap guides, set formation, and set-move in the tugways canvas. The snap modifier key is configurable via a single constant (default: Option/Alt).
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] Free drag (no modifier) shows no snap guides and does not snap (manual verification)
-- [ ] Option+drag shows snap guides and snaps to edges within 8px (manual verification)
+- [ ] Snap modifier+drag shows snap guides and snaps to edges within 8px (manual verification)
 - [ ] Mid-drag modifier toggle produces immediate visual response (manual verification)
-- [ ] Set-move works without modifier after set formation (manual verification)
-- [ ] Option-triggered break-out during set-move detaches card and enters snap mode (manual verification)
+- [ ] Set-move works without snap modifier after set formation (manual verification)
+- [ ] Snap modifier-triggered break-out during set-move detaches card and enters snap mode (manual verification)
 - [ ] `bun run build` and `bun run lint` pass with no errors or warnings
 
 **Acceptance tests:**
-- [ ] Create 3 cards via menu, Option+drag card A to snap beside card B, verify guide lines appear and set forms
-- [ ] Drag card A (now in set with B) without Option -- both cards move together
-- [ ] While set-moving A+B, press Option -- A detaches, B stays at its current position, snap guides appear
-- [ ] With Option still held, drag A near card C -- A snaps to C, new set forms on drop
+- [ ] Create 3 cards via menu, snap modifier+drag card A to snap beside card B, verify guide lines appear and set forms
+- [ ] Drag card A (now in set with B) without snap modifier -- both cards move together
+- [ ] While set-moving A+B, press snap modifier -- A detaches, B stays at its current position, snap guides appear
+- [ ] With snap modifier still held, drag A near card C -- A snaps to C, new set forms on drop
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -281,6 +286,6 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 |------------|--------------|
 | Build passes | `cd tugdeck && bun run build` |
 | Lint passes | `cd tugdeck && bun run lint` |
-| Snap guides visible | Manual: Option+drag near another card, blue dashed lines appear |
-| Set-move works | Manual: snap two cards, drag one without Option, both move |
-| Break-out works | Manual: during set-move, press Option, card detaches |
+| Snap guides visible | Manual: snap modifier+drag near another card, blue dashed lines appear |
+| Set-move works | Manual: snap two cards, drag one without snap modifier, both move |
+| Break-out works | Manual: during set-move, press snap modifier, card detaches |
