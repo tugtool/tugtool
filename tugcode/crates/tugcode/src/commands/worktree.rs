@@ -104,6 +104,8 @@ pub struct SetupData {
     // Tugstate fields
     #[serde(skip_serializing_if = "is_false")]
     pub state_initialized: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub auto_reinitialized: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
 }
@@ -556,6 +558,7 @@ pub fn run_worktree_setup_with_root(
                         all_steps: None,
                         ready_steps: None,
                         state_initialized: false,
+                        auto_reinitialized: false,
                         warnings: vec![],
                     };
                     eprintln!(
@@ -580,12 +583,65 @@ pub fn run_worktree_setup_with_root(
             let total_steps = synced_plan.steps.len();
 
             // Initialize tugstate for this worktree and query ready steps while db is in scope
-            let (state_initialized, state_warnings, ready_steps) = {
+            let (state_initialized, auto_reinitialized, state_warnings, ready_steps) = {
                 let db_path = repo_root.join(".tugtool").join("state.db");
                 match tugtool_core::compute_plan_hash(&synced_plan_path) {
                     Ok(plan_hash) => match tugtool_core::StateDb::open(&db_path) {
                         Ok(mut db) => match db.init_plan(&plan, &synced_plan, &plan_hash) {
-                            Ok(_) => {
+                            Ok(init_result) => {
+                                // If already initialized, check for drift
+                                let auto_reinit = if init_result.already_initialized {
+                                    // Compare stored hash against current hash
+                                    let stored_hash = db
+                                        .show_plan(&plan)
+                                        .ok()
+                                        .map(|ps| ps.plan_hash)
+                                        .unwrap_or_default();
+                                    if stored_hash != plan_hash {
+                                        // Hashes differ: check completed steps
+                                        match db.count_completed_steps(&plan) {
+                                            Ok(0) => {
+                                                // No completed steps: auto-reinit
+                                                match db.reinit_plan(
+                                                    &plan,
+                                                    &synced_plan,
+                                                    &plan_hash,
+                                                ) {
+                                                    Ok(_) => true,
+                                                    Err(e) => {
+                                                        if !quiet {
+                                                            eprintln!(
+                                                                "warning: auto-reinit failed: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                        false
+                                                    }
+                                                }
+                                            }
+                                            Ok(n) => {
+                                                // Some completed steps: fail with clear message
+                                                let msg = format!(
+                                                    "Plan has changed since initialization. {} step{} completed. Run `tugcode state reinit <plan>` to reset all progress and reinitialize.",
+                                                    n,
+                                                    if n == 1 { " was" } else { "s were" }
+                                                );
+                                                if json_output {
+                                                    println!(r#"{{"error": "{}"}}"#, msg);
+                                                } else if !quiet {
+                                                    eprintln!("error: {}", msg);
+                                                }
+                                                return Ok(1);
+                                            }
+                                            Err(_) => false,
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+
                                 let ready = match db.ready_steps(&plan) {
                                     Ok(result) => Some(
                                         result.ready.iter().map(|s| s.anchor.clone()).collect(),
@@ -597,14 +653,14 @@ pub fn run_worktree_setup_with_root(
                                         None
                                     }
                                 };
-                                (true, vec![], ready)
+                                (true, auto_reinit, vec![], ready)
                             }
                             Err(e) => {
                                 let msg = format!("state init failed: {}", e);
                                 if !quiet {
                                     eprintln!("warning: {}", msg);
                                 }
-                                (false, vec![msg], None)
+                                (false, false, vec![msg], None)
                             }
                         },
                         Err(e) => {
@@ -612,7 +668,7 @@ pub fn run_worktree_setup_with_root(
                             if !quiet {
                                 eprintln!("warning: {}", msg);
                             }
-                            (false, vec![msg], None)
+                            (false, false, vec![msg], None)
                         }
                     },
                     Err(e) => {
@@ -620,7 +676,7 @@ pub fn run_worktree_setup_with_root(
                         if !quiet {
                             eprintln!("warning: {}", msg);
                         }
-                        (false, vec![msg], None)
+                        (false, false, vec![msg], None)
                     }
                 }
             };
@@ -636,6 +692,7 @@ pub fn run_worktree_setup_with_root(
                     all_steps: Some(all_steps),
                     ready_steps,
                     state_initialized,
+                    auto_reinitialized,
                     warnings: state_warnings.clone(),
                 };
                 println!(
@@ -1069,6 +1126,7 @@ mod tests {
             all_steps: None,
             ready_steps: None,
             state_initialized: false,
+            auto_reinitialized: false,
             warnings: vec![],
         };
 
@@ -1079,6 +1137,8 @@ mod tests {
         assert!(!json.contains("reused"));
         // state_initialized should be skipped when false
         assert!(!json.contains("state_initialized"));
+        // auto_reinitialized should be skipped when false
+        assert!(!json.contains("auto_reinitialized"));
         // warnings should be skipped when empty
         assert!(!json.contains("warnings"));
         // session fields should not be present
@@ -1099,6 +1159,7 @@ mod tests {
             all_steps: None,
             ready_steps: None,
             state_initialized: true,
+            auto_reinitialized: false,
             warnings: vec![],
         };
         let json = serde_json::to_string(&data).expect("serialization should succeed");
@@ -1120,6 +1181,7 @@ mod tests {
             all_steps: None,
             ready_steps: None,
             state_initialized: false,
+            auto_reinitialized: false,
             warnings: vec!["state init failed: forced".to_string()],
         };
         let json = serde_json::to_string(&data).expect("serialization should succeed");

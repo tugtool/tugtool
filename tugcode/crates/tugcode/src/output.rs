@@ -557,6 +557,23 @@ pub struct StateInitData {
     pub checklist_count: usize,
 }
 
+/// Data payload for state reinit command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateReinitData {
+    /// Plan file path (relative to repo root)
+    pub plan_path: String,
+    /// SHA-256 hash of the plan file after reinitialization
+    pub plan_hash: String,
+    /// Always true: indicates this was a reinit operation
+    pub reinitialized: bool,
+    /// Number of steps created
+    pub step_count: usize,
+    /// Number of dependency edges created
+    pub dep_count: usize,
+    /// Number of checklist items created
+    pub checklist_count: usize,
+}
+
 /// Data payload for state claim command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateClaimData {

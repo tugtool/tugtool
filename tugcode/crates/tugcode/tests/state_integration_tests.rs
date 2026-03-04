@@ -2513,3 +2513,148 @@ fn test_state_update_subcommand_rejected() {
         stderr
     );
 }
+
+#[test]
+fn test_state_reinit_basic() {
+    let temp = setup_test_git_repo();
+    let plan_path = ".tugtool/tugplan-reinit.md";
+
+    // Initialize the plan
+    init_plan_in_repo(&temp, "reinit", MINIMAL_PLAN);
+
+    // Run reinit
+    let output = Command::new(tug_binary())
+        .args(["state", "reinit", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state reinit");
+
+    assert!(
+        output.status.success(),
+        "state reinit failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("state reinit output should be valid JSON");
+
+    assert_eq!(json["status"], "ok");
+    let data = &json["data"];
+    assert_eq!(data["reinitialized"], true);
+    assert_eq!(data["plan_path"], plan_path);
+    assert!(
+        data["step_count"].as_u64().unwrap_or(0) > 0,
+        "should have steps"
+    );
+    assert!(
+        !data["plan_hash"].as_str().unwrap_or("").is_empty(),
+        "should have hash"
+    );
+}
+
+#[test]
+fn test_state_reinit_resets_claimed_steps() {
+    let temp = setup_test_git_repo();
+    let plan_path = ".tugtool/tugplan-reinit-claim.md";
+
+    // Initialize the plan
+    init_plan_in_repo(&temp, "reinit-claim", MINIMAL_PLAN);
+
+    // Claim step-1
+    let claim_output = Command::new(tug_binary())
+        .args([
+            "state",
+            "claim",
+            plan_path,
+            "--worktree",
+            "/tmp/test-wt",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step");
+    assert!(claim_output.status.success(), "claim failed");
+
+    let claim_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&claim_output.stdout))
+            .expect("claim output should be valid JSON");
+    assert_eq!(
+        claim_json["data"]["claimed"], true,
+        "step-1 should be claimed"
+    );
+
+    // Reinit should reset all state including the claimed step
+    let output = Command::new(tug_binary())
+        .args(["state", "reinit", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run state reinit");
+
+    assert!(
+        output.status.success(),
+        "state reinit failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let data: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+        .expect("reinit output should be valid JSON");
+    assert_eq!(data["data"]["reinitialized"], true);
+
+    // After reinit, step-1 should be claimable again
+    let claim2_output = Command::new(tug_binary())
+        .args([
+            "state",
+            "claim",
+            plan_path,
+            "--worktree",
+            "/tmp/test-wt2",
+            "--json",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to claim step after reinit");
+    assert!(claim2_output.status.success(), "second claim failed");
+
+    let claim2_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&claim2_output.stdout))
+            .expect("claim2 output should be valid JSON");
+    assert_eq!(
+        claim2_json["data"]["claimed"], true,
+        "step should be claimable after reinit"
+    );
+}
+
+#[test]
+fn test_state_reinit_idempotent_when_called_twice() {
+    let temp = setup_test_git_repo();
+    let plan_path = ".tugtool/tugplan-reinit-idem.md";
+
+    // Initialize the plan
+    init_plan_in_repo(&temp, "reinit-idem", MINIMAL_PLAN);
+
+    // First reinit
+    let output1 = Command::new(tug_binary())
+        .args(["state", "reinit", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run first state reinit");
+    assert!(output1.status.success(), "first reinit failed");
+
+    // Second reinit
+    let output2 = Command::new(tug_binary())
+        .args(["state", "reinit", plan_path, "--json"])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run second state reinit");
+    assert!(
+        output2.status.success(),
+        "second reinit failed: {}",
+        String::from_utf8_lossy(&output2.stderr)
+    );
+
+    let data: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output2.stdout))
+        .expect("reinit output should be valid JSON");
+    assert_eq!(data["data"]["reinitialized"], true);
+    assert_eq!(data["status"], "ok");
+}

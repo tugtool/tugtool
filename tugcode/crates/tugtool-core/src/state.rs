@@ -490,6 +490,88 @@ COMMIT;
         })
     }
 
+    /// Drop all state for the plan and re-initialize from current plan content.
+    ///
+    /// Deletes all rows for the plan (step_artifacts, checklist_items, step_deps, steps, plans)
+    /// in a single transaction, then calls `init_plan()` to re-initialize from the current
+    /// plan file content and hash.
+    pub fn reinit_plan(
+        &mut self,
+        plan_path: &str,
+        plan: &TugPlan,
+        plan_hash: &str,
+    ) -> Result<InitResult, TugError> {
+        // Drop all state in a single transaction (FK order matters)
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Exclusive)
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to begin reinit transaction: {}", e),
+            })?;
+
+        tx.execute(
+            "DELETE FROM step_artifacts WHERE plan_path = ?1",
+            rusqlite::params![plan_path],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to delete step_artifacts: {}", e),
+        })?;
+
+        tx.execute(
+            "DELETE FROM checklist_items WHERE plan_path = ?1",
+            rusqlite::params![plan_path],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to delete checklist_items: {}", e),
+        })?;
+
+        tx.execute(
+            "DELETE FROM step_deps WHERE plan_path = ?1",
+            rusqlite::params![plan_path],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to delete step_deps: {}", e),
+        })?;
+
+        tx.execute(
+            "DELETE FROM steps WHERE plan_path = ?1",
+            rusqlite::params![plan_path],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to delete steps: {}", e),
+        })?;
+
+        tx.execute(
+            "DELETE FROM plans WHERE plan_path = ?1",
+            rusqlite::params![plan_path],
+        )
+        .map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to delete plan: {}", e),
+        })?;
+
+        tx.commit().map_err(|e| TugError::StateDbQuery {
+            reason: format!("failed to commit reinit drop transaction: {}", e),
+        })?;
+
+        // Re-initialize from the current plan content
+        self.init_plan(plan_path, plan, plan_hash)
+    }
+
+    /// Count the number of completed steps for a plan.
+    pub fn count_completed_steps(&self, plan_path: &str) -> Result<usize, TugError> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE plan_path = ?1 AND status = 'completed'",
+                rusqlite::params![plan_path],
+                |row| row.get(0),
+            )
+            .map_err(|e| TugError::StateDbQuery {
+                reason: format!("failed to count completed steps: {}", e),
+            })?;
+        Ok(count as usize)
+    }
+
     /// Verify that the plan hash matches the stored hash in the database.
     pub fn verify_plan_hash(&self, plan_path: &str, current_hash: &str) -> Result<(), TugError> {
         let stored_hash: String = self

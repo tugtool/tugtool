@@ -134,6 +134,7 @@ fn main() -> ExitCode {
                 cli.json,
                 cli.quiet,
             ),
+            StateCommands::Reinit { plan } => commands::run_state_reinit(plan, cli.json, cli.quiet),
         },
         Some(Commands::Merge {
             plan,
