@@ -14,6 +14,8 @@
  * elements.
  */
 
+import "./setup-rtl";
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { tabDragCoordinator, exceedsDragThreshold, GHOST_TAB_ZINDEX } from "@/tab-drag-coordinator";
 

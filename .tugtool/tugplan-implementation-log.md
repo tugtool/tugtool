@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-04T03:16:12Z
+---
+
+## audit-fix: Audit fix: added setup-rtl import so tab-drag-coordinator.test.ts passes standalone
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-6
 date: 2025-03-04T03:08:19Z
 ---
