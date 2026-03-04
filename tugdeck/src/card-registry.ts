@@ -26,6 +26,7 @@
  */
 
 import type React from "react";
+import type { FeedIdValue } from "./protocol";
 
 /**
  * Props injected by CardFrame into the content rendered by renderContent.
@@ -94,7 +95,7 @@ export interface CardRegistration {
    * multi-tab Tugcard directly. Forward-compatible hook for Phase 6 feed-aware
    * card types.
    */
-  defaultFeedIds?: string[];
+  defaultFeedIds?: readonly FeedIdValue[];
 }
 
 /** Module-level registry map. Keyed by componentId. */

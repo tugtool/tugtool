@@ -36,7 +36,7 @@ import { ResponderChainProvider } from "@/components/tugways/responder-chain-pro
 import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
-import type { CardState, DeckState } from "@/layout-tree";
+import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 
@@ -514,6 +514,279 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown-card"));
 
     warnSpy.mockRestore();
+  });
+});
+
+// ============================================================================
+// onClose wiring: store.handleCardClosed is called via cloneElement injection
+// ============================================================================
+
+// ============================================================================
+// ReactiveStore -- a minimal IDeckManagerStore whose state can be mutated
+// between renders for integration tests that need store.subscribe notifications.
+// ============================================================================
+
+/**
+ * A minimal reactive IDeckManagerStore for integration tests.
+ *
+ * Exposes a `setState` method that updates the stored DeckState and notifies
+ * all subscribed callbacks, exactly as DeckManager does. This lets tests drive
+ * DeckCanvas re-renders without the full DeckManager dependency.
+ */
+class ReactiveStore implements IDeckManagerStore {
+  private _state: DeckState;
+  private _version = 0;
+  private _listeners = new Set<() => void>();
+
+  constructor(initial: DeckState = { cards: [] }) {
+    this._state = initial;
+  }
+
+  subscribe = (cb: () => void): (() => void) => {
+    this._listeners.add(cb);
+    return () => this._listeners.delete(cb);
+  };
+
+  getSnapshot = (): DeckState => this._state;
+  getVersion = (): number => this._version;
+
+  handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
+  handleCardClosed = (_id: string): void => {};
+  handleCardFocused = (_id: string): void => {};
+  addTab = (_cardId: string, _componentId: string): string | null => null;
+  removeTab = (_cardId: string, _tabId: string): void => {};
+  setActiveTab = (_cardId: string, _tabId: string): void => {};
+
+  /** Update state and notify subscribers (triggers useSyncExternalStore re-render). */
+  setState(next: DeckState): void {
+    this._state = next;
+    this._version += 1;
+    this._listeners.forEach((cb) => cb());
+  }
+}
+
+// ============================================================================
+// Step 5 integration tests: multi-tab DeckCanvas rendering
+// ============================================================================
+
+describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("adding a second tab makes TugTabBar appear on the card", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", { "data-testid": "hello-content" }, "Hello"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", { "data-testid": "hello-content-tab" }, "Hello tab"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const singleTabCard: CardState = {
+      id: "card-a",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [tab1],
+      activeTabId: "tab-1",
+    };
+
+    const store = new ReactiveStore({ cards: [singleTabCard] });
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      ));
+    });
+
+    // Single tab: no tab bar
+    expect(container.querySelector("[data-testid='tug-tab-bar']")).toBeNull();
+
+    // Add a second tab
+    const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
+    act(() => {
+      store.setState({
+        cards: [{
+          ...singleTabCard,
+          tabs: [tab1, tab2],
+          activeTabId: "tab-2",
+        }],
+      });
+    });
+
+    // Two tabs: tab bar must now be visible
+    expect(container.querySelector("[data-testid='tug-tab-bar']")).not.toBeNull();
+  });
+});
+
+describe("DeckCanvas – Step 5: switching tabs changes visible content", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("setActiveTab changes which contentFactory content is rendered", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", { "data-testid": "hello-factory" }, "Factory"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", { "data-testid": "hello-tab-content" }, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+    registerCard({
+      componentId: "terminal",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", { "data-testid": "terminal-factory" }, "Terminal"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", { "data-testid": "terminal-tab-content" }, "Terminal tab"),
+      defaultMeta: { title: "Terminal", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const tab2: TabItem = { id: "tab-2", componentId: "terminal", title: "Terminal", closable: true };
+
+    const multiTabCard: CardState = {
+      id: "card-multi",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [tab1, tab2],
+      activeTabId: "tab-1",
+    };
+
+    const store = new ReactiveStore({ cards: [multiTabCard] });
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      ));
+    });
+
+    // Tab bar is present (two tabs)
+    expect(container.querySelector("[data-testid='tug-tab-bar']")).not.toBeNull();
+    // Hello contentFactory content is rendered (activeTabId = tab-1)
+    expect(container.querySelector("[data-testid='hello-tab-content']")).not.toBeNull();
+
+    // Switch active tab to terminal
+    act(() => {
+      store.setState({
+        cards: [{ ...multiTabCard, activeTabId: "tab-2" }],
+      });
+    });
+
+    // Terminal contentFactory content now rendered
+    expect(container.querySelector("[data-testid='terminal-tab-content']")).not.toBeNull();
+    // Hello content is no longer in DOM (inactive tab unmounts -- D04)
+    expect(container.querySelector("[data-testid='hello-tab-content']")).toBeNull();
+  });
+});
+
+describe("DeckCanvas – Step 5: single-tab card uses existing factory path", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("single-tab card renders via factory (not contentFactory), backward compatible", () => {
+    let factoryCalled = false;
+    let contentFactoryCalled = false;
+
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) => {
+        factoryCalled = true;
+        return React.createElement("div", { "data-testid": "factory-output" }, "From factory");
+      },
+      contentFactory: (_cardId: string) => {
+        contentFactoryCalled = true;
+        return React.createElement("div", { "data-testid": "content-factory-output" }, "From contentFactory");
+      },
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const singleTabCard: CardState = {
+      id: "card-single",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
+      activeTabId: "tab-1",
+    };
+
+    const store = new ReactiveStore({ cards: [singleTabCard] });
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // Single-tab card: factory must have been called, contentFactory must NOT
+    expect(factoryCalled).toBe(true);
+    expect(contentFactoryCalled).toBe(false);
+  });
+});
+
+describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClosed", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("onClose on directly-constructed multi-tab Tugcard calls store.handleCardClosed", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Factory"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-1", componentId: "hello", title: "Hello", closable: true };
+    const tab2: TabItem = { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true };
+
+    const multiTabCard: CardState = {
+      id: "card-close-test",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [tab1, tab2],
+      activeTabId: "tab-1",
+    };
+
+    const closedIds: string[] = [];
+    const store = new ReactiveStore({ cards: [multiTabCard] });
+    store.handleCardClosed = (id: string) => closedIds.push(id);
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      ));
+    });
+
+    // Find and click the Tugcard close button (the card-level close, not tab close)
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']");
+    expect(closeBtn).not.toBeNull();
+
+    act(() => {
+      (closeBtn as HTMLButtonElement).click();
+    });
+
+    expect(closedIds.length).toBe(1);
+    expect(closedIds[0]).toBe("card-close-test");
   });
 });
 

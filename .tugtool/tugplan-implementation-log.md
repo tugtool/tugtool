@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-04T00:10:33Z
+---
+
+## step-5: Forked DeckCanvas renderContent for single-tab (factory+cloneElement) vs multi-tab (direct Tugcard with contentFactory children). Updated registration lookup to resolve from active tab. Fixed defaultFeedIds type. Added 4 integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-4
 date: 2025-03-04T00:01:14Z
 ---

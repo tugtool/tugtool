@@ -57,6 +57,7 @@ import type { TugConnection } from "@/connection";
 import { registerGallerySetter } from "@/action-dispatch";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
+import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
 import { ComponentGallery } from "@/components/tugways/component-gallery";
 import { CardFrame } from "./card-frame";
@@ -241,7 +242,11 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           Z-index from store array position (first = lowest). Cards with
           unregistered componentIds are skipped with a warning. */}
       {sortedCards.map((cardState) => {
-        const componentId = cardState.tabs[0]?.componentId;
+        // Resolve active componentId: prefer the active tab, fall back to first tab.
+        // This ensures the correct registration is used for header title/icon (D05).
+        const componentId =
+          cardState.tabs.find((t) => t.id === cardState.activeTabId)?.componentId ??
+          cardState.tabs[0]?.componentId;
         if (!componentId) {
           console.warn(
             `[DeckCanvas] card "${cardState.id}" has no tabs -- skipping render.`,
@@ -267,10 +272,38 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             onCardClosed={store.handleCardClosed}
             onCardFocused={handleCardFocused}
             renderContent={(injected) => {
-              // DeckCanvas is the only layer that knows onCardClosed(id), so it
-              // injects onClose into the Tugcard element produced by the factory.
-              // The factory's injected parameter (CardFrameInjectedProps) carries
-              // only onDragStart and onMinSizeChange -- onClose is not part of it.
+              // Fork rendering based on tab count (Spec S05, D08).
+              //
+              // Single-tab path (tabs.length <= 1):
+              //   Use the existing factory(cardId, injected) + cloneElement(element, { onClose })
+              //   pattern unchanged. All existing single-tab cards continue to work.
+              //
+              // Multi-tab path (tabs.length > 1):
+              //   Construct Tugcard directly, passing all tab props explicitly.
+              //   This avoids nested Tugcards (D08) and avoids fragile cloneElement
+              //   prop injection for tab props. contentFactory provides the active
+              //   tab's content without the outer Tugcard chrome.
+              if (cardState.tabs.length > 1) {
+                return (
+                  <Tugcard
+                    cardId={cardState.id}
+                    meta={registration.defaultMeta}
+                    feedIds={registration.defaultFeedIds ?? []}
+                    tabs={cardState.tabs}
+                    activeTabId={cardState.activeTabId}
+                    onTabSelect={(tabId) => store.setActiveTab(cardState.id, tabId)}
+                    onTabClose={(tabId) => store.removeTab(cardState.id, tabId)}
+                    onTabAdd={(cId) => store.addTab(cardState.id, cId)}
+                    onClose={() => store.handleCardClosed(cardState.id)}
+                    onDragStart={injected.onDragStart}
+                    onMinSizeChange={injected.onMinSizeChange}
+                  >
+                    {registration.contentFactory?.(cardState.id) ?? null}
+                  </Tugcard>
+                );
+              }
+
+              // Single-tab path: unchanged factory + cloneElement injection.
               const element = registration.factory(cardState.id, injected);
               return React.cloneElement(element, {
                 onClose: () => store.handleCardClosed(cardState.id),
