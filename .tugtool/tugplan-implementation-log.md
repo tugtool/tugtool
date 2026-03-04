@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-04T02:40:36Z
+---
+
+## step-3: Created TabDragCoordinator with drag lifecycle management: pointer capture, RAF-throttled tracking, two-tier hit-testing, ghost/indicator/drop-target visuals, and cleanup-before-commit drop handling. 18 unit tests including mode transitions and pointercancel.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-2
 date: 2025-03-04T02:24:59Z
 ---
