@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-04T18:35:25Z
+---
+
+## step-4: Added useTabOverflow hook to tug-tab-bar.tsx: ResizeObserver measurement, computeOverflow() integration, per-tab data-overflow attributes via RAF, overflow dropdown rendering with badge
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-3
 date: 2025-03-04T18:28:28Z
 ---
