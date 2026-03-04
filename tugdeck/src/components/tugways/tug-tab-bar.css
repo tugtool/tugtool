@@ -8,9 +8,17 @@
  * Active tab state is driven by the `data-active` attribute set on each
  * tab button, following Rule 4 (appearance changes go through CSS/DOM).
  *
+ * Overflow state is driven by the `data-overflow` attribute on each tab:
+ *   data-overflow="collapsed" -- tab shown as icon-only (Stage 1, [D02])
+ *   data-overflow="hidden"    -- tab hidden, in overflow dropdown (Stage 2, [D02])
+ *
  * **Authoritative references:**
+ * - [D02] Overflow state split across appearance and structural zones
  * - [D03] Tab bar uses the Tugcard accessory slot
+ * - [D04] Replace overflow-x: auto with overflow-x: hidden
  * - Table T01: Tab visual states
+ * - Spec S03: DOM data attributes for overflow state
+ * - Spec S04: Overflow button markup
  */
 
 /* ============================================================================
@@ -22,21 +30,15 @@
   flex-direction: row;
   align-items: stretch;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   height: 28px;
-  /* Hide scrollbar but keep scrollability */
-  scrollbar-width: none;
   background-color: var(--td-surface-tab);
   border-bottom: 1px solid var(--td-border);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
      relative to the tab bar (Spec S06). */
   position: relative;
-}
-
-.tug-tab-bar::-webkit-scrollbar {
-  display: none;
 }
 
 /* ============================================================================
@@ -79,6 +81,29 @@
 .tug-tab:not([data-active="true"]):hover {
   background-color: var(--td-surface-control);
   color: var(--td-text);
+}
+
+/* ============================================================================
+   Tab Overflow States (Phase 5b4)
+   Spec S03: DOM data attributes for overflow state
+   [D02] Imperative DOM attribute application
+   ========================================================================= */
+
+/* Stage 1 collapse: hide title and close button so only the icon remains.
+   Uses display: none (not visibility: hidden) to remove them from flex layout,
+   ensuring CSS gap contributes 0px. Collapsed tab width = padding(8) + icon(12)
+   + padding(8) = 28px = ICON_ONLY_TAB_WIDTH. [D01] */
+.tug-tab[data-overflow="collapsed"] .tug-tab-title {
+  display: none;
+}
+
+.tug-tab[data-overflow="collapsed"] .tug-tab-close {
+  display: none;
+}
+
+/* Stage 2 hidden: tab is in the overflow dropdown, not rendered in the bar. */
+.tug-tab[data-overflow="hidden"] {
+  display: none;
 }
 
 /* ============================================================================
@@ -175,6 +200,56 @@
 }
 
 /* ============================================================================
+   Overflow Dropdown Button (Phase 5b4)
+   Spec S04: Overflow button markup
+   [D06] Overflow dropdown button with badge count
+   ========================================================================= */
+
+/* Overflow trigger button -- appears between the last visible tab and [+].
+   Shown only when overflowIds.length > 0 (rendered conditionally by React).
+   Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap. */
+.tug-tab-overflow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 6px;
+  flex-shrink: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--td-text-soft);
+  font-size: 0.75rem;
+  font-family: var(--td-font-sans);
+  cursor: default;
+  user-select: none;
+  transition:
+    background-color var(--td-duration-fast) var(--td-easing-standard),
+    color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+.tug-tab-overflow-btn:hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+/* Badge showing the count of overflow tabs (e.g., "+3"). */
+.tug-tab-overflow-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background-color: var(--td-accent);
+  color: var(--td-surface);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ============================================================================
    Tab Drag Visual Feedback (Phase 5b2)
    Spec S05: Ghost Tab, Spec S06: Insertion Indicator, Spec S07: Drop-Target
    ========================================================================= */
@@ -204,8 +279,7 @@
 }
 
 /* Insertion indicator -- thin vertical bar injected into the targeted tab bar.
-   Positioned via style.left during drag. Known limitation: may be clipped by
-   overflow-x:auto if tabs overflow the bar (deferred to Phase 5b4). [Spec S06] */
+   Positioned via style.left during drag. [Spec S06] */
 .tug-tab-insert-indicator {
   position: absolute;
   top: 0;

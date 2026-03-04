@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-04T18:24:06Z
+---
+
+## step-2: Modified tug-tab-bar.css: overflow-x hidden, removed scrollbar rules, added data-overflow collapsed/hidden rules, overflow button and badge styles, removed Phase 5b4 deferral comment
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-1
 date: 2025-03-04T18:20:04Z
 ---
