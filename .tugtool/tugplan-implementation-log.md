@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-04T03:16:12Z
+---
+
+## audit-fix: Audit fix: added setup-rtl import so tab-drag-coordinator.test.ts passes standalone
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-6
+date: 2025-03-04T03:08:19Z
+---
+
+## step-6: Integration checkpoint: verified build clean, 524 tests pass, all design decisions respected across all 6 steps
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-5
+date: 2025-03-04T03:02:52Z
+---
+
+## step-5: Added useEffect to DeckCanvas for tabDragCoordinator.init(store), updated mock stores with reorderTab/detachTab/mergeTab, added T19-T23 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-4
+date: 2025-03-04T02:52:14Z
+---
+
+## step-4: Added cardId prop to TugTabBar with data-card-id attributes, onPointerDown threshold detection for drag initiation, data-card-id on tugcard-accessory div, and tests T17/T18
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-3
+date: 2025-03-04T02:40:36Z
+---
+
+## step-3: Created TabDragCoordinator with drag lifecycle management: pointer capture, RAF-throttled tracking, two-tier hit-testing, ghost/indicator/drop-target visuals, and cleanup-before-commit drop handling. 18 unit tests including mode transitions and pointercancel.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-2
+date: 2025-03-04T02:24:59Z
+---
+
+## step-2: Added CSS classes for tab drag visual feedback: .tug-tab-ghost, .tug-tab-insert-indicator, drop-target highlights, and source tab dimming
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
+step: step-1
+date: 2025-03-04T02:20:03Z
+---
+
+## step-1: Added reorderTab, detachTab, mergeTab methods to DeckManager with _spliceTabFromCards helper and 13 unit tests (T1-T13)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-11
 date: 2025-03-04T00:48:20Z
 ---

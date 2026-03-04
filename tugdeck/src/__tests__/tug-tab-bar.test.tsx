@@ -1,5 +1,5 @@
 /**
- * TugTabBar unit tests -- Step 3.
+ * TugTabBar unit tests -- Steps 3 & 4.
  *
  * Tests cover:
  * - TugTabBar renders the correct number of tab buttons
@@ -8,6 +8,8 @@
  * - Clicking the close button calls onTabClose with the correct tabId
  * - Close button is not rendered for tabs with closable: false
  * - [+] button renders and type picker lists all registered card types
+ * - T17: Tab click (no movement) still triggers onTabSelect
+ * - T18: Tab pointer down + 6px movement initiates drag via tabDragCoordinator.startDrag
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -20,6 +22,7 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
+import { tabDragCoordinator } from "@/tab-drag-coordinator";
 
 // Clean up mounted React trees and registry after each test.
 afterEach(() => {
@@ -64,6 +67,7 @@ describe("TugTabBar – renders correct number of tab buttons", () => {
     const tabs = [makeTab("tab-1", "hello", "Hello")];
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -82,6 +86,7 @@ describe("TugTabBar – renders correct number of tab buttons", () => {
     ];
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -96,6 +101,7 @@ describe("TugTabBar – renders correct number of tab buttons", () => {
   it("renders zero tab buttons for an empty tabs array", () => {
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={[]}
         activeTabId=""
         onTabSelect={() => {}}
@@ -125,6 +131,7 @@ describe("TugTabBar – active tab has data-active='true'", () => {
     ];
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -149,6 +156,7 @@ describe("TugTabBar – active tab has data-active='true'", () => {
     ];
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-2"
         onTabSelect={() => {}}
@@ -184,6 +192,7 @@ describe("TugTabBar – clicking a tab calls onTabSelect", () => {
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-2"
         onTabSelect={(id) => selectedIds.push(id)}
@@ -210,6 +219,7 @@ describe("TugTabBar – clicking a tab calls onTabSelect", () => {
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={(id) => selectedIds.push(id)}
@@ -247,6 +257,7 @@ describe("TugTabBar – clicking close button calls onTabClose", () => {
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -275,6 +286,7 @@ describe("TugTabBar – clicking close button calls onTabClose", () => {
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={(id) => selectedIds.push(id)}
@@ -311,6 +323,7 @@ describe("TugTabBar – close button not rendered for closable: false tabs", () 
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -328,6 +341,7 @@ describe("TugTabBar – close button not rendered for closable: false tabs", () 
 
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={tabs}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -354,6 +368,7 @@ describe("TugTabBar – [+] button and type picker", () => {
   it("[+] button is rendered in the tab bar", () => {
     const { container } = render(
       <TugTabBar
+        cardId="card-test"
         tabs={[makeTab("tab-1", "hello", "Hello")]}
         activeTabId="tab-1"
         onTabSelect={() => {}}
@@ -376,6 +391,109 @@ describe("TugTabBar – [+] button and type picker", () => {
 
     expect(addedComponentIds.length).toBe(1);
     expect(addedComponentIds[0]).toBe("hello");
+  });
+});
+
+// ============================================================================
+// T17: Tab click (no movement) still triggers onTabSelect (Step 4)
+// ============================================================================
+
+describe("TugTabBar – T17: click without movement calls onTabSelect", () => {
+  beforeEach(() => {
+    registerMinimalCard("hello", "Hello");
+    registerMinimalCard("terminal", "Terminal");
+  });
+
+  it("T17: click on tab (no pointer movement) fires onTabSelect and not drag", () => {
+    const selectedIds: string[] = [];
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = render(
+      <TugTabBar
+        cardId="card-test"
+        tabs={tabs}
+        activeTabId="tab-2"
+        onTabSelect={(id) => selectedIds.push(id)}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      />,
+    );
+
+    const tab1 = container.querySelector("[data-testid='tug-tab-tab-1']") as HTMLElement;
+
+    act(() => {
+      // Simulate pointerdown at (10, 10) -- this registers document-level listeners.
+      fireEvent.pointerDown(tab1, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+      // Simulate pointerup at same position (sub-threshold) -- listeners are removed.
+      fireEvent.pointerUp(document, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+      // Normal click fires after pointerup.
+      fireEvent.click(tab1);
+    });
+
+    // onTabSelect must fire exactly once.
+    expect(selectedIds.length).toBe(1);
+    expect(selectedIds[0]).toBe("tab-1");
+  });
+});
+
+// ============================================================================
+// T18: Tab drag initiation on 6px movement calls tabDragCoordinator.startDrag
+// ============================================================================
+
+describe("TugTabBar – T18: 6px pointer movement initiates drag", () => {
+  beforeEach(() => {
+    registerMinimalCard("hello", "Hello");
+    registerMinimalCard("terminal", "Terminal");
+  });
+
+  it("T18: pointerdown + 6px pointermove calls tabDragCoordinator.startDrag", () => {
+    // Spy on tabDragCoordinator.startDrag by replacing it temporarily.
+    // tabDragCoordinator is imported at the module level above.
+    const startDragCalls: unknown[][] = [];
+    const originalStartDrag = tabDragCoordinator.startDrag.bind(tabDragCoordinator);
+    tabDragCoordinator.startDrag = (...args: Parameters<typeof tabDragCoordinator.startDrag>) => {
+      startDragCalls.push([...args]);
+    };
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = render(
+      <TugTabBar
+        cardId="card-test"
+        tabs={tabs}
+        activeTabId="tab-2"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      />,
+    );
+
+    const tab1 = container.querySelector("[data-testid='tug-tab-tab-1']") as HTMLElement;
+
+    act(() => {
+      // Pointerdown at (10, 10).
+      fireEvent.pointerDown(tab1, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+      // Move 6px horizontally -- exceeds the 5px threshold.
+      fireEvent.pointerMove(document, { clientX: 16, clientY: 10, pointerId: 1 });
+    });
+
+    // startDrag should have been called exactly once.
+    expect(startDragCalls.length).toBe(1);
+    // Verify the cardId, tabId, and tabCount were passed correctly (args 2, 3, 4).
+    const [, , calledCardId, calledTabId, calledTabCount] = startDragCalls[0] as [PointerEvent, HTMLElement, string, string, number];
+    expect(calledCardId).toBe("card-test");
+    expect(calledTabId).toBe("tab-1");
+    expect(calledTabCount).toBe(2);
+
+    // Restore original method and clean up any lingering drag state.
+    tabDragCoordinator.startDrag = originalStartDrag;
+    tabDragCoordinator.cleanup();
   });
 });
 
