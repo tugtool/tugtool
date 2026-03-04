@@ -466,6 +466,7 @@ export function TugTabBarDemo() {
   return (
     <div className="cg-tab-bar-demo">
       <TugTabBar
+        cardId="gallery-demo-card"
         tabs={tabs}
         activeTabId={activeTabId}
         onTabSelect={handleTabSelect}

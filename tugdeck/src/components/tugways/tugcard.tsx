@@ -307,6 +307,7 @@ export function Tugcard({
   const resolvedAccessory: React.ReactNode | null = hasMultipleTabs && onTabSelect && onTabClose && onTabAdd
     ? (
         <TugTabBar
+          cardId={cardId}
           tabs={tabs}
           activeTabId={activeTabId!}
           onTabSelect={handleTabSelect}
@@ -413,11 +414,14 @@ export function Tugcard({
         )}
       </div>
 
-      {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px */}
+      {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
+          data-card-id is used by TabDragCoordinator to identify single-tab card
+          drop targets (tier-2 hit-test cache entry, [D05, Spec S07]). */}
       <div
         ref={accessoryRef}
         className="tugcard-accessory"
         data-testid="tugcard-accessory"
+        data-card-id={cardId}
         style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
       >
         {resolvedAccessory}

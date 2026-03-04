@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-04T02:52:14Z
+---
+
+## step-4: Added cardId prop to TugTabBar with data-card-id attributes, onPointerDown threshold detection for drag initiation, data-card-id on tugcard-accessory div, and tests T17/T18
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-3
 date: 2025-03-04T02:40:36Z
 ---
