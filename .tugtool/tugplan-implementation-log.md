@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T18:58:21Z
+---
+
+## step-7: Added onOverflowChange callback to TugTabBar, expanded demo to 6 initial tabs, Add 5 Tabs button, overflow status line, and 10 new tests (600 total)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-6
 date: 2025-03-04T18:41:40Z
 ---

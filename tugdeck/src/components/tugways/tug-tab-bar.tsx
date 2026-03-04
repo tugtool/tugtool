@@ -62,6 +62,13 @@ export interface TugTabBarProps {
    * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
    */
   acceptedFamilies?: readonly string[];
+  /**
+   * Optional callback invoked whenever the overflow state changes.
+   * Receives the current overflow stage and the count of overflow tabs.
+   * Intended for demo/diagnostic use (e.g., the gallery TugTabBar demo
+   * status line). Not required for production tab bar usage.
+   */
+  onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void;
 }
 
 // ---- Helpers ----
@@ -109,12 +116,14 @@ function renderIcon(iconName: string | undefined): React.ReactNode {
  * @param barRef    Ref to the tab bar container div.
  * @param tabs      Ordered array of tab items.
  * @param activeTabId ID of the currently active tab.
+ * @param onOverflowChange Optional callback invoked when overflow stage or count changes.
  * @returns {{ overflowTabs: TabItem[] }} Tabs currently in the overflow dropdown.
  */
 function useTabOverflow(
   barRef: React.RefObject<HTMLDivElement | null>,
   tabs: TabItem[],
   activeTabId: string,
+  onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void,
 ): { overflowTabs: TabItem[] } {
   // overflowTabs is structural-zone state: it controls whether the overflow
   // dropdown button is rendered and what items it contains. [D02]
@@ -123,6 +132,16 @@ function useTabOverflow(
   // Stable reference to the last overflow tab IDs string, used to avoid
   // unnecessary React state updates when the set hasn't changed.
   const lastOverflowIdsRef = useRef<string>("");
+
+  // Stable reference to the last overflow stage, tracked independently so
+  // onOverflowChange fires on stage transitions even when overflowIds stays
+  // empty (e.g. "none" → "collapsed": both have overflowIds = []).
+  const lastStageRef = useRef<"none" | "collapsed" | "overflow">("none");
+
+  // Stable ref for the onOverflowChange callback so the RAF closure always
+  // calls the latest version without needing it in the dependency array.
+  const onOverflowChangeRef = useRef(onOverflowChange);
+  onOverflowChangeRef.current = onOverflowChange;
 
   // Stable reference to the pending RAF id, for cancellation on cleanup.
   const rafIdRef = useRef<number | null>(null);
@@ -240,10 +259,19 @@ function useTabOverflow(
           barEl2.removeAttribute("data-overflow-active");
         }
 
+        // --- Structural-zone and callback updates ---
+        //
+        // Snapshot previous values before any mutations so comparisons
+        // against "what changed" are accurate.
+        const prevOverflowIdsKey = lastOverflowIdsRef.current;
+        const prevStage = lastStageRef.current;
+
+        const newOverflowIdsKey = result.overflowIds.join(",");
+        const newOverflowCount = result.overflowIds.length;
+
         // Update structural-zone state only when overflow tab IDs change.
         // Joining IDs into a string gives cheap reference equality. [D02]
-        const newOverflowIdsKey = result.overflowIds.join(",");
-        if (newOverflowIdsKey !== lastOverflowIdsRef.current) {
+        if (newOverflowIdsKey !== prevOverflowIdsKey) {
           lastOverflowIdsRef.current = newOverflowIdsKey;
 
           // Map overflow IDs back to TabItem objects, preserving order.
@@ -252,6 +280,19 @@ function useTabOverflow(
             .filter((t): t is TabItem => t !== undefined);
 
           setOverflowTabs(overflowTabItems);
+        }
+
+        // Notify optional observer whenever stage OR overflow count changes.
+        //
+        // This check is intentionally separate from the overflowIds gate
+        // above. The "none" → "collapsed" Stage 1 transition keeps
+        // overflowIds = [] in both states, so newOverflowIdsKey stays ""
+        // and the gate above never fires for it. Tracking stage in its own
+        // ref lets us detect that transition and call onOverflowChange. [D02]
+        const prevOverflowCount = prevOverflowIdsKey.split(",").filter(Boolean).length;
+        if (result.stage !== prevStage || newOverflowCount !== prevOverflowCount) {
+          lastStageRef.current = result.stage;
+          onOverflowChangeRef.current?.(result.stage, newOverflowCount);
         }
       });
     }
@@ -314,13 +355,14 @@ export function TugTabBar({
   onTabClose,
   onTabAdd,
   acceptedFamilies,
+  onOverflowChange,
 }: TugTabBarProps) {
   // Ref for the tab bar container, used by useTabOverflow. [D02]
   const barRef = useRef<HTMLDivElement>(null);
 
   // Overflow hook: attaches ResizeObserver, applies appearance-zone DOM
   // attributes, returns structural-zone overflowTabs for dropdown rendering.
-  const { overflowTabs } = useTabOverflow(barRef, tabs, activeTabId);
+  const { overflowTabs } = useTabOverflow(barRef, tabs, activeTabId, onOverflowChange);
 
   // Resolve effective families: default to ["standard"] when prop is omitted.
   const effectiveFamilies = acceptedFamilies ?? ["standard"];
