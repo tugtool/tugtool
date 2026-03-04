@@ -3,7 +3,8 @@
  *
  * Tests cover all cases from the plan:
  * - T01: All tabs fit at full width → stage "none"
- * - T02: Active tab full + inactive icon-only fit → stage "collapsed"
+ * - T02: Active tab full + minimal icon-only collapse fits → stage "collapsed"
+ * - T02m: Minimal collapse — only collapse the minimum number of inactive tabs needed
  * - T03: Tabs overflow even at icon-only → stage "overflow"
  * - T04: Active tab is always in visibleFullIds, never in collapsedIds or overflowIds
  * - T05: Zero tabs → stage "none", all empty arrays
@@ -13,6 +14,11 @@
  * - T09: Iconless inactive tabs stay in visibleFullIds at full width during Stage 1
  * - T10: Iconless tabs can still be moved to overflowIds in Stage 2
  * - T10a: ICON_ONLY_TAB_WIDTH constant equals 28 (documents CSS dependency chain)
+ *
+ * **Stage 1 collapse is minimal:** inactive icon tabs are collapsed one at a time
+ * from rightmost inward until the total fits. Only the minimum number needed are
+ * collapsed — some inactive tabs may stay at full width. This means collapsedIds
+ * may have fewer entries than the total number of inactive icon tabs.
  *
  * **Authoritative references:**
  * - Spec S01: computeOverflow function signature
@@ -153,7 +159,7 @@ describe("computeOverflow — Stage 1 collapse ('collapsed')", () => {
   it("T02: inactive tab collapses to icon-only when total exceeds container at full width", () => {
     // Available = 200 - 28 = 172px.
     // Full: tab-1(100) + tab-2(100) = 200 → does NOT fit.
-    // Stage 1: tab-1(active, 100) + tab-2(28 icon-only) = 128 → fits.
+    // Minimal Stage 1: collapse rightmost icon tab (tab-2, 100→28): 100+28=128 ≤ 172. ✓
     const tabs = [tabWithIcon("tab-1", 100), tabWithIcon("tab-2", 100)];
     const result = computeOverflow(tabs, 200, "tab-1", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
     expect(result.stage).toBe("collapsed");
@@ -162,10 +168,11 @@ describe("computeOverflow — Stage 1 collapse ('collapsed')", () => {
     expect(result.overflowIds).toEqual([]);
   });
 
-  it("T02: multiple inactive tabs collapse, active stays full", () => {
+  it("T02: multiple inactive tabs collapse when all must collapse to fit", () => {
     // Available = 200 - 28 = 172px.
     // Full: 80 + 80 + 80 = 240 → does not fit.
-    // Stage 1: 80(active) + 28 + 28 = 136 → fits.
+    // Minimal Stage 1: collapse c(80→28): 188 > 172. Collapse b(80→28): 136 ≤ 172. ✓
+    // Both b and c must collapse because collapsing only c isn't enough.
     const tabs = [tabWithIcon("a", 80), tabWithIcon("b", 80), tabWithIcon("c", 80)];
     const result = computeOverflow(tabs, 200, "a", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
     expect(result.stage).toBe("collapsed");
@@ -174,6 +181,59 @@ describe("computeOverflow — Stage 1 collapse ('collapsed')", () => {
     expect(result.collapsedIds).toContain("b");
     expect(result.collapsedIds).toContain("c");
     expect(result.overflowIds).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T02m: Minimal collapse — only collapse the minimum number of tabs needed
+// ---------------------------------------------------------------------------
+
+describe("computeOverflow — minimal collapse strategy", () => {
+  it("T02m: only rightmost tab collapses when one collapse is sufficient", () => {
+    // Three tabs: active(80), b(50), c(120). Container: 220px.
+    // Available = 220 - 28 = 192px. Full: 80+50+120 = 250 → does NOT fit.
+    // Minimal Stage 1: collapse rightmost icon tab c(120→28): 250-92=158 ≤ 192. ✓
+    // Only c collapses — b stays at full width even though it also has an icon.
+    const tabs = [tabWithIcon("active", 80), tabWithIcon("b", 50), tabWithIcon("c", 120)];
+    const result = computeOverflow(tabs, 220, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
+    expect(result.stage).toBe("collapsed");
+    expect(result.collapsedIds).toEqual(["c"]); // only rightmost collapsed
+    expect(result.visibleFullIds).toContain("active");
+    expect(result.visibleFullIds).toContain("b"); // b stays full — minimal collapse
+    expect(result.visibleFullIds).not.toContain("c");
+    expect(result.overflowIds).toEqual([]);
+  });
+
+  it("T02m: middle tabs stay full when only rightmost needs collapsing", () => {
+    // Four tabs: active(80), b(40), c(40), d(100). Container: 230px.
+    // Available = 230 - 28 = 202px. Full: 80+40+40+100 = 260 → does NOT fit.
+    // Minimal Stage 1: collapse d(100→28): 260-72=188 ≤ 202. ✓
+    // b and c stay at full width; only d collapses.
+    const tabs = [
+      tabWithIcon("active", 80),
+      tabWithIcon("b", 40),
+      tabWithIcon("c", 40),
+      tabWithIcon("d", 100),
+    ];
+    const result = computeOverflow(tabs, 230, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
+    expect(result.stage).toBe("collapsed");
+    expect(result.collapsedIds).toEqual(["d"]);
+    expect(result.visibleFullIds).toContain("b");
+    expect(result.visibleFullIds).toContain("c");
+    expect(result.visibleFullIds).not.toContain("d");
+    expect(result.overflowIds).toEqual([]);
+  });
+
+  it("T02m: collapsedIds order matches left-to-right tab order (not collapse order)", () => {
+    // Three tabs: active(80), b(100), c(100). Container: 210px.
+    // Available = 210 - 28 = 182px. Full: 80+100+100=280 → does NOT fit.
+    // Minimal Stage 1: collapse c(100→28): 208 > 182. Collapse b(100→28): 136 ≤ 182. ✓
+    // Both b and c collapse. collapsedIds should be in LTR order: [b, c].
+    const tabs = [tabWithIcon("active", 80), tabWithIcon("b", 100), tabWithIcon("c", 100)];
+    const result = computeOverflow(tabs, 210, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
+    expect(result.stage).toBe("collapsed");
+    expect(result.collapsedIds).toEqual(["b", "c"]); // left-to-right order
+    expect(result.visibleFullIds).toEqual(["active"]);
   });
 });
 
@@ -369,17 +429,12 @@ describe("computeOverflow — active tab exceeds container (edge case)", () => {
 // ---------------------------------------------------------------------------
 // T09: Iconless inactive tabs stay at full width during Stage 1
 // ---------------------------------------------------------------------------
+// Note: In practice, all registered card types now provide an icon (with
+// "Diamond" as the fallback default). These tests remain to verify the
+// computeOverflow function handles iconless tabs correctly for robustness.
 
 describe("computeOverflow — iconless tabs", () => {
   it("T09: iconless inactive tabs stay in visibleFullIds (not collapsed) during Stage 1", () => {
-    // Active: 80px (with icon). Iconless: 80px (cannot collapse).
-    // Available = 200 - 28 = 172px. Full: 80 + 80 = 160 → fits → stage none.
-    // Make it NOT fit at full: use a smaller container.
-    // Available = 150 - 28 = 122px. Full: 80 + 80 = 160 → no.
-    // Stage 1: active(80) + iconless_full(80) = 160 > 122 → does not fit either.
-    // Stage 2: available = 150 - 28 - 40 = 82px.
-    //   Start: 80 + 80 = 160 > 82. Remove iconless tab (only inactive) → active(80) ≤ 82. ✓
-    // But first check a case where it DOES fit in Stage 1 with iconless tab at full width.
     const tabsIconless = [
       tabWithIcon("active", 50),
       tabWithoutIcon("iconless", 60),
@@ -390,14 +445,15 @@ describe("computeOverflow — iconless tabs", () => {
     expect(result1.visibleFullIds).toContain("iconless");
     expect(result1.collapsedIds).not.toContain("iconless");
 
-    // Now force Stage 1 by having an icon tab that collapses but iconless tab stays full.
+    // Force Stage 1 by having an icon tab that must collapse; iconless tab stays full.
     const tabsMixed = [
       tabWithIcon("active", 80),
       tabWithIcon("b", 100), // can collapse to 28
       tabWithoutIcon("iconless", 80), // cannot collapse
     ];
-    // Available = 400 - 28 = 372. Full: 80 + 100 + 80 = 260 → fits → none.
-    // Use container 250: available = 222. Full: 260 > 222. Stage 1: 80+28+80=188 ≤ 222. ✓
+    // Available = 250 - 28 = 222. Full: 80 + 100 + 80 = 260 > 222.
+    // Minimal Stage 1: collapse rightmost icon tab. Rightmost icon tab is b (iconless
+    // cannot collapse). Collapse b(100→28): 80+28+80=188 ≤ 222. ✓
     const result2 = computeOverflow(tabsMixed, 250, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
     expect(result2.stage).toBe("collapsed");
     expect(result2.visibleFullIds).toContain("active");
@@ -410,6 +466,9 @@ describe("computeOverflow — iconless tabs", () => {
 // ---------------------------------------------------------------------------
 // T10: Iconless tabs can be moved to overflowIds in Stage 2
 // ---------------------------------------------------------------------------
+// Note: In practice, all registered card types now provide an icon (with
+// "Diamond" as the fallback default). These tests remain to verify the
+// computeOverflow function handles iconless tabs correctly for robustness.
 
 describe("computeOverflow — iconless tabs can overflow", () => {
   it("T10: iconless inactive tab moves to overflowIds in Stage 2 when needed", () => {

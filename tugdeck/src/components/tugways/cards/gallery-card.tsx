@@ -644,7 +644,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "TugButton", closable: true }}
+        meta={{ title: "TugButton", icon: "MousePointerClick", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -653,7 +653,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryButtonsContent />,
-    defaultMeta: { title: "TugButton", closable: true },
+    defaultMeta: { title: "TugButton", icon: "MousePointerClick", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     defaultTabs: GALLERY_DEFAULT_TABS,
@@ -666,7 +666,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "Chain Actions", closable: true }}
+        meta={{ title: "Chain Actions", icon: "Zap", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -675,7 +675,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryChainActionsContent />,
-    defaultMeta: { title: "Chain Actions", closable: true },
+    defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
@@ -686,7 +686,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "Mutation Model", closable: true }}
+        meta={{ title: "Mutation Model", icon: "GitBranch", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -695,7 +695,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryMutationContent />,
-    defaultMeta: { title: "Mutation Model", closable: true },
+    defaultMeta: { title: "Mutation Model", icon: "GitBranch", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
@@ -706,7 +706,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "TugTabBar", closable: true }}
+        meta={{ title: "TugTabBar", icon: "Tabs", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -715,7 +715,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryTabBarContent />,
-    defaultMeta: { title: "TugTabBar", closable: true },
+    defaultMeta: { title: "TugTabBar", icon: "Tabs", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
@@ -726,7 +726,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "TugDropdown", closable: true }}
+        meta={{ title: "TugDropdown", icon: "ChevronDown", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -735,7 +735,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryDropdownContent />,
-    defaultMeta: { title: "TugDropdown", closable: true },
+    defaultMeta: { title: "TugDropdown", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

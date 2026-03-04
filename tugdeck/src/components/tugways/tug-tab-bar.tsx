@@ -77,9 +77,15 @@ export interface TugTabBarProps {
  * Render a lucide icon by name, or null if the name is absent or unrecognised.
  * Mirrors the pattern in tugcard.tsx.
  */
+/**
+ * Fallback icon name used when a registration does not specify an icon.
+ * Ensures all tabs render an icon and can collapse to icon-only mode.
+ */
+const DEFAULT_TAB_ICON = "Diamond";
+
 function renderIcon(iconName: string | undefined): React.ReactNode {
-  if (!iconName) return null;
-  const IconComponent = icons[iconName as keyof typeof icons];
+  const name = iconName ?? DEFAULT_TAB_ICON;
+  const IconComponent = icons[name as keyof typeof icons];
   if (!IconComponent) return null;
   return React.createElement(IconComponent, { size: 12 });
 }

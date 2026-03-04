@@ -97,9 +97,12 @@ export interface OverflowResult {
  * Algorithm (Spec S02):
  * 1. Reserve space for the [+] button (addButtonWidth).
  * 2. Try all tabs at full width. If they fit, return stage "none".
- * 3. Stage 1 collapse: keep active tab at full width; collapse inactive tabs
- *    with icons to iconOnlyWidth; iconless tabs stay at fullWidth.
- *    If the total fits, return stage "collapsed".
+ * 3. Stage 1 collapse (minimal): keep active tab at full width; collapse
+ *    inactive tabs with icons one at a time from rightmost inward until the
+ *    total fits. Iconless tabs always stay at fullWidth. Only the minimum
+ *    number of tabs are collapsed — some inactive tabs may remain full-width.
+ *    If the total fits after collapsing some (or all) icon tabs, return stage
+ *    "collapsed".
  * 4. Stage 2 overflow: reserve space for the overflow button. Remove tabs
  *    from the right (rightmost inactive first) until the remainder fits.
  *    Return stage "overflow".
@@ -139,36 +142,44 @@ export function computeOverflow(
     };
   }
 
-  // Step 3: Stage 1 collapse.
-  // Active tab stays at fullWidth. Inactive tabs with icons use iconOnlyWidth;
-  // inactive iconless tabs stay at fullWidth.
-  let stage1Total = 0;
+  // Step 3: Stage 1 collapse — minimal strategy.
+  // Start with all tabs at full width. Collapse inactive icon tabs one at a
+  // time from rightmost inward until the total fits. Only the minimum number
+  // of tabs are collapsed; iconless tabs always remain at full width.
   const activeTab = tabs.find((t) => t.tabId === activeTabId);
   const activeFullWidth = activeTab?.fullWidth ?? 0;
-  stage1Total += activeFullWidth;
 
-  // Categorize inactive tabs for Stage 1.
+  // Collect inactive tabs in left-to-right order.
+  const inactiveTabs = tabs.filter((t) => t.tabId !== activeTabId);
+
+  // Collect inactive icon tabs in right-to-left order (rightmost first for collapse).
+  const inactiveIconTabsRTL = inactiveTabs.filter((t) => t.hasIcon).reverse();
+
+  // Running total starts at full width for all tabs.
+  let stage1Running = totalFull;
   const stage1Collapsed: string[] = [];
-  const stage1FullInactive: string[] = [];
 
-  for (const tab of tabs) {
-    if (tab.tabId === activeTabId) continue;
-    if (tab.hasIcon) {
-      stage1Total += tab.iconOnlyWidth;
-      stage1Collapsed.push(tab.tabId);
-    } else {
-      stage1Total += tab.fullWidth;
-      stage1FullInactive.push(tab.tabId);
-    }
+  for (const tab of inactiveIconTabsRTL) {
+    if (stage1Running <= availableBase) break;
+    // Collapse this tab: replace fullWidth with iconOnlyWidth.
+    stage1Running -= tab.fullWidth - tab.iconOnlyWidth;
+    stage1Collapsed.push(tab.tabId);
   }
 
-  if (stage1Total <= availableBase) {
-    // All tabs fit with Stage 1 collapse applied.
-    const visibleFullIds = [activeTabId, ...stage1FullInactive];
+  if (stage1Running <= availableBase) {
+    // Fits after minimal collapse. Build visibleFullIds (all tabs NOT collapsed).
+    const collapsedSet = new Set(stage1Collapsed);
+    const visibleFullIds = tabs
+      .filter((t) => !collapsedSet.has(t.tabId))
+      .map((t) => t.tabId);
+    // Restore left-to-right order for collapsedIds.
+    const collapsedIds = inactiveTabs
+      .filter((t) => collapsedSet.has(t.tabId))
+      .map((t) => t.tabId);
     return {
       stage: "collapsed",
       visibleFullIds,
-      collapsedIds: stage1Collapsed,
+      collapsedIds,
       overflowIds: [],
     };
   }
@@ -177,12 +188,8 @@ export function computeOverflow(
   // Reserve additional space for the overflow button.
   const availableOverflow = containerWidth - addButtonWidth - overflowButtonWidth;
 
-  // Build ordered list of inactive tabs (preserving left-to-right order from `tabs`).
-  // We remove from the rightmost inactive tab first.
-  const inactiveTabs = tabs.filter((t) => t.tabId !== activeTabId);
-
-  // Start with all inactive tabs participating (collapsed if they have icons,
-  // full-width if iconless). Remove from the right until things fit.
+  // Start with all inactive tabs at their collapsed sizes (icon-only for icon
+  // tabs, fullWidth for iconless tabs). Remove from the right until things fit.
   const overflowIds: string[] = [];
 
   // Clone the inactive tab list so we can pop from the right.
