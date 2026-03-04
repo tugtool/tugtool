@@ -228,6 +228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         devMenu.addItem(NSMenuItem.separator())
         devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: ""))
         devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Add Tab", action: #selector(addTab(_:)), keyEquivalent: ""))
 
         // Source tree display item
         if let path = sourceTreePath {
@@ -324,6 +325,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showTestCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "hello"])
+    }
+
+    @objc private func addTab(_ sender: Any) {
+        sendControl("add-tab")
     }
 
     @objc private func chooseSourceTree(_ sender: Any) {

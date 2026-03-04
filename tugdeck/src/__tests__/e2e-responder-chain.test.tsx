@@ -61,6 +61,9 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     handleCardFocused: (_id: string) => {},
+    addTab: (_cardId: string, _componentId: string) => null,
+    removeTab: (_cardId: string, _tabId: string) => {},
+    setActiveTab: (_cardId: string, _tabId: string) => {},
   };
 }
 

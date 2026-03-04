@@ -49,4 +49,16 @@ export interface IDeckManagerStore {
 
   /** Stable bound callback: bring a card to front. */
   handleCardFocused: (id: string) => void;
+
+  /**
+   * Add a new tab to an existing card.
+   * Returns the new tab id, or null if the card or registration is not found.
+   */
+  addTab: (cardId: string, componentId: string) => string | null;
+
+  /** Remove a tab from a card. If the last tab is removed, the card is removed entirely. */
+  removeTab: (cardId: string, tabId: string) => void;
+
+  /** Set the active tab on a card. No-op if the tabId is not in the card's tabs array. */
+  setActiveTab: (cardId: string, tabId: string) => void;
 }

@@ -23,6 +23,7 @@ import React, { useContext, useEffect, useRef } from "react";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
 import { matchKeybinding } from "./keybinding-map";
 import { selectionGuard } from "./selection-guard";
+import { registerResponderChainManager } from "../../action-dispatch";
 
 // ---- ResponderChainProvider ----
 
@@ -41,6 +42,12 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
   const manager = managerRef.current;
 
   useEffect(() => {
+    // ---- ResponderChainManager registration with action-dispatch ----
+    // Register the manager so the add-tab Control-frame action handler can
+    // dispatch "addTab" through the chain without importing React context.
+    // ([D06], [D09])
+    registerResponderChainManager(manager);
+
     // ---- SelectionGuard lifecycle ----
     // Attach the SelectionGuard document-level listeners alongside the key
     // pipeline. Both are document-level event systems that live for the

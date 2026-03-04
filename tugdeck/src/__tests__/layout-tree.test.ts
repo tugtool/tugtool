@@ -117,7 +117,7 @@ describe("buildDefaultLayout", () => {
 // ---- serialize / deserialize tests ----
 
 describe("serialize and deserialize", () => {
-  test("serialize -> deserialize round-trip preserves all card data", () => {
+  test("serialize -> deserialize round-trip preserves all card data (single tab)", () => {
     const tab: TabItem = {
       id: "tab-known-1",
       componentId: "terminal",
@@ -148,6 +148,121 @@ describe("serialize and deserialize", () => {
     expect(restoredCard.tabs[0].id).toBe("tab-known-1");
     expect(restoredCard.tabs[0].componentId).toBe("terminal");
     expect(restoredCard.activeTabId).toBe("tab-known-1");
+  });
+
+  test("serialize -> deserialize round-trip preserves multi-tab CardState (Step 8)", () => {
+    // Verify that a card with multiple tabs survives a full serialize/deserialize
+    // cycle with all tabs, all tab metadata, and activeTabId intact.
+    const tab1: TabItem = { id: "tab-mt-1", componentId: "hello", title: "Hello", closable: true };
+    const tab2: TabItem = { id: "tab-mt-2", componentId: "hello", title: "Hello 2", closable: true };
+    const tab3: TabItem = { id: "tab-mt-3", componentId: "hello", title: "Hello 3", closable: false };
+    const card: CardState = {
+      id: "card-mt",
+      position: { x: 50, y: 80 },
+      size: { width: 500, height: 400 },
+      tabs: [tab1, tab2, tab3],
+      activeTabId: "tab-mt-2",
+    };
+    const canvasState: DeckState = { cards: [card] };
+
+    const json = JSON.stringify(serialize(canvasState));
+    const restored = deserialize(json, 1920, 1080);
+
+    expect(restored.cards.length).toBe(1);
+    const r = restored.cards[0];
+    expect(r.id).toBe("card-mt");
+    expect(r.tabs.length).toBe(3);
+    expect(r.tabs[0]).toEqual(tab1);
+    expect(r.tabs[1]).toEqual(tab2);
+    expect(r.tabs[2]).toEqual(tab3);
+    // activeTabId points to the second tab, not tabs[0]
+    expect(r.activeTabId).toBe("tab-mt-2");
+  });
+
+  test("deserialize falls back activeTabId to tabs[0] when activeTabId is missing", () => {
+    // If stored JSON has no activeTabId field, deserialize uses tabs[0].id.
+    const v5 = {
+      version: 5,
+      cards: [
+        {
+          id: "card-no-active",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: "tab-a", componentId: "hello", title: "Hello", closable: true },
+            { id: "tab-b", componentId: "hello", title: "Hello 2", closable: true },
+          ],
+          // activeTabId intentionally omitted
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].activeTabId).toBe("tab-a");
+  });
+
+  test("deserialize falls back activeTabId to tabs[0] when activeTabId references a non-existent tab", () => {
+    // If stored activeTabId doesn't match any tab id, deserialize falls back to tabs[0].
+    const v5 = {
+      version: 5,
+      cards: [
+        {
+          id: "card-bad-active",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
+            { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
+          ],
+          activeTabId: "tab-does-not-exist",
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].activeTabId).toBe("tab-1");
+  });
+
+  test("serialize -> deserialize round-trip with two multi-tab cards preserves both (Step 8)", () => {
+    // Two cards each with two tabs; verify both are restored correctly.
+    const cardA: CardState = {
+      id: "card-a",
+      position: { x: 10, y: 20 },
+      size: { width: 400, height: 300 },
+      tabs: [
+        { id: "a-tab-1", componentId: "hello", title: "Hello", closable: true },
+        { id: "a-tab-2", componentId: "hello", title: "Hello 2", closable: true },
+      ],
+      activeTabId: "a-tab-2",
+    };
+    const cardB: CardState = {
+      id: "card-b",
+      position: { x: 200, y: 100 },
+      size: { width: 450, height: 320 },
+      tabs: [
+        { id: "b-tab-1", componentId: "hello", title: "Tab 1", closable: true },
+        { id: "b-tab-2", componentId: "hello", title: "Tab 2", closable: false },
+        { id: "b-tab-3", componentId: "hello", title: "Tab 3", closable: true },
+      ],
+      activeTabId: "b-tab-3",
+    };
+
+    const json = JSON.stringify(serialize({ cards: [cardA, cardB] }));
+    const restored = deserialize(json, 1920, 1080);
+
+    expect(restored.cards.length).toBe(2);
+
+    const ra = restored.cards[0];
+    expect(ra.id).toBe("card-a");
+    expect(ra.tabs.length).toBe(2);
+    expect(ra.activeTabId).toBe("a-tab-2");
+    expect(ra.tabs[1].closable).toBe(true);
+
+    const rb = restored.cards[1];
+    expect(rb.id).toBe("card-b");
+    expect(rb.tabs.length).toBe(3);
+    expect(rb.activeTabId).toBe("b-tab-3");
+    expect(rb.tabs[1].closable).toBe(false);
   });
 
   test("deserialize with version:3 data falls back to buildDefaultLayout", () => {

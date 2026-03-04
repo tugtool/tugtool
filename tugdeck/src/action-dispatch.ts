@@ -13,6 +13,7 @@
 import type React from "react";
 import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
+import type { ResponderChainManager } from "./components/tugways/responder-chain";
 import { FeedId } from "./protocol";
 
 /** Handler function for an action */
@@ -37,6 +38,18 @@ let themeSetterRef: ((theme: string) => void) | null = null;
  * Spec S05 (#s05-gallery-action)
  */
 let gallerySetterRef: React.Dispatch<React.SetStateAction<boolean>> | null = null;
+
+/**
+ * Module-level reference to the ResponderChainManager, populated by
+ * ResponderChainProvider on mount via `registerResponderChainManager`.
+ *
+ * Used by the `add-tab` Control-frame action to dispatch `"addTab"` through
+ * the responder chain, which routes it to DeckCanvas's registered handler.
+ *
+ * [D06] Add-tab action uses DeckManager + responder chain
+ * [D09] Add-tab routed as DeckCanvas responder action
+ */
+let responderChainManagerRef: ResponderChainManager | null = null;
 
 /**
  * Register the theme setter function from TugThemeProvider.
@@ -70,6 +83,19 @@ export function registerGallerySetter(
   gallerySetterRef = setter;
 }
 
+/**
+ * Register the ResponderChainManager from ResponderChainProvider.
+ * Called by ResponderChainProvider on mount so the `add-tab` action handler
+ * can dispatch `"addTab"` through the chain.
+ *
+ * Last-registration-wins: calling again replaces the previous manager.
+ *
+ * [D06] Add-tab action uses DeckManager + responder chain
+ */
+export function registerResponderChainManager(manager: ResponderChainManager): void {
+  responderChainManagerRef = manager;
+}
+
 /** TextDecoder for UTF-8 payload decoding */
 const textDecoder = new TextDecoder();
 
@@ -89,6 +115,7 @@ export function _resetForTest(): void {
   reloadPending = false;
   themeSetterRef = null;
   gallerySetterRef = null;
+  responderChainManagerRef = null;
 }
 
 /**
@@ -211,5 +238,17 @@ export function initActionDispatch(
       return;
     }
     deckManager.addCard(component);
+  });
+
+  // add-tab: Add a new tab to the focused card via the responder chain.
+  // Dispatches "addTab" through the ResponderChainManager, which routes it to
+  // DeckCanvas's registered addTab handler. DeckCanvas reads the focused card
+  // from its cardsRef and calls store.addTab(). ([D06], [D09])
+  registerAction("add-tab", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.dispatch("addTab");
+    } else {
+      console.warn("add-tab: responder chain manager not registered yet");
+    }
   });
 }

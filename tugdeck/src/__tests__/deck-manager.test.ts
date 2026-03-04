@@ -546,3 +546,322 @@ describe("DeckManager store API – subscriber callback timing", () => {
     expect(fired).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// addTab tests (Spec S03)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.addTab", () => {
+  it("creates a new tab with correct componentId and title from registration", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const initialTabCount = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length;
+    expect(initialTabCount).toBe(1);
+
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const newTabId = manager.addTab(cardId, "terminal");
+
+    expect(newTabId).not.toBeNull();
+    expect(typeof newTabId).toBe("string");
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.tabs.length).toBe(2);
+    const newTab = card.tabs.find((t) => t.id === newTabId)!;
+    expect(newTab.componentId).toBe("terminal");
+    expect(newTab.title).toBe("Terminal");
+  });
+
+  it("new tab becomes the active tab after addTab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const newTabId = manager.addTab(cardId, "terminal");
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.activeTabId).toBe(newTabId);
+  });
+
+  it("returns null for unregistered componentId", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = manager.addTab(cardId, "nonexistent");
+
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("returns null for non-existent cardId", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = manager.addTab("nonexistent-card-id", "hello");
+
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("notifies subscribers after addTab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    let callCount = 0;
+    manager.subscribe(() => { callCount += 1; });
+    manager.addTab(cardId, "terminal");
+
+    expect(callCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeTab tests (Spec S03)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.removeTab", () => {
+  it("removes the specified tab and activates the previous tab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const cardId = manager.addCard("hello") as string;
+    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId;
+
+    // Add a second tab and make it active
+    const secondTabId = manager.addTab(cardId, "terminal") as string;
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.activeTabId).toBe(secondTabId);
+
+    // Remove the second (active) tab -- should activate the previous (first) tab
+    manager.removeTab(cardId, secondTabId);
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.tabs.length).toBe(1);
+    expect(card.activeTabId).toBe(firstTabId);
+  });
+
+  it("activates first tab when the first tab is removed", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const cardId = manager.addCard("hello") as string;
+    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+
+    // Add a second tab (it becomes active)
+    const secondTabId = manager.addTab(cardId, "terminal") as string;
+
+    // Make first tab active, then remove it
+    manager.setActiveTab(cardId, firstTabId);
+    manager.removeTab(cardId, firstTabId);
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.tabs.length).toBe(1);
+    expect(card.activeTabId).toBe(secondTabId);
+  });
+
+  it("removes the card entirely when the last tab is removed", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+
+    manager.removeTab(cardId, tabId);
+
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
+  });
+
+  it("is a no-op for a non-existent tabId", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length;
+
+    manager.removeTab(cardId, "nonexistent-tab-id");
+
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length).toBe(tabsBefore);
+  });
+
+  it("is a no-op for a non-existent cardId", () => {
+    const cardCountBefore = manager.getDeckState().cards.length;
+
+    manager.removeTab("nonexistent-card-id", "some-tab-id");
+
+    expect(manager.getDeckState().cards.length).toBe(cardCountBefore);
+  });
+
+  it("notifies subscribers after removeTab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const cardId = manager.addCard("hello") as string;
+    const secondTabId = manager.addTab(cardId, "terminal") as string;
+
+    let callCount = 0;
+    manager.subscribe(() => { callCount += 1; });
+    manager.removeTab(cardId, secondTabId);
+
+    expect(callCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setActiveTab tests (Spec S03)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// filterRegisteredCards tests (Step 9)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
+  it("keeps only registered tabs from a card with mixed registered/unregistered tabs", () => {
+    // Register only "hello"; "ghost" is intentionally not registered.
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    // Build a DeckState with one card having two tabs: one registered ("hello")
+    // and one unregistered ("ghost"). Bypass addTab (which checks registration)
+    // by calling applyLayout directly.
+    const cardId = crypto.randomUUID();
+    const helloTabId = crypto.randomUUID();
+    const ghostTabId = crypto.randomUUID();
+
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+          ],
+          activeTabId: helloTabId,
+        },
+      ],
+    });
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    expect(card).toBeDefined();
+    expect(card!.tabs.length).toBe(1);
+    expect(card!.tabs[0].id).toBe(helloTabId);
+    expect(card!.activeTabId).toBe(helloTabId);
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("removes a card entirely when all its tabs are unregistered", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const cardId = crypto.randomUUID();
+    const tabId = crypto.randomUUID();
+
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: tabId, componentId: "totally-unknown", title: "Unknown", closable: true },
+          ],
+          activeTabId: tabId,
+        },
+      ],
+    });
+
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("falls back activeTabId to first registered tab when the active tab is unregistered", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const cardId = crypto.randomUUID();
+    const helloTabId = crypto.randomUUID();
+    const ghostTabId = crypto.randomUUID();
+
+    // Active tab is the unregistered "ghost" tab.
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+          ],
+          activeTabId: ghostTabId,
+        },
+      ],
+    });
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    expect(card).toBeDefined();
+    // Only the hello tab survives; activeTabId falls back to it.
+    expect(card!.tabs.length).toBe(1);
+    expect(card!.tabs[0].id).toBe(helloTabId);
+    expect(card!.activeTabId).toBe(helloTabId);
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
+describe("DeckManager.setActiveTab", () => {
+  it("updates activeTabId to the specified tab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const cardId = manager.addCard("hello") as string;
+    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+
+    // Add second tab (becomes active)
+    manager.addTab(cardId, "terminal");
+
+    // Switch back to first tab
+    manager.setActiveTab(cardId, firstTabId);
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.activeTabId).toBe(firstTabId);
+  });
+
+  it("is a no-op for an invalid tabId (not in tabs array)", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    const originalActiveTabId = card.activeTabId;
+    const versionBefore = manager.getVersion();
+
+    manager.setActiveTab(cardId, "nonexistent-tab-id");
+
+    const cardAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(cardAfter.activeTabId).toBe(originalActiveTabId);
+    expect(manager.getVersion()).toBe(versionBefore);
+  });
+
+  it("is a no-op when the tab is already active", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const versionBefore = manager.getVersion();
+
+    manager.setActiveTab(cardId, tabId);
+
+    expect(manager.getVersion()).toBe(versionBefore);
+  });
+
+  it("notifies subscribers after setActiveTab changes the active tab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    const cardId = manager.addCard("hello") as string;
+    const firstTabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    manager.addTab(cardId, "terminal");
+
+    let callCount = 0;
+    manager.subscribe(() => { callCount += 1; });
+    manager.setActiveTab(cardId, firstTabId);
+
+    expect(callCount).toBe(1);
+  });
+});

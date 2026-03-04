@@ -116,4 +116,21 @@ describe("registerHelloCard – T22: registers 'hello' in the card registry", ()
     const content = container.querySelector("[data-testid='hello-card-content']");
     expect(content).not.toBeNull();
   });
+
+  it("registration includes contentFactory that returns HelloCardContent", () => {
+    registerHelloCard();
+    const reg = getRegistration("hello");
+    expect(reg).not.toBeUndefined();
+    expect(reg!.contentFactory).not.toBeUndefined();
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <>{reg!.contentFactory!("card-hello-test")}</>
+      ));
+    });
+
+    const content = container.querySelector("[data-testid='hello-card-content']");
+    expect(content).not.toBeNull();
+  });
 });

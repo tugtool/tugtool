@@ -1,0 +1,172 @@
+/**
+ * TugTabBar styles -- tugways-specific CSS using var(--td-*) tokens.
+ *
+ * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * hex values, no raw Tailwind color classes. Theme switches update CSS
+ * variables at the DOM level -- TugTabBar re-paints without React re-renders.
+ *
+ * Active tab state is driven by the `data-active` attribute set on each
+ * tab button, following Rule 4 (appearance changes go through CSS/DOM).
+ *
+ * **Authoritative references:**
+ * - [D03] Tab bar uses the Tugcard accessory slot
+ * - Table T01: Tab visual states
+ */
+
+/* ============================================================================
+   Tab Bar Container
+   ========================================================================= */
+
+.tug-tab-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 28px;
+  /* Hide scrollbar but keep scrollability */
+  scrollbar-width: none;
+  background-color: var(--td-surface-raised);
+  border-bottom: 1px solid var(--td-border);
+  user-select: none;
+}
+
+.tug-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================================
+   Tab Buttons
+   ========================================================================= */
+
+.tug-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  height: 100%;
+  min-width: 0;
+  max-width: 160px;
+  flex-shrink: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background-color: transparent;
+  color: var(--td-text-muted);
+  font-size: 0.75rem;
+  font-family: var(--td-font-sans);
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+  transition:
+    background-color var(--td-duration-fast) var(--td-easing-standard),
+    color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+/* Active tab (Table T01) */
+.tug-tab[data-active="true"] {
+  background-color: var(--td-surface);
+  color: var(--td-text);
+  border-bottom-color: var(--td-accent);
+}
+
+/* Inactive tab hover (Table T01) */
+.tug-tab:not([data-active="true"]):hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+/* ============================================================================
+   Tab Icon
+   ========================================================================= */
+
+.tug-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+
+/* ============================================================================
+   Tab Title
+   ========================================================================= */
+
+.tug-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Close Button (per Table T01)
+   ========================================================================= */
+
+.tug-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 2px;
+  background-color: transparent;
+  color: inherit;
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
+  opacity: 0;
+  transition: opacity var(--td-duration-fast) var(--td-easing-standard),
+    background-color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+/* Close button always visible on active tab (Table T01) */
+.tug-tab[data-active="true"] .tug-tab-close {
+  opacity: 1;
+}
+
+/* Close button visible on hover for inactive tabs (Table T01) */
+.tug-tab:not([data-active="true"]):hover .tug-tab-close {
+  opacity: 1;
+}
+
+/* Close button hover state */
+.tug-tab-close:hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}
+
+/* ============================================================================
+   Add Tab [+] Button
+   ========================================================================= */
+
+.tug-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  flex-shrink: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--td-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
+  transition:
+    background-color var(--td-duration-fast) var(--td-easing-standard),
+    color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+.tug-tab-add:hover {
+  background-color: var(--td-surface-control);
+  color: var(--td-text);
+}

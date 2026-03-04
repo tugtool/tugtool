@@ -89,6 +89,7 @@ export function registerHelloCard(): void {
         <HelloCardContent />
       </Tugcard>
     ),
+    contentFactory: () => <HelloCardContent />,
     defaultMeta: { title: "Hello", icon: "Star", closable: true },
   });
 }

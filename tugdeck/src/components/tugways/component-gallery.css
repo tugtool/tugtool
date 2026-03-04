@@ -224,3 +224,57 @@
   outline: 2px solid var(--td-accent);
   outline-offset: 2px;
 }
+
+/* ============================================================================
+   TugTabBar Demo (Phase 5b)
+   ========================================================================= */
+
+.cg-tab-bar-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ============================================================================
+   TugDropdown Demo (Phase 5b)
+   ========================================================================= */
+
+.cg-dropdown-demo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Trigger button for the TugDropdown demo -- styled to match the gallery aesthetic */
+.cg-demo-trigger {
+  font-size: 12px;
+  font-family: var(--td-font-sans);
+  color: var(--td-text);
+  background-color: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cg-demo-trigger:hover {
+  background-color: var(--td-surface-raised);
+}
+
+/* Shared status line for both demos */
+.cg-demo-status {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  user-select: none;
+}
+
+.cg-demo-status code {
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text);
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  padding: 1px 5px;
+}

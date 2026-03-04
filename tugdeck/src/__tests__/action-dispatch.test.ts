@@ -4,6 +4,7 @@ import {
   dispatchAction,
   registerAction,
   registerThemeSetter,
+  registerResponderChainManager,
   _resetForTest,
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
@@ -417,5 +418,60 @@ describe("initActionDispatch: show-card – T24: missing component logs warning"
 
     expect(() => dispatchAction({ action: "show-card", component: null })).not.toThrow();
     expect(deck._addCardCalls.length).toBe(0);
+  });
+});
+
+// ---- add-tab handler ([D06], [D09]) ----
+
+describe("initActionDispatch: add-tab", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  it("dispatches 'addTab' through the registered ResponderChainManager", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    // Create a stub ResponderChainManager that records dispatch calls.
+    const dispatched: string[] = [];
+    const stubManager = {
+      dispatch(action: string): boolean {
+        dispatched.push(action);
+        return true;
+      },
+    };
+    registerResponderChainManager(stubManager as any);
+
+    dispatchAction({ action: "add-tab" });
+
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0]).toBe("addTab");
+  });
+
+  it("warns and does not throw when no ResponderChainManager is registered", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    // No registerResponderChainManager call -- ref is null after _resetForTest.
+    expect(() => dispatchAction({ action: "add-tab" })).not.toThrow();
+  });
+
+  it("uses the most recently registered manager (last-registration-wins)", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    const first: string[] = [];
+    const second: string[] = [];
+    registerResponderChainManager({ dispatch: (a: string) => { first.push(a); return true; } } as any);
+    registerResponderChainManager({ dispatch: (a: string) => { second.push(a); return true; } } as any);
+
+    dispatchAction({ action: "add-tab" });
+
+    expect(first.length).toBe(0);
+    expect(second.length).toBe(1);
+    expect(second[0]).toBe("addTab");
   });
 });
