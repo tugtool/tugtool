@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-04T02:20:03Z
+---
+
+## step-1: Added reorderTab, detachTab, mergeTab methods to DeckManager with _spliceTabFromCards helper and 13 unit tests (T1-T13)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-11
 date: 2025-03-04T00:48:20Z
 ---

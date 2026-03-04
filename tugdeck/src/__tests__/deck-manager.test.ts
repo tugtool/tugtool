@@ -865,3 +865,285 @@ describe("DeckManager.setActiveTab", () => {
     expect(callCount).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// reorderTab tests (Spec S01 / Step 1)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.reorderTab", () => {
+  it("T1: moves tab from index 0 to index 2 in a 3-tab card", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    registerCard(makeRegistration("git", "Git"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tab2Id = manager.addTab(cardId, "terminal") as string;
+    const tab3Id = manager.addTab(cardId, "git") as string;
+
+    // Initial order: [tab1, tab2, tab3]
+    manager.reorderTab(cardId, 0, 2);
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
+    expect(card.tabs[0].id).toBe(tab2Id);
+    expect(card.tabs[1].id).toBe(tab3Id);
+    expect(card.tabs[2].id).toBe(tab1Id);
+  });
+
+  it("T2: no-op when fromIndex === toIndex", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    manager.addTab(cardId, "terminal");
+
+    const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const versionBefore = manager.getVersion();
+
+    manager.reorderTab(cardId, 0, 0);
+
+    const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    expect(after).toEqual(before);
+    // No-op means no notify was fired (version unchanged)
+    expect(manager.getVersion()).toBe(versionBefore);
+  });
+
+  it("T3: no-op when card not found", () => {
+    const versionBefore = manager.getVersion();
+    manager.reorderTab("nonexistent-card", 0, 1);
+    expect(manager.getVersion()).toBe(versionBefore);
+  });
+
+  it("T4: no-op when indices out of bounds", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    manager.addTab(cardId, "terminal");
+
+    const before = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const versionBefore = manager.getVersion();
+
+    // fromIndex out of bounds
+    manager.reorderTab(cardId, -1, 1);
+    expect(manager.getVersion()).toBe(versionBefore);
+
+    // toIndex out of bounds
+    manager.reorderTab(cardId, 0, 5);
+    expect(manager.getVersion()).toBe(versionBefore);
+
+    const after = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    expect(after).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detachTab tests (Spec S02 / Step 1)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.detachTab", () => {
+  it("T5: creates new card with detached tab, removes tab from source", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab2Id = manager.addTab(cardId, "terminal") as string;
+
+    const newCardId = manager.detachTab(cardId, tab2Id, { x: 100, y: 150 });
+
+    expect(newCardId).not.toBeNull();
+    expect(typeof newCardId).toBe("string");
+
+    const state = manager.getDeckState();
+
+    // Source card should still exist with only 1 tab
+    const sourceCard = state.cards.find((c) => c.id === cardId);
+    expect(sourceCard).toBeDefined();
+    expect(sourceCard!.tabs.length).toBe(1);
+    expect(sourceCard!.tabs.some((t) => t.id === tab2Id)).toBe(false);
+
+    // New card should have the detached tab
+    const newCard = state.cards.find((c) => c.id === newCardId);
+    expect(newCard).toBeDefined();
+    expect(newCard!.tabs.length).toBe(1);
+    expect(newCard!.tabs[0].id).toBe(tab2Id);
+    expect(newCard!.activeTabId).toBe(tab2Id);
+    expect(newCard!.position.x).toBe(100);
+    expect(newCard!.position.y).toBe(150);
+  });
+
+  it("T6: returns null when card has only one tab (last-tab guard)", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const cardId = manager.addCard("hello") as string;
+    const tabId = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+
+    const result = manager.detachTab(cardId, tabId, { x: 100, y: 100 });
+
+    expect(result).toBeNull();
+    // Card should still have 1 tab
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.length).toBe(1);
+  });
+
+  it("T7: handles two-tab card: source transitions to single-tab after detach", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    const tab2Id = manager.addTab(cardId, "terminal") as string;
+
+    const newCardId = manager.detachTab(cardId, tab2Id, { x: 200, y: 200 });
+
+    expect(newCardId).not.toBeNull();
+
+    const state = manager.getDeckState();
+    const sourceCard = state.cards.find((c) => c.id === cardId);
+    expect(sourceCard).toBeDefined();
+    expect(sourceCard!.tabs.length).toBe(1);
+    expect(sourceCard!.tabs[0].id).toBe(tab1Id);
+    expect(sourceCard!.activeTabId).toBe(tab1Id);
+  });
+
+  it("T8: returns null when card not found", () => {
+    const result = manager.detachTab("nonexistent-card", "some-tab", { x: 0, y: 0 });
+    expect(result).toBeNull();
+  });
+
+  it("new card is appended to end of cards array (highest z-index)", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab2Id = manager.addTab(cardId, "terminal") as string;
+
+    const cardsBefore = manager.getDeckState().cards.length;
+    const newCardId = manager.detachTab(cardId, tab2Id, { x: 50, y: 50 }) as string;
+
+    const cards = manager.getDeckState().cards;
+    expect(cards.length).toBe(cardsBefore + 1);
+    // New card should be the last in the array
+    expect(cards[cards.length - 1].id).toBe(newCardId);
+  });
+
+  it("detached card position is clamped to canvas bounds", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab2Id = manager.addTab(cardId, "terminal") as string;
+
+    // Position far outside canvas bounds (canvas is 1280x800 in tests)
+    const newCardId = manager.detachTab(cardId, tab2Id, { x: 9999, y: 9999 }) as string;
+
+    const newCard = manager.getDeckState().cards.find((c) => c.id === newCardId)!;
+    // Position should be clamped: canvasWidth - DEFAULT_CARD_WIDTH = 1280 - 400 = 880
+    expect(newCard.position.x).toBe(1280 - 400);
+    expect(newCard.position.y).toBe(800 - 300);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeTab tests (Spec S03 / Step 1)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.mergeTab", () => {
+  it("T9: moves tab from source to target at insertAtIndex", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    registerCard(makeRegistration("git", "Git"));
+
+    // Create two cards
+    const card1Id = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    manager.addTab(card1Id, "terminal");
+
+    const card2Id = manager.addCard("git") as string;
+    const tab3Id = manager.getDeckState().cards.find((c) => c.id === card2Id)!.tabs[0].id;
+    // card2 needs 2 tabs so it doesn't get removed
+    manager.addTab(card2Id, "terminal");
+
+    // Merge first tab of card1 into card2 at index 0
+    manager.mergeTab(card1Id, tab1Id, card2Id, 0);
+
+    const state = manager.getDeckState();
+    const targetCard = state.cards.find((c) => c.id === card2Id)!;
+    expect(targetCard.tabs[0].id).toBe(tab1Id);
+    // Source card should still exist (it had 2 tabs, now 1)
+    const sourceCard = state.cards.find((c) => c.id === card1Id);
+    expect(sourceCard).toBeDefined();
+    expect(sourceCard!.tabs.some((t) => t.id === tab1Id)).toBe(false);
+  });
+
+  it("T10: removes source card when source had only one tab", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+    registerCard(makeRegistration("git", "Git"));
+
+    // Create source card with 1 tab
+    const sourceCardId = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === sourceCardId)!.tabs[0].id;
+
+    // Create target card with 1 tab (also needs 2 to stay alive, but the merge adds one)
+    const targetCardId = manager.addCard("terminal") as string;
+
+    manager.mergeTab(sourceCardId, tab1Id, targetCardId, 0);
+
+    const state = manager.getDeckState();
+    // Source card should be gone
+    expect(state.cards.find((c) => c.id === sourceCardId)).toBeUndefined();
+    // Target card should have the merged tab
+    const targetCard = state.cards.find((c) => c.id === targetCardId)!;
+    expect(targetCard.tabs.some((t) => t.id === tab1Id)).toBe(true);
+  });
+
+  it("T11: sets merged tab as activeTabId on target", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const card1Id = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    manager.addTab(card1Id, "terminal");
+
+    const card2Id = manager.addCard("hello") as string;
+
+    manager.mergeTab(card1Id, tab1Id, card2Id, 0);
+
+    const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
+    expect(targetCard.activeTabId).toBe(tab1Id);
+  });
+
+  it("T12: clamps insertAtIndex to target tabs length", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const card1Id = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === card1Id)!.tabs[0].id;
+    manager.addTab(card1Id, "terminal");
+
+    const card2Id = manager.addCard("hello") as string;
+    // card2 has 1 tab; insertAtIndex of 999 should be clamped to 1 (tabs.length)
+    manager.mergeTab(card1Id, tab1Id, card2Id, 999);
+
+    const targetCard = manager.getDeckState().cards.find((c) => c.id === card2Id)!;
+    // Merged tab should appear at end (index 1)
+    expect(targetCard.tabs[targetCard.tabs.length - 1].id).toBe(tab1Id);
+  });
+
+  it("T13: no-op when sourceCardId === targetCardId", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    registerCard(makeRegistration("terminal", "Terminal"));
+
+    const cardId = manager.addCard("hello") as string;
+    const tab1Id = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs[0].id;
+    manager.addTab(cardId, "terminal");
+
+    const tabsBefore = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    const versionBefore = manager.getVersion();
+
+    manager.mergeTab(cardId, tab1Id, cardId, 0);
+
+    expect(manager.getVersion()).toBe(versionBefore);
+    const tabsAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
+    expect(tabsAfter).toEqual(tabsBefore);
+  });
+});

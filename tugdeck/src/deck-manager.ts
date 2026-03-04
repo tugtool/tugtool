@@ -120,6 +120,15 @@ export class DeckManager implements IDeckManagerStore {
   /** Stable bound callback: set the active tab on a card. */
   public setActiveTab: (cardId: string, tabId: string) => void;
 
+  /** Stable bound callback: reorder a tab within a card. */
+  public reorderTab: (cardId: string, fromIndex: number, toIndex: number) => void;
+
+  /** Stable bound callback: detach a tab into a new single-tab card. */
+  public detachTab: (cardId: string, tabId: string, position: { x: number; y: number }) => string | null;
+
+  /** Stable bound callback: merge a tab from one card into another. */
+  public mergeTab: (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number) => void;
+
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
   /**
@@ -169,6 +178,9 @@ export class DeckManager implements IDeckManagerStore {
     this.addTab = this._addTab.bind(this);
     this.removeTab = this._removeTab.bind(this);
     this.setActiveTab = this._setActiveTab.bind(this);
+    this.reorderTab = this._reorderTab.bind(this);
+    this.detachTab = this._detachTab.bind(this);
+    this.mergeTab = this._mergeTab.bind(this);
 
     // Load or build the initial canvas state.
     // subscribers, stateVersion, handleCard*, and deckState must all be initialized
@@ -448,6 +460,193 @@ export class DeckManager implements IDeckManagerStore {
       ...this.deckState,
       cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
     };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  // ---- Tab drag methods (Spec S01, S02, S03) ----
+
+  /**
+   * Pure helper: removes a tab from a card within a cards array.
+   *
+   * Handles active-tab fallback when the removed tab was active.
+   * Removes the card entirely if the tab was the last one.
+   * Returns the updated cards array and the removed TabItem (or null if not found).
+   *
+   * Does NOT call notify() or scheduleSave() -- callers are responsible.
+   */
+  private _spliceTabFromCards(
+    cards: CardState[],
+    cardId: string,
+    tabId: string,
+  ): { updatedCards: CardState[]; removedTab: TabItem | null } {
+    const cardIndex = cards.findIndex((c) => c.id === cardId);
+    if (cardIndex === -1) {
+      return { updatedCards: cards, removedTab: null };
+    }
+
+    const card = cards[cardIndex];
+    const tabIndex = card.tabs.findIndex((t) => t.id === tabId);
+    if (tabIndex === -1) {
+      return { updatedCards: cards, removedTab: null };
+    }
+
+    const removedTab = card.tabs[tabIndex];
+
+    // If this is the last tab, remove the card entirely.
+    if (card.tabs.length === 1) {
+      const updatedCards = cards.filter((c) => c.id !== cardId);
+      return { updatedCards, removedTab };
+    }
+
+    const newTabs = card.tabs.filter((t) => t.id !== tabId);
+
+    // Determine the new active tab.
+    let newActiveTabId = card.activeTabId;
+    if (card.activeTabId === tabId) {
+      const newIndex = tabIndex > 0 ? tabIndex - 1 : 0;
+      newActiveTabId = newTabs[newIndex].id;
+    }
+
+    const updatedCard = { ...card, tabs: newTabs, activeTabId: newActiveTabId };
+    const updatedCards = cards.map((c) => (c.id === cardId ? updatedCard : c));
+    return { updatedCards, removedTab };
+  }
+
+  /**
+   * Reorder a tab within a card's tabs array.
+   *
+   * Moves the tab at fromIndex to toIndex. No-op if the card is not found,
+   * indices are out of bounds, or fromIndex === toIndex.
+   */
+  private _reorderTab(cardId: string, fromIndex: number, toIndex: number): void {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    const len = card.tabs.length;
+    if (fromIndex < 0 || fromIndex >= len || toIndex < 0 || toIndex >= len) return;
+    if (fromIndex === toIndex) return;
+
+    const newTabs = [...card.tabs];
+    const [moved] = newTabs.splice(fromIndex, 1);
+    newTabs.splice(toIndex, 0, moved);
+
+    const updatedCard = { ...card, tabs: newTabs };
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+    };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  /**
+   * Detach a tab from its card and create a new single-tab card at the given position.
+   *
+   * Returns the new card's id, or null if:
+   * - the source card or tab is not found
+   * - the tab is the last tab on the card (last-tab guard)
+   *
+   * The new card is appended to the end of the cards array (highest z-index).
+   * Position is clamped to canvas bounds.
+   * Exactly one notify() and scheduleSave() per call.
+   */
+  private _detachTab(
+    cardId: string,
+    tabId: string,
+    position: { x: number; y: number },
+  ): string | null {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) return null;
+
+    const tab = card.tabs.find((t) => t.id === tabId);
+    if (!tab) return null;
+
+    // Last-tab guard: cannot detach the only tab.
+    if (card.tabs.length === 1) return null;
+
+    // Remove tab from source card.
+    const { updatedCards, removedTab } = this._spliceTabFromCards(
+      this.deckState.cards,
+      cardId,
+      tabId,
+    );
+
+    if (!removedTab) return null;
+
+    // Clamp position to canvas bounds.
+    const canvasWidth = this.container.clientWidth || 800;
+    const canvasHeight = this.container.clientHeight || 600;
+    const clampedX = Math.max(0, Math.min(position.x, canvasWidth - DEFAULT_CARD_WIDTH));
+    const clampedY = Math.max(0, Math.min(position.y, canvasHeight - DEFAULT_CARD_HEIGHT));
+
+    // Create the new card.
+    const newCardId = crypto.randomUUID();
+    const newCard: CardState = {
+      id: newCardId,
+      position: { x: clampedX, y: clampedY },
+      size: { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT },
+      tabs: [removedTab],
+      activeTabId: removedTab.id,
+    };
+
+    // Append new card to end (highest z-index).
+    this.deckState = {
+      ...this.deckState,
+      cards: [...updatedCards, newCard],
+    };
+    this.notify();
+    this.scheduleSave();
+    return newCardId;
+  }
+
+  /**
+   * Move a tab from sourceCardId to targetCardId, inserting at insertAtIndex.
+   *
+   * No-op if sourceCardId === targetCardId.
+   * The merged tab becomes the active tab on the target card.
+   * If the source card has only one tab, the source card is removed.
+   * Exactly one notify() and scheduleSave() per call.
+   */
+  private _mergeTab(
+    sourceCardId: string,
+    tabId: string,
+    targetCardId: string,
+    insertAtIndex: number,
+  ): void {
+    // No-op: same card merge is meaningless (use reorderTab instead).
+    if (sourceCardId === targetCardId) return;
+
+    const sourceCard = this.deckState.cards.find((c) => c.id === sourceCardId);
+    if (!sourceCard) return;
+
+    const tab = sourceCard.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    const targetCard = this.deckState.cards.find((c) => c.id === targetCardId);
+    if (!targetCard) return;
+
+    // Remove tab from source card.
+    const { updatedCards, removedTab } = this._spliceTabFromCards(
+      this.deckState.cards,
+      sourceCardId,
+      tabId,
+    );
+
+    if (!removedTab) return;
+
+    // Clamp insertAtIndex to valid range [0, targetTabs.length].
+    const clampedIndex = Math.max(0, Math.min(insertAtIndex, targetCard.tabs.length));
+
+    // Insert tab into target card.
+    const finalCards = updatedCards.map((c) => {
+      if (c.id !== targetCardId) return c;
+      const newTabs = [...c.tabs];
+      newTabs.splice(clampedIndex, 0, removedTab);
+      return { ...c, tabs: newTabs, activeTabId: removedTab.id };
+    });
+
+    this.deckState = { ...this.deckState, cards: finalCards };
     this.notify();
     this.scheduleSave();
   }

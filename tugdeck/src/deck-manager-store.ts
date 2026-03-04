@@ -61,4 +61,26 @@ export interface IDeckManagerStore {
 
   /** Set the active tab on a card. No-op if the tabId is not in the card's tabs array. */
   setActiveTab: (cardId: string, tabId: string) => void;
+
+  /**
+   * Reorder a tab within a card's tabs array.
+   * Moves the tab at fromIndex to toIndex.
+   * No-op if the card is not found, indices are out of bounds, or fromIndex === toIndex.
+   */
+  reorderTab: (cardId: string, fromIndex: number, toIndex: number) => void;
+
+  /**
+   * Detach a tab from its card and create a new single-tab card at the given position.
+   * Returns the new card's id, or null if the source card or tab is not found,
+   * or if the tab is the last tab on the card.
+   */
+  detachTab: (cardId: string, tabId: string, position: { x: number; y: number }) => string | null;
+
+  /**
+   * Move a tab from sourceCardId to targetCardId, inserting at insertAtIndex.
+   * No-op if sourceCardId === targetCardId.
+   * The merged tab becomes the active tab on the target card.
+   * If the source card has only one tab, the source card is removed.
+   */
+  mergeTab: (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number) => void;
 }
