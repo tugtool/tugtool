@@ -1122,6 +1122,83 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 5b3 Step 4: cardTitle and acceptedFamilies passed from CardState
+// ---------------------------------------------------------------------------
+
+describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed header", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("multi-tab card with title: 'Foo' renders header with 'Foo: <tab-title>'", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const multiTabCard: CardState = {
+      id: "titled-card",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [
+        { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
+        { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
+      ],
+      activeTabId: "tab-1",
+      title: "Foo",
+      acceptsFamilies: ["standard"],
+    };
+
+    const store = makeMockStore(makeDeckState([multiTabCard]));
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Foo: Hello");
+  });
+
+  it("multi-tab card with title: '' renders header with just the tab title", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const multiTabCard: CardState = {
+      id: "untitled-card",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [
+        { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
+        { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
+      ],
+      activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+
+    const store = makeMockStore(makeDeckState([multiTabCard]));
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Hello");
+  });
+});
+
 describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for single-tab card", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-04T16:30:37Z
+---
+
+## step-4: DeckCanvas multi-tab rendering path now passes cardState.title as cardTitle and cardState.acceptsFamilies as acceptedFamilies to Tugcard; added tests for composed title rendering through DeckCanvas
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: step-3
 date: 2025-03-04T16:26:45Z
 ---

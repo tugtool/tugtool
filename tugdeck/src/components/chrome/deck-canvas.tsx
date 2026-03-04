@@ -322,6 +322,8 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
                     onClose={() => store.handleCardClosed(cardState.id)}
                     onDragStart={injected.onDragStart}
                     onMinSizeChange={injected.onMinSizeChange}
+                    cardTitle={cardState.title}
+                    acceptedFamilies={cardState.acceptsFamilies}
                   >
                     {registration.contentFactory?.(cardState.id) ?? null}
                   </Tugcard>
