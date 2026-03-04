@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-04T22:54:14Z
+---
+
+## step-2: Read .tugcard computed borderTopWidth at drag-start via getComputedStyle, stored in ref, passed as 4th argument to computeSnap for border-collapse snap offset
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-1
 date: 2025-03-04T22:50:12Z
 ---

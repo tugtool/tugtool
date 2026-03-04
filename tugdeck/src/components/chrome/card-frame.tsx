@@ -199,6 +199,9 @@ export function CardFrame({
   const prevSnapModifier = useRef(false);
   // Most recent snap result, carried from rAF closure to onPointerUp. [D01]
   const lastSnapResult = useRef<SnapResult | null>(null);
+  // Computed border width of the .tugcard element, read once at drag-start. [D56]
+  // Passed to computeSnap so adjacent card borders collapse into a single visual line.
+  const dragBorderWidth = useRef(0);
 
   /**
    * Set a tab bar element as the current drag drop target (appearance-zone).
@@ -360,6 +363,13 @@ export function CardFrame({
         }
       }
 
+      // Read .tugcard computed border width once at drag-start for border collapse. [D56]
+      // Parsed to a number for use as computeSnap's borderWidth parameter.
+      const tugcardEl = frame.querySelector<HTMLElement>(".tugcard");
+      dragBorderWidth.current = tugcardEl
+        ? parseFloat(getComputedStyle(tugcardEl).borderTopWidth) || 0
+        : 0;
+
       // Initialize snap modifier state. [D01]
       latestSnapModifier.current = false;
       prevSnapModifier.current = false;
@@ -415,6 +425,8 @@ export function CardFrame({
           const snapResult = computeSnap(
             movingRect,
             dragOtherRects.current.map((r) => r.rect),
+            undefined,
+            dragBorderWidth.current,
           );
           lastSnapResult.current = snapResult;
           if (snapResult.x !== null) {
