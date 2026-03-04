@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-04T18:37:58Z
+---
+
+## step-5: Step-5 no-op: all overflow dropdown tasks were already implemented in step-4. Log-only commit.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-4
 date: 2025-03-04T18:35:25Z
 ---
