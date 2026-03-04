@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-04T03:02:52Z
+---
+
+## step-5: Added useEffect to DeckCanvas for tabDragCoordinator.init(store), updated mock stores with reorderTab/detachTab/mergeTab, added T19-T23 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-4
 date: 2025-03-04T02:52:14Z
 ---

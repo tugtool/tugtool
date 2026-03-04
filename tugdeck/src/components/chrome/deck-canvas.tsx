@@ -64,6 +64,7 @@ import { CardFrame } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
+import { tabDragCoordinator } from "@/tab-drag-coordinator";
 
 // ---- DeckCanvasProps (Spec S04) ----
 
@@ -182,7 +183,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
   //             useRequiredResponderChain -> useCallback -> useState ->
-  //             useResponder -> useEffect
+  //             useResponder -> useEffect(gallery) -> useEffect(coordinator)
 
   // Gallery visibility state -- toggled by show-component-gallery action via
   // action-dispatch (Mac menu) and by the showComponentGallery responder action.
@@ -237,6 +238,17 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   useEffect(() => {
     registerGallerySetter(setGalleryVisible);
   }, []);
+
+  // Provide the coordinator with the store reference so it can call
+  // reorderTab / detachTab / mergeTab on drop. [D07, Spec S04]
+  //
+  // useEffect runs after the first render (after mount), which is always
+  // before any user interaction, so the coordinator is ready before any
+  // tab drag can be attempted. Re-initialization is safe: init() only
+  // overwrites the stored IDeckManagerStore reference; no cleanup needed.
+  useEffect(() => {
+    tabDragCoordinator.init(store);
+  }, [store]);
 
   return (
     <ResponderScope>
