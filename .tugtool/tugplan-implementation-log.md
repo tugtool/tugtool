@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T16:59:30Z
+---
+
+## step-7: Integration checkpoint: verified all 561 tests pass, all grep checks confirm floating panel infrastructure fully removed, cleaned up stale cg-panel comment in tug-dropdown.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: step-6
 date: 2025-03-04T16:54:46Z
 ---
