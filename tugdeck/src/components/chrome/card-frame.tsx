@@ -73,6 +73,22 @@ export interface CardFrameProps {
   onCardClosed: (id: string) => void;
   /** Called on pointer-down anywhere in the frame to bring the card to front. */
   onCardFocused: (id: string) => void;
+  /**
+   * Called when a card drag ends over another card's tab bar ([D45]).
+   *
+   * Receives the source card id, the target card id, and the insertion index
+   * within the target's tab array. The active tab of the source card is merged
+   * into the target card at insertIndex.
+   *
+   * Wired in DeckCanvas to store.mergeTab. When this prop is not provided,
+   * card drag always falls back to onCardMoved (no merge behaviour).
+   */
+  onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
+  /**
+   * The id of the active tab on this card. Used by the merge hit-test in
+   * onPointerUp to determine which tab gets merged into the target card.
+   */
+  activeTabId?: string;
   /** CSS z-index for stacking order. */
   zIndex: number;
   /** Whether this card is the focused (topmost) card. Drives visual focus styles. */
@@ -99,6 +115,8 @@ export function CardFrame({
   renderContent,
   onCardMoved,
   onCardFocused,
+  onCardMerged,
+  activeTabId,
   zIndex,
   isFocused,
 }: CardFrameProps) {
@@ -141,6 +159,46 @@ export function CardFrame({
   const dragCanvasBounds = useRef<DOMRect | null>(null);
   const latestDragPointer = useRef({ x: 0, y: 0 });
 
+  // Track the tab bar element currently highlighted as a merge drop target.
+  // Appearance-zone only: set/cleared via data-drop-target attribute. [D45, Rule 4]
+  const dragDropTargetEl = useRef<HTMLElement | null>(null);
+
+  /**
+   * Snapshot all .tug-tab-bar[data-card-id] elements at drag-start (excluding
+   * our own card). Used for hit-testing during drag and on pointer-up. [D45]
+   */
+  const dragTabBarCache = useRef<Array<{ cardId: string; rect: DOMRect; el: HTMLElement }>>([]);
+
+  /**
+   * Set a tab bar element as the current drag drop target (appearance-zone).
+   * Clears the previous target before applying the new one. [D45, Rule 4]
+   */
+  function setDragDropTarget(el: HTMLElement | null): void {
+    if (dragDropTargetEl.current === el) return;
+    if (dragDropTargetEl.current) {
+      dragDropTargetEl.current.removeAttribute("data-card-drag-target");
+    }
+    dragDropTargetEl.current = el;
+    if (el) {
+      el.setAttribute("data-card-drag-target", "true");
+    }
+  }
+
+  /**
+   * Compute insertion index for a merge into a target tab bar's tab array,
+   * based on pointer X coordinate vs tab midpoints. Uses the same approach
+   * as TabDragCoordinator.computeReorderIndex. [D45]
+   */
+  function computeMergeInsertIndex(barEl: HTMLElement, pointerX: number): number {
+    const tabEls = barEl.querySelectorAll<HTMLElement>('.tug-tab:not([data-overflow="hidden"])');
+    if (tabEls.length === 0) return 0;
+    for (let i = 0; i < tabEls.length; i++) {
+      const rect = tabEls[i].getBoundingClientRect();
+      if (pointerX < rect.left + rect.width / 2) return i;
+    }
+    return tabEls.length;
+  }
+
   const handleDragStart = useCallback(
     (event: React.PointerEvent) => {
       if (!frameRef.current) return;
@@ -157,6 +215,16 @@ export function CardFrame({
       dragStartPosition.current = { x: position.x, y: position.y };
       latestDragPointer.current = { x: event.clientX, y: event.clientY };
 
+      // Build tab bar cache for merge hit-testing. [D45]
+      // Snapshot all .tug-tab-bar[data-card-id] elements (excluding this card).
+      dragTabBarCache.current = [];
+      const barEls = document.querySelectorAll<HTMLElement>(".tug-tab-bar[data-card-id]");
+      barEls.forEach((el) => {
+        const cid = el.getAttribute("data-card-id");
+        if (!cid || cid === id) return;
+        dragTabBarCache.current.push({ cardId: cid, rect: el.getBoundingClientRect(), el });
+      });
+
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
@@ -169,6 +237,19 @@ export function CardFrame({
         );
         frame.style.left = `${pos.x}px`;
         frame.style.top = `${pos.y}px`;
+
+        // Hit-test tab bars for drop target visual feedback. [D45, Rule 4]
+        const cx = latestDragPointer.current.x;
+        const cy = latestDragPointer.current.y;
+        let found: HTMLElement | null = null;
+        for (const entry of dragTabBarCache.current) {
+          const r = entry.rect;
+          if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+            found = entry.el;
+            break;
+          }
+        }
+        setDragDropTarget(found);
       }
 
       function onPointerMove(e: PointerEvent) {
@@ -189,6 +270,32 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
+        // Clear drop target highlight before committing. [D45, Rule 4]
+        setDragDropTarget(null);
+        // Belt-and-suspenders: clear attribute on all cached bar elements.
+        for (const entry of dragTabBarCache.current) {
+          entry.el.removeAttribute("data-card-drag-target");
+        }
+
+        // Hit-test tab bars for merge on drop. [D45]
+        // If the pointer is inside a tab bar belonging to a different card,
+        // call onCardMerged instead of onCardMoved.
+        if (onCardMerged && activeTabId) {
+          const cx = e.clientX;
+          const cy = e.clientY;
+          for (const entry of dragTabBarCache.current) {
+            const r = entry.rect;
+            if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+              const insertIndex = computeMergeInsertIndex(entry.el, cx);
+              onCardMerged(id, entry.cardId, insertIndex);
+              dragTabBarCache.current = [];
+              return;
+            }
+          }
+        }
+
+        dragTabBarCache.current = [];
+
         const finalPos = clampedPosition(
           { x: e.clientX, y: e.clientY },
           dragStartPointer.current,
@@ -204,9 +311,10 @@ export function CardFrame({
       frame.addEventListener("pointermove", onPointerMove);
       frame.addEventListener("pointerup", onPointerUp);
     },
-    // position.x/y captured into dragStartPosition at drag-start; id and onCardMoved are stable.
+    // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
+    // onCardMerged, and activeTabId are stable or handled via closure capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, position.x, position.y],
+    [id, onCardMoved, onCardMerged, activeTabId, position.x, position.y],
   );
 
   // ---------------------------------------------------------------------------

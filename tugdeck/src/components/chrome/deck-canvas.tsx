@@ -345,6 +345,17 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             onCardMoved={store.handleCardMoved}
             onCardClosed={handleClose}
             onCardFocused={handleCardFocused}
+            onCardMerged={(sourceCardId, targetCardId, insertIndex) => {
+              // Resolve the active tab id from the source card at commit time.
+              // store.mergeTab takes (sourceCardId, tabId, targetCardId, insertAtIndex).
+              // [D45]
+              const snapshot = store.getSnapshot();
+              const sourceCard = snapshot.cards.find((c) => c.id === sourceCardId);
+              if (!sourceCard) return;
+              const tabId = sourceCard.activeTabId;
+              store.mergeTab(sourceCardId, tabId, targetCardId, insertIndex);
+            }}
+            activeTabId={cardState.activeTabId}
             renderContent={(injected) => {
               // Fork rendering based on tab count (Spec S05, D08).
               //
