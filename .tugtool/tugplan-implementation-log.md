@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-04T18:41:40Z
+---
+
+## step-6: Verification-only step: full test suite 590/590, build clean, all step 1-5 artifacts confirmed present and working together
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-5
 date: 2025-03-04T18:37:58Z
 ---
