@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-04T22:58:00Z
+---
+
+## step-3: Added computeCornerRadii (pure function with Spec S02 directional matching and OR corner logic), applySetCorners (DOM mutation for set members), and resetCorners (clears inline border-radius) as module-level helpers in card-frame.tsx
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-2
 date: 2025-03-04T22:54:14Z
 ---

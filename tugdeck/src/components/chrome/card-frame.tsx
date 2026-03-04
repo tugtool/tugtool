@@ -29,7 +29,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, findSharedEdges, computeSets } from "@/snap";
-import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -788,4 +788,100 @@ function resizeDelta(
   }
 
   return { left, top, width, height };
+}
+
+// ---------------------------------------------------------------------------
+// Corner-radius helpers (appearance-zone, [D53], Spec S02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute per-corner border-radius values for a card in a set.
+ *
+ * Uses directional SharedEdge matching per Spec S02:
+ * - right edge has neighbor: vertical edge where cardAId === cardId
+ * - left edge has neighbor: vertical edge where cardBId === cardId
+ * - bottom edge has neighbor: horizontal edge where cardAId === cardId
+ * - top edge has neighbor: horizontal edge where cardBId === cardId
+ *
+ * Corner squaring uses OR logic: a corner is squared if EITHER forming edge
+ * has a neighbor. See Spec S02 for rationale.
+ *
+ * @param cardId - The card whose corners to compute.
+ * @param sharedEdges - All shared edges among the set's cards.
+ * @param radiusValue - CSS value for rounded corners (e.g. "6px" or "var(--td-radius-md)").
+ * @returns Per-corner radius strings (topLeft, topRight, bottomRight, bottomLeft).
+ */
+export function computeCornerRadii(
+  cardId: string,
+  sharedEdges: SharedEdge[],
+  radiusValue: string,
+): { topLeft: string; topRight: string; bottomRight: string; bottomLeft: string } {
+  // Determine which edges of this card have a neighbor.
+  // right edge: this card is on the left (cardAId) of a vertical shared edge
+  const hasRightNeighbor = sharedEdges.some(
+    (e) => e.axis === "vertical" && e.cardAId === cardId,
+  );
+  // left edge: this card is on the right (cardBId) of a vertical shared edge
+  const hasLeftNeighbor = sharedEdges.some(
+    (e) => e.axis === "vertical" && e.cardBId === cardId,
+  );
+  // bottom edge: this card is on top (cardAId) of a horizontal shared edge
+  const hasBottomNeighbor = sharedEdges.some(
+    (e) => e.axis === "horizontal" && e.cardAId === cardId,
+  );
+  // top edge: this card is on bottom (cardBId) of a horizontal shared edge
+  const hasTopNeighbor = sharedEdges.some(
+    (e) => e.axis === "horizontal" && e.cardBId === cardId,
+  );
+
+  // Square a corner if either forming edge has a neighbor (OR logic per Spec S02).
+  const topLeft = hasTopNeighbor || hasLeftNeighbor ? "0" : radiusValue;
+  const topRight = hasTopNeighbor || hasRightNeighbor ? "0" : radiusValue;
+  const bottomRight = hasBottomNeighbor || hasRightNeighbor ? "0" : radiusValue;
+  const bottomLeft = hasBottomNeighbor || hasLeftNeighbor ? "0" : radiusValue;
+
+  return { topLeft, topRight, bottomRight, bottomLeft };
+}
+
+/**
+ * Apply per-corner border-radius squaring to all .tugcard elements in a set.
+ *
+ * For each card in setCardIds, finds its .tugcard via
+ * `.card-frame[data-card-id] .tugcard`, computes corner radii using
+ * computeCornerRadii, and applies via style.borderRadius shorthand
+ * (CSS order: top-left top-right bottom-right bottom-left). [D53, Spec S02]
+ *
+ * @param setCardIds - IDs of all cards in the set.
+ * @param sharedEdges - All shared edges among the set's cards.
+ * @param radiusValue - CSS value for rounded corners (e.g. "6px").
+ */
+export function applySetCorners(
+  setCardIds: string[],
+  sharedEdges: SharedEdge[],
+  radiusValue: string,
+): void {
+  for (const cardId of setCardIds) {
+    const frameEl = document.querySelector<HTMLElement>(
+      `.card-frame[data-card-id="${cardId}"]`,
+    );
+    if (!frameEl) continue;
+    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
+    if (!tugcardEl) continue;
+    const radii = computeCornerRadii(cardId, sharedEdges, radiusValue);
+    // CSS shorthand order: top-left top-right bottom-right bottom-left
+    tugcardEl.style.borderRadius =
+      `${radii.topLeft} ${radii.topRight} ${radii.bottomRight} ${radii.bottomLeft}`;
+  }
+}
+
+/**
+ * Reset all four border-radius corners on the .tugcard inside a frame element
+ * to the CSS default (clears the inline style, reverting to var(--td-radius-md)).
+ *
+ * @param cardFrameEl - The .card-frame element containing the .tugcard.
+ */
+export function resetCorners(cardFrameEl: HTMLElement): void {
+  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
+  if (!tugcardEl) return;
+  tugcardEl.style.borderRadius = "";
 }
