@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T00:22:19Z
+---
+
+## step-7: Wired add-tab command: registerResponderChainManager in action-dispatch.ts, registration in responder-chain-provider.tsx, addTab responder action in DeckCanvas targeting topmost card, Add Tab menu item in AppDelegate.swift Developer menu. Added 6 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-6
 date: 2025-03-04T00:14:29Z
 ---

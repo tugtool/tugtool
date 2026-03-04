@@ -215,6 +215,19 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
       showComponentGallery: () => {
         setGalleryVisible((prev) => !prev);
       },
+      // addTab: Add a new "hello" tab to the topmost card (last in array).
+      // Reads cardsRef so the closure never goes stale. If no cards exist,
+      // this is a no-op. The componentId "hello" is intentionally hardcoded
+      // because it is the only registered card type in Phase 5; parameterized
+      // componentId dispatch is deferred until payload support is added.
+      // [D06] Add-tab action uses DeckManager + responder chain
+      // [D09] Add-tab routed as DeckCanvas responder action
+      addTab: () => {
+        const c = cardsRef.current;
+        if (c.length === 0) return;
+        const focusedCard = c[c.length - 1]; // topmost card
+        store.addTab(focusedCard.id, "hello");
+      },
     },
   });
 

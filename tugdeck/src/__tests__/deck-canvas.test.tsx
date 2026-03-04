@@ -839,3 +839,121 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via cloneElem
     expect(closedIds[0]).toBe("target-card");
   });
 });
+
+// ============================================================================
+// Step 7: addTab responder action wired in DeckCanvas
+// ============================================================================
+
+describe("DeckCanvas – Step 7: addTab responder action", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("registers 'addTab' as a dispatchable action on the responder chain", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    expect(manager!.canHandle("addTab")).toBe(true);
+  });
+
+  it("dispatching addTab with a focused card calls store.addTab with the card id and 'hello'", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const addTabCalls: Array<{ cardId: string; componentId: string }> = [];
+    const card = makeCardState("focused-card", "hello");
+    const store = makeMockStore(makeDeckState([card]));
+    store.addTab = (cardId, componentId) => {
+      addTabCalls.push({ cardId, componentId });
+      return null;
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    act(() => {
+      manager!.dispatch("addTab");
+    });
+
+    expect(addTabCalls.length).toBe(1);
+    expect(addTabCalls[0].cardId).toBe("focused-card");
+    expect(addTabCalls[0].componentId).toBe("hello");
+  });
+
+  it("dispatching addTab with no cards is a silent no-op", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const addTabCalls: Array<unknown> = [];
+    const store = makeMockStore({ cards: [] });
+    store.addTab = (cardId, componentId) => {
+      addTabCalls.push({ cardId, componentId });
+      return null;
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    act(() => {
+      manager!.dispatch("addTab");
+    });
+
+    expect(addTabCalls.length).toBe(0);
+  });
+});
