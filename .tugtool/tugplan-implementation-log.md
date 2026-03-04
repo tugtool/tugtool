@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-04T16:22:45Z
+---
+
+## step-2: Added acceptedFamilies prop to TugTabBar; type picker now filters registrations by family field; added tests for developer-family filtering and default standard-family behavior
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: step-1
 date: 2025-03-04T16:16:40Z
 ---
