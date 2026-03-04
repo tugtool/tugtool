@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-04T18:28:28Z
+---
+
+## step-3: Added VISIBLE_TAB_SELECTOR constant, updated computeReorderIndex and updateInsertionIndicator to exclude hidden tabs, added isDragging getter, plus 5 new tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-2
 date: 2025-03-04T18:24:06Z
 ---

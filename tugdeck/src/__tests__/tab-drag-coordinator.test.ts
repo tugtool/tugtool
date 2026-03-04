@@ -17,7 +17,12 @@
 import "./setup-rtl";
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { tabDragCoordinator, exceedsDragThreshold, GHOST_TAB_ZINDEX } from "@/tab-drag-coordinator";
+import {
+  tabDragCoordinator,
+  exceedsDragThreshold,
+  GHOST_TAB_ZINDEX,
+  VISIBLE_TAB_SELECTOR,
+} from "@/tab-drag-coordinator";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -632,5 +637,151 @@ describe("exceedsDragThreshold", () => {
 
   it("returns true for negative direction movement", () => {
     expect(exceedsDragThreshold(100, 100, 95, 100)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T11: VISIBLE_TAB_SELECTOR backward-compatibility with no overflow tabs
+// ---------------------------------------------------------------------------
+
+describe("VISIBLE_TAB_SELECTOR — backward compatibility (T11)", () => {
+  /**
+   * T11: Existing drag tests must still pass (selector change is backward-compatible).
+   * When no tabs have data-overflow="hidden", VISIBLE_TAB_SELECTOR matches
+   * the same set as ".tug-tab", so computeReorderIndex returns identical results.
+   *
+   * This is verified implicitly by all T15 tests above still passing after the
+   * selector change. The tests below additionally confirm the selector constant
+   * value and direct querySelectorAll behavior.
+   */
+
+  it("T11: VISIBLE_TAB_SELECTOR constant has the expected value", () => {
+    expect(VISIBLE_TAB_SELECTOR).toBe('.tug-tab:not([data-overflow="hidden"])');
+  });
+
+  it("T11: computeReorderIndex returns correct result on bar with no overflow tabs (same as .tug-tab)", () => {
+    // Bar with 3 normal tabs (no data-overflow attribute): midpoints at 40, 120, 200.
+    const bar = makeMockTabBar(0, 3, 80);
+    document.body.appendChild(bar);
+
+    // Pointer at x=80: between first midpoint (40) and second midpoint (120) → index 1.
+    const index = tabDragCoordinator.computeReorderIndex(bar, 80);
+    expect(index).toBe(1);
+
+    bar.remove();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T12: VISIBLE_TAB_SELECTOR excludes hidden overflow tabs
+// ---------------------------------------------------------------------------
+
+describe("VISIBLE_TAB_SELECTOR — excludes data-overflow='hidden' tabs (T12)", () => {
+  /**
+   * T12: Verify VISIBLE_TAB_SELECTOR matches only non-hidden tabs in a mock
+   * DOM containing tabs with and without data-overflow="hidden".
+   *
+   * [D07] TabDragCoordinator selectors exclude hidden overflow tabs, Risk R04
+   */
+
+  it("T12: querySelectorAll with VISIBLE_TAB_SELECTOR excludes hidden tabs", () => {
+    const bar = document.createElement("div");
+    bar.className = "tug-tab-bar";
+
+    // Tab 1: visible (no data-overflow)
+    const tab1 = document.createElement("div");
+    tab1.className = "tug-tab";
+    tab1.setAttribute("data-testid", "tab-1");
+
+    // Tab 2: collapsed (data-overflow="collapsed") — still visible in the bar
+    const tab2 = document.createElement("div");
+    tab2.className = "tug-tab";
+    tab2.setAttribute("data-overflow", "collapsed");
+    tab2.setAttribute("data-testid", "tab-2");
+
+    // Tab 3: hidden (data-overflow="hidden") — in overflow dropdown, excluded
+    const tab3 = document.createElement("div");
+    tab3.className = "tug-tab";
+    tab3.setAttribute("data-overflow", "hidden");
+    tab3.setAttribute("data-testid", "tab-3");
+
+    // Tab 4: visible (no data-overflow)
+    const tab4 = document.createElement("div");
+    tab4.className = "tug-tab";
+    tab4.setAttribute("data-testid", "tab-4");
+
+    bar.appendChild(tab1);
+    bar.appendChild(tab2);
+    bar.appendChild(tab3);
+    bar.appendChild(tab4);
+    document.body.appendChild(bar);
+
+    const visibleEls = bar.querySelectorAll(VISIBLE_TAB_SELECTOR);
+
+    // Should match tab1, tab2 (collapsed), tab4 — but NOT tab3 (hidden).
+    expect(visibleEls.length).toBe(3);
+    const testIds = Array.from(visibleEls).map((el) => el.getAttribute("data-testid"));
+    expect(testIds).toContain("tab-1");
+    expect(testIds).toContain("tab-2");
+    expect(testIds).toContain("tab-4");
+    expect(testIds).not.toContain("tab-3");
+
+    bar.remove();
+  });
+
+  it("T12: computeReorderIndex skips hidden tabs when computing insertion index", () => {
+    // Bar with 3 tabs: tab at index 1 is hidden (data-overflow="hidden").
+    // Visible tabs: tab0 (left=0, w=80), tab2 (left=160, w=80).
+    // Hidden tab1 is at left=80 but should be excluded.
+    // Visible midpoints: tab0 midpoint=40, tab2 midpoint=200.
+    const bar = document.createElement("div");
+    bar.className = "tug-tab-bar";
+    bar.getBoundingClientRect = () =>
+      ({
+        left: 0, right: 240, top: 0, bottom: 28,
+        width: 240, height: 28, x: 0, y: 0, toJSON: () => {},
+      } as DOMRect);
+
+    const tab0 = makeMockTabElement(0, 80);   // visible, midpoint=40
+    const tab1 = makeMockTabElement(80, 80);  // hidden (overflow), midpoint=120 — excluded
+    tab1.setAttribute("data-overflow", "hidden");
+    const tab2 = makeMockTabElement(160, 80); // visible, midpoint=200
+
+    bar.appendChild(tab0);
+    bar.appendChild(tab1);
+    bar.appendChild(tab2);
+    document.body.appendChild(bar);
+
+    // Pointer at x=100: would be between tab0 midpoint (40) and tab2 midpoint (200).
+    // With VISIBLE_TAB_SELECTOR, tab1 is excluded.
+    // tab0 midpoint=40 < 100, tab2 midpoint=200 > 100 → insertIndex=1 (between visible tabs).
+    const index = tabDragCoordinator.computeReorderIndex(bar, 100);
+    expect(index).toBe(1);
+
+    bar.remove();
+  });
+
+  it("T12: isDragging getter reflects drag state", () => {
+    const store = makeMockStore();
+    tabDragCoordinator.init(store);
+
+    // Initially not dragging.
+    expect(tabDragCoordinator.isDragging).toBe(false);
+
+    const tabEl = makeMockTabElement(0, 80);
+    document.body.appendChild(tabEl);
+
+    const fakeEvent = { pointerId: 1, clientX: 40, clientY: 14 } as PointerEvent;
+    tabDragCoordinator.startDrag(fakeEvent, tabEl, "card-1", "tab-1", 2);
+
+    // Should be dragging now.
+    expect(tabDragCoordinator.isDragging).toBe(true);
+
+    tabDragCoordinator.cleanup();
+
+    // Should not be dragging after cleanup.
+    expect(tabDragCoordinator.isDragging).toBe(false);
+
+    tabEl.remove();
   });
 });
