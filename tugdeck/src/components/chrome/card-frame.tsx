@@ -28,6 +28,21 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
+import { computeSnap, findSharedEdges, computeSets } from "@/snap";
+import type { Rect, GuidePosition, SnapResult } from "@/snap";
+
+// ---------------------------------------------------------------------------
+// Snap modifier key configuration [D01]
+//
+// To change the snap modifier, update SNAP_MODIFIER_KEY. All behavior follows.
+// ---------------------------------------------------------------------------
+
+const SNAP_MODIFIER_KEY: keyof Pick<PointerEvent, "altKey" | "ctrlKey" | "shiftKey" | "metaKey"> =
+  "altKey";
+
+function isSnapModifier(e: PointerEvent): boolean {
+  return e[SNAP_MODIFIER_KEY];
+}
 
 // ---------------------------------------------------------------------------
 // Types (Spec S04)
@@ -169,6 +184,22 @@ export function CardFrame({
    */
   const dragTabBarCache = useRef<Array<{ cardId: string; rect: DOMRect; el: HTMLElement }>>([]);
 
+  // Snap-related refs [D01, D03, D04]
+  // Other card rects snapshotted at drag-start (canvas-relative, keyed by id). [D04]
+  const dragOtherRects = useRef<{ id: string; rect: Rect }[]>([]);
+  // Active snap guide DOM elements for cleanup. [D03]
+  const dragGuideEls = useRef<HTMLElement[]>([]);
+  // Set member card ids and frame elements (empty if not in a set). [D02]
+  const dragSetMembers = useRef<{ id: string; el: HTMLElement }[]>([]);
+  // Parallel to dragSetMembers: original DOM positions at drag-start. [D02]
+  const dragSetOrigins = useRef<{ x: number; y: number }[]>([]);
+  // Snap modifier state from latest pointer event. [D01]
+  const latestSnapModifier = useRef(false);
+  // Previous frame's snap modifier value for break-out transition detection. [D05]
+  const prevSnapModifier = useRef(false);
+  // Most recent snap result, carried from rAF closure to onPointerUp. [D01]
+  const lastSnapResult = useRef<SnapResult | null>(null);
+
   /**
    * Set a tab bar element as the current drag drop target (appearance-zone).
    * Clears the previous target before applying the new one. [D45, Rule 4]
@@ -199,6 +230,55 @@ export function CardFrame({
     return tabEls.length;
   }
 
+  /**
+   * Render snap guide DOM elements from a list of guide positions. [D03]
+   * Creates or reuses <div> elements with .snap-guide-line CSS classes.
+   * Appends to container; removes excess guide elements.
+   */
+  function syncGuides(guides: GuidePosition[], container: HTMLElement): void {
+    // Create or update guide elements
+    for (let i = 0; i < guides.length; i++) {
+      const guide = guides[i];
+      let el = dragGuideEls.current[i];
+      if (!el) {
+        el = document.createElement("div");
+        el.classList.add("snap-guide-line");
+        container.appendChild(el);
+        dragGuideEls.current.push(el);
+      }
+      // Reset axis classes
+      el.classList.remove("snap-guide-line-x", "snap-guide-line-y");
+      if (guide.axis === "x") {
+        el.classList.add("snap-guide-line-x");
+        el.style.left = `${guide.position}px`;
+        el.style.top = "";
+      } else {
+        el.classList.add("snap-guide-line-y");
+        el.style.top = `${guide.position}px`;
+        el.style.left = "";
+      }
+    }
+    // Remove excess guide elements
+    while (dragGuideEls.current.length > guides.length) {
+      const excess = dragGuideEls.current.pop();
+      if (excess && excess.parentNode) {
+        excess.parentNode.removeChild(excess);
+      }
+    }
+  }
+
+  /**
+   * Remove all snap guide elements from the DOM and clear tracking ref. [D03]
+   */
+  function clearGuides(): void {
+    for (const el of dragGuideEls.current) {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }
+    dragGuideEls.current = [];
+  }
+
   const handleDragStart = useCallback(
     (event: React.PointerEvent) => {
       if (!frameRef.current) return;
@@ -225,6 +305,66 @@ export function CardFrame({
         dragTabBarCache.current.push({ cardId: cid, rect: el.getBoundingClientRect(), el });
       });
 
+      // Snapshot other card rects at drag-start for snap computation. [D04]
+      // Convert to canvas-relative coordinates by subtracting canvas bounds offset.
+      const canvasBounds = dragCanvasBounds.current;
+      dragOtherRects.current = [];
+      const cardFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+      cardFrameEls.forEach((el) => {
+        const cid = el.getAttribute("data-card-id");
+        if (!cid || cid === id) return;
+        const domRect = el.getBoundingClientRect();
+        const rect: Rect = {
+          x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+          y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+          width: domRect.width,
+          height: domRect.height,
+        };
+        dragOtherRects.current.push({ id: cid, rect });
+      });
+
+      // Compute set membership at drag-start for set-move behavior. [D02]
+      // Build allCardRects with this card prepended.
+      const thisRect: Rect = {
+        x: position.x,
+        y: position.y,
+        width: frame.offsetWidth,
+        height: frame.offsetHeight,
+      };
+      const allCardRects = [{ id, rect: thisRect }, ...dragOtherRects.current];
+      const sharedEdges = findSharedEdges(allCardRects);
+      const sets = computeSets(
+        allCardRects.map((c) => c.id),
+        sharedEdges,
+      );
+
+      // Find the set this card belongs to (if any).
+      dragSetMembers.current = [];
+      dragSetOrigins.current = [];
+      for (const cardSet of sets) {
+        if (cardSet.cardIds.includes(id) && cardSet.cardIds.length >= 2) {
+          for (const memberId of cardSet.cardIds) {
+            if (memberId === id) continue;
+            const memberEl = document.querySelector<HTMLElement>(
+              `.card-frame[data-card-id="${memberId}"]`,
+            );
+            if (memberEl) {
+              dragSetMembers.current.push({ id: memberId, el: memberEl });
+              dragSetOrigins.current.push({
+                x: parseFloat(memberEl.style.left) || 0,
+                y: parseFloat(memberEl.style.top) || 0,
+              });
+            }
+          }
+          break;
+        }
+      }
+
+      // Initialize snap modifier state. [D01]
+      latestSnapModifier.current = false;
+      prevSnapModifier.current = false;
+      lastSnapResult.current = null;
+
       function applyDragFrame() {
         dragRafId.current = null;
         if (!dragActive.current) return;
@@ -235,6 +375,75 @@ export function CardFrame({
           dragCanvasBounds.current,
           { width: frame.offsetWidth, height: frame.offsetHeight },
         );
+
+        // Break-out detection: snap modifier pressed during set-move. [D05]
+        // If modifier transitions false->true while set members exist, detach.
+        if (
+          dragSetMembers.current.length > 0 &&
+          latestSnapModifier.current === true &&
+          prevSnapModifier.current === false
+        ) {
+          // Commit each set member's current DOM position to the store.
+          for (const member of dragSetMembers.current) {
+            const memberPos = {
+              x: parseFloat(member.el.style.left) || 0,
+              y: parseFloat(member.el.style.top) || 0,
+            };
+            const memberSize = {
+              width: member.el.offsetWidth,
+              height: member.el.offsetHeight,
+            };
+            onCardMoved(member.id, memberPos, memberSize);
+          }
+          // Detach: clear set members so this card enters snap mode.
+          dragSetMembers.current = [];
+          dragSetOrigins.current = [];
+        }
+
+        // Update previous snap modifier for next frame's break-out check.
+        prevSnapModifier.current = latestSnapModifier.current;
+
+        // Determine behavior based on modifier and set membership.
+        if (latestSnapModifier.current && dragSetMembers.current.length === 0) {
+          // Snap mode: modifier held, solo card or just broke out. [D01]
+          const movingRect: Rect = {
+            x: pos.x,
+            y: pos.y,
+            width: frame.offsetWidth,
+            height: frame.offsetHeight,
+          };
+          const snapResult = computeSnap(
+            movingRect,
+            dragOtherRects.current.map((r) => r.rect),
+          );
+          lastSnapResult.current = snapResult;
+          if (snapResult.x !== null) {
+            pos.x = snapResult.x;
+          }
+          if (snapResult.y !== null) {
+            pos.y = snapResult.y;
+          }
+          // Render snap guides via DOM manipulation. [D03]
+          const container = frame.parentElement;
+          if (container) {
+            syncGuides(snapResult.guides, container);
+          }
+        } else if (!latestSnapModifier.current && dragSetMembers.current.length === 0) {
+          // Free drag: solo card, no snap modifier. Clear guides and snap result.
+          lastSnapResult.current = null;
+          clearGuides();
+        } else if (dragSetMembers.current.length > 0 && !latestSnapModifier.current) {
+          // Set-move: modifier not held, move all set members by pointer displacement. [D02]
+          const deltaX = latestDragPointer.current.x - dragStartPointer.current.x;
+          const deltaY = latestDragPointer.current.y - dragStartPointer.current.y;
+          for (let i = 0; i < dragSetMembers.current.length; i++) {
+            const member = dragSetMembers.current[i];
+            const origin = dragSetOrigins.current[i];
+            member.el.style.left = `${origin.x + deltaX}px`;
+            member.el.style.top = `${origin.y + deltaY}px`;
+          }
+        }
+
         frame.style.left = `${pos.x}px`;
         frame.style.top = `${pos.y}px`;
 
@@ -254,6 +463,8 @@ export function CardFrame({
 
       function onPointerMove(e: PointerEvent) {
         latestDragPointer.current = { x: e.clientX, y: e.clientY };
+        // Update snap modifier state from pointer event. [D01]
+        latestSnapModifier.current = isSnapModifier(e);
         if (dragRafId.current === null) {
           dragRafId.current = requestAnimationFrame(applyDragFrame);
         }
@@ -270,6 +481,10 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
+        // Remove snap guides immediately on drop. [D03]
+        // Must happen before any early return (e.g. merge) to prevent guide leaks.
+        clearGuides();
+
         // Clear drop target highlight before committing. [D45, Rule 4]
         setDragDropTarget(null);
         // Belt-and-suspenders: clear attribute on all cached bar elements.
@@ -278,8 +493,7 @@ export function CardFrame({
         }
 
         // Hit-test tab bars for merge on drop. [D45]
-        // If the pointer is inside a tab bar belonging to a different card,
-        // call onCardMerged instead of onCardMoved.
+        // Merge takes priority over snap-on-drop. [D06]
         if (onCardMerged && activeTabId) {
           const cx = e.clientX;
           const cy = e.clientY;
@@ -289,6 +503,13 @@ export function CardFrame({
               const insertIndex = computeMergeInsertIndex(entry.el, cx);
               onCardMerged(id, entry.cardId, insertIndex);
               dragTabBarCache.current = [];
+              // Reset all snap/set state before returning.
+              dragOtherRects.current = [];
+              dragSetMembers.current = [];
+              dragSetOrigins.current = [];
+              latestSnapModifier.current = false;
+              prevSnapModifier.current = false;
+              lastSnapResult.current = null;
               return;
             }
           }
@@ -296,16 +517,46 @@ export function CardFrame({
 
         dragTabBarCache.current = [];
 
-        const finalPos = clampedPosition(
+        // Compute final position for the dragged card. [S03]
+        const clampedPos = clampedPosition(
           { x: e.clientX, y: e.clientY },
           dragStartPointer.current,
           dragStartPosition.current,
           dragCanvasBounds.current,
           { width: frame.offsetWidth, height: frame.offsetHeight },
         );
+
+        // Apply snapped position if snap was active at drop. [S03 priority 2]
+        const snapResult = lastSnapResult.current;
+        const finalPos = {
+          x: snapResult && snapResult.x !== null ? snapResult.x : clampedPos.x,
+          y: snapResult && snapResult.y !== null ? snapResult.y : clampedPos.y,
+        };
+
         frame.style.left = `${finalPos.x}px`;
         frame.style.top = `${finalPos.y}px`;
         onCardMoved(id, finalPos, { width: frame.offsetWidth, height: frame.offsetHeight });
+
+        // Commit set members' final positions if set-move completed without break-out. [D02]
+        for (const member of dragSetMembers.current) {
+          const memberPos = {
+            x: parseFloat(member.el.style.left) || 0,
+            y: parseFloat(member.el.style.top) || 0,
+          };
+          const memberSize = {
+            width: member.el.offsetWidth,
+            height: member.el.offsetHeight,
+          };
+          onCardMoved(member.id, memberPos, memberSize);
+        }
+
+        // Reset all snap/set state.
+        dragOtherRects.current = [];
+        dragSetMembers.current = [];
+        dragSetOrigins.current = [];
+        latestSnapModifier.current = false;
+        prevSnapModifier.current = false;
+        lastSnapResult.current = null;
       }
 
       frame.addEventListener("pointermove", onPointerMove);
