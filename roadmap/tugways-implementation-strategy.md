@@ -445,6 +445,27 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: Casual drags are free movement. Option+drag activates snap guides and set formation. Existing set-move and break-out behavior preserved.
 
+### Phase 5c2: Card Snap Set Refinements (Concept 13, [D53]-[D56])
+
+**Goal**: Snapped card sets look and behave like unified shapes — squared internal corners, single-line borders, outer-hull perimeter flash, and clean break-out visuals.
+
+**What to do**:
+1. **Border collapse in snap math** ([D56]): modify `computeSnap` in `snap.ts` to accept a `borderWidth` parameter. When a snap alignment is found, offset the snap position inward by `borderWidth` so the snapping card's border overlaps the neighbor's border. The caller reads the actual computed border width via `getComputedStyle(tugcardEl).borderTopWidth` and passes it in. No hardcoded pixel values — handles fractional positions correctly.
+2. **Set corner rounding** ([D53]): after a set is formed on pointer-up, compute which corners of each set member face the interior vs. exterior. Set interior-facing corners to `border-radius: 0` and exterior-facing corners to `var(--td-radius-md)` via direct DOM mutation on the `.tugcard` element. Use the shared-edge data from `findSharedEdges` to determine adjacency per corner.
+3. **Outer-hull perimeter flash** ([D54]): modify the set-flash logic to suppress the border on internal edges. Each card in the set gets a `.set-flash-overlay`, but with `border-top/right/bottom/left` selectively set to `none` on edges that face another set member. The overlay's `border-radius` matches the card's current corner rounding (squared at seams, rounded at exterior).
+4. **Break-out visual restoration** ([D55]): when a card detaches from a set (modifier pressed during set-move), immediately restore all four corners to `var(--td-radius-md)` via DOM mutation. Recompute remaining set members' corners to reflect the new topology. Flash the detached card's full perimeter (all four edges, standard `.set-flash-overlay`).
+5. **Corner rounding on free drag** : when a card that was in a set is freely dragged (not as part of set-move), restore rounded corners at drag-start so the card looks independent during the drag.
+6. **CSS additions**: add utility rules for per-edge border suppression on `.set-flash-overlay` (e.g., `.set-flash-no-top { border-top: none; }`, etc.) to `chrome.css`.
+
+**Files modified**:
+1. `tugdeck/src/snap.ts` — `computeSnap` gains `borderWidth` parameter, snap positions offset accordingly
+2. `tugdeck/src/components/chrome/card-frame.tsx` — corner rounding logic, flash edge suppression, break-out restoration, border-width read
+3. `tugdeck/styles/chrome.css` — per-edge flash border suppression utility classes
+
+**Result**: Snapped sets look like unified shapes with clean single-line borders, squared internal corners, rounded outer hull, and perimeter flash that traces only the exterior boundary. Break-out cleanly restores the detached card's visual independence.
+
+**Note**: Phase 5c2 depends on Phase 5c (snap and set-move must exist). It does not block any other phase.
+
 ### Phase 5d: Default Button (Concept 3, [D39])
 
 **Goal**: Dialogs, alerts, sheets, and popovers can designate a default button. Enter activates it. The `primary` variant is the visual affordance.
@@ -635,7 +656,12 @@ Responder Chain  Mutation Model                              │
              ▼          ▼          ▼          ▼      ▼       ▼
          Phase 5b:  Phase 5c:  Phase 5d:  Phase 6:  Phase 7:
          Card Tabs  Card Snap  Default    Feed Abs. Motion
-             │                 Button               ◄── (tokens from Phase 1)
+                        │      Button               ◄── (tokens from Phase 1)
+                        ▼
+                    Phase 5c2:
+                    Snap Set
+                    Refinements
+             │                    │
              ├────────┐            │
              ▼        ▼            ▼
          Phase 5b2: Phase 5b3: Phase 8a:
@@ -680,7 +706,8 @@ wave builds on the previous) and depend on Phase 2 (Component Gallery exists) an
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
 motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
 the component library (Phases 8b–8d) for form controls, data display, and visualization.
-Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
+Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, 5c2, and 5d are enhancements that can land before, during, or after Phase 9.
+Phase 5c2 (Card Snap Set Refinements) depends on Phase 5c (snap and set-move must exist). It adds set visual identity: corner rounding, perimeter flash, border collapse, and break-out restoration.
 Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab state must exist).
 Phase 5b3 (Gallery Card) depends on Phase 5b (tab system must exist). It does not depend on Phase 5b2.
 Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not depend on Phase 5b2 or 5b3, though both benefit from overflow handling.
@@ -706,6 +733,7 @@ Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durabl
 | 5b4 | ~3 files | ~300 lines |
 | 5b5 | ~2 files | ~100 lines |
 | 5c | ~1 file | ~50 lines |
+| 5c2 | ~3 files | ~200 lines |
 | 5d | ~3 files | ~150 lines |
 | 5e | ~10 files | ~1500 lines |
 | 5f | ~6 files | ~500 lines |
@@ -749,16 +777,17 @@ The suggested plan sequence:
 12. `tugways-phase-5b4-tab-overflow` — progressive tab collapse: icon-only, then overflow dropdown
 13. `tugways-phase-5b5-tab-refinements` — card-as-tab merge, additional refinements
 14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets, `Geometric engine` section features used
-15. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-16. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
-17. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-18. `tugways-phase-6-feed` — feed hooks, data flow
-19. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-20. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-21. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-22. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-23. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-24. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+15. `tugways-phase-5c2-card-snapping-refinements` — set corner rounding, outer-hull perimeter flash, break-out restoration, border collapse
+16. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
+17. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
+18. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
+19. `tugways-phase-6-feed` — feed hooks, data flow
+20. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+21. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+22. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+23. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+24. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+25. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 
