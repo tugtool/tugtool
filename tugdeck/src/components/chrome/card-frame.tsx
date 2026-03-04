@@ -29,7 +29,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, findSharedEdges, computeSets } from "@/snap";
-import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -199,6 +199,9 @@ export function CardFrame({
   const prevSnapModifier = useRef(false);
   // Most recent snap result, carried from rAF closure to onPointerUp. [D01]
   const lastSnapResult = useRef<SnapResult | null>(null);
+  // Computed border width of the .tugcard element, read once at drag-start. [D56]
+  // Passed to computeSnap so adjacent card borders collapse into a single visual line.
+  const dragBorderWidth = useRef(0);
 
   /**
    * Set a tab bar element as the current drag drop target (appearance-zone).
@@ -360,6 +363,17 @@ export function CardFrame({
         }
       }
 
+      // Read .tugcard computed border width once at drag-start for border collapse. [D56]
+      // Parsed to a number for use as computeSnap's borderWidth parameter.
+      const tugcardEl = frame.querySelector<HTMLElement>(".tugcard");
+      dragBorderWidth.current = tugcardEl
+        ? parseFloat(getComputedStyle(tugcardEl).borderTopWidth) || 0
+        : 0;
+
+      // Reset corners on the dragged card only at drag-start. [D53]
+      // Other cards' corner state is managed by their own set membership and must not be disturbed.
+      resetCorners(frame);
+
       // Initialize snap modifier state. [D01]
       latestSnapModifier.current = false;
       prevSnapModifier.current = false;
@@ -383,8 +397,11 @@ export function CardFrame({
           latestSnapModifier.current === true &&
           prevSnapModifier.current === false
         ) {
+          // Snapshot remaining members before clearing (used for corner recompute below).
+          const remainingMembers = dragSetMembers.current.slice();
+
           // Commit each set member's current DOM position to the store.
-          for (const member of dragSetMembers.current) {
+          for (const member of remainingMembers) {
             const memberPos = {
               x: parseFloat(member.el.style.left) || 0,
               y: parseFloat(member.el.style.top) || 0,
@@ -398,6 +415,47 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
+
+          // Break-out visual restoration [D55, D04]:
+          // 1. Restore all four rounded corners on the detached card (before flash). [D55]
+          resetCorners(frame);
+
+          // 2. Recompute corners for remaining members — the departed card's edge is now
+          //    exterior for its former neighbors, so their corner radii must be updated.
+          if (remainingMembers.length > 0) {
+            const canvasBounds = dragCanvasBounds.current;
+            const remainingRects: { id: string; rect: Rect }[] = remainingMembers.map((m) => {
+              const domRect = m.el.getBoundingClientRect();
+              return {
+                id: m.id,
+                rect: {
+                  x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+                  y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+                  width: domRect.width,
+                  height: domRect.height,
+                },
+              };
+            });
+            const remainingSharedEdges = findSharedEdges(remainingRects);
+            const remainingSets = computeSets(
+              remainingRects.map((r) => r.id),
+              remainingSharedEdges,
+            );
+            if (remainingSets.length > 0) {
+              // Remaining members still form a set — recompute their corners.
+              for (const rSet of remainingSets) {
+                applySetCorners(rSet.cardIds, remainingSharedEdges, "var(--td-radius-md)");
+              }
+            } else {
+              // Remaining members are now singletons — restore fully rounded corners on each.
+              for (const member of remainingMembers) {
+                resetCorners(member.el);
+              }
+            }
+          }
+
+          // 3. Flash full perimeter of the detached card (after corners are restored). [D55]
+          flashCardPerimeter(frame);
         }
 
         // Update previous snap modifier for next frame's break-out check.
@@ -415,6 +473,8 @@ export function CardFrame({
           const snapResult = computeSnap(
             movingRect,
             dragOtherRects.current.map((r) => r.rect),
+            undefined,
+            dragBorderWidth.current,
           );
           lastSnapResult.current = snapResult;
           if (snapResult.x !== null) {
@@ -548,6 +608,44 @@ export function CardFrame({
             height: member.el.offsetHeight,
           };
           onCardMoved(member.id, memberPos, memberSize);
+        }
+
+        // Apply corner squaring based on the new set membership after drop. [D53]
+        // Rebuild all-card rects from the DOM (positions may have shifted during set-move).
+        {
+          const canvasBounds = dragCanvasBounds.current;
+          const postDropRects: { id: string; rect: Rect }[] = [];
+          const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+          allFrameEls.forEach((el) => {
+            const cid = el.getAttribute("data-card-id");
+            if (!cid) return;
+            const domRect = el.getBoundingClientRect();
+            postDropRects.push({
+              id: cid,
+              rect: {
+                x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+                y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+                width: domRect.width,
+                height: domRect.height,
+              },
+            });
+          });
+          const postDropSharedEdges = findSharedEdges(postDropRects);
+          const postDropSets = computeSets(
+            postDropRects.map((c) => c.id),
+            postDropSharedEdges,
+          );
+          // Find the set the dragged card now belongs to (if any).
+          const mySet = postDropSets.find((s) => s.cardIds.includes(id));
+          if (mySet) {
+            // Card is in a set: square internal corners first, then flash perimeter. [D53, D54]
+            // Corners must be applied before flash so the overlay reads the correct radius. [Risk R01]
+            applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)");
+            flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
+          } else {
+            // Card is not in a set: ensure it has fully rounded corners.
+            resetCorners(frame);
+          }
         }
 
         // Reset all snap/set state.
@@ -776,4 +874,210 @@ function resizeDelta(
   }
 
   return { left, top, width, height };
+}
+
+// ---------------------------------------------------------------------------
+// Corner-radius helpers (appearance-zone, [D53], Spec S02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute per-corner border-radius values for a card in a set.
+ *
+ * Uses directional SharedEdge matching per Spec S02:
+ * - right edge has neighbor: vertical edge where cardAId === cardId
+ * - left edge has neighbor: vertical edge where cardBId === cardId
+ * - bottom edge has neighbor: horizontal edge where cardAId === cardId
+ * - top edge has neighbor: horizontal edge where cardBId === cardId
+ *
+ * Corner squaring uses OR logic: a corner is squared if EITHER forming edge
+ * has a neighbor. See Spec S02 for rationale.
+ *
+ * @param cardId - The card whose corners to compute.
+ * @param sharedEdges - All shared edges among the set's cards.
+ * @param radiusValue - CSS value for rounded corners (e.g. "6px" or "var(--td-radius-md)").
+ * @returns Per-corner radius strings (topLeft, topRight, bottomRight, bottomLeft).
+ */
+export function computeCornerRadii(
+  cardId: string,
+  sharedEdges: SharedEdge[],
+  radiusValue: string,
+): { topLeft: string; topRight: string; bottomRight: string; bottomLeft: string } {
+  // Determine which edges of this card have a neighbor.
+  // right edge: this card is on the left (cardAId) of a vertical shared edge
+  const hasRightNeighbor = sharedEdges.some(
+    (e) => e.axis === "vertical" && e.cardAId === cardId,
+  );
+  // left edge: this card is on the right (cardBId) of a vertical shared edge
+  const hasLeftNeighbor = sharedEdges.some(
+    (e) => e.axis === "vertical" && e.cardBId === cardId,
+  );
+  // bottom edge: this card is on top (cardAId) of a horizontal shared edge
+  const hasBottomNeighbor = sharedEdges.some(
+    (e) => e.axis === "horizontal" && e.cardAId === cardId,
+  );
+  // top edge: this card is on bottom (cardBId) of a horizontal shared edge
+  const hasTopNeighbor = sharedEdges.some(
+    (e) => e.axis === "horizontal" && e.cardBId === cardId,
+  );
+
+  // Square a corner if either forming edge has a neighbor (OR logic per Spec S02).
+  const topLeft = hasTopNeighbor || hasLeftNeighbor ? "0" : radiusValue;
+  const topRight = hasTopNeighbor || hasRightNeighbor ? "0" : radiusValue;
+  const bottomRight = hasBottomNeighbor || hasRightNeighbor ? "0" : radiusValue;
+  const bottomLeft = hasBottomNeighbor || hasLeftNeighbor ? "0" : radiusValue;
+
+  return { topLeft, topRight, bottomRight, bottomLeft };
+}
+
+/**
+ * Apply per-corner border-radius squaring to all .tugcard elements in a set.
+ *
+ * For each card in setCardIds, finds its .tugcard via
+ * `.card-frame[data-card-id] .tugcard`, computes corner radii using
+ * computeCornerRadii, and applies via style.borderRadius shorthand
+ * (CSS order: top-left top-right bottom-right bottom-left). [D53, Spec S02]
+ *
+ * @param setCardIds - IDs of all cards in the set.
+ * @param sharedEdges - All shared edges among the set's cards.
+ * @param radiusValue - CSS value for rounded corners (e.g. "6px").
+ */
+export function applySetCorners(
+  setCardIds: string[],
+  sharedEdges: SharedEdge[],
+  radiusValue: string,
+): void {
+  for (const cardId of setCardIds) {
+    const frameEl = document.querySelector<HTMLElement>(
+      `.card-frame[data-card-id="${cardId}"]`,
+    );
+    if (!frameEl) continue;
+    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
+    if (!tugcardEl) continue;
+    const radii = computeCornerRadii(cardId, sharedEdges, radiusValue);
+    // CSS shorthand order: top-left top-right bottom-right bottom-left
+    tugcardEl.style.borderRadius =
+      `${radii.topLeft} ${radii.topRight} ${radii.bottomRight} ${radii.bottomLeft}`;
+  }
+}
+
+/**
+ * Reset all four border-radius corners on the .tugcard inside a frame element
+ * to the CSS default (clears the inline style, reverting to var(--td-radius-md)).
+ *
+ * @param cardFrameEl - The .card-frame element containing the .tugcard.
+ */
+export function resetCorners(cardFrameEl: HTMLElement): void {
+  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
+  if (!tugcardEl) return;
+  tugcardEl.style.borderRadius = "";
+}
+
+// ---------------------------------------------------------------------------
+// Flash overlay helpers (appearance-zone, [D54], Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create per-card .set-flash-overlay elements for a newly formed set.
+ *
+ * For each card, suppresses the borders that face an internal seam (Spec S03),
+ * applies clip-path to prevent box-shadow glow from bleeding across seam edges,
+ * and sets border-radius to match the card's current (already-squared) .tugcard
+ * border-radius. The overlay self-removes on animationend. [D54, Spec S03]
+ *
+ * Corner squaring (applySetCorners) MUST be called before this function so that
+ * the .tugcard border-radius is already correct when we read it. [Risk R01]
+ *
+ * @param setCardIds - IDs of all cards in the set.
+ * @param sharedEdges - All shared edges among the set's cards.
+ */
+export function flashSetPerimeter(setCardIds: string[], sharedEdges: SharedEdge[]): void {
+  for (const cardId of setCardIds) {
+    const frameEl = document.querySelector<HTMLElement>(
+      `.card-frame[data-card-id="${cardId}"]`,
+    );
+    if (!frameEl) continue;
+    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
+
+    const overlay = document.createElement("div");
+    overlay.classList.add("set-flash-overlay");
+
+    // Determine which of this card's edges are internal seams (Spec S03).
+    // right edge internal: this card is cardAId of a vertical shared edge
+    const rightInternal = sharedEdges.some(
+      (e) => e.axis === "vertical" && e.cardAId === cardId,
+    );
+    // left edge internal: this card is cardBId of a vertical shared edge
+    const leftInternal = sharedEdges.some(
+      (e) => e.axis === "vertical" && e.cardBId === cardId,
+    );
+    // bottom edge internal: this card is cardAId of a horizontal shared edge
+    const bottomInternal = sharedEdges.some(
+      (e) => e.axis === "horizontal" && e.cardAId === cardId,
+    );
+    // top edge internal: this card is cardBId of a horizontal shared edge
+    const topInternal = sharedEdges.some(
+      (e) => e.axis === "horizontal" && e.cardBId === cardId,
+    );
+
+    // Suppress borders on internal seam edges via inline style (Spec S03).
+    if (topInternal) overlay.style.borderTop = "none";
+    if (rightInternal) overlay.style.borderRight = "none";
+    if (bottomInternal) overlay.style.borderBottom = "none";
+    if (leftInternal) overlay.style.borderLeft = "none";
+
+    // Apply clip-path to prevent box-shadow glow from bleeding across seam edges.
+    // External edges: -4px (allow glow to extend). Internal edges: 0 (flush clip).
+    // CSS inset order: top right bottom left.
+    const clipTop = topInternal ? "0" : "-4px";
+    const clipRight = rightInternal ? "0" : "-4px";
+    const clipBottom = bottomInternal ? "0" : "-4px";
+    const clipLeft = leftInternal ? "0" : "-4px";
+    overlay.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
+
+    // Set border-radius to match the .tugcard's current inline radius (already squared).
+    // The CSS `border-radius: inherit` on .set-flash-overlay inherits from .card-frame,
+    // not from .tugcard, so we must set it explicitly via inline style. [Risk R01]
+    if (tugcardEl) {
+      overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
+    }
+
+    // Self-remove after animation completes.
+    overlay.addEventListener("animationend", () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    });
+
+    frameEl.appendChild(overlay);
+  }
+}
+
+/**
+ * Create a full-perimeter .set-flash-overlay on a single card's frame.
+ *
+ * Used on break-out to flash the detached card's entire perimeter. All four
+ * borders are intact (no suppression). Border-radius is inherited from the
+ * .tugcard element (which has already had its corners restored). [D55]
+ *
+ * resetCorners MUST be called before this function so the .tugcard shows
+ * fully rounded corners when we read its border-radius.
+ *
+ * @param cardFrameEl - The .card-frame element of the detached card.
+ */
+export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
+  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
+
+  const overlay = document.createElement("div");
+  overlay.classList.add("set-flash-overlay");
+
+  // Full perimeter: no edge suppression, no clip-path restriction.
+  // Copy border-radius from .tugcard (corners already restored by resetCorners).
+  if (tugcardEl) {
+    overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
+  }
+
+  // Self-remove after animation completes.
+  overlay.addEventListener("animationend", () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  });
+
+  cardFrameEl.appendChild(overlay);
 }

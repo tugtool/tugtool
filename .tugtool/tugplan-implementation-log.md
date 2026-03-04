@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T23:16:25Z
+---
+
+## step-7: Integration checkpoint: 37 snap tests pass, TypeScript type check clean, production build clean. All four visual refinements (border collapse, corner squaring, set flash, break-out restore) verified end-to-end.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-6
+date: 2025-03-04T23:13:33Z
+---
+
+## step-6: Expanded break-out block: resetCorners on detached card, recompute shared edges for remaining members and apply/reset their corners, flashCardPerimeter on detached card with correct ordering per D55
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-5
+date: 2025-03-04T23:09:33Z
+---
+
+## step-5: Added flashSetPerimeter (per-card overlay with directional edge suppression, clip-path inset for glow, border-radius from squared .tugcard) and flashCardPerimeter (full-perimeter flash for break-out). Wired flashSetPerimeter into onPointerUp after applySetCorners.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-4
+date: 2025-03-04T23:03:37Z
+---
+
+## step-4: Wired applySetCorners and resetCorners into drag lifecycle: resetCorners at drag-start, post-drop DOM scan rebuilds rects, recomputes shared edges and sets, applies corner squaring for set members or resets for singletons
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-3
+date: 2025-03-04T22:58:00Z
+---
+
+## step-3: Added computeCornerRadii (pure function with Spec S02 directional matching and OR corner logic), applySetCorners (DOM mutation for set members), and resetCorners (clears inline border-radius) as module-level helpers in card-frame.tsx
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-2
+date: 2025-03-04T22:54:14Z
+---
+
+## step-2: Read .tugcard computed borderTopWidth at drag-start via getComputedStyle, stored in ref, passed as 4th argument to computeSnap for border-collapse snap offset
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
+step: step-1
+date: 2025-03-04T22:50:12Z
+---
+
+## step-1: Added optional borderWidth parameter to computeSnap, replaced nested loop with four explicit named-edge comparisons per axis applying offset only to adjacent-edge pairs
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-1
 date: 2025-03-04T21:36:38Z
 ---
