@@ -397,8 +397,11 @@ export function CardFrame({
           latestSnapModifier.current === true &&
           prevSnapModifier.current === false
         ) {
+          // Snapshot remaining members before clearing (used for corner recompute below).
+          const remainingMembers = dragSetMembers.current.slice();
+
           // Commit each set member's current DOM position to the store.
-          for (const member of dragSetMembers.current) {
+          for (const member of remainingMembers) {
             const memberPos = {
               x: parseFloat(member.el.style.left) || 0,
               y: parseFloat(member.el.style.top) || 0,
@@ -412,6 +415,47 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
+
+          // Break-out visual restoration [D55, D04]:
+          // 1. Restore all four rounded corners on the detached card (before flash). [D55]
+          resetCorners(frame);
+
+          // 2. Recompute corners for remaining members — the departed card's edge is now
+          //    exterior for its former neighbors, so their corner radii must be updated.
+          if (remainingMembers.length > 0) {
+            const canvasBounds = dragCanvasBounds.current;
+            const remainingRects: { id: string; rect: Rect }[] = remainingMembers.map((m) => {
+              const domRect = m.el.getBoundingClientRect();
+              return {
+                id: m.id,
+                rect: {
+                  x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+                  y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+                  width: domRect.width,
+                  height: domRect.height,
+                },
+              };
+            });
+            const remainingSharedEdges = findSharedEdges(remainingRects);
+            const remainingSets = computeSets(
+              remainingRects.map((r) => r.id),
+              remainingSharedEdges,
+            );
+            if (remainingSets.length > 0) {
+              // Remaining members still form a set — recompute their corners.
+              for (const rSet of remainingSets) {
+                applySetCorners(rSet.cardIds, remainingSharedEdges, "var(--td-radius-md)");
+              }
+            } else {
+              // Remaining members are now singletons — restore fully rounded corners on each.
+              for (const member of remainingMembers) {
+                resetCorners(member.el);
+              }
+            }
+          }
+
+          // 3. Flash full perimeter of the detached card (after corners are restored). [D55]
+          flashCardPerimeter(frame);
         }
 
         // Update previous snap modifier for next frame's break-out check.

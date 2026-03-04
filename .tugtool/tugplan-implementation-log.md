@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-04T23:13:33Z
+---
+
+## step-6: Expanded break-out block: resetCorners on detached card, recompute shared edges for remaining members and apply/reset their corners, flashCardPerimeter on detached card with correct ordering per D55
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-5
 date: 2025-03-04T23:09:33Z
 ---
