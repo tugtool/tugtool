@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-04T00:37:12Z
+---
+
+## step-9: Verification-only: filterRegisteredCards per-tab filtering, activeTabId fallback, and 3 unit tests were already implemented in step-8. Build and all 477 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-8
 date: 2025-03-04T00:30:33Z
 ---
