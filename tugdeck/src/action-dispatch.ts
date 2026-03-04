@@ -6,11 +6,13 @@
  *
  * Phase 0: DevNotificationRef dependency removed, card handlers removed.
  * Phase 2: Added gallerySetterRef and show-component-gallery handler.
+ * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
+ *   show-component-gallery now dispatches "showComponentGallery" through
+ *   the responder chain manager (same pattern as add-tab).
  * Spec S04 (#s04-action-dispatch-shape), [D04] Gut action-dispatch
  * Spec S05 (#s05-gallery-action)
  */
 
-import type React from "react";
 import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
 import type { ResponderChainManager } from "./components/tugways/responder-chain";
@@ -29,22 +31,12 @@ let reloadPending = false;
 let themeSetterRef: ((theme: string) => void) | null = null;
 
 /**
- * Module-level reference to the gallery visibility setter, populated by DeckCanvas on mount.
- *
- * Typed as React.Dispatch<React.SetStateAction<boolean>> to support the toggle-via-callback
- * pattern: gallerySetterRef((prev) => !prev). This differs from themeSetterRef which accepts
- * a direct value -- the dispatch type is needed so the toggle can read the previous state.
- *
- * Spec S05 (#s05-gallery-action)
- */
-let gallerySetterRef: React.Dispatch<React.SetStateAction<boolean>> | null = null;
-
-/**
  * Module-level reference to the ResponderChainManager, populated by
  * ResponderChainProvider on mount via `registerResponderChainManager`.
  *
- * Used by the `add-tab` Control-frame action to dispatch `"addTab"` through
- * the responder chain, which routes it to DeckCanvas's registered handler.
+ * Used by the `add-tab` and `show-component-gallery` Control-frame actions
+ * to dispatch through the responder chain, which routes them to DeckCanvas's
+ * registered handlers.
  *
  * [D06] Add-tab action uses DeckManager + responder chain
  * [D09] Add-tab routed as DeckCanvas responder action
@@ -69,24 +61,9 @@ export function getThemeSetter(): ((theme: string) => void) | null {
 }
 
 /**
- * Register the gallery visibility setter from DeckCanvas.
- * Called by DeckCanvas on mount so the show-component-gallery action handler
- * can toggle gallery visibility when the Mac Developer menu item is selected.
- *
- * Last-registration-wins: calling again replaces the previous setter.
- *
- * Spec S05 (#s05-gallery-action)
- */
-export function registerGallerySetter(
-  setter: React.Dispatch<React.SetStateAction<boolean>>
-): void {
-  gallerySetterRef = setter;
-}
-
-/**
  * Register the ResponderChainManager from ResponderChainProvider.
- * Called by ResponderChainProvider on mount so the `add-tab` action handler
- * can dispatch `"addTab"` through the chain.
+ * Called by ResponderChainProvider on mount so the `add-tab` and
+ * `show-component-gallery` action handlers can dispatch through the chain.
  *
  * Last-registration-wins: calling again replaces the previous manager.
  *
@@ -114,7 +91,6 @@ export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
   themeSetterRef = null;
-  gallerySetterRef = null;
   responderChainManagerRef = null;
 }
 
@@ -205,12 +181,15 @@ export function initActionDispatch(
     }
   });
 
-  // show-component-gallery: Toggle Component Gallery visibility via DeckCanvas state
+  // show-component-gallery: Show the Component Gallery card via DeckCanvas responder action.
+  // Dispatches "showComponentGallery" through the ResponderChainManager, which routes it
+  // to DeckCanvas's registered showComponentGallery handler. DeckCanvas finds or creates
+  // the gallery card and focuses it. ([D05], [D07] show-only semantics)
   registerAction("show-component-gallery", () => {
-    if (gallerySetterRef) {
-      gallerySetterRef((prev: boolean) => !prev);
+    if (responderChainManagerRef) {
+      responderChainManagerRef.dispatch("showComponentGallery");
     } else {
-      console.warn("show-component-gallery: gallery setter not registered yet");
+      console.warn("show-component-gallery: responder chain manager not registered yet");
     }
   });
 

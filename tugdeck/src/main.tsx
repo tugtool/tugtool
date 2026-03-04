@@ -12,6 +12,7 @@ import {
   type ThemeName,
 } from "./contexts/theme-provider";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
+import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -43,6 +44,7 @@ if (!container) {
   // from the first render. Additional card types (settings, about, etc.) will be
   // registered in Phase 9.
   registerHelloCard();
+  registerGalleryCards();
 
   // Create deck manager with the pre-fetched layout and initial theme.
   const deck = new DeckManager(

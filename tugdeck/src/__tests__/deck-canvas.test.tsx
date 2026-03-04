@@ -37,6 +37,7 @@ import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { registerHelloCard } from "@/components/tugways/cards/hello-card";
+import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
@@ -273,6 +274,9 @@ describe("DeckCanvas – cycleCard action", () => {
 // ============================================================================
 
 describe("DeckCanvas – showComponentGallery action", () => {
+  beforeEach(() => { _resetForTest(); registerGalleryCards(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
   it("handles showComponentGallery action (dispatch returns true)", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
@@ -301,7 +305,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     expect(handled).toBe(true);
   });
 
-  it("showComponentGallery toggles gallery visibility", () => {
+  it("showComponentGallery calls store.addCard('gallery-buttons') when no gallery card exists", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -310,30 +314,123 @@ describe("DeckCanvas – showComponentGallery action", () => {
       return null;
     }
 
+    const addCardCalls: string[] = [];
+    const GALLERY_CARD_ID = "gallery-card-uuid-1";
     const store = makeMockStore();
-    let container!: HTMLElement;
+    store.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      return GALLERY_CARD_ID;
+    };
+
     act(() => {
-      ({ container } = render(
+      render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas connection={null} />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
-      ));
+      );
     });
-
-    expect(container.querySelector(".cg-panel")).toBeNull();
 
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
-    expect(container.querySelector(".cg-panel")).not.toBeNull();
+
+    expect(addCardCalls.length).toBe(1);
+    expect(addCardCalls[0]).toBe("gallery-buttons");
+  });
+
+  it("showComponentGallery calls makeFirstResponder with new card ID after addCard", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const GALLERY_CARD_ID = "gallery-card-uuid-2";
+    const store = makeMockStore();
+    store.addCard = (_componentId: string) => GALLERY_CARD_ID;
+
+    const makeFirstResponderCalls: string[] = [];
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // Wrap makeFirstResponder to capture calls after mount
+    const origMakeFirstResponder = manager!.makeFirstResponder.bind(manager);
+    manager!.makeFirstResponder = (id: string) => {
+      makeFirstResponderCalls.push(id);
+      origMakeFirstResponder(id);
+    };
 
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
-    expect(container.querySelector(".cg-panel")).toBeNull();
+
+    expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
+  });
+
+  it("showComponentGallery a second time calls store.handleCardFocused (show-only, [D07])", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const GALLERY_CARD_ID = "gallery-card-uuid-3";
+    const addCardCalls: string[] = [];
+    const focusedIds: string[] = [];
+
+    // ReactiveStore so cards array updates after addCard
+    const reactiveStore = new ReactiveStore({ cards: [] });
+    reactiveStore.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      // Simulate adding the card to store state
+      reactiveStore.setState({
+        cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
+      });
+      return GALLERY_CARD_ID;
+    };
+    reactiveStore.handleCardFocused = (id: string) => {
+      focusedIds.push(id);
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={reactiveStore}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // First dispatch: creates the gallery card
+    act(() => {
+      manager!.dispatch("showComponentGallery");
+    });
+    expect(addCardCalls.length).toBe(1);
+
+    // Second dispatch: gallery card now exists -- should focus it, NOT create a new one
+    act(() => {
+      manager!.dispatch("showComponentGallery");
+    });
+    expect(addCardCalls.length).toBe(1); // No second addCard call
+    expect(focusedIds).toContain(GALLERY_CARD_ID);
   });
 });
 

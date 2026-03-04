@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-04T16:54:46Z
+---
+
+## step-6: Wired gallery card into system: main.tsx calls registerGalleryCards, action-dispatch dispatches showComponentGallery through responder chain, deck-canvas uses galleryCardIdRef for find-or-create semantics with show-only behavior, deleted component-gallery.tsx/css floating panel, rewrote five test files for card-based gallery
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: step-5
 date: 2025-03-04T16:39:21Z
 ---
