@@ -44,6 +44,14 @@ export interface TugTabBarProps {
   onTabClose: (tabId: string) => void;
   /** Called when the user selects a card type from the [+] type picker. */
   onTabAdd: (componentId: string) => void;
+  /**
+   * Families of card types to show in the [+] type picker.
+   * Only registrations whose `family` matches one of these strings appear.
+   * Defaults to `["standard"]` when omitted.
+   *
+   * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
+   */
+  acceptedFamilies?: readonly string[];
 }
 
 // ---- Helpers ----
@@ -87,15 +95,22 @@ export function TugTabBar({
   onTabSelect,
   onTabClose,
   onTabAdd,
+  acceptedFamilies,
 }: TugTabBarProps) {
-  // Build the type-picker dropdown items from all registered card types.
-  const typePickerItems: TugDropdownItem[] = Array.from(getAllRegistrations().values()).map(
-    (reg) => ({
+  // Resolve effective families: default to ["standard"] when prop is omitted.
+  const effectiveFamilies = acceptedFamilies ?? ["standard"];
+
+  // Build the type-picker dropdown items from registered card types,
+  // filtered by family. A registration with no `family` field is treated as
+  // "standard" (default family). Only registrations whose family is in
+  // effectiveFamilies are shown.
+  const typePickerItems: TugDropdownItem[] = Array.from(getAllRegistrations().values())
+    .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"))
+    .map((reg) => ({
       id: reg.componentId,
       label: reg.defaultMeta.title,
       icon: renderIcon(reg.defaultMeta.icon),
-    }),
-  );
+    }));
 
   // Stable handler for [+] button type picker selection.
   const handleTypeSelect = useCallback(

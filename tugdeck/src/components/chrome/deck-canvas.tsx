@@ -1,10 +1,10 @@
 /**
- * DeckCanvas -- canvas shell with Component Gallery, responder chain support,
- * and CardFrame rendering from DeckState (Phase 5).
+ * DeckCanvas -- canvas shell with responder chain support and CardFrame rendering
+ * from DeckState (Phase 5).
  *
- * Phase 2: Renders DisconnectBanner and optionally the ComponentGallery panel.
+ * Phase 2: Rendered DisconnectBanner and optionally the ComponentGallery panel.
  *          Gallery visibility driven by show-component-gallery action via
- *          action-dispatch -- registerGallerySetter connects React state to
+ *          action-dispatch -- registerGallerySetter connected React state to
  *          the module-level gallerySetterRef.
  *
  * Phase 3: Registers as root responder "deck-canvas" via useResponder.
@@ -14,16 +14,11 @@
  *          responder behavior), so Ctrl+` works immediately after mount with no
  *          explicit makeFirstResponder call.
  *
- *          The existing show-component-gallery action-dispatch handler (for Mac
- *          menu control frames) remains operational alongside the new responder
- *          chain action -- both converge on the same setGalleryVisible state setter.
- *
  * Phase 5 (Spec S06, Spec S07): Receives DeckState + stable callbacks from
  *          DeckManager via props. Maps deckState.cards to CardFrame components.
  *          For each card, looks up the registry to obtain the Tugcard factory.
  *          Cards with unregistered componentIds are skipped (warning logged).
  *          Z-index by array position: first card = lowest, last card = highest.
- *          Gallery renders above all cards (highest z-index).
  *          forwardRef / DeckCanvasHandle removed -- DeckManager drives via props.
  *
  * Phase 5a2 (Spec S04, [D01], [D04]):
@@ -35,9 +30,20 @@
  *          variable used for the ResponderChainManager via
  *          useRequiredResponderChain().
  *
+ * Phase 5b3 (Step 6, [D05], [D06], [D07]):
+ *          Floating ComponentGallery panel removed. showComponentGallery now
+ *          uses a galleryCardIdRef to find-or-create the gallery card via
+ *          store.addCard("gallery-buttons"). Show-only semantics: the gallery
+ *          is never closed by showComponentGallery -- only focused if already
+ *          present ([D07]). The onClose callback clears galleryCardIdRef when
+ *          the user explicitly closes the card (defense-in-depth). The Mac
+ *          menu show-component-gallery action now dispatches through the
+ *          responder chain manager (registerGallerySetter removed from
+ *          action-dispatch).
+ *
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
- *   useRequiredResponderChain -> useCallback -> useState -> useResponder ->
+ *   useRequiredResponderChain -> useCallback -> useResponder ->
  *   useEffect
  *
  * The canvas div with grid background is provided by #deck-container in
@@ -48,18 +54,19 @@
  * Spec S06 (#deckcanvas-props), Spec S07 (#tugcard-visual-stack)
  * [D01] DeckManager is a subscribable store with one root.render() at mount
  * [D04] DeckCanvas reads state from store, not props
+ * [D05] Focus logic in DeckCanvas
+ * [D06] Remove floating panel infrastructure
+ * [D07] Show-only semantics
  * [D07] ResponderChainProvider wraps DeckCanvas only
  * Table T01: cycleCard, resetLayout, showSettings, showComponentGallery
  */
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import type { TugConnection } from "@/connection";
-import { registerGallerySetter } from "@/action-dispatch";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
-import { ComponentGallery } from "@/components/tugways/component-gallery";
 import { CardFrame } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
@@ -79,23 +86,21 @@ export interface DeckCanvasProps {
   connection: TugConnection | null;
 }
 
-// ---- Gallery z-index base ----
+// ---- Card z-index base ----
 
 /**
  * Z-index base for cards. Card at index i in deckState.cards gets
- * z-index CARD_ZINDEX_BASE + i. The gallery renders at GALLERY_ZINDEX
- * so it always floats above all cards.
+ * z-index CARD_ZINDEX_BASE + i.
  */
 const CARD_ZINDEX_BASE = 1;
-const GALLERY_ZINDEX = 1000;
 
 // ---- DeckCanvas ----
 
 /**
  * DeckCanvas -- plain function component (Phase 5 removes forwardRef).
  *
- * Renders the responder-chain root, the disconnect banner, the optional
- * component gallery, and one CardFrame per card in deckState.
+ * Renders the responder-chain root, the disconnect banner, and one CardFrame
+ * per card in deckState.
  *
  * State is read from DeckManagerContext via useSyncExternalStore -- no
  * deckState prop. The variable `store` holds the IDeckManagerStore instance;
@@ -113,9 +118,9 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   // Stable render order
   // ---------------------------------------------------------------------------
   // Cards are rendered in a stable order (sorted by ID) so that focusCard
-  // reordering the store array only changes z-index values — React never
+  // reordering the store array only changes z-index values -- React never
   // calls insertBefore to move DOM nodes. This preserves the browser's
-  // pointer→click event sequence when clicking interactive elements on
+  // pointer->click event sequence when clicking interactive elements on
   // unfocused cards (the synchronous onCardFocused on pointerdown updates
   // z-index before click fires, so the card is already focused).
   //
@@ -152,6 +157,20 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const cardsRef = useRef<readonly CardState[]>(cards);
   cardsRef.current = cards;
 
+  /**
+   * galleryCardIdRef tracks the ID of the currently-open gallery card.
+   *
+   * showComponentGallery reads this ref to determine whether to create a new
+   * gallery card or focus the existing one ([D07] show-only semantics).
+   * The onClose callback for gallery cards clears this ref so that the next
+   * showComponentGallery dispatch creates a fresh gallery card.
+   *
+   * [D05] Focus logic in DeckCanvas
+   * [D06] Remove floating panel infrastructure
+   * [D07] Show-only semantics (never close via showComponentGallery)
+   */
+  const galleryCardIdRef = useRef<string | null>(null);
+
   // Responder chain manager (stable singleton, safe in mount-time closure).
   // Named `manager` as before -- distinct from `store` (IDeckManagerStore).
   const manager = useRequiredResponderChain();
@@ -182,12 +201,8 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   );
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
-  //             useRequiredResponderChain -> useCallback -> useState ->
-  //             useResponder -> useEffect(gallery) -> useEffect(coordinator)
-
-  // Gallery visibility state -- toggled by show-component-gallery action via
-  // action-dispatch (Mac menu) and by the showComponentGallery responder action.
-  const [galleryVisible, setGalleryVisible] = useState<boolean>(false);
+  //             useRequiredResponderChain -> useCallback -> useResponder ->
+  //             useEffect
 
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
@@ -213,8 +228,36 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
         // Phase 8 will open the settings panel.
         console.log("showSettings: stub -- not implemented until Phase 8");
       },
+      /**
+       * showComponentGallery -- find or create the gallery card ([D05], [D07]).
+       *
+       * Show-only semantics ([D07]): the gallery card is never closed by this
+       * action. If a gallery card is already present (tracked via galleryCardIdRef),
+       * it is focused. If not, a new gallery card is created via
+       * store.addCard("gallery-buttons") and the returned ID is stored in
+       * galleryCardIdRef. In both paths, makeFirstResponder is called so the
+       * gallery takes responder focus immediately ([D05]).
+       */
       showComponentGallery: () => {
-        setGalleryVisible((prev) => !prev);
+        const existingId = galleryCardIdRef.current;
+        const c = cardsRef.current;
+
+        // Check whether the tracked gallery card still exists in the store
+        const existingCard = existingId ? c.find((card) => card.id === existingId) : null;
+
+        if (existingCard) {
+          // Gallery card already exists -- focus it ([D07] show-only, never close)
+          store.handleCardFocused(existingCard.id);
+          setDeselected(false);
+          manager.makeFirstResponder(existingCard.id);
+        } else {
+          // No gallery card -- create one
+          const newId = store.addCard("gallery-buttons");
+          if (newId) {
+            galleryCardIdRef.current = newId;
+            manager.makeFirstResponder(newId);
+          }
+        }
       },
       // addTab: Add a new "hello" tab to the topmost card (last in array).
       // Reads cardsRef so the closure never goes stale. If no cards exist,
@@ -231,13 +274,6 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
       },
     },
   });
-
-  // Register the gallery setter with action-dispatch on mount so the
-  // show-component-gallery Mac menu control frame handler can toggle this state.
-  // This path remains operational alongside the responder chain action.
-  useEffect(() => {
-    registerGallerySetter(setGalleryVisible);
-  }, []);
 
   // Provide the coordinator with the store reference so it can call
   // reorderTab / detachTab / mergeTab on drop. [D07, Spec S04]
@@ -287,6 +323,19 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           return null;
         }
 
+        /**
+         * onClose wrapper: when the closed card matches galleryCardIdRef.current,
+         * clear the ref to null. This ensures that the next showComponentGallery
+         * dispatch creates a fresh gallery card rather than looking for a card
+         * that no longer exists (defense-in-depth, [D07]).
+         */
+        const handleClose = () => {
+          if (galleryCardIdRef.current === cardState.id) {
+            galleryCardIdRef.current = null;
+          }
+          store.handleCardClosed(cardState.id);
+        };
+
         return (
           <CardFrame
             key={cardState.id}
@@ -294,7 +343,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             zIndex={zIndexMap.get(cardState.id) ?? CARD_ZINDEX_BASE}
             isFocused={cardState.id === focusedCardId}
             onCardMoved={store.handleCardMoved}
-            onCardClosed={store.handleCardClosed}
+            onCardClosed={handleClose}
             onCardFocused={handleCardFocused}
             renderContent={(injected) => {
               // Fork rendering based on tab count (Spec S05, D08).
@@ -319,9 +368,11 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
                     onTabSelect={(tabId) => store.setActiveTab(cardState.id, tabId)}
                     onTabClose={(tabId) => store.removeTab(cardState.id, tabId)}
                     onTabAdd={(cId) => store.addTab(cardState.id, cId)}
-                    onClose={() => store.handleCardClosed(cardState.id)}
+                    onClose={handleClose}
                     onDragStart={injected.onDragStart}
                     onMinSizeChange={injected.onMinSizeChange}
+                    cardTitle={cardState.title}
+                    acceptedFamilies={cardState.acceptsFamilies}
                   >
                     {registration.contentFactory?.(cardState.id) ?? null}
                   </Tugcard>
@@ -331,19 +382,12 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
               // Single-tab path: unchanged factory + cloneElement injection.
               const element = registration.factory(cardState.id, injected);
               return React.cloneElement(element, {
-                onClose: () => store.handleCardClosed(cardState.id),
+                onClose: handleClose,
               });
             }}
           />
         );
       })}
-
-      {/* Gallery renders above all cards (Spec S07 higher z-index) */}
-      {galleryVisible && (
-        <div style={{ position: "relative", zIndex: GALLERY_ZINDEX }}>
-          <ComponentGallery onClose={() => setGalleryVisible(false)} />
-        </div>
-      )}
     </ResponderScope>
   );
 }

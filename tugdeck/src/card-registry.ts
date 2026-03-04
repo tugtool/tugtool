@@ -27,6 +27,7 @@
 
 import type React from "react";
 import type { FeedIdValue } from "./protocol";
+import type { TabItem } from "./layout-tree";
 
 /**
  * Props injected by CardFrame into the content rendered by renderContent.
@@ -96,6 +97,37 @@ export interface CardRegistration {
    * card types.
    */
   defaultFeedIds?: readonly FeedIdValue[];
+  /**
+   * The family this card type belongs to (e.g. "standard", "developer").
+   * Used by the type picker to group card types. Defaults to "standard" when omitted.
+   *
+   * **Authoritative reference:** [D02] Family field on CardRegistration.
+   */
+  family?: string;
+  /**
+   * The families of card types this card can host in its type picker.
+   * When set, the type picker filters to only show cards belonging to these families.
+   * Defaults to `["standard"]` when omitted.
+   *
+   * **Authoritative reference:** [D03] acceptsFamilies field.
+   */
+  acceptsFamilies?: readonly string[];
+  /**
+   * Default tabs to create when addCard is called with this registration.
+   * Each entry is a template: `componentId`, `title`, and `closable` are copied,
+   * but a fresh UUID is assigned as the tab `id`. When omitted, a single tab
+   * is created from `defaultMeta`.
+   *
+   * **Authoritative reference:** Spec S01 registration fields.
+   */
+  defaultTabs?: readonly TabItem[];
+  /**
+   * Default card-level title (e.g. "Component Gallery").
+   * Stored as `card.title` in CardState. Defaults to `""` when omitted.
+   *
+   * **Authoritative reference:** [D04] Card title field.
+   */
+  defaultTitle?: string;
 }
 
 /** Module-level registry map. Keyed by componentId. */

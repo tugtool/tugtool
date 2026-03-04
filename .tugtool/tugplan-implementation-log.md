@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-04T16:59:30Z
+---
+
+## step-7: Integration checkpoint: verified all 561 tests pass, all grep checks confirm floating panel infrastructure fully removed, cleaned up stale cg-panel comment in tug-dropdown.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-6
+date: 2025-03-04T16:54:46Z
+---
+
+## step-6: Wired gallery card into system: main.tsx calls registerGalleryCards, action-dispatch dispatches showComponentGallery through responder chain, deck-canvas uses galleryCardIdRef for find-or-create semantics with show-only behavior, deleted component-gallery.tsx/css floating panel, rewrote five test files for card-based gallery
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-5
+date: 2025-03-04T16:39:21Z
+---
+
+## step-5: Created gallery-card.tsx with five content components (GalleryButtonsContent, GalleryChainActionsContent, GalleryMutationContent, GalleryTabBarContent, GalleryDropdownContent), GALLERY_DEFAULT_TABS constant, registerGalleryCards function with developer family; created gallery-card.css with content styles; added gallery-card.test.tsx with 19 tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-4
+date: 2025-03-04T16:30:37Z
+---
+
+## step-4: DeckCanvas multi-tab rendering path now passes cardState.title as cardTitle and cardState.acceptsFamilies as acceptedFamilies to Tugcard; added tests for composed title rendering through DeckCanvas
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-3
+date: 2025-03-04T16:26:45Z
+---
+
+## step-3: Added cardTitle and acceptedFamilies props to Tugcard; header title composes cardTitle: tabTitle when cardTitle is non-empty; forwarded acceptedFamilies to TugTabBar; added tests for title composition
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-2
+date: 2025-03-04T16:22:45Z
+---
+
+## step-2: Added acceptedFamilies prop to TugTabBar; type picker now filters registrations by family field; added tests for developer-family filtering and default standard-family behavior
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
+step: step-1
+date: 2025-03-04T16:16:40Z
+---
+
+## step-1: Added family, acceptsFamilies, defaultTabs, defaultTitle to CardRegistration; title and acceptsFamilies to CardState; addCard to IDeckManagerStore; updated DeckManager.addCard with defaultTabs template support; updated serialization deserialize; updated all test files with new required fields and mock store methods
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-04T03:16:12Z
 ---

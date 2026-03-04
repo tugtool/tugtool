@@ -18,7 +18,7 @@ import React from "react";
 import { describe, it, expect } from "bun:test";
 import { render, fireEvent, act } from "@testing-library/react";
 
-import { MutationModelDemo } from "@/components/tugways/component-gallery";
+import { MutationModelDemo } from "@/components/tugways/cards/gallery-card";
 
 // ============================================================================
 // T18: MutationModelDemo renders without errors

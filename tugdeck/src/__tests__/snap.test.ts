@@ -27,6 +27,8 @@ describe("cardToRect", () => {
       size: { width: 200, height: 300 },
       tabs: [],
       activeTabId: "",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
     const rect = cardToRect(card);
     expect(rect.x).toBe(10);

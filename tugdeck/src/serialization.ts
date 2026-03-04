@@ -84,12 +84,24 @@ export function deserialize(
         activeTabId = tabs[0].id;
       }
 
+      // Extract title with defensive default.
+      const rawTitle = card["title"];
+      const title = typeof rawTitle === "string" ? rawTitle : "";
+
+      // Extract acceptsFamilies with defensive default.
+      const rawAcceptsFamilies = card["acceptsFamilies"];
+      const acceptsFamilies: readonly string[] = Array.isArray(rawAcceptsFamilies)
+        ? (rawAcceptsFamilies as string[])
+        : ["standard"];
+
       cards.push({
         id,
         position: { x, y },
         size: { width, height },
         tabs,
         activeTabId,
+        title,
+        acceptsFamilies,
       });
     }
 

@@ -593,6 +593,126 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 5b3 Step 3: cardTitle prop composes header title
+// ---------------------------------------------------------------------------
+
+describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("with cardTitle='Component Gallery', header shows 'Component Gallery: Hello'", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        cardTitle="Component Gallery"
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Component Gallery: Hello");
+  });
+
+  it("with cardTitle omitted, header shows just the tab title", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        // cardTitle intentionally omitted
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Hello");
+  });
+
+  it("with cardTitle='', header shows just the tab title (empty string treated as omitted)", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        cardTitle=""
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Hello");
+  });
+
+  it("cardTitle also composes when active tab is the second tab", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        cardTitle="Component Gallery"
+        tabs={tabs}
+        activeTabId="tab-2"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl!.textContent).toBe("Component Gallery: Terminal");
+  });
+});
+
 // Suppress unused-import warnings
 void spyOn;
 void fireEvent;

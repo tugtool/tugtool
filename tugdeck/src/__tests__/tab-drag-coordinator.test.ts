@@ -39,6 +39,7 @@ function makeMockStore() {
     handleCardMoved: () => {},
     handleCardClosed: () => {},
     handleCardFocused: () => {},
+    addCard: () => null,
     addTab: () => null,
     removeTab: () => {},
     setActiveTab: () => {},

@@ -112,6 +112,25 @@ export interface TugcardProps {
   onTabClose?: (tabId: string) => void;
   /** Called when the user picks a new card type from the [+] type picker. */
   onTabAdd?: (componentId: string) => void;
+
+  // ---- Phase 5b3 props ----
+
+  /**
+   * Card-level title prefix. When non-empty, the header displays
+   * `"${cardTitle}: ${effectiveMeta.title}"`. When empty or omitted,
+   * the header displays `effectiveMeta.title` alone.
+   *
+   * **Authoritative reference:** [D04] Card title field, Spec S06.
+   */
+  cardTitle?: string;
+  /**
+   * Families of card types to show in the [+] type picker.
+   * Forwarded to TugTabBar when the multi-tab accessory is active.
+   * Defaults to `["standard"]` when omitted.
+   *
+   * **Authoritative reference:** [D03] acceptsFamilies field, Spec S05.
+   */
+  acceptedFamilies?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +169,8 @@ export function Tugcard({
   onTabSelect,
   onTabClose,
   onTabAdd,
+  cardTitle,
+  acceptedFamilies,
 }: TugcardProps) {
   // ---------------------------------------------------------------------------
   // Content area ref (Phase 5a: selection boundary + selectAll action)
@@ -298,6 +319,12 @@ export function Tugcard({
     ? activeTabRegistration.defaultMeta
     : meta;
 
+  // Compose the header display title: when cardTitle is non-empty, prefix it.
+  // "Component Gallery: Hello" vs "Hello"
+  const displayTitle = cardTitle
+    ? `${cardTitle}: ${effectiveMeta.title}`
+    : effectiveMeta.title;
+
   // ---------------------------------------------------------------------------
   // Phase 5b: Build accessory slot content (D03)
   // ---------------------------------------------------------------------------
@@ -313,6 +340,7 @@ export function Tugcard({
           onTabSelect={handleTabSelect}
           onTabClose={onTabClose}
           onTabAdd={onTabAdd}
+          acceptedFamilies={acceptedFamilies}
         />
       )
     : accessory;
@@ -399,7 +427,7 @@ export function Tugcard({
           </span>
         )}
         <span className="tugcard-title" data-testid="tugcard-title">
-          {effectiveMeta.title}
+          {displayTitle}
         </span>
         {closable && (
           <button

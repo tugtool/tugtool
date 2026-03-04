@@ -1,31 +1,36 @@
 /**
- * ComponentGallery tests -- Phase 3 update.
+ * Gallery card tests -- Step 6 rewrite.
  *
- * Phase 2 tests updated to render inside ResponderChainProvider + DeckCanvas
- * so the gallery's useResponder/useRequiredResponderChain hooks have the required
- * context. Phase 3 tests added for responder registration and focus management.
+ * Phase 5b3: The ComponentGallery floating panel is replaced by five registered
+ * card types in the "developer" family. This file tests the new gallery card
+ * system defined in gallery-card.tsx.
  *
  * Tests cover:
- * - ComponentGallery renders without errors
- * - Close button calls onClose callback
- * - Gallery registers as responder "component-gallery" on mount
- * - Gallery calls makeFirstResponder on mount
- * - Gallery unregisters on unmount, first responder auto-promotes to "deck-canvas"
- * - With gallery focused: canHandle("cycleCard") returns true (walks up to DeckCanvas)
- * - Key pipeline dispatches work correctly when gallery is the first responder
+ * - registerGalleryCards() registers all five gallery componentIds in the
+ *   card registry
+ * - Each of the five content components renders without errors
+ * - Responder chain walk: gallery card rendered as Tugcard, chain-action
+ *   buttons dispatch through the responder chain to DeckCanvas
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
 import "./setup-rtl";
 
 import React from "react";
-import { describe, it, expect, mock, afterEach } from "bun:test";
-import { render, fireEvent, act, cleanup } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+import { render, act, cleanup } from "@testing-library/react";
 
-import { ResponderChainProvider, useResponderChain } from "@/components/tugways/responder-chain-provider";
+import { _resetForTest, getRegistration } from "@/card-registry";
+import {
+  registerGalleryCards,
+  GalleryButtonsContent,
+  GalleryChainActionsContent,
+  GalleryMutationContent,
+  GalleryTabBarContent,
+  GalleryDropdownContent,
+} from "@/components/tugways/cards/gallery-card";
+import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
-import { ResponderChainManager } from "@/components/tugways/responder-chain";
-import { ComponentGallery } from "@/components/tugways/component-gallery";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -35,262 +40,178 @@ afterEach(() => {
 // ---- Helpers ----
 
 /**
- * A lightweight stand-in for DeckCanvas that registers the "deck-canvas" responder
- * and wraps children in its ResponderScope. Used instead of real DeckCanvas to
- * avoid importing action-dispatch side effects and the full DeckCanvas component.
+ * A lightweight stand-in for DeckCanvas that registers the "deck-canvas"
+ * responder and wraps children in its ResponderScope.
  */
 function FakeDeckCanvas({ children }: { children?: React.ReactNode }) {
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
       cycleCard: () => {},
-      resetLayout: () => {},
-      showSettings: () => {},
       showComponentGallery: () => {},
     },
   });
   return <ResponderScope>{children}</ResponderScope>;
 }
 
-/**
- * Captures the ResponderChainManager from context into a ref for inspection.
- */
-function ManagerCapture({
-  managerRef,
-}: {
-  managerRef: React.MutableRefObject<ResponderChainManager | null>;
-}) {
-  const manager = useResponderChain();
-  if (manager) managerRef.current = manager;
-  return null;
-}
-
-/**
- * Full test wrapper: provider > manager capture > fake deck-canvas > gallery.
- */
-function GalleryWrapper({
-  onClose,
-  managerRef,
-}: {
-  onClose: () => void;
-  managerRef?: React.MutableRefObject<ResponderChainManager | null>;
-}) {
-  const ref = managerRef ?? { current: null };
-  return (
-    <ResponderChainProvider>
-      <ManagerCapture managerRef={ref} />
-      <FakeDeckCanvas>
-        <ComponentGallery onClose={onClose} />
-      </FakeDeckCanvas>
-    </ResponderChainProvider>
-  );
-}
-
 // ============================================================================
-// Basic render (Phase 2 tests -- updated to use provider)
+// registerGalleryCards() -- registry integration
 // ============================================================================
 
-describe("ComponentGallery – basic render", () => {
-  it("renders without errors", () => {
-    const onClose = mock(() => {});
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryWrapper onClose={onClose} />));
-    });
-    const panel = container.querySelector(".cg-panel");
-    expect(panel).not.toBeNull();
+describe("registerGalleryCards – card registry integration", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+  afterEach(() => {
+    _resetForTest();
   });
 
-  it("renders the title 'Component Gallery'", () => {
-    const onClose = mock(() => {});
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryWrapper onClose={onClose} />));
-    });
-    const title = container.querySelector(".cg-title");
-    expect(title).not.toBeNull();
-    expect(title?.textContent).toContain("Component Gallery");
-  });
-});
+  it("registers all five gallery componentIds", () => {
+    registerGalleryCards();
 
-describe("ComponentGallery – close button", () => {
-  it("calls onClose when close button is clicked", () => {
-    const onClose = mock(() => {});
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryWrapper onClose={onClose} />));
-    });
-    const closeBtn = container.querySelector("button[aria-label='Close Component Gallery']");
-    expect(closeBtn).not.toBeNull();
-    act(() => { fireEvent.click(closeBtn!); });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ============================================================================
-// Phase 3: Responder registration
-// ============================================================================
-
-describe("ComponentGallery – responder registration", () => {
-  it("registers as responder 'component-gallery' on mount", () => {
-    const managerRef = { current: null as ResponderChainManager | null };
-    const onClose = mock(() => {});
-
-    act(() => {
-      render(<GalleryWrapper onClose={onClose} managerRef={managerRef} />);
-    });
-
-    expect(managerRef.current).not.toBeNull();
-    // Gallery is registered -- its parent (deck-canvas) handles cycleCard,
-    // so canHandle from gallery's position returns true.
-    expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
+    expect(getRegistration("gallery-buttons")).not.toBeNull();
+    expect(getRegistration("gallery-chain-actions")).not.toBeNull();
+    expect(getRegistration("gallery-mutation")).not.toBeNull();
+    expect(getRegistration("gallery-tabbar")).not.toBeNull();
+    expect(getRegistration("gallery-dropdown")).not.toBeNull();
   });
 
-  it("calls makeFirstResponder on mount -- gallery becomes first responder", () => {
-    const managerRef = { current: null as ResponderChainManager | null };
-    const onClose = mock(() => {});
-
-    act(() => {
-      render(<GalleryWrapper onClose={onClose} managerRef={managerRef} />);
-    });
-
-    expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
+  it("gallery-buttons has family 'developer'", () => {
+    registerGalleryCards();
+    const reg = getRegistration("gallery-buttons");
+    expect(reg?.family).toBe("developer");
   });
 
-  it("unregisters on unmount, first responder auto-promotes to 'deck-canvas' (not null)", () => {
-    const managerRef = { current: null as ResponderChainManager | null };
-    const onClose = mock(() => {});
+  it("gallery-buttons has defaultTabs with five tabs", () => {
+    registerGalleryCards();
+    const reg = getRegistration("gallery-buttons");
+    expect(reg?.defaultTabs).toBeDefined();
+    expect(reg?.defaultTabs?.length).toBe(5);
+  });
 
-    // Use a toggling wrapper so we can unmount just the gallery
-    function ToggleWrapper({ show }: { show: boolean }) {
-      return (
-        <ResponderChainProvider>
-          <ManagerCapture managerRef={managerRef} />
-          <FakeDeckCanvas>
-            {show && <ComponentGallery onClose={onClose} />}
-          </FakeDeckCanvas>
-        </ResponderChainProvider>
-      );
+  it("gallery-buttons has defaultTitle 'Component Gallery'", () => {
+    registerGalleryCards();
+    const reg = getRegistration("gallery-buttons");
+    expect(reg?.defaultTitle).toBe("Component Gallery");
+  });
+
+  it("all five gallery registrations have family 'developer'", () => {
+    registerGalleryCards();
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown"];
+    for (const id of ids) {
+      expect(getRegistration(id)?.family).toBe("developer");
     }
-
-    let rerender!: (ui: React.ReactElement) => void;
-    act(() => {
-      ({ rerender } = render(<ToggleWrapper show={true} />));
-    });
-
-    expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
-
-    act(() => {
-      rerender(<ToggleWrapper show={false} />);
-    });
-
-    // Auto-promotion: parentId = "deck-canvas" becomes first responder
-    expect(managerRef.current!.getFirstResponder()).toBe("deck-canvas");
   });
-});
 
-// ============================================================================
-// Phase 3: Chain walk with gallery focused
-// ============================================================================
-
-describe("ComponentGallery – chain walk when focused", () => {
-  it("canHandle('cycleCard') returns true when gallery is first responder (walks up to DeckCanvas)", () => {
-    const managerRef = { current: null as ResponderChainManager | null };
-    const onClose = mock(() => {});
-
-    act(() => {
-      render(<GalleryWrapper onClose={onClose} managerRef={managerRef} />);
-    });
-
-    // Gallery is first responder; cycleCard is in deck-canvas (parent) actions map.
-    expect(managerRef.current!.getFirstResponder()).toBe("component-gallery");
-    expect(managerRef.current!.canHandle("cycleCard")).toBe(true);
-  });
-});
-
-// ============================================================================
-// Phase 3: Key pipeline with gallery as first responder
-// ============================================================================
-
-describe("ComponentGallery – key pipeline with gallery focused", () => {
-  it("Ctrl+` dispatches cycleCard through chain when gallery is first responder", () => {
-    let cycleCardCalled = false;
-
-    function TestWrapper() {
-      const { ResponderScope } = useResponder({
-        id: "deck-canvas",
-        actions: {
-          cycleCard: () => { cycleCardCalled = true; },
-          resetLayout: () => {},
-          showSettings: () => {},
-          showComponentGallery: () => {},
-        },
-      });
-      return (
-        <ResponderScope>
-          <ComponentGallery onClose={() => {}} />
-        </ResponderScope>
-      );
+  it("all five gallery registrations have acceptsFamilies ['developer']", () => {
+    registerGalleryCards();
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown"];
+    for (const id of ids) {
+      expect(getRegistration(id)?.acceptsFamilies).toEqual(["developer"]);
     }
-
-    act(() => {
-      render(
-        <ResponderChainProvider>
-          <TestWrapper />
-        </ResponderChainProvider>
-      );
-    });
-
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", {
-        code: "Backquote",
-        key: "Backquote",
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }));
-    });
-
-    expect(cycleCardCalled).toBe(true);
   });
 });
 
 // ============================================================================
-// Step 7: Chain-action buttons in the gallery
+// Content components -- render without errors
 // ============================================================================
 
-describe("ComponentGallery – chain-action button demo section", () => {
-  it("'Cycle Card' button is visible and enabled when DeckCanvas responder is registered", () => {
-    const managerRef = { current: null as ResponderChainManager | null };
-    const onClose = mock(() => {});
-
+describe("GalleryButtonsContent – renders without errors", () => {
+  it("renders the gallery-buttons content", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <GalleryWrapper onClose={onClose} managerRef={managerRef} />
+        <ResponderChainProvider>
+          <GalleryButtonsContent />
+        </ResponderChainProvider>
+      ));
+    });
+    expect(container.querySelector("[data-testid='gallery-buttons-content']")).not.toBeNull();
+  });
+});
+
+describe("GalleryChainActionsContent – renders without errors", () => {
+  it("renders the gallery-chain-actions content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <FakeDeckCanvas>
+            <GalleryChainActionsContent />
+          </FakeDeckCanvas>
+        </ResponderChainProvider>
+      ));
+    });
+    expect(container.querySelector("[data-testid='gallery-chain-actions-content']")).not.toBeNull();
+  });
+});
+
+describe("GalleryMutationContent – renders without errors", () => {
+  it("renders the gallery-mutation content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryMutationContent />));
+    });
+    expect(container.querySelector("[data-testid='gallery-mutation-content']")).not.toBeNull();
+  });
+});
+
+describe("GalleryTabBarContent – renders without errors", () => {
+  it("renders the gallery-tabbar content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryTabBarContent />));
+    });
+    expect(container.querySelector("[data-testid='gallery-tabbar-content']")).not.toBeNull();
+  });
+});
+
+describe("GalleryDropdownContent – renders without errors", () => {
+  it("renders the gallery-dropdown content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryDropdownContent />));
+    });
+    expect(container.querySelector("[data-testid='gallery-dropdown-content']")).not.toBeNull();
+  });
+});
+
+// ============================================================================
+// Responder chain walk: chain-action buttons dispatch through DeckCanvas
+// ============================================================================
+
+describe("GalleryChainActionsContent – chain-action button dispatches to DeckCanvas", () => {
+  it("'Cycle Card' button is visible and enabled when DeckCanvas responder is in the chain", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <FakeDeckCanvas>
+            <GalleryChainActionsContent />
+          </FakeDeckCanvas>
+        </ResponderChainProvider>
       ));
     });
 
-    // Find all buttons whose text content includes "Cycle Card"
     const buttons = Array.from(container.querySelectorAll("button"));
     const cycleCardBtn = buttons.find((b) => b.textContent?.includes("Cycle Card"));
     expect(cycleCardBtn).not.toBeUndefined();
-    // Should be enabled (no aria-disabled, no HTML disabled)
     expect(cycleCardBtn!.getAttribute("aria-disabled")).toBeNull();
     expect(cycleCardBtn!.disabled).toBe(false);
   });
 
-  it("'nonexistentAction' button is hidden (TugButton returns null)", () => {
-    const onClose = mock(() => {});
-
+  it("'nonexistentAction' button is hidden (TugButton returns null for unhandled action)", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <GalleryWrapper onClose={onClose} />
+        <ResponderChainProvider>
+          <FakeDeckCanvas>
+            <GalleryChainActionsContent />
+          </FakeDeckCanvas>
+        </ResponderChainProvider>
       ));
     });
 
-    // No button should contain the text "Hidden (nonexistentAction)"
     const buttons = Array.from(container.querySelectorAll("button"));
     const hiddenBtn = buttons.find((b) =>
       b.textContent?.includes("Hidden") || b.textContent?.includes("nonexistentAction")
@@ -298,7 +219,7 @@ describe("ComponentGallery – chain-action button demo section", () => {
     expect(hiddenBtn).toBeUndefined();
   });
 
-  it("clicking 'Cycle Card' dispatches the cycleCard action", () => {
+  it("clicking 'Cycle Card' dispatches cycleCard through the responder chain", () => {
     let cycleCardCalled = false;
 
     function TestWrapper() {
@@ -306,14 +227,12 @@ describe("ComponentGallery – chain-action button demo section", () => {
         id: "deck-canvas",
         actions: {
           cycleCard: () => { cycleCardCalled = true; },
-          resetLayout: () => {},
-          showSettings: () => {},
           showComponentGallery: () => {},
         },
       });
       return (
         <ResponderScope>
-          <ComponentGallery onClose={() => {}} />
+          <GalleryChainActionsContent />
         </ResponderScope>
       );
     }
@@ -331,8 +250,34 @@ describe("ComponentGallery – chain-action button demo section", () => {
     const cycleCardBtn = buttons.find((b) => b.textContent?.includes("Cycle Card"));
     expect(cycleCardBtn).not.toBeUndefined();
 
-    act(() => { fireEvent.click(cycleCardBtn!); });
+    act(() => {
+      cycleCardBtn!.click();
+    });
 
     expect(cycleCardCalled).toBe(true);
   });
+
+  it("'Show Gallery' button label is 'Show Gallery' not 'Toggle Gallery' ([D07])", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainProvider>
+          <FakeDeckCanvas>
+            <GalleryChainActionsContent />
+          </FakeDeckCanvas>
+        </ResponderChainProvider>
+      ));
+    });
+
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const showGalleryBtn = buttons.find((b) => b.textContent?.includes("Show Gallery"));
+    expect(showGalleryBtn).not.toBeUndefined();
+
+    // Ensure "Toggle Gallery" label is NOT present
+    const toggleGalleryBtn = buttons.find((b) => b.textContent?.trim() === "Toggle Gallery");
+    expect(toggleGalleryBtn).toBeUndefined();
+  });
 });
+
+// Suppress unused import warning
+void mock;

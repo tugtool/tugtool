@@ -37,6 +37,7 @@ import { DeckManagerContext } from "@/deck-manager-context";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { registerCard, _resetForTest } from "@/card-registry";
 import { registerHelloCard } from "@/components/tugways/cards/hello-card";
+import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
@@ -78,6 +79,7 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     handleCardMoved: (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }) => {},
     handleCardClosed: (_id: string) => {},
     handleCardFocused: (_id: string) => {},
+    addCard: (_componentId: string) => null,
     addTab: (_cardId: string, _componentId: string) => null,
     removeTab: (_cardId: string, _tabId: string) => {},
     setActiveTab: (_cardId: string, _tabId: string) => {},
@@ -139,6 +141,8 @@ function makeCardState(id: string, componentId: string): CardState {
     size: { width: 400, height: 300 },
     tabs: [{ id: `${id}-tab`, componentId, title: componentId, closable: true }],
     activeTabId: `${id}-tab`,
+    title: "",
+    acceptsFamilies: ["standard"],
   };
 }
 
@@ -270,6 +274,9 @@ describe("DeckCanvas – cycleCard action", () => {
 // ============================================================================
 
 describe("DeckCanvas – showComponentGallery action", () => {
+  beforeEach(() => { _resetForTest(); registerGalleryCards(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
   it("handles showComponentGallery action (dispatch returns true)", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
@@ -298,7 +305,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     expect(handled).toBe(true);
   });
 
-  it("showComponentGallery toggles gallery visibility", () => {
+  it("showComponentGallery calls store.addCard('gallery-buttons') when no gallery card exists", () => {
     const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
     let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
 
@@ -307,30 +314,123 @@ describe("DeckCanvas – showComponentGallery action", () => {
       return null;
     }
 
+    const addCardCalls: string[] = [];
+    const GALLERY_CARD_ID = "gallery-card-uuid-1";
     const store = makeMockStore();
-    let container!: HTMLElement;
+    store.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      return GALLERY_CARD_ID;
+    };
+
     act(() => {
-      ({ container } = render(
+      render(
         <ResponderChainProvider>
           <DeckManagerContext.Provider value={store}>
             <DeckCanvas connection={null} />
             <ManagerCapture />
           </DeckManagerContext.Provider>
         </ResponderChainProvider>
-      ));
+      );
     });
-
-    expect(container.querySelector(".cg-panel")).toBeNull();
 
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
-    expect(container.querySelector(".cg-panel")).not.toBeNull();
+
+    expect(addCardCalls.length).toBe(1);
+    expect(addCardCalls[0]).toBe("gallery-buttons");
+  });
+
+  it("showComponentGallery calls makeFirstResponder with new card ID after addCard", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const GALLERY_CARD_ID = "gallery-card-uuid-2";
+    const store = makeMockStore();
+    store.addCard = (_componentId: string) => GALLERY_CARD_ID;
+
+    const makeFirstResponderCalls: string[] = [];
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // Wrap makeFirstResponder to capture calls after mount
+    const origMakeFirstResponder = manager!.makeFirstResponder.bind(manager);
+    manager!.makeFirstResponder = (id: string) => {
+      makeFirstResponderCalls.push(id);
+      origMakeFirstResponder(id);
+    };
 
     act(() => {
       manager!.dispatch("showComponentGallery");
     });
-    expect(container.querySelector(".cg-panel")).toBeNull();
+
+    expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
+  });
+
+  it("showComponentGallery a second time calls store.handleCardFocused (show-only, [D07])", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const GALLERY_CARD_ID = "gallery-card-uuid-3";
+    const addCardCalls: string[] = [];
+    const focusedIds: string[] = [];
+
+    // ReactiveStore so cards array updates after addCard
+    const reactiveStore = new ReactiveStore({ cards: [] });
+    reactiveStore.addCard = (componentId: string) => {
+      addCardCalls.push(componentId);
+      // Simulate adding the card to store state
+      reactiveStore.setState({
+        cards: [makeCardState(GALLERY_CARD_ID, "gallery-buttons")],
+      });
+      return GALLERY_CARD_ID;
+    };
+    reactiveStore.handleCardFocused = (id: string) => {
+      focusedIds.push(id);
+    };
+
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={reactiveStore}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    // First dispatch: creates the gallery card
+    act(() => {
+      manager!.dispatch("showComponentGallery");
+    });
+    expect(addCardCalls.length).toBe(1);
+
+    // Second dispatch: gallery card now exists -- should focus it, NOT create a new one
+    act(() => {
+      manager!.dispatch("showComponentGallery");
+    });
+    expect(addCardCalls.length).toBe(1); // No second addCard call
+    expect(focusedIds).toContain(GALLERY_CARD_ID);
   });
 });
 
@@ -557,6 +657,7 @@ class ReactiveStore implements IDeckManagerStore {
   handleCardMoved = (_id: string, _pos: { x: number; y: number }, _size: { width: number; height: number }): void => {};
   handleCardClosed = (_id: string): void => {};
   handleCardFocused = (_id: string): void => {};
+  addCard = (_componentId: string): string | null => null;
   addTab = (_cardId: string, _componentId: string): string | null => null;
   removeTab = (_cardId: string, _tabId: string): void => {};
   setActiveTab = (_cardId: string, _tabId: string): void => {};
@@ -597,6 +698,8 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
       size: { width: 400, height: 300 },
       tabs: [tab1],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [singleTabCard] });
@@ -663,6 +766,8 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [multiTabCard] });
@@ -724,6 +829,8 @@ describe("DeckCanvas – Step 5: single-tab card uses existing factory path", ()
       size: { width: 400, height: 300 },
       tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = new ReactiveStore({ cards: [singleTabCard] });
@@ -767,6 +874,8 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
       size: { width: 400, height: 300 },
       tabs: [tab1, tab2],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const closedIds: string[] = [];
@@ -1090,6 +1199,8 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
       size: { width: 400, height: 300 },
       tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = makeMockStore(makeDeckState([singleTabCard]));
@@ -1105,6 +1216,83 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
 
     // Single-tab card: no tab bar rendered (tabs.length === 1).
     expect(container.querySelector("[data-testid='tug-tab-bar']")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5b3 Step 4: cardTitle and acceptedFamilies passed from CardState
+// ---------------------------------------------------------------------------
+
+describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed header", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("multi-tab card with title: 'Foo' renders header with 'Foo: <tab-title>'", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const multiTabCard: CardState = {
+      id: "titled-card",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [
+        { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
+        { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
+      ],
+      activeTabId: "tab-1",
+      title: "Foo",
+      acceptsFamilies: ["standard"],
+    };
+
+    const store = makeMockStore(makeDeckState([multiTabCard]));
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Foo: Hello");
+  });
+
+  it("multi-tab card with title: '' renders header with just the tab title", () => {
+    registerCard({
+      componentId: "hello",
+      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+        React.createElement("div", {}, "Hello"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Tab content"),
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const multiTabCard: CardState = {
+      id: "untitled-card",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [
+        { id: "tab-1", componentId: "hello", title: "Hello", closable: true },
+        { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
+      ],
+      activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+
+    const store = makeMockStore(makeDeckState([multiTabCard]));
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = renderDeckCanvasWithStore(store));
+    });
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("Hello");
   });
 });
 
@@ -1135,6 +1323,8 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
         { id: "tab-2", componentId: "hello", title: "Hello 2", closable: true },
       ],
       activeTabId: "tab-1",
+      title: "",
+      acceptsFamilies: ["standard"],
     };
 
     const store = makeMockStore(makeDeckState([multiTabCard]));

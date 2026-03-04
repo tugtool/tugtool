@@ -1,63 +1,14 @@
 /**
- * Component Gallery styles -- panel positioning, layout grid, section styles.
+ * Gallery card content styles -- migrated from component-gallery.css.
+ *
+ * Includes all .cg-* classes EXCEPT .cg-panel, .cg-titlebar, and .cg-title,
+ * which belonged to the old floating panel chrome (now removed).
+ *
+ * Each gallery content component renders inside a Tugcard content area,
+ * so panel positioning and titlebar styles are no longer needed here.
  *
  * All colors use var(--td-*) semantic tokens exclusively.
- * Panel is absolute-positioned per Spec S04 (#s04-gallery-panel).
- *
- * [D03] Gallery as absolute-positioned div
- * [D04] Semantic tokens exclusively
- * Spec S04 (#s04-gallery-panel)
  */
-
-/* ============================================================================
-   Panel Container
-   ========================================================================= */
-
-.cg-panel {
-  position: absolute;
-  top: 64px;
-  left: 64px;
-  width: 640px;
-  max-height: calc(100vh - 128px);
-  background-color: var(--td-card);
-  border: 1px solid var(--td-border);
-  border-radius: var(--radius);
-  overflow-y: auto;
-  /* Above canvas grid, below DisconnectBanner */
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  font-family: var(--td-font-sans);
-  color: var(--td-text);
-  box-shadow: 0 8px 32px var(--td-shadow-soft);
-}
-
-/* ============================================================================
-   Title Bar
-   ========================================================================= */
-
-.cg-titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 12px 20px;
-  border-bottom: 1px solid var(--td-border);
-  background-color: var(--td-card);
-  /* Sticky so it stays visible while scrolling content */
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  border-radius: var(--radius) var(--radius) 0 0;
-  flex-shrink: 0;
-}
-
-.cg-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--td-text);
-  user-select: none;
-}
 
 /* ============================================================================
    Scrollable Content Area
