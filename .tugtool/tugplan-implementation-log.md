@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-04T18:20:04Z
+---
+
+## step-1: Created tab-overflow.ts with TabMeasurement/OverflowResult interfaces, computeOverflow() function, and 24 unit tests covering T01-T10a
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b4-tab-overflow.md
+
+---
+
+---
 step: step-7
 date: 2025-03-04T16:59:30Z
 ---
