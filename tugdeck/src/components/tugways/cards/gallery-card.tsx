@@ -706,7 +706,7 @@ export function registerGalleryCards(): void {
     factory: (cardId, injected) => (
       <Tugcard
         cardId={cardId}
-        meta={{ title: "TugTabBar", icon: "Tabs", closable: true }}
+        meta={{ title: "TugTabBar", icon: "PanelTop", closable: true }}
         feedIds={[]}
         onDragStart={injected.onDragStart}
         onMinSizeChange={injected.onMinSizeChange}
@@ -715,7 +715,7 @@ export function registerGalleryCards(): void {
       </Tugcard>
     ),
     contentFactory: (_cardId) => <GalleryTabBarContent />,
-    defaultMeta: { title: "TugTabBar", icon: "Tabs", closable: true },
+    defaultMeta: { title: "TugTabBar", icon: "PanelTop", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

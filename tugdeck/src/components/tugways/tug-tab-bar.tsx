@@ -85,7 +85,7 @@ const DEFAULT_TAB_ICON = "Diamond";
 
 function renderIcon(iconName: string | undefined): React.ReactNode {
   const name = iconName ?? DEFAULT_TAB_ICON;
-  const IconComponent = icons[name as keyof typeof icons];
+  const IconComponent = icons[name as keyof typeof icons] ?? icons[DEFAULT_TAB_ICON as keyof typeof icons];
   if (!IconComponent) return null;
   return React.createElement(IconComponent, { size: 12 });
 }
