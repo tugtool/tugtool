@@ -370,6 +370,10 @@ export function CardFrame({
         ? parseFloat(getComputedStyle(tugcardEl).borderTopWidth) || 0
         : 0;
 
+      // Reset corners on the dragged card only at drag-start. [D53]
+      // Other cards' corner state is managed by their own set membership and must not be disturbed.
+      resetCorners(frame);
+
       // Initialize snap modifier state. [D01]
       latestSnapModifier.current = false;
       prevSnapModifier.current = false;
@@ -560,6 +564,42 @@ export function CardFrame({
             height: member.el.offsetHeight,
           };
           onCardMoved(member.id, memberPos, memberSize);
+        }
+
+        // Apply corner squaring based on the new set membership after drop. [D53]
+        // Rebuild all-card rects from the DOM (positions may have shifted during set-move).
+        {
+          const canvasBounds = dragCanvasBounds.current;
+          const postDropRects: { id: string; rect: Rect }[] = [];
+          const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+          allFrameEls.forEach((el) => {
+            const cid = el.getAttribute("data-card-id");
+            if (!cid) return;
+            const domRect = el.getBoundingClientRect();
+            postDropRects.push({
+              id: cid,
+              rect: {
+                x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+                y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+                width: domRect.width,
+                height: domRect.height,
+              },
+            });
+          });
+          const postDropSharedEdges = findSharedEdges(postDropRects);
+          const postDropSets = computeSets(
+            postDropRects.map((c) => c.id),
+            postDropSharedEdges,
+          );
+          // Find the set the dragged card now belongs to (if any).
+          const mySet = postDropSets.find((s) => s.cardIds.includes(id));
+          if (mySet) {
+            // Card is in a set: square internal corners for all set members.
+            applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)");
+          } else {
+            // Card is not in a set: ensure it has fully rounded corners.
+            resetCorners(frame);
+          }
         }
 
         // Reset all snap/set state.

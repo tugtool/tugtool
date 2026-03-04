@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-04T23:03:37Z
+---
+
+## step-4: Wired applySetCorners and resetCorners into drag lifecycle: resetCorners at drag-start, post-drop DOM scan rebuilds rects, recomputes shared edges and sets, applies corner squaring for set members or resets for singletons
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-3
 date: 2025-03-04T22:58:00Z
 ---
