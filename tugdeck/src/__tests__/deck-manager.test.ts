@@ -704,6 +704,111 @@ describe("DeckManager.removeTab", () => {
 // setActiveTab tests (Spec S03)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// filterRegisteredCards tests (Step 9)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager filterRegisteredCards – multi-tab filtering", () => {
+  it("keeps only registered tabs from a card with mixed registered/unregistered tabs", () => {
+    // Register only "hello"; "ghost" is intentionally not registered.
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    // Build a DeckState with one card having two tabs: one registered ("hello")
+    // and one unregistered ("ghost"). Bypass addTab (which checks registration)
+    // by calling applyLayout directly.
+    const cardId = crypto.randomUUID();
+    const helloTabId = crypto.randomUUID();
+    const ghostTabId = crypto.randomUUID();
+
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+          ],
+          activeTabId: helloTabId,
+        },
+      ],
+    });
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    expect(card).toBeDefined();
+    expect(card!.tabs.length).toBe(1);
+    expect(card!.tabs[0].id).toBe(helloTabId);
+    expect(card!.activeTabId).toBe(helloTabId);
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("removes a card entirely when all its tabs are unregistered", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const cardId = crypto.randomUUID();
+    const tabId = crypto.randomUUID();
+
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: tabId, componentId: "totally-unknown", title: "Unknown", closable: true },
+          ],
+          activeTabId: tabId,
+        },
+      ],
+    });
+
+    expect(manager.getDeckState().cards.find((c) => c.id === cardId)).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("falls back activeTabId to first registered tab when the active tab is unregistered", () => {
+    registerCard(makeRegistration("hello", "Hello"));
+
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    const cardId = crypto.randomUUID();
+    const helloTabId = crypto.randomUUID();
+    const ghostTabId = crypto.randomUUID();
+
+    // Active tab is the unregistered "ghost" tab.
+    manager.applyLayout({
+      cards: [
+        {
+          id: cardId,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [
+            { id: helloTabId, componentId: "hello", title: "Hello", closable: true },
+            { id: ghostTabId, componentId: "ghost", title: "Ghost", closable: true },
+          ],
+          activeTabId: ghostTabId,
+        },
+      ],
+    });
+
+    const card = manager.getDeckState().cards.find((c) => c.id === cardId);
+    expect(card).toBeDefined();
+    // Only the hello tab survives; activeTabId falls back to it.
+    expect(card!.tabs.length).toBe(1);
+    expect(card!.tabs[0].id).toBe(helloTabId);
+    expect(card!.activeTabId).toBe(helloTabId);
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
 describe("DeckManager.setActiveTab", () => {
   it("updates activeTabId to the specified tab", () => {
     registerCard(makeRegistration("hello", "Hello"));

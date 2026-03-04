@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-04T00:30:33Z
+---
+
+## step-8: Verified serialization v5 handles multi-tab CardState correctly. Added 4 round-trip tests. Updated filterRegisteredCards for per-tab filtering with activeTabId fallback. Added 3 filterRegisteredCards unit tests. 477 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-7
 date: 2025-03-04T00:22:19Z
 ---

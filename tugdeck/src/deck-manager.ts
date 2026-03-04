@@ -540,26 +540,61 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Filter out cards whose componentId is not registered in the card registry.
+   * Filter out cards whose tabs have unregistered componentIds.
    *
    * Called by loadLayout() and applyLayout() so that deckState.cards only
    * contains renderable cards. This is the single filtering gate -- downstream
    * code (DeckCanvas, cycleCard, responder chain) can trust that every card
-   * in deckState has a registered factory.
+   * in deckState has at least one tab with a registered factory.
+   *
+   * For each card:
+   * - Unregistered tabs are removed from the tabs array.
+   * - If all tabs are removed, the card is dropped entirely.
+   * - If the active tab was removed, activeTabId falls back to the first
+   *   remaining registered tab.
    */
   private filterRegisteredCards(state: DeckState): DeckState {
-    const filtered = state.cards.filter((card) => {
-      const componentId = card.tabs[0]?.componentId;
-      if (!componentId || !getRegistration(componentId)) {
+    let changed = false;
+    const filtered: CardState[] = [];
+
+    for (const card of state.cards) {
+      // Filter out tabs with unregistered componentIds.
+      const registeredTabs = card.tabs.filter((tab) => {
+        if (!tab.componentId || !getRegistration(tab.componentId)) {
+          console.warn(
+            `[DeckManager] filterRegisteredCards: dropping tab "${tab.id}" ` +
+              `from card "${card.id}" -- unregistered componentId "${tab.componentId ?? "(none)"}".`,
+          );
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+
+      // If all tabs were removed, drop the card entirely.
+      if (registeredTabs.length === 0) {
         console.warn(
-          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" ` +
-            `with unregistered componentId "${componentId ?? "(none)"}".`,
+          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" -- all tabs unregistered.`,
         );
-        return false;
+        changed = true;
+        continue;
       }
-      return true;
-    });
-    if (filtered.length !== state.cards.length) {
+
+      // If the active tab was removed, fall back to the first remaining tab.
+      let activeTabId = card.activeTabId;
+      if (!registeredTabs.some((t) => t.id === activeTabId)) {
+        activeTabId = registeredTabs[0].id;
+        changed = true;
+      }
+
+      if (registeredTabs.length !== card.tabs.length || activeTabId !== card.activeTabId) {
+        filtered.push({ ...card, tabs: registeredTabs, activeTabId });
+      } else {
+        filtered.push(card);
+      }
+    }
+
+    if (changed) {
       return { ...state, cards: filtered };
     }
     return state;
