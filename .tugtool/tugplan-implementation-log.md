@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-04T21:36:38Z
+---
+
+## step-1: Added snap-on-drag with configurable modifier key (Option/Alt), set-move for snapped card groups, break-out detection, and snap guide rendering via direct DOM manipulation in card-frame.tsx
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c-card-snapping.md
+
+---
+
+---
 step: step-8
 date: 2025-03-04T19:01:33Z
 ---
