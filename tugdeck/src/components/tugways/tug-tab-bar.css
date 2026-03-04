@@ -30,6 +30,9 @@
   background-color: var(--td-surface-tab);
   border-bottom: 1px solid var(--td-border);
   user-select: none;
+  /* Required so absolutely-positioned insertion indicator is positioned
+     relative to the tab bar (Spec S06). */
+  position: relative;
 }
 
 .tug-tab-bar::-webkit-scrollbar {
@@ -169,4 +172,70 @@
 .tug-tab-add:hover {
   background-color: var(--td-surface-control);
   color: var(--td-text);
+}
+
+/* ============================================================================
+   Tab Drag Visual Feedback (Phase 5b2)
+   Spec S05: Ghost Tab, Spec S06: Insertion Indicator, Spec S07: Drop-Target
+   ========================================================================= */
+
+/* Ghost tab -- imperatively created DOM element appended to #deck-container.
+   Follows the pointer during drag. z-index 5000 = GHOST_TAB_ZINDEX, above
+   GALLERY_ZINDEX (1000), below DisconnectBanner (9999). [D02] */
+.tug-tab-ghost {
+  position: absolute;
+  z-index: 5000;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  height: 28px;
+  background-color: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  opacity: 0.7;
+  pointer-events: none;
+  font-size: 0.75rem;
+  font-family: var(--td-font-sans);
+  color: var(--td-text);
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Insertion indicator -- thin vertical bar injected into the targeted tab bar.
+   Positioned via style.left during drag. Known limitation: may be clipped by
+   overflow-x:auto if tabs overflow the bar (deferred to Phase 5b4). [Spec S06] */
+.tug-tab-insert-indicator {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background-color: var(--td-accent);
+  pointer-events: none;
+  transition: left var(--td-duration-fast) var(--td-easing-standard);
+}
+
+/* Drop-target highlight on multi-tab card tab bars. [Spec S07] */
+.tug-tab-bar[data-drop-target="true"] {
+  background-color: var(--td-surface-control);
+  border-bottom-color: var(--td-accent);
+}
+
+/* Drop-target highlight on single-tab card accessory divs.
+   Reveals a visible drop zone (min-height 28px) for cards with no tab bar.
+   [D05, Spec S07] */
+.tugcard-accessory[data-drop-target="true"] {
+  min-height: 28px;
+  background-color: var(--td-surface-control);
+  border-bottom: 2px solid var(--td-accent);
+  transition:
+    min-height var(--td-duration-fast) var(--td-easing-standard),
+    background-color var(--td-duration-fast) var(--td-easing-standard);
+}
+
+/* Dim the source tab during drag so the user sees the ghost as the dragged item.
+   Applied via data-dragging="true" by the drag coordinator. [D03] */
+.tug-tab[data-dragging="true"] {
+  opacity: 0.3;
 }

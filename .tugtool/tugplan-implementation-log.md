@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-04T02:24:59Z
+---
+
+## step-2: Added CSS classes for tab drag visual feedback: .tug-tab-ghost, .tug-tab-insert-indicator, drop-target highlights, and source tab dimming
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b2-tab-drag-gestures.md
+
+---
+
+---
 step: step-1
 date: 2025-03-04T02:20:03Z
 ---
