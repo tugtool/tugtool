@@ -594,8 +594,10 @@ export function CardFrame({
           // Find the set the dragged card now belongs to (if any).
           const mySet = postDropSets.find((s) => s.cardIds.includes(id));
           if (mySet) {
-            // Card is in a set: square internal corners for all set members.
+            // Card is in a set: square internal corners first, then flash perimeter. [D53, D54]
+            // Corners must be applied before flash so the overlay reads the correct radius. [Risk R01]
             applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)");
+            flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
           } else {
             // Card is not in a set: ensure it has fully rounded corners.
             resetCorners(frame);
@@ -924,4 +926,114 @@ export function resetCorners(cardFrameEl: HTMLElement): void {
   const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
   if (!tugcardEl) return;
   tugcardEl.style.borderRadius = "";
+}
+
+// ---------------------------------------------------------------------------
+// Flash overlay helpers (appearance-zone, [D54], Spec S03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create per-card .set-flash-overlay elements for a newly formed set.
+ *
+ * For each card, suppresses the borders that face an internal seam (Spec S03),
+ * applies clip-path to prevent box-shadow glow from bleeding across seam edges,
+ * and sets border-radius to match the card's current (already-squared) .tugcard
+ * border-radius. The overlay self-removes on animationend. [D54, Spec S03]
+ *
+ * Corner squaring (applySetCorners) MUST be called before this function so that
+ * the .tugcard border-radius is already correct when we read it. [Risk R01]
+ *
+ * @param setCardIds - IDs of all cards in the set.
+ * @param sharedEdges - All shared edges among the set's cards.
+ */
+export function flashSetPerimeter(setCardIds: string[], sharedEdges: SharedEdge[]): void {
+  for (const cardId of setCardIds) {
+    const frameEl = document.querySelector<HTMLElement>(
+      `.card-frame[data-card-id="${cardId}"]`,
+    );
+    if (!frameEl) continue;
+    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
+
+    const overlay = document.createElement("div");
+    overlay.classList.add("set-flash-overlay");
+
+    // Determine which of this card's edges are internal seams (Spec S03).
+    // right edge internal: this card is cardAId of a vertical shared edge
+    const rightInternal = sharedEdges.some(
+      (e) => e.axis === "vertical" && e.cardAId === cardId,
+    );
+    // left edge internal: this card is cardBId of a vertical shared edge
+    const leftInternal = sharedEdges.some(
+      (e) => e.axis === "vertical" && e.cardBId === cardId,
+    );
+    // bottom edge internal: this card is cardAId of a horizontal shared edge
+    const bottomInternal = sharedEdges.some(
+      (e) => e.axis === "horizontal" && e.cardAId === cardId,
+    );
+    // top edge internal: this card is cardBId of a horizontal shared edge
+    const topInternal = sharedEdges.some(
+      (e) => e.axis === "horizontal" && e.cardBId === cardId,
+    );
+
+    // Suppress borders on internal seam edges via inline style (Spec S03).
+    if (topInternal) overlay.style.borderTop = "none";
+    if (rightInternal) overlay.style.borderRight = "none";
+    if (bottomInternal) overlay.style.borderBottom = "none";
+    if (leftInternal) overlay.style.borderLeft = "none";
+
+    // Apply clip-path to prevent box-shadow glow from bleeding across seam edges.
+    // External edges: -4px (allow glow to extend). Internal edges: 0 (flush clip).
+    // CSS inset order: top right bottom left.
+    const clipTop = topInternal ? "0" : "-4px";
+    const clipRight = rightInternal ? "0" : "-4px";
+    const clipBottom = bottomInternal ? "0" : "-4px";
+    const clipLeft = leftInternal ? "0" : "-4px";
+    overlay.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
+
+    // Set border-radius to match the .tugcard's current inline radius (already squared).
+    // The CSS `border-radius: inherit` on .set-flash-overlay inherits from .card-frame,
+    // not from .tugcard, so we must set it explicitly via inline style. [Risk R01]
+    if (tugcardEl) {
+      overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
+    }
+
+    // Self-remove after animation completes.
+    overlay.addEventListener("animationend", () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    });
+
+    frameEl.appendChild(overlay);
+  }
+}
+
+/**
+ * Create a full-perimeter .set-flash-overlay on a single card's frame.
+ *
+ * Used on break-out to flash the detached card's entire perimeter. All four
+ * borders are intact (no suppression). Border-radius is inherited from the
+ * .tugcard element (which has already had its corners restored). [D55]
+ *
+ * resetCorners MUST be called before this function so the .tugcard shows
+ * fully rounded corners when we read its border-radius.
+ *
+ * @param cardFrameEl - The .card-frame element of the detached card.
+ */
+export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
+  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
+
+  const overlay = document.createElement("div");
+  overlay.classList.add("set-flash-overlay");
+
+  // Full perimeter: no edge suppression, no clip-path restriction.
+  // Copy border-radius from .tugcard (corners already restored by resetCorners).
+  if (tugcardEl) {
+    overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
+  }
+
+  // Self-remove after animation completes.
+  overlay.addEventListener("animationend", () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  });
+
+  cardFrameEl.appendChild(overlay);
 }

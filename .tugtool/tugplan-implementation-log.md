@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-04T23:09:33Z
+---
+
+## step-5: Added flashSetPerimeter (per-card overlay with directional edge suppression, clip-path inset for glow, border-radius from squared .tugcard) and flashCardPerimeter (full-perimeter flash for break-out). Wired flashSetPerimeter into onPointerUp after applySetCorners.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5c2-card-snapping-refinements.md
+
+---
+
+---
 step: step-4
 date: 2025-03-04T23:03:37Z
 ---
