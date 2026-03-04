@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-04T16:26:45Z
+---
+
+## step-3: Added cardTitle and acceptedFamilies props to Tugcard; header title composes cardTitle: tabTitle when cardTitle is non-empty; forwarded acceptedFamilies to TugTabBar; added tests for title composition
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b3-gallery-card.md
+
+---
+
+---
 step: step-2
 date: 2025-03-04T16:22:45Z
 ---
