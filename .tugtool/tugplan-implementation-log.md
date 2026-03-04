@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-04T00:01:14Z
+---
+
+## step-4: Wired tab state into Tugcard: optional tab props, TugTabBar in accessory slot, header metadata from active tab registration, selection save/restore on tab switch, previousTab/nextTab responder actions. Changed useSelectionBoundary to useLayoutEffect.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5b-card-tabs.md
+
+---
+
+---
 step: step-3
 date: 2025-03-03T23:51:52Z
 ---

@@ -15,12 +15,14 @@
 import "./setup-rtl";
 
 import React from "react";
-import { describe, it, expect, mock } from "bun:test";
-import { render, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
+import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { Tugcard } from "@/components/tugways/tugcard";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import { registerCard, _resetForTest } from "@/card-registry";
+import type { TabItem } from "@/layout-tree";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -328,3 +330,269 @@ describe("Tugcard – card with feeds shows loading state", () => {
     expect(realContent).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5b: Tab support tests
+// ---------------------------------------------------------------------------
+
+/** Build a TabItem for use in tests. */
+function makeTab(id: string, componentId: string, title: string, closable = true): TabItem {
+  return { id, componentId, title, closable };
+}
+
+/** Register a minimal card type for a given componentId with an icon. */
+function registerTabCard(componentId: string, title: string, icon?: string): void {
+  registerCard({
+    componentId,
+    factory: () => {
+      throw new Error("factory not used");
+    },
+    defaultMeta: { title, icon, closable: true },
+  });
+}
+
+describe("Tugcard – tab support: TugTabBar in accessory slot", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders TugTabBar in accessory slot when tabs.length > 1", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div data-testid="active-content">Hello content</div>
+      </Tugcard>
+    );
+
+    const tabBar = container.querySelector("[data-testid='tug-tab-bar']");
+    expect(tabBar).not.toBeNull();
+  });
+
+  it("does not render TugTabBar when tabs is undefined (backward compatible)", () => {
+    const { container } = renderInChain(
+      <Tugcard {...defaultProps}>
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const tabBar = container.querySelector("[data-testid='tug-tab-bar']");
+    expect(tabBar).toBeNull();
+  });
+
+  it("does not render TugTabBar when tabs has exactly one entry", () => {
+    registerTabCard("hello", "Hello");
+
+    const tabs = [makeTab("tab-1", "hello", "Hello")];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const tabBar = container.querySelector("[data-testid='tug-tab-bar']");
+    expect(tabBar).toBeNull();
+  });
+});
+
+describe("Tugcard – tab support: header follows active tab metadata", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("header title reflects the active tab's registration metadata", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        meta={{ title: "Original Title" }}
+        tabs={tabs}
+        activeTabId="tab-2"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl).not.toBeNull();
+    // Should show "Terminal" (active tab's registration), not "Original Title"
+    expect(titleEl!.textContent).toBe("Terminal");
+  });
+
+  it("header title falls back to meta prop when tabs.length <= 1", () => {
+    registerTabCard("hello", "Hello");
+
+    const tabs = [makeTab("tab-1", "hello", "Hello")];
+
+    const { container } = renderInChain(
+      <Tugcard
+        {...defaultProps}
+        meta={{ title: "Original Title" }}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    const titleEl = container.querySelector("[data-testid='tugcard-title']");
+    expect(titleEl!.textContent).toBe("Original Title");
+  });
+});
+
+describe("Tugcard – tab support: previousTab and nextTab responder actions", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("registers previousTab and nextTab actions on the responder chain", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { manager } = renderWithManager(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    expect(manager.canHandle("previousTab")).toBe(true);
+    expect(manager.canHandle("nextTab")).toBe(true);
+  });
+
+  it("nextTab calls onTabSelect with the next tab id", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const selectedIds: string[] = [];
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { manager } = renderWithManager(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={(id) => selectedIds.push(id)}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    act(() => {
+      manager.dispatch("nextTab");
+    });
+
+    expect(selectedIds.length).toBe(1);
+    expect(selectedIds[0]).toBe("tab-2");
+  });
+
+  it("previousTab calls onTabSelect with the previous tab id (wraps around)", () => {
+    registerTabCard("hello", "Hello");
+    registerTabCard("terminal", "Terminal");
+
+    const selectedIds: string[] = [];
+    const tabs = [
+      makeTab("tab-1", "hello", "Hello"),
+      makeTab("tab-2", "terminal", "Terminal"),
+    ];
+
+    const { manager } = renderWithManager(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={(id) => selectedIds.push(id)}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    act(() => {
+      manager.dispatch("previousTab");
+    });
+
+    // Wraps from tab-1 (index 0) back to tab-2 (index 1, last)
+    expect(selectedIds.length).toBe(1);
+    expect(selectedIds[0]).toBe("tab-2");
+  });
+
+  it("previousTab/nextTab are no-ops when tabs.length <= 1", () => {
+    registerTabCard("hello", "Hello");
+
+    const selectedIds: string[] = [];
+    const tabs = [makeTab("tab-1", "hello", "Hello")];
+
+    const { manager } = renderWithManager(
+      <Tugcard
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="tab-1"
+        onTabSelect={(id) => selectedIds.push(id)}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      >
+        <div>content</div>
+      </Tugcard>
+    );
+
+    act(() => {
+      manager.dispatch("nextTab");
+      manager.dispatch("previousTab");
+    });
+
+    expect(selectedIds.length).toBe(0);
+  });
+});
+
+// Suppress unused-import warnings
+void spyOn;
+void fireEvent;

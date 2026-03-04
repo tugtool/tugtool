@@ -6,6 +6,9 @@
  *   [D03] CardFrame/Tugcard separation, [D05] Dynamic min-size,
  *   [D07] Tugcard responder node
  * - Spec S01 TugcardProps, Spec S07 Tugcard internal layout
+ * - Phase 5b: [D01] Tab state is props-driven, [D03] Tab bar uses accessory
+ *   slot, [D04] Inactive tabs unmount, [D05] Header follows active tab,
+ *   [D07] Selection saved/restored on tab switch, Spec S02 extended props
  *
  * ## Visual Stack (Spec S07)
  *
@@ -13,20 +16,24 @@
  * CardFrame (absolute positioning, drag handles, resize handles)
  *   └─ Tugcard (flex column)
  *        ├─ CardHeader (28px, title + icon + close button)
- *        ├─ Accessory slot (0px when null)
+ *        ├─ Accessory slot (TugTabBar when tabs.length > 1, else 0px)
  *        └─ Content area (flex-grow, overflow auto)
- *             └─ children (card-specific content)
+ *             └─ children (active tab content or single card content)
  * ```
  *
  * ## Responsibilities
  *
  * - Render header chrome (title, optional icon, close button)
- * - Register as a responder node with `close`, `minimize`, `toggleMenu`, `find`
+ * - When tabs.length > 1: render TugTabBar in the accessory slot; header
+ *   title/icon follow the active tab's registration metadata ([D05])
+ * - Register as a responder node with `close`, `selectAll`, `previousTab`,
+ *   `nextTab`, `minimize`, `toggleMenu`, `find`
  * - Wrap children in `<ResponderScope>` for child responder registration
  * - Wrap children in `<TugcardDataProvider>` (feed subscription wired in Phase 6)
  * - Compute total min-size and report via `onMinSizeChange`
  * - Gate child mounting by feed arrival (feedless cards mount immediately)
  * - Call `onDragStart` from the header on pointer-down
+ * - Save/restore selection on tab switch using SelectionGuard ([D07])
  *
  * @module components/tugways/tugcard
  */
@@ -34,10 +41,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedIdValue } from "../../protocol";
 import { icons } from "lucide-react";
+import type { TabItem } from "../../layout-tree";
+import type { SavedSelection } from "./selection-guard";
+import { selectionGuard } from "./selection-guard";
+import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
 import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "./responder-chain-provider";
+import { TugTabBar } from "./tug-tab-bar";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -60,12 +72,12 @@ export interface TugcardMeta {
 /**
  * Props for the Tugcard composition component.
  *
- * **Authoritative reference:** Spec S01 TugcardProps.
+ * **Authoritative reference:** Spec S01 TugcardProps, Spec S02 extended tab props.
  */
 export interface TugcardProps {
   /** Unique card instance ID. Passed to the responder chain. */
   cardId: string;
-  /** Title, optional icon, and closable flag. */
+  /** Title, optional icon, and closable flag. Overridden by active tab metadata when tabs.length > 1. */
   meta: TugcardMeta;
   /** Feed IDs to subscribe to. Empty array = feedless card (children mount immediately). */
   feedIds: readonly FeedIdValue[];
@@ -77,7 +89,7 @@ export interface TugcardProps {
    * Default: `{ width: 100, height: 60 }`.
    */
   minContentSize?: { width: number; height: number };
-  /** Top accessory slot. Collapses to 0 when null or undefined. */
+  /** Top accessory slot. Collapses to 0 when null or undefined. Ignored when tabs.length > 1. */
   accessory?: React.ReactNode | null;
   /** Called by Tugcard when its computed min-size changes. Forwarded from CardFrame. */
   onMinSizeChange?: (size: { width: number; height: number }) => void;
@@ -87,6 +99,19 @@ export interface TugcardProps {
   onClose?: () => void;
   /** Card-specific content components. */
   children: React.ReactNode;
+
+  // ---- Phase 5b tab props (Spec S02) ----
+
+  /** All tabs on this card. When provided and length > 1, the tab bar appears. */
+  tabs?: TabItem[];
+  /** The currently active tab id. Required when tabs is provided. */
+  activeTabId?: string;
+  /** Called when the user clicks a tab to select it. */
+  onTabSelect?: (tabId: string) => void;
+  /** Called when the user clicks the close (x) button on a tab. */
+  onTabClose?: (tabId: string) => void;
+  /** Called when the user picks a new card type from the [+] type picker. */
+  onTabAdd?: (componentId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +145,11 @@ export function Tugcard({
   onDragStart,
   onClose,
   children,
+  tabs,
+  activeTabId,
+  onTabSelect,
+  onTabClose,
+  onTabAdd,
 }: TugcardProps) {
   // ---------------------------------------------------------------------------
   // Content area ref (Phase 5a: selection boundary + selectAll action)
@@ -132,33 +162,108 @@ export function Tugcard({
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Make this card the first responder when clicked anywhere on the card.
-  // This ensures the responder chain dispatches actions (e.g. Cmd+A selectAll)
-  // to the correct card, not just the visually focused one.
   const manager = useRequiredResponderChain();
   const handleCardPointerDown = useCallback(() => {
     manager.makeFirstResponder(cardId);
   }, [manager, cardId]);
 
   // Register the content area as a selection boundary with SelectionGuard.
-  // Unregisters automatically on unmount via the hook's cleanup. ([D02], Spec S02)
+  // Uses useLayoutEffect (Rule of Tug #3) so the boundary is available when
+  // Tugcard's selection-restore useLayoutEffect fires. ([D02], Spec S02)
   useSelectionBoundary(cardId, contentRef);
+
+  // ---------------------------------------------------------------------------
+  // Phase 5b: Tab state refs (for stable responder actions, Rule of Tug #5)
+  // ---------------------------------------------------------------------------
+
+  // Responder actions are registered once at mount via useLayoutEffect inside
+  // useResponder. The closures must never go stale. Use refs that are updated
+  // every render so the closures always read the current values.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+
+  const onTabSelectRef = useRef(onTabSelect);
+  onTabSelectRef.current = onTabSelect;
+
+  // ---------------------------------------------------------------------------
+  // Phase 5b: Per-tab selection persistence (D07)
+  // ---------------------------------------------------------------------------
+
+  // savedSelectionsRef maps tabId → SavedSelection. Lives entirely in Tugcard
+  // local state -- not in SelectionGuard.savedSelections (which is unused infra).
+  const savedSelectionsRef = useRef<Map<string, SavedSelection>>(new Map());
+
+  // Wrap onTabSelect to save current selection before switching tabs (D07, step 1).
+  const handleTabSelect = useCallback(
+    (newTabId: string) => {
+      if (!onTabSelect) return;
+      // Step 1: save selection for the OLD active tab before unmounting it.
+      const oldTabId = activeTabIdRef.current;
+      if (oldTabId && oldTabId !== newTabId) {
+        const saved = selectionGuard.saveSelection(cardId);
+        if (saved) {
+          savedSelectionsRef.current.set(oldTabId, saved);
+        }
+      }
+      // Step 2: call parent callback to update activeTabId (triggers remount of new content).
+      onTabSelect(newTabId);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cardId, onTabSelect],
+  );
+
+  // Step 3: after the new tab's content mounts and its useSelectionBoundary
+  // useLayoutEffect runs (children before parents), restore the saved selection.
+  // This useLayoutEffect has [activeTabId] as its dependency so it fires
+  // whenever the active tab changes.
+  useLayoutEffect(() => {
+    if (!activeTabId) return;
+    const saved = savedSelectionsRef.current.get(activeTabId);
+    if (saved) {
+      selectionGuard.restoreSelection(cardId, saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, cardId]);
 
   // ---------------------------------------------------------------------------
   // Responder registration (D07)
   // ---------------------------------------------------------------------------
 
-  // Stable action callbacks — defined at top level to follow Rules of Hooks.
   const handleClose = useCallback(() => {
     onClose?.();
   }, [onClose]);
 
-  // selectAll: scope Cmd+A to this card's content area. ([D06], Spec S01)
-  // contentRef is a stable React ref object — reading .current inside the
-  // callback always gives the current element without needing it in deps.
+  // selectAll: scope Cmd+A to this card's content area.
   const handleSelectAll = useCallback(() => {
     const el = contentRef.current;
     if (!el) return;
     window.getSelection()?.selectAllChildren(el);
+  }, []);
+
+  // previousTab / nextTab: read from refs so closures never go stale (Rule #5).
+  const handlePreviousTab = useCallback(() => {
+    const currentTabs = tabsRef.current;
+    const currentActiveId = activeTabIdRef.current;
+    const selectFn = onTabSelectRef.current;
+    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId || !selectFn) return;
+    const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
+    if (idx === -1) return;
+    const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
+    selectFn(currentTabs[prevIdx].id);
+  }, []);
+
+  const handleNextTab = useCallback(() => {
+    const currentTabs = tabsRef.current;
+    const currentActiveId = activeTabIdRef.current;
+    const selectFn = onTabSelectRef.current;
+    if (!currentTabs || currentTabs.length <= 1 || !currentActiveId || !selectFn) return;
+    const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
+    if (idx === -1) return;
+    const nextIdx = (idx + 1) % currentTabs.length;
+    selectFn(currentTabs[nextIdx].id);
   }, []);
 
   const { ResponderScope } = useResponder({
@@ -166,6 +271,8 @@ export function Tugcard({
     actions: {
       close: handleClose,
       selectAll: handleSelectAll,
+      previousTab: handlePreviousTab,
+      nextTab: handleNextTab,
       // Phase 5 stubs: minimize, toggleMenu, find are no-ops until later phases
       minimize: () => {},
       toggleMenu: () => {},
@@ -174,45 +281,69 @@ export function Tugcard({
   });
 
   // ---------------------------------------------------------------------------
+  // Phase 5b: Resolve header metadata from active tab (D05)
+  // ---------------------------------------------------------------------------
+
+  // When multiple tabs are present, the header title/icon follow the active tab.
+  const hasMultipleTabs = tabs !== undefined && tabs.length > 1;
+  const activeTab = hasMultipleTabs && activeTabId
+    ? tabs.find((t) => t.id === activeTabId)
+    : undefined;
+  const activeTabRegistration = activeTab
+    ? getRegistration(activeTab.componentId)
+    : undefined;
+
+  // Effective metadata for the header: active tab registration wins, else meta prop.
+  const effectiveMeta: TugcardMeta = activeTabRegistration
+    ? activeTabRegistration.defaultMeta
+    : meta;
+
+  // ---------------------------------------------------------------------------
+  // Phase 5b: Build accessory slot content (D03)
+  // ---------------------------------------------------------------------------
+
+  // When tabs.length > 1, render TugTabBar in the accessory slot.
+  // When tabs.length <= 1, use the original accessory prop (or null).
+  const resolvedAccessory: React.ReactNode | null = hasMultipleTabs && onTabSelect && onTabClose && onTabAdd
+    ? (
+        <TugTabBar
+          tabs={tabs}
+          activeTabId={activeTabId!}
+          onTabSelect={handleTabSelect}
+          onTabClose={onTabClose}
+          onTabAdd={onTabAdd}
+        />
+      )
+    : accessory;
+
+  // ---------------------------------------------------------------------------
   // Accessory height measurement (D05)
   // ---------------------------------------------------------------------------
 
-  // Ref to the accessory container div for layout measurement.
   const accessoryRef = useRef<HTMLDivElement>(null);
-
-  // Track accessory height as state so min-size reports update when it changes.
   const [accessoryHeight, setAccessoryHeight] = useState(0);
 
-  // Measure accessory height after layout and whenever accessory content changes.
-  // ResizeObserver watches for dynamic changes. In tests ResizeObserver is a no-op stub,
-  // so the initial measurement from useLayoutEffect is the only measurement.
   useLayoutEffect(() => {
     const el = accessoryRef.current;
     if (!el) {
       setAccessoryHeight(0);
       return;
     }
-
-    // Initial measurement from the layout tree.
     setAccessoryHeight(el.getBoundingClientRect().height);
-
-    // Watch for subsequent size changes (accessory content appearing/disappearing).
     const ro = new ResizeObserver(() => {
       setAccessoryHeight(el.getBoundingClientRect().height);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [accessory]); // Re-run when accessory prop changes.
+  }, [resolvedAccessory]);
 
   // ---------------------------------------------------------------------------
   // Min-size reporting (D05)
   // ---------------------------------------------------------------------------
 
-  // Compute total min-size from header + accessory + content minimums.
   const totalMinWidth = minContentSize.width;
   const totalMinHeight = HEADER_HEIGHT_PX + accessoryHeight + minContentSize.height;
 
-  // Report min-size to CardFrame whenever computed values change.
   useEffect(() => {
     onMinSizeChange?.({ width: totalMinWidth, height: totalMinHeight });
   }, [onMinSizeChange, totalMinWidth, totalMinHeight]);
@@ -221,12 +352,7 @@ export function Tugcard({
   // Feed state (Phase 6 stub)
   // ---------------------------------------------------------------------------
 
-  // In Phase 5 all cards are effectively feedless at the data layer.
-  // For cards with feedIds declared, show "Loading..." until Phase 6 wires subscriptions.
-  // For feedless cards (feedIds.length === 0), mount children immediately.
   const feedsReady = feedIds.length === 0;
-
-  // Empty feed data map for TugcardDataProvider (populated in Phase 6).
   const emptyFeedData = useRef(new Map<number, unknown>());
 
   // ---------------------------------------------------------------------------
@@ -246,7 +372,6 @@ export function Tugcard({
 
   const handleCloseClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
-      // Stop propagation so the close click does not trigger drag via the header.
       event.stopPropagation();
       onClose?.();
     },
@@ -257,7 +382,7 @@ export function Tugcard({
   // Render
   // ---------------------------------------------------------------------------
 
-  const closable = meta.closable !== false; // default true
+  const closable = effectiveMeta.closable !== false; // default true
 
   return (
     <div className="tugcard" data-card-id={cardId} onPointerDown={handleCardPointerDown}>
@@ -267,13 +392,13 @@ export function Tugcard({
         onPointerDown={handleHeaderPointerDown}
         data-testid="tugcard-header"
       >
-        {meta.icon && icons[meta.icon as keyof typeof icons] && (
+        {effectiveMeta.icon && icons[effectiveMeta.icon as keyof typeof icons] && (
           <span className="tugcard-icon" data-testid="tugcard-icon">
-            {React.createElement(icons[meta.icon as keyof typeof icons], { size: 14 })}
+            {React.createElement(icons[effectiveMeta.icon as keyof typeof icons], { size: 14 })}
           </span>
         )}
         <span className="tugcard-title" data-testid="tugcard-title">
-          {meta.title}
+          {effectiveMeta.title}
         </span>
         {closable && (
           <button
@@ -288,14 +413,14 @@ export function Tugcard({
         )}
       </div>
 
-      {/* Accessory slot: collapses to 0 when null */}
+      {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px */}
       <div
         ref={accessoryRef}
         className="tugcard-accessory"
         data-testid="tugcard-accessory"
-        style={accessory == null ? { height: 0, overflow: "hidden" } : undefined}
+        style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
       >
-        {accessory}
+        {resolvedAccessory}
       </div>
 
       {/* Content area: flex-grow, overflow auto */}

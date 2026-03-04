@@ -27,7 +27,7 @@
  * @module hooks/use-selection-boundary
  */
 
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { selectionGuard } from "../selection-guard";
 
 /**
@@ -50,7 +50,7 @@ export function useSelectionBoundary(
   cardId: string,
   contentRef: React.RefObject<HTMLElement | null>
 ): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
     selectionGuard.registerBoundary(cardId, el);
