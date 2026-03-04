@@ -372,6 +372,17 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Note**: Phase 5b4 depends on Phase 5b (tab bar component must exist). It does not depend on Phase 5b2 (drag gestures) or Phase 5b3 (gallery card), though both benefit from overflow handling.
 
+### Phase 5b5: Tab Refinements (Concept 12, [D45])
+
+**Goal**: Tab interaction refinements discovered during implementation of Phases 5b2–5b4.
+
+**What to do**:
+1. Card-as-tab merge — when a card drag (via CardFrame) ends over another card's tab bar, merge the source card's tab into the target instead of completing the move. On pointer up in CardFrame's drag handler, hit-test against all `.tug-tab-bar[data-card-id]` elements. If the drop position is inside a tab bar belonging to a different card, call `store.mergeTab(sourceCardId, sourceTabId, targetCardId, insertIndex)` and remove the now-empty source card. This reuses the existing `mergeTab` DeckManager method and the `data-card-id` hit-test infrastructure from Phase 5b2.
+
+**Result**: Single-tab cards can be merged into other cards via drag, completing the tab composition story. Combined with Phase 5b2's tab-to-tab drag gestures, all tab reorganization scenarios are covered.
+
+**Note**: Phase 5b5 depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist). Additional refinement items may be added as Phases 5b3 and 5b4 are implemented.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Goal**: Snap-to-edge and set formation require the Option (Alt) modifier. Free drag is the default.
@@ -582,10 +593,15 @@ Responder Chain  Mutation Model                              │
          Tab Drag   Gallery    Chrome
          Gestures   Card          │
              │        │        Phase 8b: Form Controls
-             ▼        │           │
-         Phase 5b4:   │        Phase 8c: Display & Nav
-         Tab          │           │
-         Overflow     │        Phase 8d: Data Viz & Compound
+             ├────────┤           │
+             ▼        │        Phase 8c: Display & Nav
+         Phase 5b4:   │           │
+         Tab          │        Phase 8d: Data Viz & Compound
+         Overflow     │                    │         │       │
+             │        │                    │         │       │
+         Phase 5b5:   │                    │         │       │
+         Tab          │                    │         │       │
+         Refinements  │                    │         │       │
              │        │                    │         │       │
              └────────┴────────────────┬───┴─────────┴───────┘
                                        ▼
@@ -608,10 +624,11 @@ wave builds on the previous) and depend on Phase 2 (Component Gallery exists) an
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
 motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
 the component library (Phases 8b–8d) for form controls, data display, and visualization.
-Phases 5b, 5b2, 5b3, 5b4, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
+Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, and 5d are enhancements that can land before, during, or after Phase 9.
 Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab state must exist).
 Phase 5b3 (Gallery Card) depends on Phase 5b (tab system must exist). It does not depend on Phase 5b2.
 Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not depend on Phase 5b2 or 5b3, though both benefit from overflow handling.
+Phase 5b5 (Tab Refinements) depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist). It is a collection phase — additional items may be added during 5b3/5b4 implementation.
 
 ## Estimated Scope
 
@@ -629,6 +646,7 @@ Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not d
 | 5b2 | ~3 files | ~300 lines |
 | 5b3 | ~5 files | ~400 lines |
 | 5b4 | ~3 files | ~300 lines |
+| 5b5 | ~2 files | ~100 lines |
 | 5c | ~1 file | ~50 lines |
 | 5d | ~3 files | ~150 lines |
 | 6 | ~4 files | ~400 lines |
@@ -639,7 +657,7 @@ Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not d
 | 8d | ~8 files | ~1000 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~11,900 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~12,000 lines** replacing the current ~9700 lines. The new
 codebase is modestly larger because the 28-component library (Phases 8a–8d)
 adds ~2500 lines of reusable UI primitives that the old codebase lacked. The
 triple-registration redundancy is gone, the adapter layer is gone, and the
@@ -668,15 +686,16 @@ The suggested plan sequence:
 10. `tugways-phase-5b2-tab-drag-gestures` — reorder, detach to new card, merge into existing card
 11. `tugways-phase-5b3-gallery-card` — convert Component Gallery to a proper tabbed card
 12. `tugways-phase-5b4-tab-overflow` — progressive tab collapse: icon-only, then overflow dropdown
-13. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
-14. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-15. `tugways-phase-6-feed` — feed hooks, data flow
-16. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-17. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-18. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-19. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-20. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-21. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+13. `tugways-phase-5b5-tab-refinements` — card-as-tab merge, additional refinements
+14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets
+15. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
+16. `tugways-phase-6-feed` — feed hooks, data flow
+17. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+18. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
+19. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
+20. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+21. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+22. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
 
 ## Resolved Questions
 

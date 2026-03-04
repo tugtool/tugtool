@@ -86,6 +86,7 @@
 | [D42] | No repeated `root.render()` from external code | Concept 5 | [#d42-no-repeated-root-render](#d42-no-repeated-root-render) |
 | [D43] | Component Gallery is a proper card with tabs, not a floating panel | Concept 3 | [#d43-gallery-card](#d43-gallery-card) |
 | [D44] | Progressive tab overflow: icon-only collapse, then overflow dropdown | Concept 12 | [#d44-tab-overflow](#d44-tab-overflow) |
+| [D45] | Card-as-tab merge: dropping a card onto another card's tab bar merges it | Concept 12 | [#d45-card-as-tab-merge](#d45-card-as-tab-merge) |
 
 ### Key Architectural Patterns
 
@@ -2435,6 +2436,10 @@ The [+] button opens a **type picker dropdown** listing all registered card type
 
 The drag gestures are the primary way users reorganize tabbed cards. They build on the click-based tab infrastructure from Phase 5b and add pointer-capture and hit-testing mechanics.
 
+**Card-as-tab merge (Phase 5b5):** {#d45-card-as-tab-merge}
+
+Dragging a single-tab card onto another card's tab bar merges it as a new tab. This completes the tab composition story — Phase 5b2's drag gestures handle tab-to-tab operations, but there is no way to merge an entire card into another card via drag. The card-as-tab merge uses drop target detection: a normal card drag (via CardFrame) checks on drop whether the pointer is over another card's tab bar. If so, instead of completing the card move, the source card's tab is merged into the target card via `mergeTab`, and the now-empty source card is removed. This reuses the existing `mergeTab` DeckManager method and the tab bar's `data-card-id` hit-test infrastructure from Phase 5b2.
+
 #### Responder Chain Integration
 
 The active tab's content is the active responder node within the card's position in the chain. Switching tabs changes which content view receives actions:
@@ -2509,7 +2514,7 @@ Tab state is already persisted in `CardState.tabs` and `CardState.activeTabId`. 
 4. **Responder chain follows the active tab** — tab switching is a chain reconfiguration, handled automatically by mount/unmount of content responders.
 5. **Tab icons from card registration** — each tab displays its card type icon from `TugcardMeta.icon`. The icon is a property of the card type, shared between the title bar (single-tab) and the tab bar (multi-tab).
 6. **Mixed-type tabs without restriction** — any card type can share a frame with any other. CardFrame is type-agnostic; each tab carries its own `componentId`.
-7. **Four-phase implementation** — Phase 5b covers click-based tab management (create, switch, close, type picker, icons). Phase 5b2 adds drag gestures (reorder, detach, merge). Phase 5b3 converts the Component Gallery from a floating panel to a proper tabbed card ([#d43-gallery-card](#d43-gallery-card)). Phase 5b4 adds progressive tab overflow ([#d44-tab-overflow](#d44-tab-overflow)).
+7. **Five-phase implementation** — Phase 5b covers click-based tab management (create, switch, close, type picker, icons). Phase 5b2 adds drag gestures (reorder, detach, merge). Phase 5b3 converts the Component Gallery from a floating panel to a proper tabbed card ([#d43-gallery-card](#d43-gallery-card)). Phase 5b4 adds progressive tab overflow ([#d44-tab-overflow](#d44-tab-overflow)). Phase 5b5 adds tab refinements including card-as-tab merge ([#d45-card-as-tab-merge](#d45-card-as-tab-merge)).
 
 ### 13. Card Snap Sets {#c13-snap-sets}
 
@@ -3243,3 +3248,11 @@ Post-Phase 5b implementation review led to two new phases:
 - **[D43] Component Gallery as a proper card.** The gallery started as an absolute-positioned floating panel (Phase 2). Now that cards and tabs exist, the gallery should dogfood them. Phase 5b3 converts it to a registered card type with five tabs (TugButton, Chain-Action, Mutation Model, TugTabBar, TugDropdown). This eliminates z-index hacks (dropdown portals fought with the panel's z-index:100), gives the gallery proper card lifecycle (persistence, deck membership), and validates the tab system with a real multi-tab card.
 - **[D44] Progressive tab overflow.** Phase 5b's tab bar scrolled horizontally on overflow — functional but not ideal. Phase 5b4 adds three-stage progressive collapse: (1) inactive tabs collapse to icon-only, (2) remaining overflow tabs move into a dropdown. The active tab is always visible in the strip. A ResizeObserver drives the collapse measurement. This interacts with Phase 5b2's drag gestures — dragging a tab into an overflowing card triggers re-measurement and may route the new tab to the overflow dropdown.
 - **Phase count**: Concept 12 now has four implementation phases (5b, 5b2, 5b3, 5b4). Phase 5b3 depends on Phase 5b (tab system must exist). Phase 5b4 depends on Phase 5b (tab bar component must exist) but not on 5b2 or 5b3.
+
+### Entry 23: Tab Refinements — Phase 5b5 {#log-23} (2026-03-03)
+
+Post-Phase 5b2 implementation review identified a gap in tab composition: single-tab cards cannot be merged into other cards via drag. Phase 5b2 handles tab-to-tab drag gestures (reorder, detach, merge) but requires a tab bar to initiate drag from. Single-tab cards have no tab bar.
+
+- **[D45] Card-as-tab merge.** Dropping a card onto another card's tab bar merges it as a new tab. This uses drop target detection on the existing CardFrame drag path — on pointer up, check if the drop position is over a tab bar. If so, call `mergeTab` instead of completing the card move. Reuses the `data-card-id` hit-test infrastructure from Phase 5b2.
+- **Phase 5b5: Tab Refinements.** A collection phase for tab-related refinements discovered during implementation. Card-as-tab merge is the first item. Additional refinements may be added as Phases 5b3 and 5b4 are implemented.
+- **Phase count**: Concept 12 now has five implementation phases (5b, 5b2, 5b3, 5b4, 5b5). Phase 5b5 depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist).
