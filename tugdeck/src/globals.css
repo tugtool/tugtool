@@ -64,6 +64,7 @@ body {
 }
 
 body {
+  color: var(--td-text);
   background-color: var(--td-canvas);
   background-image:
     linear-gradient(var(--td-grid-color) 1px, transparent 1px),
