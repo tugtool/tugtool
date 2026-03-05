@@ -506,6 +506,10 @@ export function CardFrame({
 
           // Flash full perimeter of the detached card. [D55]
           flashCardPerimeter(frame);
+
+          // Clear the pre-drag set snapshot so the drag-end postActionSetUpdate
+          // does not see "was in set, now solo" and fire a second break-out flash. [D55]
+          dragSetMemberIdsAtDragStart.current = [];
         }
 
         // Update previous snap modifier for next frame's break-out check.
@@ -1152,18 +1156,10 @@ function updateSetAppearance(canvasBounds: DOMRect | null): void {
       // Determine which sides are shared (internal) for this card.
       // Vertical shared edge: cardAId = LEFT card (right side internal), cardBId = RIGHT card (left side internal).
       // Horizontal shared edge: cardAId = TOP card (bottom side internal), cardBId = BOTTOM card (top side internal).
-      const rightInternal = sharedEdges.some((e) => e.axis === "vertical" && e.cardAId === cardId);
-      const leftInternal = sharedEdges.some((e) => e.axis === "vertical" && e.cardBId === cardId);
-      const bottomInternal = sharedEdges.some((e) => e.axis === "horizontal" && e.cardAId === cardId);
-      const topInternal = sharedEdges.some((e) => e.axis === "horizontal" && e.cardBId === cardId);
+      const internal = computeInternalEdges(cardId, sharedEdges);
 
       // Build clip-path: external sides use -8px (let shadow breathe), shared sides use 0px (clip flush).
-      // CSS inset() order: top right bottom left.
-      const clipTop = topInternal ? "0px" : "-8px";
-      const clipRight = rightInternal ? "0px" : "-8px";
-      const clipBottom = bottomInternal ? "0px" : "-8px";
-      const clipLeft = leftInternal ? "0px" : "-8px";
-      el.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
+      el.style.clipPath = buildClipPath(internal, 8);
     } else {
       // Solo card: restore rounded corners and full shadow.
       el.removeAttribute("data-in-set");
@@ -1453,6 +1449,42 @@ function resizeDelta(
 }
 
 // ---------------------------------------------------------------------------
+// Internal-edge helpers (shared by flashSetPerimeter and updateSetAppearance)
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine which sides of a card are internal (shared with a set neighbor).
+ * Returns { top, right, bottom, left } booleans.
+ */
+function computeInternalEdges(
+  cardId: string,
+  sharedEdges: import("@/snap").SharedEdge[],
+): { top: boolean; right: boolean; bottom: boolean; left: boolean } {
+  return {
+    right: sharedEdges.some((e) => e.axis === "vertical" && e.cardAId === cardId),
+    left: sharedEdges.some((e) => e.axis === "vertical" && e.cardBId === cardId),
+    bottom: sharedEdges.some((e) => e.axis === "horizontal" && e.cardAId === cardId),
+    top: sharedEdges.some((e) => e.axis === "horizontal" && e.cardBId === cardId),
+  };
+}
+
+/**
+ * Build a CSS clip-path: inset() string from internal edge flags.
+ * External edges expand by `spread` px to let shadow/glow breathe.
+ * Internal edges clip flush at 0px.
+ */
+function buildClipPath(
+  internal: { top: boolean; right: boolean; bottom: boolean; left: boolean },
+  spread: number,
+): string {
+  const t = internal.top ? "0px" : `-${spread}px`;
+  const r = internal.right ? "0px" : `-${spread}px`;
+  const b = internal.bottom ? "0px" : `-${spread}px`;
+  const l = internal.left ? "0px" : `-${spread}px`;
+  return `inset(${t} ${r} ${b} ${l})`;
+}
+
+// ---------------------------------------------------------------------------
 // Flash overlay helpers (appearance-zone, [D54], Spec S03)
 // ---------------------------------------------------------------------------
 
@@ -1478,37 +1510,17 @@ export function flashSetPerimeter(setCardIds: string[], sharedEdges: import("@/s
     overlay.classList.add("set-flash-overlay");
 
     // Determine which of this card's edges are internal seams (Spec S03).
-    // right edge internal: this card is cardAId of a vertical shared edge
-    const rightInternal = sharedEdges.some(
-      (e) => e.axis === "vertical" && e.cardAId === cardId,
-    );
-    // left edge internal: this card is cardBId of a vertical shared edge
-    const leftInternal = sharedEdges.some(
-      (e) => e.axis === "vertical" && e.cardBId === cardId,
-    );
-    // bottom edge internal: this card is cardAId of a horizontal shared edge
-    const bottomInternal = sharedEdges.some(
-      (e) => e.axis === "horizontal" && e.cardAId === cardId,
-    );
-    // top edge internal: this card is cardBId of a horizontal shared edge
-    const topInternal = sharedEdges.some(
-      (e) => e.axis === "horizontal" && e.cardBId === cardId,
-    );
+    const internal = computeInternalEdges(cardId, sharedEdges);
 
     // Suppress borders on internal seam edges via inline style (Spec S03).
-    if (topInternal) overlay.style.borderTop = "none";
-    if (rightInternal) overlay.style.borderRight = "none";
-    if (bottomInternal) overlay.style.borderBottom = "none";
-    if (leftInternal) overlay.style.borderLeft = "none";
+    if (internal.top) overlay.style.borderTop = "none";
+    if (internal.right) overlay.style.borderRight = "none";
+    if (internal.bottom) overlay.style.borderBottom = "none";
+    if (internal.left) overlay.style.borderLeft = "none";
 
     // Apply clip-path to prevent box-shadow glow from bleeding across seam edges.
-    // External edges: -4px (allow glow to extend). Internal edges: 0 (flush clip).
-    // CSS inset order: top right bottom left.
-    const clipTop = topInternal ? "0" : "-4px";
-    const clipRight = rightInternal ? "0" : "-4px";
-    const clipBottom = bottomInternal ? "0" : "-4px";
-    const clipLeft = leftInternal ? "0" : "-4px";
-    overlay.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
+    // Flash glow spread is 4px.
+    overlay.style.clipPath = buildClipPath(internal, 4);
 
     // Cards are always fully rounded — use CSS default border-radius (no inline override).
 
