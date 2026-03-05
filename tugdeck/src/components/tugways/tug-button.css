@@ -26,6 +26,12 @@
   border: 1px solid transparent;
 }
 
+/* Primary variant: accent-2 fill with inverse text */
+.tug-button-primary {
+  background-color: var(--td-accent-2);
+  color: var(--td-text-inverse);
+}
+
 /* Destructive variant: bold red fill with white text */
 .tug-button-destructive {
   background-color: var(--td-danger);

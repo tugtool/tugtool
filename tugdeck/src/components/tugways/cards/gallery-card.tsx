@@ -662,6 +662,14 @@ export function GalleryDefaultButtonContent() {
           Click outside the buttons, then press Enter to activate the default button.
         </p>
         <div className="cg-variant-row">
+          <TugButton
+            subtype="push"
+            variant="secondary"
+            size="md"
+            onClick={() => setLastAction("Cancel clicked")}
+          >
+            Cancel
+          </TugButton>
           <span ref={confirmContainerRef}>
             <TugButton
               subtype="push"
@@ -672,14 +680,6 @@ export function GalleryDefaultButtonContent() {
               Confirm
             </TugButton>
           </span>
-          <TugButton
-            subtype="push"
-            variant="secondary"
-            size="md"
-            onClick={() => setLastAction("Cancel clicked")}
-          >
-            Cancel
-          </TugButton>
         </div>
         {lastAction !== null && (
           <div className="cg-demo-status" data-testid="gallery-default-button-status">
