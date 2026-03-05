@@ -430,6 +430,19 @@ export function CardFrame({
         }
       }
 
+      // Defensive sweep: remove all stale .set-shadow elements and rebuild before
+      // the shadow lookup below. Any shadow that was missed by the store subscriber
+      // (e.g. during a rapid close-then-drag sequence) is cleared here so that
+      // dragShadowEl always references a freshly-built element. [D03, S04]
+      // Note: setGestureActive(true) (called above) is already set, so the store
+      // subscriber will not interfere with this rebuild.
+      const container = frame.parentElement;
+      if (container) {
+        const staleShadows = container.querySelectorAll<HTMLElement>(".set-shadow");
+        staleShadows.forEach((el) => el.parentNode?.removeChild(el));
+        updateSetAppearance(dragCanvasBounds.current, container);
+      }
+
       // Look up the virtual shadow element for this set at drag-start. [D05]
       // Uses the sorted, comma-joined card ID string to find the matching .set-shadow wrapper.
       // The reference is stored once and translated in the RAF loop to avoid per-frame DOM queries.

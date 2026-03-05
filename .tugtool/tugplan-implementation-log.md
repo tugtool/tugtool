@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-05T15:07:29Z
+---
+
+## step-4: Inserted defensive sweep in handleDragStart that removes all .set-shadow elements and rebuilds via updateSetAppearance before shadow lookup, preventing stale shadows from missed updates.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-3
 date: 2025-03-05T15:05:16Z
 ---
