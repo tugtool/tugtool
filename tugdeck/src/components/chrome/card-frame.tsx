@@ -51,7 +51,7 @@ function isSnapModifier(e: PointerEvent): boolean {
 // clamping. Set to 0 for flush edges. Increase for a gutter around the canvas.
 // ---------------------------------------------------------------------------
 
-const CANVAS_PADDING = 0;
+const CANVAS_PADDING = 2;
 
 // ---------------------------------------------------------------------------
 // Types (Spec S04)
