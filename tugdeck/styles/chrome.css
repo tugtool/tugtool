@@ -17,9 +17,13 @@
 .card-frame-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
 .card-frame-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
-/* ---- Card focus: shadow on focused, dim overlay on unfocused ---- */
-.card-frame[data-focused="true"] {
+/* ---- Card shadow: always-on box-shadow on .tugcard ---- */
+.tugcard {
   box-shadow: var(--td-card-shadow-active);
+}
+
+/* ---- Card focus: border-radius on focused, dim overlay on unfocused ---- */
+.card-frame[data-focused="true"] {
   border-radius: var(--td-radius-md);
 }
 
@@ -48,42 +52,18 @@
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
-/* ---- Set membership: squared corners, suppressed per-card shadow ---- */
+/* ---- Set membership: squared corners; clip-path on .tugcard controls shadow edges ---- */
 /*
  * Cards in a set have their corners squared so adjacent cards form a seamless group.
- * Per-card box-shadow is suppressed; a shared hull shadow is rendered by .set-shadow. [D08, D03]
+ * clip-path: inset() on .tugcard (set inline by updateSetAppearance()) suppresses shadow on
+ * interior (shared) edges while showing shadow on exterior edges. [D01, D02, D04, D08]
  * The data-in-set attribute is applied by updateSetAppearance() after each move/resize. [D08]
  */
 .card-frame[data-in-set="true"] {
   border-radius: 0;
-  box-shadow: none;
 }
 .card-frame[data-in-set="true"] .tugcard {
   border-radius: 0;
-}
-
-/* ---- Virtual set hull shadow ---- */
-/*
- * One .set-shadow wrapper per set, appended to the ResponderScope by updateSetAppearance().
- * Positioned at the hull bounding box. Carries filter:drop-shadow — no clip-path here.
- * The drop-shadow filter reads the shape of the clipped inner div and renders the shadow
- * outside the hull polygon, giving a clean elevation effect that follows the set outline. [D03]
- *
- * .set-shadow-shape is the inner div. It carries the hull polygon clip-path (set inline
- * from JS) and the surface background so the filter has a solid shape to shadow.
- */
-.set-shadow {
-  position: absolute;
-  pointer-events: none;
-  overflow: visible;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-}
-
-.set-shadow-shape {
-  width: 100%;
-  height: 100%;
-  background: var(--td-surface);
-  /* clip-path is set inline from JS (hull polygon in wrapper-local coords) */
 }
 
 /* ---- Card flash feedback (single-card break-out flash) ---- */

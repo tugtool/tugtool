@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-05T16:09:21Z
+---
+
+## step-1: Added unconditional box-shadow to .tugcard, removed conditional shadow from .card-frame rules, deleted .set-shadow and .set-shadow-shape CSS rules and comment block
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
 step: step-5
 date: 2025-03-05T15:10:11Z
 ---
