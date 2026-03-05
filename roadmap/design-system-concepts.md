@@ -96,10 +96,14 @@
 | [D50] | `useTugcardPersistence` hook for card content state save/restore | Concept 18 | [#d50-persistence-hook](#d50-persistence-hook) |
 | [D51] | Focused card ID persisted in DeckState for reload restoration | Concept 18 | [#d51-focused-card](#d51-focused-card) |
 | [D52] | Collapsed state persisted in CardState | Concept 18 | [#d52-collapsed-state](#d52-collapsed-state) |
-| [D53] | Set corners squared at internal seams, rounded on outer hull | Concept 13 | [#d53-set-corners](#d53-set-corners) |
-| [D54] | Set perimeter flash on formation — outer hull only, no internal edges | Concept 13 | [#d54-set-perimeter-flash](#d54-set-perimeter-flash) |
-| [D55] | Break-out restores rounded corners and flashes card perimeter | Concept 13 | [#d55-breakout-restore](#d55-breakout-restore) |
+| [D53] | Set members get uniform squared corners via CSS `data-in-set` attribute | Concept 13 | [#d53-set-corners](#d53-set-corners) |
+| [D54] | Set perimeter flash via SVG hull polygon trace — outer hull only | Concept 13 | [#d54-set-perimeter-flash](#d54-set-perimeter-flash) |
+| [D55] | Break-out restores rounded corners (CSS-driven) and flashes card perimeter | Concept 13 | [#d55-breakout-restore](#d55-breakout-restore) |
 | [D56] | Border collapse: snap positions offset by border width to share a single line | Concept 13 | [#d56-border-collapse](#d56-border-collapse) |
+| [D57] | Set shadows via clip-path:inset() on .tugcard — no shadow DOM elements | Concept 13 | [#d57-clip-path-shadow](#d57-clip-path-shadow) |
+| [D58] | Active/inactive shadow tokens for focused vs. unfocused cards | Concept 13 | [#d58-active-inactive-shadow](#d58-active-inactive-shadow) |
+| [D59] | Command-key (metaKey) suppresses card activation on click | Concept 13 | [#d59-command-suppress-activation](#d59-command-suppress-activation) |
+| [D60] | Resize click activates the card (brings to front) | Concept 13 | [#d60-resize-activates](#d60-resize-activates) |
 
 ### Key Architectural Patterns
 
@@ -2581,7 +2585,7 @@ function onDragMove(cardId: string, cursorX: number, cursorY: number, event: Mou
 }
 ```
 
-The existing `computeSnap`, `findSharedEdges`, `computeSets` functions in `snap.ts` are untouched. The only change is the conditional call site.
+The existing `findSharedEdges` and `computeSets` functions in `snap.ts` are untouched. `computeSnap` gained a `borderWidth` parameter for border collapse ([D56]). `computeSetHullPolygon` was added for set perimeter flash ([D54]).
 
 #### Set-Move Is Always Active {#d33-set-move-always}
 
@@ -2608,43 +2612,59 @@ The existing break-out detection in `DeckManager` (measuring drag distance from 
 |-------|--------|
 | Free drag (no Option) | Card follows cursor, no guides, no highlighting |
 | Option held during drag | Snap guides appear (existing blue/accent lines), target edges highlight |
-| Card snaps to edge | 1px overlap applied, docked corners computed (square at shared edge, rounded elsewhere) |
-| Set formed | Sash handles appear at shared edges (existing behavior) |
+| Card snaps to edge | Border-width overlap applied ([D56]), corners squared via `data-in-set` ([D53]) |
+| Set formed | Set flash traces outer hull perimeter ([D54]), clip-path hides interior shadows ([D08]) |
+| Set-move (no modifier) | All set members translate together, clip-path values unchanged |
+| Break-out (Option pressed during set-move) | Detached card gets rounded corners, full shadow, perimeter flash ([D55]) |
 
-The snap guides, docked corner computation, 1px overlap, and sash rendering are all existing visual features. The only change is their activation condition.
+The snap guides, border collapse, and sash rendering are existing features. The modifier gate, hull-polygon flash, clip-path shadow system, and break-out restoration were added in Phases 5c/5c2.
 
 #### Set Corner Rounding {#d53-set-corners}
 
-When cards form a set by snapping, the **outer hull** of the set retains rounded corners (`var(--td-radius-md)`, currently 6px) while **internal seams** get squared-off corners (`border-radius: 0`). This makes the set look like a single unified shape rather than a stack of overlapping rounded rectangles.
+When cards form a set by snapping, all set member corners become squared (`border-radius: 0`). Solo cards retain rounded corners (`var(--td-radius-md)`, currently 6px). This makes the set look like a single unified shape.
 
-The rule is per-corner, driven by whether that corner faces the exterior or an internal seam:
+The mechanism is CSS-driven via the `data-in-set` attribute on `.card-frame`:
 
-| Corner position | Treatment |
-|-----------------|-----------|
-| Faces the exterior of the set (no adjacent card on that side) | Rounded (`var(--td-radius-md)`) |
-| Faces an internal seam (adjacent card shares that edge) | Squared (`0`) |
+```css
+.card-frame[data-in-set="true"] { border-radius: 0; }
+.card-frame[data-in-set="true"] .tugcard { border-radius: 0; }
+```
 
-For a vertical 2-card stack: the top card keeps rounded top-left/top-right, squares its bottom-left/bottom-right; the bottom card squares its top-left/top-right, keeps rounded bottom-left/bottom-right. For an L-shaped 3-card set, each card's corners are computed independently based on which edges have neighbors.
+`updateSetAppearance()` sets or removes `data-in-set` on each card frame based on set membership computed by `findSharedEdges` and `computeSets`. This is an appearance-zone operation per the three-zone model ([D12]) — no React state involved.
 
-Corner rounding is an appearance-zone operation — applied via direct DOM manipulation on the `.tugcard` element's `border-radius` property, per [D08]/[D09]. No React state involved.
+**Design note**: The original design called for per-corner computation (exterior corners rounded, interior corners squared). The uniform approach was chosen instead because: (a) it's dramatically simpler — a single CSS attribute toggle vs. per-corner DOM mutations, (b) the visual difference is negligible at 6px radius, and (c) it eliminates a class of edge cases with L-shaped and T-shaped set topologies.
 
 #### Set Perimeter Flash {#d54-set-perimeter-flash}
 
 When a set is formed on pointer-up, the **outer hull** of the set flashes the accent color. Internal edges where cards connect do **not** flash — only the exterior boundary of the combined shape.
 
-Implementation: rather than flashing each card's individual `.set-flash-overlay` (which would show internal borders), compute the set's exterior edges and render a single flash overlay that traces the outer perimeter. Each card in the set gets a flash overlay, but the overlay's border is selectively applied: edges facing the exterior get the `3px solid var(--td-accent)` border; edges facing another set member get `border: none` on that side. The `border-radius` on the flash overlay matches the card's current corner rounding (squared at seams, rounded at exterior).
+Implementation: `flashSetPerimeter()` computes the outer hull polygon of the set via `computeSetHullPolygon()` (a coordinate-compression + grid-based boundary trace algorithm in `snap.ts`), then renders a single SVG element with a `<path>` that strokes the hull perimeter. The SVG includes a glow filter (`<feGaussianBlur>` + `<feMerge>`) for the accent glow effect. Each flash gets a unique filter ID (via a module-level counter) to avoid cross-SVG collisions. The SVG uses `animation: set-flash-fade 0.5s ease-out forwards` from `chrome.css` and self-removes on `animationend`.
 
-The existing `@keyframes set-flash-fade` animation and glow `box-shadow` in `chrome.css` are reused. The only change is per-edge border suppression on internal seams.
+Flash parameters: stroke `var(--td-accent)`, width 3px, glow blur 4px.
+
+**Design note**: The original design described per-card flash overlays with selective edge suppression. The hull polygon SVG approach was chosen instead because it produces a visually perfect single continuous perimeter — no corner artifacts, no border-radius mismatches between adjacent card overlays, and no need for per-edge CSS utility classes.
+
+The `computeSetHullPolygon()` algorithm:
+1. **Coordinate compression**: Collect unique X/Y values from all rect edges, sort them
+2. **Boolean grid**: Fill cells where any rect covers that region
+3. **Clockwise boundary trace**: Walk the perimeter keeping interior on the left (screen coordinates, y-down). At concave corners turn counterclockwise `(dir+3)%4`, at convex corners turn clockwise `(dir+1)%4`
+4. **Collinear removal**: Remove vertices on straight lines between neighbors
+5. **Canvas coordinate conversion**: Convert grid indices back to canvas coordinates
+
+Returns an array of `Point` objects in canvas coordinates, ordered clockwise.
 
 #### Break-Out Visual Restoration {#d55-breakout-restore}
 
-When a card breaks out of a set (modifier pressed during set-move, per [D32]):
+Break-out is triggered by pressing the snap modifier (Alt/Option) mid-drag while in a set — the card detaches and enters snap mode. This is detected as a modifier transition (false→true) in `applyDragFrame`.
 
-1. **Immediately restore rounded corners** on the detached card — all four corners return to `var(--td-radius-md)`. This is a direct DOM mutation on `.tugcard`'s `border-radius`.
-2. **Flash the detached card's perimeter** in accent color, using the standard `.set-flash-overlay` animation. Since the card is now solo, all four edges flash (no internal-edge suppression needed).
-3. **Update remaining set members' corners** — the cards still in the set recompute their corner rounding to reflect the new set topology (the departed card's edge is now exterior for its former neighbors).
+When a card breaks out:
 
-The corner restore happens synchronously during break-out detection in `applyDragFrame`. The flash is triggered on the next animation frame after corners are updated, so the flash always shows the correct (rounded) shape.
+1. **Immediately restore rounded corners** on the detached card — `data-in-set` is removed from the card frame, and CSS returns the corners to `var(--td-radius-md)`.
+2. **Clear the detached card's clip-path** — `tugcardEl.style.clipPath = ''` so the card shows full shadow on all sides.
+3. **Flash the detached card's perimeter** via `flashCardPerimeter()`, which creates a `.card-flash-overlay` div with `border: 3px solid var(--td-accent)`, box-shadow glow, and `inset: -1px`. The overlay uses `animation: set-flash-fade` and self-removes on `animationend`.
+4. **Update remaining set members** — `onCardMoved` triggers a store mutation, which fires the store subscriber in `deck-canvas.tsx`, which calls `updateSetAppearance()` to recompute clip-paths and `data-in-set` for the remaining members.
+
+The corner and clip-path restore happen synchronously during break-out detection. The store subscriber handles remaining member updates asynchronously but within the same frame.
 
 #### Border Collapse via Snap Offset {#d56-border-collapse}
 
@@ -2654,14 +2674,68 @@ The offset is the actual computed border width of the `.tugcard` element (curren
 
 This adjustment lives in `computeSnap` in `snap.ts`: when a snap alignment is found, the snap position is shifted inward by the border width so the snapping card's border overlaps the neighbor's border. The border width is passed as a parameter to `computeSnap`, keeping the function pure (no DOM access inside `snap.ts`).
 
+#### Set Shadows via Clip-Path {#d57-clip-path-shadow}
+
+Set member shadows are controlled via `clip-path: inset()` on `.tugcard`, not by creating or removing shadow DOM elements. The `computeClipPathForCard()` helper in `card-frame.tsx` determines which edges are interior (shared with a neighbor) and which are exterior:
+
+- **Exterior edges**: extend the clip-path by `SHADOW_EXTEND_PX` (20px) beyond the border-box, allowing the full box-shadow to show
+- **Interior edges**: clip at `0px` (the border-box edge), hiding the shadow on that side
+
+The SharedEdge convention from `findSharedEdges`: vertical axis means cardA's right touches cardB's left; horizontal axis means cardA's bottom touches cardB's top. Solo cards (no shared edges) get no clip-path at all — full shadow on all sides.
+
+`updateSetAppearance()` applies the computed clip-path to each card's `.tugcard` child element via `tugcardEl.style.clipPath`. It also runs per-frame during sash co-resize to keep clip-paths correct as the shared edge moves.
+
+**Design note**: The original implementation used `.set-shadow` DOM elements — absolutely-positioned divs with their own box-shadow, sized and positioned to cover the set hull polygon. This approach was replaced because: (a) it required complex element lifecycle management (create, position, translate, remove), (b) the hull polygon shadow had visual artifacts at concave set topologies, and (c) per-card clip-path is dramatically simpler — no DOM elements created or removed, just a style property computed from shared-edge data.
+
+#### Active/Inactive Shadow Tokens {#d58-active-inactive-shadow}
+
+Cards display different shadow intensity based on focus state:
+
+| Token | Brio (default) | Bluenote | Harmony (light) |
+|-------|---------------|----------|-----------------|
+| `--td-card-shadow-active` | `0 2px 8px rgba(0, 0, 0, 0.4)` | `0 2px 8px rgba(0, 0, 0, 0.45)` | `0 2px 8px rgba(0, 0, 0, 0.18)` |
+| `--td-card-shadow-inactive` | `0 1px 4px rgba(0, 0, 0, 0.2)` | `0 1px 4px rgba(0, 0, 0, 0.22)` | `0 1px 4px rgba(0, 0, 0, 0.09)` |
+
+Inactive shadows use roughly half the blur radius and opacity of active shadows. The CSS rules:
+
+```css
+.tugcard { box-shadow: var(--td-card-shadow-inactive); }
+.card-frame[data-focused="true"] .tugcard { box-shadow: var(--td-card-shadow-active); }
+```
+
+The `data-focused` attribute is set by CardFrame based on the `isFocused` prop from DeckManager. Unfocused cards also receive a dim overlay via the `::after` pseudo-element (`--td-card-dim-overlay`).
+
+#### Command-Key Suppresses Activation {#d59-command-suppress-activation}
+
+Holding the Command key (metaKey) during a pointer-down on a card frame **suppresses** the `onCardFocused` call, preventing the card from coming to the front or becoming active. This is a standard macOS convention — Command-click interacts with a window without changing the window order.
+
+The check is in `handleFramePointerDown`:
+
+```typescript
+const handleFramePointerDown = useCallback((event: React.PointerEvent) => {
+  if (!event.metaKey) {
+    onCardFocused(id);
+  }
+}, [id, onCardFocused]);
+```
+
+The same check is applied in `handleResizeStart` to maintain consistency — Command+resize-drag does not bring the card to front.
+
+#### Resize Click Activates Card {#d60-resize-activates}
+
+Clicking a resize handle now explicitly calls `onCardFocused(id)` to bring the card to front before starting the resize gesture. Previously, resize handles called `event.stopPropagation()` which prevented the frame's `handleFramePointerDown` from firing, meaning resize would start on an inactive card without activating it.
+
+The fix adds `onCardFocused(id)` at the top of `handleResizeStart` (subject to the Command-key check per [D59]), then `stopPropagation()` to prevent a redundant second activation from the frame handler.
+
 #### What Concept 13 Establishes {#c13-demonstrates}
 
 1. **Snap is modifier-gated** — Option (Alt) activates snap guides and snap-to-edge during drag. Free drag is the default. ([#d32-modifier-snap](#d32-modifier-snap))
 2. **Set-move is always active** — once a set is formed, dragging any member moves the group. No modifier needed for set operations. ([#d33-set-move-always](#d33-set-move-always))
-3. **Geometric engine untouched** — `snap.ts` remains a pure geometry library. The modifier gate lives in the drag handler, not the math. The only `snap.ts` change is the border-width offset parameter in `computeSnap`. ([#d56-border-collapse](#d56-border-collapse))
-4. **Fluid modifier interaction** — Option can be pressed/released mid-drag with immediate visual feedback. No mode switches, no state machines.
-5. **Set visual identity** — snapped cards form a unified visual shape: squared internal corners, rounded outer hull, single-line borders at seams, and a perimeter flash that traces only the exterior boundary. ([#d53-set-corners](#d53-set-corners), [#d54-set-perimeter-flash](#d54-set-perimeter-flash))
-6. **Break-out visual restoration** — detaching from a set immediately restores rounded corners and flashes the card's perimeter. ([#d55-breakout-restore](#d55-breakout-restore))
+3. **Geometric engine untouched** — `snap.ts` remains a pure geometry library. The modifier gate lives in the drag handler, not the math. The `snap.ts` additions are: border-width offset parameter in `computeSnap` ([#d56-border-collapse](#d56-border-collapse)) and `computeSetHullPolygon` for flash ([#d54-set-perimeter-flash](#d54-set-perimeter-flash)).
+4. **Fluid modifier interaction** — Option can be pressed/released mid-drag with immediate visual feedback. Pressing Option while in a set triggers break-out. No mode switches, no state machines.
+5. **Set visual identity** — snapped cards form a unified visual shape: squared corners via CSS `data-in-set`, single-line borders via border-width offset, clip-path suppresses interior shadows, and perimeter flash traces the outer hull via SVG polygon. ([#d53-set-corners](#d53-set-corners), [#d54-set-perimeter-flash](#d54-set-perimeter-flash))
+6. **Break-out visual restoration** — pressing Option during set-move detaches the card, restores rounded corners and full shadow, and flashes the card's perimeter. ([#d55-breakout-restore](#d55-breakout-restore))
+7. **Shadow architecture** — box-shadow lives on `.tugcard` unconditionally via CSS. Interior set edges are hidden via `clip-path: inset()` computed per card from shared-edge data. Active (`--td-card-shadow-active`) and inactive (`--td-card-shadow-inactive`) shadow tokens differentiate focused vs. unfocused cards. No shadow DOM elements are created or removed — the old `.set-shadow` element approach was replaced by the clip-path system.
 
 ### 14. Selection Model {#c14-selection}
 
@@ -3384,9 +3458,9 @@ Two missing concepts identified and designed:
 - **[D32] Snap requires Option (Alt) modifier during drag.** Without the modifier: free drag, no guides, no snapping. With the modifier: snap guides appear, cards snap to edges, sets form on drop. The modifier can be pressed/released mid-drag with immediate visual feedback.
 - **[D33] Set-move is always active once formed.** Sets are intentional structures — requiring Option for every set-move would be tedious. The modifier is only for *forming* sets.
 - **Geometric engine untouched.** The modifier gate lives in `DeckManager`'s drag handler, not in `snap.ts`. Pure geometry library stays pure. (One addition: `computeSnap` gains a border-width offset parameter for [D56].)
-- **[D53] Set corners squared at internal seams.** The outer hull of a snapped set retains rounded corners; internal seam corners are squared off. Appearance-zone DOM mutation.
-- **[D54] Set perimeter flash on formation.** On pointer-up, the outer hull of the set flashes accent color. Internal edges between set members do not flash.
-- **[D55] Break-out restores rounded corners + flash.** Detaching from a set immediately rounds all four corners and flashes the card's full perimeter.
+- **[D53] Set corners squared.** All set member corners become squared (`border-radius: 0`) via CSS `data-in-set` attribute. Solo cards retain rounded corners. (Simplified from original per-corner design during implementation.)
+- **[D54] Set perimeter flash on formation.** `computeSetHullPolygon()` computes the outer boundary; a single SVG path strokes the hull with glow filter. (Replaced original per-card overlay design during implementation.)
+- **[D55] Break-out restores corners + flash.** Removing `data-in-set` restores rounded corners via CSS. `flashCardPerimeter()` creates a `.card-flash-overlay` div on the detached card.
 - **[D56] Border collapse via snap offset.** Snap positions are offset by the computed border width so adjacent card borders overlap into a single line. No hardcoded pixel values — uses actual computed border width for fractional-pixel correctness.
 
 Deferred concepts renumbered: Keybindings View → 14, Brio Theme Revision → 15. Concept count is now 15.
@@ -3494,8 +3568,30 @@ Cards and tabs lose ephemeral state in two scenarios: tab switch (inactive tab u
 
 Phase 5c delivered modifier-gated snapping and set-move. Manual testing revealed four visual refinements needed to make sets feel like unified shapes rather than cards that happen to be adjacent:
 
-- **[D53] Set corners squared at internal seams.** When cards form a set, internal-facing corners become square while the outer hull retains rounded corners. Per-corner computation based on which edges have neighbors. Appearance-zone DOM mutation on `.tugcard`'s `border-radius`.
-- **[D54] Set perimeter flash — outer hull only.** The existing per-card `.set-flash-overlay` flashes all four borders, which looks wrong for sets (internal borders between members flash too). Phase 5c2 suppresses the border on internal edges so only the exterior perimeter flashes. Reuses existing `@keyframes set-flash-fade` and glow effects.
-- **[D55] Break-out restores corners + flash.** When a card detaches from a set, rounded corners are restored immediately, remaining members recompute their corners, and the detached card flashes its full perimeter.
-- **[D56] Border collapse via snap offset.** Cards snapping to a neighbor's edge now offset by the actual computed border width (via `getComputedStyle`) so borders overlap into a single line. No hardcoded pixel values — handles fractional-pixel positions correctly. The offset parameter is added to `computeSnap` in `snap.ts`, keeping the function pure.
-- **Phase 5c2**: Implementation phase. Depends on Phase 5c (snap and set-move must exist). Touches `snap.ts` (border-width offset), `card-frame.tsx` (corner rounding, flash edge suppression, break-out restoration), and `chrome.css` (per-edge flash border rules).
+- **[D53] Set corners squared at internal seams.** Implementation simplified from the original per-corner design to uniform `border-radius: 0` for all set members via CSS `data-in-set` attribute. Simpler and visually equivalent at 6px radius.
+- **[D54] Set perimeter flash — outer hull only.** Implementation diverged from the original per-card overlay design to a single SVG hull polygon trace via `computeSetHullPolygon()` in `snap.ts`. This produces a cleaner single continuous perimeter with no corner artifacts.
+- **[D55] Break-out restores corners + flash.** Removing `data-in-set` restores rounded corners via CSS. `flashCardPerimeter()` creates a `.card-flash-overlay` div. Remaining set members update via store subscriber.
+- **[D56] Border collapse via snap offset.** `computeSnap` gains a `borderWidth` parameter. Drag reads computed border width from `.tugcard`; resize uses hardcoded 1px.
+- **Phase 5c2**: Touches `snap.ts` (border-width offset, hull polygon algorithm), `card-frame.tsx` (corner rounding, set flash, break-out restoration), and `chrome.css` (flash overlay rules).
+
+### Entry 27: Shadow Rewrite and Card Refinements {#log-27} (2026-03-05)
+
+Post-5c2 implementation revealed that the `.set-shadow` DOM element approach for set shadows had fundamental problems: visual glitches at concave set topologies, complex element lifecycle management, and a `_gestureActive` flag system that gated the store subscriber to avoid conflicts between gesture-time shadow tracking and subscriber-driven updates.
+
+Four PRs resolved this:
+
+1. **Set Shadow Glitches (#87)**: Fixed hull polygon computation bugs and visual artifacts.
+2. **Hull Polygon Visual Overhaul (#86)**: Rewrote `computeSetHullPolygon` with coordinate compression + grid-based boundary trace algorithm.
+3. **Set Shadow Rewrite (#88)**: Replaced the entire `.set-shadow` DOM element system with `clip-path: inset()` on `.tugcard`. Five steps: (a) CSS foundation — universal shadow on `.tugcard`, remove `.set-shadow` rules; (b) rewrite `updateSetAppearance` to apply clip-path instead of creating shadow elements; (c) delete gesture-active flag and all shadow tracking from drag/resize; (d) add per-frame clip-path update to sash co-resize; (e) cleanup and verification.
+4. **Three Quick Fixes (dash)**: Added `--td-card-shadow-inactive` token, resize-click activation, Command-key suppression of activation.
+
+New design decisions:
+
+- **[D57] Set shadows via clip-path:inset()** — `computeClipPathForCard()` maps SharedEdge data to inset values. Interior edges clip at 0px (hiding shadow), exterior edges extend by `SHADOW_EXTEND_PX` (20px) to show full shadow. No DOM elements created or removed.
+- **[D58] Active/inactive shadow tokens** — focused cards use `--td-card-shadow-active` (stronger shadow), unfocused use `--td-card-shadow-inactive` (half blur, half opacity). CSS-driven via `data-focused` attribute.
+- **[D59] Command-key suppresses activation** — `metaKey` check in `handleFramePointerDown` and `handleResizeStart` skips `onCardFocused` call. Standard macOS convention.
+- **[D60] Resize click activates card** — `handleResizeStart` explicitly calls `onCardFocused(id)` since `stopPropagation()` prevents the frame's handler from firing.
+
+**Deleted infrastructure**: `_gestureActive`/`isGestureActive`/`setGestureActive` flag system, `dragShadowEl`/`dragShadowOrigin` refs, `resizeShadowEl`/`resizeShadowOriginX`/`resizeShadowOriginY` locals, defensive sweep block in `handleDragStart`, shadow translation in drag/resize RAF loops, `.set-shadow` and `.set-shadow-shape` CSS rules.
+
+**Phases 5c and 5c2 are now complete.** The card snapping system is fully implemented: modifier-gated snap, set formation, set-move, break-out, border collapse, corner squaring, hull polygon flash, clip-path shadow management, active/inactive shadow differentiation, and activation refinements.

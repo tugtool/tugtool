@@ -434,37 +434,47 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 ### Phase 5c: Card Snapping (Concept 13)
 
+**Status: COMPLETE** (2026-03-04)
+
 **Goal**: Snap-to-edge and set formation require the Option (Alt) modifier. Free drag is the default.
 
-**What to do**:
-1. Gate snap behavior on Option (Alt) modifier ([D32]): in DeckManager's drag handler, only call `computeSnap` and show guides when `event.altKey` is true. Free drag is the default.
-2. Support mid-drag modifier toggle: pressing/releasing Option during a drag immediately shows/hides guides and snaps/unsnaps
-3. Verify set-move still works without modifier once a set is formed ([D33])
-4. Verify break-out behavior: drag a set member away to detach, then Option+drag to snap elsewhere
-5. Test with multiple cards: create cards via menu, Option+drag to snap, verify set formation and set-move
+**What was done**:
+1. Gated snap behavior on configurable modifier key (default: Alt/Option) via `SNAP_MODIFIER_KEY` constant and `isSnapModifier()` helper in `card-frame.tsx`. Solo card drag only calls `computeSnap` when modifier is held.
+2. Mid-drag modifier toggle supported: pressing/releasing Option immediately shows/hides guides and snaps/unsnaps.
+3. Set-move works without modifier once a set is formed — dragging any member moves the group.
+4. Break-out triggered by pressing Option during set-move (modifier transition false→true), not just drag distance.
 
-**Result**: Casual drags are free movement. Option+drag activates snap guides and set formation. Existing set-move and break-out behavior preserved.
+**Result**: Casual drags are free movement. Option+drag activates snap guides and set formation. Set-move and break-out behavior work correctly.
 
-### Phase 5c2: Card Snap Set Refinements (Concept 13, [D53]-[D56])
+### Phase 5c2: Card Snap Set Refinements (Concept 13, [D53]-[D60])
 
-**Goal**: Snapped card sets look and behave like unified shapes — squared internal corners, single-line borders, outer-hull perimeter flash, and clean break-out visuals.
+**Status: COMPLETE** (2026-03-05)
 
-**What to do**:
-1. **Border collapse in snap math** ([D56]): modify `computeSnap` in `snap.ts` to accept a `borderWidth` parameter. When a snap alignment is found, offset the snap position inward by `borderWidth` so the snapping card's border overlaps the neighbor's border. The caller reads the actual computed border width via `getComputedStyle(tugcardEl).borderTopWidth` and passes it in. No hardcoded pixel values — handles fractional positions correctly.
-2. **Set corner rounding** ([D53]): after a set is formed on pointer-up, compute which corners of each set member face the interior vs. exterior. Set interior-facing corners to `border-radius: 0` and exterior-facing corners to `var(--td-radius-md)` via direct DOM mutation on the `.tugcard` element. Use the shared-edge data from `findSharedEdges` to determine adjacency per corner.
-3. **Outer-hull perimeter flash** ([D54]): modify the set-flash logic to suppress the border on internal edges. Each card in the set gets a `.set-flash-overlay`, but with `border-top/right/bottom/left` selectively set to `none` on edges that face another set member. The overlay's `border-radius` matches the card's current corner rounding (squared at seams, rounded at exterior).
-4. **Break-out visual restoration** ([D55]): when a card detaches from a set (modifier pressed during set-move), immediately restore all four corners to `var(--td-radius-md)` via DOM mutation. Recompute remaining set members' corners to reflect the new topology. Flash the detached card's full perimeter (all four edges, standard `.set-flash-overlay`).
-5. **Corner rounding on free drag** : when a card that was in a set is freely dragged (not as part of set-move), restore rounded corners at drag-start so the card looks independent during the drag.
-6. **CSS additions**: add utility rules for per-edge border suppression on `.set-flash-overlay` (e.g., `.set-flash-no-top { border-top: none; }`, etc.) to `chrome.css`.
+**Goal**: Snapped card sets look and behave like unified shapes — squared corners, single-line borders, outer-hull perimeter flash, clip-path shadow management, and clean break-out visuals. Plus card activation refinements.
+
+**What was done** (across PRs #85-#88 and a dash):
+
+1. **Border collapse in snap math** ([D56]): `computeSnap` in `snap.ts` gained a `borderWidth` parameter. Snap positions offset inward by border width so adjacent card borders overlap. Drag reads computed width via `getComputedStyle(tugcardEl).borderTopWidth`; resize uses hardcoded 1px.
+2. **Set corner rounding** ([D53]): simplified from per-corner computation to uniform `border-radius: 0` for all set members via CSS `data-in-set` attribute. `updateSetAppearance()` sets/removes the attribute based on set membership.
+3. **Outer-hull perimeter flash** ([D54]): `computeSetHullPolygon()` added to `snap.ts` — coordinate compression + grid-based boundary trace. `flashSetPerimeter()` renders a single SVG `<path>` stroking the hull with glow filter. Replaced the per-card overlay edge-suppression approach.
+4. **Break-out visual restoration** ([D55]): removing `data-in-set` restores rounded corners via CSS. `flashCardPerimeter()` creates a `.card-flash-overlay` div. Break-out triggered by Alt key transition (false→true) during set-move.
+5. **Shadow rewrite** ([D57]): replaced `.set-shadow` DOM elements with `clip-path: inset()` on `.tugcard`. `computeClipPathForCard()` helper maps SharedEdge data to inset values. `SHADOW_EXTEND_PX = 20`. Deleted `_gestureActive` flag system, `dragShadowEl`/`resizeShadowEl` refs, shadow tracking in drag/resize RAF loops. Store subscriber calls `updateSetAppearance` unconditionally.
+6. **Active/inactive shadow tokens** ([D58]): added `--td-card-shadow-inactive` across all three themes. `.tugcard` uses inactive shadow by default; `.card-frame[data-focused="true"] .tugcard` uses active shadow.
+7. **Command-key suppresses activation** ([D59]): `metaKey` check in `handleFramePointerDown` and `handleResizeStart` skips `onCardFocused` call.
+8. **Resize click activates card** ([D60]): `handleResizeStart` explicitly calls `onCardFocused(id)` since `stopPropagation()` prevents the frame handler from firing.
 
 **Files modified**:
-1. `tugdeck/src/snap.ts` — `computeSnap` gains `borderWidth` parameter, snap positions offset accordingly
-2. `tugdeck/src/components/chrome/card-frame.tsx` — corner rounding logic, flash edge suppression, break-out restoration, border-width read
-3. `tugdeck/styles/chrome.css` — per-edge flash border suppression utility classes
+1. `tugdeck/src/snap.ts` — `computeSnap` borderWidth parameter, `computeSetHullPolygon` algorithm
+2. `tugdeck/src/components/chrome/card-frame.tsx` — clip-path system, flash functions, break-out, activation, deleted shadow tracking infrastructure
+3. `tugdeck/src/components/chrome/deck-canvas.tsx` — removed `isGestureActive` guard, unconditional `updateSetAppearance`
+4. `tugdeck/styles/chrome.css` — `.tugcard` shadow rules, `.card-flash-overlay`, removed `.set-shadow`/`.set-shadow-shape`
+5. `tugdeck/styles/tokens.css` — `--td-card-shadow-inactive` token
+6. `tugdeck/styles/bluenote.css` — bluenote inactive shadow override
+7. `tugdeck/styles/harmony.css` — harmony inactive shadow override
 
-**Result**: Snapped sets look like unified shapes with clean single-line borders, squared internal corners, rounded outer hull, and perimeter flash that traces only the exterior boundary. Break-out cleanly restores the detached card's visual independence.
+**Result**: Snapped sets look like unified shapes with clean single-line borders, squared corners, clip-path shadow management, and hull-polygon perimeter flash. Break-out cleanly restores visual independence. Active/inactive shadows differentiate focused cards. Resize activates cards. Command-click preserves window order.
 
-**Note**: Phase 5c2 depends on Phase 5c (snap and set-move must exist). It does not block any other phase.
+**Note**: Phase 5c2 depended on Phase 5c (snap and set-move). Both phases are now complete. They do not block any other phase.
 
 ### Phase 5d: Default Button (Concept 3, [D39])
 
