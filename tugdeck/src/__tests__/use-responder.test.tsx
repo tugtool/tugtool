@@ -392,10 +392,6 @@ describe("useResponder – stable ResponderScope identity", () => {
 
 describe("useResponder – outside provider", () => {
   it("throws descriptive error when no ResponderChainProvider is in the tree", () => {
-    // Suppress React's error boundary console.error output for this test
-    const origError = console.error;
-    console.error = () => {};
-
     function BareComponent() {
       useResponder({ id: "orphan" });
       return <div />;
@@ -421,8 +417,6 @@ describe("useResponder – outside provider", () => {
         </ErrorBoundary>
       );
     });
-
-    console.error = origError;
 
     expect(caughtError).toBeInstanceOf(Error);
     expect((caughtError as Error).message).toContain("useResponder must be used inside a <ResponderChainProvider>");

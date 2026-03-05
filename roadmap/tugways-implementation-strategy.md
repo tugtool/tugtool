@@ -476,7 +476,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Note**: Phase 5c2 depended on Phase 5c (snap and set-move). Both phases are now complete. They do not block any other phase.
 
-### Phase 5d: Default Button (Concept 3, [D39])
+### Phase 5d1: Default Button (Concept 3, [D39])
 
 **Goal**: Dialogs, alerts, sheets, and popovers can designate a default button. Enter activates it. The `primary` variant is the visual affordance.
 
@@ -492,7 +492,72 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: The default button pattern works end-to-end. Enter activates the accent-filled `primary` button in any modal context. The responder chain manages scoping so nested modals (sheet inside a card while an alert is open) route Enter correctly.
 
-**Note**: Phase 5d depends on Phase 3 (responder chain exists) and Phase 5 (Tugcard base, where alerts and sheets are first consumed). It does not depend on Phase 8a (which builds TugAlert/TugSheet/TugConfirmPopover) — rather, Phase 8a depends on Phase 5d for the default button registration mechanism. Phase 5d establishes the responder chain extension and key pipeline wiring; Phase 8a wires it into the concrete alert/sheet/popover components.
+**Note**: Phase 5d1 depends on Phase 3 (responder chain exists) and Phase 5 (Tugcard base, where alerts and sheets are first consumed). It does not depend on Phase 8a (which builds TugAlert/TugSheet/TugConfirmPopover) — rather, Phase 8a depends on Phase 5d1 for the default button registration mechanism. Phase 5d1 establishes the responder chain extension and key pipeline wiring; Phase 8a wires it into the concrete alert/sheet/popover components.
+
+### Phase 5d2: Control Action Foundation (Concept 19, [D61]-[D63])
+
+**Goal**: The responder chain supports typed action payloads, continuous action phases, explicit-target dispatch, and the control/responder separation rule. All existing dispatch call sites continue to work.
+
+**What to do**:
+1. Define the `ActionEvent` interface in `responder-chain.ts` — `{ action, sender?, value?, phase }` with five phases: `discrete`, `begin`, `change`, `commit`, `cancel`
+2. Extend `ResponderChainManager.dispatch()` to accept either a string (backward compat, desugars to `{ action, phase: 'discrete' }`) or a full `ActionEvent`. Action handlers receive the `ActionEvent` object; existing handlers that accept no arguments continue to work for discrete actions
+3. Add `ResponderChainManager.dispatchTo(targetId, event)` for explicit-target dispatch — delivers the action directly to the named responder without chain walk. Throws if the target is not registered
+4. Add `target` prop to `TugButton` — when set alongside `action`, button uses `dispatchTo` instead of nil-target `dispatch`. Omitting `target` preserves existing nil-target behavior
+5. Update the action vocabulary in `design-system-concepts.md` with inspector and continuous control actions
+6. Add the `ActionEvent` type to the Component Gallery's chain-action button demo — show a button dispatching with payload, and a responder receiving and displaying it
+7. Verify: all existing chain-action buttons and keyboard shortcuts work unchanged. New `ActionEvent` dispatch works end-to-end in the gallery demo
+
+**Files modified**:
+1. `tugdeck/src/components/tugways/responder-chain.ts` — ActionEvent interface, extended dispatch, dispatchTo
+2. `tugdeck/src/components/tugways/tug-button.tsx` — optional `target` prop
+3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — ActionEvent demo section
+
+**Result**: The responder chain speaks a richer action language. Continuous controls can express begin/change/commit/cancel phases. Inspector panels can target specific cards. All existing code is backward compatible.
+
+**Note**: Phase 5d2 depends on Phase 5a2 (responder chain infrastructure must be stable). It does not depend on Phase 5d1 (default button) — the two are independent extensions to the responder chain.
+
+### Phase 5d3: Mutation Transactions (Concept 20, [D64]-[D66])
+
+**Goal**: Live-preview editing with snapshot/restore. Inspector scrubs mutate CSS/DOM in the appearance zone; commit finalizes, cancel reverts. Style cascade introspection available for inspector display.
+
+**What to do**:
+1. Implement `MutationTransaction` class — `begin(target, properties)` snapshots current CSS/inline/data-attribute values; `preview(target, property, value)` applies appearance-zone mutations; `commit()` finalizes; `cancel()` restores snapshot
+2. Implement `MutationTransactionManager` singleton — creates transactions, tracks active transactions per element, auto-cancels previous transaction if a new one starts on the same element
+3. Implement `StyleCascadeReader` utility — `getDeclared(element, property)` returns value + source layer (`token`/`class`/`inline`/`preview`); `getComputed(element, property)` returns computed value; `getTokenValue(tokenName)` reads from document computed style
+4. Build a vertical-slice demo in the Component Gallery: a mock card element with a color swatch and x/y coordinate fields. Scrubbing the color picker previews the change in real time (appearance zone). Releasing commits. Pressing Escape cancels and restores the original color. The demo shows the cascade reader displaying which layer the current value comes from
+5. Verify: preview mutations are pure CSS/DOM (no React re-renders during scrub). Cancel restores exactly the snapshotted state. Commit leaves final values in place. Multiple sequential transactions on the same element work correctly
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/mutation-transaction.ts` — new: MutationTransaction, MutationTransactionManager
+2. `tugdeck/src/components/tugways/style-cascade-reader.ts` — new: StyleCascadeReader utility
+3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — mutation transaction demo section
+
+**Result**: The infrastructure for live-preview editing exists. Inspector panels (Phase 8e) and continuous controls (Phase 8b) can use transactions for scrub-preview-commit workflows without custom snapshot/restore code.
+
+**Note**: Phase 5d3 depends on Phase 5d2 (action phases drive transaction lifecycle) and Phase 4 (mutation model hooks for appearance-zone operations). It does not depend on Phase 5d1.
+
+### Phase 5d4: Observable Properties (Concept 21, [D67]-[D69])
+
+**Goal**: Cards can expose inspectable properties via a typed key-path store. Inspectors discover, read, write, and observe properties without importing card internals. PropertyStore integrates with `useSyncExternalStore` for targeted React re-renders.
+
+**What to do**:
+1. Implement `PropertyStore` class — typed key-value store with schema validation, `get(path)`, `set(path, value, source)`, `observe(path, listener)` returning unsubscribe function. Change records include `{ path, oldValue, newValue, source, transactionId? }`
+2. Implement `PropertySchema` and `PropertyDescriptor` types — path, type (`string`/`number`/`boolean`/`color`/`point`/`enum`), label, constraints (min/max, enumValues, readOnly)
+3. Implement `usePropertyStore` hook — card content components call this to register a PropertyStore with their card. Takes schema + `onGet`/`onSet` callbacks. Returns the store instance
+4. Ensure `useSyncExternalStore` compatibility — `PropertyStore.observe()` works as a subscribe function; `PropertyStore.get()` returns stable references for unchanged values (no spurious re-renders)
+5. Wire `setProperty` action handler in Tugcard — when a `setProperty` action arrives via the responder chain (from an inspector), route it to the card content's PropertyStore
+6. Build a minimal inspector demo in the Component Gallery: a PropertyStore with three properties (color, fontSize, fontFamily). An inspector panel reads the schema, renders appropriate controls, and edits via `dispatchTo`. Changes reflect in both the target element (live preview via transaction) and the inspector fields (via store observation)
+7. Verify: inspector reads match card state, inspector writes update the card, changes from the card side notify the inspector, source attribution prevents circular updates, `useSyncExternalStore` triggers re-renders only for the changed property
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/property-store.ts` — new: PropertyStore, PropertySchema, PropertyChange
+2. `tugdeck/src/components/tugways/hooks/use-property-store.ts` — new: usePropertyStore hook
+3. `tugdeck/src/components/tugways/tugcard.tsx` — setProperty action handler routing
+4. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — inspector demo section
+
+**Result**: The property observation infrastructure is complete. Cards can opt in to inspectability with a hook call and a schema. Inspector panels (Phase 8e) compose with any card via the PropertyStore + responder chain, with zero direct coupling.
+
+**Note**: Phase 5d4 depends on Phase 5d2 (explicit-target dispatch for inspector→card actions) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases, establishing the full inspector pipeline.
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -562,13 +627,14 @@ find any registered callbacks). This is fine — no errors, no crashes.
    - `TugCheckbox` — wraps Checkbox, adds label integration, mixed state
    - `TugRadioGroup` — wraps RadioGroup, adds group label, horizontal/vertical layout
    - `TugSwitch` — wraps Switch, adds label position, size variants
-   - `TugSlider` — wraps Slider, adds value display, range labels, tick marks
+   - `TugSlider` — wraps Slider, adds value display, range labels, tick marks. Emits action phases (`begin`/`change`/`commit`/`cancel`) per [D61] when used with `action` prop
    - `TugLabel` — wraps Label, adds required indicator, helper text slot
 3. Implement `TugSeparator` wrapper — horizontal/vertical, label slot
-4. Add all 9 components to the Component Gallery with interactive controls
-5. Write tests for each component following the established hook test pattern
+4. All continuous controls (TugSlider, TugInput, TugTextarea) support the `action`/`target` props from [D61]/[D62] for chain-action mode with phases. Direct-action mode via `onChange` remains available
+5. Add all 9 components to the Component Gallery with interactive controls
+6. Write tests for each component following the established hook test pattern
 
-**Result**: All form controls exist. The Settings card can be built.
+**Result**: All form controls exist. Continuous controls emit action phases for inspector integration. The Settings card can be built.
 
 ### Phase 8c: Display, Feedback & Navigation ([D34])
 
@@ -618,6 +684,30 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: The full 28-component library is complete. The Component Gallery is a comprehensive design system showcase. Phase 9 card rebuilds can begin.
 
+### Phase 8e: Inspector Panels (Concepts 19–21, [D61]-[D69])
+
+**Goal**: Color picker, font picker, and coordinate inspector panels available as first-class tugways components. Each emits action phases (begin/change/commit/cancel), works with mutation transactions for live preview, and reads/writes via PropertyStore.
+
+**What to do**:
+1. Implement `TugColorPicker` (original) — hue/saturation/brightness wheel or strip, opacity slider, hex/RGB input, swatch history. Emits `setColor` action with `begin/change/commit/cancel` phases. During `change` phase, uses MutationTransaction for live preview on the target element
+2. Implement `TugFontPicker` (original) — font family dropdown (system fonts), font size TugSlider, weight/style toggles. Emits `setFontSize`, `setFontFamily`, `setFontWeight` actions with phases
+3. Implement `TugCoordinateInspector` (original) — x/y/width/height number fields with scrub-on-drag (drag the label to scrub the value). Emits `setPosition`, `setSize` actions with phases. Fields read from PropertyStore and update on external changes
+4. Implement `TugInspectorPanel` (composition) — container that hosts inspector sections. Reads `PropertyStore.getSchema()` from the focused card and dynamically renders appropriate controls for each property. Registers as a responder node. Uses explicit-target dispatch (D62) to send edits to the focused card
+5. Wire `TugInspectorPanel` to respond to card focus changes — when the focused card changes, the inspector reads the new card's PropertyStore schema and updates its displayed controls. If the focused card has no PropertyStore, the inspector shows "No inspectable properties"
+6. Add all inspector components to the Component Gallery with interactive demos
+7. Verify: color picker scrub previews live with transaction, commit persists, cancel reverts. Font picker changes cascade through CSS. Coordinate inspector reflects current values and updates on external changes. Inspector works with any card that registers a PropertyStore
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/tug-color-picker.tsx` — new
+2. `tugdeck/src/components/tugways/tug-font-picker.tsx` — new
+3. `tugdeck/src/components/tugways/tug-coordinate-inspector.tsx` — new
+4. `tugdeck/src/components/tugways/tug-inspector-panel.tsx` — new
+5. `tugdeck/styles/tug-inspector.css` — new
+
+**Result**: Inspector panels are reusable tugways components. Any card that exposes a PropertyStore gets free inspector support. The color/font/coordinate controls are available standalone for use in card content (e.g., a settings card's theme color editor).
+
+**Note**: Phase 8e depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore must exist) and Phase 8b (TugSlider and form controls used internally by inspector components). It does not depend on Phase 8a (chrome) or Phase 8d (data viz). Phase 8e is an enhancement — it does not block Phase 9, but Phase 9 cards benefit from PropertyStore support.
+
 ### Phase 9: Card Rebuild
 
 **Goal**: All card content rebuilt on new infrastructure.
@@ -634,7 +724,9 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Design reference**: Retronow's card frame, header, and canvas patterns (`RetronowDeckCanvas.tsx`, `retronow-deck.css`, `retronow-classes.ts`) are the visual models for card chrome and layout. See [Retronow Design Reference](#retronow-design-reference).
 
-**Result**: Full app restored with new infrastructure. Every card uses Tugcard composition, feed hooks, responder chain, and the three-zone mutation model.
+Each rebuilt card can optionally expose a `PropertyStore` via `usePropertyStore` ([D67]) for inspector integration. Cards that expose inspectable properties (style, layout, content settings) get free inspector panel support without any inspector-specific code.
+
+**Result**: Full app restored with new infrastructure. Every card uses Tugcard composition, feed hooks, responder chain, and the three-zone mutation model. Cards with PropertyStore registrations are automatically inspectable.
 
 ## Phase Dependencies
 
@@ -664,13 +756,21 @@ Responder Chain  Mutation Model                              │
              │                                               │
              ├──────────┬──────────┬──────────┬──────┐       │
              ▼          ▼          ▼          ▼      ▼       ▼
-         Phase 5b:  Phase 5c:  Phase 5d:  Phase 6:  Phase 7:
+         Phase 5b:  Phase 5c:  Phase 5d1: Phase 6:  Phase 7:
          Card Tabs  Card Snap  Default    Feed Abs. Motion
                         │      Button               ◄── (tokens from Phase 1)
-                        ▼
-                    Phase 5c2:
-                    Snap Set
-                    Refinements
+                        ▼          │
+                    Phase 5c2:  Phase 5d2:
+                    Snap Set    Control Action
+                    Refinements Foundation
+                                   │
+                                Phase 5d3:
+                                Mutation
+                                Transactions
+                                   │
+                                Phase 5d4:
+                                Observable
+                                Properties
              │                    │
              ├────────┐            │
              ▼        ▼            ▼
@@ -682,10 +782,10 @@ Responder Chain  Mutation Model                              │
              ▼        │        Phase 8c: Display & Nav
          Phase 5b4:   │           │
          Tab          │        Phase 8d: Data Viz & Compound
-         Overflow     │                    │         │       │
-             │        │                    │         │       │
-         Phase 5b5:   │                    │         │       │
-         Tab          │                    │         │       │
+         Overflow     │           │
+             │        │        Phase 8e: ◄─── (5d2 + 5d3 + 5d4 + 8b)
+         Phase 5b5:   │        Inspector
+         Tab          │        Panels
          Refinements  │                    │         │       │
              │        │                    │         │       │
              │     Phase 5e: ◄─────────────┤         │       │
@@ -703,27 +803,31 @@ Responder Chain  Mutation Model                              │
 Phases 3 and 4 can run in parallel. Phase 5a (Selection Model) depends on Phase 5 and
 should be completed before Phase 5a2 and all subsequent phases — card content in all
 subsequent phases needs correct selection behavior from the start. Phase 5a2 (DeckManager
-Store Migration) depends on Phase 5a and must complete before Phases 5b, 5c, 5d, 6, 7,
+Store Migration) depends on Phase 5a and must complete before Phases 5b, 5c, 5d1, 6, 7,
 and 8a — all subsequent phases inherit the deterministic event flow guarantees established
-by the store migration. Phases 5b, 5c, 5d, 6, and 7 can all start as soon as Phase 5a2
-completes (Phase 7 also needs Phase 1's motion tokens). Phase 5d (Default Button) adds
+by the store migration. Phases 5b, 5c, 5d1, 6, and 7 can all start as soon as Phase 5a2
+completes (Phase 7 also needs Phase 1's motion tokens). Phase 5d1 (Default Button) adds
 `setDefaultButton`/`clearDefaultButton` to the responder chain and wires Enter at stage 2
 of the key pipeline — a prerequisite for Phase 8a's alert, sheet, and popover components,
 which register their default buttons on mount. Phase 8a (Alerts + Title Bar + Dock)
-depends on Phase 5d for the default button mechanism. Phases 8b–8d are sequential (each
+depends on Phase 5d1 for the default button mechanism. Phases 8b–8d are sequential (each
 wave builds on the previous) and depend on Phase 2 (Component Gallery exists) and Phase 4
 (mutation model hooks). They can run in parallel with Phases 5b, 5c, 6, and 7. Phase 9
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
 motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
-the component library (Phases 8b–8d) for form controls, data display, and visualization.
-Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, 5c2, and 5d are enhancements that can land before, during, or after Phase 9.
+the component library (Phases 8b–8e) for form controls, data display, visualization, and inspectors.
+Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, 5c2, and 5d1–5d4 are enhancements that can land before, during, or after Phase 9.
 Phase 5c2 (Card Snap Set Refinements) depends on Phase 5c (snap and set-move must exist). It adds set visual identity: corner rounding, perimeter flash, border collapse, and break-out restoration.
 Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab state must exist).
 Phase 5b3 (Gallery Card) depends on Phase 5b (tab system must exist). It does not depend on Phase 5b2.
 Phase 5b4 (Tab Overflow) depends on Phase 5b (tab bar must exist). It does not depend on Phase 5b2 or 5b3, though both benefit from overflow handling.
 Phase 5b5 (Tab Refinements) depends on Phase 5b2 (drag coordinator and hit-test infrastructure must exist). It is a collection phase — additional items may be added during 5b3/5b4 implementation.
+Phase 5d2 (Control Action Foundation) depends on Phase 5a2 (responder chain infrastructure must be stable). It does not depend on Phase 5d1 — the two are independent extensions to the responder chain.
+Phase 5d3 (Mutation Transactions) depends on Phase 5d2 (action phases drive transaction lifecycle) and Phase 4 (mutation model hooks for appearance-zone operations).
+Phase 5d4 (Observable Properties) depends on Phase 5d2 (explicit-target dispatch) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases.
 Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
+Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
 
 ## Estimated Scope
 
@@ -744,7 +848,10 @@ Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durabl
 | 5b5 | ~2 files | ~100 lines |
 | 5c | ~1 file | ~50 lines |
 | 5c2 | ~3 files | ~200 lines |
-| 5d | ~3 files | ~150 lines |
+| 5d1 | ~3 files | ~150 lines |
+| 5d2 | ~3 files | ~200 lines |
+| 5d3 | ~3 files | ~300 lines |
+| 5d4 | ~4 files | ~400 lines |
 | 5e | ~10 files | ~1500 lines |
 | 5f | ~6 files | ~500 lines |
 | 6 | ~4 files | ~400 lines |
@@ -753,14 +860,16 @@ Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durabl
 | 8b | ~9 files | ~800 lines |
 | 8c | ~11 files | ~700 lines |
 | 8d | ~8 files | ~1000 lines |
+| 8e | ~5 files | ~800 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~14,000 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~15,700 lines** replacing the current ~9700 lines. The new
 codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
-lines of reusable UI primitives, and tugbank (Phase 5e) adds ~1500 lines of
-Rust infrastructure for typed persistence. The triple-registration redundancy
-is gone, the adapter layer is gone, and the component abstractions do more
-with less code.
+lines of reusable UI primitives, the control action/transaction/property
+infrastructure (Phases 5d2–5d4) adds ~900 lines, the inspector panels (Phase 8e)
+add ~800 lines, and tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
+for typed persistence. The triple-registration redundancy is gone, the adapter
+layer is gone, and the component abstractions do more with less code.
 
 ## How This Drives Tugplan Creation
 
@@ -788,16 +897,20 @@ The suggested plan sequence:
 13. `tugways-phase-5b5-tab-refinements` — card-as-tab merge, additional refinements
 14. `tugways-phase-5c-card-snapping` — modifier-gated snap, Option+drag to form sets, `Geometric engine` section features used
 15. `tugways-phase-5c2-card-snapping-refinements` — set corner rounding, outer-hull perimeter flash, break-out restoration, border collapse
-16. `tugways-phase-5d-default-button` — Enter key routing, default button registration, primary variant as default button visual
-17. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
-18. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-19. `tugways-phase-6-feed` — feed hooks, data flow
-20. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-21. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d for default button)
-22. `tugways-phase-8b-form-controls` — form controls + core display (9 components)
-23. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-24. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-25. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card
+16. `tugways-phase-5d1-default-button` — Enter key routing, default button registration, primary variant as default button visual
+17. `tugways-phase-5d2-control-action` — ActionEvent with payloads/phases, explicit-target dispatch, control/responder separation
+18. `tugways-phase-5d3-mutation-transactions` — snapshot/preview/commit/cancel, StyleCascadeReader, vertical-slice gallery demo
+19. `tugways-phase-5d4-observable-properties` — PropertyStore, usePropertyStore hook, inspector demo
+20. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
+21. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
+22. `tugways-phase-6-feed` — feed hooks, data flow
+23. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+24. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+25. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+26. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+27. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+28. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+29. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 

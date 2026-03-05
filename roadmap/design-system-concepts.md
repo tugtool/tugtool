@@ -12,6 +12,8 @@
 6. **Selection stays inside card boundaries.** `SelectionGuard` clamps selection on `selectionchange`. Every card registers its content area as a selection boundary. [D02, D03]
 7. **Tugcard composes chrome; CardFrame owns geometry.** Cards never set their own position, size, or z-index. CardFrame handles drag, resize, and stacking. Tugcard handles header, icon, accessory, and content. [D01, D03]
 8. **One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to components. CardFrame owns geometry. Tugcard owns chrome. Card content owns domain logic. Don't reach across layers. [D01, D03, D05]
+9. **Live preview is appearance-zone only; commit crosses zone boundaries.** During mutation transactions (D64), all preview mutations are CSS/DOM. The commit handler may write to stores or React state. Never mix preview with state changes. [D64, D65]
+10. **Controls emit actions; responders handle actions.** Controls (buttons, sliders, pickers) are not responder nodes (D63). They dispatch ActionEvents into the chain. Responders receive and handle them. [D61, D63]
 
 ---
 
@@ -39,6 +41,9 @@
 | 16 | Brio Theme Revision | DEFERRED | [#c16-brio](#c16-brio) |
 | 17 | Tugbank: Persistent Defaults Store | DESIGNED | [#c17-tugbank](#c17-tugbank) |
 | 18 | Inactive State Preservation | DESIGNED | [#c18-inactive-state](#c18-inactive-state) |
+| 19 | Target/Action Control Model | DESIGNED | [#c19-target-action](#c19-target-action) |
+| 20 | Mutation Transactions | DESIGNED | [#c20-mutation-transactions](#c20-mutation-transactions) |
+| 21 | Observable Properties | DESIGNED | [#c21-observable-properties](#c21-observable-properties) |
 
 ### Cross-Cutting Design Decisions
 
@@ -104,6 +109,15 @@
 | [D58] | Active/inactive shadow tokens for focused vs. unfocused cards | Concept 13 | [#d58-active-inactive-shadow](#d58-active-inactive-shadow) |
 | [D59] | Command-key (metaKey) suppresses card activation on click | Concept 13 | [#d59-command-suppress-activation](#d59-command-suppress-activation) |
 | [D60] | Resize click activates the card (brings to front) | Concept 13 | [#d60-resize-activates](#d60-resize-activates) |
+| [D61] | Actions carry typed payloads, sender identity, and phase | Concept 19 | [#d61-action-event](#d61-action-event) |
+| [D62] | Two dispatch modes: explicit target and nil-target (chain resolution) | Concept 19 | [#d62-dispatch-modes](#d62-dispatch-modes) |
+| [D63] | Controls dispatch into chain, never register as responders | Concept 19 | [#d63-controls-not-responders](#d63-controls-not-responders) |
+| [D64] | Mutation transactions: begin → preview → commit/cancel | Concept 20 | [#d64-mutation-transactions](#d64-mutation-transactions) |
+| [D65] | Transactions operate in appearance zone only | Concept 20 | [#d65-transactions-appearance-zone](#d65-transactions-appearance-zone) |
+| [D66] | Style source layers with cascade reader for inspector editing | Concept 20 | [#d66-style-cascade-reader](#d66-style-cascade-reader) |
+| [D67] | Typed key-path property store per card | Concept 21 | [#d67-property-store](#d67-property-store) |
+| [D68] | PropertyStore integrates with useSyncExternalStore | Concept 21 | [#d68-property-store-sync](#d68-property-store-sync) |
+| [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
 
 ### Key Architectural Patterns
 
@@ -124,6 +138,9 @@
 | Default button | Responder chain designates one button per scope; Enter key activates it | [#d39-default-button](#d39-default-button) |
 | Tugbank defaults store | SQLite-backed typed key-value persistence with domain separation and CAS | [#d46-tugbank](#d46-tugbank) |
 | Per-tab state preservation | Scroll, selection, and card-content state saved/restored across tab switch and app reload | [#d49-tab-state-bag](#d49-tab-state-bag) |
+| Target/action control model | Controls emit ActionEvents with payload, sender, and phase; two dispatch modes (nil-target and explicit-target) | [#d61-action-event](#d61-action-event) |
+| Mutation transactions | Snapshot/preview/commit/cancel cycle for live-preview editing; appearance-zone only during preview | [#d64-mutation-transactions](#d64-mutation-transactions) |
+| Observable property store | Typed key-path store per card with observation; integrates with useSyncExternalStore for inspector UI | [#d67-property-store](#d67-property-store) |
 
 ### External References
 
@@ -156,6 +173,7 @@
 | 21 | Concept 12 Revised — Tab Icons, Type Picker, Phase Split | 2026-03-03 | [#log-21](#log-21) |
 | 24 | Tugbank Defaults Store — Concept 17 | 2026-03-04 | [#log-24](#log-24) |
 | 25 | Inactive State Preservation — Concept 18 | 2026-03-04 | [#log-25](#log-25) |
+| 28 | Target/Action, Mutation Transactions, Observable Properties — Concepts 19–21 | 2026-03-05 | [#log-28](#log-28) |
 
 ---
 
@@ -3168,6 +3186,299 @@ The currently-focused card ID is written to tugbank under `dev.tugtool.deck.stat
 
 Add `collapsed?: boolean` to `CardState` in `layout-tree.ts`. This field is serialized with the layout and restored on reload. When `true`, the card renders in window-shade mode (title bar only, content hidden). The collapse UI itself is built in Phase 8a (title bar enhancements), but the data field and persistence are established here so that Phase 8a can simply read/write it.
 
+### 19. Target/Action Control Model {#c19-target-action}
+
+**Status: DESIGNED** (2026-03-05)
+
+**The problem.** The responder chain dispatches actions as bare strings — `dispatch('copy')`. This works for discrete commands (copy, paste, close) but breaks down for continuous controls. A slider scrub isn't a single event — it's a begin → change → change → change → commit sequence. A color picker preview needs to communicate "the user is scrubbing hue, here's the current value, and they haven't committed yet." The chain has no way to express this.
+
+TugButton already has two modes (direct-action and chain-action, [D08]), but both fire a single event. There's no sender identity, no typed payload, and no phase. When inspector panels need to edit properties on the focused card's content, the current dispatch signature — a bare string — is insufficient.
+
+**The inspiration.** Apple's UIKit target/action pattern (UIControl → target → action selector). Controls don't need hard coupling to handlers. A nil-target action naturally maps to the responder chain. The key additions: typed payloads (a slider sends its current value, not just "valueChanged"), action phases (begin/change/commit/cancel for continuous gestures), and explicit-target dispatch for when the target is known.
+
+#### ActionEvent: Typed Payloads and Phases {#d61-action-event}
+
+**[D61] Actions carry typed payloads, sender identity, and phase.**
+
+Extend `ResponderChainManager.dispatch()` to accept an `ActionEvent` object:
+
+```typescript
+interface ActionEvent {
+  action: string;              // semantic name from action vocabulary
+  sender?: unknown;            // the control that initiated (ref or instance)
+  value?: unknown;             // typed payload (color, number, point, etc.)
+  phase: 'discrete' | 'begin' | 'change' | 'commit' | 'cancel';
+}
+```
+
+The existing `dispatch('copy')` shorthand continues to work — it desugars to `{ action: 'copy', phase: 'discrete' }`. Continuous controls use `begin/change/commit/cancel`. Responder handlers receive the full `ActionEvent`.
+
+**Phase semantics:**
+
+| Phase | Meaning | Typical Source | Mutation Zone |
+|-------|---------|----------------|---------------|
+| `discrete` | One-shot action | Button click, keyboard shortcut | Local data or structure |
+| `begin` | Gesture started | Pointer down on slider/picker | Opens mutation transaction (D64) |
+| `change` | Live value update | Pointer move during scrub | Appearance zone only (preview) |
+| `commit` | Gesture completed | Pointer up, Enter key | Local data or structure (finalize) |
+| `cancel` | Gesture aborted | Escape key, pointer leave | Appearance zone (restore snapshot) |
+
+**Backward compatibility:** Existing action handlers that accept no arguments continue to work for `discrete` phase actions. Handlers that want to process continuous actions declare the `ActionEvent` parameter.
+
+#### Two Dispatch Modes {#d62-dispatch-modes}
+
+**[D62] Two dispatch modes: explicit target and nil-target (chain resolution).**
+
+Controls can dispatch actions in two ways:
+
+**Nil-target dispatch** — send the action into the responder chain. The chain walks from first responder upward until a handler is found. This is the current behavior, now with payload:
+
+```typescript
+// TugSlider with nil-target — chain resolves the handler
+responderChain.dispatch({ action: 'setOpacity', value: 0.75, phase: 'change' });
+```
+
+**Explicit-target dispatch** — send directly to a specific responder by ID. Bypasses the chain walk. Used when the target is known (e.g., an inspector panel editing a specific card's properties):
+
+```typescript
+// Inspector targets a specific card's responder
+responderChain.dispatchTo(cardId, { action: 'setBackgroundColor', value: '#ff6600', phase: 'change' });
+```
+
+TugButton's existing `action` prop remains nil-target. A new optional `target` prop enables explicit-target dispatch. All tugways controls (TugSlider, TugInput, TugColorPicker, etc.) support the same two modes.
+
+#### Controls Are Not Responders {#d63-controls-not-responders}
+
+**[D63] Controls dispatch into chain, never register as responders.**
+
+This is the existing TugButton design (it doesn't register via `useResponder`, [#tugbutton-a11y](#tugbutton-a11y)), now formalized as a rule for all tugways controls. Controls *emit* actions; responders *handle* actions. This separation keeps the chain clean — controls are leaf UI that dispatch into the chain, while responders (card content, Tugcard, DeckCanvas, TugApp) handle and validate.
+
+A TugSlider with `action="setFontSize"` dispatches `{ action: 'setFontSize', value: 14, phase: 'change' }` into the chain. The focused card's content area handles it. The slider never appears in the responder chain tree.
+
+**The exception:** Controls that *also* handle routed actions (e.g., a text input that handles `selectAll` and `paste`) register as responders for those specific actions. But they do so as responders, not as controls — the control identity (emitting actions) and the responder identity (handling actions) are separate roles that happen to coexist in the same component.
+
+#### New Action Vocabulary Entries
+
+The target/action model adds the following to the [action vocabulary](#action-vocabulary):
+
+**Inspector actions** (dispatched by inspector controls, handled by card content):
+
+| Action | Payload | Description |
+|--------|---------|-------------|
+| `setProperty` | `{ path: string, value: unknown }` | Set an inspectable property by key-path |
+| `getProperty` | `{ path: string }` | Query a property value (response via PropertyStore) |
+
+**Continuous control actions** (dispatched by sliders, pickers, coordinate fields):
+
+| Action | Payload | Description |
+|--------|---------|-------------|
+| `setOpacity` | `number` | Set opacity (0–1) |
+| `setFontSize` | `number` | Set font size in px |
+| `setColor` | `{ property: string, color: string }` | Set a color property |
+| `setPosition` | `{ x: number, y: number }` | Set position coordinates |
+
+Card-specific continuous actions extend this vocabulary as needed.
+
+### 20. Mutation Transactions {#c20-mutation-transactions}
+
+**Status: DESIGNED** (2026-03-05)
+
+**The problem.** Inspector panels need live preview: as you scrub a color picker, the target element updates in real time. But if you cancel, everything must revert. The three-zone model (D12) says appearance changes are CSS/DOM mutations (zero re-renders) — correct. But there's no mechanism to *snapshot and restore* the appearance state when a preview is abandoned.
+
+The "bypass React during the gesture, sync on commit" principle from the Excalidraw study ([#d13-dom-hooks](#d13-dom-hooks)) describes the timing correctly. Mutation transactions formalize this with snapshot/restore semantics.
+
+#### Transaction Lifecycle {#d64-mutation-transactions}
+
+**[D64] Mutation transactions: begin → preview → commit/cancel.**
+
+A `MutationTransaction` captures the initial state of targeted CSS properties and DOM attributes before any preview mutations begin. During the transaction, appearance-zone mutations are applied directly. On commit, the final values become canonical. On cancel, the snapshot is restored.
+
+```typescript
+interface MutationTransaction {
+  readonly id: string;
+  begin(target: Element, properties: string[]): void;  // snapshot current values
+  preview(target: Element, property: string, value: string): void;  // appearance-zone mutation
+  commit(): void;   // finalize — values stay as-is, write to store if needed
+  cancel(): void;   // restore snapshot — every previewed property reverts
+}
+```
+
+**Integration with action phases (D61):** `phase: 'begin'` opens a transaction. `phase: 'change'` calls `preview()`. `phase: 'commit'` calls `commit()`. `phase: 'cancel'` calls `cancel()`. The responder that handles continuous actions manages the transaction lifecycle.
+
+**What gets snapshotted:**
+- CSS custom property values (`element.style.getPropertyValue()`)
+- Inline style properties (`element.style[prop]`)
+- Data attributes (`element.dataset[key]`)
+- CSS class presence (`element.classList.contains()`)
+
+**What does NOT get snapshotted:** Computed styles that come from class rules or theme tokens. The transaction only tracks values that the transaction itself *writes*. If a preview sets `element.style.backgroundColor = 'red'`, the snapshot records the previous inline `backgroundColor` (which may be empty, meaning "inherit from class/token"). Cancel restores the empty value, and the cascade takes over again.
+
+#### Appearance Zone Only {#d65-transactions-appearance-zone}
+
+**[D65] Transactions operate in the appearance zone only.**
+
+During a transaction, all mutations are CSS custom property writes, inline style changes, data-attribute toggles, or class toggles. No React state changes. No re-renders. This is Rule #9.
+
+On commit, if the change needs to persist (e.g., a card's background color saved to tugbank via PropertyStore), the commit handler writes to the appropriate store. This crosses from appearance zone to local-data zone — but only once, at commit time, not on every scrub tick.
+
+```
+begin:   snapshot CSS/DOM state
+change:  mutate CSS/DOM directly (appearance zone, 60fps, zero re-renders)
+change:  ...
+change:  ...
+commit:  final CSS/DOM state stays; write to PropertyStore (local-data zone, one re-render)
+ —or—
+cancel:  restore snapshot (appearance zone, zero re-renders)
+```
+
+**Transaction manager:** A `MutationTransactionManager` singleton creates and tracks active transactions. Only one transaction per target element at a time (starting a new transaction on the same element cancels the previous one). The manager is an imperative object, not React state — consistent with the responder chain and selection guard patterns.
+
+#### Style Cascade Reader {#d66-style-cascade-reader}
+
+**[D66] Style source layers with cascade reader for inspector editing.**
+
+CSS values on an element come from multiple sources. An inspector needs to show which layer a value comes from and edit at the right layer. A `StyleCascadeReader` utility provides read-only introspection:
+
+```typescript
+interface StyleLayer {
+  value: string;
+  source: 'token' | 'class' | 'inline' | 'preview';
+}
+
+interface StyleCascadeReader {
+  getDeclared(element: Element, property: string): StyleLayer | null;
+  getComputed(element: Element, property: string): string;
+  getTokenValue(tokenName: string): string;  // reads from document's computed style
+}
+```
+
+**Source layer priority** (highest to lowest):
+
+| Layer | Source | Example |
+|-------|--------|---------|
+| `preview` | Active MutationTransaction | Inspector scrubbing a color |
+| `inline` | `element.style[prop]` | Card-specific override |
+| `class` | CSS class rules | `.tugcard` base styles |
+| `token` | CSS custom properties from theme | `var(--td-surface-2)` |
+
+The cascade reader tells the inspector *what to show* (the current effective value and where it comes from). The transaction system (D64) tells it *how to edit* (preview at the inline/preview layer, commit to the appropriate persistent layer).
+
+**Implementation note:** `getDeclared` uses `element.style.getPropertyValue()` for inline values and `getComputedStyle()` comparison logic for class-level values. The `preview` source is tracked by the MutationTransactionManager — if a transaction is active on the element, the previewed properties are reported as `source: 'preview'`.
+
+### 21. Observable Properties {#c21-observable-properties}
+
+**Status: DESIGNED** (2026-03-05)
+
+**The problem.** Inspectors and card content need to stay in sync without tight coupling. When a card's content has editable properties (background color, font, position), an inspector panel needs to read and write those properties without importing the card's internals. Today there's no shared property model — each card manages its own state independently.
+
+This is the KVC/KVO problem from Apple's Cocoa framework: key-value coding provides uniform property access by string path, and key-value observing provides change notification without explicit delegation. The tugways equivalent needs to work with the three-zone model and `useSyncExternalStore`.
+
+#### Typed Key-Path Property Store {#d67-property-store}
+
+**[D67] Typed key-path property store per card.**
+
+Each card that wants to expose inspectable properties registers a `PropertyStore` — a typed key-value store with observation. This is not a general-purpose global store; it's scoped to a single card (or component) and exposes only the properties that external code (inspectors, other cards) should see.
+
+```typescript
+interface PropertyStore {
+  get(path: string): unknown;
+  set(path: string, value: unknown, source?: string): void;
+  observe(path: string, listener: PropertyChangeListener): () => void;  // returns unsubscribe
+  getSchema(): PropertySchema;  // describes available paths and their types
+}
+
+type PropertyChangeListener = (change: PropertyChange) => void;
+
+interface PropertyChange {
+  path: string;
+  oldValue: unknown;
+  newValue: unknown;
+  source: string;       // who made the change ('inspector', 'content', 'feed', etc.)
+  transactionId?: string;  // links to MutationTransaction if in a preview cycle
+}
+
+interface PropertySchema {
+  paths: PropertyDescriptor[];
+}
+
+interface PropertyDescriptor {
+  path: string;            // e.g., 'style.backgroundColor', 'layout.x', 'content.fontSize'
+  type: 'string' | 'number' | 'boolean' | 'color' | 'point' | 'enum';
+  label: string;           // human-readable label for inspector UI
+  enumValues?: string[];   // for 'enum' type
+  min?: number;            // for 'number' type
+  max?: number;            // for 'number' type
+  readOnly?: boolean;      // inspector shows but cannot edit
+}
+```
+
+**Key-paths** are dot-separated strings. The store validates paths against its schema at registration — no arbitrary key access. A card registers its store via a context or the responder chain:
+
+```typescript
+// In card content component
+const store = usePropertyStore({
+  paths: [
+    { path: 'style.backgroundColor', type: 'color', label: 'Background' },
+    { path: 'style.fontSize', type: 'number', label: 'Font Size', min: 8, max: 72 },
+    { path: 'style.fontFamily', type: 'enum', label: 'Font', enumValues: ['system-ui', 'monospace', 'serif'] },
+  ],
+  onGet: (path) => { /* read from DOM or internal state */ },
+  onSet: (path, value, source) => { /* apply to DOM or internal state */ },
+});
+```
+
+**Change records** include `source` so that circular updates are avoided — when the inspector sets a property (source: `'inspector'`), the card's observer knows the change came from outside and doesn't re-dispatch it back.
+
+#### useSyncExternalStore Integration {#d68-property-store-sync}
+
+**[D68] PropertyStore integrates with `useSyncExternalStore`.**
+
+For React components that need to display a property value (like an inspector field showing the current color), the store exposes a per-path subscription interface compatible with `useSyncExternalStore`. This means inspector UI re-renders only when the specific property it displays changes — not when any property on the card changes.
+
+```typescript
+// In an inspector field component — subscribes to ONE property
+function ColorField({ store, path }: { store: PropertyStore; path: string }) {
+  const value = useSyncExternalStore(
+    (cb) => store.observe(path, cb),
+    () => store.get(path)
+  );
+  return <TugColorPicker value={value as string} /* ... */ />;
+}
+```
+
+**Snapshot stability:** `PropertyStore.get()` returns the same reference for unchanged values (same rule as D40's `getSnapshot`). For object values (points, colors), the store caches the reference and only replaces it when the value actually changes. This prevents `useSyncExternalStore` from triggering spurious re-renders.
+
+**Relationship to feed data:** PropertyStore is for *editable, inspectable* properties — things the user can see and change via UI controls. Feed data (concept 7) flows through `useFeedBuffer`/`useFeedStore` and is typically read-only from the frontend's perspective. Some cards may bridge feed data into PropertyStore (e.g., a stats card exposing computed values as read-only inspectable properties), but the two systems serve different purposes.
+
+#### Inspector Panels as Responder Participants {#d69-inspector-responders}
+
+**[D69] Inspector panels are responder participants.**
+
+An inspector panel registers as a responder node via `useResponder`, just like any other component in the chain. When it edits a property, it dispatches an action through the chain — using explicit-target dispatch (D62) to the card that owns the PropertyStore:
+
+```
+Inspector UI           Responder Chain           Card Content
+    │                       │                        │
+    │  dispatch(target, {   │                        │
+    │    action: 'setProperty',                      │
+    │    value: { path: 'style.backgroundColor',     │
+    │             value: '#ff6600' },                 │
+    │    phase: 'change'    │                        │
+    │  })                   │                        │
+    │──────────────────────▶│───────────────────────▶│
+    │                       │                        │ store.set(path, value)
+    │                       │                        │ (appearance-zone preview)
+    │                       │                        │
+    │◀──────────────── observer notification ────────│
+    │ (useSyncExternalStore re-renders inspector field)
+```
+
+The inspector doesn't import the card's internal code. It discovers available properties through `PropertyStore.getSchema()`. It reads values via `store.get()`. It writes via dispatching actions. The card is the authority on its own properties.
+
+**Inspector as a card or panel:** An inspector can be implemented as a card (lives in the deck like any other card, can be tabbed), as a sidebar panel, or as a popover attached to a toolbar button. The PropertyStore + responder chain integration works identically regardless of how the inspector is hosted — the coupling is through the chain and the store, not through component hierarchy.
+
+**Multiple inspectors, one target:** Multiple inspector panels can observe the same PropertyStore simultaneously. Each subscribes to the paths it cares about. Changes from any source (any inspector, the card itself, feed data) notify all observers.
+
 ---
 
 ## Dependency Map
@@ -3219,6 +3530,11 @@ Add `collapsed?: boolean` to `CardState` in `layout-tree.ts`. This field is seri
    │17. Tugbank       │──────▶│18. Inactive State   │
    │ (defaults store) │       │    Preservation     │
    └─────────────────┘       └─────────────────────┘
+
+   ┌─────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+   │19. Target/Action │─▶│20. Mutation          │─▶│21. Observable       │
+   │ Control Model    │  │    Transactions      │  │    Properties       │
+   └─────────────────┘  └─────────────────────┘  └─────────────────────┘
 ```
 
 Concepts 12 (Card Tabs) depends on concept 6 (Tugcard). Concept 13 (Card Snap Sets) is
@@ -3231,6 +3547,12 @@ Concept 17 (Tugbank) is infrastructure — it depends on the tugcast backend but
 frontend design system stack. Concept 18 (Inactive State Preservation) depends on concepts 6
 (Tugcard), 12 (Card Tabs), 14 (Selection Model), and 17 (Tugbank) — it uses the selection
 guard's save/restore API, extends Tugcard with lifecycle hooks, and persists state via tugbank.
+Concept 19 (Target/Action) depends on concept 4 (Responder Chain) — it extends the dispatch
+mechanism with ActionEvent payloads and phases. Concept 20 (Mutation Transactions) depends on
+concepts 5 (Mutation Model) and 19 (Target/Action) — transactions map to action phases and
+operate within the appearance zone. Concept 21 (Observable Properties) depends on concepts 19
+(Target/Action) and 20 (Mutation Transactions) — property stores use transactions for live
+preview and actions for write coordination.
 
 ---
 
@@ -3595,3 +3917,17 @@ New design decisions:
 **Deleted infrastructure**: `_gestureActive`/`isGestureActive`/`setGestureActive` flag system, `dragShadowEl`/`dragShadowOrigin` refs, `resizeShadowEl`/`resizeShadowOriginX`/`resizeShadowOriginY` locals, defensive sweep block in `handleDragStart`, shadow translation in drag/resize RAF loops, `.set-shadow` and `.set-shadow-shape` CSS rules.
 
 **Phases 5c and 5c2 are now complete.** The card snapping system is fully implemented: modifier-gated snap, set formation, set-move, break-out, border collapse, corner squaring, hull polygon flash, clip-path shadow management, active/inactive shadow differentiation, and activation refinements.
+
+### Entry 28: Target/Action, Mutation Transactions, Observable Properties — Concepts 19–21 {#log-28} (2026-03-05)
+
+Expanded the design system with three new concept areas, motivated by the need for inspector panels (color picker, font picker, coordinate inspector) and better control wiring. The expansion was designed around Apple's UIKit target/action pattern, AppKit's KVC/KVO observation model, and the existing three-zone mutation model.
+
+**Concept 19 — Target/Action Control Model** extends the responder chain's bare-string dispatch with typed `ActionEvent` objects carrying payload, sender, and phase. Five phases (`discrete`, `begin`, `change`, `commit`, `cancel`) support continuous controls like sliders and color pickers. Two dispatch modes: nil-target (chain resolution, existing behavior) and explicit-target (direct to a specific responder, for inspector→card communication). Formalizes that controls emit actions but never register as responders (D63), generalizing the existing TugButton design.
+
+**Concept 20 — Mutation Transactions** provides snapshot/preview/commit/cancel semantics for live-preview editing. During a transaction, all mutations are appearance-zone (CSS/DOM, zero re-renders). On commit, the final state persists; on cancel, the snapshot restores. Integrates with action phases: `begin` opens a transaction, `change` previews, `commit`/`cancel` finalize. A `StyleCascadeReader` utility provides read-only introspection into CSS source layers (token, class, inline, preview) for inspector display.
+
+**Concept 21 — Observable Properties** introduces a typed key-path `PropertyStore` per card — a scoped KVC/KVO-inspired store. Cards register inspectable properties with schemas. Inspectors discover properties via `getSchema()`, read via `get()`, write via responder chain actions, and observe via `useSyncExternalStore`-compatible subscriptions. Change records include source attribution to prevent circular updates.
+
+New design decisions: D61–D69. New Rules of Tug: #9 (live preview is appearance-zone only), #10 (controls emit, responders handle).
+
+Phase 5d restructured into 5d1 (default button, unchanged), 5d2 (control action foundation), 5d3 (mutation transactions), 5d4 (observable properties). New Phase 8e (Inspector Panels) added downstream.

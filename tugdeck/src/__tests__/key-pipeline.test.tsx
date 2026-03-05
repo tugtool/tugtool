@@ -142,9 +142,6 @@ describe("useResponderChain", () => {
 
 describe("useRequiredResponderChain", () => {
   it("throws outside the provider", () => {
-    const origError = console.error;
-    console.error = () => {};
-
     function BareConsumer() {
       useRequiredResponderChain();
       return null;
@@ -171,7 +168,6 @@ describe("useRequiredResponderChain", () => {
       );
     });
 
-    console.error = origError;
     expect(caughtError).toBeInstanceOf(Error);
     expect((caughtError as Error).message).toContain(
       "useRequiredResponderChain must be used inside a <ResponderChainProvider>"

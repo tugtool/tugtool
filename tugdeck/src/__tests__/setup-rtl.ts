@@ -88,14 +88,6 @@ if (typeof (global as any).requestAnimationFrame !== "function") {
 // Signal to React 19 that we are in an act() environment
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Suppress React act() warnings from Radix UI internal animations.
-// Radix Presence/Popper components schedule deferred state updates that
-// cannot be wrapped in act() from test code. This is a known upstream
-// issue (radix-ui/primitives#1822).
-const _origConsoleError = console.error;
-console.error = (...args: unknown[]) => {
-  if (typeof args[0] === "string" && args[0].includes("was not wrapped in act(")) {
-    return;
-  }
-  _origConsoleError.call(console, ...args);
-};
+// Console output is globally suppressed by setup-silence.ts preload.
+// React act() warnings from Radix UI (radix-ui/primitives#1822) are
+// silenced as part of that blanket suppression.
