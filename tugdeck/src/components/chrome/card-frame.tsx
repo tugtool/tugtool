@@ -879,10 +879,12 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
-        // Clear resize guides on drop. [D03]
-        clearGuideElements(resizeGuideEls);
-
+        // Compute final resize with snap applied first, THEN clear guides. [D03]
+        // clearGuideElements must come AFTER computeAndApplyResize so that when snap
+        // is active, syncGuideElements inside computeAndApplyResize does not re-create
+        // guides that were already cleared.
         const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, isSnapModifier(e));
+        clearGuideElements(resizeGuideEls);
         frame.style.left = `${r.left}px`;
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
@@ -949,6 +951,86 @@ export function CardFrame({
       {renderContent(injected)}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Set appearance: squared corners and shadow clipping [D08]
+// ---------------------------------------------------------------------------
+
+/**
+ * Update the visual appearance of all cards based on their current set membership.
+ *
+ * For cards in a set:
+ *   - Sets `data-in-set="true"` (CSS squares their corners via border-radius: 0).
+ *   - Applies `clip-path: inset(...)` to clip box-shadow on shared (internal) edges.
+ *     External sides use `-8px` to let the shadow breathe; shared sides use `0px` to clip flush.
+ *
+ * For solo cards:
+ *   - Removes `data-in-set` attribute (CSS restores rounded corners).
+ *   - Clears `clip-path` so shadow is fully visible.
+ *
+ * Called after any move or resize action completes. [D08, D09]
+ *
+ * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
+ */
+function updateSetAppearance(canvasBounds: DOMRect | null): void {
+  const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+  const rects: { id: string; rect: Rect }[] = [];
+  allFrameEls.forEach((el) => {
+    const cid = el.getAttribute("data-card-id");
+    if (!cid) return;
+    const domRect = el.getBoundingClientRect();
+    rects.push({
+      id: cid,
+      rect: {
+        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+        width: domRect.width,
+        height: domRect.height,
+      },
+    });
+  });
+
+  const sharedEdges = findSharedEdges(rects);
+  const sets = computeSets(rects.map((c) => c.id), sharedEdges);
+
+  // Build a set membership lookup: cardId → true if in any set.
+  const inSetIds = new Set<string>();
+  for (const cardSet of sets) {
+    for (const cid of cardSet.cardIds) {
+      inSetIds.add(cid);
+    }
+  }
+
+  allFrameEls.forEach((el) => {
+    const cardId = el.getAttribute("data-card-id");
+    if (!cardId) return;
+
+    if (inSetIds.has(cardId)) {
+      // Mark as in-set (CSS squares corners). [D08]
+      el.setAttribute("data-in-set", "true");
+
+      // Determine which sides are shared (internal) for this card.
+      // Vertical shared edge: cardAId = LEFT card (right side internal), cardBId = RIGHT card (left side internal).
+      // Horizontal shared edge: cardAId = TOP card (bottom side internal), cardBId = BOTTOM card (top side internal).
+      const rightInternal = sharedEdges.some((e) => e.axis === "vertical" && e.cardAId === cardId);
+      const leftInternal = sharedEdges.some((e) => e.axis === "vertical" && e.cardBId === cardId);
+      const bottomInternal = sharedEdges.some((e) => e.axis === "horizontal" && e.cardAId === cardId);
+      const topInternal = sharedEdges.some((e) => e.axis === "horizontal" && e.cardBId === cardId);
+
+      // Build clip-path: external sides use -8px (let shadow breathe), shared sides use 0px (clip flush).
+      // CSS inset() order: top right bottom left.
+      const clipTop = topInternal ? "0px" : "-8px";
+      const clipRight = rightInternal ? "0px" : "-8px";
+      const clipBottom = bottomInternal ? "0px" : "-8px";
+      const clipLeft = leftInternal ? "0px" : "-8px";
+      el.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
+    } else {
+      // Solo card: restore rounded corners and full shadow.
+      el.removeAttribute("data-in-set");
+      el.style.clipPath = "";
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,6 +1101,9 @@ function postActionSetUpdate(
       flashCardPerimeter(frameEl);
     }
   }
+
+  // Update set appearance (squared corners, shadow clipping) after any move/resize. [D08]
+  updateSetAppearance(canvasBounds);
 }
 
 // ---------------------------------------------------------------------------

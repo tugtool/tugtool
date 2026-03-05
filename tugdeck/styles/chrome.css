@@ -48,6 +48,26 @@
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
+/* ---- Set membership: squared corners ---- */
+/*
+ * Cards in a set have their corners squared so adjacent cards form a seamless group.
+ * The data-in-set attribute is applied by updateSetAppearance() after each move/resize. [D08]
+ */
+.card-frame[data-in-set="true"] {
+  border-radius: 0;
+}
+.card-frame[data-in-set="true"] .tugcard {
+  border-radius: 0;
+}
+
+/*
+ * Focused card in a set: keep the active shadow (clip-path on the frame will clip it
+ * flush on shared/internal edges so shadow only shows on external edges). [D08]
+ */
+.card-frame[data-in-set="true"][data-focused="true"] {
+  box-shadow: var(--td-card-shadow-active);
+}
+
 /* ---- Set flash feedback ---- */
 @keyframes set-flash-fade {
   0%   { opacity: 1; }
