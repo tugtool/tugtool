@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-05T21:03:50Z
+---
+
+## step-3: Added .tug-button-destructive base rule with background-color: var(--td-danger) and color: var(--td-text-inverse) in tug-button.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
 step: step-2
 date: 2025-03-05T21:01:22Z
 ---
