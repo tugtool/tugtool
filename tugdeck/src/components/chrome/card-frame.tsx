@@ -1659,7 +1659,7 @@ export function flashSetPerimeter(
 }
 
 /**
- * Create a full-perimeter .set-flash-overlay on a single card's frame.
+ * Create a full-perimeter .card-flash-overlay on a single card's frame.
  *
  * Used on break-out to flash the detached card's entire perimeter. All four
  * borders are intact (no suppression). Cards are always fully rounded. [D55]
@@ -1668,7 +1668,7 @@ export function flashSetPerimeter(
  */
 export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
   const overlay = document.createElement("div");
-  overlay.classList.add("set-flash-overlay");
+  overlay.classList.add("card-flash-overlay");
 
   // Full perimeter: no edge suppression, no clip-path restriction.
   // Cards are always fully rounded — use CSS default border-radius.

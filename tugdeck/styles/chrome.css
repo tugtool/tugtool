@@ -86,13 +86,17 @@
   /* clip-path is set inline from JS (hull polygon in wrapper-local coords) */
 }
 
-/* ---- Set flash feedback ---- */
+/* ---- Card flash feedback (single-card break-out flash) ---- */
 @keyframes set-flash-fade {
   0%   { opacity: 1; }
   100% { opacity: 0; }
 }
 
-.set-flash-overlay {
+/*
+ * .card-flash-overlay: full-perimeter flash on a single card frame (break-out flash).
+ * Renamed from .set-flash-overlay; used exclusively by flashCardPerimeter(). [D55]
+ */
+.card-flash-overlay {
   position: absolute;
   inset: -1px; /* extend over panel's 1px border so adjacent overlays share edges */
   pointer-events: none;

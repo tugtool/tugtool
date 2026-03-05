@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-05T03:51:34Z
+---
+
+## step-5: Renamed .set-flash-overlay CSS class to .card-flash-overlay to reflect its single-card break-out flash purpose. Verified no remaining references to obsolete symbols (buildFlashPolygon, FLASH_PADDING, computeInternalEdges, buildClipPath).
+
+**Files changed:**
+- .tugtool/tugplan-hull-polygon-visual-overhaul.md
+
+---
+
+---
 step: step-4
 date: 2025-03-05T03:47:25Z
 ---
