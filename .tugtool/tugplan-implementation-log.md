@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-05T14:56:51Z
+---
+
+## step-1: Added null-guarded removeChild call for dragShadowEl in the break-out detection block of applyDragFrame, preventing orphaned shadow elements during drag.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-6
 date: 2025-03-05T03:54:25Z
 ---

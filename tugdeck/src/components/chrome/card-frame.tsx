@@ -533,8 +533,13 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
-          // Clear shadow ref; shadow stays visible at current position and is
-          // recomputed by updateSetAppearance when postActionSetUpdate fires at drag-end. [D05]
+          // Remove shadow DOM element immediately on break-out so no orphaned
+          // .set-shadow remains during the remainder of the drag. [D01, SC1]
+          // The shadow is recreated by updateSetAppearance when postActionSetUpdate
+          // fires at drag-end.
+          if (dragShadowEl.current) {
+            dragShadowEl.current.parentNode?.removeChild(dragShadowEl.current);
+          }
           dragShadowEl.current = null;
 
           // Flash full perimeter of the detached card. [D55]
