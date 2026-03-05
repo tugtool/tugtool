@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-05T03:54:25Z
+---
+
+## step-6: Integration checkpoint: verified all exit criteria met. All unit tests pass, build succeeds, deleted helpers absent, flashCardPerimeter unchanged, no per-card clip-path applied.
+
+**Files changed:**
+- .tugtool/tugplan-hull-polygon-visual-overhaul.md
+
+---
+
+---
 step: step-5
 date: 2025-03-05T03:51:34Z
 ---
