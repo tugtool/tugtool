@@ -258,17 +258,22 @@ export function CardFrame({
    * Render snap guide DOM elements from a list of guide positions. [D03]
    * Creates or reuses <div> elements with .snap-guide-line CSS classes.
    * Appends to container; removes excess guide elements.
+   * Works for both move-drag (dragGuideEls) and resize (resizeGuideEls).
    */
-  function syncGuides(guides: GuidePosition[], container: HTMLElement): void {
+  function syncGuideElements(
+    guideRef: React.MutableRefObject<HTMLElement[]>,
+    guides: GuidePosition[],
+    container: HTMLElement,
+  ): void {
     // Create or update guide elements
     for (let i = 0; i < guides.length; i++) {
       const guide = guides[i];
-      let el = dragGuideEls.current[i];
+      let el = guideRef.current[i];
       if (!el) {
         el = document.createElement("div");
         el.classList.add("snap-guide-line");
         container.appendChild(el);
-        dragGuideEls.current.push(el);
+        guideRef.current.push(el);
       }
       // Reset axis classes
       el.classList.remove("snap-guide-line-x", "snap-guide-line-y");
@@ -283,8 +288,8 @@ export function CardFrame({
       }
     }
     // Remove excess guide elements
-    while (dragGuideEls.current.length > guides.length) {
-      const excess = dragGuideEls.current.pop();
+    while (guideRef.current.length > guides.length) {
+      const excess = guideRef.current.pop();
       if (excess && excess.parentNode) {
         excess.parentNode.removeChild(excess);
       }
@@ -293,14 +298,15 @@ export function CardFrame({
 
   /**
    * Remove all snap guide elements from the DOM and clear tracking ref. [D03]
+   * Works for both move-drag (dragGuideEls) and resize (resizeGuideEls).
    */
-  function clearGuides(): void {
-    for (const el of dragGuideEls.current) {
+  function clearGuideElements(guideRef: React.MutableRefObject<HTMLElement[]>): void {
+    for (const el of guideRef.current) {
       if (el.parentNode) {
         el.parentNode.removeChild(el);
       }
     }
-    dragGuideEls.current = [];
+    guideRef.current = [];
   }
 
   const handleDragStart = useCallback(
@@ -530,12 +536,12 @@ export function CardFrame({
           // Render snap guides via DOM manipulation. [D03]
           const container = frame.parentElement;
           if (container) {
-            syncGuides(snapResult.guides, container);
+            syncGuideElements(dragGuideEls, snapResult.guides, container);
           }
         } else if (!latestSnapModifier.current && dragSetMembers.current.length === 0) {
           // Free drag: solo card, no snap modifier. Clear guides and snap result.
           lastSnapResult.current = null;
-          clearGuides();
+          clearGuideElements(dragGuideEls);
         } else if (dragSetMembers.current.length > 0 && !latestSnapModifier.current) {
           // Set-move: modifier not held, move all set members by the same clamped delta
           // as the main card so no member slides relative to any other. [D02]
@@ -591,7 +597,7 @@ export function CardFrame({
 
         // Remove snap guides immediately on drop. [D03]
         // Must happen before any early return (e.g. merge) to prevent guide leaks.
-        clearGuides();
+        clearGuideElements(dragGuideEls);
 
         // Clear drop target highlight before committing. [D45, Rule 4]
         setDragDropTarget(null);
@@ -683,45 +689,8 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
-        // Flash set perimeter if the dragged card has newly joined or changed sets. [D54]
-        // All cards remain rounded — no corner squaring. Only the flash overlay
-        // is applied to signal set membership change.
-        {
-          const canvasBounds = dragCanvasBounds.current;
-          const postDropRects: { id: string; rect: Rect }[] = [];
-          const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
-          allFrameEls.forEach((el) => {
-            const cid = el.getAttribute("data-card-id");
-            if (!cid) return;
-            const domRect = el.getBoundingClientRect();
-            postDropRects.push({
-              id: cid,
-              rect: {
-                x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-                y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-                width: domRect.width,
-                height: domRect.height,
-              },
-            });
-          });
-          const postDropSharedEdges = findSharedEdges(postDropRects);
-          const postDropSets = computeSets(
-            postDropRects.map((c) => c.id),
-            postDropSharedEdges,
-          );
-          const mySet = postDropSets.find((s) => s.cardIds.includes(id));
-          if (mySet) {
-            // Only flash when the card has newly joined a set or the set membership changed. [D54]
-            const startIds = dragSetMemberIdsAtDragStart.current.slice().sort();
-            const endIds = mySet.cardIds.slice().sort();
-            const setChanged =
-              startIds.length !== endIds.length ||
-              startIds.some((sid, i) => sid !== endIds[i]);
-            if (setChanged) {
-              flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
-            }
-          }
-        }
+        // Flash set perimeter / break-out flash on drop. [D54, D55]
+        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current);
 
         // Reset all snap/set state.
         dragOtherRects.current = [];
@@ -750,50 +719,8 @@ export function CardFrame({
   // Snap guide DOM elements for resize (separate from drag guides). [D03]
   const resizeGuideEls = useRef<HTMLElement[]>([]);
 
-  /**
-   * Render snap guide DOM elements during resize. Reuses the same syncGuides
-   * logic used by move-drag. [D03]
-   */
-  function syncResizeGuides(guides: GuidePosition[], container: HTMLElement): void {
-    for (let i = 0; i < guides.length; i++) {
-      const guide = guides[i];
-      let el = resizeGuideEls.current[i];
-      if (!el) {
-        el = document.createElement("div");
-        el.classList.add("snap-guide-line");
-        container.appendChild(el);
-        resizeGuideEls.current.push(el);
-      }
-      el.classList.remove("snap-guide-line-x", "snap-guide-line-y");
-      if (guide.axis === "x") {
-        el.classList.add("snap-guide-line-x");
-        el.style.left = `${guide.position}px`;
-        el.style.top = "";
-      } else {
-        el.classList.add("snap-guide-line-y");
-        el.style.top = `${guide.position}px`;
-        el.style.left = "";
-      }
-    }
-    while (resizeGuideEls.current.length > guides.length) {
-      const excess = resizeGuideEls.current.pop();
-      if (excess && excess.parentNode) {
-        excess.parentNode.removeChild(excess);
-      }
-    }
-  }
-
-  /**
-   * Remove all resize snap guide elements from the DOM. [D03]
-   */
-  function clearResizeGuides(): void {
-    for (const el of resizeGuideEls.current) {
-      if (el.parentNode) {
-        el.parentNode.removeChild(el);
-      }
-    }
-    resizeGuideEls.current = [];
-  }
+  // syncResizeGuides and clearResizeGuides are now handled by the shared
+  // syncGuideElements(resizeGuideEls, ...) and clearGuideElements(resizeGuideEls) calls. [D03]
 
   const handleResizeStart = useCallback(
     (edge: ResizeEdge, event: React.PointerEvent) => {
@@ -831,6 +758,32 @@ export function CardFrame({
           height: domRect.height,
         });
       });
+
+      // Snapshot set membership at resize-start for post-resize flash detection. [D54]
+      // Build all card rects (including this card) and find which set this card belongs to.
+      const resizeAllRects: { id: string; rect: Rect }[] = [];
+      const resizeAllFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+      resizeAllFrameEls.forEach((el) => {
+        const cid = el.getAttribute("data-card-id");
+        if (!cid) return;
+        const domRect = el.getBoundingClientRect();
+        resizeAllRects.push({
+          id: cid,
+          rect: {
+            x: domRect.left - (resizeCanvasBounds ? resizeCanvasBounds.left : 0),
+            y: domRect.top - (resizeCanvasBounds ? resizeCanvasBounds.top : 0),
+            width: domRect.width,
+            height: domRect.height,
+          },
+        });
+      });
+      const resizePreSharedEdges = findSharedEdges(resizeAllRects);
+      const resizePreSets = computeSets(
+        resizeAllRects.map((c) => c.id),
+        resizePreSharedEdges,
+      );
+      const resizePreSet = resizePreSets.find((s) => s.cardIds.includes(id));
+      const resizePreSetMemberIds: string[] = resizePreSet ? resizePreSet.cardIds.slice() : [];
 
       const latestResizePointer = { x: startX, y: startY };
       let latestResizeModifier = isSnapModifier(event.nativeEvent);
@@ -886,12 +839,12 @@ export function CardFrame({
           // Render resize snap guides. [D03]
           const container = frame.parentElement;
           if (container) {
-            syncResizeGuides(snapResult.guides, container);
+            syncGuideElements(resizeGuideEls, snapResult.guides, container);
           }
 
           return { left, top, width, height };
         } else {
-          clearResizeGuides();
+          clearGuideElements(resizeGuideEls);
           return r;
         }
       }
@@ -927,7 +880,7 @@ export function CardFrame({
         frame.releasePointerCapture(e.pointerId);
 
         // Clear resize guides on drop. [D03]
-        clearResizeGuides();
+        clearGuideElements(resizeGuideEls);
 
         const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, isSnapModifier(e));
         frame.style.left = `${r.left}px`;
@@ -935,6 +888,9 @@ export function CardFrame({
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
         onCardMoved(id, { x: r.left, y: r.top }, { width: r.width, height: r.height });
+
+        // Flash set perimeter / break-out flash on resize end. [D54, D55]
+        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds);
       }
 
       frame.addEventListener("pointermove", onPointerMove);
@@ -993,6 +949,76 @@ export function CardFrame({
       {renderContent(injected)}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Post-action set detection and flash (shared by move and resize) [D54]
+// ---------------------------------------------------------------------------
+
+/**
+ * After a move or resize action completes, detect whether the card has joined,
+ * left, or changed sets and fire the appropriate flash animation. [D54, D55]
+ *
+ * This function:
+ * 1. Queries all `.card-frame[data-card-id]` elements from the DOM.
+ * 2. Builds rects relative to canvas bounds.
+ * 3. Calls `findSharedEdges(rects)` and `computeSets(ids, sharedEdges)`.
+ * 4. Finds the set containing `cardId` (if any).
+ * 5. Compares sorted `preActionSetMemberIds` vs post-action set member IDs.
+ * 6. If set membership CHANGED and card is now in a set → `flashSetPerimeter`.
+ * 7. If card WAS in a set but is now NOT in any set → `flashCardPerimeter` (break-out flash).
+ *
+ * @param cardId - The id of the moved or resized card.
+ * @param preActionSetMemberIds - Set member IDs captured before the action started (empty if solo).
+ * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
+ */
+function postActionSetUpdate(
+  cardId: string,
+  preActionSetMemberIds: string[],
+  canvasBounds: DOMRect | null,
+): void {
+  const postRects: { id: string; rect: Rect }[] = [];
+  const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+  allFrameEls.forEach((el) => {
+    const cid = el.getAttribute("data-card-id");
+    if (!cid) return;
+    const domRect = el.getBoundingClientRect();
+    postRects.push({
+      id: cid,
+      rect: {
+        x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
+        y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
+        width: domRect.width,
+        height: domRect.height,
+      },
+    });
+  });
+
+  const postSharedEdges = findSharedEdges(postRects);
+  const postSets = computeSets(
+    postRects.map((c) => c.id),
+    postSharedEdges,
+  );
+  const mySet = postSets.find((s) => s.cardIds.includes(cardId));
+
+  if (mySet) {
+    // Card is now in a set — flash only if membership changed. [D54]
+    const startIds = preActionSetMemberIds.slice().sort();
+    const endIds = mySet.cardIds.slice().sort();
+    const setChanged =
+      startIds.length !== endIds.length || startIds.some((sid, i) => sid !== endIds[i]);
+    if (setChanged) {
+      flashSetPerimeter(mySet.cardIds, postSharedEdges);
+    }
+  } else if (preActionSetMemberIds.length > 0) {
+    // Card was in a set but is now solo — break-out flash. [D55]
+    const frameEl = document.querySelector<HTMLElement>(
+      `.card-frame[data-card-id="${cardId}"]`,
+    );
+    if (frameEl) {
+      flashCardPerimeter(frameEl);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
