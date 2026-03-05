@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-05T16:25:45Z
+---
+
+## step-3: Deleted gesture-active flag system, dragShadowEl/resizeShadowEl refs, defensive sweep, shadow translation in drag/resize RAF loops. Replaced break-out shadow removal with direct clip-path/data-in-set clearing. Simplified deck-canvas store subscriber to call updateSetAppearance unconditionally.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
 step: step-2
 date: 2025-03-05T16:17:32Z
 ---
