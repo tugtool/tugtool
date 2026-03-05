@@ -942,6 +942,26 @@ export function CardFrame({
         }
       }
 
+      // Snapshot the shadow element at resize-start for per-frame position tracking. [D04, S05]
+      // Only needed when this card is in a set; north/west edge resizes shift the card's
+      // top-left corner, so the shadow wrapper must translate to match. East/south-only
+      // resizes produce zero delta and the shadow stays put (correct — wrapper position
+      // doesn't change when only width/height change).
+      let resizeShadowEl: HTMLElement | null = null;
+      let resizeShadowOriginX = 0;
+      let resizeShadowOriginY = 0;
+      if (resizePreSetMemberIds.length > 0) {
+        const idString = resizePreSetMemberIds.slice().sort().join(",");
+        const shadowEl = document.querySelector<HTMLElement>(
+          `.set-shadow[data-set-card-ids="${idString}"]`,
+        );
+        if (shadowEl) {
+          resizeShadowEl = shadowEl;
+          resizeShadowOriginX = parseFloat(shadowEl.style.left) || 0;
+          resizeShadowOriginY = parseFloat(shadowEl.style.top) || 0;
+        }
+      }
+
       const latestResizePointer = { x: startX, y: startY };
       let latestResizeModifier = isSnapModifier(event.nativeEvent);
       let resizeRafId: number | null = null;
@@ -1086,6 +1106,15 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
+        // Translate the shadow wrapper by the card's position delta so it tracks
+        // north/west edge resizes frame-by-frame. Only left/top are updated here;
+        // the full hull is rebuilt by postActionSetUpdate at resize-end. [D04, S05]
+        if (resizeShadowEl) {
+          const deltaX = r.left - startLeft;
+          const deltaY = r.top - startTop;
+          resizeShadowEl.style.left = `${resizeShadowOriginX + deltaX}px`;
+          resizeShadowEl.style.top = `${resizeShadowOriginY + deltaY}px`;
+        }
       }
 
       function onPointerMove(e: PointerEvent) {

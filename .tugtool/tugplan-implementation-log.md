@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-05T15:10:11Z
+---
+
+## step-5: Added shadow element snapshot after resizePreSetMemberIds computation and position delta translation in applyResizeFrame, so shadow tracks card position during north/west resize gestures.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-4
 date: 2025-03-05T15:07:29Z
 ---
