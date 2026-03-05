@@ -6,6 +6,7 @@ import {
   type SharedEdge,
   type CardSet,
   type EdgeValidator,
+  type Point,
   SNAP_THRESHOLD_PX,
   SNAP_VISIBILITY_THRESHOLD,
   computeSnap,
@@ -14,6 +15,7 @@ import {
   findSharedEdges,
   computeSets,
   cardToRect,
+  computeSetHullPolygon,
 } from "../snap";
 import type { CardState } from "../layout-tree";
 
@@ -598,6 +600,197 @@ describe("computeEdgeVisibility", () => {
   test("returns 0 for zero-length range", () => {
     const visibility = computeEdgeVisibility(200, 100, 100, true, []);
     expect(visibility).toBe(0);
+  });
+});
+
+// ---- computeSetHullPolygon ----
+
+// Helper: compute twice the signed area using the shoelace formula.
+// In screen coords (y-down): negative = clockwise, positive = counterclockwise.
+// The spec requires clockwise ordering, so we check area < 0.
+function signedArea(pts: Point[]): number {
+  let area = 0;
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    area += (b.x - a.x) * (b.y + a.y);
+  }
+  return area; // negative = clockwise in screen/canvas coords (y-down)
+}
+
+function isClockwise(pts: Point[]): boolean {
+  return signedArea(pts) < 0;
+}
+
+describe("computeSetHullPolygon", () => {
+  // Empty input → empty array [D06]
+  test("returns empty array for empty input", () => {
+    const result = computeSetHullPolygon([]);
+    expect(result).toEqual([]);
+  });
+
+  // Single zero-area rect → empty array [D06]
+  test("returns empty array for single zero-area rect (zero width)", () => {
+    const result = computeSetHullPolygon([{ x: 0, y: 0, width: 0, height: 100 }]);
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array for single zero-area rect (zero height)", () => {
+    const result = computeSetHullPolygon([{ x: 0, y: 0, width: 100, height: 0 }]);
+    expect(result).toEqual([]);
+  });
+
+  // Single rectangle → 4 corners [Spec S02 worked example]
+  test("returns 4-vertex polygon for a single rectangle", () => {
+    const rect: Rect = { x: 10, y: 20, width: 100, height: 50 };
+    const result = computeSetHullPolygon([rect]);
+    expect(result.length).toBe(4);
+    // All corners should be present (in some order)
+    const expected = [
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 70 },
+      { x: 10, y: 70 },
+    ];
+    for (const exp of expected) {
+      expect(result.some((p) => p.x === exp.x && p.y === exp.y)).toBe(true);
+    }
+    // Clockwise winding (positive signed area in screen/y-down coords)
+    expect(isClockwise(result)).toBe(true);
+  });
+
+  // Two rectangles side by side (horizontal) → 4 corners of bounding box
+  test("returns 4-vertex polygon for two horizontally adjacent rectangles", () => {
+    // Rect A: (0,0,100,50), Rect B: (100,0,100,50) — exactly touching
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 50 },
+      { x: 100, y: 0, width: 100, height: 50 },
+    ];
+    const result = computeSetHullPolygon(rects);
+    expect(result.length).toBe(4);
+    // Should be the merged bounding box: (0,0) to (200,50)
+    const expected = [
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+      { x: 200, y: 50 },
+      { x: 0, y: 50 },
+    ];
+    for (const exp of expected) {
+      expect(result.some((p) => p.x === exp.x && p.y === exp.y)).toBe(true);
+    }
+    expect(isClockwise(result)).toBe(true);
+  });
+
+  // Two rectangles stacked (vertical) → 4 corners of combined bounding box
+  test("returns 4-vertex polygon for two vertically stacked rectangles", () => {
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 50 },
+      { x: 0, y: 50, width: 100, height: 50 },
+    ];
+    const result = computeSetHullPolygon(rects);
+    expect(result.length).toBe(4);
+    const expected = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 100 },
+    ];
+    for (const exp of expected) {
+      expect(result.some((p) => p.x === exp.x && p.y === exp.y)).toBe(true);
+    }
+    expect(isClockwise(result)).toBe(true);
+  });
+
+  // L-shape: 3 rectangles forming an L → 6 vertices
+  // Layout: two rects forming a 2×1 horizontal strip on top, one rect below-left
+  //   [A][B]
+  //   [C]
+  // A: (0,0,100,100), B: (100,0,100,100), C: (0,100,100,100)
+  test("returns 6-vertex polygon for L-shape (3 rectangles)", () => {
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 100 },   // A: top-left
+      { x: 100, y: 0, width: 100, height: 100 },  // B: top-right
+      { x: 0, y: 100, width: 100, height: 100 },  // C: bottom-left
+    ];
+    const result = computeSetHullPolygon(rects);
+    expect(result.length).toBe(6);
+    // Must include the concave corner at (100, 100) and (100, 200) is NOT there
+    // The concave inner corner is at (100, 100)
+    const hasInnerCorner = result.some((p) => p.x === 100 && p.y === 100);
+    expect(hasInnerCorner).toBe(true);
+    expect(isClockwise(result)).toBe(true);
+  });
+
+  // T-shape: 3 rects with one centered on top of two side by side → 8 vertices
+  // Layout:
+  //    [B]
+  //  [A][C]
+  // A: (0,100,100,100), B: (100,0,100,100), C: (200,100,100,100)  — T upside down
+  // Actually let's do a proper T: one on top spanning full width...
+  // Simpler T: top rect spans 2 cells wide, two rects below on the sides
+  // [A A]     top: (0,0,200,100)
+  // [B][C]    bottom-left: (0,100,100,100), bottom-right: (100,100,100,100)
+  // That's just 3 stacked → 4 vertices. We need a T where one arm sticks out.
+  // True T-shape:
+  //   [B]          B: (50,0,100,100)   — top stem
+  //  [A][C]        A: (0,100,100,100), C: (100,100,100,100)  — horizontal bar
+  // This gives 8 vertices
+  test("returns 8-vertex polygon for T-shape (3 rectangles)", () => {
+    const rects: Rect[] = [
+      { x: 0, y: 100, width: 100, height: 100 },   // A: bottom-left
+      { x: 50, y: 0, width: 100, height: 100 },    // B: top center (stem of T)
+      { x: 100, y: 100, width: 100, height: 100 }, // C: bottom-right
+    ];
+    const result = computeSetHullPolygon(rects);
+    expect(result.length).toBe(8);
+    expect(isClockwise(result)).toBe(true);
+  });
+
+  // Staircase: 3 rects in a diagonal staircase pattern
+  // [A]
+  //   [B]
+  //     [C]
+  // A: (0,0,100,100), B: (100,100,100,100), C: (200,200,100,100)
+  test("returns polygon tracing the staircase outline for staircase shape", () => {
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 100, y: 100, width: 100, height: 100 },
+      { x: 200, y: 200, width: 100, height: 100 },
+    ];
+    const result = computeSetHullPolygon(rects);
+    // Staircase with 3 steps has 12 vertices (4 corners per rect minus 2 shared corners × 3...
+    // actually 4*3=12 minus collinear reductions; with no collinear vertices it's 12)
+    expect(result.length).toBeGreaterThan(6);
+    expect(isClockwise(result)).toBe(true);
+    // All rect corners should appear in the polygon
+    const allCorners = [
+      { x: 0, y: 0 }, { x: 100, y: 0 },
+      { x: 200, y: 100 }, { x: 200, y: 200 },
+      { x: 300, y: 200 }, { x: 300, y: 300 },
+      { x: 200, y: 300 }, { x: 100, y: 200 },
+      { x: 100, y: 100 }, { x: 0, y: 100 },
+    ];
+    for (const c of allCorners) {
+      expect(result.some((p) => p.x === c.x && p.y === c.y)).toBe(true);
+    }
+  });
+
+  // Overlapping rectangles → merged correctly, hull of union
+  test("handles overlapping rectangles by merging them", () => {
+    // Two overlapping rects → hull should be bounding box (or close to it)
+    const rects: Rect[] = [
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 50, y: 50, width: 100, height: 100 },
+    ];
+    const result = computeSetHullPolygon(rects);
+    // The union is an L-shape (neither axis-aligned merge)
+    // It should have more than 4 corners since it's not a simple rectangle
+    expect(result.length).toBeGreaterThan(0);
+    expect(isClockwise(result)).toBe(true);
+    // The bounding box corners must be present
+    expect(result.some((p) => p.x === 0 && p.y === 0)).toBe(true);
+    expect(result.some((p) => p.x === 150 && p.y === 150)).toBe(true);
   });
 });
 
