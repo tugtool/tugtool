@@ -28,8 +28,14 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
-import { computeSnap, computeResizeSnap, findSharedEdges, computeSets } from "@/snap";
+import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
+
+// ---------------------------------------------------------------------------
+// Module-level counter for unique SVG flash filter IDs [Spec S03]
+// ---------------------------------------------------------------------------
+
+let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -694,7 +700,7 @@ export function CardFrame({
         }
 
         // Flash set perimeter / break-out flash on drop. [D54, D55]
-        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current);
+        postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
 
         // Reset all snap/set state.
         dragOtherRects.current = [];
@@ -1035,7 +1041,7 @@ export function CardFrame({
         }
 
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
-        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds);
+        postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement);
       }
 
       frame.addEventListener("pointermove", onPointerMove);
@@ -1281,6 +1287,7 @@ function postActionSetUpdate(
   cardId: string,
   preActionSetMemberIds: string[],
   canvasBounds: DOMRect | null,
+  containerEl: HTMLElement | null,
 ): void {
   const postRects: { id: string; rect: Rect }[] = [];
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
@@ -1313,7 +1320,7 @@ function postActionSetUpdate(
     const setChanged =
       startIds.length !== endIds.length || startIds.some((sid, i) => sid !== endIds[i]);
     if (setChanged) {
-      flashSetPerimeter(mySet.cardIds, postSharedEdges, postRects);
+      flashSetPerimeter(mySet.cardIds, postRects, containerEl);
     }
   } else if (preActionSetMemberIds.length > 0) {
     // Card was in a set but is now solo — break-out flash. [D55]
@@ -1488,249 +1495,106 @@ function buildClipPath(
 // Flash overlay helpers (appearance-zone, [D54], Spec S03)
 // ---------------------------------------------------------------------------
 
-/** Glow expansion in px for the flash overlay. */
-const FLASH_PADDING = 4;
+/** Glow expansion in px for the SVG flash glow filter. */
+const SVG_FLASH_GLOW_BLUR = 4;
 
 /**
- * Build a CSS polygon() clip-path for a card's flash overlay that precisely
- * traces external edges and clips away shared (internal) edge segments.
+ * Create a single SVG hull flash element for a newly formed set. [D02, Spec S03]
  *
- * The overlay is positioned with `inset: -P` (where P = FLASH_PADDING),
- * so in overlay-local coordinates:
- *   - Card top-left = (P, P)
- *   - Card bottom-right = (P + W, P + H)
- *   - Overlay top-left = (0, 0)
- *   - Overlay bottom-right = (W + 2P, H + 2P)
- *
- * For each side, we walk along the edge. Where there is no shared segment,
- * the path follows the expanded overlay boundary. Where there IS a shared
- * segment, the path jogs inward to the card edge, clipping border and glow
- * on that portion only.
- *
- * @param cardRect - Card position in canvas coords.
- * @param cardId - ID of the card whose flash polygon to build.
- * @param sharedEdges - All shared edges among the set's cards.
- * @param padding - Glow expansion in px (e.g. FLASH_PADDING = 4).
- */
-function buildFlashPolygon(
-  cardRect: Rect,
-  cardId: string,
-  sharedEdges: SharedEdge[],
-  padding: number,
-): string {
-  const P = padding;
-  const W = cardRect.width;
-  const H = cardRect.height;
-
-  // Collect shared segments per side in card-local coordinates.
-  // For vertical shared edges:
-  //   cardAId = LEFT card (its RIGHT side is internal)
-  //   cardBId = RIGHT card (its LEFT side is internal)
-  //   overlapStart/overlapEnd = Y range in canvas coords → convert to card-local Y
-  // For horizontal shared edges:
-  //   cardAId = TOP card (its BOTTOM side is internal)
-  //   cardBId = BOTTOM card (its TOP side is internal)
-  //   overlapStart/overlapEnd = X range in canvas coords → convert to card-local X
-
-  const rightSegs: [number, number][] = [];
-  const leftSegs: [number, number][] = [];
-  const bottomSegs: [number, number][] = [];
-  const topSegs: [number, number][] = [];
-
-  for (const edge of sharedEdges) {
-    if (edge.axis === "vertical") {
-      if (edge.cardAId === cardId) {
-        // This card's RIGHT side is internal along this Y range.
-        rightSegs.push([edge.overlapStart - cardRect.y, edge.overlapEnd - cardRect.y]);
-      } else if (edge.cardBId === cardId) {
-        // This card's LEFT side is internal along this Y range.
-        leftSegs.push([edge.overlapStart - cardRect.y, edge.overlapEnd - cardRect.y]);
-      }
-    } else {
-      // axis === "horizontal"
-      if (edge.cardAId === cardId) {
-        // This card's BOTTOM side is internal along this X range.
-        bottomSegs.push([edge.overlapStart - cardRect.x, edge.overlapEnd - cardRect.x]);
-      } else if (edge.cardBId === cardId) {
-        // This card's TOP side is internal along this X range.
-        topSegs.push([edge.overlapStart - cardRect.x, edge.overlapEnd - cardRect.x]);
-      }
-    }
-  }
-
-  // Sort all segment arrays by start position ascending.
-  rightSegs.sort((a, b) => a[0] - b[0]);
-  leftSegs.sort((a, b) => a[0] - b[0]);
-  bottomSegs.sort((a, b) => a[0] - b[0]);
-  topSegs.sort((a, b) => a[0] - b[0]);
-
-  // Build polygon points clockwise.
-  // Overlay extents:
-  //   x: 0 (left) to W+2P (right)
-  //   y: 0 (top) to H+2P (bottom)
-  // Card occupies (P, P) to (P+W, P+H) in overlay-local coords.
-
-  const pts: [number, number][] = [];
-
-  function pt(x: number, y: number): void {
-    pts.push([x, y]);
-  }
-
-  // TOP edge: walk left → right at y=0 (expanded), jog to y=P on shared segments.
-  {
-    let curX = 0;
-    for (const [segStart, segEnd] of topSegs) {
-      const jogX0 = P + segStart;
-      const jogX1 = P + segEnd;
-      // Walk along expanded boundary to start of shared segment.
-      if (curX < jogX0) {
-        pt(curX, 0);
-        pt(jogX0, 0);
-      } else {
-        pt(curX, 0);
-      }
-      // Jog inward (down) to card edge.
-      pt(jogX0, P);
-      // Walk along card edge through shared segment.
-      pt(jogX1, P);
-      // Jog back out (up) to expanded boundary.
-      pt(jogX1, 0);
-      curX = jogX1;
-    }
-    // Walk remaining expanded boundary to top-right corner.
-    pt(curX, 0);
-    pt(W + 2 * P, 0);
-  }
-
-  // RIGHT edge: walk top → bottom at x=W+2P (expanded), jog to x=P+W on shared segments.
-  {
-    let curY = 0;
-    for (const [segStart, segEnd] of rightSegs) {
-      const jogY0 = P + segStart;
-      const jogY1 = P + segEnd;
-      if (curY < jogY0) {
-        pt(W + 2 * P, curY);
-        pt(W + 2 * P, jogY0);
-      } else {
-        pt(W + 2 * P, curY);
-      }
-      // Jog inward (left) to card edge.
-      pt(P + W, jogY0);
-      // Walk along card edge through shared segment.
-      pt(P + W, jogY1);
-      // Jog back out (right) to expanded boundary.
-      pt(W + 2 * P, jogY1);
-      curY = jogY1;
-    }
-    // Walk remaining expanded boundary to bottom-right corner.
-    pt(W + 2 * P, curY);
-    pt(W + 2 * P, H + 2 * P);
-  }
-
-  // BOTTOM edge: walk right → left at y=H+2P (expanded), jog to y=P+H on shared segments.
-  // Segments are sorted ascending by X; we walk right-to-left so reverse the order.
-  {
-    let curX = W + 2 * P;
-    for (let i = bottomSegs.length - 1; i >= 0; i--) {
-      const [segStart, segEnd] = bottomSegs[i];
-      const jogX1 = P + segEnd;   // right boundary of segment (in overlay coords)
-      const jogX0 = P + segStart; // left boundary of segment
-      if (curX > jogX1) {
-        pt(curX, H + 2 * P);
-        pt(jogX1, H + 2 * P);
-      } else {
-        pt(curX, H + 2 * P);
-      }
-      // Jog inward (up) to card edge.
-      pt(jogX1, P + H);
-      // Walk along card edge through shared segment (right → left).
-      pt(jogX0, P + H);
-      // Jog back out (down) to expanded boundary.
-      pt(jogX0, H + 2 * P);
-      curX = jogX0;
-    }
-    // Walk remaining expanded boundary to bottom-left corner.
-    pt(curX, H + 2 * P);
-    pt(0, H + 2 * P);
-  }
-
-  // LEFT edge: walk bottom → top at x=0 (expanded), jog to x=P on shared segments.
-  // Segments are sorted ascending by Y; we walk bottom-to-top so reverse the order.
-  {
-    let curY = H + 2 * P;
-    for (let i = leftSegs.length - 1; i >= 0; i--) {
-      const [segStart, segEnd] = leftSegs[i];
-      const jogY1 = P + segEnd;   // bottom of segment (in overlay coords)
-      const jogY0 = P + segStart; // top of segment
-      if (curY > jogY1) {
-        pt(0, curY);
-        pt(0, jogY1);
-      } else {
-        pt(0, curY);
-      }
-      // Jog inward (right) to card edge.
-      pt(P, jogY1);
-      // Walk along card edge through shared segment (bottom → top).
-      pt(P, jogY0);
-      // Jog back out (left) to expanded boundary.
-      pt(0, jogY0);
-      curY = jogY0;
-    }
-    // Walk remaining expanded boundary back to origin.
-    pt(0, curY);
-    pt(0, 0);
-  }
-
-  // Format as CSS polygon().
-  const coordStr = pts.map(([x, y]) => `${x}px ${y}px`).join(", ");
-  return `polygon(${coordStr})`;
-}
-
-/**
- * Create per-card .set-flash-overlay elements for a newly formed set.
- *
- * Uses a per-card polygon() clip-path that precisely traces external edges and
- * clips away shared (internal) edge segments. Partial shared edges are handled
- * correctly — only the shared portion is clipped; exposed portions still flash.
- * Cards always remain fully rounded — no corner squaring is applied. [D53]
- * The overlay self-removes on animationend. [D54, Spec S03]
+ * Replaces the per-card overlay approach. Computes the outer hull polygon of
+ * all set cards, draws a single SVG <path> with accent stroke and glow filter,
+ * and appends it to the ResponderScope (containerEl). Self-removes on animationend.
  *
  * @param setCardIds - IDs of all cards in the set.
- * @param sharedEdges - All shared edges among the set's cards.
- * @param cardRects - Canvas-relative rects for all cards (used for polygon computation).
+ * @param cardRects - Canvas-relative rects for all cards.
+ * @param containerEl - The ResponderScope element to append the SVG to.
  */
 export function flashSetPerimeter(
   setCardIds: string[],
-  sharedEdges: SharedEdge[],
   cardRects: { id: string; rect: Rect }[],
+  containerEl: HTMLElement | null,
 ): void {
+  if (!containerEl) return;
+
+  // Collect rects for all cards in the set.
+  const rects: Rect[] = [];
   for (const cardId of setCardIds) {
-    const frameEl = document.querySelector<HTMLElement>(
-      `.card-frame[data-card-id="${cardId}"]`,
-    );
-    if (!frameEl) continue;
-
-    const cardRectEntry = cardRects.find((r) => r.id === cardId);
-    if (!cardRectEntry) continue;
-
-    const polygon = buildFlashPolygon(cardRectEntry.rect, cardId, sharedEdges, FLASH_PADDING);
-
-    const overlay = document.createElement("div");
-    overlay.classList.add("set-flash-overlay");
-
-    // Use the polygon clip-path to precisely trace external edges only.
-    overlay.style.clipPath = polygon;
-    overlay.style.inset = `-${FLASH_PADDING}px`;
-
-    // Cards are always fully rounded — use CSS default border-radius (no inline override).
-
-    // Self-remove after animation completes.
-    overlay.addEventListener("animationend", () => {
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    });
-
-    frameEl.appendChild(overlay);
+    const entry = cardRects.find((r) => r.id === cardId);
+    if (entry) rects.push(entry.rect);
   }
+
+  // Compute hull polygon. Guard against degenerate input per [D06].
+  const hull = computeSetHullPolygon(rects);
+  if (hull.length < 3) return;
+
+  // Compute hull bounding box with glow padding so the filter has room to breathe.
+  const pad = SVG_FLASH_GLOW_BLUR * 2;
+  const hullMinX = hull.reduce((m, p) => Math.min(m, p.x), Infinity);
+  const hullMinY = hull.reduce((m, p) => Math.min(m, p.y), Infinity);
+  const hullMaxX = hull.reduce((m, p) => Math.max(m, p.x), -Infinity);
+  const hullMaxY = hull.reduce((m, p) => Math.max(m, p.y), -Infinity);
+  const bx = hullMinX - pad;
+  const by = hullMinY - pad;
+  const bw = hullMaxX - hullMinX + pad * 2;
+  const bh = hullMaxY - hullMinY + pad * 2;
+
+  // Unique filter ID to avoid cross-SVG filter collisions when multiple flashes are active.
+  const uid = nextFlashId++;
+
+  // Build SVG path data in SVG-local coordinates (hull coords minus bounding box origin).
+  const svgPath =
+    hull.map((p, i) => `${i === 0 ? "M" : "L"}${p.x - bx},${p.y - by}`).join(" ") + " Z";
+
+  // Create SVG element.
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("set-flash-svg");
+  svg.style.left = `${bx}px`;
+  svg.style.top = `${by}px`;
+  svg.style.width = `${bw}px`;
+  svg.style.height = `${bh}px`;
+
+  // Glow filter: feGaussianBlur + feMerge to render both blurred glow and crisp stroke.
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+  filter.setAttribute("id", `set-flash-glow-${uid}`);
+  filter.setAttribute("x", "-50%");
+  filter.setAttribute("y", "-50%");
+  filter.setAttribute("width", "200%");
+  filter.setAttribute("height", "200%");
+
+  const blur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
+  blur.setAttribute("in", "SourceGraphic");
+  blur.setAttribute("stdDeviation", String(SVG_FLASH_GLOW_BLUR));
+  blur.setAttribute("result", "blur");
+
+  const merge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
+  const mergeNodeBlur = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
+  mergeNodeBlur.setAttribute("in", "blur");
+  const mergeNodeSrc = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
+  mergeNodeSrc.setAttribute("in", "SourceGraphic");
+
+  merge.appendChild(mergeNodeBlur);
+  merge.appendChild(mergeNodeSrc);
+  filter.appendChild(blur);
+  filter.appendChild(merge);
+  defs.appendChild(filter);
+  svg.appendChild(defs);
+
+  // Hull path with accent stroke and glow filter.
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", svgPath);
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "var(--td-accent)");
+  path.setAttribute("stroke-width", "3");
+  path.setAttribute("filter", `url(#set-flash-glow-${uid})`);
+  svg.appendChild(path);
+
+  // Self-remove after animation completes.
+  svg.addEventListener("animationend", () => {
+    if (svg.parentNode) svg.parentNode.removeChild(svg);
+  });
+
+  containerEl.appendChild(svg);
 }
 
 /**

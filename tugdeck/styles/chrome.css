@@ -87,3 +87,16 @@
   z-index: 2;
   box-sizing: border-box;
 }
+
+/*
+ * SVG hull flash: one SVG element per set, positioned on the ResponderScope.
+ * Uses overflow: visible so the glow filter extends beyond SVG bounds.
+ * Animated by the set-flash-fade keyframe; self-removes on animationend. [D02, Spec S03]
+ */
+.set-flash-svg {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 9999;
+  animation: set-flash-fade 0.5s ease-out forwards;
+}

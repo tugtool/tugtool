@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-05T03:26:44Z
+---
+
+## step-2: Rewrote flashSetPerimeter to create a single SVG element with hull polygon path and glow filter. Added containerEl parameter to postActionSetUpdate and flashSetPerimeter. Deleted buildFlashPolygon and FLASH_PADDING. Added .set-flash-svg CSS class.
+
+**Files changed:**
+- .tugtool/tugplan-hull-polygon-visual-overhaul.md
+
+---
+
+---
 step: step-1
 date: 2025-03-05T03:17:47Z
 ---
