@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-03-05T21:14:27Z
+---
+
+## step-5: Integration checkpoint: verified all success criteria, Rules of Tug compliance, 641/641 tests pass, no code changes
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
+step: step-4
+date: 2025-03-05T21:11:07Z
+---
+
+## step-4: Added GalleryDefaultButtonContent component, registered gallery-default-button card, added sixth tab to GALLERY_DEFAULT_TABS, updated gallery-card.test.tsx and component-gallery.test.tsx with six-entry assertions
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
+step: step-3
+date: 2025-03-05T21:03:50Z
+---
+
+## step-3: Added .tug-button-destructive base rule with background-color: var(--td-danger) and color: var(--td-text-inverse) in tug-button.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
+step: step-2
+date: 2025-03-05T21:01:22Z
+---
+
+## step-2: Added Enter-key default-button activation logic to bubbleListener stage-2 with guards for INPUT/TEXTAREA/SELECT/BUTTON/contentEditable, plus 6 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
+step: step-1
+date: 2025-03-05T20:56:29Z
+---
+
+## step-1: Added private defaultButtonStack field and three public methods (setDefaultButton, clearDefaultButton, getDefaultButton) to ResponderChainManager, plus comprehensive unit tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
+step: step-5
 date: 2025-03-05T16:32:39Z
 ---
 

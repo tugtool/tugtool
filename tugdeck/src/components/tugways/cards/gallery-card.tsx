@@ -1,14 +1,14 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into five separately
+ * Converts the Component Gallery from a floating panel into six separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates a five-tab card titled "Component Gallery".
+ * creates a six-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
- * - [D01] Five separate componentIds for gallery sections
+ * - [D01] Six separate componentIds for gallery sections
  * - [D08] Normal tabs: each section is a distinct componentId
  * - [D09] Real factory each: every registration has a real `factory` function
  * - Spec S03: Gallery registrations
@@ -18,7 +18,8 @@
  * @module components/tugways/cards/gallery-card
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useLayoutEffect } from "react";
+import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { Tugcard } from "@/components/tugways/tugcard";
@@ -43,17 +44,18 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a five-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates a six-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
 export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
-  { id: "template", componentId: "gallery-buttons",      title: "TugButton",      closable: true },
-  { id: "template", componentId: "gallery-chain-actions", title: "Chain Actions",  closable: true },
-  { id: "template", componentId: "gallery-mutation",     title: "Mutation Model", closable: true },
-  { id: "template", componentId: "gallery-tabbar",       title: "TugTabBar",      closable: true },
-  { id: "template", componentId: "gallery-dropdown",     title: "TugDropdown",    closable: true },
+  { id: "template", componentId: "gallery-buttons",        title: "TugButton",      closable: true },
+  { id: "template", componentId: "gallery-chain-actions",  title: "Chain Actions",  closable: true },
+  { id: "template", componentId: "gallery-mutation",       title: "Mutation Model", closable: true },
+  { id: "template", componentId: "gallery-tabbar",         title: "TugTabBar",      closable: true },
+  { id: "template", componentId: "gallery-dropdown",       title: "TugDropdown",    closable: true },
+  { id: "template", componentId: "gallery-default-button", title: "Default Button", closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -617,11 +619,84 @@ export function GalleryDropdownContent() {
 }
 
 // ---------------------------------------------------------------------------
+// GalleryDefaultButtonContent
+// ---------------------------------------------------------------------------
+
+/**
+ * GalleryDefaultButtonContent -- default button registration + Enter-key demo.
+ *
+ * Renders a primary "Confirm" button and a secondary "Cancel" button. The
+ * Confirm button is registered as the default button via useLayoutEffect on
+ * mount and cleared on unmount. Pressing Enter when neither button is focused
+ * activates Confirm via the stage-2 bubble-pipeline shortcut.
+ *
+ * Rules of Tug compliance:
+ * - [D41] useLayoutEffect for registrations that events depend on
+ * - [D40] Local UI state (last action) uses useState -- this is local component
+ *   state, not external store state, so useSyncExternalStore does not apply
+ *
+ * **Authoritative reference:** [D01] gallery-default-button componentId.
+ */
+export function GalleryDefaultButtonContent() {
+  const manager = useRequiredResponderChain();
+  const confirmContainerRef = useRef<HTMLSpanElement | null>(null);
+  const [lastAction, setLastAction] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    // Find the underlying <button> DOM element inside the TugButton wrapper span.
+    // TugButton does not support ref forwarding, so we locate the button via the
+    // container span. This is safe: the span holds exactly one button child.
+    const btn = confirmContainerRef.current?.querySelector("button") ?? null;
+    if (!btn) return;
+    manager.setDefaultButton(btn);
+    return () => {
+      manager.clearDefaultButton(btn);
+    };
+  }, [manager]);
+
+  return (
+    <div className="cg-content" data-testid="gallery-default-button-content">
+      <div className="cg-section">
+        <div className="cg-section-title">Default Button</div>
+        <p className="cg-description">
+          Click outside the buttons, then press Enter to activate the default button.
+        </p>
+        <div className="cg-variant-row">
+          <span ref={confirmContainerRef}>
+            <TugButton
+              subtype="push"
+              variant="primary"
+              size="md"
+              onClick={() => setLastAction("Confirm clicked")}
+            >
+              Confirm
+            </TugButton>
+          </span>
+          <TugButton
+            subtype="push"
+            variant="secondary"
+            size="md"
+            onClick={() => setLastAction("Cancel clicked")}
+          >
+            Cancel
+          </TugButton>
+        </div>
+        {lastAction !== null && (
+          <div className="cg-demo-status" data-testid="gallery-default-button-status">
+            {lastAction}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // registerGalleryCards
 // ---------------------------------------------------------------------------
 
 /**
- * Register all five gallery card types in the global card registry.
+ * Register all six gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -632,7 +707,7 @@ export function GalleryDropdownContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates five-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates six-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations)
@@ -736,6 +811,26 @@ export function registerGalleryCards(): void {
     ),
     contentFactory: (_cardId) => <GalleryDropdownContent />,
     defaultMeta: { title: "TugDropdown", icon: "ChevronDown", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-default-button ----
+  registerCard({
+    componentId: "gallery-default-button",
+    factory: (cardId, injected) => (
+      <Tugcard
+        cardId={cardId}
+        meta={{ title: "Default Button", icon: "CornerDownLeft", closable: true }}
+        feedIds={[]}
+        onDragStart={injected.onDragStart}
+        onMinSizeChange={injected.onMinSizeChange}
+      >
+        <GalleryDefaultButtonContent />
+      </Tugcard>
+    ),
+    contentFactory: (_cardId) => <GalleryDefaultButtonContent />,
+    defaultMeta: { title: "Default Button", icon: "CornerDownLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

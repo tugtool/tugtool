@@ -26,6 +26,12 @@
   border: 1px solid transparent;
 }
 
+/* Destructive variant: bold red fill with white text */
+.tug-button-destructive {
+  background-color: var(--td-danger);
+  color: var(--td-text-inverse);
+}
+
 /* Destructive variant: red-tinted border to communicate caution */
 .tug-button-destructive.tug-button-bordered {
   border-color: var(--td-danger);
