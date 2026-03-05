@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-05T16:28:37Z
+---
+
+## step-4: Added per-frame updateSetAppearance call in applyResizeFrame for sash co-resize, ensuring both resizing card and sash neighbor get correct clip-path values during resize.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
 step: step-3
 date: 2025-03-05T16:25:45Z
 ---

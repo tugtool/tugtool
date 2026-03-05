@@ -1020,8 +1020,13 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
-        // clip-path is intrinsic to each card and tracks automatically — no shadow
-        // element translation needed. [D01]
+        // During sash co-resize both cards change size/position each frame, so the shared
+        // edge moves and each card's interior vs exterior edges may change proportionally.
+        // Call updateSetAppearance once per frame to keep clip-path values correct for both
+        // the resizing card and the sash neighbor throughout the gesture. [D06, Spec S01]
+        if (sashNeighborEl && !latestResizeModifier) {
+          updateSetAppearance(resizeCanvasBounds, frame.parentElement);
+        }
       }
 
       function onPointerMove(e: PointerEvent) {
