@@ -48,13 +48,55 @@
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
-/* ---- Set flash feedback ---- */
+/* ---- Set membership: squared corners, suppressed per-card shadow ---- */
+/*
+ * Cards in a set have their corners squared so adjacent cards form a seamless group.
+ * Per-card box-shadow is suppressed; a shared hull shadow is rendered by .set-shadow. [D08, D03]
+ * The data-in-set attribute is applied by updateSetAppearance() after each move/resize. [D08]
+ */
+.card-frame[data-in-set="true"] {
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-frame[data-in-set="true"] .tugcard {
+  border-radius: 0;
+}
+
+/* ---- Virtual set hull shadow ---- */
+/*
+ * One .set-shadow wrapper per set, appended to the ResponderScope by updateSetAppearance().
+ * Positioned at the hull bounding box. Carries filter:drop-shadow — no clip-path here.
+ * The drop-shadow filter reads the shape of the clipped inner div and renders the shadow
+ * outside the hull polygon, giving a clean elevation effect that follows the set outline. [D03]
+ *
+ * .set-shadow-shape is the inner div. It carries the hull polygon clip-path (set inline
+ * from JS) and the surface background so the filter has a solid shape to shadow.
+ */
+.set-shadow {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+}
+
+.set-shadow-shape {
+  width: 100%;
+  height: 100%;
+  background: var(--td-surface);
+  /* clip-path is set inline from JS (hull polygon in wrapper-local coords) */
+}
+
+/* ---- Card flash feedback (single-card break-out flash) ---- */
 @keyframes set-flash-fade {
   0%   { opacity: 1; }
   100% { opacity: 0; }
 }
 
-.set-flash-overlay {
+/*
+ * .card-flash-overlay: full-perimeter flash on a single card frame (break-out flash).
+ * Renamed from .set-flash-overlay; used exclusively by flashCardPerimeter(). [D55]
+ */
+.card-flash-overlay {
   position: absolute;
   inset: -1px; /* extend over panel's 1px border so adjacent overlays share edges */
   pointer-events: none;
@@ -66,4 +108,17 @@
   animation: set-flash-fade 0.5s ease-out forwards;
   z-index: 2;
   box-sizing: border-box;
+}
+
+/*
+ * SVG hull flash: one SVG element per set, positioned on the ResponderScope.
+ * Uses overflow: visible so the glow filter extends beyond SVG bounds.
+ * Animated by the set-flash-fade keyframe; self-removes on animationend. [D02, Spec S03]
+ */
+.set-flash-svg {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 9999;
+  animation: set-flash-fade 0.5s ease-out forwards;
 }

@@ -159,18 +159,18 @@ export function computeSnap(
         xCandidates.push({ dist, delta: otherLeft - movingLeft, guide: otherLeft });
       }
     }
-    // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward +bw)
+    // movingLeft vs otherRight (adjacent: moving-left to other-right, offset inward -bw)
     {
       const dist = Math.abs(movingLeft - otherRight);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherRight - movingLeft + bw, guide: otherRight });
+        xCandidates.push({ dist, delta: otherRight - movingLeft - bw, guide: otherRight });
       }
     }
-    // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward -bw)
+    // movingRight vs otherLeft (adjacent: moving-right to other-left, offset inward +bw)
     {
       const dist = Math.abs(movingRight - otherLeft);
       if (dist <= SNAP_THRESHOLD_PX) {
-        xCandidates.push({ dist, delta: otherLeft - movingRight - bw, guide: otherLeft });
+        xCandidates.push({ dist, delta: otherLeft - movingRight + bw, guide: otherLeft });
       }
     }
     // movingRight vs otherRight (same-edge, no offset)
@@ -203,18 +203,18 @@ export function computeSnap(
         yCandidates.push({ dist, delta: otherTop - movingTop, guide: otherTop });
       }
     }
-    // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward +bw)
+    // movingTop vs otherBottom (adjacent: moving-top to other-bottom, offset inward -bw)
     {
       const dist = Math.abs(movingTop - otherBottom);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherBottom - movingTop + bw, guide: otherBottom });
+        yCandidates.push({ dist, delta: otherBottom - movingTop - bw, guide: otherBottom });
       }
     }
-    // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward -bw)
+    // movingBottom vs otherTop (adjacent: moving-bottom to other-top, offset inward +bw)
     {
       const dist = Math.abs(movingBottom - otherTop);
       if (dist <= SNAP_THRESHOLD_PX) {
-        yCandidates.push({ dist, delta: otherTop - movingBottom - bw, guide: otherTop });
+        yCandidates.push({ dist, delta: otherTop - movingBottom + bw, guide: otherTop });
       }
     }
     // movingBottom vs otherBottom (same-edge, no offset)
@@ -259,22 +259,38 @@ export function computeSnap(
  *   (only the keys present are snapped).
  *
  * Returns snapped edge values and guide positions.
+ *
+ * @param borderWidth - Optional border width in pixels (default 0). When > 0,
+ *   adjacent-edge snaps (e.g. resizing right toward another card's left) are offset
+ *   inward by this amount so that borders overlap into a single visual line.
+ *   Same-edge snaps (e.g. resizing right toward another card's right) are not offset.
+ *   Pass 0 or omit for backward-compatible behavior.
  */
 export function computeResizeSnap(
   resizingEdges: { top?: number; bottom?: number; left?: number; right?: number },
-  others: Rect[]
+  others: Rect[],
+  borderWidth?: number
 ): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[] } {
+  const bw = borderWidth ?? 0;
+
   // Snap each edge independently; track best snap (minimum distance) per edge key.
+  // For adjacent-edge snaps, the snapped value includes a borderWidth offset for border collapse.
+  // The distance check uses the raw (un-offset) position.
+  // Guide positions track the OTHER card's target edge (for rendering the guide line at the snap target).
   let leftSnapped: number | undefined;
+  let leftGuide: number | undefined;
   let leftDist = Infinity;
 
   let rightSnapped: number | undefined;
+  let rightGuide: number | undefined;
   let rightDist = Infinity;
 
   let topSnapped: number | undefined;
+  let topGuide: number | undefined;
   let topDist = Infinity;
 
   let bottomSnapped: number | undefined;
+  let bottomGuide: number | undefined;
   let bottomDist = Infinity;
 
   for (const other of others) {
@@ -282,45 +298,91 @@ export function computeResizeSnap(
     const otherRight = other.x + other.width;
     const otherTop = other.y;
     const otherBottom = other.y + other.height;
-    const xTargets = [otherLeft, otherRight];
-    const yTargets = [otherTop, otherBottom];
 
+    // Left edge: check same-edge (otherLeft, no offset) and adjacent-edge (otherRight, -bw offset)
     if (resizingEdges.left !== undefined) {
-      for (const target of xTargets) {
-        const dist = Math.abs(resizingEdges.left - target);
+      // left vs otherLeft (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.left - otherLeft);
         if (dist <= SNAP_THRESHOLD_PX && dist < leftDist) {
           leftDist = dist;
-          leftSnapped = target;
+          leftSnapped = otherLeft;
+          leftGuide = otherLeft;
+        }
+      }
+      // left vs otherRight (adjacent-edge: resizing left toward other's right, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.left - otherRight);
+        if (dist <= SNAP_THRESHOLD_PX && dist < leftDist) {
+          leftDist = dist;
+          leftSnapped = otherRight - bw;
+          leftGuide = otherRight;
         }
       }
     }
 
+    // Right edge: check adjacent-edge (otherLeft, +bw offset) and same-edge (otherRight, no offset)
     if (resizingEdges.right !== undefined) {
-      for (const target of xTargets) {
-        const dist = Math.abs(resizingEdges.right - target);
+      // right vs otherLeft (adjacent-edge: resizing right toward other's left, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.right - otherLeft);
         if (dist <= SNAP_THRESHOLD_PX && dist < rightDist) {
           rightDist = dist;
-          rightSnapped = target;
+          rightSnapped = otherLeft + bw;
+          rightGuide = otherLeft;
+        }
+      }
+      // right vs otherRight (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.right - otherRight);
+        if (dist <= SNAP_THRESHOLD_PX && dist < rightDist) {
+          rightDist = dist;
+          rightSnapped = otherRight;
+          rightGuide = otherRight;
         }
       }
     }
 
+    // Top edge: check same-edge (otherTop, no offset) and adjacent-edge (otherBottom, -bw offset)
     if (resizingEdges.top !== undefined) {
-      for (const target of yTargets) {
-        const dist = Math.abs(resizingEdges.top - target);
+      // top vs otherTop (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.top - otherTop);
         if (dist <= SNAP_THRESHOLD_PX && dist < topDist) {
           topDist = dist;
-          topSnapped = target;
+          topSnapped = otherTop;
+          topGuide = otherTop;
+        }
+      }
+      // top vs otherBottom (adjacent-edge: resizing top toward other's bottom, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.top - otherBottom);
+        if (dist <= SNAP_THRESHOLD_PX && dist < topDist) {
+          topDist = dist;
+          topSnapped = otherBottom - bw;
+          topGuide = otherBottom;
         }
       }
     }
 
+    // Bottom edge: check adjacent-edge (otherTop, +bw offset) and same-edge (otherBottom, no offset)
     if (resizingEdges.bottom !== undefined) {
-      for (const target of yTargets) {
-        const dist = Math.abs(resizingEdges.bottom - target);
+      // bottom vs otherTop (adjacent-edge: resizing bottom toward other's top, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.bottom - otherTop);
         if (dist <= SNAP_THRESHOLD_PX && dist < bottomDist) {
           bottomDist = dist;
-          bottomSnapped = target;
+          bottomSnapped = otherTop + bw;
+          bottomGuide = otherTop;
+        }
+      }
+      // bottom vs otherBottom (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.bottom - otherBottom);
+        if (dist <= SNAP_THRESHOLD_PX && dist < bottomDist) {
+          bottomDist = dist;
+          bottomSnapped = otherBottom;
+          bottomGuide = otherBottom;
         }
       }
     }
@@ -328,20 +390,20 @@ export function computeResizeSnap(
 
   const guides: GuidePosition[] = [];
 
-  if (leftSnapped !== undefined) {
-    guides.push({ axis: "x", position: leftSnapped });
+  if (leftGuide !== undefined) {
+    guides.push({ axis: "x", position: leftGuide });
   }
-  if (rightSnapped !== undefined) {
-    if (!guides.some((g) => g.axis === "x" && g.position === rightSnapped)) {
-      guides.push({ axis: "x", position: rightSnapped });
+  if (rightGuide !== undefined) {
+    if (!guides.some((g) => g.axis === "x" && g.position === rightGuide)) {
+      guides.push({ axis: "x", position: rightGuide });
     }
   }
-  if (topSnapped !== undefined) {
-    guides.push({ axis: "y", position: topSnapped });
+  if (topGuide !== undefined) {
+    guides.push({ axis: "y", position: topGuide });
   }
-  if (bottomSnapped !== undefined) {
-    if (!guides.some((g) => g.axis === "y" && g.position === bottomSnapped)) {
-      guides.push({ axis: "y", position: bottomSnapped });
+  if (bottomGuide !== undefined) {
+    if (!guides.some((g) => g.axis === "y" && g.position === bottomGuide)) {
+      guides.push({ axis: "y", position: bottomGuide });
     }
   }
 
@@ -515,6 +577,222 @@ export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardS
   }
 
   return sets;
+}
+
+// ---- Point type and computeSetHullPolygon ----
+
+/**
+ * A 2D point in canvas coordinates.
+ */
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/**
+ * Compute the outer perimeter polygon of a union of axis-aligned rectangles.
+ * Returns vertices in canvas coordinates, ordered clockwise.
+ * Returns empty array for degenerate input (no rects, zero-area rects).
+ *
+ * Algorithm:
+ * 1. Coordinate compression: collect unique X and Y values from rect edges.
+ * 2. Fill a boolean grid: cell (i,j) is filled if any rect covers that sub-region.
+ * 3. Find topmost-leftmost filled cell; trace clockwise boundary.
+ * 4. Remove collinear vertices for minimal polygon representation.
+ *
+ * References: [D01] Hull in snap.ts, Spec S01, Spec S02, #hull-algorithm
+ */
+export function computeSetHullPolygon(rects: Rect[]): Point[] {
+  // Filter to non-degenerate rects only
+  const validRects = rects.filter((r) => r.width > 0 && r.height > 0);
+  if (validRects.length === 0) return [];
+
+  // Step 1: Collect unique X and Y coordinates (sorted)
+  const xSet = new Set<number>();
+  const ySet = new Set<number>();
+  for (const r of validRects) {
+    xSet.add(r.x);
+    xSet.add(r.x + r.width);
+    ySet.add(r.y);
+    ySet.add(r.y + r.height);
+  }
+  const xs = Array.from(xSet).sort((a, b) => a - b);
+  const ys = Array.from(ySet).sort((a, b) => a - b);
+
+  const cols = xs.length - 1;
+  const rows = ys.length - 1;
+  if (cols <= 0 || rows <= 0) return [];
+
+  // Step 2: Build boolean grid — cell (ci, ri) is filled if any rect covers it
+  const grid: boolean[] = new Array(cols * rows).fill(false);
+  for (const r of validRects) {
+    // Find the column/row range this rect covers
+    const ciStart = xs.indexOf(r.x);
+    const ciEnd = xs.indexOf(r.x + r.width);
+    const riStart = ys.indexOf(r.y);
+    const riEnd = ys.indexOf(r.y + r.height);
+    for (let ci = ciStart; ci < ciEnd; ci++) {
+      for (let ri = riStart; ri < riEnd; ri++) {
+        grid[ri * cols + ci] = true;
+      }
+    }
+  }
+
+  // Helper: is cell (ci, ri) filled?
+  function cellFilled(ci: number, ri: number): boolean {
+    if (ci < 0 || ci >= cols || ri < 0 || ri >= rows) return false;
+    return grid[ri * cols + ci];
+  }
+
+  // Step 3: Find topmost-leftmost filled cell
+  let startCi = -1;
+  let startRi = -1;
+  outer: for (let ri = 0; ri < rows; ri++) {
+    for (let ci = 0; ci < cols; ci++) {
+      if (cellFilled(ci, ri)) {
+        startCi = ci;
+        startRi = ri;
+        break outer;
+      }
+    }
+  }
+  if (startCi === -1) return [];
+
+  // Step 4: Clockwise boundary trace (in screen/canvas coordinates, y-down)
+  // Traces the outer perimeter with the filled interior on the LEFT as we walk.
+  // Directions indexed as: 0=RIGHT, 1=DOWN, 2=LEFT, 3=UP (clockwise sequence in screen space).
+  // Position is a grid corner in range [0..cols] x [0..rows].
+  // Starting corner is top-left of topmost-leftmost filled cell, facing RIGHT.
+  //
+  // At each step (cellAhead = the interior cell we are hugging on our LEFT):
+  //   - If the cell to our interior-right (cellToRight) is filled: concave corner, turn
+  //     counterclockwise in screen (= (dir+3)%4), step forward, record vertex.
+  //   - Else if cell ahead (cellAhead) is filled: continue straight, step forward, record vertex.
+  //   - Else: convex outer corner, turn clockwise in screen (= (dir+1)%4), no step.
+  //
+  // Corner (col, row) cell lookups (derived from the spec's clockwise boundary trace spec):
+  //   RIGHT → cellAhead = (col, row)       DOWN  → cellAhead = (col-1, row)
+  //   LEFT  → cellAhead = (col-1, row-1)   UP    → cellAhead = (col, row-1)
+  //   RIGHT → cellToRight = (col, row-1)   DOWN  → cellToRight = (col, row)
+  //   LEFT  → cellToRight = (col-1, row)   UP    → cellToRight = (col-1, row-1)
+  const DIR_RIGHT = 0;
+  const DIR_DOWN = 1;
+  const DIR_LEFT = 2;
+  const DIR_UP = 3;
+
+  function cellAheadOf(col: number, row: number, dir: number): [number, number] {
+    switch (dir) {
+      case DIR_RIGHT: return [col, row];
+      case DIR_DOWN:  return [col - 1, row];
+      case DIR_LEFT:  return [col - 1, row - 1];
+      case DIR_UP:    return [col, row - 1];
+      default:        return [col, row];
+    }
+  }
+
+  function cellToRightOf(col: number, row: number, dir: number): [number, number] {
+    switch (dir) {
+      case DIR_RIGHT: return [col, row - 1];
+      case DIR_DOWN:  return [col, row];
+      case DIR_LEFT:  return [col - 1, row];
+      case DIR_UP:    return [col - 1, row - 1];
+      default:        return [col, row];
+    }
+  }
+
+  function stepDir(dir: number): [number, number] {
+    switch (dir) {
+      case DIR_RIGHT: return [1, 0];
+      case DIR_DOWN:  return [0, 1];
+      case DIR_LEFT:  return [-1, 0];
+      case DIR_UP:    return [0, -1];
+      default:        return [0, 0];
+    }
+  }
+
+  // Start at top-left corner of the topmost-leftmost filled cell, facing RIGHT
+  let col = startCi;
+  let row = startRi;
+  let dir = DIR_RIGHT;
+  const startCol = col;
+  const startRow = row;
+  const startDir = dir;
+
+  const vertices: Array<[number, number]> = [[col, row]];
+
+  // Safety limit to prevent infinite loops
+  const maxIter = (cols + rows) * 4 * 4 + 8;
+  let iter = 0;
+
+  for (;;) {
+    iter++;
+    if (iter > maxIter) break; // Safety exit
+
+    // At a concave inner corner (cellToRight is filled): turn counterclockwise in screen (dir+3)%4
+    const [rci, rri] = cellToRightOf(col, row, dir);
+    if (cellFilled(rci, rri)) {
+      dir = (dir + 3) % 4;
+      const [dx, dy] = stepDir(dir);
+      col += dx;
+      row += dy;
+      vertices.push([col, row]);
+    } else {
+      // Check cell ahead (interior is still to our left: go straight)
+      const [aci, ari] = cellAheadOf(col, row, dir);
+      if (cellFilled(aci, ari)) {
+        const [dx, dy] = stepDir(dir);
+        col += dx;
+        row += dy;
+        vertices.push([col, row]);
+      } else {
+        // Convex outer corner: turn clockwise in screen (dir+1)%4, no step
+        dir = (dir + 1) % 4;
+      }
+    }
+
+    // Check if we've completed the loop
+    if (col === startCol && row === startRow && dir === startDir) {
+      break;
+    }
+  }
+
+  // The last vertex is the same as the first (loop closure); remove it
+  if (
+    vertices.length > 1 &&
+    vertices[vertices.length - 1][0] === vertices[0][0] &&
+    vertices[vertices.length - 1][1] === vertices[0][1]
+  ) {
+    vertices.pop();
+  }
+
+  // Step 5: Remove collinear vertices
+  // A vertex is collinear if it lies on a straight line between its neighbors
+  function removeCollinear(pts: Array<[number, number]>): Array<[number, number]> {
+    if (pts.length <= 2) return pts;
+    const result: Array<[number, number]> = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i + n - 1) % n];
+      const cur = pts[i];
+      const next = pts[(i + 1) % n];
+      // Direction prev→cur
+      const dx1 = cur[0] - prev[0];
+      const dy1 = cur[1] - prev[1];
+      // Direction cur→next
+      const dx2 = next[0] - cur[0];
+      const dy2 = next[1] - cur[1];
+      // Collinear if same direction (cross product = 0)
+      if (dx1 * dy2 !== dx2 * dy1) {
+        result.push(cur);
+      }
+    }
+    return result;
+  }
+
+  const minimal = removeCollinear(vertices);
+
+  // Step 6: Convert grid indices back to canvas coordinates
+  return minimal.map(([ci, ri]) => ({ x: xs[ci], y: ys[ri] }));
 }
 
 // ---- computeEdgeVisibility ----
