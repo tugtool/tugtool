@@ -29,7 +29,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
-import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]
@@ -58,6 +58,16 @@ export function isGestureActive(): boolean {
 export function setGestureActive(v: boolean): void {
   _gestureActive = v;
 }
+
+// ---------------------------------------------------------------------------
+// Shadow extension constant [Spec S02]
+//
+// px beyond border-box for exterior edges in clip-path: inset().
+// Derived from --td-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
+// 20px = blur(8) * 2 + offset(2) + margin — generous enough to show full shadow.
+// ---------------------------------------------------------------------------
+
+const SHADOW_EXTEND_PX = 20;
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -1228,27 +1238,89 @@ export function CardFrame({
 }
 
 // ---------------------------------------------------------------------------
-// Set appearance: squared corners and virtual set shadows [D08, D03]
+// Set appearance: squared corners and clip-path shadow control [D08, D01, D02]
 // ---------------------------------------------------------------------------
+
+/**
+ * Compute the `clip-path: inset(...)` CSS value for a single card based on its
+ * shared edges within the set. [Spec S01, D04]
+ *
+ * For each of the four sides (top, right, bottom, left):
+ * - Interior (shared with a neighbor): inset = `0px` (clips shadow at border-box edge).
+ * - Exterior (no shared neighbor): inset = `-SHADOW_EXTEND_PX` (extends clip region to show shadow).
+ *
+ * SharedEdge convention:
+ * - `axis: "vertical"`, `cardAId` → cardA's **right** edge is shared (interior for cardA).
+ * - `axis: "vertical"`, `cardBId` → cardB's **left** edge is shared (interior for cardB).
+ * - `axis: "horizontal"`, `cardAId` → cardA's **bottom** edge is shared (interior for cardA).
+ * - `axis: "horizontal"`, `cardBId` → cardB's **top** edge is shared (interior for cardB).
+ *
+ * Returns an empty string when the card has no interior edges (all exterior — full shadow visible).
+ *
+ * @param cardId - The id of the card to compute clip-path for.
+ * @param sharedEdges - All shared edges in the current layout.
+ */
+function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): string {
+  let topInterior = false;
+  let rightInterior = false;
+  let bottomInterior = false;
+  let leftInterior = false;
+
+  for (const edge of sharedEdges) {
+    if (edge.axis === "vertical") {
+      if (edge.cardAId === cardId) {
+        // cardA's right edge is shared.
+        rightInterior = true;
+      } else if (edge.cardBId === cardId) {
+        // cardB's left edge is shared.
+        leftInterior = true;
+      }
+    } else {
+      // axis === "horizontal"
+      if (edge.cardAId === cardId) {
+        // cardA's bottom edge is shared.
+        bottomInterior = true;
+      } else if (edge.cardBId === cardId) {
+        // cardB's top edge is shared.
+        topInterior = true;
+      }
+    }
+  }
+
+  // If no edges are interior, return empty string (no clip-path needed — full shadow visible).
+  if (!topInterior && !rightInterior && !bottomInterior && !leftInterior) {
+    return "";
+  }
+
+  const ext = `-${SHADOW_EXTEND_PX}px`;
+  const top = topInterior ? "0px" : ext;
+  const right = rightInterior ? "0px" : ext;
+  const bottom = bottomInterior ? "0px" : ext;
+  const left = leftInterior ? "0px" : ext;
+
+  return `inset(${top} ${right} ${bottom} ${left})`;
+}
 
 /**
  * Update the visual appearance of all cards based on their current set membership.
  *
  * For cards in a set:
- *   - Sets `data-in-set="true"` (CSS squares corners and suppresses per-card box-shadow).
- *   - Creates one virtual shadow div per set (.set-shadow + .set-shadow-shape) on containerEl,
- *     using the hull polygon clip-path for a unified elevation effect. [D03, Spec S04]
+ *   - Sets `data-in-set="true"` on `.card-frame` (CSS squares corners). [D08]
+ *   - Computes `clip-path: inset(...)` per Spec S01 and applies it to the `.tugcard`
+ *     child element, clipping shadow on interior (shared) edges while showing shadow
+ *     on exterior edges. [D01, D02, D04]
  *
  * For solo cards:
- *   - Removes `data-in-set` attribute (CSS restores rounded corners and box-shadow).
+ *   - Removes `data-in-set` attribute (CSS restores rounded corners).
+ *   - Clears `clip-path` on `.tugcard` (full shadow visible on all sides).
  *
- * Existing .set-shadow elements are removed and recreated synchronously, so the
- * browser paints only one frame (no intermediate shadowless state). [D03]
+ * No DOM elements are created or removed. All mutations are direct style/attribute
+ * writes on existing elements, safe to call at any time including mid-gesture. [D05]
  *
  * Called after any move or resize action completes, and once on initial load. [D08, D09]
  *
  * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
- * @param containerEl - The ResponderScope element where shadow divs are appended.
+ * @param containerEl - The ResponderScope element (kept for API compatibility; used for z-index reordering context).
  */
 export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null): void {
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
@@ -1283,64 +1355,24 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     const cardId = el.getAttribute("data-card-id");
     if (!cardId) return;
 
+    const tugcardEl = el.querySelector<HTMLElement>(".tugcard");
+
     if (inSetIds.has(cardId)) {
-      // Mark as in-set (CSS squares corners and suppresses per-card box-shadow). [D08]
+      // Mark as in-set (CSS squares corners). [D08]
       el.setAttribute("data-in-set", "true");
+      // Apply clip-path: inset() to .tugcard to control shadow visibility on each edge. [D01, D02, D04]
+      if (tugcardEl) {
+        const clipPath = computeClipPathForCard(cardId, sharedEdges);
+        tugcardEl.style.clipPath = clipPath;
+      }
     } else {
-      // Solo card: restore rounded corners and per-card box-shadow.
+      // Solo card: restore rounded corners and clear clip-path (full shadow visible on all sides).
       el.removeAttribute("data-in-set");
+      if (tugcardEl) {
+        tugcardEl.style.clipPath = "";
+      }
     }
   });
-
-  // Remove all existing .set-shadow elements synchronously before recreating. [D03]
-  if (containerEl) {
-    const existingShadows = containerEl.querySelectorAll<HTMLElement>(".set-shadow");
-    existingShadows.forEach((el) => el.parentNode?.removeChild(el));
-  }
-
-  // Create one .set-shadow element per set on containerEl. [D03, Spec S04]
-  // Each shadow element uses the hull polygon clip-path for a unified elevation.
-  if (containerEl) {
-    for (const cardSet of sets) {
-      const setRects: Rect[] = cardSet.cardIds
-        .map((cid) => rects.find((r) => r.id === cid)?.rect)
-        .filter((r): r is Rect => r !== undefined);
-
-      const hull = computeSetHullPolygon(setRects);
-      if (hull.length < 3) continue;
-
-      // Compute bounding box of hull to size the shadow div.
-      const hullMinX = hull.reduce((m, p) => Math.min(m, p.x), Infinity);
-      const hullMinY = hull.reduce((m, p) => Math.min(m, p.y), Infinity);
-      const hullMaxX = hull.reduce((m, p) => Math.max(m, p.x), -Infinity);
-      const hullMaxY = hull.reduce((m, p) => Math.max(m, p.y), -Infinity);
-
-      // Outer wrapper: positioned at hull bounding box, carries filter:drop-shadow.
-      // No clip-path on the wrapper — clip-path is on the inner shape so the drop-shadow
-      // filter sees the clipped shape and produces a clean hull-following shadow. [D03]
-      const wrapper = document.createElement("div");
-      wrapper.classList.add("set-shadow");
-      wrapper.style.left = `${hullMinX}px`;
-      wrapper.style.top = `${hullMinY}px`;
-      wrapper.style.width = `${hullMaxX - hullMinX}px`;
-      wrapper.style.height = `${hullMaxY - hullMinY}px`;
-
-      // Tag with sorted card IDs for identity tracking and future updates.
-      wrapper.setAttribute("data-set-card-ids", cardSet.cardIds.slice().sort().join(","));
-
-      // Inner shape div: carries the hull clip-path and background. The drop-shadow
-      // filter on the wrapper reads this shape and renders the shadow outside it. [D03]
-      const inner = document.createElement("div");
-      inner.classList.add("set-shadow-shape");
-
-      // Hull clip-path in wrapper-local coordinates (hull points minus bounding box origin).
-      const clipPoints = hull.map((p) => `${p.x - hullMinX}px ${p.y - hullMinY}px`).join(", ");
-      inner.style.clipPath = `polygon(${clipPoints})`;
-
-      wrapper.appendChild(inner);
-      containerEl.appendChild(wrapper);
-    }
-  }
 
   // Adjust z-indices so that set members are consecutive (no non-set card between them). [D08]
   // This is an appearance-zone change: direct DOM mutation, not React state.
@@ -1430,23 +1462,6 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     }
   }
 
-  // Assign z-index to each .set-shadow wrapper: lowest member z-index minus 1,
-  // so the hull shadow renders beneath all cards in the set. [D03]
-  if (containerEl) {
-    const shadowEls = containerEl.querySelectorAll<HTMLElement>(".set-shadow[data-set-card-ids]");
-    shadowEls.forEach((shadowEl) => {
-      const cardIds = (shadowEl.getAttribute("data-set-card-ids") ?? "").split(",").filter(Boolean);
-      let minZ = Infinity;
-      for (const cid of cardIds) {
-        const frameEl = document.querySelector<HTMLElement>(`.card-frame[data-card-id="${cid}"]`);
-        if (frameEl) {
-          const z = parseInt(frameEl.style.zIndex, 10);
-          if (!isNaN(z) && z < minZ) minZ = z;
-        }
-      }
-      shadowEl.style.zIndex = String(minZ !== Infinity ? minZ - 1 : 0);
-    });
-  }
 }
 
 // ---------------------------------------------------------------------------

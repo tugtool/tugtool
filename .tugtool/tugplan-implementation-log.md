@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-05T16:17:32Z
+---
+
+## step-2: Rewrote updateSetAppearance to apply clip-path:inset() on .tugcard elements instead of creating .set-shadow DOM elements. Added computeClipPathForCard helper and SHADOW_EXTEND_PX constant.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
 step: step-1
 date: 2025-03-05T16:09:21Z
 ---
