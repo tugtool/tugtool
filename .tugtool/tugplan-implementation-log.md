@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-05T15:10:11Z
+---
+
+## step-5: Added shadow element snapshot after resizePreSetMemberIds computation and position delta translation in applyResizeFrame, so shadow tracks card position during north/west resize gestures.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
+step: step-4
+date: 2025-03-05T15:07:29Z
+---
+
+## step-4: Inserted defensive sweep in handleDragStart that removes all .set-shadow elements and rebuilds via updateSetAppearance before shadow lookup, preventing stale shadows from missed updates.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
+step: step-3
+date: 2025-03-05T15:05:16Z
+---
+
+## step-3: Added module-level gesture flag (isGestureActive/setGestureActive) in card-frame.tsx with true at drag/resize start and false at all exit points. Added store subscriber useEffect in deck-canvas.tsx that rebuilds shadows on mutations when no gesture is active.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
+step: step-2
+date: 2025-03-05T14:59:23Z
+---
+
+## step-2: Added updateSetAppearance call in the merge early-return block of onPointerUp to rebuild shadows after merge, preventing stale shadow elements.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
+step: step-1
+date: 2025-03-05T14:56:51Z
+---
+
+## step-1: Added null-guarded removeChild call for dragShadowEl in the break-out detection block of applyDragFrame, preventing orphaned shadow elements during drag.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-6
 date: 2025-03-05T03:54:25Z
 ---

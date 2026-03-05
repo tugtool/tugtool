@@ -38,6 +38,28 @@ import type { Rect, GuidePosition, SnapResult } from "@/snap";
 let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
+// Gesture-active flag for store subscriber gating [D03, S03]
+//
+// When a drag or resize is in progress, the store subscriber in DeckCanvas
+// must skip updateSetAppearance to avoid invalidating the shadow element
+// reference held by the active gesture. Getter/setter functions are used
+// instead of `export let` to avoid fragile ES module live binding issues
+// that break silently if the import is destructured or aliased.
+// ---------------------------------------------------------------------------
+
+let _gestureActive = false;
+
+/** Returns true while a drag or resize gesture owns the shadow refs. */
+export function isGestureActive(): boolean {
+  return _gestureActive;
+}
+
+/** Set or clear the gesture-active flag. Call at gesture-start and all exit points. */
+export function setGestureActive(v: boolean): void {
+  _gestureActive = v;
+}
+
+// ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
 //
 // To change the snap modifier, update SNAP_MODIFIER_KEY. All behavior follows.
@@ -326,6 +348,10 @@ export function CardFrame({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
 
+      // Gate the store subscriber from calling updateSetAppearance while this
+      // drag owns the shadow ref. Cleared at every exit point of onPointerUp. [D03, S03]
+      setGestureActive(true);
+
       // Capture pointer on the frame element for reliable move/up tracking outside bounds.
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
@@ -402,6 +428,19 @@ export function CardFrame({
           }
           break;
         }
+      }
+
+      // Defensive sweep: remove all stale .set-shadow elements and rebuild before
+      // the shadow lookup below. Any shadow that was missed by the store subscriber
+      // (e.g. during a rapid close-then-drag sequence) is cleared here so that
+      // dragShadowEl always references a freshly-built element. [D03, S04]
+      // Note: setGestureActive(true) (called above) is already set, so the store
+      // subscriber will not interfere with this rebuild.
+      const container = frame.parentElement;
+      if (container) {
+        const staleShadows = container.querySelectorAll<HTMLElement>(".set-shadow");
+        staleShadows.forEach((el) => el.parentNode?.removeChild(el));
+        updateSetAppearance(dragCanvasBounds.current, container);
       }
 
       // Look up the virtual shadow element for this set at drag-start. [D05]
@@ -533,8 +572,13 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
-          // Clear shadow ref; shadow stays visible at current position and is
-          // recomputed by updateSetAppearance when postActionSetUpdate fires at drag-end. [D05]
+          // Remove shadow DOM element immediately on break-out so no orphaned
+          // .set-shadow remains during the remainder of the drag. [D01, SC1]
+          // The shadow is recreated by updateSetAppearance when postActionSetUpdate
+          // fires at drag-end.
+          if (dragShadowEl.current) {
+            dragShadowEl.current.parentNode?.removeChild(dragShadowEl.current);
+          }
           dragShadowEl.current = null;
 
           // Flash full perimeter of the detached card. [D55]
@@ -669,6 +713,13 @@ export function CardFrame({
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
+              // Re-enable the store subscriber before the shadow rebuild so any
+              // concurrent store mutations that arrive after this point are handled
+              // by the subscriber rather than being silently dropped. [D03, S03]
+              setGestureActive(false);
+              // Clean up shadow elements after merge so no orphaned .set-shadow
+              // remains in the DOM. [D02, SC2]
+              updateSetAppearance(dragCanvasBounds.current, frame.parentElement);
               return;
             }
           }
@@ -732,6 +783,9 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
+        // Re-enable the store subscriber before postActionSetUpdate so that its
+        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
+        setGestureActive(false);
         // Flash set perimeter / break-out flash on drop. [D54, D55]
         postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
 
@@ -778,6 +832,10 @@ export function CardFrame({
       if (!frameRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
+
+      // Gate the store subscriber from calling updateSetAppearance while this
+      // resize owns the shadow ref. Cleared at the exit point of onPointerUp. [D03, S03]
+      setGestureActive(true);
 
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
@@ -881,6 +939,26 @@ export function CardFrame({
             }
             break;
           }
+        }
+      }
+
+      // Snapshot the shadow element at resize-start for per-frame position tracking. [D04, S05]
+      // Only needed when this card is in a set; north/west edge resizes shift the card's
+      // top-left corner, so the shadow wrapper must translate to match. East/south-only
+      // resizes produce zero delta and the shadow stays put (correct — wrapper position
+      // doesn't change when only width/height change).
+      let resizeShadowEl: HTMLElement | null = null;
+      let resizeShadowOriginX = 0;
+      let resizeShadowOriginY = 0;
+      if (resizePreSetMemberIds.length > 0) {
+        const idString = resizePreSetMemberIds.slice().sort().join(",");
+        const shadowEl = document.querySelector<HTMLElement>(
+          `.set-shadow[data-set-card-ids="${idString}"]`,
+        );
+        if (shadowEl) {
+          resizeShadowEl = shadowEl;
+          resizeShadowOriginX = parseFloat(shadowEl.style.left) || 0;
+          resizeShadowOriginY = parseFloat(shadowEl.style.top) || 0;
         }
       }
 
@@ -1028,6 +1106,15 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
+        // Translate the shadow wrapper by the card's position delta so it tracks
+        // north/west edge resizes frame-by-frame. Only left/top are updated here;
+        // the full hull is rebuilt by postActionSetUpdate at resize-end. [D04, S05]
+        if (resizeShadowEl) {
+          const deltaX = r.left - startLeft;
+          const deltaY = r.top - startTop;
+          resizeShadowEl.style.left = `${resizeShadowOriginX + deltaX}px`;
+          resizeShadowEl.style.top = `${resizeShadowOriginY + deltaY}px`;
+        }
       }
 
       function onPointerMove(e: PointerEvent) {
@@ -1075,6 +1162,9 @@ export function CardFrame({
           onCardMoved(sashNeighborId, neighborPos, neighborSize);
         }
 
+        // Re-enable the store subscriber before postActionSetUpdate so that its
+        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
+        setGestureActive(false);
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
         postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement);
       }
