@@ -44,8 +44,8 @@
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
  *   useRequiredResponderChain -> useCallback -> useResponder ->
- *   useEffect (tabDragCoordinator init) -> useLayoutEffect (initial shadow) ->
- *   useEffect (store subscriber for shadow updates)
+ *   useEffect (tabDragCoordinator init) -> useLayoutEffect (initial clip-path) ->
+ *   useEffect (store subscriber for clip-path updates)
  *
  * The canvas div with grid background is provided by #deck-container in
  * index.html and styled by globals.css. DeckCanvas renders inside it.
@@ -68,7 +68,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
-import { CardFrame, updateSetAppearance, isGestureActive } from "./card-frame";
+import { CardFrame, updateSetAppearance } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -173,9 +173,9 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   const galleryCardIdRef = useRef<string | null>(null);
 
   /**
-   * containerRef: ref to the positioning wrapper div that card frames, shadow divs,
-   * snap guides, and SVG flash elements are rendered into. Passed to updateSetAppearance
-   * for initial-load hull shadow creation. [D03, Spec S04]
+   * containerRef: ref to the positioning wrapper div that card frames, snap guides,
+   * and SVG flash elements are rendered into. Passed to updateSetAppearance for
+   * initial-load clip-path and data-in-set setup. [D03, Spec S04]
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -295,8 +295,8 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     tabDragCoordinator.init(store);
   }, [store]);
 
-  // Run updateSetAppearance once after initial mount so set hull shadows are drawn
-  // for any cards that are already in sets when the layout is first rendered. [D08, D03]
+  // Run updateSetAppearance once after initial mount so clip-path and data-in-set are
+  // applied for any cards that are already in sets when the layout is first rendered. [D08, D03]
   useLayoutEffect(() => {
     const containerEl = containerRef.current;
     if (!containerEl) return;
@@ -304,19 +304,17 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Subscribe to store mutations and rebuild set shadows on every notification. [D03, S03]
-  // This ensures shadows stay current after card close, undo, and redo without requiring
-  // a React re-render. The callback is a DOM side-effect (not a state update), so
-  // useEffect + store.subscribe() is correct here — useSyncExternalStore is not used
-  // because no React state is being read or derived. [D40 compliance]
+  // Subscribe to store mutations and update set appearance on every notification. [D03, S03]
+  // This ensures clip-path and data-in-set stay current after card close, undo, and redo
+  // without requiring a React re-render. The callback is a DOM side-effect (not a state
+  // update), so useEffect + store.subscribe() is correct here — useSyncExternalStore is not
+  // used because no React state is being read or derived. [D40 compliance]
   //
-  // The isGestureActive() guard prevents updateSetAppearance from removing the shadow
-  // element that is currently being translated by an active drag or resize gesture.
-  // postActionSetUpdate (called at gesture-end) performs the authoritative rebuild
-  // after the flag is cleared. [D03 Risk R02]
+  // No gesture gating needed: updateSetAppearance now only writes clip-path and
+  // data-in-set to existing elements (no DOM creation/removal), making it safe to call at
+  // any time, including mid-gesture. [D05]
   useEffect(() => {
     const unsubscribe = store.subscribe(() => {
-      if (isGestureActive()) return; // skip while drag/resize owns shadow refs
       const containerEl = containerRef.current;
       if (!containerEl) return;
       const canvasBounds = containerEl.getBoundingClientRect();
@@ -338,9 +336,9 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
       <DisconnectBanner connection={connection} />
 
       {/*
-        * containerRef wrapper: positioning context for card frames, snap guides, hull shadows,
+        * containerRef wrapper: positioning context for card frames, snap guides,
         * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).
-        * The ref is used by updateSetAppearance for initial-load hull shadow creation. [D03]
+        * The ref is used by updateSetAppearance for initial-load clip-path setup. [D03]
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>

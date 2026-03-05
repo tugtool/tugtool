@@ -29,7 +29,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
-import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]
@@ -38,26 +38,14 @@ import type { Rect, GuidePosition, SnapResult } from "@/snap";
 let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
-// Gesture-active flag for store subscriber gating [D03, S03]
+// Shadow extension constant [Spec S02]
 //
-// When a drag or resize is in progress, the store subscriber in DeckCanvas
-// must skip updateSetAppearance to avoid invalidating the shadow element
-// reference held by the active gesture. Getter/setter functions are used
-// instead of `export let` to avoid fragile ES module live binding issues
-// that break silently if the import is destructured or aliased.
+// px beyond border-box for exterior edges in clip-path: inset().
+// Derived from --td-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
+// 20px = blur(8) * 2 + offset(2) + margin — generous enough to show full shadow.
 // ---------------------------------------------------------------------------
 
-let _gestureActive = false;
-
-/** Returns true while a drag or resize gesture owns the shadow refs. */
-export function isGestureActive(): boolean {
-  return _gestureActive;
-}
-
-/** Set or clear the gesture-active flag. Call at gesture-start and all exit points. */
-export function setGestureActive(v: boolean): void {
-  _gestureActive = v;
-}
+const SHADOW_EXTEND_PX = 20;
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -242,11 +230,6 @@ export function CardFrame({
   // Set member IDs at drag-start (including this card if in a set). Used at drop
   // to detect whether the card has newly joined a set (flash only on new membership). [D54]
   const dragSetMemberIdsAtDragStart = useRef<string[]>([]);
-  // Virtual set shadow element for the current set-move drag. [D05]
-  // Looked up once at drag-start by matching data-set-card-ids; translated in the RAF loop.
-  const dragShadowEl = useRef<HTMLElement | null>(null);
-  // Starting left/top of the shadow element at drag-start. [D05]
-  const dragShadowOrigin = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // Bounding-box extension of the set beyond the dragged card at drag-start. [D02]
   // Stored as { left, top, right, bottom } offsets (non-negative px amounts) so the
   // clamp logic can use the full set bounding box when constraining to canvas bounds.
@@ -348,10 +331,6 @@ export function CardFrame({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
 
-      // Gate the store subscriber from calling updateSetAppearance while this
-      // drag owns the shadow ref. Cleared at every exit point of onPointerUp. [D03, S03]
-      setGestureActive(true);
-
       // Capture pointer on the frame element for reliable move/up tracking outside bounds.
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
@@ -427,38 +406,6 @@ export function CardFrame({
             }
           }
           break;
-        }
-      }
-
-      // Defensive sweep: remove all stale .set-shadow elements and rebuild before
-      // the shadow lookup below. Any shadow that was missed by the store subscriber
-      // (e.g. during a rapid close-then-drag sequence) is cleared here so that
-      // dragShadowEl always references a freshly-built element. [D03, S04]
-      // Note: setGestureActive(true) (called above) is already set, so the store
-      // subscriber will not interfere with this rebuild.
-      const container = frame.parentElement;
-      if (container) {
-        const staleShadows = container.querySelectorAll<HTMLElement>(".set-shadow");
-        staleShadows.forEach((el) => el.parentNode?.removeChild(el));
-        updateSetAppearance(dragCanvasBounds.current, container);
-      }
-
-      // Look up the virtual shadow element for this set at drag-start. [D05]
-      // Uses the sorted, comma-joined card ID string to find the matching .set-shadow wrapper.
-      // The reference is stored once and translated in the RAF loop to avoid per-frame DOM queries.
-      dragShadowEl.current = null;
-      dragShadowOrigin.current = { x: 0, y: 0 };
-      if (dragSetMemberIdsAtDragStart.current.length > 0) {
-        const idString = dragSetMemberIdsAtDragStart.current.slice().sort().join(",");
-        const shadowEl = document.querySelector<HTMLElement>(
-          `.set-shadow[data-set-card-ids="${idString}"]`,
-        );
-        if (shadowEl) {
-          dragShadowEl.current = shadowEl;
-          dragShadowOrigin.current = {
-            x: parseFloat(shadowEl.style.left) || 0,
-            y: parseFloat(shadowEl.style.top) || 0,
-          };
         }
       }
 
@@ -572,14 +519,19 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
-          // Remove shadow DOM element immediately on break-out so no orphaned
-          // .set-shadow remains during the remainder of the drag. [D01, SC1]
-          // The shadow is recreated by updateSetAppearance when postActionSetUpdate
-          // fires at drag-end.
-          if (dragShadowEl.current) {
-            dragShadowEl.current.parentNode?.removeChild(dragShadowEl.current);
+          // Directly clear clip-path and data-in-set on the detached card's .tugcard.
+          // Break-out detection runs BEFORE frame.style.left/top is written, so
+          // getBoundingClientRect still sees the previous frame's position. Calling
+          // updateSetAppearance here would incorrectly see the detached card as still
+          // adjacent to the set. Direct DOM manipulation gives immediate visual
+          // correctness without position dependency. [D07]
+          // The remaining set members' clip-paths are updated by the store subscriber,
+          // which fires synchronously from the onCardMoved calls above. [D07]
+          const breakoutTugcard = frame.querySelector<HTMLElement>(".tugcard");
+          if (breakoutTugcard) {
+            breakoutTugcard.style.clipPath = "";
           }
-          dragShadowEl.current = null;
+          frame.removeAttribute("data-in-set");
 
           // Flash full perimeter of the detached card. [D55]
           flashCardPerimeter(frame);
@@ -637,11 +589,8 @@ export function CardFrame({
             member.el.style.left = `${origin.x + clampedDeltaX}px`;
             member.el.style.top = `${origin.y + clampedDeltaY}px`;
           }
-          // Translate the virtual shadow by the same clamped delta so it tracks the set. [D05]
-          if (dragShadowEl.current) {
-            dragShadowEl.current.style.left = `${dragShadowOrigin.current.x + clampedDeltaX}px`;
-            dragShadowEl.current.style.top = `${dragShadowOrigin.current.y + clampedDeltaY}px`;
-          }
+          // No shadow element to translate — clip-path is intrinsic to each card and
+          // moves automatically with the card's box model. [D01, D05]
         }
 
         frame.style.left = `${pos.x}px`;
@@ -709,16 +658,10 @@ export function CardFrame({
               dragSetOrigins.current = [];
               dragSetMemberIdsAtDragStart.current = [];
               dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
-              dragShadowEl.current = null;
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
-              // Re-enable the store subscriber before the shadow rebuild so any
-              // concurrent store mutations that arrive after this point are handled
-              // by the subscriber rather than being silently dropped. [D03, S03]
-              setGestureActive(false);
-              // Clean up shadow elements after merge so no orphaned .set-shadow
-              // remains in the DOM. [D02, SC2]
+              // Recompute clip-path after merge so set appearance reflects the new layout. [D01]
               updateSetAppearance(dragCanvasBounds.current, frame.parentElement);
               return;
             }
@@ -783,9 +726,6 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
-        // Re-enable the store subscriber before postActionSetUpdate so that its
-        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
-        setGestureActive(false);
         // Flash set perimeter / break-out flash on drop. [D54, D55]
         postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
 
@@ -795,8 +735,6 @@ export function CardFrame({
         dragSetOrigins.current = [];
         dragSetMemberIdsAtDragStart.current = [];
         dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
-        // Shadow recomputed fresh by updateSetAppearance inside postActionSetUpdate. [D05]
-        dragShadowEl.current = null;
         latestSnapModifier.current = false;
         prevSnapModifier.current = false;
         lastSnapResult.current = null;
@@ -832,10 +770,6 @@ export function CardFrame({
       if (!frameRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
-
-      // Gate the store subscriber from calling updateSetAppearance while this
-      // resize owns the shadow ref. Cleared at the exit point of onPointerUp. [D03, S03]
-      setGestureActive(true);
 
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
@@ -939,26 +873,6 @@ export function CardFrame({
             }
             break;
           }
-        }
-      }
-
-      // Snapshot the shadow element at resize-start for per-frame position tracking. [D04, S05]
-      // Only needed when this card is in a set; north/west edge resizes shift the card's
-      // top-left corner, so the shadow wrapper must translate to match. East/south-only
-      // resizes produce zero delta and the shadow stays put (correct — wrapper position
-      // doesn't change when only width/height change).
-      let resizeShadowEl: HTMLElement | null = null;
-      let resizeShadowOriginX = 0;
-      let resizeShadowOriginY = 0;
-      if (resizePreSetMemberIds.length > 0) {
-        const idString = resizePreSetMemberIds.slice().sort().join(",");
-        const shadowEl = document.querySelector<HTMLElement>(
-          `.set-shadow[data-set-card-ids="${idString}"]`,
-        );
-        if (shadowEl) {
-          resizeShadowEl = shadowEl;
-          resizeShadowOriginX = parseFloat(shadowEl.style.left) || 0;
-          resizeShadowOriginY = parseFloat(shadowEl.style.top) || 0;
         }
       }
 
@@ -1106,14 +1020,12 @@ export function CardFrame({
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
-        // Translate the shadow wrapper by the card's position delta so it tracks
-        // north/west edge resizes frame-by-frame. Only left/top are updated here;
-        // the full hull is rebuilt by postActionSetUpdate at resize-end. [D04, S05]
-        if (resizeShadowEl) {
-          const deltaX = r.left - startLeft;
-          const deltaY = r.top - startTop;
-          resizeShadowEl.style.left = `${resizeShadowOriginX + deltaX}px`;
-          resizeShadowEl.style.top = `${resizeShadowOriginY + deltaY}px`;
+        // During sash co-resize both cards change size/position each frame, so the shared
+        // edge moves and each card's interior vs exterior edges may change proportionally.
+        // Call updateSetAppearance once per frame to keep clip-path values correct for both
+        // the resizing card and the sash neighbor throughout the gesture. [D06, Spec S01]
+        if (sashNeighborEl && !latestResizeModifier) {
+          updateSetAppearance(resizeCanvasBounds, frame.parentElement);
         }
       }
 
@@ -1162,9 +1074,6 @@ export function CardFrame({
           onCardMoved(sashNeighborId, neighborPos, neighborSize);
         }
 
-        // Re-enable the store subscriber before postActionSetUpdate so that its
-        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
-        setGestureActive(false);
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
         postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement);
       }
@@ -1228,27 +1137,89 @@ export function CardFrame({
 }
 
 // ---------------------------------------------------------------------------
-// Set appearance: squared corners and virtual set shadows [D08, D03]
+// Set appearance: squared corners and clip-path shadow control [D08, D01, D02]
 // ---------------------------------------------------------------------------
+
+/**
+ * Compute the `clip-path: inset(...)` CSS value for a single card based on its
+ * shared edges within the set. [Spec S01, D04]
+ *
+ * For each of the four sides (top, right, bottom, left):
+ * - Interior (shared with a neighbor): inset = `0px` (clips shadow at border-box edge).
+ * - Exterior (no shared neighbor): inset = `-SHADOW_EXTEND_PX` (extends clip region to show shadow).
+ *
+ * SharedEdge convention:
+ * - `axis: "vertical"`, `cardAId` → cardA's **right** edge is shared (interior for cardA).
+ * - `axis: "vertical"`, `cardBId` → cardB's **left** edge is shared (interior for cardB).
+ * - `axis: "horizontal"`, `cardAId` → cardA's **bottom** edge is shared (interior for cardA).
+ * - `axis: "horizontal"`, `cardBId` → cardB's **top** edge is shared (interior for cardB).
+ *
+ * Returns an empty string when the card has no interior edges (all exterior — full shadow visible).
+ *
+ * @param cardId - The id of the card to compute clip-path for.
+ * @param sharedEdges - All shared edges in the current layout.
+ */
+function computeClipPathForCard(cardId: string, sharedEdges: SharedEdge[]): string {
+  let topInterior = false;
+  let rightInterior = false;
+  let bottomInterior = false;
+  let leftInterior = false;
+
+  for (const edge of sharedEdges) {
+    if (edge.axis === "vertical") {
+      if (edge.cardAId === cardId) {
+        // cardA's right edge is shared.
+        rightInterior = true;
+      } else if (edge.cardBId === cardId) {
+        // cardB's left edge is shared.
+        leftInterior = true;
+      }
+    } else {
+      // axis === "horizontal"
+      if (edge.cardAId === cardId) {
+        // cardA's bottom edge is shared.
+        bottomInterior = true;
+      } else if (edge.cardBId === cardId) {
+        // cardB's top edge is shared.
+        topInterior = true;
+      }
+    }
+  }
+
+  // If no edges are interior, return empty string (no clip-path needed — full shadow visible).
+  if (!topInterior && !rightInterior && !bottomInterior && !leftInterior) {
+    return "";
+  }
+
+  const ext = `-${SHADOW_EXTEND_PX}px`;
+  const top = topInterior ? "0px" : ext;
+  const right = rightInterior ? "0px" : ext;
+  const bottom = bottomInterior ? "0px" : ext;
+  const left = leftInterior ? "0px" : ext;
+
+  return `inset(${top} ${right} ${bottom} ${left})`;
+}
 
 /**
  * Update the visual appearance of all cards based on their current set membership.
  *
  * For cards in a set:
- *   - Sets `data-in-set="true"` (CSS squares corners and suppresses per-card box-shadow).
- *   - Creates one virtual shadow div per set (.set-shadow + .set-shadow-shape) on containerEl,
- *     using the hull polygon clip-path for a unified elevation effect. [D03, Spec S04]
+ *   - Sets `data-in-set="true"` on `.card-frame` (CSS squares corners). [D08]
+ *   - Computes `clip-path: inset(...)` per Spec S01 and applies it to the `.tugcard`
+ *     child element, clipping shadow on interior (shared) edges while showing shadow
+ *     on exterior edges. [D01, D02, D04]
  *
  * For solo cards:
- *   - Removes `data-in-set` attribute (CSS restores rounded corners and box-shadow).
+ *   - Removes `data-in-set` attribute (CSS restores rounded corners).
+ *   - Clears `clip-path` on `.tugcard` (full shadow visible on all sides).
  *
- * Existing .set-shadow elements are removed and recreated synchronously, so the
- * browser paints only one frame (no intermediate shadowless state). [D03]
+ * No DOM elements are created or removed. All mutations are direct style/attribute
+ * writes on existing elements, safe to call at any time including mid-gesture. [D05]
  *
  * Called after any move or resize action completes, and once on initial load. [D08, D09]
  *
  * @param canvasBounds - Canvas DOMRect used to convert viewport rects to canvas-relative coords.
- * @param containerEl - The ResponderScope element where shadow divs are appended.
+ * @param containerEl - The ResponderScope element (kept for API compatibility; used for z-index reordering context).
  */
 export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: HTMLElement | null): void {
   const allFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
@@ -1283,64 +1254,24 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     const cardId = el.getAttribute("data-card-id");
     if (!cardId) return;
 
+    const tugcardEl = el.querySelector<HTMLElement>(".tugcard");
+
     if (inSetIds.has(cardId)) {
-      // Mark as in-set (CSS squares corners and suppresses per-card box-shadow). [D08]
+      // Mark as in-set (CSS squares corners). [D08]
       el.setAttribute("data-in-set", "true");
+      // Apply clip-path: inset() to .tugcard to control shadow visibility on each edge. [D01, D02, D04]
+      if (tugcardEl) {
+        const clipPath = computeClipPathForCard(cardId, sharedEdges);
+        tugcardEl.style.clipPath = clipPath;
+      }
     } else {
-      // Solo card: restore rounded corners and per-card box-shadow.
+      // Solo card: restore rounded corners and clear clip-path (full shadow visible on all sides).
       el.removeAttribute("data-in-set");
+      if (tugcardEl) {
+        tugcardEl.style.clipPath = "";
+      }
     }
   });
-
-  // Remove all existing .set-shadow elements synchronously before recreating. [D03]
-  if (containerEl) {
-    const existingShadows = containerEl.querySelectorAll<HTMLElement>(".set-shadow");
-    existingShadows.forEach((el) => el.parentNode?.removeChild(el));
-  }
-
-  // Create one .set-shadow element per set on containerEl. [D03, Spec S04]
-  // Each shadow element uses the hull polygon clip-path for a unified elevation.
-  if (containerEl) {
-    for (const cardSet of sets) {
-      const setRects: Rect[] = cardSet.cardIds
-        .map((cid) => rects.find((r) => r.id === cid)?.rect)
-        .filter((r): r is Rect => r !== undefined);
-
-      const hull = computeSetHullPolygon(setRects);
-      if (hull.length < 3) continue;
-
-      // Compute bounding box of hull to size the shadow div.
-      const hullMinX = hull.reduce((m, p) => Math.min(m, p.x), Infinity);
-      const hullMinY = hull.reduce((m, p) => Math.min(m, p.y), Infinity);
-      const hullMaxX = hull.reduce((m, p) => Math.max(m, p.x), -Infinity);
-      const hullMaxY = hull.reduce((m, p) => Math.max(m, p.y), -Infinity);
-
-      // Outer wrapper: positioned at hull bounding box, carries filter:drop-shadow.
-      // No clip-path on the wrapper — clip-path is on the inner shape so the drop-shadow
-      // filter sees the clipped shape and produces a clean hull-following shadow. [D03]
-      const wrapper = document.createElement("div");
-      wrapper.classList.add("set-shadow");
-      wrapper.style.left = `${hullMinX}px`;
-      wrapper.style.top = `${hullMinY}px`;
-      wrapper.style.width = `${hullMaxX - hullMinX}px`;
-      wrapper.style.height = `${hullMaxY - hullMinY}px`;
-
-      // Tag with sorted card IDs for identity tracking and future updates.
-      wrapper.setAttribute("data-set-card-ids", cardSet.cardIds.slice().sort().join(","));
-
-      // Inner shape div: carries the hull clip-path and background. The drop-shadow
-      // filter on the wrapper reads this shape and renders the shadow outside it. [D03]
-      const inner = document.createElement("div");
-      inner.classList.add("set-shadow-shape");
-
-      // Hull clip-path in wrapper-local coordinates (hull points minus bounding box origin).
-      const clipPoints = hull.map((p) => `${p.x - hullMinX}px ${p.y - hullMinY}px`).join(", ");
-      inner.style.clipPath = `polygon(${clipPoints})`;
-
-      wrapper.appendChild(inner);
-      containerEl.appendChild(wrapper);
-    }
-  }
 
   // Adjust z-indices so that set members are consecutive (no non-set card between them). [D08]
   // This is an appearance-zone change: direct DOM mutation, not React state.
@@ -1430,23 +1361,6 @@ export function updateSetAppearance(canvasBounds: DOMRect | null, containerEl: H
     }
   }
 
-  // Assign z-index to each .set-shadow wrapper: lowest member z-index minus 1,
-  // so the hull shadow renders beneath all cards in the set. [D03]
-  if (containerEl) {
-    const shadowEls = containerEl.querySelectorAll<HTMLElement>(".set-shadow[data-set-card-ids]");
-    shadowEls.forEach((shadowEl) => {
-      const cardIds = (shadowEl.getAttribute("data-set-card-ids") ?? "").split(",").filter(Boolean);
-      let minZ = Infinity;
-      for (const cid of cardIds) {
-        const frameEl = document.querySelector<HTMLElement>(`.card-frame[data-card-id="${cid}"]`);
-        if (frameEl) {
-          const z = parseInt(frameEl.style.zIndex, 10);
-          if (!isNaN(z) && z < minZ) minZ = z;
-        }
-      }
-      shadowEl.style.zIndex = String(minZ !== Infinity ? minZ - 1 : 0);
-    });
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1519,7 +1433,7 @@ function postActionSetUpdate(
     }
   }
 
-  // Update set appearance (squared corners, hull shadows) after any move/resize. [D08]
+  // Update set appearance (squared corners, clip-path) after any move/resize. [D08]
   updateSetAppearance(canvasBounds, containerEl);
 }
 

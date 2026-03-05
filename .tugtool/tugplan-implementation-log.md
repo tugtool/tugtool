@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-03-05T16:32:39Z
+---
+
+## step-5: Fixed stale hull shadow comment in postActionSetUpdate, verified no stale set-shadow/gestureActive/dragShadowEl/resizeShadowEl references remain in tugdeck source or styles.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
+step: step-4
+date: 2025-03-05T16:28:37Z
+---
+
+## step-4: Added per-frame updateSetAppearance call in applyResizeFrame for sash co-resize, ensuring both resizing card and sash neighbor get correct clip-path values during resize.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
+step: step-3
+date: 2025-03-05T16:25:45Z
+---
+
+## step-3: Deleted gesture-active flag system, dragShadowEl/resizeShadowEl refs, defensive sweep, shadow translation in drag/resize RAF loops. Replaced break-out shadow removal with direct clip-path/data-in-set clearing. Simplified deck-canvas store subscriber to call updateSetAppearance unconditionally.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
+step: step-2
+date: 2025-03-05T16:17:32Z
+---
+
+## step-2: Rewrote updateSetAppearance to apply clip-path:inset() on .tugcard elements instead of creating .set-shadow DOM elements. Added computeClipPathForCard helper and SHADOW_EXTEND_PX constant.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
+step: step-1
+date: 2025-03-05T16:09:21Z
+---
+
+## step-1: Added unconditional box-shadow to .tugcard, removed conditional shadow from .card-frame rules, deleted .set-shadow and .set-shadow-shape CSS rules and comment block
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
+step: step-5
 date: 2025-03-05T15:10:11Z
 ---
 
