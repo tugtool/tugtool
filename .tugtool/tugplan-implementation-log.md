@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-05T20:56:29Z
+---
+
+## step-1: Added private defaultButtonStack field and three public methods (setDefaultButton, clearDefaultButton, getDefaultButton) to ResponderChainManager, plus comprehensive unit tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
 step: step-5
 date: 2025-03-05T16:32:39Z
 ---

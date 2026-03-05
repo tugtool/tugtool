@@ -59,6 +59,7 @@ export class ResponderChainManager {
   private firstResponderId: string | null = null;
   private validationVersion = 0;
   private subscribers: Set<() => void> = new Set();
+  private defaultButtonStack: HTMLButtonElement[] = [];
 
   // ---- Registration ----
 
@@ -190,6 +191,47 @@ export class ResponderChainManager {
       currentId = node.parentId;
     }
     return false;
+  }
+
+  // ---- Default button stack ----
+
+  /**
+   * Push a default button onto the stack.
+   *
+   * The most recently pushed button is the active default button. Supports
+   * nested modal scoping: inner modals push their button on open and pop it
+   * on close, restoring the outer button automatically.
+   *
+   * [D01] Stack semantics for nested modal scoping
+   */
+  setDefaultButton(element: HTMLButtonElement): void {
+    this.defaultButtonStack.push(element);
+  }
+
+  /**
+   * Remove a specific button from the stack by reference.
+   *
+   * Uses strict reference equality (===) to find the last occurrence of the
+   * element via lastIndexOf and removes exactly one instance. No-op if the
+   * element is not found on the stack.
+   *
+   * [D01] Reference-based removal
+   * [R02] Defensive: no-op if not found
+   */
+  clearDefaultButton(element: HTMLButtonElement): void {
+    const index = this.defaultButtonStack.lastIndexOf(element);
+    if (index !== -1) {
+      this.defaultButtonStack.splice(index, 1);
+    }
+  }
+
+  /**
+   * Return the topmost default button, or null if the stack is empty.
+   *
+   * [D01] Most recent registration wins
+   */
+  getDefaultButton(): HTMLButtonElement | null {
+    return this.defaultButtonStack[this.defaultButtonStack.length - 1] ?? null;
   }
 
   // ---- Subscription (for useSyncExternalStore) ----
