@@ -73,7 +73,29 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     // ---- Stages 2-4: bubble-phase listener ----
     function bubbleListener(event: KeyboardEvent): void {
-      // Stage 2: keyboard navigation -- deferred to browser in Phase 3.
+      // Stage 2: keyboard navigation -- Enter-key default-button activation.
+      // [D02] Enter-key check lives in stage-2 of the bubble pipeline.
+      // [D04] Activation via synthetic click (element.click()).
+      if (event.key === "Enter") {
+        const active = document.activeElement as HTMLElement | null;
+        const skipActivation =
+          active !== null &&
+          (active.tagName === "INPUT" ||
+            active.tagName === "TEXTAREA" ||
+            active.tagName === "SELECT" ||
+            active.isContentEditable ||
+            active.tagName === "BUTTON");
+        if (!skipActivation) {
+          const defaultButton = manager.getDefaultButton();
+          if (defaultButton !== null) {
+            defaultButton.click();
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+        // No default button registered or guard triggered -- fall through to stage 3/4.
+      }
 
       // Stage 3: chain action dispatch.
       // Skip if the event target is a native text input or contenteditable.

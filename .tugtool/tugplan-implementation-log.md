@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-05T21:01:22Z
+---
+
+## step-2: Added Enter-key default-button activation logic to bubbleListener stage-2 with guards for INPUT/TEXTAREA/SELECT/BUTTON/contentEditable, plus 6 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
 step: step-1
 date: 2025-03-05T20:56:29Z
 ---
