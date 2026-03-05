@@ -29,7 +29,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets } from "@/snap";
-import type { Rect, GuidePosition, SnapResult } from "@/snap";
+import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -1313,7 +1313,7 @@ function postActionSetUpdate(
     const setChanged =
       startIds.length !== endIds.length || startIds.some((sid, i) => sid !== endIds[i]);
     if (setChanged) {
-      flashSetPerimeter(mySet.cardIds, postSharedEdges);
+      flashSetPerimeter(mySet.cardIds, postSharedEdges, postRects);
     }
   } else if (preActionSetMemberIds.length > 0) {
     // Card was in a set but is now solo — break-out flash. [D55]
@@ -1458,7 +1458,7 @@ function resizeDelta(
  */
 function computeInternalEdges(
   cardId: string,
-  sharedEdges: import("@/snap").SharedEdge[],
+  sharedEdges: SharedEdge[],
 ): { top: boolean; right: boolean; bottom: boolean; left: boolean } {
   return {
     right: sharedEdges.some((e) => e.axis === "vertical" && e.cardAId === cardId),
@@ -1488,39 +1488,239 @@ function buildClipPath(
 // Flash overlay helpers (appearance-zone, [D54], Spec S03)
 // ---------------------------------------------------------------------------
 
+/** Glow expansion in px for the flash overlay. */
+const FLASH_PADDING = 4;
+
+/**
+ * Build a CSS polygon() clip-path for a card's flash overlay that precisely
+ * traces external edges and clips away shared (internal) edge segments.
+ *
+ * The overlay is positioned with `inset: -P` (where P = FLASH_PADDING),
+ * so in overlay-local coordinates:
+ *   - Card top-left = (P, P)
+ *   - Card bottom-right = (P + W, P + H)
+ *   - Overlay top-left = (0, 0)
+ *   - Overlay bottom-right = (W + 2P, H + 2P)
+ *
+ * For each side, we walk along the edge. Where there is no shared segment,
+ * the path follows the expanded overlay boundary. Where there IS a shared
+ * segment, the path jogs inward to the card edge, clipping border and glow
+ * on that portion only.
+ *
+ * @param cardRect - Card position in canvas coords.
+ * @param cardId - ID of the card whose flash polygon to build.
+ * @param sharedEdges - All shared edges among the set's cards.
+ * @param padding - Glow expansion in px (e.g. FLASH_PADDING = 4).
+ */
+function buildFlashPolygon(
+  cardRect: Rect,
+  cardId: string,
+  sharedEdges: SharedEdge[],
+  padding: number,
+): string {
+  const P = padding;
+  const W = cardRect.width;
+  const H = cardRect.height;
+
+  // Collect shared segments per side in card-local coordinates.
+  // For vertical shared edges:
+  //   cardAId = LEFT card (its RIGHT side is internal)
+  //   cardBId = RIGHT card (its LEFT side is internal)
+  //   overlapStart/overlapEnd = Y range in canvas coords → convert to card-local Y
+  // For horizontal shared edges:
+  //   cardAId = TOP card (its BOTTOM side is internal)
+  //   cardBId = BOTTOM card (its TOP side is internal)
+  //   overlapStart/overlapEnd = X range in canvas coords → convert to card-local X
+
+  const rightSegs: [number, number][] = [];
+  const leftSegs: [number, number][] = [];
+  const bottomSegs: [number, number][] = [];
+  const topSegs: [number, number][] = [];
+
+  for (const edge of sharedEdges) {
+    if (edge.axis === "vertical") {
+      if (edge.cardAId === cardId) {
+        // This card's RIGHT side is internal along this Y range.
+        rightSegs.push([edge.overlapStart - cardRect.y, edge.overlapEnd - cardRect.y]);
+      } else if (edge.cardBId === cardId) {
+        // This card's LEFT side is internal along this Y range.
+        leftSegs.push([edge.overlapStart - cardRect.y, edge.overlapEnd - cardRect.y]);
+      }
+    } else {
+      // axis === "horizontal"
+      if (edge.cardAId === cardId) {
+        // This card's BOTTOM side is internal along this X range.
+        bottomSegs.push([edge.overlapStart - cardRect.x, edge.overlapEnd - cardRect.x]);
+      } else if (edge.cardBId === cardId) {
+        // This card's TOP side is internal along this X range.
+        topSegs.push([edge.overlapStart - cardRect.x, edge.overlapEnd - cardRect.x]);
+      }
+    }
+  }
+
+  // Sort all segment arrays by start position ascending.
+  rightSegs.sort((a, b) => a[0] - b[0]);
+  leftSegs.sort((a, b) => a[0] - b[0]);
+  bottomSegs.sort((a, b) => a[0] - b[0]);
+  topSegs.sort((a, b) => a[0] - b[0]);
+
+  // Build polygon points clockwise.
+  // Overlay extents:
+  //   x: 0 (left) to W+2P (right)
+  //   y: 0 (top) to H+2P (bottom)
+  // Card occupies (P, P) to (P+W, P+H) in overlay-local coords.
+
+  const pts: [number, number][] = [];
+
+  function pt(x: number, y: number): void {
+    pts.push([x, y]);
+  }
+
+  // TOP edge: walk left → right at y=0 (expanded), jog to y=P on shared segments.
+  {
+    let curX = 0;
+    for (const [segStart, segEnd] of topSegs) {
+      const jogX0 = P + segStart;
+      const jogX1 = P + segEnd;
+      // Walk along expanded boundary to start of shared segment.
+      if (curX < jogX0) {
+        pt(curX, 0);
+        pt(jogX0, 0);
+      } else {
+        pt(curX, 0);
+      }
+      // Jog inward (down) to card edge.
+      pt(jogX0, P);
+      // Walk along card edge through shared segment.
+      pt(jogX1, P);
+      // Jog back out (up) to expanded boundary.
+      pt(jogX1, 0);
+      curX = jogX1;
+    }
+    // Walk remaining expanded boundary to top-right corner.
+    pt(curX, 0);
+    pt(W + 2 * P, 0);
+  }
+
+  // RIGHT edge: walk top → bottom at x=W+2P (expanded), jog to x=P+W on shared segments.
+  {
+    let curY = 0;
+    for (const [segStart, segEnd] of rightSegs) {
+      const jogY0 = P + segStart;
+      const jogY1 = P + segEnd;
+      if (curY < jogY0) {
+        pt(W + 2 * P, curY);
+        pt(W + 2 * P, jogY0);
+      } else {
+        pt(W + 2 * P, curY);
+      }
+      // Jog inward (left) to card edge.
+      pt(P + W, jogY0);
+      // Walk along card edge through shared segment.
+      pt(P + W, jogY1);
+      // Jog back out (right) to expanded boundary.
+      pt(W + 2 * P, jogY1);
+      curY = jogY1;
+    }
+    // Walk remaining expanded boundary to bottom-right corner.
+    pt(W + 2 * P, curY);
+    pt(W + 2 * P, H + 2 * P);
+  }
+
+  // BOTTOM edge: walk right → left at y=H+2P (expanded), jog to y=P+H on shared segments.
+  // Segments are sorted ascending by X; we walk right-to-left so reverse the order.
+  {
+    let curX = W + 2 * P;
+    for (let i = bottomSegs.length - 1; i >= 0; i--) {
+      const [segStart, segEnd] = bottomSegs[i];
+      const jogX1 = P + segEnd;   // right boundary of segment (in overlay coords)
+      const jogX0 = P + segStart; // left boundary of segment
+      if (curX > jogX1) {
+        pt(curX, H + 2 * P);
+        pt(jogX1, H + 2 * P);
+      } else {
+        pt(curX, H + 2 * P);
+      }
+      // Jog inward (up) to card edge.
+      pt(jogX1, P + H);
+      // Walk along card edge through shared segment (right → left).
+      pt(jogX0, P + H);
+      // Jog back out (down) to expanded boundary.
+      pt(jogX0, H + 2 * P);
+      curX = jogX0;
+    }
+    // Walk remaining expanded boundary to bottom-left corner.
+    pt(curX, H + 2 * P);
+    pt(0, H + 2 * P);
+  }
+
+  // LEFT edge: walk bottom → top at x=0 (expanded), jog to x=P on shared segments.
+  // Segments are sorted ascending by Y; we walk bottom-to-top so reverse the order.
+  {
+    let curY = H + 2 * P;
+    for (let i = leftSegs.length - 1; i >= 0; i--) {
+      const [segStart, segEnd] = leftSegs[i];
+      const jogY1 = P + segEnd;   // bottom of segment (in overlay coords)
+      const jogY0 = P + segStart; // top of segment
+      if (curY > jogY1) {
+        pt(0, curY);
+        pt(0, jogY1);
+      } else {
+        pt(0, curY);
+      }
+      // Jog inward (right) to card edge.
+      pt(P, jogY1);
+      // Walk along card edge through shared segment (bottom → top).
+      pt(P, jogY0);
+      // Jog back out (left) to expanded boundary.
+      pt(0, jogY0);
+      curY = jogY0;
+    }
+    // Walk remaining expanded boundary back to origin.
+    pt(0, curY);
+    pt(0, 0);
+  }
+
+  // Format as CSS polygon().
+  const coordStr = pts.map(([x, y]) => `${x}px ${y}px`).join(", ");
+  return `polygon(${coordStr})`;
+}
+
 /**
  * Create per-card .set-flash-overlay elements for a newly formed set.
  *
- * For each card, suppresses the borders that face an internal seam (Spec S03),
- * applies clip-path to prevent box-shadow glow from bleeding across seam edges.
+ * Uses a per-card polygon() clip-path that precisely traces external edges and
+ * clips away shared (internal) edge segments. Partial shared edges are handled
+ * correctly — only the shared portion is clipped; exposed portions still flash.
  * Cards always remain fully rounded — no corner squaring is applied. [D53]
  * The overlay self-removes on animationend. [D54, Spec S03]
  *
  * @param setCardIds - IDs of all cards in the set.
  * @param sharedEdges - All shared edges among the set's cards.
+ * @param cardRects - Canvas-relative rects for all cards (used for polygon computation).
  */
-export function flashSetPerimeter(setCardIds: string[], sharedEdges: import("@/snap").SharedEdge[]): void {
+export function flashSetPerimeter(
+  setCardIds: string[],
+  sharedEdges: SharedEdge[],
+  cardRects: { id: string; rect: Rect }[],
+): void {
   for (const cardId of setCardIds) {
     const frameEl = document.querySelector<HTMLElement>(
       `.card-frame[data-card-id="${cardId}"]`,
     );
     if (!frameEl) continue;
 
+    const cardRectEntry = cardRects.find((r) => r.id === cardId);
+    if (!cardRectEntry) continue;
+
+    const polygon = buildFlashPolygon(cardRectEntry.rect, cardId, sharedEdges, FLASH_PADDING);
+
     const overlay = document.createElement("div");
     overlay.classList.add("set-flash-overlay");
 
-    // Determine which of this card's edges are internal seams (Spec S03).
-    const internal = computeInternalEdges(cardId, sharedEdges);
-
-    // Suppress borders on internal seam edges via inline style (Spec S03).
-    if (internal.top) overlay.style.borderTop = "none";
-    if (internal.right) overlay.style.borderRight = "none";
-    if (internal.bottom) overlay.style.borderBottom = "none";
-    if (internal.left) overlay.style.borderLeft = "none";
-
-    // Apply clip-path to prevent box-shadow glow from bleeding across seam edges.
-    // Flash glow spread is 4px.
-    overlay.style.clipPath = buildClipPath(internal, 4);
+    // Use the polygon clip-path to precisely trace external edges only.
+    overlay.style.clipPath = polygon;
+    overlay.style.inset = `-${FLASH_PADDING}px`;
 
     // Cards are always fully rounded — use CSS default border-radius (no inline override).
 
