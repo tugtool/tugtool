@@ -259,22 +259,38 @@ export function computeSnap(
  *   (only the keys present are snapped).
  *
  * Returns snapped edge values and guide positions.
+ *
+ * @param borderWidth - Optional border width in pixels (default 0). When > 0,
+ *   adjacent-edge snaps (e.g. resizing right toward another card's left) are offset
+ *   inward by this amount so that borders overlap into a single visual line.
+ *   Same-edge snaps (e.g. resizing right toward another card's right) are not offset.
+ *   Pass 0 or omit for backward-compatible behavior.
  */
 export function computeResizeSnap(
   resizingEdges: { top?: number; bottom?: number; left?: number; right?: number },
-  others: Rect[]
+  others: Rect[],
+  borderWidth?: number
 ): { top?: number; bottom?: number; left?: number; right?: number; guides: GuidePosition[] } {
+  const bw = borderWidth ?? 0;
+
   // Snap each edge independently; track best snap (minimum distance) per edge key.
+  // For adjacent-edge snaps, the snapped value includes a borderWidth offset for border collapse.
+  // The distance check uses the raw (un-offset) position.
+  // Guide positions track the OTHER card's target edge (for rendering the guide line at the snap target).
   let leftSnapped: number | undefined;
+  let leftGuide: number | undefined;
   let leftDist = Infinity;
 
   let rightSnapped: number | undefined;
+  let rightGuide: number | undefined;
   let rightDist = Infinity;
 
   let topSnapped: number | undefined;
+  let topGuide: number | undefined;
   let topDist = Infinity;
 
   let bottomSnapped: number | undefined;
+  let bottomGuide: number | undefined;
   let bottomDist = Infinity;
 
   for (const other of others) {
@@ -282,45 +298,91 @@ export function computeResizeSnap(
     const otherRight = other.x + other.width;
     const otherTop = other.y;
     const otherBottom = other.y + other.height;
-    const xTargets = [otherLeft, otherRight];
-    const yTargets = [otherTop, otherBottom];
 
+    // Left edge: check same-edge (otherLeft, no offset) and adjacent-edge (otherRight, -bw offset)
     if (resizingEdges.left !== undefined) {
-      for (const target of xTargets) {
-        const dist = Math.abs(resizingEdges.left - target);
+      // left vs otherLeft (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.left - otherLeft);
         if (dist <= SNAP_THRESHOLD_PX && dist < leftDist) {
           leftDist = dist;
-          leftSnapped = target;
+          leftSnapped = otherLeft;
+          leftGuide = otherLeft;
+        }
+      }
+      // left vs otherRight (adjacent-edge: resizing left toward other's right, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.left - otherRight);
+        if (dist <= SNAP_THRESHOLD_PX && dist < leftDist) {
+          leftDist = dist;
+          leftSnapped = otherRight - bw;
+          leftGuide = otherRight;
         }
       }
     }
 
+    // Right edge: check adjacent-edge (otherLeft, +bw offset) and same-edge (otherRight, no offset)
     if (resizingEdges.right !== undefined) {
-      for (const target of xTargets) {
-        const dist = Math.abs(resizingEdges.right - target);
+      // right vs otherLeft (adjacent-edge: resizing right toward other's left, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.right - otherLeft);
         if (dist <= SNAP_THRESHOLD_PX && dist < rightDist) {
           rightDist = dist;
-          rightSnapped = target;
+          rightSnapped = otherLeft + bw;
+          rightGuide = otherLeft;
+        }
+      }
+      // right vs otherRight (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.right - otherRight);
+        if (dist <= SNAP_THRESHOLD_PX && dist < rightDist) {
+          rightDist = dist;
+          rightSnapped = otherRight;
+          rightGuide = otherRight;
         }
       }
     }
 
+    // Top edge: check same-edge (otherTop, no offset) and adjacent-edge (otherBottom, -bw offset)
     if (resizingEdges.top !== undefined) {
-      for (const target of yTargets) {
-        const dist = Math.abs(resizingEdges.top - target);
+      // top vs otherTop (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.top - otherTop);
         if (dist <= SNAP_THRESHOLD_PX && dist < topDist) {
           topDist = dist;
-          topSnapped = target;
+          topSnapped = otherTop;
+          topGuide = otherTop;
+        }
+      }
+      // top vs otherBottom (adjacent-edge: resizing top toward other's bottom, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.top - otherBottom);
+        if (dist <= SNAP_THRESHOLD_PX && dist < topDist) {
+          topDist = dist;
+          topSnapped = otherBottom - bw;
+          topGuide = otherBottom;
         }
       }
     }
 
+    // Bottom edge: check adjacent-edge (otherTop, +bw offset) and same-edge (otherBottom, no offset)
     if (resizingEdges.bottom !== undefined) {
-      for (const target of yTargets) {
-        const dist = Math.abs(resizingEdges.bottom - target);
+      // bottom vs otherTop (adjacent-edge: resizing bottom toward other's top, overlap by bw)
+      {
+        const dist = Math.abs(resizingEdges.bottom - otherTop);
         if (dist <= SNAP_THRESHOLD_PX && dist < bottomDist) {
           bottomDist = dist;
-          bottomSnapped = target;
+          bottomSnapped = otherTop + bw;
+          bottomGuide = otherTop;
+        }
+      }
+      // bottom vs otherBottom (same-edge, no offset)
+      {
+        const dist = Math.abs(resizingEdges.bottom - otherBottom);
+        if (dist <= SNAP_THRESHOLD_PX && dist < bottomDist) {
+          bottomDist = dist;
+          bottomSnapped = otherBottom;
+          bottomGuide = otherBottom;
         }
       }
     }
@@ -328,20 +390,20 @@ export function computeResizeSnap(
 
   const guides: GuidePosition[] = [];
 
-  if (leftSnapped !== undefined) {
-    guides.push({ axis: "x", position: leftSnapped });
+  if (leftGuide !== undefined) {
+    guides.push({ axis: "x", position: leftGuide });
   }
-  if (rightSnapped !== undefined) {
-    if (!guides.some((g) => g.axis === "x" && g.position === rightSnapped)) {
-      guides.push({ axis: "x", position: rightSnapped });
+  if (rightGuide !== undefined) {
+    if (!guides.some((g) => g.axis === "x" && g.position === rightGuide)) {
+      guides.push({ axis: "x", position: rightGuide });
     }
   }
-  if (topSnapped !== undefined) {
-    guides.push({ axis: "y", position: topSnapped });
+  if (topGuide !== undefined) {
+    guides.push({ axis: "y", position: topGuide });
   }
-  if (bottomSnapped !== undefined) {
-    if (!guides.some((g) => g.axis === "y" && g.position === bottomSnapped)) {
-      guides.push({ axis: "y", position: bottomSnapped });
+  if (bottomGuide !== undefined) {
+    if (!guides.some((g) => g.axis === "y" && g.position === bottomGuide)) {
+      guides.push({ axis: "y", position: bottomGuide });
     }
   }
 

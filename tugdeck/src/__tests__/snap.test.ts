@@ -240,6 +240,89 @@ describe("computeResizeSnap", () => {
     expect(result.bottom).toBeUndefined();
     expect(result.guides).toEqual([]);
   });
+
+  // borderWidth tests for resize snap (adjacent-edge overlap)
+  test("resizing right toward other left with borderWidth overlaps by bw", () => {
+    // Right edge at 398, other left at 400 (dist=2 ≤ 8), borderWidth=1
+    // Adjacent-edge: rightSnapped = otherLeft + bw = 400 + 1 = 401
+    const resizingEdges = { right: 398 };
+    const other: Rect = { x: 400, y: 0, width: 200, height: 300 };
+
+    const result = computeResizeSnap(resizingEdges, [other], 1);
+
+    expect(result.right).toBe(401);
+    // Guide should be at the other card's left edge (400), not the offset value
+    const xGuide = result.guides.find((g) => g.axis === "x");
+    expect(xGuide).toBeDefined();
+    expect(xGuide!.position).toBe(400);
+  });
+
+  test("resizing right toward other right (same-edge) with borderWidth has no offset", () => {
+    // Right edge at 398, other right at 400 (dist=2 ≤ 8), borderWidth=1
+    // Same-edge: rightSnapped = otherRight = 400 (no offset)
+    const resizingEdges = { right: 398 };
+    const other: Rect = { x: 200, y: 0, width: 200, height: 300 };
+    // other.right = 200+200 = 400
+
+    const result = computeResizeSnap(resizingEdges, [other], 1);
+
+    expect(result.right).toBe(400);
+  });
+
+  test("resizing left toward other right (adjacent-edge) with borderWidth overlaps by bw", () => {
+    // Left edge at 202, other right at 200 (dist=2 ≤ 8), borderWidth=1
+    // Adjacent-edge: leftSnapped = otherRight - bw = 200 - 1 = 199
+    const resizingEdges = { left: 202 };
+    const other: Rect = { x: 0, y: 0, width: 200, height: 300 };
+    // other.right = 200
+
+    const result = computeResizeSnap(resizingEdges, [other], 1);
+
+    expect(result.left).toBe(199);
+    const xGuide = result.guides.find((g) => g.axis === "x");
+    expect(xGuide).toBeDefined();
+    expect(xGuide!.position).toBe(200);
+  });
+
+  test("resizing bottom toward other top (adjacent-edge) with borderWidth overlaps by bw", () => {
+    // Bottom edge at 398, other top at 400 (dist=2 ≤ 8), borderWidth=1
+    // Adjacent-edge: bottomSnapped = otherTop + bw = 400 + 1 = 401
+    const resizingEdges = { bottom: 398 };
+    const other: Rect = { x: 0, y: 400, width: 200, height: 200 };
+
+    const result = computeResizeSnap(resizingEdges, [other], 1);
+
+    expect(result.bottom).toBe(401);
+    const yGuide = result.guides.find((g) => g.axis === "y");
+    expect(yGuide).toBeDefined();
+    expect(yGuide!.position).toBe(400);
+  });
+
+  test("resizing top toward other bottom (adjacent-edge) with borderWidth overlaps by bw", () => {
+    // Top edge at 202, other bottom at 200 (dist=2 ≤ 8), borderWidth=1
+    // Adjacent-edge: topSnapped = otherBottom - bw = 200 - 1 = 199
+    const resizingEdges = { top: 202 };
+    const other: Rect = { x: 0, y: 0, width: 200, height: 200 };
+    // other.bottom = 200
+
+    const result = computeResizeSnap(resizingEdges, [other], 1);
+
+    expect(result.top).toBe(199);
+    const yGuide = result.guides.find((g) => g.axis === "y");
+    expect(yGuide).toBeDefined();
+    expect(yGuide!.position).toBe(200);
+  });
+
+  test("borderWidth=0 is identical to no borderWidth (backward compat)", () => {
+    const resizingEdges = { right: 398 };
+    const other: Rect = { x: 400, y: 0, width: 200, height: 300 };
+
+    const withZero = computeResizeSnap(resizingEdges, [other], 0);
+    const withoutBW = computeResizeSnap(resizingEdges, [other]);
+
+    expect(withZero.right).toBe(withoutBW.right);
+    expect(withZero.right).toBe(400);
+  });
 });
 
 // ---- findSharedEdges ----

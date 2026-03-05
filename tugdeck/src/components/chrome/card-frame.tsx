@@ -785,6 +785,60 @@ export function CardFrame({
       const resizePreSet = resizePreSets.find((s) => s.cardIds.includes(id));
       const resizePreSetMemberIds: string[] = resizePreSet ? resizePreSet.cardIds.slice() : [];
 
+      // Detect sash neighbor: if this card is in a set AND the edge being resized is a shared
+      // edge with a neighbor, store the sash neighbor info for co-resize. [Fix 3]
+      // Only single-edge resizes (n, s, e, w) can be sash; corners skip sash detection.
+      let sashNeighborId: string | null = null;
+      let sashNeighborEdge: "n" | "s" | "e" | "w" | null = null;
+      let sashNeighborEl: HTMLElement | null = null;
+      let sashNeighborStartLeft = 0;
+      let sashNeighborStartTop = 0;
+      let sashNeighborStartW = 0;
+      let sashNeighborStartH = 0;
+
+      const isSingleEdge = edge === "n" || edge === "s" || edge === "e" || edge === "w";
+      if (isSingleEdge && resizePreSet) {
+        for (const sharedEdge of resizePreSharedEdges) {
+          // Check if this shared edge involves the current card and the resize edge.
+          let neighborId: string | null = null;
+          let neighborEdge: "n" | "s" | "e" | "w" | null = null;
+
+          if (edge === "e" && sharedEdge.axis === "vertical" && sharedEdge.cardAId === id) {
+            // This card's right edge = neighbor's left edge; neighbor's left moves east.
+            neighborId = sharedEdge.cardBId;
+            neighborEdge = "w";
+          } else if (edge === "w" && sharedEdge.axis === "vertical" && sharedEdge.cardBId === id) {
+            // This card's left edge = neighbor's right edge; neighbor's right moves west.
+            neighborId = sharedEdge.cardAId;
+            neighborEdge = "e";
+          } else if (edge === "s" && sharedEdge.axis === "horizontal" && sharedEdge.cardAId === id) {
+            // This card's bottom edge = neighbor's top edge; neighbor's top moves south.
+            neighborId = sharedEdge.cardBId;
+            neighborEdge = "n";
+          } else if (edge === "n" && sharedEdge.axis === "horizontal" && sharedEdge.cardBId === id) {
+            // This card's top edge = neighbor's bottom edge; neighbor's bottom moves north.
+            neighborId = sharedEdge.cardAId;
+            neighborEdge = "s";
+          }
+
+          if (neighborId && neighborEdge) {
+            const neighborEl = document.querySelector<HTMLElement>(
+              `.card-frame[data-card-id="${neighborId}"]`,
+            );
+            if (neighborEl) {
+              sashNeighborId = neighborId;
+              sashNeighborEdge = neighborEdge;
+              sashNeighborEl = neighborEl;
+              sashNeighborStartLeft = parseFloat(neighborEl.style.left) || 0;
+              sashNeighborStartTop = parseFloat(neighborEl.style.top) || 0;
+              sashNeighborStartW = neighborEl.offsetWidth;
+              sashNeighborStartH = neighborEl.offsetHeight;
+            }
+            break;
+          }
+        }
+      }
+
       const latestResizePointer = { x: startX, y: startY };
       let latestResizeModifier = isSnapModifier(event.nativeEvent);
       let resizeRafId: number | null = null;
@@ -805,6 +859,77 @@ export function CardFrame({
           resizeCanvasBounds,
         );
 
+        // Sash co-resize: when a shared edge is grabbed and modifier is NOT held,
+        // apply the opposite resize to the neighbor so the shared edge moves as a sash. [Fix 3]
+        if (sashNeighborEl && sashNeighborEdge && !snapModifier) {
+          const minW = minSizeRef.current.width;
+          const minH = minSizeRef.current.height;
+          let neighborLeft = sashNeighborStartLeft;
+          let neighborTop = sashNeighborStartTop;
+          let neighborW = sashNeighborStartW;
+          let neighborH = sashNeighborStartH;
+
+          if (edge === "e" && sashNeighborEdge === "w") {
+            // Grabbed card grows right → neighbor's left moves right (neighbor gets narrower).
+            // delta for the shared edge = r.left + r.width - (startLeft + startW)
+            const sharedEdgePos = r.left + r.width;
+            const neighborRight = sashNeighborStartLeft + sashNeighborStartW;
+            neighborLeft = sharedEdgePos;
+            neighborW = Math.max(minW, neighborRight - sharedEdgePos);
+            // If neighbor would be clamped, clamp the grabbed card's right edge too.
+            if (neighborRight - sharedEdgePos < minW) {
+              const clampedSharedEdge = neighborRight - minW;
+              neighborLeft = clampedSharedEdge;
+              neighborW = minW;
+              r.width = Math.max(minW, clampedSharedEdge - r.left);
+            }
+          } else if (edge === "w" && sashNeighborEdge === "e") {
+            // Grabbed card grows left → neighbor's right moves left (neighbor gets narrower).
+            const sharedEdgePos = r.left;
+            const neighborLeft0 = sashNeighborStartLeft;
+            neighborW = Math.max(minW, sharedEdgePos - neighborLeft0);
+            if (sharedEdgePos - neighborLeft0 < minW) {
+              const clampedSharedEdge = neighborLeft0 + minW;
+              neighborW = minW;
+              r.left = clampedSharedEdge;
+              r.width = Math.max(minW, startLeft + startW - clampedSharedEdge);
+            }
+          } else if (edge === "s" && sashNeighborEdge === "n") {
+            // Grabbed card grows down → neighbor's top moves down (neighbor gets shorter).
+            const sharedEdgePos = r.top + r.height;
+            const neighborBottom = sashNeighborStartTop + sashNeighborStartH;
+            neighborTop = sharedEdgePos;
+            neighborH = Math.max(minH, neighborBottom - sharedEdgePos);
+            if (neighborBottom - sharedEdgePos < minH) {
+              const clampedSharedEdge = neighborBottom - minH;
+              neighborTop = clampedSharedEdge;
+              neighborH = minH;
+              r.height = Math.max(minH, clampedSharedEdge - r.top);
+            }
+          } else if (edge === "n" && sashNeighborEdge === "s") {
+            // Grabbed card grows up → neighbor's bottom moves up (neighbor gets shorter).
+            const sharedEdgePos = r.top;
+            const neighborTop0 = sashNeighborStartTop;
+            neighborH = Math.max(minH, sharedEdgePos - neighborTop0);
+            if (sharedEdgePos - neighborTop0 < minH) {
+              const clampedSharedEdge = neighborTop0 + minH;
+              neighborH = minH;
+              r.top = clampedSharedEdge;
+              r.height = Math.max(minH, startTop + startH - clampedSharedEdge);
+            }
+          }
+
+          // Apply neighbor dimensions to its DOM element.
+          sashNeighborEl.style.left = `${neighborLeft}px`;
+          sashNeighborEl.style.top = `${neighborTop}px`;
+          sashNeighborEl.style.width = `${neighborW}px`;
+          sashNeighborEl.style.height = `${neighborH}px`;
+
+          // No snap guides for sash resize (cards are already aligned).
+          clearGuideElements(resizeGuideEls);
+          return r;
+        }
+
         // Apply snap-to-edge if modifier is held. [D01]
         if (snapModifier) {
           // Build the set of edges being actively resized (absolute canvas coords).
@@ -815,7 +940,8 @@ export function CardFrame({
           if (edge.includes("w")) resizingEdges.left = r.left;
           if (edge.includes("e")) resizingEdges.right = r.left + r.width;
 
-          const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects);
+          // Pass borderWidth=1 so adjacent-edge resize snaps overlap by 1px for border collapse. [D56]
+          const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects, 1);
 
           // Apply snapped values back to the rect, clamped to minSize.
           let { left, top, width, height } = r;
@@ -890,6 +1016,19 @@ export function CardFrame({
         frame.style.width = `${r.width}px`;
         frame.style.height = `${r.height}px`;
         onCardMoved(id, { x: r.left, y: r.top }, { width: r.width, height: r.height });
+
+        // Commit sash neighbor's final position if sash mode was active. [Fix 3]
+        if (sashNeighborId && sashNeighborEl && !isSnapModifier(e)) {
+          const neighborPos = {
+            x: parseFloat(sashNeighborEl.style.left) || 0,
+            y: parseFloat(sashNeighborEl.style.top) || 0,
+          };
+          const neighborSize = {
+            width: sashNeighborEl.offsetWidth,
+            height: sashNeighborEl.offsetHeight,
+          };
+          onCardMoved(sashNeighborId, neighborPos, neighborSize);
+        }
 
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
         postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds);
@@ -1031,6 +1170,94 @@ function updateSetAppearance(canvasBounds: DOMRect | null): void {
       el.style.clipPath = "";
     }
   });
+
+  // Adjust z-indices so that set members are consecutive (no non-set card between them). [D08]
+  // This is an appearance-zone change: direct DOM mutation, not React state.
+  //
+  // Algorithm:
+  // 1. Collect all card elements with their current z-index.
+  // 2. Sort by current z-index (ascending).
+  // 3. Build a new z-order where, when we encounter the highest-z member of a set,
+  //    all set members are emitted consecutively at that position.
+  // 4. Apply new z-indices to DOM elements.
+  {
+    // Build list of all card elements with current z-index values.
+    const cardZList: Array<{ id: string; el: HTMLElement; z: number }> = [];
+    allFrameEls.forEach((el) => {
+      const cid = el.getAttribute("data-card-id");
+      if (!cid) return;
+      const z = parseInt(el.style.zIndex, 10);
+      cardZList.push({ id: cid, el, z: isNaN(z) ? 0 : z });
+    });
+
+    // Sort by current z-index ascending.
+    cardZList.sort((a, b) => a.z - b.z);
+
+    // Build a map from cardId to which set it belongs to (index into sets array).
+    const cardSetIndex = new Map<string, number>();
+    for (let i = 0; i < sets.length; i++) {
+      for (const cid of sets[i].cardIds) {
+        cardSetIndex.set(cid, i);
+      }
+    }
+
+    // For each set, find the highest z-index among its members (the "anchor" position).
+    const setMaxZ: number[] = sets.map(() => -Infinity);
+    for (const entry of cardZList) {
+      const si = cardSetIndex.get(entry.id);
+      if (si !== undefined && entry.z > setMaxZ[si]) {
+        setMaxZ[si] = entry.z;
+      }
+    }
+
+    // Rebuild z-order: process cards in ascending z-index order.
+    // When we encounter the anchor of a set (highest-z member), emit all set members
+    // consecutively. Non-set cards and set members that have already been emitted are skipped/placed normally.
+    const emittedSets = new Set<number>();
+    const newZOrder: Array<{ el: HTMLElement; newZ: number }> = [];
+    let nextZ = cardZList.length > 0 ? cardZList[0].z : 1;
+
+    // We need to assign z-indices while keeping relative order.
+    // Strategy: iterate cards in ascending z order. When we hit a set's anchor (highest-z member),
+    // first emit all other members of that set (lowest-z first), then the anchor itself.
+    // Skip cards already emitted as part of their set's earlier anchor pass.
+    const alreadyEmitted = new Set<string>();
+
+    for (const entry of cardZList) {
+      if (alreadyEmitted.has(entry.id)) continue;
+
+      const si = cardSetIndex.get(entry.id);
+      if (si !== undefined && !emittedSets.has(si)) {
+        // Check if this is the anchor (highest-z) member of the set.
+        if (entry.z === setMaxZ[si]) {
+          // Emit all set members consecutively at this position.
+          // Sort set members by their original z-index to preserve relative order within set.
+          const setMembers = cardZList.filter((e) => cardSetIndex.get(e.id) === si);
+          setMembers.sort((a, b) => a.z - b.z);
+          for (const member of setMembers) {
+            newZOrder.push({ el: member.el, newZ: nextZ });
+            nextZ++;
+            alreadyEmitted.add(member.id);
+          }
+          emittedSets.add(si);
+        } else {
+          // Not the anchor yet — skip this card; it will be emitted when we reach the anchor.
+          continue;
+        }
+      } else if (si === undefined) {
+        // Non-set card: emit at next available position.
+        newZOrder.push({ el: entry.el, newZ: nextZ });
+        nextZ++;
+        alreadyEmitted.add(entry.id);
+      }
+      // If si is defined but set already emitted, card was already handled — skip.
+    }
+
+    // Apply new z-indices to DOM.
+    for (const { el, newZ } of newZOrder) {
+      el.style.zIndex = String(newZ);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
