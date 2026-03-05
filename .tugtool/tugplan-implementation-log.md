@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-05T03:47:25Z
+---
+
+## step-4: Added dragShadowEl and dragShadowOrigin refs. At drag-start, looks up shadow by data-set-card-ids. In RAF loop set-move branch, translates shadow by clamped delta. Clears shadow ref on break-out, drag-end, and merge early-return.
+
+**Files changed:**
+- .tugtool/tugplan-hull-polygon-visual-overhaul.md
+
+---
+
+---
 step: step-3
 date: 2025-03-05T03:40:37Z
 ---

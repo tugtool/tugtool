@@ -220,6 +220,11 @@ export function CardFrame({
   // Set member IDs at drag-start (including this card if in a set). Used at drop
   // to detect whether the card has newly joined a set (flash only on new membership). [D54]
   const dragSetMemberIdsAtDragStart = useRef<string[]>([]);
+  // Virtual set shadow element for the current set-move drag. [D05]
+  // Looked up once at drag-start by matching data-set-card-ids; translated in the RAF loop.
+  const dragShadowEl = useRef<HTMLElement | null>(null);
+  // Starting left/top of the shadow element at drag-start. [D05]
+  const dragShadowOrigin = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // Bounding-box extension of the set beyond the dragged card at drag-start. [D02]
   // Stored as { left, top, right, bottom } offsets (non-negative px amounts) so the
   // clamp logic can use the full set bounding box when constraining to canvas bounds.
@@ -399,6 +404,25 @@ export function CardFrame({
         }
       }
 
+      // Look up the virtual shadow element for this set at drag-start. [D05]
+      // Uses the sorted, comma-joined card ID string to find the matching .set-shadow wrapper.
+      // The reference is stored once and translated in the RAF loop to avoid per-frame DOM queries.
+      dragShadowEl.current = null;
+      dragShadowOrigin.current = { x: 0, y: 0 };
+      if (dragSetMemberIdsAtDragStart.current.length > 0) {
+        const idString = dragSetMemberIdsAtDragStart.current.slice().sort().join(",");
+        const shadowEl = document.querySelector<HTMLElement>(
+          `.set-shadow[data-set-card-ids="${idString}"]`,
+        );
+        if (shadowEl) {
+          dragShadowEl.current = shadowEl;
+          dragShadowOrigin.current = {
+            x: parseFloat(shadowEl.style.left) || 0,
+            y: parseFloat(shadowEl.style.top) || 0,
+          };
+        }
+      }
+
       // Compute the bounding-box extension of the set relative to the dragged card. [D02]
       // This measures how far the set extends beyond the card's own edges so that
       // clampedPosition can use the full set bounding box during set-move clamping.
@@ -509,6 +533,9 @@ export function CardFrame({
           // Detach: clear set members so this card enters snap mode.
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
+          // Clear shadow ref; shadow stays visible at current position and is
+          // recomputed by updateSetAppearance when postActionSetUpdate fires at drag-end. [D05]
+          dragShadowEl.current = null;
 
           // Flash full perimeter of the detached card. [D55]
           flashCardPerimeter(frame);
@@ -565,6 +592,11 @@ export function CardFrame({
             const origin = dragSetOrigins.current[i];
             member.el.style.left = `${origin.x + clampedDeltaX}px`;
             member.el.style.top = `${origin.y + clampedDeltaY}px`;
+          }
+          // Translate the virtual shadow by the same clamped delta so it tracks the set. [D05]
+          if (dragShadowEl.current) {
+            dragShadowEl.current.style.left = `${dragShadowOrigin.current.x + clampedDeltaX}px`;
+            dragShadowEl.current.style.top = `${dragShadowOrigin.current.y + clampedDeltaY}px`;
           }
         }
 
@@ -633,6 +665,7 @@ export function CardFrame({
               dragSetOrigins.current = [];
               dragSetMemberIdsAtDragStart.current = [];
               dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
+              dragShadowEl.current = null;
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
@@ -708,6 +741,8 @@ export function CardFrame({
         dragSetOrigins.current = [];
         dragSetMemberIdsAtDragStart.current = [];
         dragSetBBoxOffset.current = { left: 0, top: 0, right: 0, bottom: 0 };
+        // Shadow recomputed fresh by updateSetAppearance inside postActionSetUpdate. [D05]
+        dragShadowEl.current = null;
         latestSnapModifier.current = false;
         prevSnapModifier.current = false;
         lastSnapResult.current = null;
