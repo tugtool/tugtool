@@ -56,5 +56,6 @@ body {
   --tways-icon-inactive: #a29b8a;
   --tways-grid-color: rgba(0, 0, 0, 0.06);
   --tways-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --tways-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.09);
   --tways-card-dim-overlay: rgba(0, 0, 0, 0.08);
 }

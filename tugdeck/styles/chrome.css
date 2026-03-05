@@ -17,8 +17,12 @@
 .card-frame-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
 .card-frame-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
-/* ---- Card shadow: always-on box-shadow on .tugcard ---- */
+/* ---- Card shadow: inactive by default, active when focused ---- */
 .tugcard {
+  box-shadow: var(--td-card-shadow-inactive);
+}
+
+.card-frame[data-focused="true"] .tugcard {
   box-shadow: var(--td-card-shadow-active);
 }
 

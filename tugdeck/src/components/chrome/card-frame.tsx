@@ -761,10 +761,13 @@ export function CardFrame({
 
   const handleResizeStart = useCallback(
     (edge: ResizeEdge, event: React.PointerEvent) => {
-      // Stop propagation so the frame's onPointerDown does not also fire onCardFocused
-      // for the resize handle. onCardFocused is already called by the frame's handler
-      // which fires before this (pointer-down bubbles up). We call stopPropagation to
-      // avoid a second onCardFocused call but the first is fine.
+      // Bring to front on resize unless Command is held (standard Mac modifier convention).
+      // stopPropagation below prevents the frame's onPointerDown from firing, so we must
+      // call onCardFocused explicitly here.
+      if (!event.metaKey) {
+        onCardFocused(id);
+      }
+      // Stop propagation so the frame's onPointerDown does not fire a second time.
       event.stopPropagation();
 
       if (!frameRef.current) return;
@@ -1083,15 +1086,18 @@ export function CardFrame({
     },
     // minSizeRef.current is always current; position/size are start values read at resize-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, position.x, position.y, size.width, size.height],
+    [id, onCardFocused, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
   // ---------------------------------------------------------------------------
   // Frame pointer-down: bring card to front
   // ---------------------------------------------------------------------------
 
-  const handleFramePointerDown = useCallback(() => {
-    onCardFocused(id);
+  const handleFramePointerDown = useCallback((event: React.PointerEvent) => {
+    // Skip activation when Command is held (standard Mac modifier convention).
+    if (!event.metaKey) {
+      onCardFocused(id);
+    }
   }, [id, onCardFocused]);
 
   // ---------------------------------------------------------------------------
