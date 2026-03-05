@@ -74,6 +74,6 @@ body {
 }
 
 #deck-container {
-  width: calc(100% - 48px);
+  width: 100%;
   height: 100%;
 }

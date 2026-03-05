@@ -28,8 +28,8 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
-import { computeSnap, findSharedEdges, computeSets } from "@/snap";
-import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
+import { computeSnap, computeResizeSnap, findSharedEdges, computeSets } from "@/snap";
+import type { Rect, GuidePosition, SnapResult } from "@/snap";
 
 // ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
@@ -43,6 +43,15 @@ const SNAP_MODIFIER_KEY: keyof Pick<PointerEvent, "altKey" | "ctrlKey" | "shiftK
 function isSnapModifier(e: PointerEvent): boolean {
   return e[SNAP_MODIFIER_KEY];
 }
+
+// ---------------------------------------------------------------------------
+// Canvas padding configuration
+//
+// Uniform padding applied to all four sides of the canvas for move/resize
+// clamping. Set to 0 for flush edges. Increase for a gutter around the canvas.
+// ---------------------------------------------------------------------------
+
+const CANVAS_PADDING = 0;
 
 // ---------------------------------------------------------------------------
 // Types (Spec S04)
@@ -417,10 +426,6 @@ export function CardFrame({
         ? parseFloat(getComputedStyle(tugcardEl).borderTopWidth) || 0
         : 0;
 
-      // Reset corners on the dragged card only at drag-start. [D53]
-      // Other cards' corner state is managed by their own set membership and must not be disturbed.
-      resetCorners(frame);
-
       // Initialize snap modifier state. [D01]
       latestSnapModifier.current = false;
       prevSnapModifier.current = false;
@@ -493,45 +498,7 @@ export function CardFrame({
           dragSetMembers.current = [];
           dragSetOrigins.current = [];
 
-          // Break-out visual restoration [D55, D04]:
-          // 1. Restore all four rounded corners on the detached card (before flash). [D55]
-          resetCorners(frame);
-
-          // 2. Recompute corners for remaining members — the departed card's edge is now
-          //    exterior for its former neighbors, so their corner radii must be updated.
-          if (remainingMembers.length > 0) {
-            const canvasBounds = dragCanvasBounds.current;
-            const remainingRects: { id: string; rect: Rect }[] = remainingMembers.map((m) => {
-              const domRect = m.el.getBoundingClientRect();
-              return {
-                id: m.id,
-                rect: {
-                  x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-                  y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-                  width: domRect.width,
-                  height: domRect.height,
-                },
-              };
-            });
-            const remainingSharedEdges = findSharedEdges(remainingRects);
-            const remainingSets = computeSets(
-              remainingRects.map((r) => r.id),
-              remainingSharedEdges,
-            );
-            if (remainingSets.length > 0) {
-              // Remaining members still form a set — recompute their corners.
-              for (const rSet of remainingSets) {
-                applySetCorners(rSet.cardIds, remainingSharedEdges, "var(--td-radius-md)", dragCanvasBounds.current);
-              }
-            } else {
-              // Remaining members are now singletons — restore fully rounded corners on each.
-              for (const member of remainingMembers) {
-                resetCorners(member.el);
-              }
-            }
-          }
-
-          // 3. Flash full perimeter of the detached card (after corners are restored). [D55]
+          // Flash full perimeter of the detached card. [D55]
           flashCardPerimeter(frame);
         }
 
@@ -570,14 +537,18 @@ export function CardFrame({
           lastSnapResult.current = null;
           clearGuides();
         } else if (dragSetMembers.current.length > 0 && !latestSnapModifier.current) {
-          // Set-move: modifier not held, move all set members by pointer displacement. [D02]
-          const deltaX = latestDragPointer.current.x - dragStartPointer.current.x;
-          const deltaY = latestDragPointer.current.y - dragStartPointer.current.y;
+          // Set-move: modifier not held, move all set members by the same clamped delta
+          // as the main card so no member slides relative to any other. [D02]
+          // Use the clamped card position (pos) minus the drag-start position to get
+          // the actual effective displacement (which may differ from raw pointer delta
+          // when the set bounding box is clamped at the canvas edge).
+          const clampedDeltaX = pos.x - dragStartPosition.current.x;
+          const clampedDeltaY = pos.y - dragStartPosition.current.y;
           for (let i = 0; i < dragSetMembers.current.length; i++) {
             const member = dragSetMembers.current[i];
             const origin = dragSetOrigins.current[i];
-            member.el.style.left = `${origin.x + deltaX}px`;
-            member.el.style.top = `${origin.y + deltaY}px`;
+            member.el.style.left = `${origin.x + clampedDeltaX}px`;
+            member.el.style.top = `${origin.y + clampedDeltaY}px`;
           }
         }
 
@@ -712,8 +683,9 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
-        // Apply corner squaring based on the new set membership after drop. [D53]
-        // Rebuild all-card rects from the DOM (positions may have shifted during set-move).
+        // Flash set perimeter if the dragged card has newly joined or changed sets. [D54]
+        // All cards remain rounded — no corner squaring. Only the flash overlay
+        // is applied to signal set membership change.
         {
           const canvasBounds = dragCanvasBounds.current;
           const postDropRects: { id: string; rect: Rect }[] = [];
@@ -737,16 +709,9 @@ export function CardFrame({
             postDropRects.map((c) => c.id),
             postDropSharedEdges,
           );
-          // Find the set the dragged card now belongs to (if any).
           const mySet = postDropSets.find((s) => s.cardIds.includes(id));
           if (mySet) {
-            // Card is in a set: square internal corners first, then flash perimeter. [D53, D54]
-            // Corners must be applied before flash so the overlay reads the correct radius. [Risk R01]
-            applySetCorners(mySet.cardIds, postDropSharedEdges, "var(--td-radius-md)", dragCanvasBounds.current);
             // Only flash when the card has newly joined a set or the set membership changed. [D54]
-            // Compare post-drop set members against the snapshotted drag-start set membership.
-            // If both sets are identical (same card IDs, regardless of order), the set is unchanged
-            // (e.g. a set-move that landed without snapping in a new card) — skip the flash.
             const startIds = dragSetMemberIdsAtDragStart.current.slice().sort();
             const endIds = mySet.cardIds.slice().sort();
             const setChanged =
@@ -755,9 +720,6 @@ export function CardFrame({
             if (setChanged) {
               flashSetPerimeter(mySet.cardIds, postDropSharedEdges);
             }
-          } else {
-            // Card is not in a set: ensure it has fully rounded corners.
-            resetCorners(frame);
           }
         }
 
@@ -785,6 +747,54 @@ export function CardFrame({
   // Resize mechanic
   // ---------------------------------------------------------------------------
 
+  // Snap guide DOM elements for resize (separate from drag guides). [D03]
+  const resizeGuideEls = useRef<HTMLElement[]>([]);
+
+  /**
+   * Render snap guide DOM elements during resize. Reuses the same syncGuides
+   * logic used by move-drag. [D03]
+   */
+  function syncResizeGuides(guides: GuidePosition[], container: HTMLElement): void {
+    for (let i = 0; i < guides.length; i++) {
+      const guide = guides[i];
+      let el = resizeGuideEls.current[i];
+      if (!el) {
+        el = document.createElement("div");
+        el.classList.add("snap-guide-line");
+        container.appendChild(el);
+        resizeGuideEls.current.push(el);
+      }
+      el.classList.remove("snap-guide-line-x", "snap-guide-line-y");
+      if (guide.axis === "x") {
+        el.classList.add("snap-guide-line-x");
+        el.style.left = `${guide.position}px`;
+        el.style.top = "";
+      } else {
+        el.classList.add("snap-guide-line-y");
+        el.style.top = `${guide.position}px`;
+        el.style.left = "";
+      }
+    }
+    while (resizeGuideEls.current.length > guides.length) {
+      const excess = resizeGuideEls.current.pop();
+      if (excess && excess.parentNode) {
+        excess.parentNode.removeChild(excess);
+      }
+    }
+  }
+
+  /**
+   * Remove all resize snap guide elements from the DOM. [D03]
+   */
+  function clearResizeGuides(): void {
+    for (const el of resizeGuideEls.current) {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }
+    resizeGuideEls.current = [];
+  }
+
   const handleResizeStart = useCallback(
     (edge: ResizeEdge, event: React.PointerEvent) => {
       // Stop propagation so the frame's onPointerDown does not also fire onCardFocused
@@ -806,15 +816,32 @@ export function CardFrame({
       const startW = size.width;
       const startH = size.height;
 
+      // Snapshot canvas bounds and other card rects for resize snapping. [D04]
+      const resizeCanvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
+      const resizeOtherRects: Rect[] = [];
+      const cardFrameEls = document.querySelectorAll<HTMLElement>(".card-frame[data-card-id]");
+      cardFrameEls.forEach((el) => {
+        const cid = el.getAttribute("data-card-id");
+        if (!cid || cid === id) return;
+        const domRect = el.getBoundingClientRect();
+        resizeOtherRects.push({
+          x: domRect.left - (resizeCanvasBounds ? resizeCanvasBounds.left : 0),
+          y: domRect.top - (resizeCanvasBounds ? resizeCanvasBounds.top : 0),
+          width: domRect.width,
+          height: domRect.height,
+        });
+      });
+
       const latestResizePointer = { x: startX, y: startY };
+      let latestResizeModifier = isSnapModifier(event.nativeEvent);
       let resizeRafId: number | null = null;
       let resizeActive = true;
 
-      function applyResizeFrame() {
-        resizeRafId = null;
-        if (!resizeActive) return;
+      function computeAndApplyResize(pointer: { x: number; y: number }, snapModifier: boolean): {
+        left: number; top: number; width: number; height: number;
+      } {
         const r = resizeDelta(
-          latestResizePointer,
+          pointer,
           { x: startX, y: startY },
           startLeft,
           startTop,
@@ -822,7 +849,57 @@ export function CardFrame({
           startH,
           edge,
           minSizeRef.current,
+          resizeCanvasBounds,
         );
+
+        // Apply snap-to-edge if modifier is held. [D01]
+        if (snapModifier) {
+          // Build the set of edges being actively resized (absolute canvas coords).
+          const resizingEdges: { top?: number; bottom?: number; left?: number; right?: number } =
+            {};
+          if (edge.includes("n")) resizingEdges.top = r.top;
+          if (edge.includes("s")) resizingEdges.bottom = r.top + r.height;
+          if (edge.includes("w")) resizingEdges.left = r.left;
+          if (edge.includes("e")) resizingEdges.right = r.left + r.width;
+
+          const snapResult = computeResizeSnap(resizingEdges, resizeOtherRects);
+
+          // Apply snapped values back to the rect, clamped to minSize.
+          let { left, top, width, height } = r;
+          if (snapResult.left !== undefined) {
+            const newW = Math.max(minSizeRef.current.width, left + width - snapResult.left);
+            left = left + width - newW;
+            width = newW;
+          }
+          if (snapResult.right !== undefined) {
+            width = Math.max(minSizeRef.current.width, snapResult.right - left);
+          }
+          if (snapResult.top !== undefined) {
+            const newH = Math.max(minSizeRef.current.height, top + height - snapResult.top);
+            top = top + height - newH;
+            height = newH;
+          }
+          if (snapResult.bottom !== undefined) {
+            height = Math.max(minSizeRef.current.height, snapResult.bottom - top);
+          }
+
+          // Render resize snap guides. [D03]
+          const container = frame.parentElement;
+          if (container) {
+            syncResizeGuides(snapResult.guides, container);
+          }
+
+          return { left, top, width, height };
+        } else {
+          clearResizeGuides();
+          return r;
+        }
+      }
+
+      function applyResizeFrame() {
+        resizeRafId = null;
+        if (!resizeActive) return;
+        const r = computeAndApplyResize(latestResizePointer, latestResizeModifier);
         frame.style.left = `${r.left}px`;
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
@@ -832,6 +909,7 @@ export function CardFrame({
       function onPointerMove(e: PointerEvent) {
         latestResizePointer.x = e.clientX;
         latestResizePointer.y = e.clientY;
+        latestResizeModifier = isSnapModifier(e);
         if (resizeRafId === null) {
           resizeRafId = requestAnimationFrame(applyResizeFrame);
         }
@@ -848,16 +926,10 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
-        const r = resizeDelta(
-          { x: e.clientX, y: e.clientY },
-          { x: startX, y: startY },
-          startLeft,
-          startTop,
-          startW,
-          startH,
-          edge,
-          minSizeRef.current,
-        );
+        // Clear resize guides on drop. [D03]
+        clearResizeGuides();
+
+        const r = computeAndApplyResize({ x: e.clientX, y: e.clientY }, isSnapModifier(e));
         frame.style.left = `${r.left}px`;
         frame.style.top = `${r.top}px`;
         frame.style.width = `${r.width}px`;
@@ -942,8 +1014,8 @@ function clampedPosition(
   let y = startPosition.y + (pointer.y - startPointer.y);
 
   if (canvasBounds) {
-    x = Math.max(0, Math.min(x, canvasBounds.width - frameSize.width));
-    y = Math.max(0, Math.min(y, canvasBounds.height - frameSize.height));
+    x = Math.max(CANVAS_PADDING, Math.min(x, canvasBounds.width - frameSize.width - CANVAS_PADDING));
+    y = Math.max(CANVAS_PADDING, Math.min(y, canvasBounds.height - frameSize.height - CANVAS_PADDING));
   }
 
   return { x, y };
@@ -952,6 +1024,8 @@ function clampedPosition(
 /**
  * Compute new bounding rect after resizing on the given edge.
  * Width and height are clamped to minSize.
+ * When canvasBounds is provided, the resulting rect is also clamped so the
+ * card cannot extend beyond the canvas edges (accounting for CANVAS_PADDING).
  */
 function resizeDelta(
   pointer: { x: number; y: number },
@@ -962,6 +1036,7 @@ function resizeDelta(
   startH: number,
   edge: ResizeEdge,
   minSize: { width: number; height: number },
+  canvasBounds?: DOMRect | null,
 ): { left: number; top: number; width: number; height: number } {
   const dx = pointer.x - startPointer.x;
   const dy = pointer.y - startPointer.y;
@@ -988,155 +1063,55 @@ function resizeDelta(
     height = newH;
   }
 
-  return { left, top, width, height };
-}
+  // Clamp to canvas bounds so the card cannot be resized past any canvas edge. [D04]
+  if (canvasBounds) {
+    const maxRight = canvasBounds.width - CANVAS_PADDING;
+    const maxBottom = canvasBounds.height - CANVAS_PADDING;
 
-// ---------------------------------------------------------------------------
-// Corner-radius helpers (appearance-zone, [D53], Spec S02)
-// ---------------------------------------------------------------------------
+    // Clamp right edge: prevent card from extending past canvas right.
+    if (left + width > maxRight) {
+      if (edge.includes("e")) {
+        // Shrink width when resizing from east edge.
+        width = Math.max(minSize.width, maxRight - left);
+      } else if (edge.includes("w")) {
+        // Resizing from west: the right edge is fixed; clamp left so left >= CANVAS_PADDING.
+        left = Math.max(CANVAS_PADDING, left);
+        width = startLeft + startW - left;
+        if (width < minSize.width) {
+          width = minSize.width;
+          left = startLeft + startW - width;
+        }
+      }
+    }
+    // Clamp left edge: prevent card from going left of canvas left.
+    if (left < CANVAS_PADDING) {
+      left = CANVAS_PADDING;
+      width = startLeft + startW - left;
+      if (width < minSize.width) width = minSize.width;
+    }
 
-/**
- * Compute per-corner border-radius values for a card in a set.
- *
- * Uses directional SharedEdge matching with per-corner geometric tests (Option B):
- * - right edge has neighbor: vertical edge where cardAId === cardId
- * - left edge has neighbor: vertical edge where cardBId === cardId
- * - bottom edge has neighbor: horizontal edge where cardAId === cardId
- * - top edge has neighbor: horizontal edge where cardBId === cardId
- *
- * Corner squaring uses per-corner geometric tests: a corner is only squared if
- * the neighboring card's edge actually extends to or past that corner point.
- * For example, the top-right corner is squared only if:
- * - A right neighbor's shared-edge overlap includes the card's top edge, OR
- * - A top neighbor's shared-edge overlap includes the card's right edge.
- *
- * This requires the card's own rect so we can compare corner coordinates against
- * each edge's overlap range.
- *
- * @param cardId - The card whose corners to compute.
- * @param cardRect - The card's own rect (canvas-relative position and size).
- * @param sharedEdges - All shared edges among the set's cards.
- * @param radiusValue - CSS value for rounded corners (e.g. "6px" or "var(--td-radius-md)").
- * @returns Per-corner radius strings (topLeft, topRight, bottomRight, bottomLeft).
- */
-export function computeCornerRadii(
-  cardId: string,
-  cardRect: Rect,
-  sharedEdges: SharedEdge[],
-  radiusValue: string,
-): { topLeft: string; topRight: string; bottomRight: string; bottomLeft: string } {
-  const cardTop = cardRect.y;
-  const cardBottom = cardRect.y + cardRect.height;
-  const cardLeft = cardRect.x;
-  const cardRight = cardRect.x + cardRect.width;
-
-  // For each corner, check if a neighboring card's edge extends to or past that corner.
-  //
-  // Vertical shared edge (right neighbor, cardAId === cardId):
-  //   overlapStart/End is the y-range where the cards share that vertical boundary.
-  //   Top-right corner is covered if overlapStart <= cardTop (neighbor extends up to/past card top).
-  //   Bottom-right corner is covered if overlapEnd >= cardBottom (neighbor extends down to/past card bottom).
-  //
-  // Vertical shared edge (left neighbor, cardBId === cardId):
-  //   Top-left corner is covered if overlapStart <= cardTop.
-  //   Bottom-left corner is covered if overlapEnd >= cardBottom.
-  //
-  // Horizontal shared edge (bottom neighbor, cardAId === cardId):
-  //   overlapStart/End is the x-range where the cards share that horizontal boundary.
-  //   Bottom-right corner is covered if overlapEnd >= cardRight (neighbor extends right to/past card right).
-  //   Bottom-left corner is covered if overlapStart <= cardLeft (neighbor extends left to/past card left).
-  //
-  // Horizontal shared edge (top neighbor, cardBId === cardId):
-  //   Top-right corner is covered if overlapEnd >= cardRight.
-  //   Top-left corner is covered if overlapStart <= cardLeft.
-
-  let squareTopLeft = false;
-  let squareTopRight = false;
-  let squareBottomRight = false;
-  let squareBottomLeft = false;
-
-  for (const e of sharedEdges) {
-    if (e.axis === "vertical" && e.cardAId === cardId) {
-      // Right neighbor
-      if (e.overlapStart <= cardTop) squareTopRight = true;
-      if (e.overlapEnd >= cardBottom) squareBottomRight = true;
-    } else if (e.axis === "vertical" && e.cardBId === cardId) {
-      // Left neighbor
-      if (e.overlapStart <= cardTop) squareTopLeft = true;
-      if (e.overlapEnd >= cardBottom) squareBottomLeft = true;
-    } else if (e.axis === "horizontal" && e.cardAId === cardId) {
-      // Bottom neighbor
-      if (e.overlapEnd >= cardRight) squareBottomRight = true;
-      if (e.overlapStart <= cardLeft) squareBottomLeft = true;
-    } else if (e.axis === "horizontal" && e.cardBId === cardId) {
-      // Top neighbor
-      if (e.overlapEnd >= cardRight) squareTopRight = true;
-      if (e.overlapStart <= cardLeft) squareTopLeft = true;
+    // Clamp bottom edge: prevent card from extending past canvas bottom.
+    if (top + height > maxBottom) {
+      if (edge.includes("s")) {
+        height = Math.max(minSize.height, maxBottom - top);
+      } else if (edge.includes("n")) {
+        top = Math.max(CANVAS_PADDING, top);
+        height = startTop + startH - top;
+        if (height < minSize.height) {
+          height = minSize.height;
+          top = startTop + startH - height;
+        }
+      }
+    }
+    // Clamp top edge: prevent card from going above canvas top.
+    if (top < CANVAS_PADDING) {
+      top = CANVAS_PADDING;
+      height = startTop + startH - top;
+      if (height < minSize.height) height = minSize.height;
     }
   }
 
-  return {
-    topLeft: squareTopLeft ? "0" : radiusValue,
-    topRight: squareTopRight ? "0" : radiusValue,
-    bottomRight: squareBottomRight ? "0" : radiusValue,
-    bottomLeft: squareBottomLeft ? "0" : radiusValue,
-  };
-}
-
-/**
- * Apply per-corner border-radius squaring to all .tugcard elements in a set.
- *
- * For each card in setCardIds, finds its .tugcard via
- * `.card-frame[data-card-id] .tugcard`, reads the card's current DOM rect,
- * computes corner radii using computeCornerRadii (geometric per-corner test),
- * and applies via style.borderRadius shorthand
- * (CSS order: top-left top-right bottom-right bottom-left). [D53, Spec S02]
- *
- * @param setCardIds - IDs of all cards in the set.
- * @param sharedEdges - All shared edges among the set's cards.
- * @param radiusValue - CSS value for rounded corners (e.g. "6px").
- * @param canvasBounds - Optional canvas DOMRect for converting DOM coords to canvas-relative.
- *   When provided, card rects are adjusted to canvas-relative coordinates.
- *   When null, DOM getBoundingClientRect values are used directly.
- */
-export function applySetCorners(
-  setCardIds: string[],
-  sharedEdges: SharedEdge[],
-  radiusValue: string,
-  canvasBounds?: DOMRect | null,
-): void {
-  for (const cardId of setCardIds) {
-    const frameEl = document.querySelector<HTMLElement>(
-      `.card-frame[data-card-id="${cardId}"]`,
-    );
-    if (!frameEl) continue;
-    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
-    if (!tugcardEl) continue;
-    // Read the card's current DOM rect and convert to canvas-relative coords.
-    const domRect = frameEl.getBoundingClientRect();
-    const cardRect: Rect = {
-      x: domRect.left - (canvasBounds ? canvasBounds.left : 0),
-      y: domRect.top - (canvasBounds ? canvasBounds.top : 0),
-      width: domRect.width,
-      height: domRect.height,
-    };
-    const radii = computeCornerRadii(cardId, cardRect, sharedEdges, radiusValue);
-    // CSS shorthand order: top-left top-right bottom-right bottom-left
-    tugcardEl.style.borderRadius =
-      `${radii.topLeft} ${radii.topRight} ${radii.bottomRight} ${radii.bottomLeft}`;
-  }
-}
-
-/**
- * Reset all four border-radius corners on the .tugcard inside a frame element
- * to the CSS default (clears the inline style, reverting to var(--td-radius-md)).
- *
- * @param cardFrameEl - The .card-frame element containing the .tugcard.
- */
-export function resetCorners(cardFrameEl: HTMLElement): void {
-  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
-  if (!tugcardEl) return;
-  tugcardEl.style.borderRadius = "";
+  return { left, top, width, height };
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,23 +1122,19 @@ export function resetCorners(cardFrameEl: HTMLElement): void {
  * Create per-card .set-flash-overlay elements for a newly formed set.
  *
  * For each card, suppresses the borders that face an internal seam (Spec S03),
- * applies clip-path to prevent box-shadow glow from bleeding across seam edges,
- * and sets border-radius to match the card's current (already-squared) .tugcard
- * border-radius. The overlay self-removes on animationend. [D54, Spec S03]
- *
- * Corner squaring (applySetCorners) MUST be called before this function so that
- * the .tugcard border-radius is already correct when we read it. [Risk R01]
+ * applies clip-path to prevent box-shadow glow from bleeding across seam edges.
+ * Cards always remain fully rounded — no corner squaring is applied. [D53]
+ * The overlay self-removes on animationend. [D54, Spec S03]
  *
  * @param setCardIds - IDs of all cards in the set.
  * @param sharedEdges - All shared edges among the set's cards.
  */
-export function flashSetPerimeter(setCardIds: string[], sharedEdges: SharedEdge[]): void {
+export function flashSetPerimeter(setCardIds: string[], sharedEdges: import("@/snap").SharedEdge[]): void {
   for (const cardId of setCardIds) {
     const frameEl = document.querySelector<HTMLElement>(
       `.card-frame[data-card-id="${cardId}"]`,
     );
     if (!frameEl) continue;
-    const tugcardEl = frameEl.querySelector<HTMLElement>(".tugcard");
 
     const overlay = document.createElement("div");
     overlay.classList.add("set-flash-overlay");
@@ -1201,12 +1172,7 @@ export function flashSetPerimeter(setCardIds: string[], sharedEdges: SharedEdge[
     const clipLeft = leftInternal ? "0" : "-4px";
     overlay.style.clipPath = `inset(${clipTop} ${clipRight} ${clipBottom} ${clipLeft})`;
 
-    // Set border-radius to match the .tugcard's current inline radius (already squared).
-    // The CSS `border-radius: inherit` on .set-flash-overlay inherits from .card-frame,
-    // not from .tugcard, so we must set it explicitly via inline style. [Risk R01]
-    if (tugcardEl) {
-      overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
-    }
+    // Cards are always fully rounded — use CSS default border-radius (no inline override).
 
     // Self-remove after animation completes.
     overlay.addEventListener("animationend", () => {
@@ -1221,25 +1187,16 @@ export function flashSetPerimeter(setCardIds: string[], sharedEdges: SharedEdge[
  * Create a full-perimeter .set-flash-overlay on a single card's frame.
  *
  * Used on break-out to flash the detached card's entire perimeter. All four
- * borders are intact (no suppression). Border-radius is inherited from the
- * .tugcard element (which has already had its corners restored). [D55]
- *
- * resetCorners MUST be called before this function so the .tugcard shows
- * fully rounded corners when we read its border-radius.
+ * borders are intact (no suppression). Cards are always fully rounded. [D55]
  *
  * @param cardFrameEl - The .card-frame element of the detached card.
  */
 export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
-  const tugcardEl = cardFrameEl.querySelector<HTMLElement>(".tugcard");
-
   const overlay = document.createElement("div");
   overlay.classList.add("set-flash-overlay");
 
   // Full perimeter: no edge suppression, no clip-path restriction.
-  // Copy border-radius from .tugcard (corners already restored by resetCorners).
-  if (tugcardEl) {
-    overlay.style.borderRadius = tugcardEl.style.borderRadius || "";
-  }
+  // Cards are always fully rounded — use CSS default border-radius.
 
   // Self-remove after animation completes.
   overlay.addEventListener("animationend", () => {
