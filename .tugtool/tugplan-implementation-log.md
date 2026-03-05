@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-05T15:05:16Z
+---
+
+## step-3: Added module-level gesture flag (isGestureActive/setGestureActive) in card-frame.tsx with true at drag/resize start and false at all exit points. Added store subscriber useEffect in deck-canvas.tsx that rebuilds shadows on mutations when no gesture is active.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-2
 date: 2025-03-05T14:59:23Z
 ---

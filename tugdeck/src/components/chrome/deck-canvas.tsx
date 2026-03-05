@@ -44,7 +44,8 @@
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
  *   useRequiredResponderChain -> useCallback -> useResponder ->
- *   useEffect
+ *   useEffect (tabDragCoordinator init) -> useLayoutEffect (initial shadow) ->
+ *   useEffect (store subscriber for shadow updates)
  *
  * The canvas div with grid background is provided by #deck-container in
  * index.html and styled by globals.css. DeckCanvas renders inside it.
@@ -67,7 +68,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
-import { CardFrame, updateSetAppearance } from "./card-frame";
+import { CardFrame, updateSetAppearance, isGestureActive } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -209,7 +210,8 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
   //             useRequiredResponderChain -> useCallback -> useResponder ->
-  //             useEffect
+  //             useEffect (tabDragCoordinator) -> useLayoutEffect (initial shadows) ->
+  //             useEffect (store subscriber for shadow updates)
 
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
@@ -301,6 +303,27 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     const canvasBounds = containerEl.getBoundingClientRect();
     updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Subscribe to store mutations and rebuild set shadows on every notification. [D03, S03]
+  // This ensures shadows stay current after card close, undo, and redo without requiring
+  // a React re-render. The callback is a DOM side-effect (not a state update), so
+  // useEffect + store.subscribe() is correct here — useSyncExternalStore is not used
+  // because no React state is being read or derived. [D40 compliance]
+  //
+  // The isGestureActive() guard prevents updateSetAppearance from removing the shadow
+  // element that is currently being translated by an active drag or resize gesture.
+  // postActionSetUpdate (called at gesture-end) performs the authoritative rebuild
+  // after the flag is cleared. [D03 Risk R02]
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      if (isGestureActive()) return; // skip while drag/resize owns shadow refs
+      const containerEl = containerRef.current;
+      if (!containerEl) return;
+      const canvasBounds = containerEl.getBoundingClientRect();
+      updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
+    });
+    return unsubscribe;
+  }, [store]);
 
   return (
     <ResponderScope>

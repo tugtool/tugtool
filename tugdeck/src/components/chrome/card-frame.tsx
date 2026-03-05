@@ -38,6 +38,28 @@ import type { Rect, GuidePosition, SnapResult } from "@/snap";
 let nextFlashId = 0;
 
 // ---------------------------------------------------------------------------
+// Gesture-active flag for store subscriber gating [D03, S03]
+//
+// When a drag or resize is in progress, the store subscriber in DeckCanvas
+// must skip updateSetAppearance to avoid invalidating the shadow element
+// reference held by the active gesture. Getter/setter functions are used
+// instead of `export let` to avoid fragile ES module live binding issues
+// that break silently if the import is destructured or aliased.
+// ---------------------------------------------------------------------------
+
+let _gestureActive = false;
+
+/** Returns true while a drag or resize gesture owns the shadow refs. */
+export function isGestureActive(): boolean {
+  return _gestureActive;
+}
+
+/** Set or clear the gesture-active flag. Call at gesture-start and all exit points. */
+export function setGestureActive(v: boolean): void {
+  _gestureActive = v;
+}
+
+// ---------------------------------------------------------------------------
 // Snap modifier key configuration [D01]
 //
 // To change the snap modifier, update SNAP_MODIFIER_KEY. All behavior follows.
@@ -325,6 +347,10 @@ export function CardFrame({
       if (!frameRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
+
+      // Gate the store subscriber from calling updateSetAppearance while this
+      // drag owns the shadow ref. Cleared at every exit point of onPointerUp. [D03, S03]
+      setGestureActive(true);
 
       // Capture pointer on the frame element for reliable move/up tracking outside bounds.
       frame.setPointerCapture(event.nativeEvent.pointerId);
@@ -674,6 +700,10 @@ export function CardFrame({
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
+              // Re-enable the store subscriber before the shadow rebuild so any
+              // concurrent store mutations that arrive after this point are handled
+              // by the subscriber rather than being silently dropped. [D03, S03]
+              setGestureActive(false);
               // Clean up shadow elements after merge so no orphaned .set-shadow
               // remains in the DOM. [D02, SC2]
               updateSetAppearance(dragCanvasBounds.current, frame.parentElement);
@@ -740,6 +770,9 @@ export function CardFrame({
           onCardMoved(member.id, memberPos, memberSize);
         }
 
+        // Re-enable the store subscriber before postActionSetUpdate so that its
+        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
+        setGestureActive(false);
         // Flash set perimeter / break-out flash on drop. [D54, D55]
         postActionSetUpdate(id, dragSetMemberIdsAtDragStart.current, dragCanvasBounds.current, frame.parentElement);
 
@@ -786,6 +819,10 @@ export function CardFrame({
       if (!frameRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
+
+      // Gate the store subscriber from calling updateSetAppearance while this
+      // resize owns the shadow ref. Cleared at the exit point of onPointerUp. [D03, S03]
+      setGestureActive(true);
 
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
@@ -1083,6 +1120,9 @@ export function CardFrame({
           onCardMoved(sashNeighborId, neighborPos, neighborSize);
         }
 
+        // Re-enable the store subscriber before postActionSetUpdate so that its
+        // internal updateSetAppearance call is the authoritative shadow rebuild. [D03, S03]
+        setGestureActive(false);
         // Flash set perimeter / break-out flash on resize end. [D54, D55]
         postActionSetUpdate(id, resizePreSetMemberIds, resizeCanvasBounds, frame.parentElement);
       }
