@@ -674,6 +674,9 @@ export function CardFrame({
               latestSnapModifier.current = false;
               prevSnapModifier.current = false;
               lastSnapResult.current = null;
+              // Clean up shadow elements after merge so no orphaned .set-shadow
+              // remains in the DOM. [D02, SC2]
+              updateSetAppearance(dragCanvasBounds.current, frame.parentElement);
               return;
             }
           }

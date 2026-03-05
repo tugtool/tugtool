@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-05T14:59:23Z
+---
+
+## step-2: Added updateSetAppearance call in the merge early-return block of onPointerUp to rebuild shadows after merge, preventing stale shadow elements.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-glitches.md
+
+---
+
+---
 step: step-1
 date: 2025-03-05T14:56:51Z
 ---
