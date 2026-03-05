@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-05T16:32:39Z
+---
+
+## step-5: Fixed stale hull shadow comment in postActionSetUpdate, verified no stale set-shadow/gestureActive/dragShadowEl/resizeShadowEl references remain in tugdeck source or styles.
+
+**Files changed:**
+- .tugtool/tugplan-set-shadow-rewrite.md
+
+---
+
+---
 step: step-4
 date: 2025-03-05T16:28:37Z
 ---

@@ -1433,7 +1433,7 @@ function postActionSetUpdate(
     }
   }
 
-  // Update set appearance (squared corners, hull shadows) after any move/resize. [D08]
+  // Update set appearance (squared corners, clip-path) after any move/resize. [D08]
   updateSetAppearance(canvasBounds, containerEl);
 }
 
