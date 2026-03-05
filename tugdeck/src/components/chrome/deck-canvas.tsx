@@ -61,13 +61,13 @@
  * Table T01: cycleCard, resetLayout, showSettings, showComponentGallery
  */
 
-import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import type { TugConnection } from "@/connection";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
-import { CardFrame } from "./card-frame";
+import { CardFrame, updateSetAppearance } from "./card-frame";
 import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
@@ -170,6 +170,13 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
    * [D07] Show-only semantics (never close via showComponentGallery)
    */
   const galleryCardIdRef = useRef<string | null>(null);
+
+  /**
+   * containerRef: ref to the positioning wrapper div that card frames, shadow divs,
+   * snap guides, and SVG flash elements are rendered into. Passed to updateSetAppearance
+   * for initial-load hull shadow creation. [D03, Spec S04]
+   */
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Responder chain manager (stable singleton, safe in mount-time closure).
   // Named `manager` as before -- distinct from `store` (IDeckManagerStore).
@@ -286,6 +293,15 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     tabDragCoordinator.init(store);
   }, [store]);
 
+  // Run updateSetAppearance once after initial mount so set hull shadows are drawn
+  // for any cards that are already in sets when the layout is first rendered. [D08, D03]
+  useLayoutEffect(() => {
+    const containerEl = containerRef.current;
+    if (!containerEl) return;
+    const canvasBounds = containerEl.getBoundingClientRect();
+    updateSetAppearance(canvasBounds.width > 0 ? canvasBounds : null, containerEl);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <ResponderScope>
       {/* Canvas background click target for deselecting cards */}
@@ -298,6 +314,13 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
       <DisconnectBanner connection={connection} />
 
+      {/*
+        * containerRef wrapper: positioning context for card frames, snap guides, hull shadows,
+        * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).
+        * The ref is used by updateSetAppearance for initial-load hull shadow creation. [D03]
+        */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
       {/* CardFrames (Spec S06, S07): one per card in deckState.cards.
           Rendered in stable ID order (no DOM reordering on focus change).
           Z-index from store array position (first = lowest). Cards with
@@ -399,6 +422,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           />
         );
       })}
+      </div>
     </ResponderScope>
   );
 }

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-05T03:40:37Z
+---
+
+## step-3: Rewrote updateSetAppearance to create virtual set shadow divs using hull polygon. Wrapper carries filter:drop-shadow, inner carries clip-path:polygon with background. Added containerEl parameter, data-set-card-ids attribute, z-index computation. Deleted computeInternalEdges and buildClipPath. Added DeckCanvas useLayoutEffect for initial load. Updated chrome.css with .set-shadow classes and box-shadow:none for in-set cards.
+
+**Files changed:**
+- .tugtool/tugplan-hull-polygon-visual-overhaul.md
+
+---
+
+---
 step: step-2
 date: 2025-03-05T03:26:44Z
 ---
