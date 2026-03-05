@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-05T21:11:07Z
+---
+
+## step-4: Added GalleryDefaultButtonContent component, registered gallery-default-button card, added sixth tab to GALLERY_DEFAULT_TABS, updated gallery-card.test.tsx and component-gallery.test.tsx with six-entry assertions
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d1-default-button.md
+
+---
+
+---
 step: step-3
 date: 2025-03-05T21:03:50Z
 ---
