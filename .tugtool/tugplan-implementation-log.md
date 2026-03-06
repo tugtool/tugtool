@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-06T02:07:27Z
+---
+
+## step-5: Verified all exit criteria: no bare string dispatch, all handlers use ActionEvent, TugButton never hides, DeckCanvas last-resort responder, dispatchTo/nodeCanHandle present, target prop wired, gallery demo renders. 655 tests pass, build clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
 step: step-4
 date: 2025-03-06T02:03:00Z
 ---
