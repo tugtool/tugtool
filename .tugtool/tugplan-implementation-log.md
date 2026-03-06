@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T03:57:10Z
+---
+
+## step-3: Added GalleryMutationTxContent demo with three interaction models: color picker, hue scrub swatch, and position sliders. Wired as 7th gallery tab. All use MutationTransaction lifecycle and StyleCascadeReader for layer display with direct DOM writes. Updated gallery-card and component-gallery tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
+step: step-2
+date: 2025-03-06T03:43:53Z
+---
+
+## step-2: Implemented StyleCascadeReader class with StyleLayer interface and styleCascadeReader singleton. getDeclared follows T01 priority: preview > inline > token > class > null. Constructor injection for getComputedStyle enables testability. 23 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
+step: step-1
+date: 2025-03-06T03:36:20Z
+---
+
+## step-1: Implemented MutationTransaction class with begin/preview/commit/cancel lifecycle and MutationTransactionManager singleton with per-element transaction tracking, auto-cancel on collision, and isPreviewProperty for cascade reader. 35 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T02:07:27Z
 ---

@@ -1,14 +1,14 @@
 /**
- * Gallery card tests -- Step 6 rewrite (updated for six gallery sections in Phase 5d1).
+ * Gallery card tests -- Step 6 rewrite (updated for seven gallery sections in Phase 5d3).
  *
- * Phase 5b3: The ComponentGallery floating panel is replaced by six registered
+ * Phase 5b3: The ComponentGallery floating panel is replaced by registered
  * card types in the "developer" family. This file tests the new gallery card
  * system defined in gallery-card.tsx.
  *
  * Tests cover:
- * - registerGalleryCards() registers all six gallery componentIds in the
+ * - registerGalleryCards() registers all seven gallery componentIds in the
  *   card registry
- * - Each of the six content components renders without errors
+ * - Each of the content components renders without errors
  * - Responder chain walk: gallery card rendered as Tugcard, chain-action
  *   buttons dispatch through the responder chain to DeckCanvas
  *
@@ -68,7 +68,7 @@ describe("registerGalleryCards – card registry integration", () => {
     _resetForTest();
   });
 
-  it("registers all six gallery componentIds", () => {
+  it("registers all seven gallery componentIds", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).not.toBeNull();
@@ -77,6 +77,7 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(getRegistration("gallery-tabbar")).not.toBeNull();
     expect(getRegistration("gallery-dropdown")).not.toBeNull();
     expect(getRegistration("gallery-default-button")).not.toBeNull();
+    expect(getRegistration("gallery-mutation-tx")).not.toBeNull();
   });
 
   it("gallery-buttons has family 'developer'", () => {
@@ -85,11 +86,11 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.family).toBe("developer");
   });
 
-  it("gallery-buttons has defaultTabs with six tabs", () => {
+  it("gallery-buttons has defaultTabs with seven tabs", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg?.defaultTabs).toBeDefined();
-    expect(reg?.defaultTabs?.length).toBe(6);
+    expect(reg?.defaultTabs?.length).toBe(7);
   });
 
   it("gallery-buttons has defaultTitle 'Component Gallery'", () => {
@@ -98,17 +99,17 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.defaultTitle).toBe("Component Gallery");
   });
 
-  it("all six gallery registrations have family 'developer'", () => {
+  it("all seven gallery registrations have family 'developer'", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx"];
     for (const id of ids) {
       expect(getRegistration(id)?.family).toBe("developer");
     }
   });
 
-  it("all six gallery registrations have acceptsFamilies ['developer']", () => {
+  it("all seven gallery registrations have acceptsFamilies ['developer']", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx"];
     for (const id of ids) {
       expect(getRegistration(id)?.acceptsFamilies).toEqual(["developer"]);
     }
