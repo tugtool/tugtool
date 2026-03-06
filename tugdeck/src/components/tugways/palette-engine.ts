@@ -445,26 +445,6 @@ function readThemeParams(): LCParams {
 }
 
 /**
- * Read per-hue angle overrides from computed styles on document.body.
- * Returns a map of hue name to angle (merged with HUE_FAMILIES defaults).
- */
-function readHueOverrides(): Record<string, number> {
-  const result: Record<string, number> = { ...HUE_FAMILIES };
-  if (typeof document === "undefined") return result;
-  const cs = getComputedStyle(document.body);
-  for (const name of Object.keys(HUE_FAMILIES)) {
-    const raw = cs.getPropertyValue(`--tug-theme-hue-${name}`).trim();
-    if (raw) {
-      const parsed = parseFloat(raw);
-      if (!isNaN(parsed)) {
-        result[name] = parsed;
-      }
-    }
-  }
-  return result;
-}
-
-/**
  * Inject all palette CSS variables into a <style id="tug-palette"> element.
  *
  * Injects:
@@ -472,27 +452,32 @@ function readHueOverrides(): Record<string, number> {
  * - 96 named tone alias variables (24 hues × 4 aliases: soft/default/strong/intense)
  * Total: 360 variables
  *
- * Reads theme parameter overrides from getComputedStyle(document.body).
+ * When `anchorData` is provided, each hue uses per-hue anchor interpolation
+ * (`tugAnchoredColor`) instead of the smoothstep transfer function.
+ * When `anchorData` is omitted, the existing smoothstep behavior is preserved
+ * (`tugPaletteColor` with theme parameter overrides from getComputedStyle).
+ *
+ * Hue angles always come from the static HUE_FAMILIES constant.
  * Idempotent: replaces existing element content if already present.
  */
-export function injectPaletteCSS(_themeName: string): void {
+export function injectPaletteCSS(_themeName: string, anchorData?: ThemeHueAnchors): void {
   if (typeof document === "undefined") return;
 
-  const params = readThemeParams();
-  const hueOverrides = readHueOverrides();
+  // Only read theme LC params when not using anchor data (backward-compat path).
+  const params = anchorData ? DEFAULT_LC_PARAMS : readThemeParams();
 
   const lines: string[] = [":root {"];
 
-  for (const [name, _defaultAngle] of Object.entries(HUE_FAMILIES)) {
-    const angle = hueOverrides[name] ?? _defaultAngle;
-
-    // Shared formatting helper for this hue
-    const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString();
+  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
+    // Per-intensity color computation: anchor path or smoothstep fallback.
     const makeOklch = (intensity: number): string => {
-      const { L, C } = intensityToLC(intensity, params);
-      const maxC = MAX_CHROMA_FOR_HUE[name] ?? params.cMax;
-      const clampedC = Math.min(C, maxC);
-      return `oklch(${fmtNum(L)} ${fmtNum(clampedC)} ${angle})`;
+      if (anchorData) {
+        const hueAnchors = anchorData[name];
+        if (hueAnchors) {
+          return tugAnchoredColor(name, intensity, hueAnchors);
+        }
+      }
+      return tugPaletteColor(name, intensity, params);
     };
 
     // Numeric stops

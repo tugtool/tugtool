@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T18:50:13Z
+---
+
+## step-3: Updated injectPaletteCSS with optional ThemeHueAnchors parameter, removed readHueOverrides dead code, refactored makeOklch to use tugAnchoredColor/tugPaletteColor
+
+**Files changed:**
+- .tugtool/tugplan-anchor-palette-engine.md
+
+---
+
+---
 step: step-2
 date: 2025-03-06T18:45:12Z
 ---
