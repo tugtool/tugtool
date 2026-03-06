@@ -496,23 +496,44 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 ### Phase 5d2: Control Action Foundation (Concept 19, [D61]-[D63])
 
-**Goal**: The responder chain supports typed action payloads, continuous action phases, explicit-target dispatch, and the control/responder separation rule. All existing dispatch call sites continue to work.
+**Status: COMPLETE** (2026-03-05)
 
-**What to do**:
-1. Define the `ActionEvent` interface in `responder-chain.ts` — `{ action, sender?, value?, phase }` with five phases: `discrete`, `begin`, `change`, `commit`, `cancel`
-2. Extend `ResponderChainManager.dispatch()` to accept either a string (backward compat, desugars to `{ action, phase: 'discrete' }`) or a full `ActionEvent`. Action handlers receive the `ActionEvent` object; existing handlers that accept no arguments continue to work for discrete actions
-3. Add `ResponderChainManager.dispatchTo(targetId, event)` for explicit-target dispatch — delivers the action directly to the named responder without chain walk. Throws if the target is not registered
-4. Add `target` prop to `TugButton` — when set alongside `action`, button uses `dispatchTo` instead of nil-target `dispatch`. Omitting `target` preserves existing nil-target behavior
-5. Update the action vocabulary in `design-system-concepts.md` with inspector and continuous control actions
-6. Add the `ActionEvent` type to the Component Gallery's chain-action button demo — show a button dispatching with payload, and a responder receiving and displaying it
-7. Verify: all existing chain-action buttons and keyboard shortcuts work unchanged. New `ActionEvent` dispatch works end-to-end in the gallery demo
+**Goal**: The responder chain supports typed action payloads, continuous action phases, explicit-target dispatch, never-hide button semantics, and a last-resort responder. All existing dispatch call sites migrated from bare strings to `ActionEvent` with zero legacy support.
 
-**Files modified**:
-1. `tugdeck/src/components/tugways/responder-chain.ts` — ActionEvent interface, extended dispatch, dispatchTo
-2. `tugdeck/src/components/tugways/tug-button.tsx` — optional `target` prop
-3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — ActionEvent demo section
+**What was done**:
+1. Defined `ActionPhase` type and `ActionEvent` interface in `responder-chain.ts` — `{ action, sender?, value?, phase }` with five phases: `discrete`, `begin`, `change`, `commit`, `cancel`
+2. Changed `dispatch()` to accept only `ActionEvent` (clean break — no string overload, no backward compatibility). All handler signatures changed from `() => void` to `(event: ActionEvent) => void`
+3. Added `dispatchTo(targetId, event)` for explicit-target dispatch — throws `Error` on unregistered target
+4. Added `nodeCanHandle(nodeId, action)` for per-node capability queries without chain walk
+5. Added `target` prop to `TugButton` — uses `dispatchTo` and `nodeCanHandle` instead of chain-walk dispatch/canHandle
+6. Changed TugButton to never hide — buttons render as `aria-disabled` when unhandled, never return `null`
+7. Added `canHandle: () => true` to DeckCanvas as last-resort responder
+8. Added ActionEvent Dispatch demo section to gallery Chain Actions tab
+9. Migrated all ~40 dispatch call sites and all handler registrations in a single step
+10. Removed obsolete `nonexistentAction` button from gallery and its test
 
-**Result**: The responder chain speaks a richer action language. Continuous controls can express begin/change/commit/cancel phases. Inspector panels can target specific cards. All existing code is backward compatible.
+**Files modified** (19 total):
+1. `tugdeck/src/components/tugways/responder-chain.ts` — ActionPhase, ActionEvent, dispatch signature, dispatchTo, nodeCanHandle
+2. `tugdeck/src/components/tugways/use-responder.tsx` — UseResponderOptions.actions type change
+3. `tugdeck/src/components/tugways/responder-chain-provider.tsx` — keybinding dispatch produces ActionEvent
+4. `tugdeck/src/components/tugways/tug-button.tsx` — target prop, never-hide, ActionEvent dispatch
+5. `tugdeck/src/action-dispatch.ts` — dispatch calls produce ActionEvent
+6. `tugdeck/src/components/tugways/tugcard.tsx` — handler signatures accept ActionEvent
+7. `tugdeck/src/components/chrome/deck-canvas.tsx` — handler signatures, canHandle: () => true
+8. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — removed nonexistentAction, added ActionEvent demo
+9. `tugdeck/src/__tests__/responder-chain.test.ts` — dispatch migration + dispatchTo/nodeCanHandle tests
+10. `tugdeck/src/__tests__/chain-action-button.test.tsx` — dispatch migration + hide-to-disable inversion + target tests
+11. `tugdeck/src/__tests__/tugcard.test.tsx` — dispatch migration
+12. `tugdeck/src/__tests__/deck-canvas.test.tsx` — dispatch migration + last-resort test
+13. `tugdeck/src/__tests__/use-responder.test.tsx` — dispatch migration
+14. `tugdeck/src/__tests__/e2e-responder-chain.test.tsx` — dispatch migration
+15. `tugdeck/src/__tests__/action-dispatch.test.ts` — mock manager + assertion migration
+16. `tugdeck/src/__tests__/component-gallery-action.test.ts` — mock manager migration
+17. `tugdeck/src/__tests__/key-pipeline.test.tsx` — handler signature migration
+18. `tugdeck/src/__tests__/selection-model.test.tsx` — dispatch migration
+19. `tugdeck/src/__tests__/component-gallery.test.tsx` — handler migration, removed nonexistentAction test
+
+**Result**: The responder chain speaks a richer action language. `dispatch()` accepts only `ActionEvent` — bare strings are a compile error. Continuous controls can express begin/change/commit/cancel phases. Inspector panels can target specific cards via `dispatchTo`. TugButton never hides — unhandled actions render as disabled. DeckCanvas is the last-resort responder. 655 tests pass, zero TypeScript errors.
 
 **Note**: Phase 5d2 depends on Phase 5a2 (responder chain infrastructure must be stable). It does not depend on Phase 5d1 (default button) — the two are independent extensions to the responder chain.
 

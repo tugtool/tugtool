@@ -41,7 +41,7 @@
 | 16 | Brio Theme Revision | DEFERRED | [#c16-brio](#c16-brio) |
 | 17 | Tugbank: Persistent Defaults Store | DESIGNED | [#c17-tugbank](#c17-tugbank) |
 | 18 | Inactive State Preservation | DESIGNED | [#c18-inactive-state](#c18-inactive-state) |
-| 19 | Target/Action Control Model | DESIGNED | [#c19-target-action](#c19-target-action) |
+| 19 | Target/Action Control Model | IMPLEMENTED | [#c19-target-action](#c19-target-action) |
 | 20 | Mutation Transactions | DESIGNED | [#c20-mutation-transactions](#c20-mutation-transactions) |
 | 21 | Observable Properties | DESIGNED | [#c21-observable-properties](#c21-observable-properties) |
 
@@ -866,7 +866,7 @@ The hook registers the component as a responder on mount and unregisters on unmo
 
 **Action dispatch is a function call:**
 ```
-responderChain.dispatch('copy')     // walks the chain, finds a handler, calls it
+responderChain.dispatch({ action: 'copy', phase: 'discrete' })  // walks the chain, finds a handler, calls it
 responderChain.canHandle('paste')   // validation query — returns true/false
 ```
 
@@ -1429,7 +1429,7 @@ Microtask: React processes the batched SyncLane render
            → Commit complete — all state consistent
 
 Next event: Ctrl+` fires
-           → dispatch("cyclePanel") walks: card → deck-canvas → found
+           → dispatch({ action: "cyclePanel", phase: "discrete" }) walks: card → deck-canvas → found
            → Responder chain is fully consistent
 ```
 
@@ -3188,11 +3188,11 @@ Add `collapsed?: boolean` to `CardState` in `layout-tree.ts`. This field is seri
 
 ### 19. Target/Action Control Model {#c19-target-action}
 
-**Status: DESIGNED** (2026-03-05)
+**Status: IMPLEMENTED** (2026-03-05)
 
 **The problem.** The responder chain dispatches actions as bare strings — `dispatch('copy')`. This works for discrete commands (copy, paste, close) but breaks down for continuous controls. A slider scrub isn't a single event — it's a begin → change → change → change → commit sequence. A color picker preview needs to communicate "the user is scrubbing hue, here's the current value, and they haven't committed yet." The chain has no way to express this.
 
-TugButton already has two modes (direct-action and chain-action, [D08]), but both fire a single event. There's no sender identity, no typed payload, and no phase. When inspector panels need to edit properties on the focused card's content, the current dispatch signature — a bare string — is insufficient.
+TugButton already has two modes (direct-action and chain-action, [D08]), but both fire a single event. There's no sender identity, no typed payload, and no phase. When inspector panels need to edit properties on the focused card's content, the bare-string dispatch signature is insufficient.
 
 **The inspiration.** Apple's UIKit target/action pattern (UIControl → target → action selector). Controls don't need hard coupling to handlers. A nil-target action naturally maps to the responder chain. The key additions: typed payloads (a slider sends its current value, not just "valueChanged"), action phases (begin/change/commit/cancel for continuous gestures), and explicit-target dispatch for when the target is known.
 
@@ -3200,18 +3200,20 @@ TugButton already has two modes (direct-action and chain-action, [D08]), but bot
 
 **[D61] Actions carry typed payloads, sender identity, and phase.**
 
-Extend `ResponderChainManager.dispatch()` to accept an `ActionEvent` object:
+`ResponderChainManager.dispatch()` accepts only `ActionEvent` objects — no string overload, no backward compatibility shim:
 
 ```typescript
-interface ActionEvent {
+export type ActionPhase = 'discrete' | 'begin' | 'change' | 'commit' | 'cancel';
+
+export interface ActionEvent {
   action: string;              // semantic name from action vocabulary
   sender?: unknown;            // the control that initiated (ref or instance)
   value?: unknown;             // typed payload (color, number, point, etc.)
-  phase: 'discrete' | 'begin' | 'change' | 'commit' | 'cancel';
+  phase: ActionPhase;          // lifecycle phase
 }
 ```
 
-The existing `dispatch('copy')` shorthand continues to work — it desugars to `{ action: 'copy', phase: 'discrete' }`. Continuous controls use `begin/change/commit/cancel`. Responder handlers receive the full `ActionEvent`.
+This is a clean break: passing a bare string to `dispatch()` is a TypeScript compile error. All call sites produce `ActionEvent` objects (e.g., `dispatch({ action: 'copy', phase: 'discrete' })`). All action handlers receive the full `ActionEvent` — handler signatures are `(event: ActionEvent) => void` throughout. Continuous controls use `begin/change/commit/cancel`. Validation queries (`canHandle`, `validateAction`) remain string-based — they ask about capability by action name, not about a specific event instance.
 
 **Phase semantics:**
 
@@ -3223,7 +3225,7 @@ The existing `dispatch('copy')` shorthand continues to work — it desugars to `
 | `commit` | Gesture completed | Pointer up, Enter key | Local data or structure (finalize) |
 | `cancel` | Gesture aborted | Escape key, pointer leave | Appearance zone (restore snapshot) |
 
-**Backward compatibility:** Existing action handlers that accept no arguments continue to work for `discrete` phase actions. Handlers that want to process continuous actions declare the `ActionEvent` parameter.
+**No backward compatibility:** Every `dispatch("actionName")` call was migrated to `dispatch({ action: "actionName", phase: "discrete" })`. Every `actions: { name: () => void }` handler was migrated to `actions: { name: (event: ActionEvent) => void }` (or `(_event: ActionEvent) => void` for handlers that ignore the event). This was a large but mechanical migration done in a single step to ensure the codebase compiles at all times within the step boundary.
 
 #### Two Dispatch Modes {#d62-dispatch-modes}
 
@@ -3231,21 +3233,32 @@ The existing `dispatch('copy')` shorthand continues to work — it desugars to `
 
 Controls can dispatch actions in two ways:
 
-**Nil-target dispatch** — send the action into the responder chain. The chain walks from first responder upward until a handler is found. This is the current behavior, now with payload:
+**Nil-target dispatch** — send the action into the responder chain. The chain walks from first responder upward until a handler is found:
 
 ```typescript
 // TugSlider with nil-target — chain resolves the handler
-responderChain.dispatch({ action: 'setOpacity', value: 0.75, phase: 'change' });
+manager.dispatch({ action: 'setOpacity', value: 0.75, phase: 'change' });
 ```
 
-**Explicit-target dispatch** — send directly to a specific responder by ID. Bypasses the chain walk. Used when the target is known (e.g., an inspector panel editing a specific card's properties):
+**Explicit-target dispatch** — send directly to a specific responder by ID via `dispatchTo(targetId, event)`. Bypasses the chain walk. Used when the target is known (e.g., an inspector panel editing a specific card's properties). Throws `Error` with a descriptive message when the target ID is not registered — explicit-target dispatch is a programmer assertion that the target exists:
 
 ```typescript
 // Inspector targets a specific card's responder
-responderChain.dispatchTo(cardId, { action: 'setBackgroundColor', value: '#ff6600', phase: 'change' });
+manager.dispatchTo(cardId, { action: 'setBackgroundColor', value: '#ff6600', phase: 'change' });
+
+// Throws: dispatchTo: target "nonexistent" is not registered
+manager.dispatchTo('nonexistent', { action: 'foo', phase: 'discrete' });
 ```
 
-TugButton's existing `action` prop remains nil-target. A new optional `target` prop enables explicit-target dispatch. All tugways controls (TugSlider, TugInput, TugColorPicker, etc.) support the same two modes.
+**Per-node capability query** — `nodeCanHandle(nodeId, action)` checks whether a specific node can handle a given action without chain walk. Looks up the node in the nodes map, checks the actions record and optional `canHandle` callback. Returns `false` if the node is not registered. This is the per-node equivalent of the chain-walk `canHandle` method.
+
+**TugButton target prop** — TugButton's existing `action` prop remains nil-target. A new optional `target` prop enables explicit-target dispatch. When both `action` and `target` are set, TugButton uses `dispatchTo(target, event)` instead of `dispatch(event)`, and `nodeCanHandle(target, action)` for the enabled/disabled check instead of chain-walk `canHandle(action)`. A dev-mode warning fires if `target` is set without `action`.
+
+**TugButton never-hide semantics** — TugButton never returns `null` based on chain-action state. When `canHandle` returns false (nil-target) or `nodeCanHandle` returns false (target mode), the button renders with `aria-disabled="true"` instead of being hidden. This is standard UI behavior — users see the button exists but it is inert. The previous hide-when-unhandled behavior was removed.
+
+**DeckCanvas last-resort responder** — DeckCanvas registers `canHandle: () => true` so it handles all actions as a last-resort catch-all. This means chain-action buttons are almost never disabled in practice because the chain walk always reaches DeckCanvas. Note: `canHandle` is the advisory override for validation queries only — dispatch still checks the actions map, so dispatching an unregistered action to DeckCanvas is a safe no-op.
+
+All tugways controls (TugSlider, TugInput, TugColorPicker, etc.) will support the same two dispatch modes.
 
 #### Controls Are Not Responders {#d63-controls-not-responders}
 
@@ -3459,7 +3472,7 @@ An inspector panel registers as a responder node via `useResponder`, just like a
 ```
 Inspector UI           Responder Chain           Card Content
     │                       │                        │
-    │  dispatch(target, {   │                        │
+    │  dispatchTo(cardId, { │                        │
     │    action: 'setProperty',                      │
     │    value: { path: 'style.backgroundColor',     │
     │             value: '#ff6600' },                 │
@@ -3922,7 +3935,7 @@ New design decisions:
 
 Expanded the design system with three new concept areas, motivated by the need for inspector panels (color picker, font picker, coordinate inspector) and better control wiring. The expansion was designed around Apple's UIKit target/action pattern, AppKit's KVC/KVO observation model, and the existing three-zone mutation model.
 
-**Concept 19 — Target/Action Control Model** extends the responder chain's bare-string dispatch with typed `ActionEvent` objects carrying payload, sender, and phase. Five phases (`discrete`, `begin`, `change`, `commit`, `cancel`) support continuous controls like sliders and color pickers. Two dispatch modes: nil-target (chain resolution, existing behavior) and explicit-target (direct to a specific responder, for inspector→card communication). Formalizes that controls emit actions but never register as responders (D63), generalizing the existing TugButton design.
+**Concept 19 — Target/Action Control Model** replaces the responder chain's bare-string dispatch with typed `ActionEvent` objects carrying payload, sender, and phase (clean break — no backward compatibility). Five phases (`discrete`, `begin`, `change`, `commit`, `cancel`) support continuous controls like sliders and color pickers. Two dispatch modes: nil-target (chain resolution) and explicit-target via `dispatchTo` (direct to a specific responder, throws on missing target). `nodeCanHandle` provides per-node capability queries. TugButton never hides (disabled instead). DeckCanvas is the last-resort responder (`canHandle: () => true`). Formalizes that controls emit actions but never register as responders (D63), generalizing the existing TugButton design. *(Note: the original design called for backward-compatible string dispatch alongside ActionEvent; the implementation plan chose clean break instead. See Entry 29.)*
 
 **Concept 20 — Mutation Transactions** provides snapshot/preview/commit/cancel semantics for live-preview editing. During a transaction, all mutations are appearance-zone (CSS/DOM, zero re-renders). On commit, the final state persists; on cancel, the snapshot restores. Integrates with action phases: `begin` opens a transaction, `change` previews, `commit`/`cancel` finalize. A `StyleCascadeReader` utility provides read-only introspection into CSS source layers (token, class, inline, preview) for inspector display.
 
@@ -3931,3 +3944,19 @@ Expanded the design system with three new concept areas, motivated by the need f
 New design decisions: D61–D69. New Rules of Tug: #9 (live preview is appearance-zone only), #10 (controls emit, responders handle).
 
 Phase 5d restructured into 5d1 (default button, unchanged), 5d2 (control action foundation), 5d3 (mutation transactions), 5d4 (observable properties). New Phase 8e (Inspector Panels) added downstream.
+
+### Entry 29: Phase 5d2 Implemented — Control Action Foundation {#log-29} (2026-03-05)
+
+Implemented Concept 19 (Target/Action Control Model) as Phase 5d2. The plan underwent a major revision during planning: the original design called for backward-compatible string dispatch alongside `ActionEvent`, but the plan chose a **clean break** — `dispatch()` accepts only `ActionEvent`, no string overload, no union type. All existing dispatch call sites and handler signatures were migrated in a single step.
+
+**Key deviations from the original Concept 19 design:**
+
+- **No backward compatibility.** D61 originally said `dispatch('copy')` shorthand continues to work. The plan chose clean break: bare strings are a TypeScript compile error. All ~40 dispatch call sites migrated to `ActionEvent` form. All handler signatures changed from `() => void` to `(event: ActionEvent) => void`.
+- **Never-hide TugButton.** Not in the original Concept 19 design. TugButton previously returned `null` (hidden) when `canHandle` returned false. Now renders with `aria-disabled="true"` instead — buttons are always visible, disabled when unhandled. This is standard UI behavior.
+- **`nodeCanHandle(nodeId, action)`** — new public method on `ResponderChainManager` for per-node capability queries without chain walk. Used by TugButton's `target` prop for the enabled/disabled check.
+- **DeckCanvas last-resort responder** — `canHandle: () => true` added to DeckCanvas's `useResponder` registration, making it a catch-all so chain-action buttons are almost never disabled in practice.
+- **Validation queries remain string-based** — `canHandle(action: string)` and `validateAction(action: string)` were not changed to accept `ActionEvent`. They are queries about capability by action name, not about specific event instances.
+
+**Scope:** 19 files modified (8 production, 11 test), 655 tests passing, zero TypeScript errors. Five implementation steps: (1) ActionEvent type + dispatch migration + never-hide TugButton, (2) dispatchTo + nodeCanHandle methods, (3) TugButton target prop + DeckCanvas last-resort test, (4) gallery ActionEvent demo, (5) integration checkpoint verification.
+
+Design doc D61 and D62 sections updated to match implementation. Concept 19 status changed from DESIGNED to IMPLEMENTED.
