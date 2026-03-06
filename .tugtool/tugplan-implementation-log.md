@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-06T03:36:20Z
+---
+
+## step-1: Implemented MutationTransaction class with begin/preview/commit/cancel lifecycle and MutationTransactionManager singleton with per-element transaction tracking, auto-cancel on collision, and isPreviewProperty for cascade reader. 35 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T02:07:27Z
 ---
