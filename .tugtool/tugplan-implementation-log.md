@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-06T17:14:41Z
+---
+
+## step-5: Registered gallery-palette as ninth gallery card with GalleryPaletteContent. Updated GALLERY_DEFAULT_TABS, registerGalleryCards(), and all test count assertions (8→9). 70 gallery tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-4
 date: 2025-03-06T17:08:02Z
 ---
