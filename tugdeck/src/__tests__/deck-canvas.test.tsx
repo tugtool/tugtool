@@ -1338,3 +1338,41 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
     expect(tabBar).not.toBeNull();
   });
 });
+
+// ============================================================================
+// DeckCanvas last-resort responder: canHandle returns true for any action
+// ============================================================================
+
+describe("DeckCanvas – last-resort canHandle", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("manager.canHandle returns true for any arbitrary action string when DeckCanvas is registered", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    expect(manager).not.toBeNull();
+    // DeckCanvas registers with canHandle: () => true, making it a last-resort
+    // responder. canHandle() should return true for any arbitrary action string.
+    expect(manager!.canHandle("anyArbitraryAction")).toBe(true);
+    expect(manager!.canHandle("some-invented-action-xyz")).toBe(true);
+    expect(manager!.canHandle("")).toBe(true);
+  });
+});

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T01:57:32Z
+---
+
+## step-3: Added target prop to TugButton for explicit-target dispatch via dispatchTo/nodeCanHandle. Dev-mode warnings for target without action and dispatchTo returning false. Added tests for target-mode behavior and DeckCanvas last-resort responder verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
 step: step-2
 date: 2025-03-06T01:50:07Z
 ---

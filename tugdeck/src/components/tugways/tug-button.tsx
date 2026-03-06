@@ -75,6 +75,23 @@ export interface TugButtonProps {
    */
   action?: string;
 
+  /**
+   * Explicit-target dispatch: ID of the responder node that should receive
+   * the action directly (bypassing the chain walk). Requires `action` to be set.
+   *
+   * When set and chainActive:
+   * - Enabled check uses `manager.nodeCanHandle(target, action)` instead of
+   *   `manager.canHandle(action)`. The button's enabled state reflects the
+   *   target node's capability, not the chain's.
+   * - Click calls `manager.dispatchTo(target, event)` instead of
+   *   `manager.dispatch(event)`.
+   *
+   * [D03] dispatchTo throws on unregistered target
+   * [D04] TugButton target prop requires action prop
+   * [D07] nodeCanHandle for per-node capability query
+   */
+  target?: string;
+
   /** Disable the button */
   disabled?: boolean;
   /** Show spinner overlay and disable interaction */
@@ -165,6 +182,7 @@ export function TugButton({
   size = "md",
   onClick,
   action,
+  target,
   disabled = false,
   loading = false,
   children,
@@ -207,6 +225,16 @@ export function TugButton({
     }
   }, [action, onClick]);
 
+  // Dev-mode warning when target is set without action
+  React.useEffect(() => {
+    if (target !== undefined && action === undefined && process.env.NODE_ENV !== "production") {
+      console.warn(
+        "TugButton: `target` is set without `action`. " +
+        "`target` requires `action` to be set for dispatch to work."
+      );
+    }
+  }, [target, action]);
+
   // ---- Chain-action mode: unconditional hook calls (React rules of hooks) ----
 
   // useResponderChain() returns the manager or null (safe outside provider).
@@ -226,8 +254,20 @@ export function TugButton({
   // When chain-action is active, query the manager for capability and state.
   // These are derived from the useSyncExternalStore snapshot version above,
   // so they update whenever the validation version increments.
-  const chainCanHandle = chainActive ? manager.canHandle(action) : false;
-  const chainValidated = chainActive ? manager.validateAction(action) : false;
+  //
+  // When target is set, use nodeCanHandle(target, action) for the enabled check
+  // so the button reflects the target node's capability, not the full chain's.
+  // validateAction is only consulted in chain-walk mode (no target), where the
+  // chain walk determines both capability and enabled state.
+  // [D07] nodeCanHandle for per-node capability query
+  const chainCanHandle = chainActive
+    ? (target !== undefined ? manager.nodeCanHandle(target, action) : manager.canHandle(action))
+    : false;
+  // In target mode the enabled state is fully determined by nodeCanHandle alone;
+  // validateAction is a chain-walk concept and is not consulted for targeted dispatch.
+  const chainValidated = chainActive && target === undefined
+    ? manager.validateAction(action)
+    : chainCanHandle;
 
   // isChainDisabled: chain is active and either canHandle is false OR validateAction is false.
   // When true, the button renders as aria-disabled (never hidden -- [D06] never-hide).
@@ -260,7 +300,18 @@ export function TugButton({
     if (chainActive && chainCanHandle) {
       // Chain-action mode: dispatch through the responder chain with ActionEvent.
       // [D01] ActionEvent is the sole dispatch currency
-      manager.dispatch({ action, phase: "discrete" });
+      if (target !== undefined) {
+        // Explicit-target mode: dispatch directly to the named node.
+        // [D03] dispatchTo throws on unregistered target
+        const handled = manager.dispatchTo(target, { action, phase: "discrete" });
+        if (!handled && process.env.NODE_ENV !== "production") {
+          console.warn(
+            `TugButton: dispatchTo("${target}", "${action}") returned false -- target does not handle this action`
+          );
+        }
+      } else {
+        manager.dispatch({ action, phase: "discrete" });
+      }
       return;
     }
 

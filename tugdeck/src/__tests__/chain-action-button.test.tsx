@@ -324,3 +324,156 @@ describe("chain-action TugButton – CSS disabled rules", () => {
     expect(btn.getAttribute("aria-disabled")).toBeNull();
   });
 });
+
+// ============================================================================
+// Target prop: explicit-target dispatch
+// ============================================================================
+
+describe("chain-action TugButton – target prop", () => {
+  /**
+   * Build a manager with two registered nodes: a root ("canvas") and a named
+   * target ("inspector"). The target handles `actionName`; the root does not.
+   * Returns the manager, the target's dispatched events, and root's dispatched events.
+   */
+  function makeManagerWithTarget(
+    actionName: string,
+  ): {
+    manager: ResponderChainManager;
+    targetDispatched: ActionEvent[];
+    rootDispatched: ActionEvent[];
+  } {
+    const manager = new ResponderChainManager();
+    const targetDispatched: ActionEvent[] = [];
+    const rootDispatched: ActionEvent[] = [];
+    // root node: does NOT handle actionName
+    manager.register({
+      id: "canvas",
+      parentId: null,
+      actions: { other: (event: ActionEvent) => rootDispatched.push(event) },
+    });
+    // target node: handles actionName
+    manager.register({
+      id: "inspector",
+      parentId: "canvas",
+      actions: { [actionName]: (event: ActionEvent) => targetDispatched.push(event) },
+    });
+    return { manager, targetDispatched, rootDispatched };
+  }
+
+  it("calls manager.dispatchTo(target, event) on click when action and target are set", () => {
+    const { manager, targetDispatched } = makeManagerWithTarget("setColor");
+
+    const { container } = renderWithManager(manager, {
+      action: "setColor",
+      target: "inspector",
+      children: "Set Color",
+    });
+    const btn = container.querySelector("button")!;
+
+    act(() => { fireEvent.click(btn); });
+
+    expect(targetDispatched.length).toBe(1);
+    expect(targetDispatched[0]).toMatchObject({ action: "setColor", phase: "discrete" });
+  });
+
+  it("uses nodeCanHandle(target, action) for enabled check when target is set", () => {
+    const { manager } = makeManagerWithTarget("setColor");
+
+    // Button with target="inspector" -- inspector handles "setColor"
+    const { container } = renderWithManager(manager, {
+      action: "setColor",
+      target: "inspector",
+      children: "Set Color",
+    });
+    const btn = container.querySelector("button")!;
+    // nodeCanHandle("inspector", "setColor") = true → button is enabled
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("is disabled when nodeCanHandle returns false for the target", () => {
+    const { manager } = makeManagerWithTarget("setColor");
+
+    // Button targets "inspector" but requests an action "delete" it does not handle
+    const { container } = renderWithManager(manager, {
+      action: "delete",
+      target: "inspector",
+      children: "Delete",
+    });
+    const btn = container.querySelector("button")!;
+    // nodeCanHandle("inspector", "delete") = false → button is disabled
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("calls manager.dispatch (not dispatchTo) when no target is set (existing behavior preserved)", () => {
+    const manager = new ResponderChainManager();
+    const dispatched: ActionEvent[] = [];
+    manager.register({
+      id: "root",
+      parentId: null,
+      actions: { copy: (event: ActionEvent) => dispatched.push(event) },
+    });
+
+    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
+    const btn = container.querySelector("button")!;
+
+    act(() => { fireEvent.click(btn); });
+
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0]).toMatchObject({ action: "copy", phase: "discrete" });
+  });
+
+  it("renders normally and logs dev warning when target is set without action", () => {
+    const warnSpy = spyOn(console, "warn");
+    const manager = new ResponderChainManager();
+    manager.register({ id: "root", parentId: null, actions: {} });
+
+    act(() => {
+      renderWithManager(manager, {
+        target: "inspector",
+        children: "No Action",
+      });
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("`target` is set without `action`")
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("logs dev warning when dispatchTo returns false (target does not handle action)", () => {
+    const warnSpy = spyOn(console, "warn");
+
+    const manager = new ResponderChainManager();
+    // Register inspector with canHandle returning true (so button is enabled)
+    // but no actions map entry (so dispatchTo returns false)
+    manager.register({
+      id: "canvas",
+      parentId: null,
+      actions: {},
+      canHandle: () => true,
+    });
+    manager.register({
+      id: "inspector",
+      parentId: "canvas",
+      actions: {},
+      canHandle: () => true, // reports capable so button is enabled
+    });
+
+    const { container } = renderWithManager(manager, {
+      action: "setColor",
+      target: "inspector",
+      children: "Set Color",
+    });
+    const btn = container.querySelector("button")!;
+    // Button should be enabled (nodeCanHandle returns true via canHandle callback)
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
+
+    act(() => { fireEvent.click(btn); });
+
+    // dispatchTo returns false because "setColor" is not in inspector's actions map
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('dispatchTo("inspector", "setColor") returned false')
+    );
+    warnSpy.mockRestore();
+  });
+});
