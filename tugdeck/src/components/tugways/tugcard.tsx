@@ -46,6 +46,7 @@ import type { SavedSelection } from "./selection-guard";
 import { selectionGuard } from "./selection-guard";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
+import type { ActionEvent } from "./responder-chain";
 import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "./responder-chain-provider";
@@ -290,14 +291,14 @@ export function Tugcard({
   const { ResponderScope } = useResponder({
     id: cardId,
     actions: {
-      close: handleClose,
-      selectAll: handleSelectAll,
-      previousTab: handlePreviousTab,
-      nextTab: handleNextTab,
+      close: (_event: ActionEvent) => handleClose(),
+      selectAll: (_event: ActionEvent) => handleSelectAll(),
+      previousTab: (_event: ActionEvent) => handlePreviousTab(),
+      nextTab: (_event: ActionEvent) => handleNextTab(),
       // Phase 5 stubs: minimize, toggleMenu, find are no-ops until later phases
-      minimize: () => {},
-      toggleMenu: () => {},
-      find: () => {},
+      minimize: (_event: ActionEvent) => {},
+      toggleMenu: (_event: ActionEvent) => {},
+      find: (_event: ActionEvent) => {},
     },
   });
 

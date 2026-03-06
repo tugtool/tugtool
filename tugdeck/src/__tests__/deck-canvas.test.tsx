@@ -238,7 +238,7 @@ describe("DeckCanvas – cycleCard action", () => {
     });
 
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const handled = manager!.dispatch("cycleCard");
+    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
     expect(handled).toBe(true);
     logSpy.mockRestore();
   });
@@ -264,7 +264,7 @@ describe("DeckCanvas – cycleCard action", () => {
       );
     });
 
-    const handled = manager!.dispatch("cycleCard");
+    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
     expect(handled).toBe(true);
   });
 });
@@ -300,7 +300,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     let handled = false;
     act(() => {
-      handled = manager!.dispatch("showComponentGallery");
+      handled = manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(handled).toBe(true);
   });
@@ -334,7 +334,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     });
 
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
 
     expect(addCardCalls.length).toBe(1);
@@ -375,7 +375,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     };
 
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
 
     expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
@@ -421,13 +421,13 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card now exists -- should focus it, NOT create a new one
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // No second addCard call
     expect(focusedIds).toContain(GALLERY_CARD_ID);
@@ -1031,7 +1031,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch("addTab");
+      manager!.dispatch({ action: "addTab", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(1);
@@ -1067,7 +1067,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch("addTab");
+      manager!.dispatch({ action: "addTab", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(0);
@@ -1336,5 +1336,43 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
     // Multi-tab card: tab bar must carry data-card-id so coordinator can locate it.
     const tabBar = container.querySelector(".tug-tab-bar[data-card-id='multi-card']");
     expect(tabBar).not.toBeNull();
+  });
+});
+
+// ============================================================================
+// DeckCanvas last-resort responder: canHandle returns true for any action
+// ============================================================================
+
+describe("DeckCanvas – last-resort canHandle", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("manager.canHandle returns true for any arbitrary action string when DeckCanvas is registered", () => {
+    const { useResponderChain } = require("@/components/tugways/responder-chain-provider");
+    let manager: import("@/components/tugways/responder-chain").ResponderChainManager | null = null;
+
+    function ManagerCapture() {
+      manager = useResponderChain();
+      return null;
+    }
+
+    const store = makeMockStore();
+    act(() => {
+      render(
+        <ResponderChainProvider>
+          <DeckManagerContext.Provider value={store}>
+            <DeckCanvas connection={null} />
+            <ManagerCapture />
+          </DeckManagerContext.Provider>
+        </ResponderChainProvider>
+      );
+    });
+
+    expect(manager).not.toBeNull();
+    // DeckCanvas registers with canHandle: () => true, making it a last-resort
+    // responder. canHandle() should return true for any arbitrary action string.
+    expect(manager!.canHandle("anyArbitraryAction")).toBe(true);
+    expect(manager!.canHandle("some-invented-action-xyz")).toBe(true);
+    expect(manager!.canHandle("")).toBe(true);
   });
 });

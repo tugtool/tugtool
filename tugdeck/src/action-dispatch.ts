@@ -187,7 +187,7 @@ export function initActionDispatch(
   // the gallery card and focuses it. ([D05], [D07] show-only semantics)
   registerAction("show-component-gallery", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch("showComponentGallery");
+      responderChainManagerRef.dispatch({ action: "showComponentGallery", phase: "discrete" });
     } else {
       console.warn("show-component-gallery: responder chain manager not registered yet");
     }
@@ -225,7 +225,7 @@ export function initActionDispatch(
   // from its cardsRef and calls store.addTab(). ([D06], [D09])
   registerAction("add-tab", () => {
     if (responderChainManagerRef) {
-      responderChainManagerRef.dispatch("addTab");
+      responderChainManagerRef.dispatch({ action: "addTab", phase: "discrete" });
     } else {
       console.warn("add-tab: responder chain manager not registered yet");
     }

@@ -65,6 +65,7 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import type { TugConnection } from "@/connection";
 import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { DisconnectBanner } from "./disconnect-banner";
@@ -220,8 +221,20 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
   // and no first responder is set yet.
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
+    /**
+     * canHandle: () => true makes DeckCanvas a last-resort responder.
+     *
+     * DeckCanvas claims to handle all actions so that chain-action buttons
+     * remain visible and enabled in practice (the chain walk always reaches
+     * deck-canvas). Dispatch still checks the actions map -- unregistered
+     * actions are safe no-ops. Unhandled dispatches are logged to console
+     * for development debugging.
+     *
+     * [D08] DeckCanvas last-resort responder
+     */
+    canHandle: () => true,
     actions: {
-      cycleCard: () => {
+      cycleCard: (_event: ActionEvent) => {
         const c = cardsRef.current;
         if (c.length < 2) return;
         const nextId = c[0].id; // bottom card rotates to top
@@ -229,11 +242,11 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
         setDeselected(false); // clear deselect flag (stable state setter)
         manager.makeFirstResponder(nextId); // responder chain focus
       },
-      resetLayout: () => {
+      resetLayout: (_event: ActionEvent) => {
         // Phase 5 will reset card positions.
         console.log("resetLayout: stub -- not implemented until Phase 5");
       },
-      showSettings: () => {
+      showSettings: (_event: ActionEvent) => {
         // Phase 8 will open the settings panel.
         console.log("showSettings: stub -- not implemented until Phase 8");
       },
@@ -247,7 +260,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
        * galleryCardIdRef. In both paths, makeFirstResponder is called so the
        * gallery takes responder focus immediately ([D05]).
        */
-      showComponentGallery: () => {
+      showComponentGallery: (_event: ActionEvent) => {
         const existingId = galleryCardIdRef.current;
         const c = cardsRef.current;
 
@@ -275,7 +288,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
       // componentId dispatch is deferred until payload support is added.
       // [D06] Add-tab action uses DeckManager + responder chain
       // [D09] Add-tab routed as DeckCanvas responder action
-      addTab: () => {
+      addTab: (_event: ActionEvent) => {
         const c = cardsRef.current;
         if (c.length === 0) return;
         const focusedCard = c[c.length - 1]; // topmost card

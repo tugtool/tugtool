@@ -21,6 +21,7 @@ import { render, fireEvent, act, cleanup } from "@testing-library/react";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
 
@@ -284,7 +285,7 @@ describe("Tugcard – responder registration", () => {
       </Tugcard>
     );
 
-    manager.dispatch("close");
+    manager.dispatch({ action: "close", phase: "discrete" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
@@ -526,7 +527,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch("nextTab");
+      manager.dispatch({ action: "nextTab", phase: "discrete" });
     });
 
     expect(selectedIds.length).toBe(1);
@@ -557,7 +558,7 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch("previousTab");
+      manager.dispatch({ action: "previousTab", phase: "discrete" });
     });
 
     // Wraps from tab-1 (index 0) back to tab-2 (index 1, last)
@@ -585,8 +586,8 @@ describe("Tugcard – tab support: previousTab and nextTab responder actions", (
     );
 
     act(() => {
-      manager.dispatch("nextTab");
-      manager.dispatch("previousTab");
+      manager.dispatch({ action: "nextTab", phase: "discrete" });
+      manager.dispatch({ action: "previousTab", phase: "discrete" });
     });
 
     expect(selectedIds.length).toBe(0);

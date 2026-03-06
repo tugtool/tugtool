@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-03-06T02:07:27Z
+---
+
+## step-5: Verified all exit criteria: no bare string dispatch, all handlers use ActionEvent, TugButton never hides, DeckCanvas last-resort responder, dispatchTo/nodeCanHandle present, target prop wired, gallery demo renders. 655 tests pass, build clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
+step: step-4
+date: 2025-03-06T02:03:00Z
+---
+
+## step-4: Added ActionEvent Dispatch demo section to gallery-card.tsx with useResponder registration for action-event-demo node, dispatchTo-based onClick, and status line showing last received event fields.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
+step: step-3
+date: 2025-03-06T01:57:32Z
+---
+
+## step-3: Added target prop to TugButton for explicit-target dispatch via dispatchTo/nodeCanHandle. Dev-mode warnings for target without action and dispatchTo returning false. Added tests for target-mode behavior and DeckCanvas last-resort responder verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
+step: step-2
+date: 2025-03-06T01:50:07Z
+---
+
+## step-2: Added dispatchTo(targetId, event) for explicit-target dispatch (throws on unregistered) and nodeCanHandle(nodeId, action) for per-node capability queries to ResponderChainManager, with 8 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
+step: step-1
+date: 2025-03-06T00:19:28Z
+---
+
+## step-1: Added ActionPhase/ActionEvent types to responder-chain.ts, migrated dispatch() from string to ActionEvent, updated all handler signatures, implemented never-hide TugButton (disable instead of hide), added DeckCanvas last-resort canHandle, removed nonexistentAction button, and migrated all 11 test files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
+step: step-5
 date: 2025-03-05T21:14:27Z
 ---
 

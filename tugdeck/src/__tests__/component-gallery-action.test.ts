@@ -20,6 +20,7 @@ import {
   _resetForTest,
 } from "../action-dispatch";
 import type { ResponderChainManager } from "../components/tugways/responder-chain";
+import type { ActionEvent } from "../components/tugways/responder-chain";
 
 // ---- Mock helpers ----
 
@@ -68,14 +69,14 @@ describe("initActionDispatch: show-component-gallery", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as never, deck as never);
 
-    const dispatchMock = mock((_action: string) => false);
+    const dispatchMock = mock((_event: ActionEvent) => false);
     const manager = createMockResponderChainManager({ dispatch: dispatchMock });
     registerResponderChainManager(manager);
 
     dispatchAction({ action: "show-component-gallery" });
 
     expect(dispatchMock).toHaveBeenCalledTimes(1);
-    expect(dispatchMock).toHaveBeenCalledWith("showComponentGallery");
+    expect(dispatchMock).toHaveBeenCalledWith({ action: "showComponentGallery", phase: "discrete" });
   });
 
   it("does not throw when responder chain manager is not registered", () => {

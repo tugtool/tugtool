@@ -64,7 +64,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (binding.preventDefaultOnMatch) {
         event.preventDefault();
       }
-      const handled = manager.dispatch(binding.action);
+      const handled = manager.dispatch({ action: binding.action, phase: "discrete" });
       if (handled) {
         event.preventDefault();
         event.stopImmediatePropagation();

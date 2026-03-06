@@ -117,7 +117,7 @@ describe("T14 – dispatching selectAll selects content area children", () => {
     container = document.body;
 
     act(() => {
-      manager.dispatch("selectAll");
+      manager.dispatch({ action: "selectAll", phase: "discrete" });
     });
 
     // Restore original
@@ -143,7 +143,7 @@ describe("T14 – dispatching selectAll selects content area children", () => {
 
     expect(() => {
       act(() => {
-        manager.dispatch("selectAll");
+        manager.dispatch({ action: "selectAll", phase: "discrete" });
       });
     }).not.toThrow();
   });
@@ -369,7 +369,7 @@ describe("T16 – regression: existing Tugcard actions unaffected", () => {
     );
 
     act(() => {
-      manager.dispatch("close");
+      manager.dispatch({ action: "close", phase: "discrete" });
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
