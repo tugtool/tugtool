@@ -27,6 +27,7 @@ import React, {
 import { postSettings } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import { injectPaletteCSS } from "../components/tugways/palette-engine";
+import { DEFAULT_ANCHOR_DATA } from "../components/tugways/theme-anchors";
 import bluenoteCSS from "../../styles/bluenote.css?raw";
 import harmonyCSS from "../../styles/harmony.css?raw";
 
@@ -179,7 +180,7 @@ export function TugThemeProvider({
     // Re-inject palette CSS after theme injection so any theme parameter
     // overrides (--tug-theme-lc-*, --tug-theme-hue-*) are in the DOM when
     // getComputedStyle reads them. [D04]
-    injectPaletteCSS(newTheme);
+    injectPaletteCSS(newTheme, DEFAULT_ANCHOR_DATA[newTheme]);
     setThemeState(newTheme);
     try {
       localStorage.setItem("td-theme", newTheme);

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-06T18:55:03Z
+---
+
+## step-4: Updated main.tsx and theme-provider.tsx to pass DEFAULT_ANCHOR_DATA[theme] to injectPaletteCSS at boot and on theme switch
+
+**Files changed:**
+- .tugtool/tugplan-anchor-palette-engine.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T18:50:13Z
 ---

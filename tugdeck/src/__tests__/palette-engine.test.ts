@@ -29,6 +29,11 @@ import {
   tugAnchoredColor,
 } from "@/components/tugways/palette-engine";
 import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
+import {
+  DEFAULT_ANCHOR_DATA,
+  BRIO_ANCHORS,
+  BLUENOTE_ANCHORS,
+} from "@/components/tugways/theme-anchors";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -691,5 +696,73 @@ describe("injectPaletteCSS() with anchor data (step-3)", () => {
     const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
     expect(match).not.toBeNull();
     expect(match![1]).toBe(tugPaletteColor("red", 50));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step-4: wiring DEFAULT_ANCHOR_DATA into call sites
+// ---------------------------------------------------------------------------
+
+describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
+  afterEach(() => {
+    const el = document.getElementById("tug-palette");
+    if (el) el.remove();
+  });
+
+  it("after boot with brio, red tone-50 matches tugAnchoredColor with BRIO_ANCHORS", () => {
+    // Simulates main.tsx: injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme])
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const injectedValue = match![1];
+
+    const expected = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
+    expect(injectedValue).toBe(expected);
+  });
+
+  it("after switching brio -> bluenote, red tone-50 uses bluenote anchors (different L/C than brio)", () => {
+    // Simulates setTheme("brio") then setTheme("bluenote")
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const brioCSS = document.getElementById("tug-palette")!.textContent ?? "";
+    const brioMatch = brioCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(brioMatch).not.toBeNull();
+    const brioValue = brioMatch![1];
+
+    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
+    const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
+    const bluenoteMatch = bluenoteCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(bluenoteMatch).not.toBeNull();
+    const bluenoteValue = bluenoteMatch![1];
+
+    // Bluenote has a higher stop-50 L for red (0.71 vs 0.65), so values differ
+    expect(bluenoteValue).not.toBe(brioValue);
+
+    // The bluenote value matches direct computation via BLUENOTE_ANCHORS
+    const expected = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
+    expect(bluenoteValue).toBe(expected);
+
+    // Only one palette element exists after the switch
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+  });
+
+  it("after switching bluenote -> brio, palette restores brio anchor values (no stale bluenote values)", () => {
+    // Simulates setTheme("bluenote") then setTheme("brio")
+    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
+
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const restoredValue = match![1];
+
+    // Must match brio anchors, not bluenote anchors
+    const expectedBrio = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
+    const expectedBluenote = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
+
+    expect(restoredValue).toBe(expectedBrio);
+    expect(restoredValue).not.toBe(expectedBluenote);
   });
 });
