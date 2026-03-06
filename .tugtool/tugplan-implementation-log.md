@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-06T17:08:02Z
+---
+
+## step-4: Created GalleryPaletteContent component with 24x11 swatch grid, curve type selector (smoothstep/bezier/piecewise), L/C anchor sliders, side-by-side comparison panel. 16 component tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T16:57:24Z
 ---
