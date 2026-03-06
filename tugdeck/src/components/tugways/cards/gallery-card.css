@@ -229,3 +229,121 @@
   border-radius: var(--td-radius-xs);
   padding: 1px 5px;
 }
+
+/* ============================================================================
+   Mutation Transaction Demo (Phase 5d3)
+   ========================================================================= */
+
+/* Stage area: contains the positioned mock card element. */
+.cg-mutation-tx-stage {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  overflow: hidden;
+}
+
+/* Mock card: absolute-positioned target element for mutation demos. */
+.cg-mutation-tx-card {
+  position: absolute;
+  width: 80px;
+  height: 50px;
+  border-radius: var(--td-radius-sm);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: default;
+  user-select: none;
+}
+
+/* Controls row shared by color and hue demos. */
+.cg-mutation-tx-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Color input styling. */
+.cg-color-input {
+  width: 40px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  background: var(--td-surface-control);
+  cursor: pointer;
+}
+
+/* Hue swatch: draggable strip showing a full-spectrum gradient. */
+.cg-hue-swatch {
+  width: 200px;
+  height: 28px;
+  border-radius: var(--td-radius-xs);
+  background: linear-gradient(
+    to right,
+    hsl(0, 70%, 60%),
+    hsl(60, 70%, 60%),
+    hsl(120, 70%, 60%),
+    hsl(180, 70%, 60%),
+    hsl(240, 70%, 60%),
+    hsl(300, 70%, 60%),
+    hsl(360, 70%, 60%)
+  );
+  cursor: ew-resize;
+  border: 1px solid var(--td-border);
+  touch-action: none;
+  user-select: none;
+}
+
+/* Slider group: label + range input row. */
+.cg-mutation-tx-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Range slider for position demo. */
+.cg-position-slider {
+  width: 180px;
+  cursor: pointer;
+  accent-color: var(--td-accent);
+}
+
+/* Cascade reader display table. */
+.cg-cascade-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--td-font-mono, monospace);
+  width: 100%;
+  max-width: 420px;
+}
+
+.cg-cascade-table tr + tr td {
+  border-top: 1px solid var(--td-border);
+}
+
+.cg-cascade-prop {
+  color: var(--td-text-soft);
+  padding: 4px 10px 4px 0;
+  width: 140px;
+  user-select: none;
+}
+
+.cg-cascade-source {
+  color: var(--td-accent);
+  padding: 4px 10px;
+  width: 80px;
+}
+
+.cg-cascade-value {
+  color: var(--td-text);
+  padding: 4px 0;
+}
+
+/* Small description text used in demo sections. */
+.cg-description {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  line-height: 1.5;
+  margin: 0;
+}

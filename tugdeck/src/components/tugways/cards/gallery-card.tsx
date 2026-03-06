@@ -1,14 +1,14 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into six separately
+ * Converts the Component Gallery from a floating panel into seven separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates a six-tab card titled "Component Gallery".
+ * creates a seven-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
- * - [D01] Six separate componentIds for gallery sections
+ * - [D01] Seven separate componentIds for gallery sections
  * - [D08] Normal tabs: each section is a distinct componentId
  * - [D09] Real factory each: every registration has a real `factory` function
  * - Spec S03: Gallery registrations
@@ -25,6 +25,7 @@ import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { Tugcard } from "@/components/tugways/tugcard";
+import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -46,18 +47,19 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a six-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates a seven-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
 export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
-  { id: "template", componentId: "gallery-buttons",        title: "TugButton",      closable: true },
-  { id: "template", componentId: "gallery-chain-actions",  title: "Chain Actions",  closable: true },
-  { id: "template", componentId: "gallery-mutation",       title: "Mutation Model", closable: true },
-  { id: "template", componentId: "gallery-tabbar",         title: "TugTabBar",      closable: true },
-  { id: "template", componentId: "gallery-dropdown",       title: "TugDropdown",    closable: true },
-  { id: "template", componentId: "gallery-default-button", title: "Default Button", closable: true },
+  { id: "template", componentId: "gallery-buttons",        title: "TugButton",            closable: true },
+  { id: "template", componentId: "gallery-chain-actions",  title: "Chain Actions",        closable: true },
+  { id: "template", componentId: "gallery-mutation",       title: "Mutation Model",       closable: true },
+  { id: "template", componentId: "gallery-tabbar",         title: "TugTabBar",            closable: true },
+  { id: "template", componentId: "gallery-dropdown",       title: "TugDropdown",          closable: true },
+  { id: "template", componentId: "gallery-default-button", title: "Default Button",       closable: true },
+  { id: "template", componentId: "gallery-mutation-tx",    title: "Mutation Transactions", closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -780,7 +782,7 @@ export function GalleryDefaultButtonContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all six gallery card types in the global card registry.
+ * Register all seven gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -791,7 +793,7 @@ export function GalleryDefaultButtonContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates six-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates seven-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations)
@@ -918,4 +920,27 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
   });
+
+  // ---- gallery-mutation-tx ----
+  registerCard({
+    componentId: "gallery-mutation-tx",
+    factory: (cardId, injected) => (
+      <Tugcard
+        cardId={cardId}
+        meta={{ title: "Mutation Transactions", icon: "Layers", closable: true }}
+        feedIds={[]}
+        onDragStart={injected.onDragStart}
+        onMinSizeChange={injected.onMinSizeChange}
+      >
+        <GalleryMutationTxContent />
+      </Tugcard>
+    ),
+    contentFactory: (_cardId) => <GalleryMutationTxContent />,
+    defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
 }
+
+// Re-export GalleryMutationTxContent so tests can import it from either location.
+export { GalleryMutationTxContent };

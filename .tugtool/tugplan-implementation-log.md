@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T03:57:10Z
+---
+
+## step-3: Added GalleryMutationTxContent demo with three interaction models: color picker, hue scrub swatch, and position sliders. Wired as 7th gallery tab. All use MutationTransaction lifecycle and StyleCascadeReader for layer display with direct DOM writes. Updated gallery-card and component-gallery tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
 step: step-2
 date: 2025-03-06T03:43:53Z
 ---
