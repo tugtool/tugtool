@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-06T02:03:00Z
+---
+
+## step-4: Added ActionEvent Dispatch demo section to gallery-card.tsx with useResponder registration for action-event-demo node, dispatchTo-based onClick, and status line showing last received event fields.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T01:57:32Z
 ---
