@@ -313,6 +313,21 @@
 }
 
 /* ============================================================================
+   Import error message
+   ========================================================================= */
+
+.gp-import-error {
+  font-size: 11px;
+  color: #cc3333;
+  font-family: var(--td-font-sans);
+  margin-top: 4px;
+  padding: 4px 6px;
+  background-color: #fff0f0;
+  border: 1px solid #ffcccc;
+  border-radius: var(--td-radius-xs);
+}
+
+/* ============================================================================
    Visibility utility — used by mode toggle to hide inactive panel
    while keeping its DOM nodes available (for backward-compat test queries)
    ========================================================================= */

@@ -26,7 +26,7 @@
  * @module components/tugways/cards/gallery-palette-content
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   HUE_FAMILIES,
   DEFAULT_LC_PARAMS,
@@ -693,6 +693,113 @@ function AnchorEditor({
 }
 
 // ---------------------------------------------------------------------------
+// JSON export/import helpers (exported for unit testing)
+// ---------------------------------------------------------------------------
+
+/** The schema version written into every export file. */
+const EXPORT_VERSION = 1;
+
+/** Serialized JSON format (Spec S04). */
+interface ExportPayload {
+  version: number;
+  themes: {
+    brio: ThemeHueAnchors;
+    bluenote: ThemeHueAnchors;
+    harmony: ThemeHueAnchors;
+  };
+}
+
+/**
+ * Build the export JSON string from the three theme anchor states.
+ * Returns a formatted JSON string matching Spec S04.
+ */
+export function buildExportPayload(
+  brio: ThemeHueAnchors,
+  bluenote: ThemeHueAnchors,
+  harmony: ThemeHueAnchors,
+): string {
+  const payload: ExportPayload = {
+    version: EXPORT_VERSION,
+    themes: { brio, bluenote, harmony },
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+/**
+ * Parse and validate an import JSON string.
+ *
+ * Validates:
+ * - Top-level `version` field is present (numeric)
+ * - `themes.brio`, `themes.bluenote`, `themes.harmony` are present objects
+ * - Every hue in each theme has an `anchors` array
+ * - Every anchor has numeric `stop`, `L`, `C` fields
+ *
+ * Returns the parsed themes object on success.
+ * Throws an Error with a descriptive message on validation failure.
+ */
+export function parseImportPayload(jsonString: string): ExportPayload["themes"] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    throw new Error("Invalid JSON: file could not be parsed.");
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Invalid format: root must be a JSON object.");
+  }
+
+  const root = parsed as Record<string, unknown>;
+
+  if (typeof root["version"] !== "number") {
+    throw new Error("Invalid format: missing or non-numeric 'version' field.");
+  }
+
+  const themes = root["themes"];
+  if (typeof themes !== "object" || themes === null) {
+    throw new Error("Invalid format: missing 'themes' object.");
+  }
+
+  const themesObj = themes as Record<string, unknown>;
+  const themeKeys: Array<keyof ExportPayload["themes"]> = ["brio", "bluenote", "harmony"];
+
+  for (const themeKey of themeKeys) {
+    const themeData = themesObj[themeKey];
+    if (typeof themeData !== "object" || themeData === null) {
+      throw new Error(`Invalid format: missing theme '${themeKey}'.`);
+    }
+    // Validate per-hue anchor arrays
+    const hues = themeData as Record<string, unknown>;
+    for (const [hueName, hueData] of Object.entries(hues)) {
+      if (typeof hueData !== "object" || hueData === null) {
+        throw new Error(`Invalid format: theme '${themeKey}', hue '${hueName}' is not an object.`);
+      }
+      const hueObj = hueData as Record<string, unknown>;
+      if (!Array.isArray(hueObj["anchors"])) {
+        throw new Error(`Invalid format: theme '${themeKey}', hue '${hueName}' missing 'anchors' array.`);
+      }
+      for (const anchor of hueObj["anchors"] as unknown[]) {
+        if (typeof anchor !== "object" || anchor === null) {
+          throw new Error(`Invalid format: theme '${themeKey}', hue '${hueName}': anchor is not an object.`);
+        }
+        const a = anchor as Record<string, unknown>;
+        if (typeof a["stop"] !== "number" || typeof a["L"] !== "number" || typeof a["C"] !== "number") {
+          throw new Error(
+            `Invalid format: theme '${themeKey}', hue '${hueName}': anchor missing numeric stop/L/C.`,
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    brio:     themesObj["brio"] as ThemeHueAnchors,
+    bluenote: themesObj["bluenote"] as ThemeHueAnchors,
+    harmony:  themesObj["harmony"] as ThemeHueAnchors,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // AnchorsPanel — top-level anchors mode UI
 // ---------------------------------------------------------------------------
 
@@ -711,6 +818,10 @@ function AnchorsPanel() {
   );
 
   const [selected, setSelected] = useState<SelectedSwatch | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Hidden file input ref for the import picker (imperative DOM op, not appearance state)
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Resolve the active anchor data and setter for the current theme
   const activeAnchors: ThemeHueAnchors =
@@ -732,9 +843,72 @@ function AnchorsPanel() {
     setActiveAnchors((prev) => ({ ...prev, [hue]: newHueAnchors }));
   };
 
+  // Export: serialize all three themes and trigger a browser download.
+  // Imperative DOM operations — no React appearance state involved.
+  const handleExport = () => {
+    const jsonString = buildExportPayload(brioAnchors, bluenoteAnchors, harmonyAnchors);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tug-palette-anchors.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import: open the hidden file picker.
+  const handleImportClick = () => {
+    setImportError(null);
+    fileInputRef.current?.click();
+  };
+
+  // File selected: read, validate, and apply.
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
+      if (typeof text !== "string") {
+        setImportError("Could not read file contents.");
+        return;
+      }
+      try {
+        const themes = parseImportPayload(text);
+        setBrioAnchors(cloneThemeHueAnchors(themes.brio));
+        setBluenoteAnchors(cloneThemeHueAnchors(themes.bluenote));
+        setHarmonyAnchors(cloneThemeHueAnchors(themes.harmony));
+        setSelected(null);
+        setImportError(null);
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : "Unknown import error.");
+      }
+    };
+    reader.onerror = () => {
+      setImportError("File read error.");
+    };
+    reader.readAsText(file);
+
+    // Reset the input so the same file can be re-imported if needed
+    e.target.value = "";
+  };
+
   return (
     <div className="gp-anchors-panel" data-testid="gp-anchors-panel">
-      {/* Theme selector */}
+      {/* Hidden file input for import (imperative trigger, not appearance state) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+        data-testid="gp-import-file-input"
+      />
+
+      {/* Theme selector + export/import actions */}
       <div className="cg-section">
         <div className="cg-section-title">Theme</div>
         <div className="gp-anchor-theme-row">
@@ -751,7 +925,28 @@ function AnchorsPanel() {
             <option value="bluenote">Bluenote</option>
             <option value="harmony">Harmony</option>
           </select>
+          <div className="gp-action-row">
+            <button
+              className="gp-action-btn"
+              onClick={handleExport}
+              data-testid="gp-export-btn"
+            >
+              Export JSON
+            </button>
+            <button
+              className="gp-action-btn"
+              onClick={handleImportClick}
+              data-testid="gp-import-btn"
+            >
+              Import JSON
+            </button>
+          </div>
         </div>
+        {importError && (
+          <div className="gp-import-error" data-testid="gp-import-error">
+            {importError}
+          </div>
+        )}
       </div>
 
       {/* Swatch grid */}

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-06T19:15:32Z
+---
+
+## step-6: Added Export JSON and Import JSON buttons to AnchorsPanel with Spec S04 format validation, Blob download, FileReader import, and error display
+
+**Files changed:**
+- .tugtool/tugplan-anchor-palette-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T19:07:35Z
 ---
