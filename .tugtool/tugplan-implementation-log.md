@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T15:07:14Z
+---
+
+## step-3: Added PropertyStore ref, registration callback, TugcardPropertyContext provider wrapping content children, and setProperty action handler in Tugcard's useResponder actions. Added 3 integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-2
 date: 2025-03-06T14:58:46Z
 ---

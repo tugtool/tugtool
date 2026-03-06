@@ -51,6 +51,8 @@ import { TugcardDataProvider } from "./hooks/use-tugcard-data";
 import { useSelectionBoundary } from "./hooks/use-selection-boundary";
 import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TugTabBar } from "./tug-tab-bar";
+import { TugcardPropertyContext } from "./hooks/use-property-store";
+import type { PropertyStore } from "./property-store";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -195,6 +197,27 @@ export function Tugcard({
   useSelectionBoundary(cardId, contentRef);
 
   // ---------------------------------------------------------------------------
+  // Phase 5d4: PropertyStore registration ([D01], [D04])
+  // ---------------------------------------------------------------------------
+
+  // Holds the PropertyStore registered by card content via usePropertyStore.
+  // Set via TugcardPropertyContext registration callback; read by setProperty
+  // action handler. Null when card content has not called usePropertyStore.
+  const propertyStoreRef = useRef<PropertyStore | null>(null);
+
+  // Stable registration callback provided to TugcardPropertyContext. Card
+  // content calls this in useLayoutEffect via usePropertyStore() to install
+  // the store before any events fire. [D01]
+  //
+  // useCallback with [] keeps the reference stable across re-renders so
+  // TugcardPropertyContext does not unnecessarily re-trigger consumers.
+  // The setProperty responder reads propertyStoreRef.current directly,
+  // which is always current because propertyStoreRef is a ref (Rule #5).
+  const registerPropertyStore = useCallback((store: PropertyStore) => {
+    propertyStoreRef.current = store;
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Phase 5b: Tab state refs (for stable responder actions, Rule of Tug #5)
   // ---------------------------------------------------------------------------
 
@@ -299,6 +322,16 @@ export function Tugcard({
       minimize: (_event: ActionEvent) => {},
       toggleMenu: (_event: ActionEvent) => {},
       find: (_event: ActionEvent) => {},
+      // Phase 5d4: route incoming setProperty actions to the registered PropertyStore.
+      // Payload shape: { path: string, value: unknown, source?: string } (Spec S06).
+      // No-op when no PropertyStore is registered (card does not support inspection).
+      setProperty: (event: ActionEvent) => {
+        const store = propertyStoreRef.current;
+        if (!store) return;
+        const payload = event.value as { path: string; value: unknown; source?: string } | undefined;
+        if (!payload || typeof payload.path !== "string") return;
+        store.set(payload.path, payload.value, payload.source ?? "inspector");
+      },
     },
   });
 
@@ -460,11 +493,16 @@ export function Tugcard({
       <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
         <TugcardDataProvider feedData={emptyFeedData.current}>
           <ResponderScope>
-            {feedsReady ? children : (
-              <div className="tugcard-loading" data-testid="tugcard-loading">
-                Loading...
-              </div>
-            )}
+            {/* Phase 5d4: provide PropertyStore registration callback to card content.
+                Card content calls usePropertyStore() which reads this context and
+                calls registerPropertyStore in useLayoutEffect. [D01] */}
+            <TugcardPropertyContext value={registerPropertyStore}>
+              {feedsReady ? children : (
+                <div className="tugcard-loading" data-testid="tugcard-loading">
+                  Loading...
+                </div>
+              )}
+            </TugcardPropertyContext>
           </ResponderScope>
         </TugcardDataProvider>
       </div>
