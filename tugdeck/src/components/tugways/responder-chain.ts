@@ -237,6 +237,53 @@ export class ResponderChainManager {
     return false;
   }
 
+  // ---- Explicit-target dispatch ----
+
+  /**
+   * Dispatch an action directly to a specific registered node by ID.
+   *
+   * Unlike dispatch(), this does not walk the chain -- it delivers the event
+   * directly to the named target. If the target is not registered, throws an
+   * Error with a descriptive message. If the target is registered but does not
+   * handle the action (action key not in its actions map), returns false.
+   *
+   * Note: canHandle is advisory for validation queries only and is never
+   * consulted during dispatchTo.
+   *
+   * [D03] dispatchTo throws on unregistered target
+   * Spec S03 (#s03-dispatch-to-method)
+   */
+  dispatchTo(targetId: string, event: ActionEvent): boolean {
+    const node = this.nodes.get(targetId);
+    if (!node) {
+      throw new Error(`dispatchTo: target "${targetId}" is not registered`);
+    }
+    if (event.action in node.actions) {
+      node.actions[event.action](event);
+      return true;
+    }
+    return false;
+  }
+
+  // ---- Per-node capability query ----
+
+  /**
+   * Query whether a specific registered node can handle the given action.
+   *
+   * Checks the node's actions map first, then the optional canHandle function.
+   * Returns false if the node is not registered.
+   *
+   * [D07] nodeCanHandle for per-node capability query
+   * Spec S07 (#s07-node-can-handle)
+   */
+  nodeCanHandle(nodeId: string, action: string): boolean {
+    const node = this.nodes.get(nodeId);
+    if (!node) return false;
+    if (action in node.actions) return true;
+    if (node.canHandle && node.canHandle(action)) return true;
+    return false;
+  }
+
   // ---- Default button stack ----
 
   /**

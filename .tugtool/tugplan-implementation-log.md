@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-06T01:50:07Z
+---
+
+## step-2: Added dispatchTo(targetId, event) for explicit-target dispatch (throws on unregistered) and nodeCanHandle(nodeId, action) for per-node capability queries to ResponderChainManager, with 8 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
 step: step-1
 date: 2025-03-06T00:19:28Z
 ---

@@ -325,6 +325,79 @@ describe("subscribe", () => {
   });
 });
 
+// ---- dispatchTo ----
+
+describe("dispatchTo", () => {
+  it("delivers action to registered target and returns true", () => {
+    const mgr = makeManager();
+    let handled = false;
+    mgr.register({ id: "root", parentId: null, actions: {} });
+    mgr.register({ id: "target", parentId: "root", actions: { save: (_event: ActionEvent) => { handled = true; } } });
+    const result = mgr.dispatchTo("target", { action: "save", phase: "discrete" });
+    expect(result).toBe(true);
+    expect(handled).toBe(true);
+  });
+
+  it("returns false when target exists but does not handle the action", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "root", parentId: null, actions: {} });
+    mgr.register({ id: "target", parentId: "root", actions: { save: (_event: ActionEvent) => {} } });
+    const result = mgr.dispatchTo("target", { action: "delete", phase: "discrete" });
+    expect(result).toBe(false);
+  });
+
+  it("throws Error with descriptive message when target is not registered", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "root", parentId: null, actions: {} });
+    expect(() => mgr.dispatchTo("ghost", { action: "save", phase: "discrete" })).toThrow(
+      'dispatchTo: target "ghost" is not registered'
+    );
+  });
+
+  it("bypasses chain walk -- action goes directly to target, not first responder", () => {
+    const mgr = makeManager();
+    const calls: string[] = [];
+    mgr.register({ id: "root", parentId: null, actions: { save: (_event: ActionEvent) => calls.push("root") } });
+    mgr.register({ id: "target", parentId: "root", actions: { save: (_event: ActionEvent) => calls.push("target") } });
+    // First responder is root (auto-promoted), but we dispatch directly to target
+    expect(mgr.getFirstResponder()).toBe("root");
+    mgr.dispatchTo("target", { action: "save", phase: "discrete" });
+    expect(calls).toEqual(["target"]);
+  });
+});
+
+// ---- nodeCanHandle ----
+
+describe("nodeCanHandle", () => {
+  it("returns true when node has action in actions map", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "root", parentId: null, actions: { copy: (_event: ActionEvent) => {} } });
+    expect(mgr.nodeCanHandle("root", "copy")).toBe(true);
+  });
+
+  it("returns true when node's canHandle callback returns true", () => {
+    const mgr = makeManager();
+    mgr.register({
+      id: "root",
+      parentId: null,
+      actions: {},
+      canHandle: (action: string) => action === "dynamic-action",
+    });
+    expect(mgr.nodeCanHandle("root", "dynamic-action")).toBe(true);
+  });
+
+  it("returns false when node does not handle action", () => {
+    const mgr = makeManager();
+    mgr.register({ id: "root", parentId: null, actions: { copy: (_event: ActionEvent) => {} } });
+    expect(mgr.nodeCanHandle("root", "paste")).toBe(false);
+  });
+
+  it("returns false when node is not registered", () => {
+    const mgr = makeManager();
+    expect(mgr.nodeCanHandle("ghost", "copy")).toBe(false);
+  });
+});
+
 // ---- Edge cases ----
 
 describe("edge cases", () => {
