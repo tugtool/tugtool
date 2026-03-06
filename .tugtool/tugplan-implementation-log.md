@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-06T03:43:53Z
+---
+
+## step-2: Implemented StyleCascadeReader class with StyleLayer interface and styleCascadeReader singleton. getDeclared follows T01 priority: preview > inline > token > class > null. Constructor injection for getComputedStyle enables testability. 23 unit tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d3-mutation-transactions.md
+
+---
+
+---
 step: step-1
 date: 2025-03-06T03:36:20Z
 ---
