@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-06T15:28:29Z
+---
+
+## step-4: Created GalleryObservablePropsContent with PropertyStore (backgroundColor, fontSize, fontFamily), useSyncExternalStore subscriptions, inspector panel controls, and live source attribution observer demonstrating circular guard. Registered as eighth gallery tab.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T15:07:14Z
 ---

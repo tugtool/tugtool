@@ -1,0 +1,447 @@
+/**
+ * gallery-observable-props-content.tsx -- GalleryObservablePropsContent demo component.
+ *
+ * Demonstrates the full PropertyStore round-trip:
+ *   1. Card content registers a PropertyStore via usePropertyStore().
+ *   2. An inspector panel reads current values and dispatches setProperty
+ *      actions via manager.dispatchTo(cardId, ...) — routing through the
+ *      parent Tugcard's responder node to the registered store.
+ *   3. The target element's appearance updates reactively via
+ *      useSyncExternalStore subscriptions, one per property.
+ *   4. Source attribution prevents circular re-dispatch: inspector controls
+ *      tag their changes as source 'inspector'; if a content observer sees
+ *      source 'inspector' it skips re-dispatch.
+ *
+ * This is the first gallery tab to use the cardId argument from contentFactory.
+ * The cardId is needed to direct setProperty actions to the correct Tugcard
+ * responder node via dispatchTo.
+ *
+ * Design decisions:
+ *   [D01] Context callback registration for PropertyStore
+ *   [D02] Store owns values with optional callbacks
+ *   [D03] Observer-side circular guard
+ *   [D04] setProperty action routed through Tugcard responder
+ *   [D05] Per-path observe for useSyncExternalStore
+ *
+ * Rules of Tugways:
+ *   #1  -- No root.render() after initial mount
+ *   #2  -- useSyncExternalStore for external state reads
+ *   #3  -- useLayoutEffect for registrations events depend on
+ *   #4  -- Appearance changes through CSS/DOM, never React state
+ *
+ * Spec S01, Spec S06, Spec S07 (#s07-gallery-demo)
+ *
+ * See also: tugplan-tugways-phase-5d4-observable-properties.md
+ *
+ * @module components/tugways/cards/gallery-observable-props-content
+ */
+
+import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
+import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
+import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
+
+// ---------------------------------------------------------------------------
+// Schema constants (module-scope to avoid recreation on each render)
+// ---------------------------------------------------------------------------
+
+/**
+ * Property schema for the Observable Props demo.
+ * Three properties: color, number (with min/max), enum.
+ *
+ * Spec S07 (#s07-gallery-demo)
+ */
+const DEMO_SCHEMA: PropertyDescriptor[] = [
+  {
+    path: "style.backgroundColor",
+    type: "color",
+    label: "Background Color",
+  },
+  {
+    path: "style.fontSize",
+    type: "number",
+    label: "Font Size",
+    min: 8,
+    max: 72,
+  },
+  {
+    path: "style.fontFamily",
+    type: "enum",
+    label: "Font Family",
+    enumValues: ["system-ui", "monospace", "serif"],
+  },
+];
+
+const DEMO_INITIAL_VALUES: Record<string, unknown> = {
+  "style.backgroundColor": "#4f8ef7",
+  "style.fontSize": 16,
+  "style.fontFamily": "system-ui",
+};
+
+const FONT_FAMILY_OPTIONS = ["system-ui", "monospace", "serif"] as const;
+
+// ---------------------------------------------------------------------------
+// GalleryObservablePropsContent
+// ---------------------------------------------------------------------------
+
+/**
+ * GalleryObservablePropsContent -- gallery tab demo for the PropertyStore
+ * observable-properties pipeline.
+ *
+ * Accepts the `cardId` prop from contentFactory so it can target setProperty
+ * actions at the correct Tugcard responder node via dispatchTo. This is the
+ * first gallery tab content to use the cardId argument; existing tabs discard
+ * it as `_cardId`.
+ *
+ * **Target element:** A styled div whose backgroundColor, fontSize, and
+ * fontFamily are driven by useSyncExternalStore subscriptions to the
+ * PropertyStore. Each property subscribes independently so only the component
+ * consuming the changed path re-renders. [D05]
+ *
+ * **Inspector panel:** Three controls (color input, number input + range,
+ * select dropdown). Each control dispatches a setProperty action via
+ * manager.dispatchTo(cardId, { action: 'setProperty', value: { path, value,
+ * source: 'inspector' } }). The action routes through the parent Tugcard's
+ * responder node, which calls store.set() on the registered PropertyStore.
+ * [D04]
+ *
+ * **Source attribution:** Inspector controls tag changes with
+ * source: 'inspector'. Content observers that see source === 'inspector'
+ * skip re-dispatch to avoid circular notification loops. [D03]
+ *
+ * Spec S07 (#s07-gallery-demo)
+ */
+export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
+  const manager = useRequiredResponderChain();
+
+  // Register the PropertyStore with Tugcard via context callback.
+  // [D01] usePropertyStore calls TugcardPropertyContext in useLayoutEffect.
+  const store = usePropertyStore({
+    schema: DEMO_SCHEMA,
+    initialValues: DEMO_INITIAL_VALUES,
+  });
+
+  // Subscribe to each property independently via useSyncExternalStore.
+  // This means only the component consuming the changed path re-renders. [D05]
+  // observe() signature matches useSyncExternalStore's subscribe argument:
+  //   subscribe: (callback: () => void) => () => void
+  const backgroundColor = useSyncExternalStore(
+    (cb) => store.observe("style.backgroundColor", cb),
+    () => store.get("style.backgroundColor") as string,
+  );
+
+  const fontSize = useSyncExternalStore(
+    (cb) => store.observe("style.fontSize", cb),
+    () => store.get("style.fontSize") as number,
+  );
+
+  const fontFamily = useSyncExternalStore(
+    (cb) => store.observe("style.fontFamily", cb),
+    () => store.get("style.fontFamily") as string,
+  );
+
+  // ---------------------------------------------------------------------------
+  // Source-attribution observer — live [D03] circular guard demonstration
+  // ---------------------------------------------------------------------------
+  //
+  // This is the content-side observer required by the plan. It calls
+  // store.observe() with a full PropertyChangeListener that receives the
+  // PropertyChange record and inspects change.source:
+  //
+  //   - source === 'content': the change originated from content code; the
+  //     observer would re-dispatch or apply secondary effects here.
+  //   - source === 'inspector': the change came from the inspector; the
+  //     observer SKIPS re-dispatch to break the circular loop:
+  //       inspector → dispatchTo → Tugcard.setProperty → store.set →
+  //       notify observers → (skip) → no re-dispatch back to inspector.
+  //
+  // The observer writes the last change record into a DOM ref for live display
+  // (appearance-zone: direct DOM write, no React state — Rule #4). [D03]
+
+  // Ref to the DOM span that displays the last PropertyChange record.
+  const lastChangeRef = useRef<HTMLSpanElement>(null);
+
+  // Ref to count how many times the observer fired — exposed as a data
+  // attribute for testability without React state.
+  const observerFireCountRef = useRef<HTMLSpanElement>(null);
+  const fireCountRef = useRef(0);
+
+  useLayoutEffect(() => {
+    // Subscribe to all three paths with a single typed PropertyChangeListener.
+    // The listener checks change.source and guards against re-dispatch. [D03]
+    const handleChange = (change: PropertyChange) => {
+      // [D03] Observer-side circular guard:
+      // When source === 'inspector', this content observer skips re-dispatch.
+      // This prevents: inspector writes → store notifies → content re-dispatches
+      // → store notifies again → infinite loop.
+      if (change.source === "inspector") {
+        // Write to DOM to show the guard fired (no React setState). [D04]
+        if (lastChangeRef.current) {
+          lastChangeRef.current.textContent =
+            `[guarded] ${change.path} ← ${JSON.stringify(change.newValue)} (source: inspector, skipped re-dispatch)`;
+        }
+        fireCountRef.current += 1;
+        if (observerFireCountRef.current) {
+          observerFireCountRef.current.textContent = String(fireCountRef.current);
+        }
+        return; // ← circular guard: skip re-dispatch
+      }
+
+      // source === 'content' (or any other source): apply secondary effects.
+      if (lastChangeRef.current) {
+        lastChangeRef.current.textContent =
+          `[applied] ${change.path} ← ${JSON.stringify(change.newValue)} (source: ${change.source})`;
+      }
+      fireCountRef.current += 1;
+      if (observerFireCountRef.current) {
+        observerFireCountRef.current.textContent = String(fireCountRef.current);
+      }
+    };
+
+    const unsub1 = store.observe("style.backgroundColor", handleChange);
+    const unsub2 = store.observe("style.fontSize", handleChange);
+    const unsub3 = store.observe("style.fontFamily", handleChange);
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store]);
+
+  // ---------------------------------------------------------------------------
+  // Inspector control handlers — dispatch setProperty via dispatchTo
+  // ---------------------------------------------------------------------------
+  //
+  // All controls tag their changes with source: 'inspector'. This allows the
+  // content-side observer above to detect that it did not originate the change
+  // and skip re-dispatch, preventing circular notification loops. [D03]
+  //
+  // The action routes through the parent Tugcard's setProperty handler, which
+  // calls store.set(path, value, source). This exercises the full round-trip:
+  //   inspector control → dispatchTo → Tugcard.setProperty → store.set →
+  //   observer notification → useSyncExternalStore re-render. [D04]
+
+  const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    manager.dispatchTo(cardId, {
+      action: "setProperty",
+      phase: "discrete",
+      value: {
+        path: "style.backgroundColor",
+        value: e.target.value,
+        source: "inspector",
+      },
+    });
+  };
+
+  const handleFontSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const num = Number(e.target.value);
+    manager.dispatchTo(cardId, {
+      action: "setProperty",
+      phase: "discrete",
+      value: {
+        path: "style.fontSize",
+        value: num,
+        source: "inspector",
+      },
+    });
+  };
+
+  const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    manager.dispatchTo(cardId, {
+      action: "setProperty",
+      phase: "discrete",
+      value: {
+        path: "style.fontFamily",
+        value: e.target.value,
+        source: "inspector",
+      },
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  return (
+    <div className="cg-content" data-testid="gallery-observable-props-content">
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Target element: appearance driven by PropertyStore via              */}
+      {/* useSyncExternalStore. No React state — values flow from the store.  */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="cg-section">
+        <div className="cg-section-title">Target Element</div>
+        <p className="cg-description">
+          Appearance driven by PropertyStore values via{" "}
+          <code>useSyncExternalStore</code>. Each property subscribes
+          independently — only the affected field re-renders when a value
+          changes.
+        </p>
+        <div className="cg-observable-props-stage" data-testid="observable-props-stage">
+          <div
+            className="cg-observable-props-target"
+            data-testid="observable-props-target"
+            style={{
+              backgroundColor,
+              fontSize: `${fontSize}px`,
+              fontFamily,
+            }}
+          >
+            The quick brown fox jumps over the lazy dog.
+          </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Inspector panel: controls dispatch setProperty via dispatchTo.      */}
+      {/* Source attribution: source: 'inspector' tags all writes so          */}
+      {/* content-side observers can skip re-dispatch. [D03]                  */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="cg-section" data-testid="observable-props-inspector">
+        <div className="cg-section-title">Inspector Panel</div>
+        <p className="cg-description">
+          Each control dispatches <code>setProperty</code> via{" "}
+          <code>dispatchTo(cardId, ...)</code>. The action routes through the
+          parent Tugcard's responder node to the registered PropertyStore.
+          Source is tagged <code>'inspector'</code> to prevent circular loops.
+        </p>
+
+        {/* Background Color */}
+        <div className="cg-control-group" data-testid="inspector-bg-color-group">
+          <label
+            className="cg-control-label"
+            htmlFor="obs-props-bg-color"
+          >
+            {DEMO_SCHEMA[0].label}
+          </label>
+          <input
+            id="obs-props-bg-color"
+            type="color"
+            className="cg-color-input"
+            value={backgroundColor}
+            data-testid="inspector-bg-color"
+            onChange={handleColorChange}
+          />
+        </div>
+
+        {/* Font Size */}
+        <div className="cg-control-group" data-testid="inspector-font-size-group">
+          <label
+            className="cg-control-label"
+            htmlFor="obs-props-font-size"
+          >
+            {DEMO_SCHEMA[1].label}
+          </label>
+          <input
+            id="obs-props-font-size"
+            type="number"
+            className="cg-control-input"
+            min={DEMO_SCHEMA[1].min}
+            max={DEMO_SCHEMA[1].max}
+            value={fontSize}
+            data-testid="inspector-font-size"
+            onChange={handleFontSizeChange}
+          />
+          <input
+            type="range"
+            className="cg-position-slider"
+            min={DEMO_SCHEMA[1].min}
+            max={DEMO_SCHEMA[1].max}
+            value={fontSize}
+            data-testid="inspector-font-size-range"
+            onChange={handleFontSizeChange}
+          />
+        </div>
+
+        {/* Font Family */}
+        <div className="cg-control-group" data-testid="inspector-font-family-group">
+          <label
+            className="cg-control-label"
+            htmlFor="obs-props-font-family"
+          >
+            {DEMO_SCHEMA[2].label}
+          </label>
+          <select
+            id="obs-props-font-family"
+            className="cg-control-select"
+            value={fontFamily}
+            data-testid="inspector-font-family"
+            onChange={handleFontFamilyChange}
+          >
+            {FONT_FAMILY_OPTIONS.map((ff) => (
+              <option key={ff} value={ff}>
+                {ff}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Source attribution — live circular guard display [D03]             */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="cg-section" data-testid="observable-props-source-note">
+        <div className="cg-section-title">Source Attribution (Circular Guard)</div>
+        <p className="cg-description">
+          A content-side <code>store.observe()</code> listener receives every{" "}
+          <code>PropertyChange</code> record and checks <code>change.source</code>:{" "}
+          when source is <code>'inspector'</code> it skips re-dispatch; when source
+          is <code>'content'</code> it applies secondary effects. The observer
+          count and last record below update via direct DOM writes — no React
+          state, no re-render. [D03, Rule #4]
+        </p>
+
+        {/* Live observer output — updated via direct DOM writes in the observer */}
+        <table className="cg-cascade-table" data-testid="observable-props-state-table">
+          <tbody>
+            <tr>
+              <td className="cg-cascade-prop">Observer fire count</td>
+              <td className="cg-cascade-value">
+                <span
+                  ref={observerFireCountRef}
+                  data-testid="observer-fire-count"
+                >
+                  0
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td className="cg-cascade-prop">Last change record</td>
+              <td className="cg-cascade-value">
+                <span
+                  ref={lastChangeRef}
+                  data-testid="observer-last-change"
+                >
+                  (none yet — use the inspector above)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td className="cg-cascade-prop">style.backgroundColor</td>
+              <td className="cg-cascade-value" data-testid="state-bg-color">
+                {backgroundColor}
+              </td>
+            </tr>
+            <tr>
+              <td className="cg-cascade-prop">style.fontSize</td>
+              <td className="cg-cascade-value" data-testid="state-font-size">
+                {fontSize}px
+              </td>
+            </tr>
+            <tr>
+              <td className="cg-cascade-prop">style.fontFamily</td>
+              <td className="cg-cascade-value" data-testid="state-font-family">
+                {fontFamily}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
