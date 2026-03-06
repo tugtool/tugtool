@@ -1,6 +1,6 @@
 # Tugways Design System — Concepts and Roadmap {#top}
 
-## Rules of Tug {#rules-of-tug}
+## Rules of Tugways {#rules-of-tugways}
 
 *Invariants for tugways implementation. Every rule traces to a design decision. Violating any rule requires updating the design decision first — never silently diverge.*
 
@@ -3851,9 +3851,9 @@ These decisions formalize what Concept 5 already prescribed: DeckManager operate
 
 New phase **5a2: DeckManager Store Migration** added to the implementation strategy between Phase 5a (Selection Model) and Phase 5b (Card Tabs).
 
-### Entry 20: Rules of Tug {#log-20} (2026-03-03)
+### Entry 20: Rules of Tugways {#log-20} (2026-03-03)
 
-Added the "Rules of Tug" section at the very top of this document (before the Table of Contents). Eight hard invariants distilled from existing design decisions [D01]-[D42], phrased as prohibitions and imperatives that can be mechanically verified during implementation. The rules exist because the D40-D42 investigation revealed that correct design principles in Concept 5 were not followed during implementation — DeckManager diverged from the subscribable store pattern. Short, scannable rules at the top of the document prevent this class of drift. Referenced from CLAUDE.md so AI agents see the critical rules every session.
+Added the "Rules of Tugways" section at the very top of this document (before the Table of Contents). Eight hard invariants distilled from existing design decisions [D01]-[D42], phrased as prohibitions and imperatives that can be mechanically verified during implementation. The rules exist because the D40-D42 investigation revealed that correct design principles in Concept 5 were not followed during implementation — DeckManager diverged from the subscribable store pattern. Short, scannable rules at the top of the document prevent this class of drift. Referenced from CLAUDE.md so AI agents see the critical rules every session.
 
 ### Entry 21: Concept 12 Revised — Tab Icons, Type Picker, Phase Split {#log-21} (2026-03-03)
 
@@ -3941,7 +3941,7 @@ Expanded the design system with three new concept areas, motivated by the need f
 
 **Concept 21 — Observable Properties** introduces a typed key-path `PropertyStore` per card — a scoped KVC/KVO-inspired store. Cards register inspectable properties with schemas. Inspectors discover properties via `getSchema()`, read via `get()`, write via responder chain actions, and observe via `useSyncExternalStore`-compatible subscriptions. Change records include source attribution to prevent circular updates.
 
-New design decisions: D61–D69. New Rules of Tug: #9 (live preview is appearance-zone only), #10 (controls emit, responders handle).
+New design decisions: D61–D69. New Rules of Tugways: #9 (live preview is appearance-zone only), #10 (controls emit, responders handle).
 
 Phase 5d restructured into 5d1 (default button, unchanged), 5d2 (control action foundation), 5d3 (mutation transactions), 5d4 (observable properties). New Phase 8e (Inspector Panels) added downstream.
 

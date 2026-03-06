@@ -29,7 +29,7 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 - Wire `computeSnap` into the existing `applyDragFrame` rAF loop inside `card-frame.tsx`, gated on the snap modifier key (read via a configurable helper)
 - Read other card rects from the DOM at drag-start (snapshot approach, same pattern as the existing `dragTabBarCache`)
-- Render snap guide `<div>` elements via direct DOM manipulation (create/position/remove), consistent with Rules of Tug [D08]/[D09] -- no React state for guides
+- Render snap guide `<div>` elements via direct DOM manipulation (create/position/remove), consistent with Rules of Tugways [D08]/[D09] -- no React state for guides
 - Compute sets transiently at drag-start via `findSharedEdges` + `computeSets` to determine if the dragged card is part of a set (for set-move)
 - Keep `snap.ts` geometry functions completely untouched -- the modifier gate lives in the drag handler
 - Target ~180-220 lines of change in one file (`card-frame.tsx`), revised from the initial ~50-line estimate to account for set-move, modifier-driven break-out, guide management, and store commit ordering
@@ -66,7 +66,7 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 
 #### Constraints {#constraints}
 
-- Appearance changes go through CSS and DOM, never React state (Rules of Tug [D08], [D09])
+- Appearance changes go through CSS and DOM, never React state (Rules of Tugways [D08], [D09])
 - Never call `root.render()` after initial mount ([D40], [D42])
 - Drag handler runs in a rAF loop -- snap computation must be fast enough for 60fps
 - PointerEvent carries modifier state (`altKey`, `ctrlKey`, `shiftKey`, `metaKey`) natively -- no separate `keydown`/`keyup` listener needed
@@ -118,7 +118,7 @@ Phase 5c, as described in the implementation strategy, adds exactly one behavior
 **Decision:** Snap guide lines are created/positioned/removed as `<div>` elements with `.snap-guide-line` CSS classes via direct DOM manipulation inside the rAF loop.
 
 **Rationale:**
-- Consistent with Rules of Tug [D08]/[D09]: appearance changes go through CSS and DOM, never React state
+- Consistent with Rules of Tugways [D08]/[D09]: appearance changes go through CSS and DOM, never React state
 - Guide lifetime exactly matches the drag gesture -- create on first snap, remove on drag-end or when the snap modifier is released
 - No React re-renders during drag
 

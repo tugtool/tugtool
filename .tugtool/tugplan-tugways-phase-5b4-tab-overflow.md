@@ -23,14 +23,14 @@
 
 TugTabBar currently uses `overflow-x: auto` with a hidden scrollbar to handle excess tabs. This is a poor experience: tabs scroll off-screen with no visual indication, and users have no way to discover or access hidden tabs. Phase 5b4 replaces this with a two-stage progressive collapse that keeps all tabs accessible. This work is purely presentational and local to TugTabBar — no changes to layout-tree.ts, serialization.ts, or DeckManager are needed.
 
-The existing tab bar component (from Phase 5b) and the TugDropdown component provide the foundation. The overflow dropdown reuses TugDropdown as-is. Per-tab collapse state follows the Rules of Tug appearance-zone pattern (imperative DOM data attributes, no React state), while the overflow dropdown button and its item list are structural-zone (React state), because adding/removing DOM elements requires React rendering.
+The existing tab bar component (from Phase 5b) and the TugDropdown component provide the foundation. The overflow dropdown reuses TugDropdown as-is. Per-tab collapse state follows the Rules of Tugways appearance-zone pattern (imperative DOM data attributes, no React state), while the overflow dropdown button and its item list are structural-zone (React state), because adding/removing DOM elements requires React rendering.
 
 #### Strategy {#strategy}
 
 - Extract a pure `computeOverflow()` function that determines which tabs are visible vs. overflow based on measured widths, enabling thorough unit testing without DOM dependencies.
 - Implement Stage 1 collapse first (icon-only inactive tabs), then Stage 2 (overflow dropdown), building incrementally.
 - Use a ResizeObserver on the tab bar container to trigger re-measurement on resize, tab add/remove, or card resize.
-- Measure actual tab widths via `getBoundingClientRect` after an initial render pass, then apply overflow state via data attributes (appearance-zone pattern per Rules of Tug [D12]).
+- Measure actual tab widths via `getBoundingClientRect` after an initial render pass, then apply overflow state via data attributes (appearance-zone pattern per Rules of Tugways [D12]).
 - Keep the [+] type picker button rightmost at all times, after the overflow dropdown button if present.
 - Switch from `overflow-x: auto` to `overflow-x: hidden`, resolving the insertion indicator clipping issue noted in the Phase 5b2 CSS.
 
@@ -69,7 +69,7 @@ The existing tab bar component (from Phase 5b) and the TugDropdown component pro
 
 #### Constraints {#constraints}
 
-- **Appearance-zone vs. structural boundary:** Per-tab collapse/hide state is appearance-zone (imperative DOM data attributes, no React state). The overflow dropdown button and its item list are structural-zone (React state via `useState` in `useTabOverflow`), because showing/hiding the dropdown button and populating its items are structural DOM changes that require React rendering. This is consistent with Rules of Tug [D12]: appearance-zone covers visual presentation changes on existing elements, while adding/removing elements is structural.
+- **Appearance-zone vs. structural boundary:** Per-tab collapse/hide state is appearance-zone (imperative DOM data attributes, no React state). The overflow dropdown button and its item list are structural-zone (React state via `useState` in `useTabOverflow`), because showing/hiding the dropdown button and populating its items are structural DOM changes that require React rendering. This is consistent with Rules of Tugways [D12]: appearance-zone covers visual presentation changes on existing elements, while adding/removing elements is structural.
 - All colors and spacing must use `--td-*` semantic tokens exclusively
 - No `overflow-x: auto` — the overflow dropdown replaces scrolling entirely
 - ResizeObserver callback must not trigger React re-renders for per-tab appearance changes (collapsed/hidden attributes); it may update React state for the overflow tab list (structural change)
@@ -150,7 +150,7 @@ This plan uses explicit anchors per the skeleton contract. All headings that are
 **Decision:** Per-tab collapse/hide state is driven by `data-overflow` attributes on tab DOM elements, set imperatively by the ResizeObserver callback (appearance-zone). The overflow tab list (which tabs appear in the dropdown) is stored in React state via `useState` in `useTabOverflow` (structural-zone), because it controls whether the overflow dropdown button is rendered and what items it contains.
 
 **Rationale:**
-- Per-tab visual changes (collapsed, hidden) are appearance-zone per Rules of Tug [D12] — CSS handles them via `data-overflow` attributes, avoiding re-renders for the common case of resizing
+- Per-tab visual changes (collapsed, hidden) are appearance-zone per Rules of Tugways [D12] — CSS handles them via `data-overflow` attributes, avoiding re-renders for the common case of resizing
 - The overflow dropdown button is a structural DOM addition/removal — React must render it and its TugDropdown items, which requires React state
 - This split is consistent with existing patterns: `data-active` and `data-dragging` are appearance-zone, while the [+] type picker dropdown items are React-rendered
 

@@ -83,7 +83,7 @@ Phase 5a2 established DeckManager as a subscribable store with `useLayoutEffect`
 
 #### Constraints {#constraints}
 
-- Rules of Tug must be followed: no `root.render()` after initial mount, `useSyncExternalStore` for external state, `useLayoutEffect` for registrations, appearance changes through CSS/DOM
+- Rules of Tugways must be followed: no `root.render()` after initial mount, `useSyncExternalStore` for external state, `useLayoutEffect` for registrations, appearance changes through CSS/DOM
 - Clean break: zero backward compatibility for old string-based dispatch. No union types.
 - `bun` only for JS/TS package management (never npm)
 
@@ -569,11 +569,11 @@ No new files. All changes are modifications to existing files.
 **Tasks:**
 - [ ] Add a new section within `GalleryChainActionsContent` below the existing "Chain-Action Buttons" section, separated by a `cg-divider`
 - [ ] The new section title: "ActionEvent Dispatch"
-- [ ] Register a local responder via `useResponder` with a stable ID (e.g., `"action-event-demo"`) that handles `demoAction` and updates local state with the received `ActionEvent` fields. Import `useResponder` from `use-responder.tsx` and use `useLayoutEffect` for registration per Rules of Tug. The responder registers as a child of the gallery card's Tugcard responder node -- `useResponder` automatically picks up the parent ID from `ResponderParentContext` provided by Tugcard's `ResponderScope`. This is correct tree placement: the demo responder is a leaf node below the gallery card in the responder chain tree.
+- [ ] Register a local responder via `useResponder` with a stable ID (e.g., `"action-event-demo"`) that handles `demoAction` and updates local state with the received `ActionEvent` fields. Import `useResponder` from `use-responder.tsx` and use `useLayoutEffect` for registration per Rules of Tugways. The responder registers as a child of the gallery card's Tugcard responder node -- `useResponder` automatically picks up the parent ID from `ResponderParentContext` provided by Tugcard's `ResponderScope`. This is correct tree placement: the demo responder is a leaf node below the gallery card in the responder chain tree.
 - [ ] Add a TugButton in **direct-action mode** (`onClick`) that calls `manager.dispatchTo("action-event-demo", { action: "demoAction", phase: "discrete" })` in its click handler. Use `useRequiredResponderChain()` to get the manager. Note: chain-action mode (`action` prop) without `target` would walk the chain upward and never find the demo responder (it is a child, not an ancestor). Using `target` prop would correctly use `nodeCanHandle`, but direct-action mode with explicit `dispatchTo` is simpler and demonstrates the same mechanism.
 - [ ] The handler receives the full `ActionEvent` and stores a display string showing its fields (action, phase).
 - [ ] A status line below the button shows the last received event's fields (action, phase) or "No event received" initially
-- [ ] Use local `useState` for the display text (this is local component state, not external store state, so `useSyncExternalStore` does not apply per Rules of Tug). Note on stale closures: the `demoAction` handler closes over the `useState` setter. This is safe because React guarantees `useState` setter identity stability across re-renders -- the setter never changes, so the closure captured at registration time always calls the current setter.
+- [ ] Use local `useState` for the display text (this is local component state, not external store state, so `useSyncExternalStore` does not apply per Rules of Tugways). Note on stale closures: the `demoAction` handler closes over the `useState` setter. This is safe because React guarantees `useState` setter identity stability across re-renders -- the setter never changes, so the closure captured at registration time always calls the current setter.
 
 **Tests:**
 - [ ] Existing gallery-card tests continue to pass

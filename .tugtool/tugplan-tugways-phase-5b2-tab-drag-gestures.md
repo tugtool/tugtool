@@ -1,6 +1,6 @@
 ## Tugways Phase 5b2: Tab Drag Gestures {#phase-5b2-tab-drag-gestures}
 
-**Purpose:** Tabs can be reordered within a tab bar, detached into new cards, and merged into existing cards via pointer-capture drag gestures -- with visual feedback (ghost tab, insertion indicator, drop-target highlight) that follows Rules of Tug appearance-zone discipline.
+**Purpose:** Tabs can be reordered within a tab bar, detached into new cards, and merged into existing cards via pointer-capture drag gestures -- with visual feedback (ghost tab, insertion indicator, drop-target highlight) that follows Rules of Tugways appearance-zone discipline.
 
 ---
 
@@ -614,7 +614,7 @@ The TugTabBar must also expose its own DOM element via a `data-card-id` attribut
 
 > This is the single place we define "done" for the phase. Keep it crisp and testable.
 
-**Deliverable:** Tabs can be freely reordered, detached into new cards, and merged into existing cards via pointer-capture drag gestures, with ghost tab, insertion indicator, and drop-target visual feedback -- all following Rules of Tug appearance-zone discipline.
+**Deliverable:** Tabs can be freely reordered, detached into new cards, and merged into existing cards via pointer-capture drag gestures, with ghost tab, insertion indicator, and drop-target visual feedback -- all following Rules of Tugways appearance-zone discipline.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 

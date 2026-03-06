@@ -70,7 +70,7 @@ Both problems share a common root: the system treats set visuals as per-card ope
 
 #### Constraints {#constraints}
 
-- Rules of Tug: appearance changes go through CSS and DOM, never React state [D08, D09, D40, D42]
+- Rules of Tugways: appearance changes go through CSS and DOM, never React state [D08, D09, D40, D42]
 - Never call `root.render()` after initial mount
 - All DOM mutations for flash and shadow are imperative (createElement, appendChild, style manipulation)
 - Must use `bun` (never `npm`) for all JS tooling

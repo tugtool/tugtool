@@ -148,7 +148,7 @@ function fireKey(key: string, target?: EventTarget): KeyboardEvent {
 
 /**
  * A test component that registers a button element as the default button via
- * useLayoutEffect, following Rules of Tug [D41].
+ * useLayoutEffect, following Rules of Tugways [D41].
  *
  * The component renders a <button> with a given data-testid and calls
  * onButtonRef with the element once it is mounted.

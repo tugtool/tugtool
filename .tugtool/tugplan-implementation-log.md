@@ -109,7 +109,7 @@ step: step-5
 date: 2025-03-05T21:14:27Z
 ---
 
-## step-5: Integration checkpoint: verified all success criteria, Rules of Tug compliance, 641/641 tests pass, no code changes
+## step-5: Integration checkpoint: verified all success criteria, Rules of Tugways compliance, 641/641 tests pass, no code changes
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-5d1-default-button.md

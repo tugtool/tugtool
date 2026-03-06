@@ -75,7 +75,7 @@ The key design change from the previous draft: each gallery section is its own `
 
 #### Constraints {#constraints}
 
-- Must follow Rules of Tug: no `root.render()` after mount, `useSyncExternalStore` for store reads, `useLayoutEffect` for registrations, CSS/DOM for appearance changes
+- Must follow Rules of Tugways: no `root.render()` after mount, `useSyncExternalStore` for store reads, `useLayoutEffect` for registrations, CSS/DOM for appearance changes
 - All colors use `var(--td-*)` semantic tokens exclusively
 - No components defined inside other components (structure-zone rule)
 

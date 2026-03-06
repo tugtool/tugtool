@@ -67,7 +67,7 @@ The new approach gives every card its own `box-shadow` (always the same `--td-ca
 
 #### Constraints {#constraints}
 
-- Must comply with Rules of Tug: Rule 4 (appearance changes through CSS/DOM, never React state), Rule 1 (no `root.render()` after mount), Rule 2 (`useSyncExternalStore` for state reads only).
+- Must comply with Rules of Tugways: Rule 4 (appearance changes through CSS/DOM, never React state), Rule 1 (no `root.render()` after mount), Rule 2 (`useSyncExternalStore` for state reads only).
 - `clip-path` must target `.tugcard`, not `.card-frame`, so resize handles are never clipped.
 - No React state changes for shadow/clip-path updates — all mutations are direct DOM manipulation in `updateSetAppearance()` and the RAF loops.
 

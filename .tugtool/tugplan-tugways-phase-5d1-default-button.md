@@ -65,7 +65,7 @@ Phase 5d1 adds the default-button stack to ResponderChainManager and the Enter-k
 
 #### Constraints {#constraints}
 
-- Rules of Tug compliance: never call `root.render()` after mount [D40, D42]; read external state with `useSyncExternalStore` only [D40]; `useLayoutEffect` for registrations events depend on [D41]; appearance changes through CSS/DOM, never React state [D08, D09]
+- Rules of Tugways compliance: never call `root.render()` after mount [D40, D42]; read external state with `useSyncExternalStore` only [D40]; `useLayoutEffect` for registrations events depend on [D41]; appearance changes through CSS/DOM, never React state [D08, D09]
 - The API takes raw `HTMLButtonElement` (direct DOM reference), not React refs or component instances
 - Stack semantics: push on set, pop on clear, most recent active
 
@@ -357,7 +357,7 @@ This rule goes before the existing `.tug-button-destructive.tug-button-bordered`
   - Renders a primary "Confirm" button and a secondary "Cancel" button
   - Uses `useLayoutEffect` to register the Confirm button as the default button via `manager.setDefaultButton(buttonRef.current)` on mount, and `clearDefaultButton` on unmount (per [D41] useLayoutEffect for registrations)
   - Uses `useRequiredResponderChain()` to get the manager
-  - Displays a status line showing the last action taken (e.g., "Confirm clicked" or "Cancel clicked") via local `useState` (this is local UI state, not external store state, so Rules of Tug [D40] does not apply)
+  - Displays a status line showing the last action taken (e.g., "Confirm clicked" or "Cancel clicked") via local `useState` (this is local UI state, not external store state, so Rules of Tugways [D40] does not apply)
   - Includes instructions: "Click outside the buttons, then press Enter to activate the default button"
 - [ ] Add `gallery-default-button` to `GALLERY_DEFAULT_TABS` array
 - [ ] Add `registerCard` call for `gallery-default-button` in `registerGalleryCards()`
@@ -389,7 +389,7 @@ This rule goes before the existing `.tug-button-destructive.tug-button-bordered`
 - [ ] Verify default button stack works with nested registrations (gallery demo or test)
 - [ ] Verify Enter does not interfere with text inputs, native buttons, or contenteditable
 - [ ] Verify destructive and primary variants are visually distinct in all three themes
-- [ ] Verify no Rules of Tug violations: no `root.render()` calls, useSyncExternalStore for external state, useLayoutEffect for registrations
+- [ ] Verify no Rules of Tugways violations: no `root.render()` calls, useSyncExternalStore for external state, useLayoutEffect for registrations
 
 **Tests:**
 - [ ] All tests pass: `cd tugdeck && bun test`

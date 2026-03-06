@@ -311,7 +311,7 @@ export function GalleryButtonsContent() {
  * its fields (action, phase). A status line below the button shows the last
  * received event, or "No event received" initially.
  *
- * Rules of Tug compliance:
+ * Rules of Tugways compliance:
  * - [D41] useResponder internally uses useLayoutEffect for registration
  * - [D40] Local display state uses useState -- local component state, not
  *   external store state, so useSyncExternalStore does not apply
@@ -716,7 +716,7 @@ export function GalleryDropdownContent() {
  * mount and cleared on unmount. Pressing Enter when neither button is focused
  * activates Confirm via the stage-2 bubble-pipeline shortcut.
  *
- * Rules of Tug compliance:
+ * Rules of Tugways compliance:
  * - [D41] useLayoutEffect for registrations that events depend on
  * - [D40] Local UI state (last action) uses useState -- this is local component
  *   state, not external store state, so useSyncExternalStore does not apply

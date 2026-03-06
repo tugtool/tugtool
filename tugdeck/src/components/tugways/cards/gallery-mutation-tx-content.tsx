@@ -16,7 +16,7 @@
  *   [D05] Three interaction models.
  *   [D06] Cascade reader display uses direct DOM writes (no setState during change phase).
  *
- * Rules of Tug:
+ * Rules of Tugways:
  *   #9  -- No React state changes during continuous preview gestures.
  *   #10 -- Controls emit actions; responders handle actions.
  *

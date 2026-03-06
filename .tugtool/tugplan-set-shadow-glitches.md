@@ -30,7 +30,7 @@ The root cause is that `updateSetAppearance` (which recreates all shadows from s
 - Fix each bug as an independent, testable change with its own commit.
 - Order fixes from simplest (one-line DOM removal) to most involved (store subscriber + resize tracking).
 - All fixes are purely imperative DOM mutations — no new React state, no additional re-renders, no calls to `root.render()`.
-- Validate each fix against Rules of Tug before committing.
+- Validate each fix against Rules of Tugways before committing.
 - Add an integration checkpoint at the end to verify all four fixes work together.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -445,7 +445,7 @@ if (resizeShadowEl) {
 - [ ] Store mutations (close, undo, redo) trigger shadow updates via subscriber (SC3)
 - [ ] Resize of set members translates shadow in real-time (SC4)
 - [ ] `cd tugdeck && bun run build` passes
-- [ ] No Rules of Tug violations: no new React state, no `root.render()`, no `useSyncExternalStore` for the side-effect subscriber
+- [ ] No Rules of Tugways violations: no new React state, no `root.render()`, no `useSyncExternalStore` for the side-effect subscriber
 
 **Acceptance tests:**
 - [ ] Manual: break-out drag → no orphaned shadow
