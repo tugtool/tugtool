@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-06T18:38:37Z
+---
+
+## step-1: Added AnchorPoint, HueAnchors, ThemeHueAnchors, ThemeAnchorData types and interpolateAnchors/tugAnchoredColor functions to palette-engine.ts with comprehensive tests
+
+**Files changed:**
+- .tugtool/tugplan-anchor-palette-engine.md
+
+---
+
+---
 step: step-6
 date: 2025-03-06T17:18:37Z
 ---

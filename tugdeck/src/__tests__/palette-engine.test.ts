@@ -26,7 +26,9 @@ import {
   clampedOklchString,
   tugPaletteVarName,
   injectPaletteCSS,
+  tugAnchoredColor,
 } from "@/components/tugways/palette-engine";
+import type { HueAnchors } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -424,6 +426,86 @@ describe("tugPaletteColor output matches injection values", () => {
     const injectedValue = match![1];
     const computed = tugPaletteColor("red", 50);
     expect(injectedValue).toBe(computed);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tugAnchoredColor() — Phase 5d5b anchor interpolation
+// ---------------------------------------------------------------------------
+
+/** Shared three-stop anchor fixture for all tugAnchoredColor tests. */
+const RED_ANCHORS: HueAnchors = {
+  anchors: [
+    { stop: 0,   L: 0.96, C: 0.01 },
+    { stop: 50,  L: 0.65, C: 0.12 },
+    { stop: 100, L: 0.42, C: 0.17 },
+  ],
+};
+
+describe("tugAnchoredColor()", () => {
+  it("returns oklch with exact L and C at stop 0", () => {
+    const result = tugAnchoredColor("red", 0, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.96, 4);
+    expect(parsed!.C).toBeCloseTo(0.01, 4);
+  });
+
+  it("returns oklch with exact L and C at stop 50", () => {
+    const result = tugAnchoredColor("red", 50, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.65, 4);
+    expect(parsed!.C).toBeCloseTo(0.12, 4);
+  });
+
+  it("returns interpolated L=0.805 at intensity 25 (midpoint between stop-0 and stop-50)", () => {
+    // L: 0.96 + 0.5*(0.65-0.96) = 0.96 - 0.155 = 0.805
+    const result = tugAnchoredColor("red", 25, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.805, 3);
+  });
+
+  it("returns oklch with exact L and C at stop 100", () => {
+    const result = tugAnchoredColor("red", 100, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.42, 4);
+    // C=0.17 is above MAX_CHROMA_FOR_HUE['red']=0.169 so it will be clamped
+    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
+  });
+
+  it("clamps intensity below 0 to 0", () => {
+    const atNeg = tugAnchoredColor("red", -5, RED_ANCHORS);
+    const atZero = tugAnchoredColor("red", 0, RED_ANCHORS);
+    expect(atNeg).toBe(atZero);
+  });
+
+  it("clamps intensity above 100 to 100", () => {
+    const atOver = tugAnchoredColor("red", 150, RED_ANCHORS);
+    const atHundred = tugAnchoredColor("red", 100, RED_ANCHORS);
+    expect(atOver).toBe(atHundred);
+  });
+
+  it("clamps chroma to MAX_CHROMA_FOR_HUE (C value exceeding the cap is capped)", () => {
+    // yellow has MAX_CHROMA_FOR_HUE=0.086; supply C=0.30 which exceeds it
+    const highChromaAnchors: HueAnchors = {
+      anchors: [
+        { stop: 0,   L: 0.96, C: 0.01 },
+        { stop: 50,  L: 0.90, C: 0.30 },
+        { stop: 100, L: 0.70, C: 0.30 },
+      ],
+    };
+    const result = tugAnchoredColor("yellow", 50, highChromaAnchors);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["yellow"] + 0.001);
+  });
+
+  it("returns a valid oklch() string format", () => {
+    const result = tugAnchoredColor("blue", 50, RED_ANCHORS);
+    expect(result).toMatch(/^oklch\([\d.]+ [\d.]+ \d+\)$/);
   });
 });
 

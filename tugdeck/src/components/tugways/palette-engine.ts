@@ -1,8 +1,10 @@
 /**
- * Palette Engine — Tugways Phase 5d5a
+ * Palette Engine — Tugways Phase 5d5b
  *
  * Computes a continuous OKLCH color palette from 24 named hue families.
- * Uses a smoothstep transfer function mapping intensity 0–100 to OKLCH L and C.
+ * Supports two transfer functions:
+ *   - Legacy smoothstep curve (tugPaletteColor, unchanged from Phase 5d5a)
+ *   - Per-hue anchor-based linear interpolation (tugAnchoredColor, new in 5d5b)
  * Per-hue chroma caps prevent sRGB gamut clipping at all standard stops.
  * Injects all palette CSS variables into a <style id="tug-palette"> element.
  *
@@ -300,6 +302,105 @@ export function clampedOklchString(hueName: string, L: number, C: number): strin
 export function tugPaletteColor(hueName: string, intensity: number, params?: LCParams): string {
   const p = params ?? DEFAULT_LC_PARAMS;
   const { L, C } = intensityToLC(intensity, p);
+  return clampedOklchString(hueName, L, C);
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-based interpolation types (Phase 5d5b)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single hand-tuned anchor point for per-hue palette interpolation.
+ * Specifies the target L (lightness) and C (chroma) at a given intensity stop.
+ */
+export interface AnchorPoint {
+  /** Intensity stop in [0, 100]. */
+  stop: number;
+  /** OKLCH lightness at this stop (typically in [0, 1]). */
+  L: number;
+  /** OKLCH chroma at this stop (before per-hue capping). */
+  C: number;
+}
+
+/**
+ * Complete anchor data for a single hue family.
+ * Must include at least stops 0, 50, and 100.
+ * Anchors must be sorted by stop in ascending order.
+ */
+export interface HueAnchors {
+  /** Sorted array of anchor points (ascending by stop). */
+  anchors: AnchorPoint[];
+}
+
+/**
+ * Anchor data for all hue families within a single theme.
+ * Keys are hue family names (matching HUE_FAMILIES).
+ */
+export type ThemeHueAnchors = Record<string, HueAnchors>;
+
+/**
+ * Anchor data for all themes.
+ * Keys are theme names (e.g., "brio", "bluenote", "harmony").
+ */
+export type ThemeAnchorData = Record<string, ThemeHueAnchors>;
+
+// ---------------------------------------------------------------------------
+// Anchor interpolation (Phase 5d5b)
+// ---------------------------------------------------------------------------
+
+/**
+ * Linearly interpolate L and C between surrounding anchor points.
+ *
+ * Clamps intensity to [0, 100].
+ * Returns the anchor's exact L/C when intensity matches a stop exactly.
+ * Anchors must be sorted ascending by stop.
+ */
+function interpolateAnchors(intensity: number, anchors: AnchorPoint[]): { L: number; C: number } {
+  const clamped = Math.max(0, Math.min(100, intensity));
+
+  // Exact match
+  for (const anchor of anchors) {
+    if (anchor.stop === clamped) {
+      return { L: anchor.L, C: anchor.C };
+    }
+  }
+
+  // Find surrounding anchors
+  let lo = anchors[0];
+  let hi = anchors[anchors.length - 1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    if (anchors[i].stop <= clamped && anchors[i + 1].stop >= clamped) {
+      lo = anchors[i];
+      hi = anchors[i + 1];
+      break;
+    }
+  }
+
+  // Linear interpolation
+  const range = hi.stop - lo.stop;
+  if (range === 0) {
+    return { L: lo.L, C: lo.C };
+  }
+  const t = (clamped - lo.stop) / range;
+  return {
+    L: lo.L + t * (hi.L - lo.L),
+    C: lo.C + t * (hi.C - lo.C),
+  };
+}
+
+/**
+ * Compute an oklch() CSS color string using per-hue anchor-based interpolation.
+ *
+ * Linearly interpolates L and C between the surrounding anchor points,
+ * then delegates to clampedOklchString for per-hue chroma capping and formatting.
+ *
+ * @param hueName  - Hue family name (must be a key of HUE_FAMILIES).
+ * @param intensity - Intensity in [0, 100]; clamped if outside range.
+ * @param hueAnchors - Anchor data for this hue family.
+ * @returns A valid oklch() CSS string with gamut-safe chroma.
+ */
+export function tugAnchoredColor(hueName: string, intensity: number, hueAnchors: HueAnchors): string {
+  const { L, C } = interpolateAnchors(intensity, hueAnchors.anchors);
   return clampedOklchString(hueName, L, C);
 }
 
