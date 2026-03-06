@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-06T17:18:37Z
+---
+
+## step-6: Integration checkpoint: tsc clean, 123 phase-specific tests pass (37 palette-engine + 53 gallery-card + 17 observable-props + 16 gallery-palette-content). 851/852 full suite pass (1 pre-existing tug-button failure unrelated to phase).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T17:14:41Z
 ---
