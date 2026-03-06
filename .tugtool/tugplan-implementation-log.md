@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-06T14:53:12Z
+---
+
+## step-1: Created PropertyStore class with typed schema validation, per-path observation, and optional onGet/onSet callbacks. Added 25 unit tests covering all API surface.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T03:57:10Z
 ---
