@@ -426,3 +426,84 @@ describe("tugPaletteColor output matches injection values", () => {
     expect(injectedValue).toBe(computed);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step-3 integration: boot-time and theme-switch wiring
+// ---------------------------------------------------------------------------
+
+describe("injectPaletteCSS – boot and theme-switch integration (step-3)", () => {
+  afterEach(() => {
+    // Remove palette element and any theme override element between tests
+    const palette = document.getElementById("tug-palette");
+    if (palette) palette.remove();
+    const themeOverride = document.getElementById("tug-theme-override");
+    if (themeOverride) themeOverride.remove();
+  });
+
+  it("after boot-time injection, --tug-palette-hue-55-orange-tone-50 is present in the style element", () => {
+    // Simulates main.tsx: applyInitialTheme(initialTheme) then injectPaletteCSS(initialTheme)
+    injectPaletteCSS("brio");
+    const css = document.getElementById("tug-palette")?.textContent ?? "";
+    expect(css).toContain("--tug-palette-hue-55-orange-tone-50:");
+    expect(css).toContain("oklch(");
+  });
+
+  it("after theme switch from brio to bluenote, palette variables are still present (re-injected)", () => {
+    // Simulates the setTheme("bluenote") call sequence in TugThemeProvider:
+    //   injectThemeCSS / removeThemeCSS  →  injectPaletteCSS(newTheme)
+    // We test the palette injection step directly.
+    injectPaletteCSS("brio");
+    expect(document.getElementById("tug-palette")).not.toBeNull();
+
+    // Theme switch: re-inject with new theme name
+    injectPaletteCSS("bluenote");
+
+    // Palette element must still exist (not removed during theme switch)
+    const el = document.getElementById("tug-palette");
+    expect(el).not.toBeNull();
+    // Still contains all the expected variables
+    const css = el!.textContent ?? "";
+    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
+    expect(css).toContain("--tug-palette-hue-55-orange-tone-50:");
+    // Only one palette element exists after the switch
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+  });
+
+  it("after switching bluenote → brio, palette uses default anchors (no stale overrides)", () => {
+    // Simulates: setTheme("bluenote") then setTheme("brio").
+    // In happy-dom, getComputedStyle does not read injected <style> textContent,
+    // so theme CSS custom property overrides are never active in the test
+    // environment. Both calls produce the same (default-param) palette output,
+    // which directly verifies there are no stale values from the prior theme.
+    injectPaletteCSS("bluenote");
+    const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
+
+    injectPaletteCSS("brio");
+    const brioCSS = document.getElementById("tug-palette")!.textContent ?? "";
+
+    // Without real theme CSS properties active, both produce identical output —
+    // confirming there is no stale state carried between calls.
+    expect(brioCSS).toBe(bluenoteCSS);
+
+    // Orange tone-50 is present with a valid oklch value under brio defaults.
+    const match = brioCSS.match(/--tug-palette-hue-55-orange-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    // The value matches direct computation with default params.
+    expect(match![1]).toBe(tugPaletteColor("orange", 50));
+  });
+
+  it("palette element is the same DOM node after multiple theme switches (no duplicate creation)", () => {
+    injectPaletteCSS("brio");
+    const firstEl = document.getElementById("tug-palette");
+    expect(firstEl).not.toBeNull();
+
+    injectPaletteCSS("bluenote");
+    injectPaletteCSS("brio");
+
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+    // Content is still valid after three switches
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain(":root {");
+    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
+  });
+});

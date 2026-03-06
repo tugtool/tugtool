@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-06T16:57:24Z
+---
+
+## step-3: Added injectPaletteCSS call in main.tsx (after applyInitialTheme, before sendCanvasColor) and in theme-provider.tsx setTheme() (after injectThemeCSS/removeThemeCSS, before setThemeState). 37 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-2
 date: 2025-03-06T16:53:07Z
 ---
