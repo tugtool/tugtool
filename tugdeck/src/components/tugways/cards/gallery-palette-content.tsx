@@ -63,16 +63,36 @@ function bezierEase(t: number, p1: number, p2: number): number {
 }
 
 /**
- * Piecewise linear transfer function with a configurable breakpoint.
- * Two linear segments: [0, breakT] → [0, breakS] and [breakT, 1] → [breakS, 1].
+ * Piecewise linear transfer function with two configurable breakpoints.
+ * Four linear segments:
+ *   [0, breakT]       → [0, breakS]
+ *   [breakT, breakT2] → [breakS, breakS2]
+ *   [breakT2, 1]      → [breakS2, 1]
+ *
+ * breakT must be less than breakT2 for well-ordered breakpoints.
  */
-function piecewiseLinear(t: number, breakT: number, breakS: number): number {
-  const clampedBreakT = Math.max(0.01, Math.min(0.99, breakT));
+function piecewiseLinear(
+  t: number,
+  breakT: number,
+  breakS: number,
+  breakT2: number,
+  breakS2: number,
+): number {
+  const clampedBreakT = Math.max(0.01, Math.min(0.98, breakT));
+  const clampedBreakT2 = Math.max(clampedBreakT + 0.01, Math.min(0.99, breakT2));
   const clampedBreakS = Math.max(0.01, Math.min(0.99, breakS));
+  const clampedBreakS2 = Math.max(0.01, Math.min(0.99, breakS2));
   if (t <= clampedBreakT) {
     return (t / clampedBreakT) * clampedBreakS;
   }
-  return clampedBreakS + ((t - clampedBreakT) / (1 - clampedBreakT)) * (1 - clampedBreakS);
+  if (t <= clampedBreakT2) {
+    return (
+      clampedBreakS +
+      ((t - clampedBreakT) / (clampedBreakT2 - clampedBreakT)) *
+        (clampedBreakS2 - clampedBreakS)
+    );
+  }
+  return clampedBreakS2 + ((t - clampedBreakT2) / (1 - clampedBreakT2)) * (1 - clampedBreakS2);
 }
 
 /**
@@ -90,6 +110,8 @@ function computeColor(
   bezierP2: number,
   pieceBreakT: number,
   pieceBreakS: number,
+  pieceBreakT2: number,
+  pieceBreakS2: number,
 ): string {
   if (curveType === "smoothstep") {
     return tugPaletteColor(hueName, intensity, params);
@@ -101,7 +123,7 @@ function computeColor(
   if (curveType === "bezier") {
     s = bezierEase(t, bezierP1, bezierP2);
   } else {
-    s = piecewiseLinear(t, pieceBreakT, pieceBreakS);
+    s = piecewiseLinear(t, pieceBreakT, pieceBreakS, pieceBreakT2, pieceBreakS2);
   }
 
   const L = params.lMax + s * (params.lMin - params.lMax);
@@ -120,6 +142,8 @@ interface CurveConfig {
   bezierP2: number;
   pieceBreakT: number;
   pieceBreakS: number;
+  pieceBreakT2: number;
+  pieceBreakS2: number;
 }
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
@@ -127,8 +151,10 @@ const DEFAULT_CURVE_CONFIG: CurveConfig = {
   curveType: "smoothstep",
   bezierP1: 0.42,
   bezierP2: 0.58,
-  pieceBreakT: 0.4,
-  pieceBreakS: 0.6,
+  pieceBreakT: 0.3,
+  pieceBreakS: 0.45,
+  pieceBreakT2: 0.7,
+  pieceBreakS2: 0.85,
 };
 
 // ---------------------------------------------------------------------------
@@ -169,6 +195,8 @@ function SwatchGrid({
                 config.bezierP2,
                 config.pieceBreakT,
                 config.pieceBreakS,
+                config.pieceBreakT2,
+                config.pieceBreakS2,
               );
               const varName = `--tug-palette-hue-${angle}-${hueName}-tone-${stop}`;
               return (
@@ -353,7 +381,7 @@ function CurveControls({
               id={`${idPrefix}-pt`}
               type="range"
               min="0.05"
-              max="0.95"
+              max="0.94"
               step="0.01"
               value={config.pieceBreakT}
               onChange={(e) => set({ pieceBreakT: parseFloat(e.target.value) })}
@@ -378,6 +406,40 @@ function CurveControls({
               data-testid={`${idPrefix}-piece-break-s`}
             />
             <span className="gp-slider-value">{config.pieceBreakS.toFixed(2)}</span>
+          </div>
+          <div className="cg-control-group">
+            <label className="cg-control-label" htmlFor={`${idPrefix}-pt2`}>
+              Break T2
+            </label>
+            <input
+              id={`${idPrefix}-pt2`}
+              type="range"
+              min="0.06"
+              max="0.95"
+              step="0.01"
+              value={config.pieceBreakT2}
+              onChange={(e) => set({ pieceBreakT2: parseFloat(e.target.value) })}
+              className="gp-slider"
+              data-testid={`${idPrefix}-piece-break-t2`}
+            />
+            <span className="gp-slider-value">{config.pieceBreakT2.toFixed(2)}</span>
+          </div>
+          <div className="cg-control-group">
+            <label className="cg-control-label" htmlFor={`${idPrefix}-ps2`}>
+              Break S2
+            </label>
+            <input
+              id={`${idPrefix}-ps2`}
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              value={config.pieceBreakS2}
+              onChange={(e) => set({ pieceBreakS2: parseFloat(e.target.value) })}
+              className="gp-slider"
+              data-testid={`${idPrefix}-piece-break-s2`}
+            />
+            <span className="gp-slider-value">{config.pieceBreakS2.toFixed(2)}</span>
           </div>
         </>
       )}

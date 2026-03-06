@@ -252,13 +252,14 @@ describe("GalleryPaletteContent – curve type selector", () => {
     expect(container.querySelector("[data-testid='gp-live-bezier-p2']")).not.toBeNull();
   });
 
-  it("switching curve type to piecewise shows piecewise-specific controls", () => {
+  it("switching curve type to piecewise shows all four piecewise-specific controls", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
 
     expect(container.querySelector("[data-testid='gp-live-piece-break-t']")).toBeNull();
+    expect(container.querySelector("[data-testid='gp-live-piece-break-t2']")).toBeNull();
 
     const select = container.querySelector("[data-testid='gp-live-curve-select']") as HTMLSelectElement;
     act(() => {
@@ -267,6 +268,8 @@ describe("GalleryPaletteContent – curve type selector", () => {
 
     expect(container.querySelector("[data-testid='gp-live-piece-break-t']")).not.toBeNull();
     expect(container.querySelector("[data-testid='gp-live-piece-break-s']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gp-live-piece-break-t2']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gp-live-piece-break-s2']")).not.toBeNull();
   });
 
   it("switching curve type changes swatch data-color values relative to smoothstep baseline", () => {
@@ -287,7 +290,7 @@ describe("GalleryPaletteContent – curve type selector", () => {
       fireEvent.change(select, { target: { value: "piecewise" } });
     });
 
-    // Adjust break point to ensure different output from smoothstep
+    // Adjust first breakpoint to ensure different output from smoothstep
     const breakTSlider = container.querySelector("[data-testid='gp-live-piece-break-t']") as HTMLInputElement;
     act(() => {
       fireEvent.change(breakTSlider, { target: { value: "0.2" } });
@@ -297,6 +300,97 @@ describe("GalleryPaletteContent – curve type selector", () => {
     expect(piecewiseColor).toMatch(/^oklch\(/);
     // Piecewise with breakT=0.2 produces a different curve than smoothstep
     expect(piecewiseColor).not.toBe(smoothstepColor);
+  });
+
+  it("renders Break T2 and Break S2 sliders when curve type is piecewise", () => {
+    // Verify the two new second-breakpoint sliders are present in the DOM when
+    // piecewise mode is active. (happy-dom does not propagate fireEvent.change
+    // on range inputs through React controlled-component state, so color-change
+    // assertions for slider moves are not reliable here — see piecewiseLinear
+    // unit tests for 4-segment behavioural coverage.)
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    const select = container.querySelector("[data-testid='gp-live-curve-select']") as HTMLSelectElement;
+    act(() => {
+      fireEvent.change(select, { target: { value: "piecewise" } });
+    });
+
+    const t2Slider = container.querySelector("[data-testid='gp-live-piece-break-t2']") as HTMLInputElement;
+    const s2Slider = container.querySelector("[data-testid='gp-live-piece-break-s2']") as HTMLInputElement;
+    expect(t2Slider).not.toBeNull();
+    expect(s2Slider).not.toBeNull();
+    // Default values from DEFAULT_CURVE_CONFIG
+    expect(t2Slider.value).toBe("0.7");
+    expect(s2Slider.value).toBe("0.85");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Piecewise 4-segment behaviour: boundary and segment verification
+// ---------------------------------------------------------------------------
+
+describe("GalleryPaletteContent – piecewise 4-segment behaviour", () => {
+  afterEach(() => { cleanup(); });
+
+  it("piecewise swatches at intensity 0 and 100 produce valid oklch colors", () => {
+    // Intensity 0 (t=0) and 100 (t=1) are the anchor ends of the transfer
+    // function — should always produce an oklch value regardless of breakpoints.
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    const select = container.querySelector("[data-testid='gp-live-curve-select']") as HTMLSelectElement;
+    act(() => {
+      fireEvent.change(select, { target: { value: "piecewise" } });
+    });
+
+    const livePanel = container.querySelector("[data-testid='gp-live-panel']")!;
+    const swatches = livePanel.querySelectorAll("[data-testid='gp-swatch']");
+
+    // STANDARD_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    // Index 0 → stop 0, index 10 → stop 100 (for hue row 0)
+    const swatchAt0 = swatches[0] as HTMLElement;
+    const swatchAt100 = swatches[10] as HTMLElement;
+    expect(swatchAt0.getAttribute("data-color")).toMatch(/^oklch\(/);
+    expect(swatchAt100.getAttribute("data-color")).toMatch(/^oklch\(/);
+  });
+
+  it("piecewise mode produces different colors at each of the four segment midpoints", () => {
+    // With default breakpoints (breakT=0.3, breakT2=0.7), the four segments
+    // cover t-ranges: [0,0.3], [0.3,0.7], [0.7,1].
+    // Intensity stops 10 (t=0.1), 50 (t=0.5), 80 (t=0.8) sample three distinct
+    // segments (the first, second, and third). They should all differ.
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    const select = container.querySelector("[data-testid='gp-live-curve-select']") as HTMLSelectElement;
+    act(() => {
+      fireEvent.change(select, { target: { value: "piecewise" } });
+    });
+
+    const livePanel = container.querySelector("[data-testid='gp-live-panel']")!;
+    const swatches = livePanel.querySelectorAll("[data-testid='gp-swatch']");
+
+    // STANDARD_STOPS indices: 0→stop0, 1→stop10, 2→stop20, 3→stop30,
+    //   4→stop40, 5→stop50, 6→stop60, 7→stop70, 8→stop80, 9→stop90, 10→stop100
+    // Hue row 0: indices 0-10
+    const color10 = (swatches[1] as HTMLElement).getAttribute("data-color")!;  // t=0.1
+    const color50 = (swatches[5] as HTMLElement).getAttribute("data-color")!;  // t=0.5
+    const color80 = (swatches[8] as HTMLElement).getAttribute("data-color")!;  // t=0.8
+
+    expect(color10).toMatch(/^oklch\(/);
+    expect(color50).toMatch(/^oklch\(/);
+    expect(color80).toMatch(/^oklch\(/);
+    // All three should be different colors (different segments, different slopes)
+    expect(color10).not.toBe(color50);
+    expect(color50).not.toBe(color80);
+    expect(color10).not.toBe(color80);
   });
 });
 
