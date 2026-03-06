@@ -187,6 +187,9 @@
   color: var(--td-text-soft);
   font-size: 1rem;
   line-height: 1;
+  /* Shift the + glyph up slightly to correct its optical baseline offset */
+  padding-top: 0;
+  padding-bottom: 2px;
   cursor: default;
   user-select: none;
   transition:
