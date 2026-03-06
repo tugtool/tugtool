@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-06T16:50:11Z
+---
+
+## step-1: Created palette-engine.ts with HUE_FAMILIES (24 hues), DEFAULT_LC_PARAMS, smoothstep transfer function, intensityToLC, oklchToLinearSRGB, MAX_CHROMA_FOR_HUE (hardcoded per-hue caps), clampedOklchString, tugPaletteColor, tugPaletteVarName, TONE_ALIASES, plus injectPaletteCSS/readThemeParams/readHueOverrides (ahead of schedule). 33 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T15:38:14Z
 ---
