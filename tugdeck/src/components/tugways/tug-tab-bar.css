@@ -55,6 +55,7 @@
   max-width: 160px;
   flex-shrink: 0;
   border: none;
+  border-bottom: 2px solid transparent;
   background-color: transparent;
   color: var(--td-text-soft);
   font-size: 0.75rem;
@@ -188,7 +189,7 @@
   line-height: 1;
   /* Shift the + glyph up slightly to correct its optical baseline offset */
   padding-top: 0;
-  padding-bottom: 2px;
+  padding-bottom: 5px;
   cursor: default;
   user-select: none;
   transition:
