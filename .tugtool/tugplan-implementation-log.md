@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-06T17:18:37Z
+---
+
+## step-6: Integration checkpoint: tsc clean, 123 phase-specific tests pass (37 palette-engine + 53 gallery-card + 17 observable-props + 16 gallery-palette-content). 851/852 full suite pass (1 pre-existing tug-button failure unrelated to phase).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
+step: step-5
+date: 2025-03-06T17:14:41Z
+---
+
+## step-5: Registered gallery-palette as ninth gallery card with GalleryPaletteContent. Updated GALLERY_DEFAULT_TABS, registerGalleryCards(), and all test count assertions (8→9). 70 gallery tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
+step: step-4
+date: 2025-03-06T17:08:02Z
+---
+
+## step-4: Created GalleryPaletteContent component with 24x11 swatch grid, curve type selector (smoothstep/bezier/piecewise), L/C anchor sliders, side-by-side comparison panel. 16 component tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
+step: step-3
+date: 2025-03-06T16:57:24Z
+---
+
+## step-3: Added injectPaletteCSS call in main.tsx (after applyInitialTheme, before sendCanvasColor) and in theme-provider.tsx setTheme() (after injectThemeCSS/removeThemeCSS, before setThemeState). 37 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
+step: step-2
+date: 2025-03-06T16:53:07Z
+---
+
+## step-2: Step 2 (CSS injection function) was fully implemented ahead of schedule in step 1. injectPaletteCSS, readThemeParams, readHueOverrides all present and tested. No new file changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
+step: step-1
+date: 2025-03-06T16:50:11Z
+---
+
+## step-1: Created palette-engine.ts with HUE_FAMILIES (24 hues), DEFAULT_LC_PARAMS, smoothstep transfer function, intensityToLC, oklchToLinearSRGB, MAX_CHROMA_FOR_HUE (hardcoded per-hue caps), clampedOklchString, tugPaletteColor, tugPaletteVarName, TONE_ALIASES, plus injectPaletteCSS/readThemeParams/readHueOverrides (ahead of schedule). 33 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5a-palette-engine.md
+
+---
+
+---
 step: step-5
 date: 2025-03-06T15:38:14Z
 ---

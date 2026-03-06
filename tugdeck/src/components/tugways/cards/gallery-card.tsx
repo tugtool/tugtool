@@ -1,16 +1,17 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into eight separately
+ * Converts the Component Gallery from a floating panel into nine separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates an eight-tab card titled "Component Gallery".
+ * creates a nine-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
  * - [D01] Seven separate componentIds for gallery sections
  * - [D08] Normal tabs: each section is a distinct componentId
  * - [D09] Real factory each: every registration has a real `factory` function
+ * - [D06] Gallery palette tab follows existing gallery card pattern
  * - Spec S03: Gallery registrations
  * - Spec S04: Gallery default tabs
  * - (#s03-gallery-registrations, #s04-gallery-default-tabs, #symbol-inventory)
@@ -27,6 +28,7 @@ import { registerCard } from "@/card-registry";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
 import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
+import { GalleryPaletteContent } from "./gallery-palette-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -48,7 +50,7 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a seven-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates a nine-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
@@ -62,6 +64,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-default-button", title: "Default Button",       closable: true },
   { id: "template", componentId: "gallery-mutation-tx",    title: "Mutation Transactions", closable: true },
   { id: "template", componentId: "gallery-observable-props", title: "Observable Props",   closable: true },
+  { id: "template", componentId: "gallery-palette",        title: "Palette Engine",       closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -784,7 +787,7 @@ export function GalleryDefaultButtonContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all eight gallery card types in the global card registry.
+ * Register all nine gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -795,10 +798,10 @@ export function GalleryDefaultButtonContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates eight-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates nine-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
- * **Authoritative reference:** Spec S03 (#s03-gallery-registrations)
+ * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
  */
 export function registerGalleryCards(): void {
   // ---- gallery-buttons (entry-point: carries defaultTabs + defaultTitle) ----
@@ -963,6 +966,26 @@ export function registerGalleryCards(): void {
     ),
     contentFactory: (cardId) => <GalleryObservablePropsContent cardId={cardId} />,
     defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-palette ----
+  registerCard({
+    componentId: "gallery-palette",
+    factory: (cardId, injected) => (
+      <Tugcard
+        cardId={cardId}
+        meta={{ title: "Palette Engine", icon: "Palette", closable: true }}
+        feedIds={[]}
+        onDragStart={injected.onDragStart}
+        onMinSizeChange={injected.onMinSizeChange}
+      >
+        <GalleryPaletteContent />
+      </Tugcard>
+    ),
+    contentFactory: (_cardId) => <GalleryPaletteContent />,
+    defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
