@@ -238,7 +238,7 @@ describe("DeckCanvas – cycleCard action", () => {
     });
 
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
-    const handled = manager!.dispatch("cycleCard");
+    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
     expect(handled).toBe(true);
     logSpy.mockRestore();
   });
@@ -264,7 +264,7 @@ describe("DeckCanvas – cycleCard action", () => {
       );
     });
 
-    const handled = manager!.dispatch("cycleCard");
+    const handled = manager!.dispatch({ action: "cycleCard", phase: "discrete" });
     expect(handled).toBe(true);
   });
 });
@@ -300,7 +300,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     let handled = false;
     act(() => {
-      handled = manager!.dispatch("showComponentGallery");
+      handled = manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(handled).toBe(true);
   });
@@ -334,7 +334,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     });
 
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
 
     expect(addCardCalls.length).toBe(1);
@@ -375,7 +375,7 @@ describe("DeckCanvas – showComponentGallery action", () => {
     };
 
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
 
     expect(makeFirstResponderCalls).toContain(GALLERY_CARD_ID);
@@ -421,13 +421,13 @@ describe("DeckCanvas – showComponentGallery action", () => {
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card now exists -- should focus it, NOT create a new one
     act(() => {
-      manager!.dispatch("showComponentGallery");
+      manager!.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // No second addCard call
     expect(focusedIds).toContain(GALLERY_CARD_ID);
@@ -1031,7 +1031,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch("addTab");
+      manager!.dispatch({ action: "addTab", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(1);
@@ -1067,7 +1067,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
     });
 
     act(() => {
-      manager!.dispatch("addTab");
+      manager!.dispatch({ action: "addTab", phase: "discrete" });
     });
 
     expect(addTabCalls.length).toBe(0);

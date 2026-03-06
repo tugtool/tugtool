@@ -44,6 +44,7 @@ import { render, act, cleanup } from "@testing-library/react";
 import { ResponderChainProvider, useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import { ResponderChainManager } from "@/components/tugways/responder-chain";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TugButton } from "@/components/tugways/tug-button";
 import { DeckCanvas } from "@/components/chrome/deck-canvas";
 import { DeckManagerContext } from "@/deck-manager-context";
@@ -208,7 +209,7 @@ describe("Responder chain E2E – full chain + key pipeline", () => {
 
     // ---- Show gallery via showComponentGallery dispatch ----
     act(() => {
-      manager.dispatch("showComponentGallery");
+      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
 
     // store.addCard("gallery-buttons") must have been called
@@ -272,13 +273,13 @@ describe("Responder chain E2E – showComponentGallery show-only idempotency", (
 
     // First dispatch: creates the gallery card
     act(() => {
-      manager.dispatch("showComponentGallery");
+      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1);
 
     // Second dispatch: gallery card exists -- must NOT create another card
     act(() => {
-      manager.dispatch("showComponentGallery");
+      manager.dispatch({ action: "showComponentGallery", phase: "discrete" });
     });
     expect(addCardCalls.length).toBe(1); // Still exactly 1
     // handleCardFocused should have been called instead
@@ -314,14 +315,14 @@ describe("Responder chain E2E – chain-action TugButton validation subscription
       // Responder A: copy is enabled (validateAction = true)
       const { ResponderScope: ScopeA } = useResponder({
         id: "root-a",
-        actions: { copy: () => {} },
+        actions: { copy: (_event: ActionEvent) => {} },
         validateAction: () => true,
       });
 
       // Responder B: copy is disabled (validateAction = false)
       const { ResponderScope: ScopeB } = useResponder({
         id: "root-b",
-        actions: { copy: () => {} },
+        actions: { copy: (_event: ActionEvent) => {} },
         validateAction: () => false,
       });
 
@@ -396,7 +397,7 @@ describe("Responder chain E2E – chain-action TugButton validation subscription
 
       const { ResponderScope } = useResponder({
         id: "root",
-        actions: { copy: () => {} },
+        actions: { copy: (_event: ActionEvent) => {} },
       });
 
       return (

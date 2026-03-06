@@ -26,6 +26,7 @@ import { describe, it, expect, mock, afterEach, spyOn } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { TugButton } from "@/components/tugways/tug-button";
 
@@ -57,13 +58,13 @@ function renderWithManager(
 function makeManagerWithAction(
   actionName: string,
   validateResult: boolean = true
-): { manager: ResponderChainManager; dispatched: string[] } {
+): { manager: ResponderChainManager; dispatched: ActionEvent[] } {
   const manager = new ResponderChainManager();
-  const dispatched: string[] = [];
+  const dispatched: ActionEvent[] = [];
   manager.register({
     id: "root",
     parentId: null,
-    actions: { [actionName]: () => dispatched.push(actionName) },
+    actions: { [actionName]: (event: ActionEvent) => dispatched.push(event) },
     validateAction: (_action: string) => validateResult,
   });
   return { manager, dispatched };
@@ -80,11 +81,13 @@ describe("chain-action TugButton – visibility", () => {
     expect(container.querySelector("button")).not.toBeNull();
   });
 
-  it("is hidden (returns null) when canHandle returns false", () => {
+  it("is visible and aria-disabled when canHandle returns false (never-hide [D06])", () => {
     const { manager } = makeManagerWithAction("copy");
     // Register manager but request an action no responder handles
     const { container } = renderWithManager(manager, { action: "paste", children: "Paste" });
-    expect(container.querySelector("button")).toBeNull();
+    // [D06] TugButton never hides -- renders as aria-disabled instead of null
+    expect(container.querySelector("button")).not.toBeNull();
+    expect(container.querySelector("button")!.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("hidden outside provider when no manager is in context", () => {
@@ -135,13 +138,13 @@ describe("chain-action TugButton – enabled/disabled state", () => {
 // ============================================================================
 
 describe("chain-action TugButton – click behavior", () => {
-  it("click on enabled button calls manager.dispatch(action)", () => {
+  it("click on enabled button calls manager.dispatch with ActionEvent", () => {
     const manager = new ResponderChainManager();
-    const dispatched: string[] = [];
+    const dispatched: ActionEvent[] = [];
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: () => dispatched.push("copy") },
+      actions: { copy: (event: ActionEvent) => dispatched.push(event) },
     });
 
     const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
@@ -149,7 +152,8 @@ describe("chain-action TugButton – click behavior", () => {
 
     act(() => { fireEvent.click(btn); });
 
-    expect(dispatched).toEqual(["copy"]);
+    expect(dispatched.length).toBe(1);
+    expect(dispatched[0]).toMatchObject({ action: "copy", phase: "discrete" });
   });
 
   it("click on disabled chain-action button does NOT dispatch", () => {
@@ -174,7 +178,7 @@ describe("chain-action TugButton – re-render on version change", () => {
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: () => {} },
+      actions: { copy: (_event: ActionEvent) => {} },
       validateAction: () => validateResult,
     });
 
@@ -201,7 +205,7 @@ describe("chain-action TugButton – re-render on version change", () => {
     manager.register({
       id: "root",
       parentId: null,
-      actions: { copy: () => {} },
+      actions: { copy: (_event: ActionEvent) => {} },
       validateAction: () => validateResult,
     });
 

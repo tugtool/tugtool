@@ -67,8 +67,11 @@ export interface TugButtonProps {
    * Chain-action mode: action name to dispatch via the responder chain.
    * Mutually exclusive with `onClick`.
    * When set, TugButton subscribes to canHandle/validateAction on the chain.
-   * If canHandle returns false, the button is hidden (returns null).
+   * If canHandle returns false, the button renders as aria-disabled (never hidden).
    * If validateAction returns false, the button is visually disabled (aria-disabled).
+   *
+   * [D06] TugButton never hides -- disable instead of hide
+   * Spec S08 (#s08-never-hide)
    */
   action?: string;
 
@@ -226,14 +229,11 @@ export function TugButton({
   const chainCanHandle = chainActive ? manager.canHandle(action) : false;
   const chainValidated = chainActive ? manager.validateAction(action) : false;
 
-  // isChainDisabled: action is handled but currently disabled (validateAction = false).
-  // Used by handleClick to guard against clicks on aria-disabled buttons.
-  const isChainDisabled = chainActive && chainCanHandle && !chainValidated;
-
-  // If chain-action is active but no responder can handle the action, hide the button.
-  if (chainActive && !chainCanHandle) {
-    return null;
-  }
+  // isChainDisabled: chain is active and either canHandle is false OR validateAction is false.
+  // When true, the button renders as aria-disabled (never hidden -- [D06] never-hide).
+  // This merges the old "no responder can handle" case (was: return null) with the
+  // "handled but disabled" case into a single disabled state. Spec S08 (#s08-never-hide).
+  const isChainDisabled = chainActive && (!chainCanHandle || !chainValidated);
 
   // ---- Layout helpers ----
 
@@ -258,8 +258,9 @@ export function TugButton({
     if (isChainDisabled) return;
 
     if (chainActive && chainCanHandle) {
-      // Chain-action mode: dispatch through the responder chain.
-      manager.dispatch(action);
+      // Chain-action mode: dispatch through the responder chain with ActionEvent.
+      // [D01] ActionEvent is the sole dispatch currency
+      manager.dispatch({ action, phase: "discrete" });
       return;
     }
 

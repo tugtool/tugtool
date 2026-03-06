@@ -15,6 +15,43 @@
 
 import { createContext } from "react";
 
+// ---- ActionPhase and ActionEvent ----
+
+/**
+ * Five-phase action lifecycle.
+ *
+ * - `discrete`: one-shot action (button click, menu selection)
+ * - `begin`:    start of a continuous interaction (scrub start, drag start)
+ * - `change`:   intermediate update during a continuous interaction
+ * - `commit`:   end of a continuous interaction with final value
+ * - `cancel`:   continuous interaction cancelled (no value change committed)
+ *
+ * [D01] ActionEvent is the sole dispatch currency
+ * Spec S01 (#s01-action-event-type)
+ */
+export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
+
+/**
+ * Typed action event -- the sole dispatch currency.
+ *
+ * All dispatch call sites produce an ActionEvent. All action handlers receive
+ * a full ActionEvent, even for discrete (button click) actions.
+ *
+ * [D01] ActionEvent is the sole dispatch currency
+ * [D02] Handler signature is (event: ActionEvent) => void
+ * Spec S01 (#s01-action-event-type)
+ */
+export interface ActionEvent {
+  /** Semantic action name from the action vocabulary. */
+  action: string;
+  /** The control that initiated the event (ref or instance). Optional. */
+  sender?: unknown;
+  /** Typed payload (color, number, point, etc.). Optional for discrete actions. */
+  value?: unknown;
+  /** Lifecycle phase. Use "discrete" for one-shot actions (button clicks, menu selections). */
+  phase: ActionPhase;
+}
+
 // ---- ResponderNode interface ----
 
 /**
@@ -29,11 +66,14 @@ import { createContext } from "react";
  * handleable actions is not statically known (e.g., a card delegating to a
  * child). It is only consulted by the canHandle() validation query -- never
  * by dispatch().
+ *
+ * [D02] Handler signature is (event: ActionEvent) => void
+ * Spec S04 (#s04-responder-node-actions)
  */
 export interface ResponderNode {
   id: string;
   parentId: string | null;
-  actions: Record<string, () => void>;
+  actions: Record<string, (event: ActionEvent) => void>;
   /**
    * Advisory capability override for validation queries only.
    * dispatch() never consults this -- only canHandle() and validateAction()
@@ -126,20 +166,24 @@ export class ResponderChainManager {
    * Dispatch an action through the chain.
    *
    * Walks from the first responder upward via parentId. For each node,
-   * checks the actions map only (not the canHandle function). If the action
-   * key exists, calls the handler and returns true. Continues to parent if
-   * not found. Returns false if the root is reached with no match.
+   * checks `event.action` in the actions map only (not the canHandle function).
+   * If the action key exists, calls the handler with the full ActionEvent and
+   * returns true. Continues to parent if not found. Returns false if the root
+   * is reached with no match.
    *
    * Note: canHandle is advisory for validation queries only and is never
    * consulted during dispatch.
+   *
+   * [D01] ActionEvent is the sole dispatch currency
+   * Spec S02 (#s02-dispatch-method)
    */
-  dispatch(action: string): boolean {
+  dispatch(event: ActionEvent): boolean {
     let currentId: string | null = this.firstResponderId;
     while (currentId !== null) {
       const node = this.nodes.get(currentId);
       if (!node) break;
-      if (action in node.actions) {
-        node.actions[action]();
+      if (event.action in node.actions) {
+        node.actions[event.action](event);
         return true;
       }
       currentId = node.parentId;

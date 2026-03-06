@@ -32,6 +32,7 @@ afterEach(() => {
 });
 
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 import {
   ResponderChainProvider,
   useResponderChain,
@@ -204,7 +205,7 @@ describe("key pipeline – capture-phase (stage 1)", () => {
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cycleCard: () => { cycleCardCalled = true; } },
+      actions: { cycleCard: (_event: ActionEvent) => { cycleCardCalled = true; } },
     });
 
     let preventDefaultCalled = false;
@@ -365,7 +366,7 @@ describe("key pipeline – bubble-phase input guard", () => {
     manager.register({
       id: "deck-canvas",
       parentId: null,
-      actions: { cycleCard: () => { cycleCardCalled = true; } },
+      actions: { cycleCard: (_event: ActionEvent) => { cycleCardCalled = true; } },
     });
 
     const input = getByTestId("text-input");

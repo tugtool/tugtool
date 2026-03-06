@@ -8,6 +8,7 @@ import {
   _resetForTest,
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
+import type { ActionEvent } from "../components/tugways/responder-chain";
 
 // Minimal mock DeckManager.
 // addCard is a stub that records calls; other methods are omitted.
@@ -434,10 +435,10 @@ describe("initActionDispatch: add-tab", () => {
     initActionDispatch(conn as any, deck as any);
 
     // Create a stub ResponderChainManager that records dispatch calls.
-    const dispatched: string[] = [];
+    const dispatched: ActionEvent[] = [];
     const stubManager = {
-      dispatch(action: string): boolean {
-        dispatched.push(action);
+      dispatch(event: ActionEvent): boolean {
+        dispatched.push(event);
         return true;
       },
     };
@@ -446,7 +447,7 @@ describe("initActionDispatch: add-tab", () => {
     dispatchAction({ action: "add-tab" });
 
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0]).toBe("addTab");
+    expect(dispatched[0]).toEqual({ action: "addTab", phase: "discrete" });
   });
 
   it("warns and does not throw when no ResponderChainManager is registered", () => {
@@ -463,15 +464,15 @@ describe("initActionDispatch: add-tab", () => {
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
 
-    const first: string[] = [];
-    const second: string[] = [];
-    registerResponderChainManager({ dispatch: (a: string) => { first.push(a); return true; } } as any);
-    registerResponderChainManager({ dispatch: (a: string) => { second.push(a); return true; } } as any);
+    const first: ActionEvent[] = [];
+    const second: ActionEvent[] = [];
+    registerResponderChainManager({ dispatch: (e: ActionEvent) => { first.push(e); return true; } } as any);
+    registerResponderChainManager({ dispatch: (e: ActionEvent) => { second.push(e); return true; } } as any);
 
     dispatchAction({ action: "add-tab" });
 
     expect(first.length).toBe(0);
     expect(second.length).toBe(1);
-    expect(second[0]).toBe("addTab");
+    expect(second[0]).toEqual({ action: "addTab", phase: "discrete" });
   });
 });

@@ -32,6 +32,7 @@ import {
 } from "@/components/tugways/cards/gallery-card";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
+import type { ActionEvent } from "@/components/tugways/responder-chain";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -48,8 +49,8 @@ function FakeDeckCanvas({ children }: { children?: React.ReactNode }) {
   const { ResponderScope } = useResponder({
     id: "deck-canvas",
     actions: {
-      cycleCard: () => {},
-      showComponentGallery: () => {},
+      cycleCard: (_event: ActionEvent) => {},
+      showComponentGallery: (_event: ActionEvent) => {},
     },
   });
   return <ResponderScope>{children}</ResponderScope>;
@@ -216,25 +217,6 @@ describe("GalleryChainActionsContent – chain-action button dispatches to DeckC
     expect(cycleCardBtn!.disabled).toBe(false);
   });
 
-  it("'nonexistentAction' button is hidden (TugButton returns null for unhandled action)", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(
-        <ResponderChainProvider>
-          <FakeDeckCanvas>
-            <GalleryChainActionsContent />
-          </FakeDeckCanvas>
-        </ResponderChainProvider>
-      ));
-    });
-
-    const buttons = Array.from(container.querySelectorAll("button"));
-    const hiddenBtn = buttons.find((b) =>
-      b.textContent?.includes("Hidden") || b.textContent?.includes("nonexistentAction")
-    );
-    expect(hiddenBtn).toBeUndefined();
-  });
-
   it("clicking 'Cycle Card' dispatches cycleCard through the responder chain", () => {
     let cycleCardCalled = false;
 
@@ -242,8 +224,8 @@ describe("GalleryChainActionsContent – chain-action button dispatches to DeckC
       const { ResponderScope } = useResponder({
         id: "deck-canvas",
         actions: {
-          cycleCard: () => { cycleCardCalled = true; },
-          showComponentGallery: () => {},
+          cycleCard: (_event: ActionEvent) => { cycleCardCalled = true; },
+          showComponentGallery: (_event: ActionEvent) => {},
         },
       });
       return (

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-06T00:19:28Z
+---
+
+## step-1: Added ActionPhase/ActionEvent types to responder-chain.ts, migrated dispatch() from string to ActionEvent, updated all handler signatures, implemented never-hide TugButton (disable instead of hide), added DeckCanvas last-resort canHandle, removed nonexistentAction button, and migrated all 11 test files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d2-control-action.md
+
+---
+
+---
 step: step-5
 date: 2025-03-05T21:14:27Z
 ---

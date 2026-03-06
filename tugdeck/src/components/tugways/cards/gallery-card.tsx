@@ -311,9 +311,6 @@ export function GalleryChainActionsContent() {
           <TugButton action="showComponentGallery">
             Show Gallery
           </TugButton>
-          <TugButton action="nonexistentAction">
-            Hidden (nonexistentAction)
-          </TugButton>
         </div>
       </div>
     </div>

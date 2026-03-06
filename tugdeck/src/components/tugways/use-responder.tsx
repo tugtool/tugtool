@@ -21,6 +21,7 @@
 
 import React, { createContext, useContext, useLayoutEffect, useRef } from "react";
 import { ResponderChainContext } from "./responder-chain";
+import type { ActionEvent } from "./responder-chain";
 
 // ---- ResponderParentContext ----
 
@@ -39,8 +40,13 @@ export const ResponderParentContext = createContext<string | null>(null);
 export interface UseResponderOptions {
   /** Stable string ID for this responder node. Should be a constant at the call site. */
   id: string;
-  /** Map of action names to handler functions (primary dispatch path). */
-  actions?: Record<string, () => void>;
+  /**
+   * Map of action names to handler functions (primary dispatch path).
+   *
+   * [D02] Handler signature is (event: ActionEvent) => void
+   * Spec S05 (#s05-use-responder-options)
+   */
+  actions?: Record<string, (event: ActionEvent) => void>;
   /**
    * Advisory canHandle function for actions not in the actions map.
    * Consulted by canHandle() and validateAction() queries only -- never by dispatch().
