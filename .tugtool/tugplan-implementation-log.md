@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-06T14:58:46Z
+---
+
+## step-2: Created usePropertyStore hook with useRef lazy init, useLayoutEffect registration via TugcardPropertyContext, and stable store return. Updated hooks barrel. Added 7 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-1
 date: 2025-03-06T14:53:12Z
 ---
