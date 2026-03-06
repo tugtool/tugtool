@@ -11,13 +11,17 @@ chrome, and the roadmap's much larger component inventory.
 
 The intent here is not a cosmetic rename. The intent is to:
 
-- replace `--tways-*` and `--td-*` with a clearer long-term structure
-- remove all legacy aliases
-- preserve and improve the accent concept instead of deleting it
-- define a large, explicit `--tug-base-*` semantic contract
-- make future component styling additive and controlled rather than ad hoc
-- add a dev-mode `Ctrl+Option + hover` cascade inspector for direct style
-  introspection
+- Replace `--tways-*` and `--td-*` with a clearer long-term structure.
+- Remove all legacy aliases.
+- Preserve and improve the accent concept instead of deleting it.
+- Define a large, explicit `--tug-base-*` semantic contract.
+- Make future component styling additive and controlled rather than ad hoc.
+- Add computed color palettes with a 0–100 intensity scale across 24 hue
+  families, using OKLCH for perceptual uniformity.
+- Add a global scale system: one root number controls all dimensions in the UI.
+- Add a global timing system: one root number controls all animation durations.
+- Add a dev-mode `Ctrl+Option + hover` cascade inspector for direct style
+  introspection.
 
 ---
 
@@ -27,10 +31,10 @@ This is a research-backed proposal document, not yet an implementation plan.
 
 If approved, the next document should be a concrete implementation tugplan with:
 
-- file-by-file migration order
-- temporary compatibility shims
-- search-based enforcement checks
-- theme parity verification across Brio, Bluenote, and Harmony
+- File-by-file migration order.
+- Temporary compatibility shims.
+- Search-based enforcement checks.
+- Theme parity verification across Brio, Bluenote, and Harmony.
 
 ---
 
@@ -38,10 +42,10 @@ If approved, the next document should be a concrete implementation tugplan with:
 
 This proposal is based on four inputs:
 
-1. Current code in `tugdeck/`
-2. `roadmap/design-system-concepts.md`
-3. `roadmap/tugways-implementation-strategy.md`
-4. Public token-system references with permissive or compatible licensing
+1. Current code in `tugdeck/`.
+2. `roadmap/design-system-concepts.md`.
+3. `roadmap/tugways-implementation-strategy.md`.
+4. Public token-system references with permissive or compatible licensing.
 
 ### Current Code Reviewed
 
@@ -57,14 +61,14 @@ The current token consumers and declarations were reviewed in:
 
 The roadmap review included the current and planned styling needs for:
 
-- canvas and chrome
-- Tugcard, tab bar, dock, snapping, flashing, selection, shadows
-- form controls
-- overlays and feedback components
-- data display and visualization
-- inspector panels and mutation-preview tooling
-- rebuilt cards including terminal, code/conversation, git, files, stats,
-  settings, developer, about, and the gallery card
+- Canvas and chrome.
+- Tugcard, tab bar, dock, snapping, flashing, selection, shadows.
+- Form controls.
+- Overlays and feedback components.
+- Data display and visualization.
+- Inspector panels and mutation-preview tooling.
+- Rebuilt cards including terminal, code/conversation, git, files, stats,
+  settings, developer, about, and the gallery card.
 
 ---
 
@@ -133,9 +137,9 @@ References:
 
 Relevant takeaways:
 
-- Carbon is particularly strong on role + state naming:
-  `background-hover`, `background-active`, `layer-01`, `field-01`,
-  `border-subtle-01`, `layer-accent-01`, etc.
+- Carbon is particularly strong on role + state naming: `background-hover`,
+  `background-active`, `layer-01`, `field-01`, `border-subtle-01`,
+  `layer-accent-01`, etc.
 - Carbon shows that a serious semantic layer must model state transitions across
   multiple surfaces, not just define one neutral background and one border.
 - Carbon's `background`, `layer`, `field`, `border`, `support`, `focus`, and
@@ -149,12 +153,12 @@ References:
 
 Relevant takeaways:
 
-- Chakra's simple nested semantic groups are a good readability model:
-  `bg`, `fg`, `border`, `focusRing`.
+- Chakra's simple nested semantic groups are a good readability model: `bg`,
+  `fg`, `border`, `focusRing`.
 - Tugways should use a similarly readable domain hierarchy even though our
   implementation is plain CSS custom properties.
 
-### 6. OKLCH Guidance And Modern CSS Palette Practice
+### 6. OKLCH Guidance and Modern CSS Palette Practice
 
 References:
 
@@ -165,8 +169,8 @@ Relevant takeaways:
 
 - OKLCH is perceptually uniform, which makes fixed lightness and chroma ramps
   behave more consistently across named hues.
-- Equal lightness values across different hues are far more trustworthy in
-  OKLCH than in HSL or ad hoc hex picking.
+- Equal lightness values across different hues are far more trustworthy in OKLCH
+  than in HSL or ad hoc hex picking.
 - Modern CSS token systems increasingly use `oklch()` directly for theme-token
   authoring, which fits tugways well.
 
@@ -178,11 +182,11 @@ References:
 
 Relevant takeaways:
 
-- Common-language hue names such as `red`, `blue`, and `purple` are clearer than
-  poetic or highly branded color names.
+- Common-language hue names such as `red`, `blue`, and `purple` are clearer
+  than poetic or highly branded color names.
 - A stable `name + value` system scales better than one-off descriptive names.
-- This strongly supports the `12` named hue families proposed for the tugways
-  palette layer.
+- This strongly supports the named hue families proposed for the tugways palette
+  layer.
 
 ### Licensing Note
 
@@ -203,66 +207,55 @@ acknowledged.
 
 Accent usage is already widespread in live code:
 
-- `tug-button.css`
-  - `--td-accent-2` for primary button fill
-  - `--td-accent` for state dots
-- `tug-tab-bar.css`
-  - `--td-accent` for active tab underline
-  - `--td-accent` for overflow badge background
-  - `--td-accent` for insert indicator
-  - `--td-accent` for drag-drop target highlights
-- `chrome.css`
-  - `--td-accent-cool` for snap guides
-  - `--td-accent` for perimeter flash
-- `tugcard.css`
-  - `--td-selection-bg` and `--td-selection-text`
-- `gallery-card.css`
-  - `--td-accent` and `--td-accent-cool` in the mutation demo
+- `tug-button.css`: `--td-accent-2` for primary button fill, `--td-accent` for
+  state dots.
+- `tug-tab-bar.css`: `--td-accent` for active tab underline, overflow badge
+  background, insert indicator, and drag-drop target highlights.
+- `chrome.css`: `--td-accent-cool` for snap guides, `--td-accent` for perimeter
+  flash.
+- `tugcard.css`: `--td-selection-bg` and `--td-selection-text`.
+- `gallery-card.css`: `--td-accent` and `--td-accent-cool` in the mutation demo.
 
 Conclusion:
 
-- the accent concept must be preserved
-- the accent system needs to become clearer, not smaller
-- the numbered accent scale must be replaced by descriptive names, not removed
-  without replacement
+- The accent concept must be preserved.
+- The accent system needs to become clearer, not smaller.
+- The numbered accent scale must be replaced by descriptive names, not removed
+  without replacement.
 
 ### 2. The Code Already Implies More Domains Than the Old Draft Covered
 
 Current declared or consumed domains include:
 
-- surface and canvas
-- text and inverse text
-- accent and status
-- chart
-- syntax
-- border and selection
-- header and icon states
-- active and inactive card shadow
-- dim overlays
-- spacing, radius, typography, line height
-- motion tokens
-- grid lines, drag/drop indicators, flash overlays
+- Surface and canvas.
+- Text and inverse text.
+- Accent and status.
+- Chart.
+- Syntax.
+- Border and selection.
+- Header and icon states.
+- Active and inactive card shadow.
+- Dim overlays.
+- Spacing, radius, typography, line height.
+- Motion tokens.
+- Grid lines, drag/drop indicators, flash overlays.
 
 ### 3. There Are Existing Gaps
 
 The current system already has holes that a better semantic layer should fix:
 
-- `hello-card.tsx` consumes `--td-text-muted`, but that token is not declared
-- drag ghost, badge, banner, and flash semantics are partly ad hoc
-- many component states still rely on local styling choices rather than named
-  cross-component semantics
-- the legacy alias layer obscures what is actually canonical
+- `hello-card.tsx` consumes `--td-text-muted`, but that token is not declared.
+- Drag ghost, badge, banner, and flash semantics are partly ad hoc.
+- Many component states still rely on local styling choices rather than named
+  cross-component semantics.
+- The legacy alias layer obscures what is actually canonical.
 
 ### 4. The Shadcn Bridge Is a Real Migration Problem
 
 `globals.css` and `components/ui/*.tsx` still depend on variables such as:
 
-- `--background`
-- `--foreground`
-- `--primary`
-- `--accent`
-- `--destructive`
-- `--ring`
+- `--background`, `--foreground`, `--primary`, `--accent`, `--destructive`,
+  `--ring`.
 
 This means the proposal must include an explicit bridge strategy. We cannot just
 declare legacy aliases dead without describing how the shadcn/Tailwind bridge is
@@ -270,284 +263,575 @@ replaced.
 
 ---
 
-## What The Roadmap Requires
+## What the Roadmap Requires
 
 The roadmap requires a token system that can credibly support all of the
 following, not just today's small CSS footprint.
 
 ### Workspace Chrome
 
-- canvas grid
-- Tugcard chrome
-- title bar active/inactive states
-- tabs and overflow tabs
-- tab drag indicators
-- dock rail and buttons
-- resize handles
-- snap guides
-- set shadows
-- perimeter flash
-- selection containment visuals
+Canvas grid, Tugcard chrome, title bar active/inactive states, tabs and overflow
+tabs, tab drag indicators, dock rail and buttons, resize handles, snap guides,
+set shadows, perimeter flash, selection containment visuals.
 
-### Controls And Inputs
+### Controls and Inputs
 
-- buttons
-- input, textarea, select
-- checkbox, radio, switch, slider
-- label/helper/required states
-- validation and error states
-- grouped control seams
-- loading and disabled states
+Buttons, input, textarea, select, checkbox, radio, switch, slider,
+label/helper/required states, validation and error states, grouped control
+seams, loading and disabled states.
 
-### Overlay And Feedback Components
+### Overlay and Feedback Components
 
-- alert, sheet, confirm popover, toast
-- tooltip, dropdown menu, context menu, dialog
-- badges, status indicators, progress, skeleton, spinner, separator, kbd, avatar
-- disconnect and warning banners
+Alert, sheet, confirm popover, toast, tooltip, dropdown menu, context menu,
+dialog, badges, status indicators, progress, skeleton, spinner, separator, kbd,
+avatar, disconnect and warning banners.
 
-### Data Display And Visualization
+### Data Display and Visualization
 
-- tables
-- stat cards
-- sparklines
-- linear gauges
-- arc gauges
-- chart series
-- threshold and trend states
+Tables, stat cards, sparklines, linear gauges, arc gauges, chart series,
+threshold and trend states.
 
 ### Inspector / Dev Tools
 
-- color picker
-- font picker
-- coordinate inspector
-- inspector panel
-- mutation preview vs commit vs cancel states
-- cascade/source display
-- hovered-target highlighting
+Color picker, font picker, coordinate inspector, inspector panel, mutation
+preview vs commit vs cancel states, cascade/source display, hovered-target
+highlighting.
 
 ### Card Domain Surfaces
 
-- terminal
-- code/conversation
-- git/files
-- stats
-- settings/developer
-- about
-- gallery
+Terminal, code/conversation, git/files, stats, settings/developer, about,
+gallery.
 
-Conclusion:
-
-`--tug-base-*` must be large enough to cover workspace chrome, generic controls,
-feedback, data display, visualization, inspector tooling, and domain-specific
-surfaces such as syntax and terminal presentation.
+Conclusion: `--tug-base-*` must be large enough to cover workspace chrome,
+generic controls, feedback, data display, visualization, inspector tooling, and
+domain-specific surfaces such as syntax and terminal presentation.
 
 ---
 
 ## Core Decisions
 
-### 1. `--tways-*` And `--td-*` Are Transitional, Not Permanent
+### 1. `--tways-*` and `--td-*` Are Transitional, Not Permanent
 
 Both current prefixes should become migration smells.
 
 Long-term target:
 
-- theme/palette primitives: `--tug-palette-*`
-- canonical semantics: `--tug-base-*`
-- component/pattern tokens: `--tug-comp-*`
+- Theme/palette primitives: `--tug-palette-*`
+- Canonical semantics: `--tug-base-*`
+- Component/pattern tokens: `--tug-comp-*`
 
 This intentionally makes any future `--tways-*` or `--td-*` usage a sign that
 old code or migration debris remains.
 
-### 2. `--tug-base-*` Is The Public Contract
+### 2. `--tug-base-*` Is the Public Contract
 
 Everything components use should resolve directly or indirectly from
 `--tug-base-*`.
 
 That means:
 
-- components consume `--tug-base-*` or `--tug-comp-*`
-- `--tug-comp-*` must resolve from `--tug-base-*`
-- palette/theme primitives never leak into component CSS
+- Components consume `--tug-base-*` or `--tug-comp-*`.
+- `--tug-comp-*` must resolve from `--tug-base-*`.
+- Palette/theme primitives never leak into component CSS.
 
-### 3. Accent Survives As A First-Class System
+### 3. Accent Survives as a First-Class System
 
 The current accent system is doing several jobs at once:
 
-- primary action color
-- cool/secondary interactive accent
-- chart series colors
-- syntax color sources
-- status tone sources
-- visual instrumentation color
+- Primary action color.
+- Cool/secondary interactive accent.
+- Chart series colors.
+- Syntax color sources.
+- Status tone sources.
+- Visual instrumentation color.
 
 These jobs should be separated, but the accent concept absolutely remains.
 
-### 4. Numbered Accents Become Named Palette Hues
+### 4. Computed Color Palettes Replace Fixed Swatches
 
-Current:
+The earlier draft proposed 12 hue families with 4 fixed tones (soft, default,
+strong, intense) for 48 total palette entries. This is too rigid.
 
-- `accent-1` through `accent-8`
+The revised design uses **24 hue families** (one every 15 degrees around the
+OKLCH hue wheel) with a **0–100 continuous intensity scale**. This produces a
+rich, computable palette where any combination of hue and intensity can be
+generated on demand.
 
-Proposed foundation:
+See [Computed Color Palette System](#computed-color-palette-system) for the full
+design.
 
-- a chromatic palette of `48` named colors
-- `12` named hues
-- `4` named tones per hue
-- a separate neutral scale for surfaces, borders, and text
+### 5. One Global Scale Controls All Dimensions
 
-Recommended hue families:
+A single `--tug-scale` value (default: `1`) multiplies every font size,
+spacing value, radius, icon size, and dimension in the system. Changing it
+resizes the entire UI — a major accessibility win. Each `Tug*` component also
+has its own component-level scale for fine-tuning relative proportions.
 
-- `red`
-- `orange`
-- `amber`
-- `yellow`
-- `lime`
-- `green`
-- `teal`
-- `cyan`
-- `blue`
-- `indigo`
-- `violet`
-- `magenta`
+See [Global Scale System](#global-scale-system) for the full design.
 
-Recommended tone names:
+### 6. One Global Timing Controls All Motion
 
-- `soft`
-- `default`
-- `strong`
-- `intense`
+A single `--tug-timing` value (default: `1`) multiplies every animation
+duration and transition in the system. Setting it to `5` gives slow-motion
+for debugging. Setting it to `0.001` effectively disables motion. A
+`prefers-reduced-motion` media query sets it to `0.001` automatically.
 
-Example palette tokens:
+See [Global Timing System](#global-timing-system) for the full design.
 
-- `--tug-palette-red-soft`
-- `--tug-palette-red-default`
-- `--tug-palette-red-strong`
-- `--tug-palette-red-intense`
-- `--tug-palette-blue-soft`
-- `--tug-palette-blue-default`
-- `--tug-palette-violet-strong`
-- `--tug-palette-green-intense`
+### 7. Size Tokens Use a Uniform Adjectival Scale
 
-Initial reference values should follow published guidance in three ways:
+Standard size ladder: `2xs`, `xs`, `sm`, `md`, `lg`, `xl`, `2xl`.
 
-- use common-language hue family names rather than poetic names, following
-  Spectrum's color-naming guidance
-- use `oklch()` values so equal lightness and chroma steps feel more uniform
-  across hues, following OKLCH guidance and modern palette practice
-- use a stable name + tone pairing so the palette can expand later without
-  renaming, following the same general logic used in systems like Spectrum and
-  Tailwind
+This scale should be used consistently across spacing, radius, typography, icon
+size, stroke width, and elevation tiers where appropriate.
 
-Initial reference 48-color palette (`12` hues x `4` tones), expressed as OKLCH
-anchors:
+---
 
-```css
-/* red */
---tug-palette-red-soft: oklch(0.92 0.04 25);
---tug-palette-red-default: oklch(0.80 0.09 25);
---tug-palette-red-strong: oklch(0.68 0.13 25);
---tug-palette-red-intense: oklch(0.56 0.17 25);
+## Computed Color Palette System
 
-/* orange */
---tug-palette-orange-soft: oklch(0.92 0.04 50);
---tug-palette-orange-default: oklch(0.80 0.09 50);
---tug-palette-orange-strong: oklch(0.68 0.13 50);
---tug-palette-orange-intense: oklch(0.56 0.17 50);
+### The Problem with Fixed Swatches
 
-/* amber */
---tug-palette-amber-soft: oklch(0.92 0.04 70);
---tug-palette-amber-default: oklch(0.80 0.09 70);
---tug-palette-amber-strong: oklch(0.68 0.13 70);
---tug-palette-amber-intense: oklch(0.56 0.17 70);
+A fixed 4-tone system (soft/default/strong/intense) forces designers into
+exactly four choices per hue. Real design work needs intermediate values: a
+slightly desaturated accent for a subtle background, a nearly-full-intensity
+color for a critical alert, or a very soft wash for a hover state. Hardcoding
+all possible combinations is infeasible.
 
-/* yellow */
---tug-palette-yellow-soft: oklch(0.92 0.04 95);
---tug-palette-yellow-default: oklch(0.80 0.09 95);
---tug-palette-yellow-strong: oklch(0.68 0.13 95);
---tug-palette-yellow-intense: oklch(0.56 0.17 95);
+### Design: 24 Hue Families x 0–100 Intensity
 
-/* lime */
---tug-palette-lime-soft: oklch(0.92 0.04 125);
---tug-palette-lime-default: oklch(0.80 0.09 125);
---tug-palette-lime-strong: oklch(0.68 0.13 125);
---tug-palette-lime-intense: oklch(0.56 0.17 125);
+**Hue families.** 24 named hues, one every 15 degrees around the OKLCH hue
+wheel:
 
-/* green */
---tug-palette-green-soft: oklch(0.92 0.04 145);
---tug-palette-green-default: oklch(0.80 0.09 145);
---tug-palette-green-strong: oklch(0.68 0.13 145);
---tug-palette-green-intense: oklch(0.56 0.17 145);
+| Hue Name | OKLCH Hue Angle |
+|----------|-----------------|
+| `cherry` | 10 |
+| `red` | 25 |
+| `coral` | 35 |
+| `scarlet` | 40 |
+| `orange` | 55 |
+| `amber` | 70 |
+| `gold` | 85 |
+| `yellow` | 100 |
+| `chartreuse` | 115 |
+| `lime` | 130 |
+| `green` | 145 |
+| `spring` | 150 |
+| `emerald` | 160 |
+| `teal` | 175 |
+| `cyan` | 190 |
+| `sky` | 210 |
+| `azure` | 225 |
+| `blue` | 240 |
+| `indigo` | 260 |
+| `violet` | 280 |
+| `purple` | 295 |
+| `magenta` | 315 |
+| `rose` | 340 |
+| `crimson` | 355 |
 
-/* teal */
---tug-palette-teal-soft: oklch(0.92 0.04 170);
---tug-palette-teal-default: oklch(0.80 0.09 170);
---tug-palette-teal-strong: oklch(0.68 0.13 170);
---tug-palette-teal-intense: oklch(0.56 0.17 170);
+Note: The 24 hues are distributed to cover the full OKLCH gamut with human-
+meaningful names. The spacing is approximately 15 degrees but adjusted slightly
+so that names land on perceptually distinct, recognizable colors. Themes may
+shift individual hue angles for artistic effect without renaming.
 
-/* cyan */
---tug-palette-cyan-soft: oklch(0.92 0.04 200);
---tug-palette-cyan-default: oklch(0.80 0.09 200);
---tug-palette-cyan-strong: oklch(0.68 0.13 200);
---tug-palette-cyan-intense: oklch(0.56 0.17 200);
+**Token naming format.** Palette tokens encode both the hue angle and the human
+name, making them self-documenting and searchable:
 
-/* blue */
---tug-palette-blue-soft: oklch(0.92 0.04 240);
---tug-palette-blue-default: oklch(0.80 0.09 240);
---tug-palette-blue-strong: oklch(0.68 0.13 240);
---tug-palette-blue-intense: oklch(0.56 0.17 240);
+`--tug-palette-hue-<angle>-<name>-tone-<intensity>`
 
-/* indigo */
---tug-palette-indigo-soft: oklch(0.92 0.04 265);
---tug-palette-indigo-default: oklch(0.80 0.09 265);
---tug-palette-indigo-strong: oklch(0.68 0.13 265);
---tug-palette-indigo-intense: oklch(0.56 0.17 265);
+Examples:
 
-/* violet */
---tug-palette-violet-soft: oklch(0.92 0.04 295);
---tug-palette-violet-default: oklch(0.80 0.09 295);
---tug-palette-violet-strong: oklch(0.68 0.13 295);
---tug-palette-violet-intense: oklch(0.56 0.17 295);
+- `--tug-palette-hue-25-red-tone-0`
+- `--tug-palette-hue-25-red-tone-50`
+- `--tug-palette-hue-280-violet-tone-50`
+- `--tug-palette-hue-190-cyan-tone-100`
+- `--tug-palette-hue-55-orange-tone-75`
 
-/* magenta */
---tug-palette-magenta-soft: oklch(0.92 0.04 330);
---tug-palette-magenta-default: oklch(0.80 0.09 330);
---tug-palette-magenta-strong: oklch(0.68 0.13 330);
---tug-palette-magenta-intense: oklch(0.56 0.17 330);
+This format has several advantages:
+
+- **Self-documenting**: reading the token name tells you both the color and its
+  position on the wheel. No need to consult a lookup table.
+- **Searchable**: grep for `hue-280` to find all violet usage, or `tone-50` to
+  find all default-intensity colors.
+- **Sortable**: tokens sort by hue angle, which matches the visual color wheel.
+- **Extensible**: if a theme needs an intermediate hue at 33 degrees, it
+  naturally slots in as `hue-33-<name>` without disrupting existing tokens.
+
+**Intensity scale.** A continuous 0–100 number:
+
+- **0**: Near-neutral wash. Very high lightness, very low chroma. Useful for
+  subtle tinted backgrounds.
+- **25**: Gentle tint. High lightness, modest chroma. Good for hover states and
+  soft badges.
+- **50**: The "excellent default." A balanced, versatile color suitable for most
+  UI purposes — readable on both light and dark backgrounds in many contexts.
+- **75**: Rich and saturated. Lower lightness, higher chroma. Good for primary
+  actions and emphasized elements.
+- **100**: Maximum intensity. Deep, highly chromatic. Good for alerts, critical
+  states, and data visualization where high contrast matters.
+
+### The Transfer Function
+
+The intensity number maps to OKLCH lightness (L) and chroma (C) through a
+non-linear transfer function. The function is designed so that the middle range
+(roughly 30–70) offers fine-grained control — this is where designers spend most
+of their time — while the extremes move more aggressively.
+
+```typescript
+/**
+ * Attempt at a mapping function from intensity (0–100) to OKLCH lightness
+ * and chroma. The curve is tuned so the 30–70 range is the sweet spot for
+ * everyday UI work: smooth gradations, good contrast, readable text.
+ *
+ * At intensity 0: L ≈ 0.96, C ≈ 0.01 (near-white wash)
+ * At intensity 50: L ≈ 0.70, C ≈ 0.11 (balanced, versatile)
+ * At intensity 100: L ≈ 0.42, C ≈ 0.22 (deep, saturated)
+ *
+ * The function uses a smoothstep-like ease so the midrange expands and
+ * the extremes compress. This makes the scale feel linear to a designer's
+ * eye even though the underlying math is not.
+ */
+
+// Attempt at OKLCH lightness/chroma anchors
+const L_MIN = 0.42;   // intensity 100
+const L_MAX = 0.96;   // intensity 0
+const C_MIN = 0.01;   // intensity 0
+const C_MAX = 0.22;   // intensity 100
+
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+function intensityToLC(intensity: number): { L: number; C: number } {
+  const t = Math.max(0, Math.min(1, intensity / 100));
+  const s = smoothstep(t);
+  return {
+    L: L_MAX - s * (L_MAX - L_MIN),
+    C: C_MIN + s * (C_MAX - C_MIN),
+  };
+}
+
+function tugPaletteColor(hueName: string, intensity: number): string {
+  const hueAngle = HUE_ANGLES[hueName]; // lookup from the 24-hue table
+  const { L, C } = intensityToLC(intensity);
+  return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${hueAngle})`;
+}
+
+// CSS variable name for a palette color
+function tugPaletteVarName(hueName: string, intensity: number): string {
+  const hueAngle = HUE_ANGLES[hueName];
+  return `--tug-palette-hue-${hueAngle}-${hueName}-tone-${intensity}`;
+}
 ```
 
-These should be treated as initial anchors, not untouchable production values.
-Before implementation closes, each theme should gamut-check these values, verify
-contrast in real UI usage, and make small hue-specific adjustments where needed.
+**Important caveats on the transfer function:** The L/C anchors and curve shape
+above are a starting point, not final values. Before implementation closes:
 
-And semantic aliases on top of that:
+- Each hue family should be gamut-checked against sRGB (OKLCH can produce
+  out-of-gamut colors at high chroma for certain hues, particularly yellows and
+  greens).
+- The smoothstep may need to be replaced with a more nuanced curve — for
+  example, a bezier or piecewise function — if testing reveals dead zones or
+  jumps in the perceptual gradient.
+- Dark themes may need a separate L/C curve or offset, since the "balanced
+  default" at intensity 50 should look good against both light and dark
+  backgrounds.
+- Per-hue chroma clamping may be necessary: yellows can reach much higher chroma
+  in OKLCH than blues at the same lightness. A `maxChromaForHue(hueAngle)`
+  guard prevents clipping.
 
-- `--tug-base-accent-default`
-- `--tug-base-accent-strong`
-- `--tug-base-accent-muted`
-- `--tug-base-accent-emphasis`
-- `--tug-base-accent-info`
-- `--tug-base-accent-positive`
-- `--tug-base-accent-warning`
-- `--tug-base-accent-danger`
+### Runtime Architecture
 
-This preserves a rich color foundation while giving component code intentful
-semantic names to consume.
+Since we cannot hardcode 2,400 CSS custom properties (24 hues x 101 intensity
+levels), the palette is computed at runtime.
 
-### 5. Size Tokens Use A Uniform Adjectival Scale
+**Standard stops.** At app startup and theme switch, the palette engine
+generates CSS custom properties for 11 standard intensity stops per hue (0, 10,
+20, ..., 100). This produces 264 pre-computed variables:
 
-Standard size ladder:
+```css
+--tug-palette-hue-25-red-tone-0: oklch(0.960 0.010 25);
+--tug-palette-hue-25-red-tone-10: oklch(0.935 0.025 25);
+--tug-palette-hue-25-red-tone-20: oklch(0.900 0.045 25);
+/* ... */
+--tug-palette-hue-25-red-tone-50: oklch(0.700 0.110 25);
+/* ... */
+--tug-palette-hue-25-red-tone-100: oklch(0.420 0.220 25);
+```
 
-- `2xs`, `xs`, `sm`, `md`, `lg`, `xl`, `2xl`
+These are injected into a `<style id="tug-palette">` element, just like theme
+overrides. Components that need a standard stop use
+`var(--tug-palette-hue-25-red-tone-50)`.
 
-This scale should be used consistently across:
+**Arbitrary intensities.** For non-standard values (e.g., intensity 37), a
+TypeScript utility function `tugPaletteColor('red', 37)` returns the raw
+`oklch(...)` string. This is used in:
 
-- spacing
-- radius
-- typography
-- icon size
-- stroke width
-- elevation tiers where appropriate
+- Inline styles set by the mutation/appearance zone (zero re-renders).
+- Inspector panels and color pickers that need continuous color ramps.
+- Data visualization where chart series colors may be interpolated.
+
+**Theme influence.** Themes can customize the palette engine by overriding:
+
+- Per-hue angle adjustments (shift the "red" hue 5 degrees warmer).
+- L/C curve parameters (a theme with lower contrast uses a narrower L range).
+- Per-hue chroma caps (prevent gamut clipping for that theme's display target).
+
+These overrides live in the theme file as structured comment metadata or as a
+small set of CSS custom properties consumed by the palette engine at load time:
+
+```css
+/* In bluenote.css */
+:root {
+  --tug-theme-lc-l-max: 0.93;
+  --tug-theme-lc-l-min: 0.40;
+  --tug-theme-lc-c-max: 0.20;
+  --tug-theme-hue-red: 28;   /* slightly warmer red for Bluenote */
+}
+```
+
+### Backward Compatibility with Named Tones
+
+For convenience in the semantic layer and for readability, the old tone names
+map to specific intensities:
+
+| Tone Name | Intensity | Use Case |
+|-----------|-----------|----------|
+| `soft` | 15 | Subtle backgrounds, tinted washes |
+| `default` | 50 | General-purpose, the workhorse value |
+| `strong` | 75 | Emphasized elements, primary actions |
+| `intense` | 100 | Alerts, critical states, maximum impact |
+
+These are aliases, not separate tokens. `--tug-palette-hue-25-red-soft` resolves
+to `--tug-palette-hue-25-red-tone-15`. Components should prefer the numeric
+form for clarity, but the named aliases exist for readability in the semantic
+layer.
+
+---
+
+## Global Scale System
+
+### The Problem
+
+Resizing a design system today requires touching dozens of token definitions:
+every font size, every spacing value, every radius, every icon dimension. This
+makes accessibility-driven scaling (larger UI for low vision) or density-driven
+scaling (compact mode for power users) a massive coordination effort.
+
+### Design: One Root Scale, Per-Component Overrides
+
+**Root scale.** A single CSS custom property controls all dimensions:
+
+```css
+:root {
+  --tug-scale: 1;
+}
+```
+
+Every size-related token in the system includes `--tug-scale` as a factor:
+
+```css
+:root {
+  --tug-base-font-size-md: calc(14px * var(--tug-scale));
+  --tug-base-font-size-sm: calc(12px * var(--tug-scale));
+  --tug-base-font-size-lg: calc(16px * var(--tug-scale));
+  --tug-base-space-md: calc(8px * var(--tug-scale));
+  --tug-base-space-lg: calc(12px * var(--tug-scale));
+  --tug-base-radius-md: calc(6px * var(--tug-scale));
+  --tug-base-icon-size-md: calc(16px * var(--tug-scale));
+  --tug-base-stroke-thin: calc(1px * var(--tug-scale));
+  /* ... every dimension token follows this pattern */
+}
+```
+
+Setting `--tug-scale: 1.25` makes the entire UI 25% larger. Setting
+`--tug-scale: 0.85` produces a compact mode. The relationship between all
+elements is preserved because every dimension scales by the same factor.
+
+**Component-level scale.** Each `Tug*` component family has an optional
+component scale that multiplies on top of the root scale:
+
+```css
+.tug-button {
+  --tug-comp-scale: var(--tug-comp-button-scale, 1);
+  font-size: calc(var(--tug-base-font-size-md) * var(--tug-comp-scale));
+  padding: calc(var(--tug-base-space-xs) * var(--tug-comp-scale))
+           calc(var(--tug-base-space-sm) * var(--tug-comp-scale));
+  border-radius: calc(var(--tug-base-radius-sm) * var(--tug-comp-scale));
+}
+```
+
+The component scale defaults to `1`, meaning it inherits the global scale
+unchanged. A designer can set `--tug-comp-button-scale: 0.9` to make buttons
+slightly more compact than the rest of the UI, or `--tug-comp-tab-scale: 1.1`
+to make the tab bar slightly more spacious.
+
+**What scales and what doesn't.** The global scale affects:
+
+- Font sizes (all tiers).
+- Spacing tokens (all tiers).
+- Border radii.
+- Icon sizes.
+- Stroke widths (with a floor: strokes below 1px clamp to 1px).
+- Component internal dimensions (padding, gaps, min-heights).
+
+The global scale does **not** affect:
+
+- Border widths (kept at 1px for crispness — a 2x scale should not produce
+  2px borders).
+- Shadow offsets and blur radii (these are perceptual, not dimensional).
+- Opacity values.
+- Color values.
+- Z-index values.
+- Animation timing (that is the timing system's job).
+
+**Implementation note:** The `calc()` multiplication means CSS custom properties
+must be registered with `@property` as `<number>` or `<length>` for the
+multiplication to work correctly in all contexts. Alternatively, the palette
+engine can pre-compute scaled values at startup — the same injection pattern
+used for computed colors.
+
+### Accessibility Use Cases
+
+| `--tug-scale` | Use Case |
+|---------------|----------|
+| `0.85` | Compact/dense mode for power users |
+| `1.0` | Default |
+| `1.25` | Large text mode |
+| `1.5` | Low-vision accessible mode |
+| `2.0` | Extreme magnification / demo mode |
+
+The scale value can be exposed in the Settings card as a slider, persisted in
+tugbank (`dev.tugtool.app` domain, key `scale`), and restored on reload.
+
+---
+
+## Global Timing System
+
+### The Problem
+
+The current system has `--td-duration-scalar` that multiplies animation
+durations, plus a `prefers-reduced-motion` media query that sets it to `0.001`.
+This is the right idea but it needs to be formalized as a first-class system
+feature and extended to cover all timing in the system, not just the four
+named duration tokens.
+
+### Design: One Root Timing, Universal Application
+
+**Root timing.** A single CSS custom property controls all temporal values:
+
+```css
+:root {
+  --tug-timing: 1;
+}
+```
+
+Every duration and delay in the system includes `--tug-timing` as a factor:
+
+```css
+:root {
+  --tug-base-motion-duration-instant: calc(0ms * var(--tug-timing));
+  --tug-base-motion-duration-fast: calc(100ms * var(--tug-timing));
+  --tug-base-motion-duration-moderate: calc(200ms * var(--tug-timing));
+  --tug-base-motion-duration-slow: calc(350ms * var(--tug-timing));
+  --tug-base-motion-duration-glacial: calc(500ms * var(--tug-timing));
+}
+```
+
+**The `--tug-motion` on/off switch.** Separate from timing speed, motion can be
+turned off entirely. This is a discrete toggle, not a continuous value:
+
+```css
+:root {
+  --tug-motion: 1; /* 1 = motion enabled, 0 = motion disabled */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tug-motion: 0;
+  }
+}
+```
+
+When `--tug-motion` is `0`, all animations and transitions are disabled. This is
+implemented by components checking the value and conditionally applying
+animation classes, or by a global rule:
+
+```css
+[data-tug-motion="off"] *,
+[data-tug-motion="off"] *::before,
+[data-tug-motion="off"] *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+```
+
+The `data-tug-motion` attribute is set on `<body>` by the theme engine based on
+the `--tug-motion` value. This gives CSS a discrete hook to work with, since
+`calc()` inside `animation-duration` has browser support limitations.
+
+**Why two controls?** The timing scalar and the motion toggle serve different
+purposes:
+
+- `--tug-timing: 5` = slow motion for debugging. Animations play at 5x normal
+  duration. Invaluable for tuning easing curves and transition choreography.
+- `--tug-timing: 0.5` = snappy mode. Everything feels faster.
+- `--tug-motion: 0` = no motion at all. Accessibility requirement for users
+  who experience motion sickness or vestibular disorders. This is categorically
+  different from "very fast motion" — it means no visual movement whatsoever.
+
+**Component-level timing is not proposed.** Unlike scale (where different
+components may need different densities), there is no clear use case for
+per-component timing overrides. All motion in the system should feel unified.
+If a specific animation needs a unique duration, it should define a named token
+in `--tug-base-motion-*`, not a component-level multiplier.
+
+### Easing tokens remain as-is
+
+Easing curves are not affected by the timing scalar. They describe the shape of
+motion, not its duration:
+
+```css
+:root {
+  --tug-base-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --tug-base-motion-easing-enter: cubic-bezier(0, 0, 0, 1);
+  --tug-base-motion-easing-exit: cubic-bezier(0.2, 0, 1, 1);
+}
+```
+
+### JavaScript Integration
+
+For animations driven by JavaScript (e.g., RAF-based drag, spring physics,
+inspector scrub), the timing value must be readable from JS:
+
+```typescript
+function getTugTiming(): number {
+  const raw = getComputedStyle(document.body)
+    .getPropertyValue('--tug-timing').trim();
+  return parseFloat(raw) || 1;
+}
+
+function isTugMotionEnabled(): boolean {
+  return document.body.dataset.tugMotion !== 'off';
+}
+```
+
+The `MutationTransaction` preview animations and `SelectionGuard` RAF-based
+autoscroll should both respect these values.
+
+### Debug and Accessibility Use Cases
+
+| `--tug-timing` | `--tug-motion` | Effect |
+|----------------|----------------|--------|
+| `1` | `1` | Normal (default) |
+| `5` | `1` | Slow motion — debug animations |
+| `10` | `1` | Very slow — inspect individual frames |
+| `0.5` | `1` | Snappy — everything faster |
+| `any` | `0` | No motion — accessibility mode |
+
+Both values can be exposed in the Settings card and persisted in tugbank.
 
 ---
 
@@ -592,8 +876,9 @@ Examples:
 
 The important distinction:
 
-- `--tug-base-*` is the shared semantic language
-- `--tug-comp-*` is where a component family binds itself to that shared language
+- `--tug-base-*` is the shared semantic language.
+- `--tug-comp-*` is where a component family binds itself to that shared
+  language.
 
 ---
 
@@ -603,25 +888,17 @@ The important distinction:
 
 Purpose:
 
-- raw values only
-- theme files own this layer
-- no component or app-role meaning
+- Raw values only.
+- Theme files own this layer.
+- No component or app-role meaning.
 
 Examples:
 
 - `--tug-palette-neutral-0` through `--tug-palette-neutral-9`
-- `--tug-palette-red-soft`
-- `--tug-palette-red-default`
-- `--tug-palette-red-strong`
-- `--tug-palette-red-intense`
-- `--tug-palette-orange-soft`
-- `--tug-palette-orange-default`
-- `--tug-palette-amber-default`
-- `--tug-palette-green-strong`
-- `--tug-palette-cyan-default`
-- `--tug-palette-blue-strong`
-- `--tug-palette-violet-default`
-- `--tug-palette-magenta-soft`
+- `--tug-palette-hue-25-red-tone-0` through `--tug-palette-hue-25-red-tone-100`
+  (standard stops at 0, 10, 20, ..., 100)
+- `--tug-palette-hue-55-orange-tone-50`
+- `--tug-palette-hue-190-cyan-tone-75`
 - `--tug-palette-shadow-soft`
 - `--tug-palette-shadow-strong`
 - `--tug-palette-grid-line`
@@ -630,53 +907,78 @@ Examples:
 
 Rules:
 
-- themes only
-- no direct component usage
-- okay to be color-system-ish or raw
-- the chromatic foundation should be `48` named hue tokens: `12` hue families x
-  `4` tones (`soft`, `default`, `strong`, `intense`), plus a neutral scale
-- themes may map those hue families to theme-appropriate values, but the hue
-  family names remain stable across themes
+- Themes only.
+- No direct component usage.
+- Chromatic tokens are computed at runtime by the palette engine.
+- Themes may customize the palette engine parameters (hue shifts, L/C curve,
+  chroma caps) but the hue family names remain stable across themes.
+- Neutral scale tokens are declared statically per theme (not computed).
+
+### Layer 0.5: Global Multipliers
+
+These are not palette values but system-level factors that affect how every
+other token is consumed.
+
+```css
+:root {
+  --tug-scale: 1;    /* multiplies all dimensions */
+  --tug-timing: 1;   /* multiplies all durations */
+  --tug-motion: 1;   /* 1 = motion on, 0 = motion off */
+}
+```
+
+Rules:
+
+- Set at the `:root` level.
+- Persisted in tugbank (`dev.tugtool.app` domain).
+- Overridable by user preferences, accessibility settings, or debug controls.
+- Every size token in Layer 1 includes `var(--tug-scale)` as a factor.
+- Every duration token in Layer 1 includes `var(--tug-timing)` as a factor.
 
 ### Layer 1: Canonical Semantics (`--tug-base-*`)
 
 Purpose:
 
-- the stable, readable contract for app and component styling
-- all public semantics live here
+- The stable, readable contract for app and component styling.
+- All public semantics live here.
 
 Rules:
 
-- all component styling eventually resolves from this layer
-- no raw palette values in component CSS
-- no `--td-*`, `--tways-*`, or legacy aliases after migration
+- All component styling eventually resolves from this layer.
+- No raw palette values in component CSS.
+- No `--td-*`, `--tways-*`, or legacy aliases after migration.
+- All size tokens include `calc(... * var(--tug-scale))`.
+- All duration tokens include `calc(... * var(--tug-timing))`.
 
 ### Layer 2: Component / Pattern Tokens (`--tug-comp-*`)
 
 Purpose:
 
-- bind a component or component family to shared semantics
-- allow family-specific tuning without inventing new raw values
+- Bind a component or component family to shared semantics.
+- Allow family-specific tuning without inventing new raw values.
 
 Examples:
 
 - `--tug-comp-button-primary-bg-rest: var(--tug-base-action-primary-bg-rest);`
 - `--tug-comp-tab-badge-bg: var(--tug-base-badge-accent-bg);`
 - `--tug-comp-card-header-bg-active: var(--tug-base-card-header-bg-active);`
+- `--tug-comp-button-scale: 1;` (component-level scale override)
 
 Rules:
 
-- may exist only when base semantics are too generic
-- must resolve entirely from `--tug-base-*`
-- should prefer family names like `control`, `button`, `field`, `menu`, `tab`,
-  `card`, `table`, `inspector` over one-off widget names whenever possible
+- May exist only when base semantics are too generic.
+- Must resolve entirely from `--tug-base-*`.
+- Should prefer family names like `control`, `button`, `field`, `menu`, `tab`,
+  `card`, `table`, `inspector` over one-off widget names whenever possible.
+- Each component family may declare a `--tug-comp-<family>-scale` property
+  (default `1`) that its internal dimensions multiply by.
 
 ---
 
 ## Revised `--tug-base-*` Semantic Taxonomy
 
-This is the part the earlier draft undershot. The taxonomy below is intentionally
-large because the roadmap is large.
+This is the part the earlier draft undershot. The taxonomy below is
+intentionally large because the roadmap is large.
 
 ### A. Foundation Domains
 
@@ -746,59 +1048,75 @@ large because the roadmap is large.
 - `--tug-base-overlay-scrim`
 - `--tug-base-overlay-highlight`
 
-#### Typography / Space / Radius / Stroke
+#### Typography (scaled)
+
+All font size and line height tokens include `var(--tug-scale)`:
 
 - `--tug-base-font-family-sans`
 - `--tug-base-font-family-mono`
-- `--tug-base-font-size-2xs`
-- `--tug-base-font-size-xs`
-- `--tug-base-font-size-sm`
-- `--tug-base-font-size-md`
-- `--tug-base-font-size-lg`
-- `--tug-base-font-size-xl`
-- `--tug-base-font-size-2xl`
-- `--tug-base-line-height-2xs`
-- `--tug-base-line-height-xs`
-- `--tug-base-line-height-sm`
-- `--tug-base-line-height-md`
-- `--tug-base-line-height-lg`
-- `--tug-base-line-height-xl`
-- `--tug-base-line-height-2xl`
-- `--tug-base-space-2xs`
-- `--tug-base-space-xs`
-- `--tug-base-space-sm`
-- `--tug-base-space-md`
-- `--tug-base-space-lg`
-- `--tug-base-space-xl`
-- `--tug-base-space-2xl`
-- `--tug-base-radius-2xs`
-- `--tug-base-radius-xs`
-- `--tug-base-radius-sm`
-- `--tug-base-radius-md`
-- `--tug-base-radius-lg`
-- `--tug-base-radius-xl`
-- `--tug-base-radius-2xl`
-- `--tug-base-stroke-hairline`
-- `--tug-base-stroke-thin`
-- `--tug-base-stroke-medium`
-- `--tug-base-stroke-thick`
-- `--tug-base-icon-size-2xs`
-- `--tug-base-icon-size-xs`
-- `--tug-base-icon-size-sm`
-- `--tug-base-icon-size-md`
-- `--tug-base-icon-size-lg`
-- `--tug-base-icon-size-xl`
+- `--tug-base-font-size-2xs` = `calc(10px * var(--tug-scale))`
+- `--tug-base-font-size-xs` = `calc(11px * var(--tug-scale))`
+- `--tug-base-font-size-sm` = `calc(12px * var(--tug-scale))`
+- `--tug-base-font-size-md` = `calc(14px * var(--tug-scale))`
+- `--tug-base-font-size-lg` = `calc(16px * var(--tug-scale))`
+- `--tug-base-font-size-xl` = `calc(20px * var(--tug-scale))`
+- `--tug-base-font-size-2xl` = `calc(24px * var(--tug-scale))`
+- `--tug-base-line-height-2xs` = `calc(14px * var(--tug-scale))`
+- `--tug-base-line-height-xs` = `calc(16px * var(--tug-scale))`
+- `--tug-base-line-height-sm` = `calc(18px * var(--tug-scale))`
+- `--tug-base-line-height-md` = `calc(20px * var(--tug-scale))`
+- `--tug-base-line-height-lg` = `calc(24px * var(--tug-scale))`
+- `--tug-base-line-height-xl` = `calc(28px * var(--tug-scale))`
+- `--tug-base-line-height-2xl` = `calc(32px * var(--tug-scale))`
 
-#### Motion
+#### Spacing (scaled)
 
-- `--tug-base-motion-duration-fast`
-- `--tug-base-motion-duration-moderate`
-- `--tug-base-motion-duration-slow`
-- `--tug-base-motion-duration-glacial`
-- `--tug-base-motion-easing-standard`
-- `--tug-base-motion-easing-enter`
-- `--tug-base-motion-easing-exit`
-- `--tug-base-motion-duration-scalar`
+- `--tug-base-space-2xs` = `calc(2px * var(--tug-scale))`
+- `--tug-base-space-xs` = `calc(4px * var(--tug-scale))`
+- `--tug-base-space-sm` = `calc(6px * var(--tug-scale))`
+- `--tug-base-space-md` = `calc(8px * var(--tug-scale))`
+- `--tug-base-space-lg` = `calc(12px * var(--tug-scale))`
+- `--tug-base-space-xl` = `calc(16px * var(--tug-scale))`
+- `--tug-base-space-2xl` = `calc(24px * var(--tug-scale))`
+
+#### Radius (scaled)
+
+- `--tug-base-radius-2xs` = `calc(1px * var(--tug-scale))`
+- `--tug-base-radius-xs` = `calc(2px * var(--tug-scale))`
+- `--tug-base-radius-sm` = `calc(4px * var(--tug-scale))`
+- `--tug-base-radius-md` = `calc(6px * var(--tug-scale))`
+- `--tug-base-radius-lg` = `calc(8px * var(--tug-scale))`
+- `--tug-base-radius-xl` = `calc(12px * var(--tug-scale))`
+- `--tug-base-radius-2xl` = `calc(16px * var(--tug-scale))`
+
+#### Stroke (scaled with floor)
+
+- `--tug-base-stroke-hairline` = `max(1px, calc(0.5px * var(--tug-scale)))`
+- `--tug-base-stroke-thin` = `max(1px, calc(1px * var(--tug-scale)))`
+- `--tug-base-stroke-medium` = `calc(1.5px * var(--tug-scale))`
+- `--tug-base-stroke-thick` = `calc(2px * var(--tug-scale))`
+
+#### Icon Size (scaled)
+
+- `--tug-base-icon-size-2xs` = `calc(10px * var(--tug-scale))`
+- `--tug-base-icon-size-xs` = `calc(12px * var(--tug-scale))`
+- `--tug-base-icon-size-sm` = `calc(14px * var(--tug-scale))`
+- `--tug-base-icon-size-md` = `calc(16px * var(--tug-scale))`
+- `--tug-base-icon-size-lg` = `calc(20px * var(--tug-scale))`
+- `--tug-base-icon-size-xl` = `calc(24px * var(--tug-scale))`
+
+#### Motion (timed)
+
+All durations include `var(--tug-timing)`:
+
+- `--tug-base-motion-duration-instant` = `calc(0ms * var(--tug-timing))`
+- `--tug-base-motion-duration-fast` = `calc(100ms * var(--tug-timing))`
+- `--tug-base-motion-duration-moderate` = `calc(200ms * var(--tug-timing))`
+- `--tug-base-motion-duration-slow` = `calc(350ms * var(--tug-timing))`
+- `--tug-base-motion-duration-glacial` = `calc(500ms * var(--tug-timing))`
+- `--tug-base-motion-easing-standard` = `cubic-bezier(0.2, 0, 0, 1)`
+- `--tug-base-motion-easing-enter` = `cubic-bezier(0, 0, 0, 1)`
+- `--tug-base-motion-easing-exit` = `cubic-bezier(0.2, 0, 1, 1)`
 
 #### Shared Motion Patterns
 
@@ -815,65 +1133,27 @@ large because the roadmap is large.
 
 This is a first-class domain, not a side note.
 
-#### 48-Color Palette Foundation
+#### Palette Foundation
 
-The accent system should derive from a named hue foundation in the palette
-layer, not from poetic or ordinal accent names in the semantic layer.
+The accent system derives from the computed palette. Semantic accent tokens
+reference specific hue + intensity combinations:
 
-Foundation hue families:
+```css
+--tug-base-accent-default: var(--tug-palette-hue-55-orange-tone-50);
+--tug-base-accent-strong: var(--tug-palette-hue-55-orange-tone-75);
+--tug-base-accent-muted: var(--tug-palette-hue-55-orange-tone-25);
+--tug-base-accent-emphasis: var(--tug-palette-hue-55-orange-tone-90);
+--tug-base-accent-cool-default: var(--tug-palette-hue-190-cyan-tone-50);
+--tug-base-accent-info: var(--tug-palette-hue-190-cyan-tone-70);
+--tug-base-accent-positive: var(--tug-palette-hue-145-green-tone-70);
+--tug-base-accent-warning: var(--tug-palette-hue-100-yellow-tone-70);
+--tug-base-accent-danger: var(--tug-palette-hue-25-red-tone-70);
+```
 
-- `red`
-- `orange`
-- `amber`
-- `yellow`
-- `lime`
-- `green`
-- `teal`
-- `cyan`
-- `blue`
-- `indigo`
-- `violet`
-- `magenta`
-
-Foundation tone names:
-
-- `soft`
-- `default`
-- `strong`
-- `intense`
-
-Example palette tokens feeding accents:
-
-- `--tug-palette-orange-default`
-- `--tug-palette-cyan-default`
-- `--tug-palette-violet-default`
-- `--tug-palette-red-default`
-- `--tug-palette-green-default`
-- `--tug-palette-yellow-default`
-- `--tug-palette-magenta-default`
-- `--tug-palette-orange-soft`
-
-#### Semantic Accent Aliases
-
-- `--tug-base-accent-default`
-- `--tug-base-accent-strong`
-- `--tug-base-accent-muted`
-- `--tug-base-accent-emphasis`
-- `--tug-base-accent-info`
-- `--tug-base-accent-positive`
-- `--tug-base-accent-warning`
-- `--tug-base-accent-danger`
-- `--tug-base-accent-cool-default`
-
-Semantic accents should resolve from the named hue palette, for example:
-
-- `--tug-base-accent-default -> var(--tug-palette-orange-default)`
-- `--tug-base-accent-strong -> var(--tug-palette-orange-strong)`
-- `--tug-base-accent-cool-default -> var(--tug-palette-cyan-default)`
-- `--tug-base-accent-info -> var(--tug-palette-cyan-strong)`
-- `--tug-base-accent-positive -> var(--tug-palette-green-strong)`
-- `--tug-base-accent-warning -> var(--tug-palette-yellow-strong)`
-- `--tug-base-accent-danger -> var(--tug-palette-red-strong)`
+Because these resolve from the computed palette, a theme that shifts the orange
+hue angle 5 degrees warmer automatically shifts the accent with it. A theme that
+adjusts the L/C curve automatically adjusts the accent's lightness/chroma
+relationship.
 
 #### Accent-Derived Interaction Tokens
 
@@ -983,7 +1263,7 @@ Semantic accents should resolve from the named hue palette, for example:
 - `--tug-base-set-breakout-flash`
 - `--tug-base-set-dropTarget`
 
-### E. Actions And Generic Controls
+### E. Actions and Generic Controls
 
 This follows Primer's useful idea of generic `control` patterns, not just
 component-by-component naming.
@@ -994,8 +1274,8 @@ Disabled controls should be treated as a first-class system state, not as an
 afterthought handled ad hoc by opacity alone.
 
 Every interactive control family should be able to derive its disabled
-presentation from a shared base contract, with component-specific overrides only
-when necessary.
+presentation from a shared base contract, with component-specific overrides
+only when necessary.
 
 Core disabled-control tokens:
 
@@ -1200,14 +1480,19 @@ rules.
 
 #### Chart / Gauge
 
-- `--tug-base-chart-series-warm`
-- `--tug-base-chart-series-cool`
-- `--tug-base-chart-series-violet`
-- `--tug-base-chart-series-rose`
-- `--tug-base-chart-series-verdant`
-- `--tug-base-chart-series-golden`
-- `--tug-base-chart-series-orchid`
-- `--tug-base-chart-series-coral`
+Chart series colors reference the computed palette directly:
+
+- `--tug-base-chart-series-warm` = `var(--tug-palette-hue-55-orange-tone-60)`
+- `--tug-base-chart-series-cool` = `var(--tug-palette-hue-190-cyan-tone-60)`
+- `--tug-base-chart-series-violet` = `var(--tug-palette-hue-280-violet-tone-60)`
+- `--tug-base-chart-series-rose` = `var(--tug-palette-hue-340-rose-tone-60)`
+- `--tug-base-chart-series-verdant` = `var(--tug-palette-hue-145-green-tone-60)`
+- `--tug-base-chart-series-golden` = `var(--tug-palette-hue-85-gold-tone-60)`
+- `--tug-base-chart-series-orchid` = `var(--tug-palette-hue-295-purple-tone-60)`
+- `--tug-base-chart-series-coral` = `var(--tug-palette-hue-35-coral-tone-50)`
+
+Gauge and chart infrastructure tokens:
+
 - `--tug-base-chart-grid`
 - `--tug-base-chart-axis`
 - `--tug-base-chart-tick`
@@ -1374,6 +1659,16 @@ component-token families should be treated as expected parts of the system.
   - `--tug-comp-inspector-property-*`
   - `--tug-comp-devOverlay-*`
   - `--tug-comp-keybindingEditor-*`
+- Scale overrides:
+  - `--tug-comp-button-scale`
+  - `--tug-comp-tab-scale`
+  - `--tug-comp-dock-scale`
+  - `--tug-comp-card-header-scale`
+  - `--tug-comp-field-scale`
+  - `--tug-comp-menu-scale`
+  - `--tug-comp-badge-scale`
+  - `--tug-comp-tooltip-scale`
+  - `--tug-comp-gauge-scale`
 
 ---
 
@@ -1383,36 +1678,37 @@ The current accent contract needs a direct mapping so the migration is explicit.
 
 ### Current -> Proposed
 
-- `--td-accent` -> `--tug-base-accent-default`
-- `--td-accent-strong` -> `--tug-base-accent-strong`
-- `--td-accent-cool` -> `--tug-base-accent-cool-default`
-- `--td-accent-1` -> `--tug-palette-orange-default`
-- `--td-accent-2` -> `--tug-palette-cyan-default`
-- `--td-accent-3` -> `--tug-palette-violet-default`
-- `--td-accent-4` -> `--tug-palette-red-default`
-- `--td-accent-5` -> `--tug-palette-green-default`
-- `--td-accent-6` -> `--tug-palette-yellow-default`
-- `--td-accent-7` -> `--tug-palette-magenta-default`
-- `--td-accent-8` -> `--tug-palette-orange-soft`
+| Current | Proposed |
+|---------|----------|
+| `--td-accent` | `--tug-base-accent-default` |
+| `--td-accent-strong` | `--tug-base-accent-strong` |
+| `--td-accent-cool` | `--tug-base-accent-cool-default` |
+| `--td-accent-1` | `--tug-palette-hue-55-orange-tone-50` |
+| `--td-accent-2` | `--tug-palette-hue-190-cyan-tone-50` |
+| `--td-accent-3` | `--tug-palette-hue-280-violet-tone-50` |
+| `--td-accent-4` | `--tug-palette-hue-25-red-tone-50` |
+| `--td-accent-5` | `--tug-palette-hue-145-green-tone-50` |
+| `--td-accent-6` | `--tug-palette-hue-100-yellow-tone-50` |
+| `--td-accent-7` | `--tug-palette-hue-315-magenta-tone-50` |
+| `--td-accent-8` | `--tug-palette-hue-35-coral-tone-30` |
 
 ### Derived Semantic Roles
 
-- `--td-success` currently derives from accent 5
-  - proposed: `--tug-base-accent-positive -> var(--tug-palette-green-strong)`
-- `--td-warning` currently derives from accent 6
-  - proposed: `--tug-base-accent-warning -> var(--tug-palette-yellow-strong)`
-- `--td-danger` currently derives from accent 4
-  - proposed: `--tug-base-accent-danger -> var(--tug-palette-red-strong)`
-- `--td-info` currently derives from accent 2
-  - proposed: `--tug-base-accent-info -> var(--tug-palette-cyan-strong)`
+| Current | Proposed |
+|---------|----------|
+| `--td-success` (accent 5) | `--tug-base-accent-positive` = `var(--tug-palette-hue-145-green-tone-70)` |
+| `--td-warning` (accent 6) | `--tug-base-accent-warning` = `var(--tug-palette-hue-100-yellow-tone-70)` |
+| `--td-danger` (accent 4) | `--tug-base-accent-danger` = `var(--tug-palette-hue-25-red-tone-70)` |
+| `--td-info` (accent 2) | `--tug-base-accent-info` = `var(--tug-palette-hue-190-cyan-tone-70)` |
 
 ### Why This Is Better
 
-- chart, syntax, and multi-series visualization still get a stable expressive
-  palette
-- component authors no longer consume meaningless ordinals
-- semantic roles such as info/warning/danger stop depending on "knowing" what
-  accent number means what
+- Chart, syntax, and multi-series visualization still get a stable expressive
+  palette — now with continuous intensity control instead of fixed steps.
+- Component authors no longer consume meaningless ordinals.
+- Semantic roles such as info/warning/danger stop depending on "knowing" what
+  accent number means what.
+- Any hue at any intensity is available on demand via `tugPaletteColor()`.
 
 ---
 
@@ -1422,24 +1718,17 @@ The following are scheduled for full removal:
 
 - `--td-*`
 - `--tways-*`
-- all legacy alias variables such as:
-  - `--background`
-  - `--foreground`
-  - `--card`
-  - `--primary`
-  - `--accent`
-  - `--destructive`
-  - `--chart-*`
-  - `--syntax-*`
+- All legacy alias variables: `--background`, `--foreground`, `--card`,
+  `--primary`, `--accent`, `--destructive`, `--chart-*`, `--syntax-*`.
 
-### But The Bridge Must Be Deliberate
+### But the Bridge Must Be Deliberate
 
 Because shadcn/Tailwind still relies on those names, migration must happen in
 three passes:
 
-1. Introduce `--tug-base-*` and `--tug-comp-*`
-2. Repoint the Tailwind/shadcn bridge from legacy aliases to new tokens
-3. Remove legacy alias declarations after all consumers are migrated
+1. Introduce `--tug-base-*` and `--tug-comp-*`.
+2. Repoint the Tailwind/shadcn bridge from legacy aliases to new tokens.
+3. Remove legacy alias declarations after all consumers are migrated.
 
 This proposal rejects permanent legacy aliases. It does not reject temporary
 migration shims.
@@ -1450,59 +1739,61 @@ migration shims.
 
 ### Interaction Model
 
-- Only available in dev mode
-- Hold `Ctrl+Option`
-- Hover any inspectable component or widget
-- A floating overlay appears near the cursor or pinned panel edge
+- Only available in dev mode.
+- Hold `Ctrl+Option`.
+- Hover any inspectable component or widget.
+- A floating overlay appears near the cursor or pinned panel edge.
 
 The overlay should show:
 
-- component or pattern identity
-- DOM path and class list
-- selected computed properties
-  - background
-  - foreground
-  - border
-  - shadow
-  - radius
-  - typography
-- full resolution chain for each inspected property:
-  - computed value
-  - source CSS rule
-  - `--tug-comp-*` token if present
-  - `--tug-base-*` token it resolves from
-  - `--tug-palette-*` value beneath that
+- Component or pattern identity.
+- DOM path and class list.
+- Selected computed properties: background, foreground, border, shadow, radius,
+  typography.
+- Full resolution chain for each inspected property:
+  - Computed value.
+  - Source CSS rule.
+  - `--tug-comp-*` token if present.
+  - `--tug-base-*` token it resolves from.
+  - `--tug-palette-*` value beneath that (including the hue name and intensity
+    number for computed palette colors).
+- Current `--tug-scale` and `--tug-timing` values and their effect on the
+  inspected element's dimensions and transitions.
 
 ### Technical Direction
 
 This should build on the roadmap's existing inspector architecture:
 
-- `StyleCascadeReader`
-- mutation transactions
-- property store
-- responder-chain-aware inspector panels
+- `StyleCascadeReader`.
+- Mutation transactions.
+- Property store.
+- Responder-chain-aware inspector panels.
 
 Recommended implementation:
 
-1. Add a dev-only `StyleInspectorOverlay` singleton
-2. Track global modifier state for `Ctrl+Option`
+1. Add a dev-only `StyleInspectorOverlay` singleton.
+2. Track global modifier state for `Ctrl+Option`.
 3. On pointer move with modifiers active:
-   - locate target with `elementFromPoint`
-   - walk up to the nearest inspect root
-   - read computed style
-   - resolve token chain using a cascade reader utility
-4. Highlight the target element with a dev-only overlay token
-5. Allow pin/unpin so the user can stop live-hover and inspect in place
-6. `Escape` closes the overlay
+   - Locate target with `elementFromPoint`.
+   - Walk up to the nearest inspect root.
+   - Read computed style.
+   - Resolve token chain using a cascade reader utility.
+4. Highlight the target element with a dev-only overlay token.
+5. Allow pin/unpin so the user can stop live-hover and inspect in place.
+6. `Escape` closes the overlay.
 
-### Why This Belongs In The Theme Machinery
+### Why This Belongs in the Theme Machinery
 
 Because the point is not generic DOM inspection. The point is to expose the
 tugways style contract:
 
-- which `--tug-comp-*` token applied
-- which `--tug-base-*` semantic is responsible
-- which theme primitive supplied the value
+- Which `--tug-comp-*` token applied.
+- Which `--tug-base-*` semantic is responsible.
+- Which theme primitive supplied the value.
+- For computed palette colors: which hue family and intensity produced the
+  value.
+- What multiplier effects `--tug-scale` and `--tug-timing` have on the
+  element.
 
 This makes the style system navigable instead of mystical.
 
@@ -1510,43 +1801,45 @@ This makes the style system navigable instead of mystical.
 
 ## Migration Strategy
 
-### Phase A: Inventory And Rename Spec
+### Phase A: Inventory and Rename Spec
 
-1. Freeze new additions under old prefixes
-2. Produce a definitive token mapping table
+1. Freeze new additions under old prefixes.
+2. Produce a definitive token mapping table.
 3. Inventory all consumers in:
    - `tugdeck/styles/*.css`
    - `tugdeck/src/components/tugways/**/*.css`
    - `tugdeck/src/components/ui/**/*.tsx`
-   - runtime style token readers/writers in TS
+   - Runtime style token readers/writers in TS.
 
 ### Phase B: Introduce New Layers
 
-1. Add `--tug-palette-*`
-2. Add `--tug-base-*`
-3. Add `--tug-comp-*` where needed
-4. Keep temporary aliases from old tokens to new tokens
+1. Implement the palette engine (TypeScript utility + startup injection).
+2. Add `--tug-palette-*` computed variables.
+3. Add `--tug-scale`, `--tug-timing`, `--tug-motion` global multipliers.
+4. Add `--tug-base-*` with scaled dimensions and timed durations.
+5. Add `--tug-comp-*` where needed, including component-level scale overrides.
+6. Keep temporary aliases from old tokens to new tokens.
 
 ### Phase C: Migrate Consumers
 
-1. Move tugways component CSS first
-2. Move chrome CSS
-3. Move globals/Tailwind bridge
-4. Move shadcn wrapper assumptions
-5. Move chart/syntax consumers
+1. Move tugways component CSS first.
+2. Move chrome CSS.
+3. Move globals/Tailwind bridge.
+4. Move shadcn wrapper assumptions.
+5. Move chart/syntax consumers.
 
 ### Phase D: Remove Migration Debris
 
-1. Remove `--td-*`
-2. Remove `--tways-*`
-3. Remove legacy aliases
-4. Add search-based enforcement checks
+1. Remove `--td-*`.
+2. Remove `--tways-*`.
+3. Remove legacy aliases.
+4. Add search-based enforcement checks.
 
 ### Phase E: Add Dev Inspector
 
-1. Implement `Ctrl+Option + hover` live inspector
-2. Add gallery demo coverage
-3. Add dev-only documentation and verification checklist
+1. Implement `Ctrl+Option + hover` live inspector.
+2. Add gallery demo coverage.
+3. Add dev-only documentation and verification checklist.
 
 ---
 
@@ -1554,63 +1847,92 @@ This makes the style system navigable instead of mystical.
 
 ### 1. Visual Drift During Rename
 
-Mitigation:
+Mitigation: keep a temporary old-to-new mapping layer. Verify Brio/Bluenote/
+Harmony parity after each migration slice.
 
-- keep a temporary old-to-new mapping layer
-- verify Brio/Bluenote/Harmony parity after each migration slice
+### 2. Hidden Dependence on Legacy Aliases
 
-### 2. Hidden Dependence On Legacy Aliases
-
-Mitigation:
-
-- static search in CSS and TS
-- explicit audit of `components/ui/*`
-- targeted runtime checks where `getComputedStyle` is involved
+Mitigation: static search in CSS and TS, explicit audit of `components/ui/*`,
+targeted runtime checks where `getComputedStyle` is involved.
 
 ### 3. Token Explosion
 
-Mitigation:
+Mitigation: use the grammar above, prefer shared pattern domains (`control`,
+`field`, `menu`, `table`) before inventing one-off component tokens, require
+that every new `--tug-comp-*` resolves from existing `--tug-base-*`.
 
-- use the grammar above
-- prefer shared pattern domains (`control`, `field`, `menu`, `table`) before
-  inventing one-off component tokens
-- require that every new `--tug-comp-*` resolves from existing `--tug-base-*`
+### 4. Computed Palette Performance
 
-### 4. Inspector Performance Overhead
+Mitigation: pre-compute standard stops (264 variables for 24 hues x 11 stops)
+at startup. This is a one-time cost of < 1ms. Arbitrary intensities are
+computed on demand via the TypeScript utility, which is pure math with no DOM
+access.
 
-Mitigation:
+### 5. OKLCH Gamut Clipping
 
-- dev-mode only
-- throttle pointer processing
-- cache cascade-resolution results per element while hovered
+Mitigation: the palette engine includes per-hue chroma capping. Before
+implementation closes, run a gamut check across all 24 hues at all standard
+stops for sRGB and P3 displays. Adjust chroma caps where needed.
+
+### 6. `calc()` with `var()` Browser Compatibility
+
+Mitigation: `calc(14px * var(--tug-scale))` works in all modern browsers. For
+older WebKit versions that don't support `calc()` in custom properties, the
+palette engine can pre-compute scaled values — the same injection mechanism used
+for computed colors. Since tugdeck targets a known WebView (WKWebView on macOS),
+browser compatibility is controlled.
+
+### 7. Inspector Performance Overhead
+
+Mitigation: dev-mode only, throttle pointer processing, cache cascade-resolution
+results per element while hovered.
 
 ---
 
-## Definition Of Done
+## Definition of Done
 
-1. No `--td-*` tokens remain in source
-2. No `--tways-*` tokens remain in source
-3. No legacy alias tokens remain in source
-4. All current accent use cases have explicit replacements
-5. Chart and syntax token families are preserved under the new contract
-6. Tugways component CSS consumes `--tug-base-*` and `--tug-comp-*` only
-7. Theme files own only `--tug-palette-*` primitives
-8. The Tailwind/shadcn bridge points at the new canonical layer
-9. Dev-mode `Ctrl+Option + hover` inspector can show full cascade resolution for
-   hovered components
+1. No `--td-*` tokens remain in source.
+2. No `--tways-*` tokens remain in source.
+3. No legacy alias tokens remain in source.
+4. All current accent use cases have explicit replacements.
+5. Chart and syntax token families are preserved under the new contract.
+6. Tugways component CSS consumes `--tug-base-*` and `--tug-comp-*` only.
+7. Theme files own only `--tug-palette-*` primitives (plus engine parameters).
+8. The Tailwind/shadcn bridge points at the new canonical layer.
+9. The palette engine computes 264 standard-stop CSS variables at startup.
+10. `--tug-scale` resizes the entire UI when changed. Verified at 0.85, 1.0,
+    1.25, and 1.5.
+11. `--tug-timing` scales all animation durations when changed. Verified at 0.5,
+    1.0, and 5.0.
+12. `--tug-motion: 0` disables all motion. Verified with `prefers-reduced-motion`
+    and manual toggle.
+13. Dev-mode `Ctrl+Option + hover` inspector can show full cascade resolution
+    for hovered components, including palette hue/intensity provenance.
 
 ---
 
-## Recommended Next Document
+## Recommended Next Steps
 
-If this proposal is approved, the next step should be a concrete execution plan:
+If this proposal is approved, it should be implemented across five sub-phases:
 
-- `tugways-phase-theme-token-overhaul`
+1. **Phase 5d5a: Palette Engine** — TypeScript palette computation, 24 hue
+   families with `hue-<angle>-<name>-tone-<intensity>` naming, transfer function
+   with interactive gallery demo for curve tuning, runtime CSS injection.
 
-That plan should include:
+2. **Phase 5d5b: Global Scale & Timing** — `--tug-scale`, `--tug-timing`,
+   `--tug-motion`, per-component scale overrides, `calc()` wiring for all
+   dimension and duration tokens, JS integration helpers.
 
-- exact token mapping tables
-- explicit bridge cutover for `globals.css` and `components/ui/*`
-- implementation slices by file group
-- verification commands and parity checks
-- follow-on cleanup for old roadmap language that still assumes `--td-*`
+3. **Phase 5d5c: Token Architecture** — Introduce `--tug-base-*` and
+   `--tug-comp-*` layers, define the full semantic taxonomy, temporary aliases
+   from old tokens to new tokens.
+
+4. **Phase 5d5d: Consumer Migration** — Migrate all CSS and TS consumers from
+   `--td-*`/`--tways-*` to new tokens, shadcn bridge cutover, remove legacy
+   aliases, search-based enforcement.
+
+5. **Phase 5d5e: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
+   palette provenance display (hue/intensity), scale/timing readout.
+
+Each sub-phase has its own tugplan. See `tugways-implementation-strategy.md` for
+the full phase descriptions and dependency map.

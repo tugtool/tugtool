@@ -580,6 +580,131 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Note**: Phase 5d4 depends on Phase 5d2 (explicit-target dispatch for inspector→card actions) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases, establishing the full inspector pipeline.
 
+### Phase 5d5a: Palette Engine (Concept 22, [D70])
+
+**Goal**: A computed OKLCH color palette with 24 hue families and a continuous 0–100 intensity scale, runtime-generated and injectable as CSS custom properties. An interactive gallery demo for tuning the transfer function curve.
+
+**What to do**:
+1. Implement `PaletteEngine` TypeScript module — defines the 24 hue families (name + OKLCH angle), the smoothstep-based transfer function mapping intensity (0–100) to OKLCH lightness and chroma, and a `tugPaletteColor(hueName, intensity)` function returning `oklch(...)` strings
+2. Implement `tugPaletteVarName(hueName, intensity)` — returns the CSS variable name in `--tug-palette-hue-<angle>-<name>-tone-<intensity>` format
+3. Implement standard-stop injection — at app startup and theme switch, compute 264 CSS variables (24 hues x 11 stops at 0, 10, 20, ..., 100) and inject into `<style id="tug-palette">`
+4. Implement per-hue chroma capping — `maxChromaForHue(hueAngle)` prevents OKLCH gamut clipping for sRGB displays, especially for yellows and greens at high intensity
+5. Implement theme parameter protocol — themes can override hue angles, L/C curve parameters, and chroma caps via CSS custom properties (`--tug-theme-hue-red`, `--tug-theme-lc-l-max`, etc.) consumed by the palette engine at load time
+6. Implement named tone aliases — `soft` (15), `default` (50), `strong` (75), `intense` (100) as convenience mappings
+7. Build interactive palette gallery demo — displays all 24 hues across the full 0–100 intensity range as a continuous gradient strip. Includes interactive controls for adjusting transfer function parameters (L/C anchors, curve type selection between smoothstep, bezier, and piecewise). Visual comparison mode to evaluate different curve shapes side by side
+8. Investigate transfer function alternatives — compare smoothstep, cubic bezier, and piecewise functions. Document findings on which produces the most designer-friendly gradient across hues (especially for yellow/green where OKLCH chroma limits differ significantly from blue/violet)
+9. Gamut-check all 24 hues at all standard stops for sRGB and P3 displays. Adjust chroma caps where needed
+10. Verify: palette injection < 1ms, `tugPaletteColor()` returns correct oklch strings, theme overrides shift colors correctly, gallery demo renders all 24x11 stops
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/palette-engine.ts` — new: PaletteEngine, tugPaletteColor, hue definitions, transfer function, injection
+2. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — palette demo tab
+3. `tugdeck/src/components/tugways/cards/gallery-card.css` — palette demo styles
+
+**Result**: The computed palette is live. Any hue at any intensity is available as a CSS variable (standard stops) or via a TypeScript utility (arbitrary values). The gallery demo provides interactive curve tuning. The transfer function is validated across all hues.
+
+**Note**: Phase 5d5a can start anytime after Phase 5a2 (basic infrastructure must exist). It does not depend on Phases 5d1–5d4. The palette engine is a standalone module that produces CSS variables — it has no coupling to the responder chain, mutation model, or property store.
+
+### Phase 5d5b: Global Scale & Timing (Concept 22, [D72]-[D73])
+
+**Goal**: A single `--tug-scale` value controls all UI dimensions. A single `--tug-timing` value controls all animation durations. A `--tug-motion` toggle disables motion entirely.
+
+**What to do**:
+1. Add `--tug-scale: 1`, `--tug-timing: 1`, and `--tug-motion: 1` to `:root` in `tokens.css`
+2. Add `prefers-reduced-motion` media query that sets `--tug-motion: 0`
+3. Implement `data-tug-motion` attribute management — set `data-tug-motion="off"` on `<body>` when `--tug-motion` is 0. Add global CSS rule that zeroes all animation/transition durations when off
+4. Define the scaled dimension token set: every font size, spacing, radius, icon size, and stroke width expressed as `calc(<base> * var(--tug-scale))`. Stroke tokens use `max(1px, calc(...))` floor. Border widths excluded from scaling
+5. Define the timed duration token set: every motion duration expressed as `calc(<base> * var(--tug-timing))`
+6. Define component-level scale tokens: `--tug-comp-button-scale`, `--tug-comp-tab-scale`, `--tug-comp-dock-scale`, etc. (all default to `1`)
+7. Implement JS integration helpers: `getTugScale()`, `getTugTiming()`, `isTugMotionEnabled()` for RAF-based animations and imperative style mutations
+8. Build gallery demo — scale slider (0.85–2.0) that resizes all gallery components live. Timing slider (0.1–10.0) that affects all gallery animations. Motion toggle. Component-level scale controls for buttons and tabs
+9. Verify: scale 0.85/1.0/1.25/1.5 produce correct proportions across all existing components. Timing 0.5/1.0/5.0 affect all animations. Motion off disables all animation. Component scales compose correctly with global scale
+
+**Files created/modified**:
+1. `tugdeck/styles/tokens.css` — global multipliers, scaled tokens, timed tokens
+2. `tugdeck/src/components/tugways/scale-timing.ts` — new: JS helpers
+3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — scale/timing demo
+4. `tugdeck/src/components/tugways/cards/gallery-card.css` — scale/timing demo styles
+
+**Result**: The entire UI resizes by changing one number. All animations speed up or slow down by changing one number. Motion can be disabled entirely. Component-level scale overrides allow fine-tuning. JS-driven animations respect the same values.
+
+**Note**: Phase 5d5b can start anytime after Phase 5a2. It does not depend on Phase 5d5a (palette engine) — the two are independent and can run in parallel. It does not depend on Phases 5d1–5d4.
+
+### Phase 5d5c: Token Architecture (Concept 22, [D71])
+
+**Goal**: Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy. Temporary aliases bridge old tokens to new tokens. No consumer migration yet.
+
+**What to do**:
+1. Define the complete `--tug-base-*` semantic taxonomy in a new `tug-tokens.css` file — all ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, stroke, icon size, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
+2. Wire `--tug-base-*` accent tokens to computed palette variables from Phase 5d5a (e.g., `--tug-base-accent-default: var(--tug-palette-hue-55-orange-tone-50)`)
+3. Wire all dimension tokens through `var(--tug-scale)` from Phase 5d5b
+4. Wire all duration tokens through `var(--tug-timing)` from Phase 5d5b
+5. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. This ensures zero visual change while the new layer is being introduced
+6. Define initial `--tug-comp-*` component token families where base semantics are too generic (dock buttons, titlebar controls, tab overflow, field metadata, gauge annotations)
+7. Verify: all existing components render identically with the backward-compatibility aliases in place. No visual diff in any theme (Brio, Bluenote, Harmony)
+
+**Files created/modified**:
+1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy
+2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-comp-*` families
+3. `tugdeck/styles/tokens.css` — backward-compatibility aliases added
+4. `tugdeck/styles/bluenote.css` — palette engine parameter overrides
+5. `tugdeck/styles/harmony.css` — palette engine parameter overrides
+
+**Result**: The new token architecture exists in parallel with the old one. All new tokens are defined and wirable. Backward-compatibility aliases ensure zero visual regression. Migration can proceed incrementally in the next phase.
+
+**Note**: Phase 5d5c depends on Phase 5d5a (palette engine must exist for accent/chart/syntax tokens to reference computed palette variables) and Phase 5d5b (scale/timing multipliers must exist for dimension/duration tokens to reference). This is the coordination phase that brings the palette engine and multipliers together into a coherent semantic layer.
+
+### Phase 5d5d: Consumer Migration (Concept 22, [D71])
+
+**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement.
+
+**What to do**:
+1. Migrate tugways component CSS first — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, and all other `components/tugways/*.css` files
+2. Migrate chrome CSS — `chrome.css`, `card-frame` styles, `deck-canvas` styles
+3. Migrate `globals.css` — repoint the Tailwind v4 `@theme` bridge from legacy aliases to `--tug-base-*` tokens
+4. Migrate shadcn wrapper assumptions — update `components/ui/*.tsx` inline styles and any hardcoded token references
+5. Migrate chart and syntax consumers — update any TypeScript that reads token values via `getComputedStyle` or sets them via inline styles
+6. Migrate runtime token readers/writers — update `StyleCascadeReader`, `MutationTransaction`, and any other TS code that references `--td-*` or `--tways-*` strings
+7. Remove backward-compatibility aliases from `tokens.css` — the old `--td-*`, `--tways-*`, and legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are deleted
+8. Add search-based enforcement: a CI-friendly script that greps for `--td-`, `--tways-`, and the legacy alias names, failing if any are found outside of migration documentation
+9. Verify: all three themes (Brio, Bluenote, Harmony) render correctly with zero visual diff. No `--td-*`, `--tways-*`, or legacy aliases remain in source
+
+**Files modified** (many):
+1. `tugdeck/src/components/tugways/*.css` — all component CSS files
+2. `tugdeck/styles/chrome.css` — chrome token references
+3. `tugdeck/src/globals.css` — Tailwind bridge
+4. `tugdeck/src/components/ui/*.tsx` — shadcn wrapper token references
+5. `tugdeck/styles/tokens.css` — remove legacy aliases
+6. `tugdeck/src/components/tugways/*.ts` — runtime token readers
+
+**Result**: The migration is complete. Only `--tug-palette-*`, `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression.
+
+**Note**: Phase 5d5d depends on Phase 5d5c (new token layers must exist with backward-compatibility aliases before consumers can be migrated). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by allowing incremental migration with verification after each file group.
+
+### Phase 5d5e: Cascade Inspector (Concept 22, [D74])
+
+**Goal**: A dev-mode `Ctrl+Option + hover` overlay that shows the full token resolution chain for any inspected component.
+
+**What to do**:
+1. Implement `StyleInspectorOverlay` singleton — tracks global modifier state for `Ctrl+Option`, manages overlay lifecycle
+2. On pointer move with modifiers active: locate target with `elementFromPoint`, walk to nearest inspect root, read computed style, resolve token chain via `StyleCascadeReader`
+3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-palette-*`)
+4. For computed palette colors: display hue family name, angle, and intensity number (e.g., "orange hue-55, tone 50")
+5. Display current `--tug-scale` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
+6. Implement pin/unpin — clicking while inspecting pins the overlay so the user can stop hovering and examine details. `Escape` closes
+7. Highlight the target element with a dev-only overlay outline
+8. Add gallery demo section showing the inspector in action
+9. Verify: inspector correctly resolves all three token layers, palette provenance is accurate, scale/timing readout matches actual values
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/style-inspector-overlay.ts` — new: StyleInspectorOverlay singleton
+2. `tugdeck/src/components/tugways/style-inspector-overlay.css` — new: overlay styles
+3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — inspector demo section
+
+**Result**: The style system is navigable. Developers can point at any element and see exactly which tokens are in play, where they come from, and how scale/timing affect them. The computed palette provenance makes OKLCH color choices transparent.
+
+**Note**: Phase 5d5e depends on Phase 5d5d (token migration must be complete so the inspector shows the final token names, not legacy aliases). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
+
 ### Phase 6: Feed Abstraction (Concept 7)
 
 **Goal**: Cards receive typed, accumulated data from backend feeds.
@@ -819,6 +944,24 @@ Responder Chain  Mutation Model                              │
              └────────┴────────────────┬───┴─────────┴───────┘
                                        ▼
                           Phase 9: Card Rebuild
+
+    Theme Token Overhaul (can run in parallel with 5b–8e):
+
+         Phase 5d5a: ◄─── (5a2)    Phase 5d5b: ◄─── (5a2)
+         Palette Engine             Scale & Timing
+             │                          │
+             └────────────┬─────────────┘
+                          ▼
+                  Phase 5d5c: ◄─── (5d5a + 5d5b)
+                  Token Architecture
+                          │
+                          ▼
+                  Phase 5d5d: ◄─── (5d5c)
+                  Consumer Migration
+                          │
+                          ▼
+                  Phase 5d5e: ◄─── (5d5d, benefits from 5d3 + 5d4)
+                  Cascade Inspector
 ```
 
 Phases 3 and 4 can run in parallel. Phase 5a (Selection Model) depends on Phase 5 and
@@ -849,6 +992,12 @@ Phase 5d4 (Observable Properties) depends on Phase 5d2 (explicit-target dispatch
 Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
+Phase 5d5a (Palette Engine) can start anytime after Phase 5a2. It is a standalone module with no coupling to the responder chain, mutation model, or property store. It does not depend on Phases 5d1–5d4.
+Phase 5d5b (Global Scale & Timing) can start anytime after Phase 5a2. It is independent of Phase 5d5a — the two can run in parallel.
+Phase 5d5c (Token Architecture) depends on Phase 5d5a (palette variables for accent/chart/syntax tokens) and Phase 5d5b (scale/timing multipliers for dimension/duration tokens). It introduces the new layers with backward-compatibility aliases for zero-risk introduction.
+Phase 5d5d (Consumer Migration) depends on Phase 5d5c (new token layers must exist before consumers migrate). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by enabling incremental migration.
+Phase 5d5e (Cascade Inspector) depends on Phase 5d5d (token migration must be complete so the inspector shows final names). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
+The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5d (Consumer Migration) should ideally complete before Phase 9 begins, so rebuilt cards use the new token names from the start.
 
 ## Estimated Scope
 
@@ -873,6 +1022,11 @@ Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation
 | 5d2 | ~3 files | ~200 lines |
 | 5d3 | ~3 files | ~300 lines |
 | 5d4 | ~4 files | ~400 lines |
+| 5d5a | ~3 files | ~400 lines |
+| 5d5b | ~4 files | ~300 lines |
+| 5d5c | ~5 files | ~600 lines |
+| 5d5d | ~20 files | ~500 lines (net change, mostly renames) |
+| 5d5e | ~3 files | ~400 lines |
 | 5e | ~10 files | ~1500 lines |
 | 5f | ~6 files | ~500 lines |
 | 6 | ~4 files | ~400 lines |
@@ -884,12 +1038,14 @@ Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation
 | 8e | ~5 files | ~800 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~15,700 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~17,900 lines** replacing the current ~9700 lines. The new
 codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
 lines of reusable UI primitives, the control action/transaction/property
 infrastructure (Phases 5d2–5d4) adds ~900 lines, the inspector panels (Phase 8e)
-add ~800 lines, and tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
-for typed persistence. The triple-registration redundancy is gone, the adapter
+add ~800 lines, tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
+for typed persistence, and the theme token overhaul (Phases 5d5a–5d5e) adds
+~2200 lines of palette engine, scaled/timed tokens, semantic taxonomy, and
+cascade inspector. The triple-registration redundancy is gone, the adapter
 layer is gone, and the component abstractions do more with less code.
 
 ## How This Drives Tugplan Creation
@@ -922,16 +1078,21 @@ The suggested plan sequence:
 17. `tugways-phase-5d2-control-action` — ActionEvent with payloads/phases, explicit-target dispatch, control/responder separation
 18. `tugways-phase-5d3-mutation-transactions` — snapshot/preview/commit/cancel, StyleCascadeReader, vertical-slice gallery demo
 19. `tugways-phase-5d4-observable-properties` — PropertyStore, usePropertyStore hook, inspector demo
-20. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
-21. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-22. `tugways-phase-6-feed` — feed hooks, data flow
-23. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-24. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-25. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-26. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-27. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-28. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-29. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+20. `tugways-phase-5d5a-palette-engine` — computed OKLCH palette, 24 hues x 0–100 intensity, transfer function, interactive gallery demo
+21. `tugways-phase-5d5b-scale-timing` — global scale, global timing, motion toggle, per-component scale, JS helpers
+22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-comp-*` layers, full semantic taxonomy, backward-compatibility aliases
+23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
+24. `tugways-phase-5d5e-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
+25. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
+26. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
+27. `tugways-phase-6-feed` — feed hooks, data flow
+28. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+29. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+30. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+31. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+32. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+33. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+34. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 

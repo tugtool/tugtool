@@ -44,6 +44,7 @@
 | 19 | Target/Action Control Model | IMPLEMENTED | [#c19-target-action](#c19-target-action) |
 | 20 | Mutation Transactions | DESIGNED | [#c20-mutation-transactions](#c20-mutation-transactions) |
 | 21 | Observable Properties | DESIGNED | [#c21-observable-properties](#c21-observable-properties) |
+| 22 | Theme Token Overhaul | DESIGNED | [#c22-theme-overhaul](#c22-theme-overhaul) |
 
 ### Cross-Cutting Design Decisions
 
@@ -118,6 +119,11 @@
 | [D67] | Typed key-path property store per card | Concept 21 | [#d67-property-store](#d67-property-store) |
 | [D68] | PropertyStore integrates with useSyncExternalStore | Concept 21 | [#d68-property-store-sync](#d68-property-store-sync) |
 | [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
+| [D70] | Computed OKLCH palette: 24 hues x 0–100 intensity, runtime-generated | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
+| [D71] | Token naming: `--tug-palette-*`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
+| [D72] | Global scale: `--tug-scale` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
+| [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
+| [D74] | Dev cascade inspector: `Ctrl+Option + hover` shows token resolution chain | Concept 22 | [#d74-cascade-inspector](#d74-cascade-inspector) |
 
 ### Key Architectural Patterns
 
@@ -141,6 +147,8 @@
 | Target/action control model | Controls emit ActionEvents with payload, sender, and phase; two dispatch modes (nil-target and explicit-target) | [#d61-action-event](#d61-action-event) |
 | Mutation transactions | Snapshot/preview/commit/cancel cycle for live-preview editing; appearance-zone only during preview | [#d64-mutation-transactions](#d64-mutation-transactions) |
 | Observable property store | Typed key-path store per card with observation; integrates with useSyncExternalStore for inspector UI | [#d67-property-store](#d67-property-store) |
+| Computed color palette | 24 OKLCH hue families x 0–100 intensity scale, runtime-generated via smoothstep transfer function | [#d70-computed-palette](#d70-computed-palette) |
+| Global scale and timing | `--tug-scale` multiplies all dimensions; `--tug-timing` multiplies all durations; `--tug-motion` toggles motion on/off | [#d72-global-scale](#d72-global-scale) |
 
 ### External References
 
@@ -151,6 +159,7 @@
 | `roadmap/tuglook-style-system-redesign.txt` | Prior art for theme system |
 | `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions |
 | `roadmap/tugbank-proposal.md` | Tugbank SQLite-backed defaults store design (schema, API, CLI, concurrency model) |
+| `roadmap/theme-overhaul-proposal.md` | Theme token overhaul: computed OKLCH palette, three-layer token architecture, global scale/timing, cascade inspector |
 
 ### Discussion Log
 
@@ -3492,6 +3501,97 @@ The inspector doesn't import the card's internal code. It discovers available pr
 
 **Multiple inspectors, one target:** Multiple inspector panels can observe the same PropertyStore simultaneously. Each subscribes to the paths it cares about. Changes from any source (any inspector, the card itself, feed data) notify all observers.
 
+### 22. Theme Token Overhaul {#c22-theme-overhaul}
+
+**Status: DESIGNED**
+
+**The problem.** The current token system (`--tways-*` palette, `--td-*` semantic) has served well for establishing theme machinery, but the naming is ad hoc, the accent system uses meaningless ordinals (`accent-1` through `accent-8`), the color palette is rigid (fixed hex values per theme), and there's no systematic way to resize the UI or control animation speed. The shadcn bridge aliases (`--background`, `--foreground`, `--primary`, etc.) create an opaque layer that obscures the actual canonical tokens. The roadmap's much larger component inventory (28+ components, inspector panels, data visualization) requires a token system designed for the full scope, not just today's small CSS footprint.
+
+**Full proposal.** The complete research-backed proposal is in `roadmap/theme-overhaul-proposal.md`, including external research references (Primer, Spectrum, Open Props, Carbon, Chakra, OKLCH guidance), current code audit, roadmap requirements analysis, and the complete semantic taxonomy (~300 tokens across 10 domains).
+
+#### Computed OKLCH Color Palette {#d70-computed-palette}
+
+**[D70] 24 hue families x 0–100 intensity, runtime-generated.** Instead of hardcoded hex values per theme, the palette is computed from OKLCH parameters. 24 named hue families (one every ~15 degrees: red, scarlet, coral, orange, amber, gold, yellow, chartreuse, lime, green, spring, emerald, teal, cyan, sky, azure, blue, indigo, violet, purple, magenta, rose, crimson, cherry) each support a continuous 0–100 intensity scale.
+
+Token naming format: `--tug-palette-hue-<angle>-<name>-tone-<intensity>`
+
+Examples: `--tug-palette-hue-25-red-tone-50`, `--tug-palette-hue-280-violet-tone-75`, `--tug-palette-hue-190-cyan-tone-0`.
+
+A smoothstep transfer function maps intensity to OKLCH lightness and chroma:
+
+- Intensity 0: near-neutral wash (L ≈ 0.96, C ≈ 0.01).
+- Intensity 50: balanced default (L ≈ 0.70, C ≈ 0.11).
+- Intensity 100: deep, saturated (L ≈ 0.42, C ≈ 0.22).
+
+The curve is non-linear — the 30–70 midrange is expanded for fine design control, while extremes move more aggressively. The transfer function parameters are a starting point; an interactive gallery demo will be built for visual curve tuning, and investigation into whether a bezier or piecewise function performs better than smoothstep.
+
+**Runtime architecture.** A TypeScript palette engine computes 264 standard-stop CSS variables (24 hues x 11 stops at 0, 10, 20, ..., 100) and injects them into a `<style id="tug-palette">` element at app startup and theme switch. Arbitrary intensities are available via `tugPaletteColor(hueName, intensity)` for inline styles, inspector panels, and data visualization.
+
+**Theme influence.** Themes customize the palette by overriding hue angle shifts, L/C curve parameters, and per-hue chroma caps via CSS custom properties in the theme file.
+
+#### Three-Layer Token Architecture {#d71-token-naming}
+
+**[D71] `--tug-palette-*`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*`.**
+
+- **Layer 0 (`--tug-palette-*`)**: Raw values. Theme files and the palette engine own this. No component usage.
+- **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer.
+- **Layer 2 (`--tug-comp-*`)**: Component/pattern bindings. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
+
+The grammar is: `--tug-base-<domain>-<role>[-<emphasis>][-<state>]` for semantics, `--tug-comp-<pattern>-<role>[-<state>]` for components.
+
+All legacy prefixes (`--td-*`, `--tways-*`) and aliases (`--background`, `--foreground`, `--primary`, `--destructive`, etc.) are removed after migration. Temporary shims bridge the transition.
+
+#### Global Scale {#d72-global-scale}
+
+**[D72] `--tug-scale` multiplies all dimensions.** A single `--tug-scale: 1` CSS custom property is the root multiplier for every font size, spacing value, radius, icon size, and stroke width in the system:
+
+```css
+--tug-base-font-size-md: calc(14px * var(--tug-scale));
+--tug-base-space-md: calc(8px * var(--tug-scale));
+--tug-base-radius-md: calc(6px * var(--tug-scale));
+```
+
+Setting `--tug-scale: 1.25` makes the entire UI 25% larger. Setting `--tug-scale: 0.85` produces compact mode. This is a major accessibility win.
+
+**Component-level scale.** Each `Tug*` component family has an optional `--tug-comp-<family>-scale` (default: `1`) that multiplies on top of the root scale, allowing fine-tuning of relative proportions (e.g., slightly compact buttons, slightly spacious tabs).
+
+**What scales:** Font sizes, spacing, radii, icon sizes, stroke widths (with 1px floor). **What doesn't scale:** Border widths (stay at specified values for crispness), shadow offsets/blur, opacity, color, z-index, timing.
+
+#### Global Timing {#d73-global-timing}
+
+**[D73] `--tug-timing` multiplies all durations; `--tug-motion` toggles motion.**
+
+Two separate controls:
+
+- `--tug-timing: 1` (default) multiplies all animation/transition durations. Set to `5` for slow-motion debugging. Set to `0.5` for snappy mode.
+- `--tug-motion: 1` (default) toggles motion on/off. Set to `0` by `prefers-reduced-motion: reduce` media query, or manually. When `0`, a `data-tug-motion="off"` attribute on `<body>` triggers a global CSS rule that zeroes all animation/transition durations.
+
+These are categorically different: "slow motion for debugging" is not the same as "no motion for accessibility."
+
+All duration tokens include the timing multiplier:
+
+```css
+--tug-base-motion-duration-fast: calc(100ms * var(--tug-timing));
+--tug-base-motion-duration-moderate: calc(200ms * var(--tug-timing));
+```
+
+Easing curves are not affected by timing — they describe motion shape, not duration.
+
+**No per-component timing.** Unlike scale (where different components may need different densities), all motion in the system should feel unified. Unique durations are named tokens in `--tug-base-motion-*`, not component multipliers.
+
+#### Dev Cascade Inspector {#d74-cascade-inspector}
+
+**[D74] `Ctrl+Option + hover` shows token resolution chain.** Dev-mode only. Hovering any component shows a floating overlay with:
+
+- Component identity and DOM path.
+- Selected computed properties (background, foreground, border, shadow, radius, typography).
+- Full resolution chain: `--tug-comp-*` → `--tug-base-*` → `--tug-palette-*`.
+- For computed palette colors: hue family name, angle, and intensity number.
+- Current `--tug-scale` and `--tug-timing` multiplier effects.
+- Pin/unpin support. Escape closes.
+
+Built on the existing inspector architecture: `StyleCascadeReader`, mutation transactions, property store, responder chain.
+
 ---
 
 ## Dependency Map
@@ -3548,6 +3648,11 @@ The inspector doesn't import the card's internal code. It discovers available pr
    │19. Target/Action │─▶│20. Mutation          │─▶│21. Observable       │
    │ Control Model    │  │    Transactions      │  │    Properties       │
    └─────────────────┘  └─────────────────────┘  └─────────────────────┘
+
+   ┌──────────────────────────┐
+   │22. Theme Token Overhaul  │◀── (Concepts 1, 2, 20, 21)
+   │ (palette, scale, timing) │
+   └──────────────────────────┘
 ```
 
 Concepts 12 (Card Tabs) depends on concept 6 (Tugcard). Concept 13 (Card Snap Sets) is
@@ -3565,7 +3670,10 @@ mechanism with ActionEvent payloads and phases. Concept 20 (Mutation Transaction
 concepts 5 (Mutation Model) and 19 (Target/Action) — transactions map to action phases and
 operate within the appearance zone. Concept 21 (Observable Properties) depends on concepts 19
 (Target/Action) and 20 (Mutation Transactions) — property stores use transactions for live
-preview and actions for write coordination.
+preview and actions for write coordination. Concept 22 (Theme Token Overhaul) depends on
+concepts 1 (Theme Architecture) and 2 (Tugways Design System) for the foundation it replaces,
+and concepts 20 (Mutation Transactions) and 21 (Observable Properties) for the cascade
+inspector's integration with the style introspection infrastructure.
 
 ---
 
@@ -3960,3 +4068,17 @@ Implemented Concept 19 (Target/Action Control Model) as Phase 5d2. The plan unde
 **Scope:** 19 files modified (8 production, 11 test), 655 tests passing, zero TypeScript errors. Five implementation steps: (1) ActionEvent type + dispatch migration + never-hide TugButton, (2) dispatchTo + nodeCanHandle methods, (3) TugButton target prop + DeckCanvas last-resort test, (4) gallery ActionEvent demo, (5) integration checkpoint verification.
 
 Design doc D61 and D62 sections updated to match implementation. Concept 19 status changed from DESIGNED to IMPLEMENTED.
+
+### Entry 30: Theme Token Overhaul — Concept 22 {#log-30} (2026-03-06)
+
+Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the token system based on an offline research and design study documented in `roadmap/theme-overhaul-proposal.md`.
+
+**Key design decisions:**
+
+- **[D70] Computed OKLCH palette.** 24 hue families (every ~15 degrees) with a 0–100 continuous intensity scale. Token naming format: `--tug-palette-hue-<angle>-<name>-tone-<intensity>` (e.g., `--tug-palette-hue-25-red-tone-50`). A smoothstep transfer function maps intensity to OKLCH lightness/chroma. 264 standard-stop CSS variables (24 hues x 11 stops) are runtime-generated by a TypeScript palette engine at app startup and theme switch. Arbitrary intensities available via `tugPaletteColor()` utility function.
+- **[D71] Three-layer token naming.** `--tug-palette-*` (theme primitives), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
+- **[D72] Global scale.** `--tug-scale` (default: `1`) multiplies all font sizes, spacing, radii, icon sizes, and stroke widths via `calc()`. Per-component `--tug-comp-<family>-scale` (default: `1`) allows fine-tuning relative proportions. Border widths are excluded from scaling.
+- **[D73] Global timing.** `--tug-timing` (default: `1`) multiplies all animation durations. `--tug-motion` (default: `1`, set to `0` by `prefers-reduced-motion`) toggles motion on/off. `data-tug-motion="off"` on body provides CSS hook. Two controls because "slow motion for debugging" and "no motion for accessibility" are categorically different.
+- **[D74] Dev cascade inspector.** `Ctrl+Option + hover` shows token resolution chain for any component: `--tug-comp-*` → `--tug-base-*` → `--tug-palette-*`, including hue/intensity provenance for computed colors and scale/timing effects.
+
+Implementation planned across five sub-phases (5d5a–5d5e) in the implementation strategy. External research surveyed Primer, Spectrum, Open Props, Carbon, and Chakra for naming patterns; OKLCH guidance for perceptual uniformity; Adobe color naming guidance for hue family names.
