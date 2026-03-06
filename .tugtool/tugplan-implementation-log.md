@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-06T15:38:14Z
+---
+
+## step-5: Added 23 integration tests covering all six verification tasks and seven success criteria. TypeScript clean, all Phase-5d4 tests pass (144 total). 3 manual browser verification items deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
+step: step-4
+date: 2025-03-06T15:28:29Z
+---
+
+## step-4: Created GalleryObservablePropsContent with PropertyStore (backgroundColor, fontSize, fontFamily), useSyncExternalStore subscriptions, inspector panel controls, and live source attribution observer demonstrating circular guard. Registered as eighth gallery tab.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
+step: step-3
+date: 2025-03-06T15:07:14Z
+---
+
+## step-3: Added PropertyStore ref, registration callback, TugcardPropertyContext provider wrapping content children, and setProperty action handler in Tugcard's useResponder actions. Added 3 integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
+step: step-2
+date: 2025-03-06T14:58:46Z
+---
+
+## step-2: Created usePropertyStore hook with useRef lazy init, useLayoutEffect registration via TugcardPropertyContext, and stable store return. Updated hooks barrel. Added 7 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
+step: step-1
+date: 2025-03-06T14:53:12Z
+---
+
+## step-1: Created PropertyStore class with typed schema validation, per-path observation, and optional onGet/onSet callbacks. Added 25 unit tests covering all API surface.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-3
 date: 2025-03-06T03:57:10Z
 ---

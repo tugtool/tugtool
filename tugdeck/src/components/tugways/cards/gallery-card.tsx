@@ -1,11 +1,11 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into seven separately
+ * Converts the Component Gallery from a floating panel into eight separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates a seven-tab card titled "Component Gallery".
+ * creates an eight-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
  * - [D01] Seven separate componentIds for gallery sections
@@ -26,6 +26,7 @@ import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
+import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -60,6 +61,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-dropdown",       title: "TugDropdown",          closable: true },
   { id: "template", componentId: "gallery-default-button", title: "Default Button",       closable: true },
   { id: "template", componentId: "gallery-mutation-tx",    title: "Mutation Transactions", closable: true },
+  { id: "template", componentId: "gallery-observable-props", title: "Observable Props",   closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -782,7 +784,7 @@ export function GalleryDefaultButtonContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all seven gallery card types in the global card registry.
+ * Register all eight gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -793,7 +795,7 @@ export function GalleryDefaultButtonContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates seven-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates eight-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations)
@@ -937,6 +939,30 @@ export function registerGalleryCards(): void {
     ),
     contentFactory: (_cardId) => <GalleryMutationTxContent />,
     defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-observable-props ----
+  // This is the first gallery tab to use the cardId argument from contentFactory.
+  // The cardId is passed through to GalleryObservablePropsContent so inspector
+  // controls can direct setProperty actions to the correct Tugcard responder node
+  // via dispatchTo. [D04] Spec S07 (#s07-gallery-demo)
+  registerCard({
+    componentId: "gallery-observable-props",
+    factory: (cardId, injected) => (
+      <Tugcard
+        cardId={cardId}
+        meta={{ title: "Observable Props", icon: "SlidersHorizontal", closable: true }}
+        feedIds={[]}
+        onDragStart={injected.onDragStart}
+        onMinSizeChange={injected.onMinSizeChange}
+      >
+        <GalleryObservablePropsContent cardId={cardId} />
+      </Tugcard>
+    ),
+    contentFactory: (cardId) => <GalleryObservablePropsContent cardId={cardId} />,
+    defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

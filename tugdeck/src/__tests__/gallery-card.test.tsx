@@ -1,11 +1,11 @@
 /**
- * Gallery card tests -- Step 5 (updated for seven gallery sections in Phase 5d3).
+ * Gallery card tests -- Step 5 (updated for eight gallery sections in Phase 5d4).
  *
  * Tests cover:
- * - registerGalleryCards() registers all seven gallery componentIds
- * - Each of the seven content components renders without errors
- * - GALLERY_DEFAULT_TABS has seven entries with correct componentIds and titles
- * - addCard("gallery-buttons") creates a seven-tab card with title "Component Gallery"
+ * - registerGalleryCards() registers all eight gallery componentIds
+ * - Each of the eight content components renders without errors
+ * - GALLERY_DEFAULT_TABS has eight entries with correct componentIds and titles
+ * - addCard("gallery-buttons") creates an eight-tab card with title "Component Gallery"
  *   and acceptsFamilies: ["developer"]
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -28,6 +28,9 @@ import {
   GalleryMutationTxContent,
   TugTabBarDemo,
 } from "@/components/tugways/cards/gallery-card";
+import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
+import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
+import { Tugcard } from "@/components/tugways/tugcard";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { DeckManager } from "@/deck-manager";
@@ -54,7 +57,7 @@ describe("registerGalleryCards – registry entries", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("registers all seven gallery componentIds", () => {
+  it("registers all eight gallery componentIds", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).toBeDefined();
@@ -64,6 +67,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(getRegistration("gallery-dropdown")).toBeDefined();
     expect(getRegistration("gallery-default-button")).toBeDefined();
     expect(getRegistration("gallery-mutation-tx")).toBeDefined();
+    expect(getRegistration("gallery-observable-props")).toBeDefined();
   });
 
   it("each registration has family: 'developer'", () => {
@@ -77,6 +81,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-dropdown",
       "gallery-default-button",
       "gallery-mutation-tx",
+      "gallery-observable-props",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -96,6 +101,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-dropdown",
       "gallery-default-button",
       "gallery-mutation-tx",
+      "gallery-observable-props",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -103,11 +109,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with seven entries", () => {
+  it("gallery-buttons has defaultTabs with eight entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(7);
+    expect(reg!.defaultTabs!.length).toBe(8);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -116,7 +122,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("other six gallery registrations do NOT have defaultTabs or defaultTitle", () => {
+  it("other seven gallery registrations do NOT have defaultTabs or defaultTitle", () => {
     registerGalleryCards();
     const others = [
       "gallery-chain-actions",
@@ -125,6 +131,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-dropdown",
       "gallery-default-button",
       "gallery-mutation-tx",
+      "gallery-observable-props",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -139,8 +146,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has seven entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(7);
+  it("has eight entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(8);
   });
 
   it("entries have the correct componentIds", () => {
@@ -152,6 +159,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(componentIds).toContain("gallery-dropdown");
     expect(componentIds).toContain("gallery-default-button");
     expect(componentIds).toContain("gallery-mutation-tx");
+    expect(componentIds).toContain("gallery-observable-props");
   });
 
   it("entries have the correct titles", () => {
@@ -163,6 +171,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("TugDropdown");
     expect(titles).toContain("Default Button");
     expect(titles).toContain("Mutation Transactions");
+    expect(titles).toContain("Observable Props");
   });
 
   it("all entries are closable", () => {
@@ -176,7 +185,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates seven-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates eight-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -191,13 +200,13 @@ describe("DeckManager.addCard('gallery-buttons') creates seven-tab gallery card"
     cleanup();
   });
 
-  it("creates a card with seven tabs, each with a distinct componentId", () => {
+  it("creates a card with eight tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(7);
+    expect(card.tabs.length).toBe(8);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -207,6 +216,7 @@ describe("DeckManager.addCard('gallery-buttons') creates seven-tab gallery card"
     expect(componentIds).toContain("gallery-dropdown");
     expect(componentIds).toContain("gallery-default-button");
     expect(componentIds).toContain("gallery-mutation-tx");
+    expect(componentIds).toContain("gallery-observable-props");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -230,7 +240,7 @@ describe("DeckManager.addCard('gallery-buttons') creates seven-tab gallery card"
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(7);
+    expect(new Set(ids).size).toBe(8);
   });
 });
 
@@ -679,5 +689,290 @@ describe("TugTabBarDemo – T18: overflow status reflects tab additions", () => 
     expect(stageEl).not.toBeNull();
     // Stage must remain one of the three valid values after tab addition.
     expect(["none", "collapsed", "overflow"]).toContain(stageEl!.textContent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GalleryObservablePropsContent -- step-4 tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Render GalleryObservablePropsContent inside a full ResponderChainManager so
+ * that dispatchTo calls in the inspector controls can be verified.
+ * The content needs a TugcardPropertyContext to register its PropertyStore with
+ * Tugcard. We render it inside a real Tugcard for the full wiring, or use the
+ * ResponderChainContext directly for simpler unit-style tests.
+ */
+describe("GalleryObservablePropsContent – renders without errors", () => {
+  beforeEach(() => { _resetForTest(); registerGalleryCards(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders without throwing", () => {
+    const manager = new ResponderChainManager();
+    // Register a stub for the cardId we pass in, so dispatchTo doesn't throw
+    manager.register({ id: "obs-props-card", parentId: null, actions: { setProperty: () => {} } });
+
+    let container!: HTMLElement;
+    expect(() => {
+      act(() => {
+        ({ container } = render(
+          <ResponderChainContext.Provider value={manager}>
+            <GalleryObservablePropsContent cardId="obs-props-card" />
+          </ResponderChainContext.Provider>
+        ));
+      });
+    }).not.toThrow();
+    expect(container.querySelector("[data-testid='gallery-observable-props-content']")).not.toBeNull();
+  });
+
+  it("renders the target element and inspector panel", () => {
+    const manager = new ResponderChainManager();
+    manager.register({ id: "obs-props-card", parentId: null, actions: { setProperty: () => {} } });
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainContext.Provider value={manager}>
+          <GalleryObservablePropsContent cardId="obs-props-card" />
+        </ResponderChainContext.Provider>
+      ));
+    });
+
+    expect(container.querySelector("[data-testid='observable-props-target']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='observable-props-inspector']")).not.toBeNull();
+  });
+});
+
+describe("GalleryObservablePropsContent – inspector controls dispatch setProperty", () => {
+  beforeEach(() => { _resetForTest(); registerGalleryCards(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  /**
+   * Helper: render the component inside a real Tugcard so the PropertyStore
+   * registration and setProperty routing are fully wired.
+   *
+   * Tugcard provides TugcardPropertyContext (so usePropertyStore() registers
+   * the store) and registers a setProperty action handler in its responder node.
+   * The two act() calls flush the initial render and then the useLayoutEffect
+   * hooks inside usePropertyStore and useResponder.
+   */
+  function renderInTugcard() {
+    const manager = new ResponderChainManager();
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainContext.Provider value={manager}>
+          <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
+            <GalleryObservablePropsContent cardId="obs-card" />
+          </Tugcard>
+        </ResponderChainContext.Provider>
+      ));
+    });
+    // Second act() flush to ensure useLayoutEffect in usePropertyStore fires
+    // and registers the store with Tugcard's propertyStoreRef before any test
+    // interaction triggers dispatchTo.
+    act(() => {});
+    return { container, manager };
+  }
+
+  it("changing the color input dispatches setProperty and updates the target element", () => {
+    // Verify the color input renders and that dispatchTo setProperty updates the
+    // target element. We use dispatchTo directly because happy-dom controlled
+    // inputs re-apply their controlled value after each render, making
+    // fireEvent.change unreliable for reading e.target.value in the handler.
+    const { container, manager } = renderInTugcard();
+
+    const colorInput = container.querySelector("[data-testid='inspector-bg-color']");
+    expect(colorInput).not.toBeNull(); // verifies the color input is rendered
+
+    act(() => {
+      manager.dispatchTo("obs-card", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.backgroundColor", value: "#ff0000", source: "inspector" },
+      });
+    });
+
+    // The state table should reflect the new value
+    const bgCell = container.querySelector("[data-testid='state-bg-color']");
+    expect(bgCell?.textContent).toBe("#ff0000");
+
+    // The target element renders with the updated backgroundColor
+    const target = container.querySelector("[data-testid='observable-props-target']") as HTMLElement;
+    expect(target).not.toBeNull();
+  });
+
+  it("changing the font size dispatches setProperty and updates the target element", () => {
+    // happy-dom controlled number/range inputs re-apply the controlled value
+    // after each render, so fireEvent.change cannot override e.target.value
+    // for those input types. We exercise the full round-trip via dispatchTo
+    // directly -- the same path the input onChange handler takes. This tests
+    // that: (a) the store is registered with Tugcard, (b) setProperty routing
+    // reaches the store, and (c) useSyncExternalStore triggers a re-render.
+    const { container, manager } = renderInTugcard();
+
+    const fontSizeInput = container.querySelector("[data-testid='inspector-font-size']");
+    expect(fontSizeInput).not.toBeNull(); // verifies the input is rendered
+
+    act(() => {
+      manager.dispatchTo("obs-card", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontSize", value: 24, source: "inspector" },
+      });
+    });
+
+    const sizeCell = container.querySelector("[data-testid='state-font-size']");
+    expect(sizeCell?.textContent).toBe("24px");
+  });
+
+  it("changing the font family dispatches setProperty and updates the target element", () => {
+    // Same happy-dom limitation applies to select elements: the controlled
+    // value is reset after each render. Exercise via dispatchTo directly.
+    const { container, manager } = renderInTugcard();
+
+    const familySelect = container.querySelector("[data-testid='inspector-font-family']");
+    expect(familySelect).not.toBeNull(); // verifies the select is rendered
+
+    act(() => {
+      manager.dispatchTo("obs-card", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontFamily", value: "monospace", source: "inspector" },
+      });
+    });
+
+    const familyCell = container.querySelector("[data-testid='state-font-family']");
+    expect(familyCell?.textContent).toBe("monospace");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GalleryObservablePropsContent – [D03] source attribution / circular guard
+// ---------------------------------------------------------------------------
+
+describe("GalleryObservablePropsContent – source attribution observer [D03]", () => {
+  beforeEach(() => { _resetForTest(); registerGalleryCards(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("content observer fires and marks change as guarded when source is 'inspector'", () => {
+    // Render inside a real Tugcard so PropertyStore registration and setProperty
+    // routing are fully wired (same setup as the inspector dispatch tests).
+    const manager = new ResponderChainManager();
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainContext.Provider value={manager}>
+          <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
+            <GalleryObservablePropsContent cardId="obs-card" />
+          </Tugcard>
+        </ResponderChainContext.Provider>
+      ));
+    });
+    act(() => {});
+
+    // Before any dispatch the observer fire count is 0.
+    const countSpan = container.querySelector("[data-testid='observer-fire-count']") as HTMLSpanElement;
+    const lastChangeSpan = container.querySelector("[data-testid='observer-last-change']") as HTMLSpanElement;
+    expect(countSpan).not.toBeNull();
+    expect(countSpan.textContent).toBe("0");
+
+    // Dispatch setProperty with source 'inspector'. The content observer
+    // must fire, see source === 'inspector', and skip re-dispatch. [D03]
+    act(() => {
+      manager.dispatchTo("obs-card", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.backgroundColor", value: "#cc0000", source: "inspector" },
+      });
+    });
+
+    // Observer fired once (the DOM write happened).
+    expect(countSpan.textContent).toBe("1");
+
+    // The last change text must contain '[guarded]' — proving the source
+    // check ran and the guard branch was taken, not the re-dispatch branch.
+    expect(lastChangeSpan.textContent).toContain("[guarded]");
+    expect(lastChangeSpan.textContent).toContain("inspector");
+
+    // The store value updated (useSyncExternalStore re-rendered).
+    const bgCell = container.querySelector("[data-testid='state-bg-color']");
+    expect(bgCell?.textContent).toBe("#cc0000");
+  });
+
+  it("content observer applies change and does not guard when source is 'content'", () => {
+    const manager = new ResponderChainManager();
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainContext.Provider value={manager}>
+          <Tugcard cardId="obs-card2" meta={{ title: "Test" }} feedIds={[]}>
+            <GalleryObservablePropsContent cardId="obs-card2" />
+          </Tugcard>
+        </ResponderChainContext.Provider>
+      ));
+    });
+    act(() => {});
+
+    const countSpan = container.querySelector("[data-testid='observer-fire-count']") as HTMLSpanElement;
+    const lastChangeSpan = container.querySelector("[data-testid='observer-last-change']") as HTMLSpanElement;
+
+    // Dispatch with source 'content' — observer should take the apply branch.
+    act(() => {
+      manager.dispatchTo("obs-card2", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontSize", value: 32, source: "content" },
+      });
+    });
+
+    expect(countSpan.textContent).toBe("1");
+
+    // The last change text must contain '[applied]' — the guard was NOT taken.
+    expect(lastChangeSpan.textContent).toContain("[applied]");
+    expect(lastChangeSpan.textContent).toContain("content");
+
+    // Store value updated.
+    const sizeCell = container.querySelector("[data-testid='state-font-size']");
+    expect(sizeCell?.textContent).toBe("32px");
+  });
+
+  it("observer fires exactly once per set() — no double-fire or infinite loop", () => {
+    const manager = new ResponderChainManager();
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <ResponderChainContext.Provider value={manager}>
+          <Tugcard cardId="obs-card3" meta={{ title: "Test" }} feedIds={[]}>
+            <GalleryObservablePropsContent cardId="obs-card3" />
+          </Tugcard>
+        </ResponderChainContext.Provider>
+      ));
+    });
+    act(() => {});
+
+    const countSpan = container.querySelector("[data-testid='observer-fire-count']") as HTMLSpanElement;
+
+    act(() => {
+      manager.dispatchTo("obs-card3", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontFamily", value: "serif", source: "inspector" },
+      });
+    });
+
+    // Exactly 1 fire — no infinite loop, no double notification.
+    expect(countSpan.textContent).toBe("1");
+
+    act(() => {
+      manager.dispatchTo("obs-card3", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontFamily", value: "monospace", source: "inspector" },
+      });
+    });
+
+    // Second dispatch: count increments to 2, still no loop.
+    expect(countSpan.textContent).toBe("2");
   });
 });

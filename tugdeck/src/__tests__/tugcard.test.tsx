@@ -714,6 +714,125 @@ describe("Tugcard – cardTitle prop (Phase 5b3)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 5d4: PropertyStore / setProperty action tests
+// ---------------------------------------------------------------------------
+
+import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
+import type { PropertyDescriptor } from "@/components/tugways/property-store";
+import { PropertyStore } from "@/components/tugways/property-store";
+
+/** Card content that registers a PropertyStore and exposes it via a ref. */
+function MakePropertyCardContent({
+  storeOutRef,
+}: {
+  storeOutRef: React.MutableRefObject<PropertyStore | null>;
+}) {
+  const SCHEMA: PropertyDescriptor[] = [
+    { path: "style.backgroundColor", type: "color", label: "Background Color" },
+    { path: "style.fontSize", type: "number", label: "Font Size", min: 8, max: 72 },
+  ];
+  const store = usePropertyStore({
+    schema: SCHEMA,
+    initialValues: { "style.backgroundColor": "#ffffff", "style.fontSize": 16 },
+  });
+  storeOutRef.current = store;
+  return <div data-testid="property-card-content">card content</div>;
+}
+
+describe("Tugcard – setProperty action (Phase 5d4)", () => {
+  it("renders without error when no PropertyStore is registered", () => {
+    // No card content calls usePropertyStore -- setProperty should be no-op
+    const { manager } = renderWithManager(
+      <Tugcard {...defaultProps} cardId="card-no-store">
+        <div>no store here</div>
+      </Tugcard>
+    );
+
+    // Make the card the first responder so dispatch can reach it
+    act(() => {
+      manager.makeFirstResponder("card-no-store");
+    });
+
+    // Dispatching setProperty with no registered store should not throw
+    expect(() => {
+      act(() => {
+        manager.dispatch({
+          action: "setProperty",
+          phase: "discrete",
+          value: { path: "style.backgroundColor", value: "#ff0000" },
+        });
+      });
+    }).not.toThrow();
+  });
+
+  it("setProperty action dispatched via dispatchTo reaches the registered PropertyStore", () => {
+    const storeRef = React.createRef<PropertyStore | null>() as React.MutableRefObject<PropertyStore | null>;
+    storeRef.current = null;
+
+    const { manager } = renderWithManager(
+      <Tugcard {...defaultProps} cardId="card-with-store">
+        <MakePropertyCardContent storeOutRef={storeRef} />
+      </Tugcard>
+    );
+
+    // Wait for useLayoutEffect in usePropertyStore to fire and register the store
+    act(() => {});
+
+    // The PropertyStore should now be registered with Tugcard
+    expect(storeRef.current).toBeInstanceOf(PropertyStore);
+
+    const store = storeRef.current!;
+    const changes: unknown[] = [];
+    store.observe("style.backgroundColor", () =>
+      changes.push(store.get("style.backgroundColor"))
+    );
+
+    // Dispatch setProperty directly to the Tugcard responder node
+    act(() => {
+      manager.dispatchTo("card-with-store", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.backgroundColor", value: "#aabbcc", source: "inspector" },
+      });
+    });
+
+    // The store should have received the update
+    expect(store.get("style.backgroundColor")).toBe("#aabbcc");
+    expect(changes).toHaveLength(1);
+  });
+
+  it("setProperty defaults source to 'inspector' when source is omitted", () => {
+    const storeRef = React.createRef<PropertyStore | null>() as React.MutableRefObject<PropertyStore | null>;
+    storeRef.current = null;
+
+    const { manager } = renderWithManager(
+      <Tugcard {...defaultProps} cardId="card-default-source">
+        <MakePropertyCardContent storeOutRef={storeRef} />
+      </Tugcard>
+    );
+
+    act(() => {});
+
+    const store = storeRef.current!;
+    let receivedSource = "";
+    store.observe("style.fontSize", (change) => {
+      receivedSource = change.source;
+    });
+
+    act(() => {
+      manager.dispatchTo("card-default-source", {
+        action: "setProperty",
+        phase: "discrete",
+        value: { path: "style.fontSize", value: 24 }, // no source field
+      });
+    });
+
+    expect(store.get("style.fontSize")).toBe(24);
+    expect(receivedSource).toBe("inspector"); // defaulted
+  });
+});
+
 // Suppress unused-import warnings
 void spyOn;
 void fireEvent;

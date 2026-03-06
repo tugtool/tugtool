@@ -53,3 +53,5 @@ export { useDOMClass } from "./use-dom-class";
 export { useDOMStyle } from "./use-dom-style";
 export { useTugcardData } from "./use-tugcard-data";
 export { useSelectionBoundary } from "./use-selection-boundary";
+export { usePropertyStore, TugcardPropertyContext } from "./use-property-store";
+export type { UsePropertyStoreOptions, PropertyStoreRegistrar } from "./use-property-store";
