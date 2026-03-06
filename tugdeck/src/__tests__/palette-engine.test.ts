@@ -26,7 +26,14 @@ import {
   clampedOklchString,
   tugPaletteVarName,
   injectPaletteCSS,
+  tugAnchoredColor,
 } from "@/components/tugways/palette-engine";
+import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
+import {
+  DEFAULT_ANCHOR_DATA,
+  BRIO_ANCHORS,
+  BLUENOTE_ANCHORS,
+} from "@/components/tugways/theme-anchors";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -428,6 +435,86 @@ describe("tugPaletteColor output matches injection values", () => {
 });
 
 // ---------------------------------------------------------------------------
+// tugAnchoredColor() — Phase 5d5b anchor interpolation
+// ---------------------------------------------------------------------------
+
+/** Shared three-stop anchor fixture for all tugAnchoredColor tests. */
+const RED_ANCHORS: HueAnchors = {
+  anchors: [
+    { stop: 0,   L: 0.96, C: 0.01 },
+    { stop: 50,  L: 0.65, C: 0.12 },
+    { stop: 100, L: 0.42, C: 0.17 },
+  ],
+};
+
+describe("tugAnchoredColor()", () => {
+  it("returns oklch with exact L and C at stop 0", () => {
+    const result = tugAnchoredColor("red", 0, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.96, 4);
+    expect(parsed!.C).toBeCloseTo(0.01, 4);
+  });
+
+  it("returns oklch with exact L and C at stop 50", () => {
+    const result = tugAnchoredColor("red", 50, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.65, 4);
+    expect(parsed!.C).toBeCloseTo(0.12, 4);
+  });
+
+  it("returns interpolated L=0.805 at intensity 25 (midpoint between stop-0 and stop-50)", () => {
+    // L: 0.96 + 0.5*(0.65-0.96) = 0.96 - 0.155 = 0.805
+    const result = tugAnchoredColor("red", 25, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.805, 3);
+  });
+
+  it("returns oklch with exact L and C at stop 100", () => {
+    const result = tugAnchoredColor("red", 100, RED_ANCHORS);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.42, 4);
+    // C=0.17 is above MAX_CHROMA_FOR_HUE['red']=0.169 so it will be clamped
+    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
+  });
+
+  it("clamps intensity below 0 to 0", () => {
+    const atNeg = tugAnchoredColor("red", -5, RED_ANCHORS);
+    const atZero = tugAnchoredColor("red", 0, RED_ANCHORS);
+    expect(atNeg).toBe(atZero);
+  });
+
+  it("clamps intensity above 100 to 100", () => {
+    const atOver = tugAnchoredColor("red", 150, RED_ANCHORS);
+    const atHundred = tugAnchoredColor("red", 100, RED_ANCHORS);
+    expect(atOver).toBe(atHundred);
+  });
+
+  it("clamps chroma to MAX_CHROMA_FOR_HUE (C value exceeding the cap is capped)", () => {
+    // yellow has MAX_CHROMA_FOR_HUE=0.086; supply C=0.30 which exceeds it
+    const highChromaAnchors: HueAnchors = {
+      anchors: [
+        { stop: 0,   L: 0.96, C: 0.01 },
+        { stop: 50,  L: 0.90, C: 0.30 },
+        { stop: 100, L: 0.70, C: 0.30 },
+      ],
+    };
+    const result = tugAnchoredColor("yellow", 50, highChromaAnchors);
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["yellow"] + 0.001);
+  });
+
+  it("returns a valid oklch() string format", () => {
+    const result = tugAnchoredColor("blue", 50, RED_ANCHORS);
+    expect(result).toMatch(/^oklch\([\d.]+ [\d.]+ \d+\)$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Step-3 integration: boot-time and theme-switch wiring
 // ---------------------------------------------------------------------------
 
@@ -505,5 +592,177 @@ describe("injectPaletteCSS – boot and theme-switch integration (step-3)", () =
     const css = document.getElementById("tug-palette")!.textContent ?? "";
     expect(css).toContain(":root {");
     expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step-3: injectPaletteCSS with anchor data
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal ThemeHueAnchors fixture covering all 24 hues.
+ * Uses a simple 3-stop structure (stops 0, 50, 100) with distinct L values
+ * so that anchor-based output is detectably different from smoothstep output.
+ */
+function buildTestAnchors(): ThemeHueAnchors {
+  const anchors: ThemeHueAnchors = {};
+  for (const name of Object.keys(HUE_FAMILIES)) {
+    const cap = MAX_CHROMA_FOR_HUE[name] ?? 0.1;
+    anchors[name] = {
+      anchors: [
+        { stop: 0,   L: 0.96, C: 0.01 },
+        { stop: 50,  L: 0.65, C: Math.min(cap * 0.75, cap) },
+        { stop: 100, L: 0.42, C: Math.min(cap * 0.95, cap) },
+      ],
+    };
+  }
+  return anchors;
+}
+
+describe("injectPaletteCSS() with anchor data (step-3)", () => {
+  afterEach(() => {
+    const el = document.getElementById("tug-palette");
+    if (el) el.remove();
+  });
+
+  it("injectPaletteCSS('brio') without anchors produces same CSS as before (behavior-preserving refactor)", () => {
+    // The first call captures output from the refactored smoothstep path.
+    // The second call must produce identical output (same params, same hue angles).
+    injectPaletteCSS("brio");
+    const firstCSS = document.getElementById("tug-palette")!.textContent ?? "";
+
+    document.getElementById("tug-palette")!.remove();
+
+    injectPaletteCSS("brio");
+    const secondCSS = document.getElementById("tug-palette")!.textContent ?? "";
+
+    expect(firstCSS).toBe(secondCSS);
+
+    // Spot-check: red tone-50 value matches tugPaletteColor directly
+    const match = firstCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe(tugPaletteColor("red", 50));
+  });
+
+  it("injectPaletteCSS with testAnchors produces CSS with 264 numeric stop + 96 alias variables", () => {
+    const testAnchors = buildTestAnchors();
+    injectPaletteCSS("brio", testAnchors);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const numericVars = css.match(/--tug-palette-hue-\d+-\w+-tone-\d+:/g) ?? [];
+    expect(numericVars.length).toBe(24 * 11); // 264
+
+    const aliasVars = css.match(/--tug-palette-hue-\d+-\w+-(soft|default|strong|intense):/g) ?? [];
+    expect(aliasVars.length).toBe(24 * 4); // 96
+  });
+
+  it("anchor-based injection: --tug-palette-hue-25-red-tone-50 matches tugAnchoredColor('red', 50, ...)", () => {
+    const testAnchors = buildTestAnchors();
+    injectPaletteCSS("brio", testAnchors);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const injectedValue = match![1];
+
+    const expected = tugAnchoredColor("red", 50, testAnchors["red"]);
+    expect(injectedValue).toBe(expected);
+  });
+
+  it("anchor-based soft alias --tug-palette-hue-25-red-soft matches tugAnchoredColor('red', 15, ...)", () => {
+    const testAnchors = buildTestAnchors();
+    injectPaletteCSS("brio", testAnchors);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-soft:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const injectedValue = match![1];
+
+    // TONE_ALIASES.soft = 15 — this is an interpolated stop (between 0 and 50 anchors)
+    const expected = tugAnchoredColor("red", 15, testAnchors["red"]);
+    expect(injectedValue).toBe(expected);
+  });
+
+  it("calling injectPaletteCSS twice (once with anchors, once without) produces only one style element", () => {
+    const testAnchors = buildTestAnchors();
+    injectPaletteCSS("brio", testAnchors);
+    injectPaletteCSS("brio");
+
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+    // Second call (no anchors) replaces content with smoothstep values
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
+    // The value should match the smoothstep path
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe(tugPaletteColor("red", 50));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step-4: wiring DEFAULT_ANCHOR_DATA into call sites
+// ---------------------------------------------------------------------------
+
+describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
+  afterEach(() => {
+    const el = document.getElementById("tug-palette");
+    if (el) el.remove();
+  });
+
+  it("after boot with brio, red tone-50 matches tugAnchoredColor with BRIO_ANCHORS", () => {
+    // Simulates main.tsx: injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme])
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const injectedValue = match![1];
+
+    const expected = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
+    expect(injectedValue).toBe(expected);
+  });
+
+  it("after switching brio -> bluenote, red tone-50 uses bluenote anchors (different L/C than brio)", () => {
+    // Simulates setTheme("brio") then setTheme("bluenote")
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const brioCSS = document.getElementById("tug-palette")!.textContent ?? "";
+    const brioMatch = brioCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(brioMatch).not.toBeNull();
+    const brioValue = brioMatch![1];
+
+    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
+    const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
+    const bluenoteMatch = bluenoteCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(bluenoteMatch).not.toBeNull();
+    const bluenoteValue = bluenoteMatch![1];
+
+    // Bluenote has a higher stop-50 L for red (0.71 vs 0.65), so values differ
+    expect(bluenoteValue).not.toBe(brioValue);
+
+    // The bluenote value matches direct computation via BLUENOTE_ANCHORS
+    const expected = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
+    expect(bluenoteValue).toBe(expected);
+
+    // Only one palette element exists after the switch
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+  });
+
+  it("after switching bluenote -> brio, palette restores brio anchor values (no stale bluenote values)", () => {
+    // Simulates setTheme("bluenote") then setTheme("brio")
+    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
+
+    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const restoredValue = match![1];
+
+    // Must match brio anchors, not bluenote anchors
+    const expectedBrio = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
+    const expectedBluenote = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
+
+    expect(restoredValue).toBe(expectedBrio);
+    expect(restoredValue).not.toBe(expectedBluenote);
   });
 });

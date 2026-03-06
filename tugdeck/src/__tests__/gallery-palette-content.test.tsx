@@ -15,7 +15,13 @@ import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
-import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette-content";
+import {
+  GalleryPaletteContent,
+  buildExportPayload,
+  parseImportPayload,
+} from "@/components/tugways/cards/gallery-palette-content";
+import { MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
+import { DEFAULT_ANCHOR_DATA } from "@/components/tugways/theme-anchors";
 
 // ---------------------------------------------------------------------------
 // Render tests
@@ -438,5 +444,478 @@ describe("GalleryPaletteContent – lock current", () => {
     // After locking, locked panel's swatch should match live panel's swatch
     const lockedColorAfterLock = lockedSwatch.getAttribute("data-color");
     expect(lockedColorAfterLock).toBe(liveColorBeforeLock);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anchors mode (Step 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: switch to Curves mode so we can also verify the mode toggle works
+ * in the opposite direction.
+ */
+function switchToAnchorsMode(container: HTMLElement) {
+  const btn = container.querySelector("[data-testid='gp-mode-anchors-btn']") as HTMLElement;
+  act(() => { fireEvent.click(btn); });
+}
+
+function switchToCurvesMode(container: HTMLElement) {
+  const btn = container.querySelector("[data-testid='gp-mode-curves-btn']") as HTMLElement;
+  act(() => { fireEvent.click(btn); });
+}
+
+describe("GalleryPaletteContent – mode toggle", () => {
+  afterEach(() => { cleanup(); });
+
+  it("renders the mode toggle with Anchors and Curves buttons", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    expect(container.querySelector("[data-testid='gp-mode-toggle']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gp-mode-anchors-btn']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gp-mode-curves-btn']")).not.toBeNull();
+  });
+
+  it("Anchors mode is active by default (Anchors button has active class)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const anchorsBtn = container.querySelector("[data-testid='gp-mode-anchors-btn']")!;
+    expect(anchorsBtn.className).toContain("gp-mode-btn--active");
+  });
+
+  it("clicking Curves button switches to Curves mode", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    switchToCurvesMode(container);
+    const curvesBtn = container.querySelector("[data-testid='gp-mode-curves-btn']")!;
+    expect(curvesBtn.className).toContain("gp-mode-btn--active");
+  });
+});
+
+describe("GalleryPaletteContent – Anchors mode renders all 24x11 swatches", () => {
+  afterEach(() => { cleanup(); });
+
+  it("renders the anchors panel in anchors mode (default)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    expect(container.querySelector("[data-testid='gp-anchors-panel']")).not.toBeNull();
+  });
+
+  it("renders the anchor swatch grid with 264 swatches (24 hues x 11 stops)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    expect(grid).not.toBeNull();
+    const swatches = grid.querySelectorAll("[data-testid='gp-swatch']");
+    expect(swatches.length).toBe(24 * 11); // 264
+  });
+
+  it("renders 24 hue rows in the anchor swatch grid", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const rows = grid.querySelectorAll("[data-testid='gp-hue-row']");
+    expect(rows.length).toBe(24);
+  });
+
+  it("each anchor swatch has a data-color attribute set to an oklch value", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const swatches = grid.querySelectorAll("[data-testid='gp-swatch']");
+    let withColor = 0;
+    swatches.forEach((s) => {
+      const color = s.getAttribute("data-color") ?? "";
+      if (color.startsWith("oklch(")) withColor++;
+    });
+    expect(withColor).toBe(264);
+  });
+
+  it("renders the theme selector with brio, bluenote, and harmony options", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const select = container.querySelector("[data-testid='gp-anchor-theme-select']") as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    const values = Array.from(select.querySelectorAll("option")).map((o) => o.value);
+    expect(values).toContain("brio");
+    expect(values).toContain("bluenote");
+    expect(values).toContain("harmony");
+  });
+});
+
+describe("GalleryPaletteContent – Anchors mode: click-to-edit", () => {
+  afterEach(() => { cleanup(); });
+
+  it("clicking a swatch opens the inline anchor editor", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    // No editor initially
+    expect(container.querySelector("[data-testid='gp-anchor-editor']")).toBeNull();
+
+    // Click the first swatch in the anchor grid
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const firstSwatch = grid.querySelectorAll("[data-testid='gp-swatch']")[0] as HTMLElement;
+    act(() => {
+      fireEvent.click(firstSwatch);
+    });
+
+    // Editor should now be visible
+    expect(container.querySelector("[data-testid='gp-anchor-editor']")).not.toBeNull();
+  });
+
+  it("the inline editor shows the hue name and stop number", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    // Click the swatch at hue row 1 (red), stop index 5 (stop=50)
+    // Row 0 is cherry, row 1 is red; within each row index 5 = stop 50
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const rows = grid.querySelectorAll("[data-testid='gp-hue-row']");
+    const redRowSwatches = rows[1].querySelectorAll("[data-testid='gp-swatch']");
+    act(() => {
+      fireEvent.click(redRowSwatches[5] as HTMLElement); // stop 50
+    });
+
+    const hueLabel = container.querySelector("[data-testid='gp-anchor-editor-hue']");
+    const stopLabel = container.querySelector("[data-testid='gp-anchor-editor-stop']");
+    expect(hueLabel?.textContent).toBe("red");
+    expect(stopLabel?.textContent).toContain("50");
+  });
+
+  it("clicking an anchor stop opens the editor with the L input enabled for editing", () => {
+    // happy-dom does not propagate fireEvent.change / fireEvent.input on
+    // type="number" inputs through React controlled-component state (same
+    // known limitation as range inputs — see existing test comments).
+    // This test verifies the editor is correctly wired: the L input is
+    // enabled for anchor stops and disabled for interpolated stops, confirming
+    // the editing interface is ready to accept user input.
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    // Click red stop-50 swatch (stop 50 is an anchor in BRIO_ANCHORS.red)
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const rows = grid.querySelectorAll("[data-testid='gp-hue-row']");
+    const redSwatch50 = rows[1].querySelectorAll("[data-testid='gp-swatch']")[5] as HTMLElement;
+
+    // stop-50 should be marked as an anchor
+    expect(redSwatch50.getAttribute("data-anchor")).toBe("true");
+
+    act(() => {
+      fireEvent.click(redSwatch50);
+    });
+
+    // Editor is open; L input is enabled for anchor stops
+    const lInput = container.querySelector("[data-testid='gp-anchor-l-input']") as HTMLInputElement;
+    expect(lInput).not.toBeNull();
+    expect(lInput.disabled).toBe(false);
+
+    // Click an interpolated stop (e.g., stop-10, index 1) — should disable the L input
+    const redSwatch10 = rows[1].querySelectorAll("[data-testid='gp-swatch']")[1] as HTMLElement;
+    expect(redSwatch10.getAttribute("data-anchor")).toBe("false");
+
+    act(() => {
+      fireEvent.click(redSwatch10);
+    });
+
+    const lInputForInterpolated = container.querySelector("[data-testid='gp-anchor-l-input']") as HTMLInputElement;
+    expect(lInputForInterpolated).not.toBeNull();
+    expect(lInputForInterpolated.disabled).toBe(true);
+    // Interpolated note should be shown
+    expect(container.querySelector("[data-testid='gp-anchor-interpolated-note']")).not.toBeNull();
+  });
+
+  it("gamut warning is absent for in-gamut anchor values and editor renders C input", () => {
+    // happy-dom does not propagate fireEvent.change / fireEvent.input on
+    // type="number" inputs through React controlled state, so we cannot
+    // directly simulate a user typing an over-cap C value.
+    // This test verifies:
+    //   (a) The gamut warning is absent when the anchor C is within the cap
+    //       (confirming the conditional renders correctly for safe values).
+    //   (b) The C input exists and is enabled for anchor stops.
+    // The gamut warning logic is: isOverGamut = currentC > chromaCap + 0.0001.
+    // For red stop-50 in BRIO_ANCHORS, C is 75% of cap (always within cap).
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    // Click red stop-50 (anchor)
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const rows = grid.querySelectorAll("[data-testid='gp-hue-row']");
+    const redSwatch50 = rows[1].querySelectorAll("[data-testid='gp-swatch']")[5] as HTMLElement;
+    act(() => {
+      fireEvent.click(redSwatch50);
+    });
+
+    // Gamut warning should NOT appear for in-cap values
+    expect(container.querySelector("[data-testid='gp-anchor-gamut-warning']")).toBeNull();
+
+    // C input is present and enabled
+    const cInput = container.querySelector("[data-testid='gp-anchor-c-input']") as HTMLInputElement;
+    expect(cInput).not.toBeNull();
+    expect(cInput.disabled).toBe(false);
+
+    // The displayed C value is within the cap for red
+    const displayedC = parseFloat(cInput.value);
+    expect(displayedC).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
+  });
+});
+
+describe("GalleryPaletteContent – Anchors mode: theme selector", () => {
+  afterEach(() => { cleanup(); });
+
+  it("switching the theme selector changes the displayed anchor data (different swatch colors)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+
+    // Capture brio colors for a mid-intensity stop on red (row 1, stop 50)
+    const grid = container.querySelector("[data-testid='gp-anchor-swatch-grid']")!;
+    const rows = grid.querySelectorAll("[data-testid='gp-hue-row']");
+    const redSwatch50 = rows[1].querySelectorAll("[data-testid='gp-swatch']")[5] as HTMLElement;
+    const brioColor = redSwatch50.getAttribute("data-color");
+    expect(brioColor).toMatch(/^oklch\(/);
+
+    // Switch to bluenote
+    const themeSelect = container.querySelector(
+      "[data-testid='gp-anchor-theme-select']"
+    ) as HTMLSelectElement;
+    act(() => {
+      fireEvent.change(themeSelect, { target: { value: "bluenote" } });
+    });
+
+    const bluenoteColor = redSwatch50.getAttribute("data-color");
+    expect(bluenoteColor).toMatch(/^oklch\(/);
+    // Bluenote has higher L at stop 50 for red, so the color differs from brio
+    expect(bluenoteColor).not.toBe(brioColor);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step-6: JSON export/import — pure helpers (unit tests, no DOM)
+// ---------------------------------------------------------------------------
+
+describe("buildExportPayload() – pure unit tests", () => {
+  it("returns a string containing version, themes, brio, bluenote, harmony", () => {
+    const json = buildExportPayload(
+      DEFAULT_ANCHOR_DATA.brio,
+      DEFAULT_ANCHOR_DATA.bluenote,
+      DEFAULT_ANCHOR_DATA.harmony,
+    );
+    expect(typeof json).toBe("string");
+    const parsed = JSON.parse(json);
+    expect(parsed.version).toBe(1);
+    expect(parsed.themes).toBeDefined();
+    expect(parsed.themes.brio).toBeDefined();
+    expect(parsed.themes.bluenote).toBeDefined();
+    expect(parsed.themes.harmony).toBeDefined();
+  });
+
+  it("exported brio has entries for all 24 hues", () => {
+    const json = buildExportPayload(
+      DEFAULT_ANCHOR_DATA.brio,
+      DEFAULT_ANCHOR_DATA.bluenote,
+      DEFAULT_ANCHOR_DATA.harmony,
+    );
+    const parsed = JSON.parse(json);
+    expect(Object.keys(parsed.themes.brio).length).toBe(24);
+  });
+
+  it("exported anchors for red stop-50 match the input brio anchor data", () => {
+    const json = buildExportPayload(
+      DEFAULT_ANCHOR_DATA.brio,
+      DEFAULT_ANCHOR_DATA.bluenote,
+      DEFAULT_ANCHOR_DATA.harmony,
+    );
+    const parsed = JSON.parse(json);
+    const redAnchors = parsed.themes.brio.red.anchors as Array<{ stop: number; L: number; C: number }>;
+    const stop50 = redAnchors.find((a) => a.stop === 50);
+    expect(stop50).toBeDefined();
+    expect(stop50!.L).toBeCloseTo(DEFAULT_ANCHOR_DATA.brio.red.anchors.find((a) => a.stop === 50)!.L, 4);
+  });
+});
+
+describe("parseImportPayload() – validation and parsing", () => {
+  const validPayload = JSON.stringify({
+    version: 1,
+    themes: {
+      brio: DEFAULT_ANCHOR_DATA.brio,
+      bluenote: DEFAULT_ANCHOR_DATA.bluenote,
+      harmony: DEFAULT_ANCHOR_DATA.harmony,
+    },
+  });
+
+  it("parses a valid payload and returns themes with all three theme keys", () => {
+    const themes = parseImportPayload(validPayload);
+    expect(themes.brio).toBeDefined();
+    expect(themes.bluenote).toBeDefined();
+    expect(themes.harmony).toBeDefined();
+  });
+
+  it("parses a valid payload: brio has 24 hues", () => {
+    const themes = parseImportPayload(validPayload);
+    expect(Object.keys(themes.brio).length).toBe(24);
+  });
+
+  it("throws on invalid JSON string", () => {
+    expect(() => parseImportPayload("not json at all {{{")).toThrow();
+  });
+
+  it("throws when version field is missing", () => {
+    const bad = JSON.stringify({ themes: { brio: {}, bluenote: {}, harmony: {} } });
+    expect(() => parseImportPayload(bad)).toThrow(/version/);
+  });
+
+  it("throws when themes object is missing", () => {
+    const bad = JSON.stringify({ version: 1 });
+    expect(() => parseImportPayload(bad)).toThrow(/themes/);
+  });
+
+  it("throws when a theme is missing (e.g. harmony absent)", () => {
+    const bad = JSON.stringify({ version: 1, themes: { brio: {}, bluenote: {} } });
+    expect(() => parseImportPayload(bad)).toThrow(/harmony/);
+  });
+
+  it("throws when a hue's anchors array is missing", () => {
+    const bad = JSON.stringify({
+      version: 1,
+      themes: {
+        brio: { red: { notAnchors: [] } },
+        bluenote: {},
+        harmony: {},
+      },
+    });
+    expect(() => parseImportPayload(bad)).toThrow(/anchors/);
+  });
+
+  it("throws when an anchor is missing numeric L field", () => {
+    const bad = JSON.stringify({
+      version: 1,
+      themes: {
+        brio: { red: { anchors: [{ stop: 0, C: 0.01 }] } },
+        bluenote: {},
+        harmony: {},
+      },
+    });
+    expect(() => parseImportPayload(bad)).toThrow(/L/);
+  });
+});
+
+describe("round-trip: buildExportPayload → parseImportPayload", () => {
+  it("produces identical anchor data after export and re-import", () => {
+    const json = buildExportPayload(
+      DEFAULT_ANCHOR_DATA.brio,
+      DEFAULT_ANCHOR_DATA.bluenote,
+      DEFAULT_ANCHOR_DATA.harmony,
+    );
+    const themes = parseImportPayload(json);
+
+    // Spot-check: brio red stop-50 L is preserved exactly
+    const originalStop50 = DEFAULT_ANCHOR_DATA.brio.red.anchors.find((a) => a.stop === 50)!;
+    const roundTrippedStop50 = themes.brio.red.anchors.find(
+      (a: { stop: number }) => a.stop === 50
+    )!;
+    expect(roundTrippedStop50.L).toBe(originalStop50.L);
+    expect(roundTrippedStop50.C).toBe(originalStop50.C);
+
+    // All 24 hues survive the round-trip for all three themes
+    expect(Object.keys(themes.brio).length).toBe(Object.keys(DEFAULT_ANCHOR_DATA.brio).length);
+    expect(Object.keys(themes.bluenote).length).toBe(Object.keys(DEFAULT_ANCHOR_DATA.bluenote).length);
+    expect(Object.keys(themes.harmony).length).toBe(Object.keys(DEFAULT_ANCHOR_DATA.harmony).length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step-6: export/import buttons render and import error (component tests)
+// ---------------------------------------------------------------------------
+
+describe("GalleryPaletteContent – export/import UI", () => {
+  afterEach(() => { cleanup(); });
+
+  it("renders the Export JSON button", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    expect(container.querySelector("[data-testid='gp-export-btn']")).not.toBeNull();
+  });
+
+  it("renders the Import JSON button and hidden file input", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    expect(container.querySelector("[data-testid='gp-import-btn']")).not.toBeNull();
+    const fileInput = container.querySelector("[data-testid='gp-import-file-input']") as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+    expect(fileInput.type).toBe("file");
+    expect(fileInput.style.display).toBe("none");
+  });
+
+  it("shows an import error when invalid JSON is provided (via parseImportPayload directly)", () => {
+    // happy-dom does not provide FileReader, so we cannot directly exercise the
+    // file-read code path in the component via fireEvent on the hidden input.
+    // Instead this test verifies the error reporting contract via the exported
+    // parseImportPayload helper, which is the same function the component calls
+    // on the result of FileReader.readAsText:
+    //   - parseImportPayload throws an Error with a descriptive message
+    //   - the component sets importError state to that message
+    // The throw-on-invalid behavior is already covered in the pure unit tests;
+    // this test confirms the error string is non-empty and user-readable.
+    const badInputs = [
+      "not json at all",
+      JSON.stringify({ version: 1 }),
+      JSON.stringify({ themes: { brio: {}, bluenote: {}, harmony: {} } }),
+    ];
+    for (const bad of badInputs) {
+      let caught: Error | null = null;
+      try {
+        parseImportPayload(bad);
+      } catch (e) {
+        caught = e as Error;
+      }
+      expect(caught).not.toBeNull();
+      expect(caught!.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("import of valid JSON via parseImportPayload restores the expected anchor structure", () => {
+    // Tests the core import logic (parseImportPayload) which is already covered
+    // in the pure unit tests above. This component-level test verifies the
+    // export payload format is accepted by the parser without error.
+    const json = buildExportPayload(
+      DEFAULT_ANCHOR_DATA.brio,
+      DEFAULT_ANCHOR_DATA.bluenote,
+      DEFAULT_ANCHOR_DATA.harmony,
+    );
+    // Should not throw
+    const themes = parseImportPayload(json);
+    expect(Object.keys(themes.brio).length).toBe(24);
+    expect(Object.keys(themes.bluenote).length).toBe(24);
+    expect(Object.keys(themes.harmony).length).toBe(24);
   });
 });

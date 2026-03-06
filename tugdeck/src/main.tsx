@@ -14,6 +14,7 @@ import {
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { injectPaletteCSS } from "./components/tugways/palette-engine";
+import { DEFAULT_ANCHOR_DATA } from "./components/tugways/theme-anchors";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -41,7 +42,7 @@ if (!container) {
   // to any component that reads them on first render. Must come after
   // applyInitialTheme so any theme parameter overrides are in the DOM when
   // getComputedStyle reads them. [D04]
-  injectPaletteCSS(initialTheme);
+  injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme]);
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.
