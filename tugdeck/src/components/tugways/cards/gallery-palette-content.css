@@ -149,3 +149,174 @@
   border-radius: 2px;
   cursor: default;
 }
+
+/* ============================================================================
+   Mode toggle (Anchors / Curves)
+   ========================================================================= */
+
+.gp-mode-toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.gp-mode-btn {
+  font-size: 11px;
+  font-family: var(--td-font-sans);
+  color: var(--td-text-soft);
+  background-color: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  padding: 3px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gp-mode-btn:hover {
+  background-color: var(--td-surface);
+}
+
+.gp-mode-btn--active {
+  color: var(--td-text);
+  background-color: var(--td-surface);
+  border-color: var(--td-border-strong, var(--td-border));
+  font-weight: 500;
+}
+
+/* ============================================================================
+   Anchor mode: swatch appearance
+   ========================================================================= */
+
+.gp-anchor-swatch {
+  cursor: pointer;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.gp-anchor-swatch:hover {
+  border-color: var(--td-border);
+}
+
+/* Anchor stops get a thicker border / dot indicator */
+.gp-anchor-swatch--is-anchor {
+  border: 2px solid var(--td-border-strong, var(--td-text-soft));
+}
+
+/* Selected swatch */
+.gp-anchor-swatch--selected {
+  outline: 2px solid var(--td-accent, #0066cc);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
+   Anchor theme selector row
+   ========================================================================= */
+
+.gp-anchor-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ============================================================================
+   Anchor inline editor
+   ========================================================================= */
+
+.gp-anchor-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: var(--td-surface-control);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  max-width: 320px;
+}
+
+.gp-anchor-editor-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gp-anchor-editor-hue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text);
+  font-family: var(--td-font-mono, monospace);
+}
+
+.gp-anchor-editor-stop {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  font-family: var(--td-font-mono, monospace);
+}
+
+.gp-anchor-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gp-anchor-editor-label {
+  font-size: 11px;
+  color: var(--td-text-soft);
+  font-family: var(--td-font-sans);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  min-width: 48px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gp-anchor-input {
+  font-size: 11px;
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text);
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  padding: 2px 6px;
+  width: 72px;
+}
+
+.gp-anchor-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gp-anchor-gamut-warning {
+  font-size: 10px;
+  color: #cc3333;
+  font-family: var(--td-font-sans);
+  white-space: nowrap;
+}
+
+.gp-anchor-editor-note {
+  font-size: 10px;
+  color: var(--td-text-soft);
+  font-style: italic;
+  font-family: var(--td-font-sans);
+}
+
+/* ============================================================================
+   Anchors panel wrapper
+   ========================================================================= */
+
+.gp-anchors-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ============================================================================
+   Visibility utility — used by mode toggle to hide inactive panel
+   while keeping its DOM nodes available (for backward-compat test queries)
+   ========================================================================= */
+
+.gp-hidden {
+  display: none;
+}

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-06T19:07:35Z
+---
+
+## step-5: Added anchor editor mode to GalleryPaletteContent with mode toggle, theme selector, AnchorSwatchGrid, inline L/C editor, anchor/interpolated toggling, and gamut warnings
+
+**Files changed:**
+- .tugtool/tugplan-anchor-palette-engine.md
+
+---
+
+---
 step: step-4
 date: 2025-03-06T18:55:03Z
 ---

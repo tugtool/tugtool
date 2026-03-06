@@ -2,8 +2,11 @@
  * gallery-palette-content.tsx -- GalleryPaletteContent interactive palette demo.
  *
  * Renders all 24 hue families across all 11 standard intensity stops as a
- * colored swatch grid, with interactive curve controls for transfer function
- * tuning and a side-by-side comparison panel.
+ * colored swatch grid, with two modes:
+ *   - Anchors mode (default, Phase 5d5b): per-hue anchor-based interpolation
+ *     with click-to-edit L/C values and theme selector.
+ *   - Curves mode (Phase 5d5a): smoothstep/bezier/piecewise transfer function
+ *     tuning and side-by-side comparison panel.
  *
  * Design decisions:
  *   [D01] Smoothstep transfer function as default curve
@@ -11,15 +14,14 @@
  *
  * Rules of Tugways compliance:
  *   - Swatch background colors are set via inline style attributes computed
- *     per-render from tugPaletteColor() / clampedOklchString(). This is
+ *     per-render from tugPaletteColor() / tugAnchoredColor(). This is
  *     acceptable because the colors are computed values applied directly to
  *     DOM, not stored as React appearance state ([D08], [D09]).
- *   - Interactive controls use local useState for curve parameters. This is
- *     local component state, not external store state, so useSyncExternalStore
- *     does not apply ([D40]).
+ *   - Interactive controls use local useState for curve/anchor parameters.
+ *     This is local component state, not external store state ([D40]).
  *   - No root.render() calls after initial mount ([D40], [D42]).
  *
- * Spec S04 (#s04-gallery-palette-tab)
+ * Spec S04 (#s04-gallery-palette-tab), Spec S05 (#s05-gallery-anchor-editor)
  *
  * @module components/tugways/cards/gallery-palette-content
  */
@@ -28,10 +30,15 @@ import React, { useState } from "react";
 import {
   HUE_FAMILIES,
   DEFAULT_LC_PARAMS,
+  MAX_CHROMA_FOR_HUE,
   tugPaletteColor,
   clampedOklchString,
+  tugAnchoredColor,
   type LCParams,
+  type HueAnchors,
+  type ThemeHueAnchors,
 } from "@/components/tugways/palette-engine";
+import { DEFAULT_ANCHOR_DATA } from "@/components/tugways/theme-anchors";
 import "./gallery-palette-content.css";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +52,10 @@ const STANDARD_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const HUE_NAMES = Object.keys(HUE_FAMILIES);
 
 type CurveType = "smoothstep" | "bezier" | "piecewise";
+
+type EditorMode = "anchors" | "curves";
+
+type ThemeKey = "brio" | "bluenote" | "harmony";
 
 // ---------------------------------------------------------------------------
 // Alternative curve implementations (local, not exported from palette-engine)
@@ -448,27 +459,349 @@ function CurveControls({
 }
 
 // ---------------------------------------------------------------------------
+// Anchor helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Deep-clone ThemeHueAnchors so edits to one theme don't affect others.
+ */
+function cloneThemeHueAnchors(src: ThemeHueAnchors): ThemeHueAnchors {
+  const result: ThemeHueAnchors = {};
+  for (const [hue, data] of Object.entries(src)) {
+    result[hue] = { anchors: data.anchors.map((a) => ({ ...a })) };
+  }
+  return result;
+}
+
+/**
+ * Return the computed L/C at a given stop by interpolating between anchors.
+ * Used when toggling a stop to anchor: freeze the interpolated value.
+ */
+function computedLCAtStop(stop: number, hueAnchors: HueAnchors): { L: number; C: number } {
+  const anchors = hueAnchors.anchors;
+  const clamped = Math.max(0, Math.min(100, stop));
+
+  for (const a of anchors) {
+    if (a.stop === clamped) return { L: a.L, C: a.C };
+  }
+
+  let lo = anchors[0];
+  let hi = anchors[anchors.length - 1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    if (anchors[i].stop <= clamped && anchors[i + 1].stop >= clamped) {
+      lo = anchors[i];
+      hi = anchors[i + 1];
+      break;
+    }
+  }
+
+  const range = hi.stop - lo.stop;
+  if (range === 0) return { L: lo.L, C: lo.C };
+  const t = (clamped - lo.stop) / range;
+  return { L: lo.L + t * (hi.L - lo.L), C: lo.C + t * (hi.C - lo.C) };
+}
+
+// ---------------------------------------------------------------------------
+// AnchorSwatchGrid — 24x11 grid using per-hue anchor interpolation
+// ---------------------------------------------------------------------------
+
+interface SelectedSwatch {
+  hue: string;
+  stop: number;
+}
+
+function AnchorSwatchGrid({
+  anchorData,
+  selected,
+  onSelect,
+}: {
+  anchorData: ThemeHueAnchors;
+  selected: SelectedSwatch | null;
+  onSelect: (hue: string, stop: number) => void;
+}) {
+  return (
+    <div className="gp-grid" data-testid="gp-anchor-swatch-grid">
+      {/* Header row */}
+      <div className="gp-grid-row gp-grid-header">
+        <div className="gp-hue-label gp-header-corner" />
+        {STANDARD_STOPS.map((stop) => (
+          <div key={stop} className="gp-stop-label">
+            {stop}
+          </div>
+        ))}
+      </div>
+      {/* Data rows */}
+      {HUE_NAMES.map((hueName) => {
+        const angle = HUE_FAMILIES[hueName];
+        const hueAnchors = anchorData[hueName];
+        const anchorStops = new Set(hueAnchors?.anchors.map((a) => a.stop) ?? []);
+        return (
+          <div key={hueName} className="gp-grid-row" data-testid="gp-hue-row">
+            <div className="gp-hue-label">{hueName}</div>
+            {STANDARD_STOPS.map((stop) => {
+              const color = hueAnchors
+                ? tugAnchoredColor(hueName, stop, hueAnchors)
+                : tugPaletteColor(hueName, stop);
+              const varName = `--tug-palette-hue-${angle}-${hueName}-tone-${stop}`;
+              const isAnchor = anchorStops.has(stop);
+              const isSelected = selected?.hue === hueName && selected?.stop === stop;
+              return (
+                <div
+                  key={stop}
+                  className={[
+                    "gp-swatch",
+                    "gp-anchor-swatch",
+                    isAnchor ? "gp-anchor-swatch--is-anchor" : "",
+                    isSelected ? "gp-anchor-swatch--selected" : "",
+                  ].filter(Boolean).join(" ")}
+                  style={{ backgroundColor: color }}
+                  title={`${varName}: ${color}`}
+                  data-color={color}
+                  data-anchor={isAnchor ? "true" : "false"}
+                  data-testid="gp-swatch"
+                  onClick={() => onSelect(hueName, stop)}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AnchorEditor — inline editor for a selected swatch
+// ---------------------------------------------------------------------------
+
+function AnchorEditor({
+  hue,
+  stop,
+  hueAnchors,
+  onUpdate,
+}: {
+  hue: string;
+  stop: number;
+  hueAnchors: HueAnchors;
+  onUpdate: (hue: string, newAnchors: HueAnchors) => void;
+}) {
+  const isAnchor = hueAnchors.anchors.some((a) => a.stop === stop);
+  const chromaCap = MAX_CHROMA_FOR_HUE[hue] ?? 0.22;
+
+  // Current values: read from anchor if it exists, else interpolate
+  const currentAnchor = hueAnchors.anchors.find((a) => a.stop === stop);
+  const { L: currentL, C: currentC } = currentAnchor ?? computedLCAtStop(stop, hueAnchors);
+
+  const handleLChange = (newL: number) => {
+    if (!isAnchor) return;
+    const newAnchors = hueAnchors.anchors.map((a) =>
+      a.stop === stop ? { ...a, L: newL } : a
+    );
+    onUpdate(hue, { anchors: newAnchors });
+  };
+
+  const handleCChange = (newC: number) => {
+    if (!isAnchor) return;
+    const newAnchors = hueAnchors.anchors.map((a) =>
+      a.stop === stop ? { ...a, C: newC } : a
+    );
+    onUpdate(hue, { anchors: newAnchors });
+  };
+
+  const handleAnchorToggle = (checked: boolean) => {
+    if (checked) {
+      // Freeze the current computed L/C as a new anchor point, then sort
+      const { L, C } = computedLCAtStop(stop, hueAnchors);
+      const newAnchors = [...hueAnchors.anchors, { stop, L, C }]
+        .sort((a, b) => a.stop - b.stop);
+      onUpdate(hue, { anchors: newAnchors });
+    } else {
+      // Remove this stop from anchors (revert to interpolated)
+      // Never remove stops 0 or 100 — they are required boundary anchors
+      if (stop === 0 || stop === 100) return;
+      const newAnchors = hueAnchors.anchors.filter((a) => a.stop !== stop);
+      onUpdate(hue, { anchors: newAnchors });
+    }
+  };
+
+  const isOverGamut = currentC > chromaCap + 0.0001;
+
+  return (
+    <div className="gp-anchor-editor" data-testid="gp-anchor-editor">
+      <div className="gp-anchor-editor-title">
+        <span className="gp-anchor-editor-hue" data-testid="gp-anchor-editor-hue">{hue}</span>
+        <span className="gp-anchor-editor-stop" data-testid="gp-anchor-editor-stop">stop {stop}</span>
+      </div>
+
+      <div className="gp-anchor-editor-row">
+        <label className="gp-anchor-editor-label">
+          <input
+            type="checkbox"
+            checked={isAnchor}
+            onChange={(e) => handleAnchorToggle(e.target.checked)}
+            data-testid="gp-anchor-checkbox"
+            disabled={stop === 0 || stop === 100}
+          />
+          Anchor
+        </label>
+      </div>
+
+      <div className="gp-anchor-editor-row">
+        <label className="gp-anchor-editor-label" htmlFor="gp-anchor-l">L</label>
+        <input
+          id="gp-anchor-l"
+          type="number"
+          min="0.1"
+          max="1.0"
+          step="0.01"
+          value={parseFloat(currentL.toFixed(4))}
+          onChange={(e) => handleLChange(parseFloat(e.target.value))}
+          disabled={!isAnchor}
+          className="gp-anchor-input"
+          data-testid="gp-anchor-l-input"
+        />
+      </div>
+
+      <div className="gp-anchor-editor-row">
+        <label className="gp-anchor-editor-label" htmlFor="gp-anchor-c">C</label>
+        <input
+          id="gp-anchor-c"
+          type="number"
+          min="0.0"
+          max="0.3"
+          step="0.001"
+          value={parseFloat(currentC.toFixed(4))}
+          onChange={(e) => handleCChange(parseFloat(e.target.value))}
+          disabled={!isAnchor}
+          className="gp-anchor-input"
+          data-testid="gp-anchor-c-input"
+        />
+        {isOverGamut && (
+          <span className="gp-anchor-gamut-warning" data-testid="gp-anchor-gamut-warning">
+            C exceeds cap ({chromaCap.toFixed(3)})
+          </span>
+        )}
+      </div>
+
+      {!isAnchor && (
+        <div className="gp-anchor-editor-note" data-testid="gp-anchor-interpolated-note">
+          Interpolated — check Anchor to edit
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AnchorsPanel — top-level anchors mode UI
+// ---------------------------------------------------------------------------
+
+function AnchorsPanel() {
+  const [selectedTheme, setSelectedTheme] = useState<ThemeKey>("brio");
+
+  // Per-theme mutable anchor state, initialized from DEFAULT_ANCHOR_DATA
+  const [brioAnchors, setBrioAnchors] = useState<ThemeHueAnchors>(() =>
+    cloneThemeHueAnchors(DEFAULT_ANCHOR_DATA.brio)
+  );
+  const [bluenoteAnchors, setBluenoteAnchors] = useState<ThemeHueAnchors>(() =>
+    cloneThemeHueAnchors(DEFAULT_ANCHOR_DATA.bluenote)
+  );
+  const [harmonyAnchors, setHarmonyAnchors] = useState<ThemeHueAnchors>(() =>
+    cloneThemeHueAnchors(DEFAULT_ANCHOR_DATA.harmony)
+  );
+
+  const [selected, setSelected] = useState<SelectedSwatch | null>(null);
+
+  // Resolve the active anchor data and setter for the current theme
+  const activeAnchors: ThemeHueAnchors =
+    selectedTheme === "brio" ? brioAnchors
+    : selectedTheme === "bluenote" ? bluenoteAnchors
+    : harmonyAnchors;
+
+  const setActiveAnchors = (updater: (prev: ThemeHueAnchors) => ThemeHueAnchors) => {
+    if (selectedTheme === "brio") setBrioAnchors(updater);
+    else if (selectedTheme === "bluenote") setBluenoteAnchors(updater);
+    else setHarmonyAnchors(updater);
+  };
+
+  const handleSwatchSelect = (hue: string, stop: number) => {
+    setSelected({ hue, stop });
+  };
+
+  const handleAnchorUpdate = (hue: string, newHueAnchors: HueAnchors) => {
+    setActiveAnchors((prev) => ({ ...prev, [hue]: newHueAnchors }));
+  };
+
+  return (
+    <div className="gp-anchors-panel" data-testid="gp-anchors-panel">
+      {/* Theme selector */}
+      <div className="cg-section">
+        <div className="cg-section-title">Theme</div>
+        <div className="gp-anchor-theme-row">
+          <select
+            value={selectedTheme}
+            onChange={(e) => {
+              setSelectedTheme(e.target.value as ThemeKey);
+              setSelected(null);
+            }}
+            className="cg-control-select"
+            data-testid="gp-anchor-theme-select"
+          >
+            <option value="brio">Brio</option>
+            <option value="bluenote">Bluenote</option>
+            <option value="harmony">Harmony</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Swatch grid */}
+      <div className="cg-section">
+        <div className="cg-section-title">Anchor Palette — click a swatch to edit</div>
+        <AnchorSwatchGrid
+          anchorData={activeAnchors}
+          selected={selected}
+          onSelect={handleSwatchSelect}
+        />
+      </div>
+
+      {/* Inline editor */}
+      {selected && (
+        <div className="cg-section">
+          <div className="cg-section-title">Edit Anchor</div>
+          <AnchorEditor
+            hue={selected.hue}
+            stop={selected.stop}
+            hueAnchors={activeAnchors[selected.hue]}
+            onUpdate={handleAnchorUpdate}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryPaletteContent
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryPaletteContent — interactive palette demo with curve tuning controls.
+ * GalleryPaletteContent — interactive palette demo with two modes.
  *
- * Renders the 24-hue x 11-stop swatch grid with:
- * - Transfer function controls (curve type, L/C anchors)
- * - Side-by-side comparison: left (live) vs right (locked reference)
- * - "Lock current" and "Reset to defaults" buttons
+ * Anchors mode (default): per-hue anchor-based palette tuning tool.
+ * Curves mode: transfer function (smoothstep/bezier/piecewise) comparison.
  *
  * Rules of Tugways: all appearance changes go through computed inline style
- * attributes, never React state. Local useState is used only for curve
- * parameters (pure UI state, not external store state).
+ * attributes, never React state. Local useState is used only for UI state
+ * (mode, selection, anchor values).
  *
- * **Authoritative reference:** Spec S04 (#s04-gallery-palette-tab), [D06]
+ * **Authoritative reference:** Spec S04 (#s04-gallery-palette-tab),
+ * Spec S05 (#s05-gallery-anchor-editor), [D06]
  */
 export function GalleryPaletteContent() {
-  // Left panel (live): current slider configuration
+  const [mode, setMode] = useState<EditorMode>("anchors");
+
+  // Curves-mode state (preserved when switching modes)
   const [liveConfig, setLiveConfig] = useState<CurveConfig>({ ...DEFAULT_CURVE_CONFIG });
-  // Right panel (locked): last "locked" configuration — starts as defaults
   const [lockedConfig, setLockedConfig] = useState<CurveConfig>({ ...DEFAULT_CURVE_CONFIG });
 
   const handleReset = () => {
@@ -481,50 +814,80 @@ export function GalleryPaletteContent() {
 
   return (
     <div className="cg-content gp-content" data-testid="gallery-palette-content">
-      {/* ---- Controls section ---- */}
+      {/* ---- Mode toggle ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Transfer Function Controls</div>
-        <CurveControls
-          config={liveConfig}
-          onChange={setLiveConfig}
-          idPrefix="gp-live"
-        />
-        <div className="gp-action-row">
+        <div className="gp-mode-toggle" data-testid="gp-mode-toggle">
           <button
-            className="gp-action-btn"
-            onClick={handleReset}
-            data-testid="gp-reset-btn"
+            className={["gp-mode-btn", mode === "anchors" ? "gp-mode-btn--active" : ""].filter(Boolean).join(" ")}
+            onClick={() => setMode("anchors")}
+            data-testid="gp-mode-anchors-btn"
           >
-            Reset to defaults
+            Anchors
           </button>
           <button
-            className="gp-action-btn"
-            onClick={handleLock}
-            data-testid="gp-lock-btn"
+            className={["gp-mode-btn", mode === "curves" ? "gp-mode-btn--active" : ""].filter(Boolean).join(" ")}
+            onClick={() => setMode("curves")}
+            data-testid="gp-mode-curves-btn"
           >
-            Lock current
+            Curves
           </button>
         </div>
       </div>
 
-      {/* ---- Side-by-side comparison ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Side-by-Side Comparison</div>
-        <div className="gp-comparison">
-          {/* Left: live configuration */}
-          <div className="gp-panel" data-testid="gp-live-panel">
-            <div className="gp-panel-label">
-              Live — {liveConfig.curveType}
-            </div>
-            <SwatchGrid config={liveConfig} testIdPrefix="gp-live" />
-          </div>
+      {/* ---- Anchors mode ---- */}
+      {/* Hidden (not unmounted) when in curves mode so Curves tests can always query the DOM */}
+      <div className={mode === "anchors" ? "" : "gp-hidden"}>
+        <AnchorsPanel />
+      </div>
 
-          {/* Right: locked reference */}
-          <div className="gp-panel" data-testid="gp-locked-panel">
-            <div className="gp-panel-label">
-              Locked — {lockedConfig.curveType}
+      {/* ---- Curves mode ---- */}
+      {/* Hidden (not unmounted) when in anchors mode so existing tests always find these elements */}
+      <div className={mode === "curves" ? "" : "gp-hidden"}>
+        {/* Controls section */}
+        <div className="cg-section">
+          <div className="cg-section-title">Transfer Function Controls</div>
+          <CurveControls
+            config={liveConfig}
+            onChange={setLiveConfig}
+            idPrefix="gp-live"
+          />
+          <div className="gp-action-row">
+            <button
+              className="gp-action-btn"
+              onClick={handleReset}
+              data-testid="gp-reset-btn"
+            >
+              Reset to defaults
+            </button>
+            <button
+              className="gp-action-btn"
+              onClick={handleLock}
+              data-testid="gp-lock-btn"
+            >
+              Lock current
+            </button>
+          </div>
+        </div>
+
+        {/* Side-by-side comparison */}
+        <div className="cg-section">
+          <div className="cg-section-title">Side-by-Side Comparison</div>
+          <div className="gp-comparison">
+            {/* Left: live configuration */}
+            <div className="gp-panel" data-testid="gp-live-panel">
+              <div className="gp-panel-label">
+                Live — {liveConfig.curveType}
+              </div>
+              <SwatchGrid config={liveConfig} testIdPrefix="gp-live" />
             </div>
-            <SwatchGrid config={lockedConfig} testIdPrefix="gp-locked" />
+
+            {/* Right: locked reference */}
+            <div className="gp-panel" data-testid="gp-locked-panel">
+              <div className="gp-panel-label">
+                Locked — {lockedConfig.curveType}
+              </div>
+              <SwatchGrid config={lockedConfig} testIdPrefix="gp-locked" />
+            </div>
           </div>
         </div>
       </div>
