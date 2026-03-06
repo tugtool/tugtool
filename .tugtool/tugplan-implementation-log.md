@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-06T15:38:14Z
+---
+
+## step-5: Added 23 integration tests covering all six verification tasks and seven success criteria. TypeScript clean, all Phase-5d4 tests pass (144 total). 3 manual browser verification items deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d4-observable-properties.md
+
+---
+
+---
 step: step-4
 date: 2025-03-06T15:28:29Z
 ---
