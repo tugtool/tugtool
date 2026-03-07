@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-07T22:35:03Z
+---
+
+## step-2: Added 168 chromatic preset formulas (7 presets x 24 hues) using oklch+calc expressions per Table T02
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-1
 date: 2025-03-07T22:28:34Z
 ---
