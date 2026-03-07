@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-07T04:16:00Z
+---
+
+## step-3: Added --tug-base-motion-duration-fast/moderate/slow/glacial as calc(ms * var(--tug-timing)). Rewired --td-duration-* tokens. Replaced hardcoded 250ms in tug-dropdown.css with var(--td-duration-moderate).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-2
 date: 2025-03-07T04:12:29Z
 ---

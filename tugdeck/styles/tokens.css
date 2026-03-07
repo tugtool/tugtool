@@ -169,11 +169,17 @@ body {
     #878e96 4px
   );
 
-  /* Motion Tokens */
-  --td-duration-fast: 100ms;
-  --td-duration-moderate: 200ms;
-  --td-duration-slow: 350ms;
-  --td-duration-glacial: 500ms;
+  /* Scaled base motion duration tokens (calc-based via --tug-timing) */
+  --tug-base-motion-duration-fast: calc(100ms * var(--tug-timing));
+  --tug-base-motion-duration-moderate: calc(200ms * var(--tug-timing));
+  --tug-base-motion-duration-slow: calc(350ms * var(--tug-timing));
+  --tug-base-motion-duration-glacial: calc(500ms * var(--tug-timing));
+
+  /* Motion Tokens (rewired through scaled base tokens) */
+  --td-duration-fast: var(--tug-base-motion-duration-fast);
+  --td-duration-moderate: var(--tug-base-motion-duration-moderate);
+  --td-duration-slow: var(--tug-base-motion-duration-slow);
+  --td-duration-glacial: var(--tug-base-motion-duration-glacial);
   --td-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --td-easing-enter: cubic-bezier(0, 0, 0, 1);
   --td-easing-exit: cubic-bezier(0.2, 0, 1, 1);

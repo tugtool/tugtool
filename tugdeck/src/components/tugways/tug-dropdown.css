@@ -100,5 +100,5 @@
 }
 
 .tug-dropdown-item-selected {
-  animation: tug-dropdown-blink 250ms var(--td-easing-standard) forwards;
+  animation: tug-dropdown-blink var(--td-duration-moderate) var(--td-easing-standard) forwards;
 }
