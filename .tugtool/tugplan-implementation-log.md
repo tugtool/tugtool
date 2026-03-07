@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-07T04:26:21Z
+---
+
+## step-5: Created scale-timing.ts with getTugScale, getTugTiming, isTugMotionEnabled, initMotionObserver. Wired initMotionObserver into main.tsx boot sequence. Added 13 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-4
 date: 2025-03-07T04:19:14Z
 ---

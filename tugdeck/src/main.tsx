@@ -14,6 +14,7 @@ import {
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { injectHvvCSS } from "./components/tugways/palette-engine";
+import { initMotionObserver } from "./components/tugways/scale-timing";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -44,6 +45,11 @@ if (!container) {
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.
   sendCanvasColor();
+
+  // Initialize motion observer early so data-tug-motion attribute is set before
+  // DeckManager construction. The cleanup function is intentionally not stored
+  // here — the observer should live for the entire app lifetime.
+  initMotionObserver();
 
   // Register card types before DeckManager construction so addCard("hello") works
   // from the first render. Additional card types (settings, about, etc.) will be
