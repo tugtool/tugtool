@@ -1,11 +1,11 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into nine separately
+ * Converts the Component Gallery from a floating panel into ten separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates a nine-tab card titled "Component Gallery".
+ * creates a ten-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
  * - [D01] Seven separate componentIds for gallery sections
@@ -29,6 +29,7 @@ import { Tugcard } from "@/components/tugways/tugcard";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
 import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
 import { GalleryPaletteContent } from "./gallery-palette-content";
+import { GalleryScaleTimingContent } from "./gallery-scale-timing-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -50,7 +51,7 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a nine-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates a ten-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
@@ -65,6 +66,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-mutation-tx",    title: "Mutation Transactions", closable: true },
   { id: "template", componentId: "gallery-observable-props", title: "Observable Props",   closable: true },
   { id: "template", componentId: "gallery-palette",        title: "Palette Engine",       closable: true },
+  { id: "template", componentId: "gallery-scale-timing",   title: "Scale & Timing",       closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -986,6 +988,26 @@ export function registerGalleryCards(): void {
     ),
     contentFactory: (_cardId) => <GalleryPaletteContent />,
     defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-scale-timing ----
+  registerCard({
+    componentId: "gallery-scale-timing",
+    factory: (cardId, injected) => (
+      <Tugcard
+        cardId={cardId}
+        meta={{ title: "Scale & Timing", icon: "SlidersHorizontal", closable: true }}
+        feedIds={[]}
+        onDragStart={injected.onDragStart}
+        onMinSizeChange={injected.onMinSizeChange}
+      >
+        <GalleryScaleTimingContent />
+      </Tugcard>
+    ),
+    contentFactory: (_cardId) => <GalleryScaleTimingContent />,
+    defaultMeta: { title: "Scale & Timing", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

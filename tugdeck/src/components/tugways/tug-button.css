@@ -99,11 +99,13 @@
   filter: brightness(0.8) saturate(1.2);
 }
 
-/* Transition for smooth hover/active */
+/* Transition for smooth hover/active; component-level scale via CSS transform */
 .tug-button-primary,
 .tug-button-secondary,
 .tug-button-ghost,
 .tug-button-destructive {
+  transform: scale(var(--tug-comp-button-scale));
+  transform-origin: center center;
   transition:
     background-color var(--td-duration-fast) var(--td-easing-standard),
     border-color var(--td-duration-fast) var(--td-easing-standard),
@@ -221,8 +223,6 @@
   border-top-color: currentColor;
   border-radius: 50%;
   animation: tug-button-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
-  /* Respect reduced-motion preference via the scalar token */
-  animation-duration: calc(var(--td-duration-moderate) / var(--td-duration-scalar, 1));
 }
 
 @keyframes tug-button-spin {

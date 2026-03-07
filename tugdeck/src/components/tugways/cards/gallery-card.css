@@ -347,3 +347,105 @@
   line-height: 1.5;
   margin: 0;
 }
+
+/* ============================================================================
+   Scale & Timing Demo (Phase 5d5b)
+   ========================================================================= */
+
+/* Controls column layout for the scale/timing sliders */
+.cg-st-controls {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* Each slider occupies a full row: label | range | value | note */
+.cg-st-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.cg-st-slider-label {
+  width: 200px;
+  flex-shrink: 0;
+  font-family: var(--td-font-mono, monospace);
+  font-size: 11px;
+}
+
+.cg-st-range {
+  flex: 0 0 180px;
+  cursor: pointer;
+  accent-color: var(--td-accent);
+}
+
+.cg-st-value {
+  flex: 0 0 36px;
+  font-size: 11px;
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text);
+  text-align: right;
+}
+
+.cg-st-note {
+  font-size: 10px;
+  color: var(--td-text-soft);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* JS helper readout: three rows showing function name and return value */
+.cg-st-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  font-family: var(--td-font-mono, monospace);
+  font-size: 11px;
+}
+
+.cg-st-readout-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.cg-st-readout-fn {
+  color: var(--td-text-soft);
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.cg-st-readout-value {
+  color: var(--td-accent-cool);
+  font-weight: 600;
+}
+
+/* Live preview area: generous gap/padding to accommodate CSS transform scale()
+   layout-box caveat (visual size grows but layout box stays original size).
+   At high --tug-comp-button-scale values, buttons may visually overlap adjacent
+   elements; the 32px gap and 16px padding provide breathing room. */
+.cg-st-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 16px;
+  background-color: var(--td-surface);
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+}
+
+.cg-st-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}

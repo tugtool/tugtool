@@ -1,11 +1,11 @@
 /**
- * Gallery card tests -- Step 5 (updated for nine gallery sections in Phase 5d5a).
+ * Gallery card tests -- Step 7 (updated for ten gallery sections in Phase 5d5b).
  *
  * Tests cover:
- * - registerGalleryCards() registers all nine gallery componentIds
- * - Each of the nine content components renders without errors
- * - GALLERY_DEFAULT_TABS has nine entries with correct componentIds and titles
- * - addCard("gallery-buttons") creates a nine-tab card with title "Component Gallery"
+ * - registerGalleryCards() registers all ten gallery componentIds
+ * - Each of the ten content components renders without errors
+ * - GALLERY_DEFAULT_TABS has ten entries with correct componentIds and titles
+ * - addCard("gallery-buttons") creates a ten-tab card with title "Component Gallery"
  *   and acceptsFamilies: ["developer"]
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -58,7 +58,7 @@ describe("registerGalleryCards – registry entries", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("registers all nine gallery componentIds", () => {
+  it("registers all ten gallery componentIds", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).toBeDefined();
@@ -70,6 +70,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(getRegistration("gallery-mutation-tx")).toBeDefined();
     expect(getRegistration("gallery-observable-props")).toBeDefined();
     expect(getRegistration("gallery-palette")).toBeDefined();
+    expect(getRegistration("gallery-scale-timing")).toBeDefined();
   });
 
   it("each registration has family: 'developer'", () => {
@@ -85,6 +86,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-mutation-tx",
       "gallery-observable-props",
       "gallery-palette",
+      "gallery-scale-timing",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -106,6 +108,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-mutation-tx",
       "gallery-observable-props",
       "gallery-palette",
+      "gallery-scale-timing",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -113,11 +116,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with nine entries", () => {
+  it("gallery-buttons has defaultTabs with ten entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(9);
+    expect(reg!.defaultTabs!.length).toBe(10);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -126,7 +129,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("other eight gallery registrations do NOT have defaultTabs or defaultTitle", () => {
+  it("other nine gallery registrations do NOT have defaultTabs or defaultTitle", () => {
     registerGalleryCards();
     const others = [
       "gallery-chain-actions",
@@ -137,6 +140,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-mutation-tx",
       "gallery-observable-props",
       "gallery-palette",
+      "gallery-scale-timing",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -151,8 +155,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has nine entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(9);
+  it("has ten entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(10);
   });
 
   it("entries have the correct componentIds", () => {
@@ -166,6 +170,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(componentIds).toContain("gallery-mutation-tx");
     expect(componentIds).toContain("gallery-observable-props");
     expect(componentIds).toContain("gallery-palette");
+    expect(componentIds).toContain("gallery-scale-timing");
   });
 
   it("entries have the correct titles", () => {
@@ -179,6 +184,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("Mutation Transactions");
     expect(titles).toContain("Observable Props");
     expect(titles).toContain("Palette Engine");
+    expect(titles).toContain("Scale & Timing");
   });
 
   it("all entries are closable", () => {
@@ -192,7 +198,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates nine-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates ten-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -207,13 +213,13 @@ describe("DeckManager.addCard('gallery-buttons') creates nine-tab gallery card",
     cleanup();
   });
 
-  it("creates a card with nine tabs, each with a distinct componentId", () => {
+  it("creates a card with ten tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(9);
+    expect(card.tabs.length).toBe(10);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -225,6 +231,7 @@ describe("DeckManager.addCard('gallery-buttons') creates nine-tab gallery card",
     expect(componentIds).toContain("gallery-mutation-tx");
     expect(componentIds).toContain("gallery-observable-props");
     expect(componentIds).toContain("gallery-palette");
+    expect(componentIds).toContain("gallery-scale-timing");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -248,7 +255,7 @@ describe("DeckManager.addCard('gallery-buttons') creates nine-tab gallery card",
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(9);
+    expect(new Set(ids).size).toBe(10);
   });
 });
 

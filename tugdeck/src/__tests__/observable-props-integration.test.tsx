@@ -499,9 +499,9 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
 // Gallery tab position: eighth tab
 // ---------------------------------------------------------------------------
 
-describe("Gallery tab 'Observable Props' is the eighth tab (of nine total)", () => {
-  it("GALLERY_DEFAULT_TABS has exactly nine entries", () => {
-    expect(GALLERY_DEFAULT_TABS).toHaveLength(9);
+describe("Gallery tab 'Observable Props' is the eighth tab (of ten total)", () => {
+  it("GALLERY_DEFAULT_TABS has exactly ten entries", () => {
+    expect(GALLERY_DEFAULT_TABS).toHaveLength(10);
   });
 
   it("the eighth tab has componentId 'gallery-observable-props' and title 'Observable Props'", () => {
@@ -516,6 +516,13 @@ describe("Gallery tab 'Observable Props' is the eighth tab (of nine total)", () 
     expect(ninth.componentId).toBe("gallery-palette");
     expect(ninth.title).toBe("Palette Engine");
     expect(ninth.closable).toBe(true);
+  });
+
+  it("the tenth tab has componentId 'gallery-scale-timing' and title 'Scale & Timing'", () => {
+    const tenth = GALLERY_DEFAULT_TABS[9];
+    expect(tenth.componentId).toBe("gallery-scale-timing");
+    expect(tenth.title).toBe("Scale & Timing");
+    expect(tenth.closable).toBe(true);
   });
 });
 

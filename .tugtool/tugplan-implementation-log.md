@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-07T04:53:03Z
+---
+
+## step-8: Integration checkpoint: fixed scale-timing.test.ts missing setup-rtl import that caused 13 tests to silently fail. All checks pass: build clean, 923/924 tests pass, zero duration-scalar references.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-7
+date: 2025-03-07T04:42:59Z
+---
+
+## step-7: Registered gallery-scale-timing in GALLERY_DEFAULT_TABS and registerGalleryCards(). Updated gallery-card docstrings from nine to ten tabs. Updated test assertions for new tab count.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-6
+date: 2025-03-07T04:36:07Z
+---
+
+## step-6: Created GalleryScaleTimingContent with scale/timing/motion sliders, component-level scale sliders, live TugButton preview, JS helper readout, reset button, useEffect cleanup. Added CSS styles and 15 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-5
+date: 2025-03-07T04:26:21Z
+---
+
+## step-5: Created scale-timing.ts with getTugScale, getTugTiming, isTugMotionEnabled, initMotionObserver. Wired initMotionObserver into main.tsx boot sequence. Added 13 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-4
+date: 2025-03-07T04:19:14Z
+---
+
+## step-4: Added --tug-comp-button-scale, --tug-comp-tab-scale, --tug-comp-dock-scale to tokens.css. Added CSS transform: scale() to tug-button variant selector and .tug-tab-bar with appropriate transform-origin values.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-3
+date: 2025-03-07T04:16:00Z
+---
+
+## step-3: Added --tug-base-motion-duration-fast/moderate/slow/glacial as calc(ms * var(--tug-timing)). Rewired --td-duration-* tokens. Replaced hardcoded 250ms in tug-dropdown.css with var(--td-duration-moderate).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-2
+date: 2025-03-07T04:12:29Z
+---
+
+## step-2: Added --tug-base-space-1..6 and --tug-base-radius-xs..lg as calc(px * var(--tug-scale)). Rewired --td-space-* and --td-radius-* to point through new scaled base tokens.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
+step: step-1
+date: 2025-03-07T04:09:17Z
+---
+
+## step-1: Added --tug-scale, --tug-timing, --tug-motion to :root in tokens.css. Added motion-off CSS rule and CSS-only prefers-reduced-motion fallback. Removed all --td-duration-scalar references including spinner hack in tug-button.css.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-6
 date: 2025-03-07T03:05:45Z
 ---

@@ -59,6 +59,36 @@
 }
 
 /* ============================================================================
+   Global Multiplier Tokens
+   ========================================================================= */
+
+:root {
+  --tug-scale: 1;
+  --tug-timing: 1;
+  --tug-motion: 1;
+}
+
+/* Motion-off rule: JS sets data-tug-motion="off" on body when --tug-motion is 0 */
+body[data-tug-motion="off"],
+body[data-tug-motion="off"] * {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* CSS-only reduced-motion fallback: immediate suppression without waiting for JS */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tug-motion: 0;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+
+/* ============================================================================
    body - Brio Theme (Default)
    ========================================================================= */
 
@@ -139,15 +169,25 @@ body {
     #878e96 4px
   );
 
-  /* Motion Tokens */
-  --td-duration-fast: 100ms;
-  --td-duration-moderate: 200ms;
-  --td-duration-slow: 350ms;
-  --td-duration-glacial: 500ms;
+  /* Scaled base motion duration tokens (calc-based via --tug-timing) */
+  --tug-base-motion-duration-fast: calc(100ms * var(--tug-timing));
+  --tug-base-motion-duration-moderate: calc(200ms * var(--tug-timing));
+  --tug-base-motion-duration-slow: calc(350ms * var(--tug-timing));
+  --tug-base-motion-duration-glacial: calc(500ms * var(--tug-timing));
+
+  /* Motion Tokens (rewired through scaled base tokens) */
+  --td-duration-fast: var(--tug-base-motion-duration-fast);
+  --td-duration-moderate: var(--tug-base-motion-duration-moderate);
+  --td-duration-slow: var(--tug-base-motion-duration-slow);
+  --td-duration-glacial: var(--tug-base-motion-duration-glacial);
   --td-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --td-easing-enter: cubic-bezier(0, 0, 0, 1);
   --td-easing-exit: cubic-bezier(0.2, 0, 1, 1);
-  --td-duration-scalar: 1;
+
+  /* Component-level scale tokens (default 1 = identity; applied via CSS transform: scale()) */
+  --tug-comp-button-scale: 1;
+  --tug-comp-tab-scale: 1;
+  --tug-comp-dock-scale: 1; /* forward-declared; no dock component consumer in this phase */
 
   /* Tier 2: Semantic Tokens (--td-* mapped to --tways-*) */
   /* Surface tokens (Table T01) */
@@ -213,17 +253,31 @@ body {
   --td-shadow-soft: var(--tways-shadow-soft);
   --td-depth-raise: var(--tways-depth-raise);
 
-  /* Spacing and radius tokens */
-  --td-space-1: var(--tways-space-1);
-  --td-space-2: var(--tways-space-2);
-  --td-space-3: var(--tways-space-3);
-  --td-space-4: var(--tways-space-4);
-  --td-space-5: var(--tways-space-5);
-  --td-space-6: var(--tways-space-6);
-  --td-radius-xs: var(--tways-radius-xs);
-  --td-radius-sm: var(--tways-radius-sm);
-  --td-radius-md: var(--tways-radius-md);
-  --td-radius-lg: var(--tways-radius-lg);
+  /* Scaled base space tokens (Tier 2, calc-based via --tug-scale) */
+  --tug-base-space-1: calc(2px * var(--tug-scale));
+  --tug-base-space-2: calc(4px * var(--tug-scale));
+  --tug-base-space-3: calc(6px * var(--tug-scale));
+  --tug-base-space-4: calc(8px * var(--tug-scale));
+  --tug-base-space-5: calc(12px * var(--tug-scale));
+  --tug-base-space-6: calc(16px * var(--tug-scale));
+
+  /* Scaled base radius tokens (Tier 2, calc-based via --tug-scale) */
+  --tug-base-radius-xs: calc(2px * var(--tug-scale));
+  --tug-base-radius-sm: calc(4px * var(--tug-scale));
+  --tug-base-radius-md: calc(6px * var(--tug-scale));
+  --tug-base-radius-lg: calc(8px * var(--tug-scale));
+
+  /* Spacing and radius tokens (rewired through scaled base tokens) */
+  --td-space-1: var(--tug-base-space-1);
+  --td-space-2: var(--tug-base-space-2);
+  --td-space-3: var(--tug-base-space-3);
+  --td-space-4: var(--tug-base-space-4);
+  --td-space-5: var(--tug-base-space-5);
+  --td-space-6: var(--tug-base-space-6);
+  --td-radius-xs: var(--tug-base-radius-xs);
+  --td-radius-sm: var(--tug-base-radius-sm);
+  --td-radius-md: var(--tug-base-radius-md);
+  --td-radius-lg: var(--tug-base-radius-lg);
 
   /* Typography tokens */
   --td-font-sans: var(--tways-font-sans);
@@ -311,12 +365,6 @@ body {
   --syntax-decorator: var(--td-syntax-decorator);
   --syntax-tag: var(--td-syntax-tag);
   --syntax-attribute: var(--td-syntax-attribute);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body {
-    --td-duration-scalar: 0.001;
-  }
 }
 
 /* ============================================================================
