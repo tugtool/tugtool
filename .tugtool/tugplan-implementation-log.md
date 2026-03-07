@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-07T19:24:57Z
+---
+
+## step-3: Migrated chrome.css from --td-* aliases to --tug-base-* tokens (12 replacements) with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-2
 date: 2025-03-07T19:20:53Z
 ---
