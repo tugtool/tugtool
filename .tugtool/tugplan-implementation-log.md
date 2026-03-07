@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-07T19:14:41Z
+---
+
+## step-1: Migrated tugcard.css, tug-button.css, tug-tab-bar.css, tug-dropdown.css from --td-* aliases to --tug-base-* and --tug-comp-* tokens with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-7
 date: 2025-03-07T17:44:48Z
 ---

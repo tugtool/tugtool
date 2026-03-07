@@ -1,7 +1,7 @@
 /**
- * TugDropdown styles -- tugways-specific CSS using var(--td-*) tokens.
+ * TugDropdown styles -- tugways-specific CSS using --tug-comp-dropdown-* and --tug-base-* tokens.
  *
- * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugDropdown re-paints without React re-renders.
  *
@@ -12,7 +12,7 @@
 
 /* ============================================================================
    Dropdown Content Panel
-   ========================================================================= */
+   ============================================================================ */
 
 /*
  * Override shadcn's Tailwind-based bg-popover / border with semantic tokens.
@@ -20,22 +20,22 @@
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-md);
-  box-shadow: var(--td-shadow-soft);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-comp-dropdown-border);
+  border-radius: var(--tug-base-radius-md);
+  box-shadow: var(--tug-base-shadow-sm);
+  color: var(--tug-comp-dropdown-fg);
   /* High z-index so the portal-rendered dropdown renders above all cards */
   z-index: 200;
 }
 
 /* ============================================================================
    Dropdown Items
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-dropdown-item {
-  color: var(--td-text);
-  border-radius: var(--td-radius-sm, 4px);
+  color: var(--tug-comp-dropdown-fg);
+  border-radius: var(--tug-base-radius-sm);
   cursor: default;
   user-select: none;
   display: flex;
@@ -44,14 +44,14 @@
 }
 
 /*
- * Hover / focus state: use --td-surface (main surface) rather than
- * --td-surface-control (which is the same as the content panel background,
- * making hover invisible). --td-surface provides visible contrast.
+ * Hover / focus state: use --tug-base-surface-default (main surface) rather than
+ * --tug-base-surface-control (which is the same as the content panel background,
+ * making hover invisible). --tug-base-surface-default provides visible contrast.
  */
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {
-  background-color: var(--td-surface);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-default);
+  color: var(--tug-comp-dropdown-fg);
 }
 
 /* Disabled items: reduced opacity, no pointer interaction */
@@ -63,7 +63,7 @@
 
 /* ============================================================================
    Item Icon + Label Layout
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-dropdown-item-icon {
   display: inline-flex;
@@ -83,22 +83,22 @@
 /* ============================================================================
    Selection Blink Animation (Mac-style double-blink before close)
    Rule 4: appearance via CSS/DOM only, never React state.
-   ========================================================================= */
+   ============================================================================ */
 
 /*
  * Two-flash highlight matching the Mac menu selection behavior:
  * item highlights → un-highlights → re-highlights → closes.
- * Uses --td-surface for the highlight (same token as hover for consistency).
- * Duration uses motion tokens: ~250ms total = 2× var(--td-duration-fast) +
- * var(--td-duration-moderate).
+ * Uses --tug-base-surface-default for the highlight (same token as hover for consistency).
+ * Duration uses motion tokens: ~250ms total = 2× --tug-base-motion-duration-fast +
+ * --tug-base-motion-duration-moderate.
  */
 @keyframes tug-dropdown-blink {
-  0%   { background-color: var(--td-surface); }
+  0%   { background-color: var(--tug-base-surface-default); }
   33%  { background-color: transparent; }
-  66%  { background-color: var(--td-surface); }
-  100% { background-color: var(--td-surface); }
+  66%  { background-color: var(--tug-base-surface-default); }
+  100% { background-color: var(--tug-base-surface-default); }
 }
 
 .tug-dropdown-item-selected {
-  animation: tug-dropdown-blink var(--td-duration-moderate) var(--td-easing-standard) forwards;
+  animation: tug-dropdown-blink var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard) forwards;
 }
