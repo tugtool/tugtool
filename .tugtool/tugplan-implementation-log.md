@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-12
+date: 2025-03-07T23:26:32Z
+---
+
+## step-12: Final verification: no injectHvvCSS refs, zero chromatic hex in tug-tokens.css, correct import order, 929 tests pass, TypeScript clean. Phase 5d5e palette engine integration complete.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-11
 date: 2025-03-07T23:22:09Z
 ---
