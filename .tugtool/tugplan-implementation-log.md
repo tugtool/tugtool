@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-07T17:12:56Z
+---
+
+## step-1: Created tugdeck/styles/tug-tokens.css with 475 --tug-base-* token declarations covering all taxonomy sections A-I. Added @import in globals.css after tokens.css. Build passes, token count 488.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-8
 date: 2025-03-07T04:53:03Z
 ---
