@@ -99,12 +99,12 @@
   position: absolute;
   top: 100%;
   left: 50%;
-  font-size: 8px;
+  font-size: 9px;
   font-family: var(--td-font-mono, monospace);
   color: var(--td-text-soft);
   user-select: none;
   white-space: nowrap;
-  transform: rotate(60deg);
+  transform: rotate(62deg);
   transform-origin: top left;
   margin-top: 4px;
 }
@@ -134,7 +134,7 @@
 }
 
 .gp-curve-hue-label {
-  font-size: 8px;
+  font-size: 9px;
   font-family: var(--td-font-mono, monospace);
   fill: var(--td-text-soft, #888);
   user-select: none;
