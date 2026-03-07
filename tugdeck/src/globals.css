@@ -66,11 +66,11 @@ body {
 }
 
 body {
-  color: var(--td-text);
-  background-color: var(--td-canvas);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-bg-canvas);
   background-image:
-    linear-gradient(var(--td-grid-color) 1px, transparent 1px),
-    linear-gradient(90deg, var(--td-grid-color) 1px, transparent 1px);
+    linear-gradient(var(--tug-base-canvas-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tug-base-canvas-grid-line) 1px, transparent 1px);
   background-size: 24px 24px;
   user-select: none;
 }

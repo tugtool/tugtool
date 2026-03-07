@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-07T19:20:53Z
+---
+
+## step-2: Migrated gallery-card.css, gallery-palette-content.css, globals.css body rules from --td-* aliases to --tug-base-* tokens with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-1
 date: 2025-03-07T19:14:41Z
 ---

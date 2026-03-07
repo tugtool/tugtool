@@ -7,7 +7,7 @@
  * Each gallery content component renders inside a Tugcard content area,
  * so panel positioning and titlebar styles are no longer needed here.
  *
- * All colors use var(--td-*) semantic tokens exclusively.
+ * All colors use --tug-base-* semantic tokens exclusively.
  */
 
 /* ============================================================================
@@ -37,7 +37,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   user-select: none;
 }
 
@@ -50,9 +50,9 @@
   align-items: center;
   gap: 16px;
   padding: 10px 14px;
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
   flex-wrap: wrap;
 }
 
@@ -64,31 +64,31 @@
 
 .cg-control-label {
   font-size: 11px;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   user-select: none;
   white-space: nowrap;
 }
 
 .cg-control-select {
   font-size: 12px;
-  font-family: var(--td-font-sans);
-  color: var(--td-text);
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
   padding: 2px 6px;
   cursor: pointer;
   outline: none;
 }
 
 .cg-control-select:focus {
-  border-color: var(--td-accent-cool);
+  border-color: var(--tug-base-accent-cool-default);
 }
 
 .cg-control-checkbox {
   width: 14px;
   height: 14px;
-  accent-color: var(--td-accent);
+  accent-color: var(--tug-base-accent-default);
   cursor: pointer;
 }
 
@@ -111,7 +111,7 @@
 .cg-subtype-label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-style: italic;
   user-select: none;
 }
@@ -125,7 +125,7 @@
 
 .cg-variant-label {
   font-size: 10px;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   width: 76px;
   flex-shrink: 0;
   user-select: none;
@@ -143,7 +143,7 @@
 
 .cg-divider {
   height: 1px;
-  background-color: var(--td-border);
+  background-color: var(--tug-base-border-default);
   margin: 4px 0;
 }
 
@@ -158,7 +158,7 @@
 }
 
 /**
- * Demo box: base styling uses --td-* semantic tokens exclusively.
+ * Demo box: base styling uses --tug-base-* semantic tokens exclusively.
  * --demo-bg is set by useCSSVar (appearance-zone hook) to swap background.
  * .demo-highlighted is toggled by useDOMClass to add a highlight outline.
  * border-width is set by useDOMStyle to swap between 1px and 3px.
@@ -166,13 +166,13 @@
 .cg-mutation-box {
   width: 120px;
   height: 60px;
-  background-color: var(--demo-bg, var(--td-surface));
-  border: 1px solid var(--td-accent-cool);
-  border-radius: var(--td-radius-sm);
+  background-color: var(--demo-bg, var(--tug-base-surface-default));
+  border: 1px solid var(--tug-base-accent-cool-default);
+  border-radius: var(--tug-base-radius-sm);
 }
 
 .cg-mutation-box.demo-highlighted {
-  outline: 2px solid var(--td-accent);
+  outline: 2px solid var(--tug-base-accent-default);
   outline-offset: 2px;
 }
 
@@ -200,33 +200,33 @@
 /* Trigger button for the TugDropdown demo -- styled to match the gallery aesthetic */
 .cg-demo-trigger {
   font-size: 12px;
-  font-family: var(--td-font-sans);
-  color: var(--td-text);
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
   padding: 5px 12px;
   cursor: pointer;
   user-select: none;
 }
 
 .cg-demo-trigger:hover {
-  background-color: var(--td-surface);
+  background-color: var(--tug-base-surface-default);
 }
 
 /* Shared status line for both demos */
 .cg-demo-status {
   font-size: 11px;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   user-select: none;
 }
 
 .cg-demo-status code {
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text);
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
   padding: 1px 5px;
 }
 
@@ -239,9 +239,9 @@
   position: relative;
   width: 100%;
   height: 140px;
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
   overflow: hidden;
 }
 
@@ -250,7 +250,7 @@
   position: absolute;
   width: 80px;
   height: 50px;
-  border-radius: var(--td-radius-sm);
+  border-radius: var(--tug-base-radius-sm);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   cursor: default;
   user-select: none;
@@ -268,9 +268,9 @@
   width: 40px;
   height: 28px;
   padding: 2px;
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
-  background: var(--td-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  background: var(--tug-base-surface-control);
   cursor: pointer;
 }
 
@@ -278,7 +278,7 @@
 .cg-hue-swatch {
   width: 200px;
   height: 28px;
-  border-radius: var(--td-radius-xs);
+  border-radius: var(--tug-base-radius-xs);
   background: linear-gradient(
     to right,
     hsl(0, 70%, 60%),
@@ -290,7 +290,7 @@
     hsl(360, 70%, 60%)
   );
   cursor: ew-resize;
-  border: 1px solid var(--td-border);
+  border: 1px solid var(--tug-base-border-default);
   touch-action: none;
   user-select: none;
 }
@@ -306,44 +306,44 @@
 .cg-position-slider {
   width: 180px;
   cursor: pointer;
-  accent-color: var(--td-accent);
+  accent-color: var(--tug-base-accent-default);
 }
 
 /* Cascade reader display table. */
 .cg-cascade-table {
   border-collapse: collapse;
   font-size: 11px;
-  font-family: var(--td-font-mono, monospace);
+  font-family: var(--tug-base-font-family-mono);
   width: 100%;
   max-width: 420px;
 }
 
 .cg-cascade-table tr + tr td {
-  border-top: 1px solid var(--td-border);
+  border-top: 1px solid var(--tug-base-border-default);
 }
 
 .cg-cascade-prop {
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   padding: 4px 10px 4px 0;
   width: 140px;
   user-select: none;
 }
 
 .cg-cascade-source {
-  color: var(--td-accent);
+  color: var(--tug-base-accent-default);
   padding: 4px 10px;
   width: 80px;
 }
 
 .cg-cascade-value {
-  color: var(--td-text);
+  color: var(--tug-base-fg-default);
   padding: 4px 0;
 }
 
 /* Small description text used in demo sections. */
 .cg-description {
   font-size: 11px;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   line-height: 1.5;
   margin: 0;
 }
@@ -370,27 +370,27 @@
 .cg-st-slider-label {
   width: 200px;
   flex-shrink: 0;
-  font-family: var(--td-font-mono, monospace);
+  font-family: var(--tug-base-font-family-mono);
   font-size: 11px;
 }
 
 .cg-st-range {
   flex: 0 0 180px;
   cursor: pointer;
-  accent-color: var(--td-accent);
+  accent-color: var(--tug-base-accent-default);
 }
 
 .cg-st-value {
   flex: 0 0 36px;
   font-size: 11px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text);
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-default);
   text-align: right;
 }
 
 .cg-st-note {
   font-size: 10px;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-style: italic;
   flex: 1;
   min-width: 0;
@@ -405,10 +405,10 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 14px;
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
-  font-family: var(--td-font-mono, monospace);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  font-family: var(--tug-base-font-family-mono);
   font-size: 11px;
 }
 
@@ -419,13 +419,13 @@
 }
 
 .cg-st-readout-fn {
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   width: 200px;
   flex-shrink: 0;
 }
 
 .cg-st-readout-value {
-  color: var(--td-accent-cool);
+  color: var(--tug-base-accent-cool-default);
   font-weight: 600;
 }
 
@@ -435,9 +435,9 @@
   flex-direction: column;
   gap: 32px;
   padding: 16px;
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
 }
 
 .cg-st-preview-row {
