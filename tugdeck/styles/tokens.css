@@ -1,17 +1,16 @@
 /**
  * Tugdeck Design Token System (Tugways Design System)
  *
- * Three-tier architecture:
- * - Tier 1: Palette tokens (--tways-* tugways palette values)
- * - Tier 2: Semantic tokens (--td-* purpose-driven mappings)
- * - Tier 3: Component tokens (--td-card-*, --td-tab-*, etc. in component CSS)
+ * Two-tier architecture:
+ * - Tier 1: Canonical tokens (--tug-base-* purpose-driven values in tug-tokens.css)
+ * - Tier 2: Component tokens (--tug-comp-card-*, --tug-comp-tab-*, etc. in component CSS)
  *
  * Theme system:
- * - Brio (deep graphite): Default theme, palette in body {}
+ * - Brio (deep graphite): Default theme, base values in tug-tokens.css body {}
  * - Bluenote (cool dark): Injected via <style id="tug-theme-override"> (styles/bluenote.css)
  * - Harmony (light): Injected via <style id="tug-theme-override"> (styles/harmony.css)
  *
- * Components MUST use only --td-* semantic tokens, never --tways-* or raw values.
+ * Components MUST use only --tug-base-* or --tug-comp-* tokens, never raw values.
  */
 
 /* ============================================================================
@@ -96,227 +95,24 @@ body {
   /* Global scale via CSS zoom — affects all dimensions including layout boxes */
   zoom: var(--tug-zoom);
 
-  /* Tier 1: Palette (Brio values from tugways --tways-* palette) */
-  --tways-bg: #1c1e22;
-  --tways-bg-soft: #272a30;
-  --tways-bg-line: rgba(255, 255, 255, 0.03);
-  --tways-panel: #2b2e35;
-  --tways-panel-soft: #23262d;
-  --tways-panel-ink: #e3e7ec;
-  --tways-surface-1: #282b32;
-  --tways-surface-2: #23262d;
-  --tways-surface-3: #1f2228;
-  --tways-surface-4: #191c22;
-  --tways-surface-screen: #353a42;
-  --tways-surface-screen-ink: #eff3f6;
-  --tways-text: #e6eaee;
-  --tways-text-soft: #bcc3cb;
-  --tways-text-inverse: #f2f7fb;
-  --tways-accent: #ff8a38;
-  --tways-accent-strong: #f17627;
-  --tways-accent-cool: #35bcff;
-  --tways-accent-1: #ff8a38;
-  --tways-accent-2: #35bcff;
-  --tways-accent-3: #b08aff;
-  --tways-accent-4: #ff5a72;
-  --tways-accent-5: #72ce8f;
-  --tways-accent-6: #ffe86b;
-  --tways-accent-7: #f07fd0;
-  --tways-accent-8: #ffa37a;
-  --tways-border: #5e656e;
-  --tways-border-soft: #7b828c;
-  --tways-shadow-hard: #1f2b33;
-  --tways-shadow-mid: #0b1117;
-  --tways-shadow-soft: rgba(0, 0, 0, 0.5);
-  --tways-glow: rgba(142, 183, 190, 0.24);
-  --tways-line-ui: 1px;
-
-  /* Shared tokens (same across all themes) */
-  --tways-success: #68bf78;
-  --tways-warning: #ffe15a;
-  --tways-danger: #ff4458;
-
-  --tways-radius-xs: 2px;
-  --tways-radius-sm: 4px;
-  --tways-radius-md: 6px;
-  --tways-radius-lg: 8px;
-
-  --tways-space-1: 2px;
-  --tways-space-2: 4px;
-  --tways-space-3: 6px;
-  --tways-space-4: 8px;
-  --tways-space-5: 12px;
-  --tways-space-6: 16px;
-
-  --tways-font-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --tways-font-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
-  --tways-line-tight: 1.2;
-  --tways-line-normal: 1.45;
-
-  --tways-depth-raise:
-    0 1px 0 0 rgba(255, 255, 255, 0.18),
-    0 1px 2px -1px var(--tways-shadow-soft);
-  --tways-depth-inset:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
-    inset 0 0 0 1px rgba(34, 48, 57, 0.22);
-  --tways-depth-screen:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
-    inset 0 0 0 1px rgba(34, 48, 57, 0.64),
-    0 1px 2px -1px var(--tways-shadow-soft);
-
-  --tways-track-bg: repeating-linear-gradient(
-    to bottom,
-    #6f757c 0px,
-    #6f757c 1px,
-    #878e96 2px,
-    #878e96 4px
-  );
-
   /* Scaled base motion duration tokens (calc-based via --tug-timing) */
   --tug-base-motion-duration-fast: calc(100ms * var(--tug-timing));
   --tug-base-motion-duration-moderate: calc(200ms * var(--tug-timing));
   --tug-base-motion-duration-slow: calc(350ms * var(--tug-timing));
   --tug-base-motion-duration-glacial: calc(500ms * var(--tug-timing));
 
-  /* Motion Tokens (rewired through scaled base tokens) */
-  --td-duration-fast: var(--tug-base-motion-duration-fast);
-  --td-duration-moderate: var(--tug-base-motion-duration-moderate);
-  --td-duration-slow: var(--tug-base-motion-duration-slow);
-  --td-duration-glacial: var(--tug-base-motion-duration-glacial);
-  --td-easing-standard: var(--tug-base-motion-easing-standard);
-  --td-easing-enter: var(--tug-base-motion-easing-enter);
-  --td-easing-exit: var(--tug-base-motion-easing-exit);
-
-  /* ============================================================================
-     Tier 2: Backward-Compatibility Aliases (--td-* -> --tug-base-*)
-     These tokens are preserved for existing consumers. --tug-base-* is the
-     canonical source of truth as of Phase 5d5c. Legacy --td-* tokens will be
-     removed in Phase 5d5d when consumers migrate to --tug-base-* directly.
-     ========================================================================= */
-
-  /* Surface tokens */
-  --td-bg: var(--tug-base-bg-app);
-  --td-bg-soft: var(--tug-base-surface-raised);
-  --td-card: var(--tug-base-card-bg);
-  --td-card-soft: var(--tug-base-surface-sunken);
-  --td-surface: var(--tug-base-surface-default);
-  --td-surface-tab: var(--tug-base-tab-bar-bg);
-  --td-surface-control: var(--tug-base-surface-control);
-  --td-surface-content: var(--tug-base-surface-content);
-
-  /* Canvas token (viewport background, distinct from --td-bg for light themes) */
-  --td-canvas: var(--tug-base-bg-canvas);
-
-  /* Text tokens */
-  --td-text: var(--tug-base-fg-default);
-  --td-text-soft: var(--tug-base-fg-muted);
-  --td-text-inverse: var(--tug-base-fg-inverse);
-
-  /* Accent and status tokens */
-  --td-accent: var(--tug-base-accent-default);
-  --td-accent-cool: var(--tug-base-accent-cool-default);
-  --td-accent-1: var(--tways-accent-1);
-  --td-accent-2: var(--tways-accent-2);
-  --td-accent-3: var(--tways-accent-3);
-  --td-accent-4: var(--tways-accent-4);
-  --td-accent-5: var(--tways-accent-5);
-  --td-accent-6: var(--tways-accent-6);
-  --td-accent-7: var(--tways-accent-7);
-  --td-accent-8: var(--tways-accent-8);
-  --td-success: var(--tug-base-accent-positive);
-  --td-warning: var(--tug-base-accent-warning);
-  --td-danger: var(--tug-base-accent-danger);
-  --td-info: var(--tug-base-accent-info);
-
-  /* Chart tokens (runtime contract for stats-card.ts) -- unchanged */
-  --td-chart-1: var(--td-accent-5);  /* CPU/Memory - green */
-  --td-chart-2: var(--td-accent-2);  /* Token Usage - cyan */
-  --td-chart-3: var(--td-accent-6);  /* Build Status - yellow */
-  --td-chart-4: var(--td-accent-4);  /* reserved - red */
-  --td-chart-5: var(--td-accent-3);  /* reserved - purple */
-
-  /* Titlebar and icon tokens */
-  --td-header-active: var(--tug-base-card-header-bg-active);
-  --td-header-inactive: var(--tug-base-card-header-bg-inactive);
-  --td-icon-active: var(--tug-base-card-header-icon-active);
-  --td-icon-inactive: var(--tug-base-card-header-icon-inactive);
-  --td-grid-color: var(--tug-base-canvas-grid-line);
-
-  /* Card focus tokens */
-  --td-card-shadow-active: var(--tug-base-card-shadow-active);
-  --td-card-shadow-inactive: var(--tug-base-card-shadow-inactive);
-  --td-card-dim-overlay: var(--tug-base-card-dim-overlay);
-
-  /* Selection tokens */
-  --td-selection-bg: var(--tug-base-selection-bg);
-  --td-selection-text: var(--tug-base-selection-fg);
-
-  /* Border, depth, utility tokens */
-  --td-border: var(--tug-base-border-default);
-  --td-border-soft: var(--tug-base-border-muted);
-  --td-shadow-soft: var(--tug-base-shadow-sm);
-  --td-depth-raise: var(--tug-base-shadow-card-active);
-
-  /* Spacing tokens */
-  --td-space-1: var(--tug-base-space-2xs);
-  --td-space-2: var(--tug-base-space-xs);
-  --td-space-3: var(--tug-base-space-sm);
-  --td-space-4: var(--tug-base-space-md);
-  --td-space-5: var(--tug-base-space-lg);
-  --td-space-6: var(--tug-base-space-xl);
-  --td-radius-xs: var(--tug-base-radius-xs);
-  --td-radius-sm: var(--tug-base-radius-sm);
-  --td-radius-md: var(--tug-base-radius-md);
-  --td-radius-lg: var(--tug-base-radius-lg);
-
-  /* Typography tokens */
-  --td-font-sans: var(--tug-base-font-family-sans);
-  --td-font-mono: var(--tug-base-font-family-mono);
-  --td-line-tight: var(--tug-base-line-height-tight);
-  --td-line-normal: var(--tug-base-line-height-normal);
-
-  /* Syntax highlighting tokens */
-  --td-syntax-keyword: var(--tug-base-syntax-keyword);
-  --td-syntax-string: var(--tug-base-syntax-string);
-  --td-syntax-number: var(--tug-base-syntax-number);
-  --td-syntax-function: var(--tug-base-syntax-function);
-  --td-syntax-type: var(--tug-base-syntax-type);
-  --td-syntax-variable: var(--tug-base-syntax-variable);
-  --td-syntax-comment: var(--tug-base-syntax-comment);
-  --td-syntax-operator: var(--tug-base-syntax-operator);
-  --td-syntax-punctuation: var(--tug-base-syntax-punctuation);
-  --td-syntax-constant: var(--tug-base-syntax-constant);
-  --td-syntax-decorator: var(--tug-base-syntax-decorator);
-  --td-syntax-tag: var(--tug-base-syntax-tag);
-  --td-syntax-attribute: var(--tug-base-syntax-attribute);
-
-  /* Shiki CSS variable bridge tokens (forward compatibility) */
-  --syntax-foreground: var(--td-text);
-  --syntax-background: var(--td-surface-control);
-  --syntax-token-keyword: var(--td-syntax-keyword);
-  --syntax-token-string: var(--td-syntax-string);
-  --syntax-token-comment: var(--td-syntax-comment);
-  --syntax-token-function: var(--td-syntax-function);
-  --syntax-token-constant: var(--td-syntax-constant);
-  --syntax-token-punctuation: var(--td-syntax-punctuation);
-  --syntax-token-parameter: var(--td-syntax-variable);
-  --syntax-token-string-expression: var(--td-syntax-string);
-  --syntax-token-link: var(--td-syntax-keyword);
-
-  /* Legacy syntax aliases */
-  --syntax-keyword: var(--td-syntax-keyword);
-  --syntax-string: var(--td-syntax-string);
-  --syntax-number: var(--td-syntax-number);
-  --syntax-function: var(--td-syntax-function);
-  --syntax-type: var(--td-syntax-type);
-  --syntax-variable: var(--td-syntax-variable);
-  --syntax-comment: var(--td-syntax-comment);
-  --syntax-operator: var(--td-syntax-operator);
-  --syntax-punctuation: var(--td-syntax-punctuation);
-  --syntax-constant: var(--td-syntax-constant);
-  --syntax-decorator: var(--td-syntax-decorator);
-  --syntax-tag: var(--td-syntax-tag);
-  --syntax-attribute: var(--td-syntax-attribute);
+  /* Shiki CSS variable bridge tokens (Spec S01) */
+  --syntax-foreground: var(--tug-base-fg-default);
+  --syntax-background: var(--tug-base-surface-control);
+  --syntax-token-keyword: var(--tug-base-syntax-keyword);
+  --syntax-token-string: var(--tug-base-syntax-string);
+  --syntax-token-comment: var(--tug-base-syntax-comment);
+  --syntax-token-function: var(--tug-base-syntax-function);
+  --syntax-token-constant: var(--tug-base-syntax-constant);
+  --syntax-token-punctuation: var(--tug-base-syntax-punctuation);
+  --syntax-token-parameter: var(--tug-base-syntax-variable);
+  --syntax-token-string-expression: var(--tug-base-syntax-string);
+  --syntax-token-link: var(--tug-base-syntax-keyword);
 }
 
 /* ============================================================================
@@ -333,14 +129,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--td-border);
+  background: var(--tug-base-border-default);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--td-border-soft);
+  background: var(--tug-base-border-muted);
   border: 2px solid transparent;
   background-clip: padding-box;
 }

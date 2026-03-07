@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-07T19:51:03Z
+---
+
+## step-6: Deleted all --tways-* palette declarations and --td-* aliases from tokens.css/bluenote.css/harmony.css; rewired Shiki bridge and chart aliases to --tug-base-*; updated comments in tug-tokens.css and brio.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-5
 date: 2025-03-07T19:38:37Z
 ---
