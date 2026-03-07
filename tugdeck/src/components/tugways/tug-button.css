@@ -99,11 +99,13 @@
   filter: brightness(0.8) saturate(1.2);
 }
 
-/* Transition for smooth hover/active */
+/* Transition for smooth hover/active; component-level scale via CSS transform */
 .tug-button-primary,
 .tug-button-secondary,
 .tug-button-ghost,
 .tug-button-destructive {
+  transform: scale(var(--tug-comp-button-scale));
+  transform-origin: center center;
   transition:
     background-color var(--td-duration-fast) var(--td-easing-standard),
     border-color var(--td-duration-fast) var(--td-easing-standard),

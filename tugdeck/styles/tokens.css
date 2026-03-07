@@ -184,6 +184,11 @@ body {
   --td-easing-enter: cubic-bezier(0, 0, 0, 1);
   --td-easing-exit: cubic-bezier(0.2, 0, 1, 1);
 
+  /* Component-level scale tokens (default 1 = identity; applied via CSS transform: scale()) */
+  --tug-comp-button-scale: 1;
+  --tug-comp-tab-scale: 1;
+  --tug-comp-dock-scale: 1; /* forward-declared; no dock component consumer in this phase */
+
   /* Tier 2: Semantic Tokens (--td-* mapped to --tways-*) */
   /* Surface tokens (Table T01) */
   --td-bg: var(--tways-bg);

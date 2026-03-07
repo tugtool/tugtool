@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-07T04:19:14Z
+---
+
+## step-4: Added --tug-comp-button-scale, --tug-comp-tab-scale, --tug-comp-dock-scale to tokens.css. Added CSS transform: scale() to tug-button variant selector and .tug-tab-bar with appropriate transform-origin values.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-3
 date: 2025-03-07T04:16:00Z
 ---
