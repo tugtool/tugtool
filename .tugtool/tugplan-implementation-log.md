@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-07T17:40:42Z
+---
+
+## step-6: Created tug-comp-tokens.css with 82 --tug-comp-* tokens for button, tab-bar, card, dropdown families. All resolve from --tug-base-* via var(). Added @import in globals.css. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-5
 date: 2025-03-07T17:36:22Z
 ---

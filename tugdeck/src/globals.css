@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
 @import "../styles/tug-tokens.css";
+@import "../styles/tug-comp-tokens.css";
 
 /*
  * shadcn CSS variable bridge is already defined in tokens.css
