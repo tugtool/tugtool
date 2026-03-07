@@ -1,7 +1,7 @@
 /**
- * TugTabBar styles -- tugways-specific CSS using var(--td-*) tokens.
+ * TugTabBar styles -- tugways-specific CSS using --tug-comp-tab-* and --tug-base-* tokens.
  *
- * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugTabBar re-paints without React re-renders.
  *
@@ -23,7 +23,7 @@
 
 /* ============================================================================
    Tab Bar Container
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab-bar {
   display: flex;
@@ -33,8 +33,8 @@
   overflow-x: hidden;
   overflow-y: hidden;
   height: 28px;
-  background-color: var(--td-surface-tab);
-  border-bottom: 1px solid var(--td-border);
+  background-color: var(--tug-comp-tab-bar-bg);
+  border-bottom: 1px solid var(--tug-base-border-default);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
      relative to the tab bar (Spec S06). */
@@ -43,7 +43,7 @@
 
 /* ============================================================================
    Tab Buttons
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab {
   display: inline-flex;
@@ -57,37 +57,37 @@
   border: none;
   border-bottom: 2px solid transparent;
   background-color: transparent;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-size: 0.75rem;
-  font-family: var(--td-font-sans);
+  font-family: var(--tug-base-font-family-sans);
   cursor: default;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
   position: relative;
   transition:
-    background-color var(--td-duration-fast) var(--td-easing-standard),
-    color var(--td-duration-fast) var(--td-easing-standard);
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 /* Active tab (Table T01) */
 .tug-tab[data-active="true"] {
-  background-color: var(--td-surface);
-  color: var(--td-text);
-  border-bottom-color: var(--td-accent);
+  background-color: var(--tug-comp-tab-bg-active);
+  color: var(--tug-comp-tab-fg-active);
+  border-bottom-color: var(--tug-comp-tab-underline-active);
 }
 
 /* Inactive tab hover (Table T01) */
 .tug-tab:not([data-active="true"]):hover {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 /* ============================================================================
    Tab Overflow States (Phase 5b4)
    Spec S03: DOM data attributes for overflow state
    [D02] Imperative DOM attribute application
-   ========================================================================= */
+   ============================================================================ */
 
 /* Stage 1 collapse: hide title and close button so only the icon remains.
    Uses display: none (not visibility: hidden) to remove them from flex layout,
@@ -108,7 +108,7 @@
 
 /* ============================================================================
    Tab Icon
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab-icon {
   display: inline-flex;
@@ -120,7 +120,7 @@
 
 /* ============================================================================
    Tab Title
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab-title {
   flex: 1;
@@ -132,7 +132,7 @@
 
 /* ============================================================================
    Close Button (per Table T01)
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab-close {
   display: inline-flex;
@@ -151,8 +151,8 @@
   cursor: default;
   user-select: none;
   opacity: 0;
-  transition: opacity var(--td-duration-fast) var(--td-easing-standard),
-    background-color var(--td-duration-fast) var(--td-easing-standard);
+  transition: opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 /* Close button always visible on active tab (Table T01) */
@@ -167,13 +167,13 @@
 
 /* Close button hover state */
 .tug-tab-close:hover {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 /* ============================================================================
    Add Tab [+] Button
-   ========================================================================= */
+   ============================================================================ */
 
 .tug-tab-add {
   display: inline-flex;
@@ -184,7 +184,7 @@
   flex-shrink: 0;
   border: none;
   background-color: transparent;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-size: 1rem;
   line-height: 1;
   /* Shift the + glyph up slightly to correct its optical baseline offset */
@@ -193,20 +193,20 @@
   cursor: default;
   user-select: none;
   transition:
-    background-color var(--td-duration-fast) var(--td-easing-standard),
-    color var(--td-duration-fast) var(--td-easing-standard);
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 .tug-tab-add:hover {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 /* ============================================================================
    Overflow Dropdown Button (Phase 5b4)
    Spec S04: Overflow button markup
    [D06] Overflow dropdown button with badge count
-   ========================================================================= */
+   ============================================================================ */
 
 /* Overflow trigger button -- appears between the last visible tab and [+].
    Shown only when overflowIds.length > 0 (rendered conditionally by React).
@@ -220,19 +220,19 @@
   flex-shrink: 0;
   border: none;
   background-color: transparent;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-size: 0.75rem;
-  font-family: var(--td-font-sans);
+  font-family: var(--tug-base-font-family-sans);
   cursor: default;
   user-select: none;
   transition:
-    background-color var(--td-duration-fast) var(--td-easing-standard),
-    color var(--td-duration-fast) var(--td-easing-standard);
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 .tug-tab-overflow-btn:hover {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 /* Badge showing the count of overflow tabs (e.g., "+3"). */
@@ -244,8 +244,8 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background-color: var(--td-accent);
-  color: var(--td-surface);
+  background-color: var(--tug-comp-tab-badge-bg);
+  color: var(--tug-base-surface-default);
   font-size: 0.65rem;
   font-weight: 600;
   line-height: 1;
@@ -255,7 +255,7 @@
 /* ============================================================================
    Tab Drag Visual Feedback (Phase 5b2)
    Spec S05: Ghost Tab, Spec S06: Insertion Indicator, Spec S07: Drop-Target
-   ========================================================================= */
+   ============================================================================ */
 
 /* Ghost tab -- imperatively created DOM element appended to #deck-container.
    Follows the pointer during drag. z-index 5000 = GHOST_TAB_ZINDEX, above
@@ -268,15 +268,15 @@
   gap: 4px;
   padding: 0 8px;
   height: 28px;
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   opacity: 0.7;
   pointer-events: none;
   font-size: 0.75rem;
-  font-family: var(--td-font-sans);
-  color: var(--td-text);
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
   user-select: none;
   white-space: nowrap;
 }
@@ -288,15 +288,15 @@
   top: 0;
   width: 2px;
   height: 100%;
-  background-color: var(--td-accent);
+  background-color: var(--tug-comp-tab-insertIndicator);
   pointer-events: none;
-  transition: left var(--td-duration-fast) var(--td-easing-standard);
+  transition: left var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 /* Drop-target highlight on multi-tab card tab bars. [Spec S07] */
 .tug-tab-bar[data-drop-target="true"] {
-  background-color: var(--td-surface-control);
-  border-bottom-color: var(--td-accent);
+  background-color: var(--tug-base-surface-control);
+  border-bottom-color: var(--tug-base-accent-default);
 }
 
 /* Drop-target highlight on single-tab card accessory divs.
@@ -304,11 +304,11 @@
    [D05, Spec S07] */
 .tugcard-accessory[data-drop-target="true"] {
   min-height: 28px;
-  background-color: var(--td-surface-control);
-  border-bottom: 2px solid var(--td-accent);
+  background-color: var(--tug-base-surface-control);
+  border-bottom: 2px solid var(--tug-base-accent-default);
   transition:
-    min-height var(--td-duration-fast) var(--td-easing-standard),
-    background-color var(--td-duration-fast) var(--td-easing-standard);
+    min-height var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 /* Dim the source tab during drag so the user sees the ghost as the dragged item.
@@ -322,12 +322,12 @@
    Applied imperatively via data-card-drag-target="true" by CardFrame's
    drag handler during a card drag over another card's tab bar.
    Appearance changes go through CSS and DOM, never React state. [Rule 4]
-   ========================================================================= */
+   ============================================================================ */
 
 /* Highlight the target tab bar when a card frame is dragged over it. */
 .tug-tab-bar[data-card-drag-target="true"] {
-  background-color: var(--td-surface-control);
-  border-bottom-color: var(--td-accent);
-  outline: 2px solid var(--td-accent);
+  background-color: var(--tug-base-surface-control);
+  border-bottom-color: var(--tug-base-accent-default);
+  outline: 2px solid var(--tug-base-accent-default);
   outline-offset: -2px;
 }

@@ -1,7 +1,7 @@
 /**
  * Tugcard styles.
  *
- * All colors use verified --td-* semantic tokens from tokens.css.
+ * All colors use --tug-comp-card-* and --tug-base-* semantic tokens.
  * No hardcoded hex values, no raw Tailwind color classes.
  *
  * Spec S07: Tugcard internal layout (flex column).
@@ -19,9 +19,9 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-md);
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-comp-card-border);
+  border-radius: var(--tug-base-radius-md);
   overflow: hidden;
 }
 
@@ -36,7 +36,7 @@
   height: 28px;
   min-height: 28px;
   padding: 0 8px;
-  background-color: var(--td-header-inactive);
+  background-color: var(--tug-comp-card-header-bg-inactive);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -60,7 +60,7 @@
  * which is the ancestor of the Tugcard.
  */
 .card-frame[data-focused="true"] .tugcard-header {
-  background-color: var(--td-header-active);
+  background-color: var(--tug-comp-card-header-bg-active);
 }
 
 .tugcard-header:active {
@@ -78,7 +78,7 @@
   white-space: nowrap;
   font-size: 12px;
   font-weight: 500;
-  color: var(--td-text);
+  color: var(--tug-comp-card-header-fg);
   pointer-events: none;
 }
 
@@ -97,11 +97,11 @@
 }
 
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--td-icon-active);
+  color: var(--tug-comp-card-header-icon-active);
 }
 
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--td-icon-inactive);
+  color: var(--tug-comp-card-header-icon-inactive);
 }
 
 /* ============================================================================
@@ -118,23 +118,23 @@
   margin-left: 4px;
   background: none;
   border: none;
-  border-radius: var(--td-radius-sm);
-  color: var(--td-text-soft);
+  border-radius: var(--tug-base-radius-sm);
+  color: var(--tug-comp-card-header-button-fg);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--td-duration-fast) var(--td-easing-standard),
-              color var(--td-duration-fast) var(--td-easing-standard);
+  transition: background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+              color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 .tugcard-close-btn:hover {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 .tugcard-close-btn:active {
-  background-color: var(--td-surface);
+  background-color: var(--tug-base-surface-default);
 }
 
 /* ============================================================================
@@ -147,8 +147,8 @@
  */
 .tugcard-accessory {
   flex-shrink: 0;
-  background-color: var(--td-surface);
-  border-bottom: 1px solid var(--td-border);
+  background-color: var(--tug-base-surface-default);
+  border-bottom: 1px solid var(--tug-comp-card-border);
 }
 
 .tugcard-accessory:empty {
@@ -162,15 +162,15 @@
 .tugcard-content {
   flex: 1;
   overflow: auto;
-  background-color: var(--td-surface);
+  background-color: var(--tug-base-surface-default);
   min-height: 0; /* needed for flex children to allow scroll */
   user-select: text;
   overscroll-behavior: contain;
 }
 
 .tugcard-content ::selection {
-  background-color: var(--td-selection-bg);
-  color: var(--td-selection-text);
+  background-color: var(--tug-base-selection-bg);
+  color: var(--tug-base-selection-fg);
 }
 
 [data-td-select="none"] {
@@ -190,6 +190,6 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--td-text-soft);
+  color: var(--tug-base-fg-muted);
   font-size: 12px;
 }

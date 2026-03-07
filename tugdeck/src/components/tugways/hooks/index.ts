@@ -14,7 +14,7 @@
  *
  * function MyComponent() {
  *   const ref = useRef<HTMLDivElement>(null);
- *   useCSSVar(ref, "--td-accent", isActive ? "var(--td-accent)" : "var(--td-accent-cool)");
+ *   useCSSVar(ref, "--tug-base-accent-default", isActive ? "var(--tug-base-accent-default)" : "var(--tug-base-accent-cool-default)");
  *   useDOMClass(ref, "is-highlighted", isHighlighted);
  *   useDOMStyle(ref, "border-width", isThick ? "3px" : "1px");
  *   return <div ref={ref} />;

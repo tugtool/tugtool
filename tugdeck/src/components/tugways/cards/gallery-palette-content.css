@@ -3,7 +3,7 @@
  *
  * Styles for the HueVibVal canonical color tuning editor.
  * Builds on the cg-* class patterns from gallery-card.css.
- * All color tokens use var(--td-*) semantic tokens exclusively.
+ * All color tokens use --tug-base-* semantic tokens exclusively.
  */
 
 /* ============================================================================
@@ -27,11 +27,11 @@
 
 .gp-action-btn {
   font-size: 11px;
-  font-family: var(--td-font-sans);
-  color: var(--td-text);
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
   padding: 4px 10px;
   cursor: pointer;
   user-select: none;
@@ -39,7 +39,7 @@
 }
 
 .gp-action-btn:hover {
-  background-color: var(--td-surface);
+  background-color: var(--tug-base-surface-default);
 }
 
 /* ============================================================================
@@ -49,12 +49,12 @@
 .gp-import-error {
   font-size: 11px;
   color: #cc3333;
-  font-family: var(--td-font-sans);
+  font-family: var(--tug-base-font-family-sans);
   margin-top: 4px;
   padding: 4px 6px;
   background-color: #fff0f0;
   border: 1px solid #ffcccc;
-  border-radius: var(--td-radius-xs);
+  border-radius: var(--tug-base-radius-xs);
 }
 
 /* ============================================================================
@@ -79,7 +79,7 @@
 }
 
 .gp-canonical-item--selected .gp-canonical-swatch {
-  outline: 2px solid var(--td-accent, #0066cc);
+  outline: 2px solid var(--tug-base-accent-default);
   outline-offset: 1px;
 }
 
@@ -92,7 +92,7 @@
 }
 
 .gp-canonical-swatch:hover {
-  border-color: var(--td-border);
+  border-color: var(--tug-base-border-default);
 }
 
 .gp-canonical-label {
@@ -100,8 +100,8 @@
   top: 100%;
   left: 50%;
   font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
   user-select: none;
   white-space: nowrap;
   transform: rotate(62deg);
@@ -110,7 +110,7 @@
 }
 
 .gp-canonical-item--selected .gp-canonical-label {
-  color: var(--td-accent, #0066cc);
+  color: var(--tug-base-accent-default);
   font-weight: 600;
 }
 
@@ -129,19 +129,19 @@
 
 .gp-curve-axis-label {
   font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  fill: var(--td-text-soft, #888);
+  font-family: var(--tug-base-font-family-mono);
+  fill: var(--tug-base-fg-muted);
 }
 
 .gp-curve-hue-label {
   font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  fill: var(--td-text-soft, #888);
+  font-family: var(--tug-base-font-family-mono);
+  fill: var(--tug-base-fg-muted);
   user-select: none;
 }
 
 .gp-curve-hue-label--selected {
-  fill: var(--td-accent, #0066cc);
+  fill: var(--tug-base-accent-default);
   font-weight: 600;
 }
 
@@ -172,8 +172,8 @@
   flex-shrink: 0;
   text-align: center;
   font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
   user-select: none;
 }
 
@@ -183,8 +183,8 @@
   text-align: right;
   padding-right: 4px;
   font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
   user-select: none;
 }
 
@@ -196,6 +196,6 @@
 }
 
 .gp-vvgrid-cell--canonical {
-  outline: 2px solid var(--td-accent, #0066cc);
+  outline: 2px solid var(--tug-base-accent-default);
   outline-offset: 1px;
 }

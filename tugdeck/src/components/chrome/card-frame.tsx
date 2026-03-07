@@ -41,7 +41,7 @@ let nextFlashId = 0;
 // Shadow extension constant [Spec S02]
 //
 // px beyond border-box for exterior edges in clip-path: inset().
-// Derived from --td-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
+// Derived from --tug-base-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
 // 20px = blur(8) * 2 + offset(2) + margin — generous enough to show full shadow.
 // ---------------------------------------------------------------------------
 
@@ -1655,7 +1655,7 @@ export function flashSetPerimeter(
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", svgPath);
   path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "var(--td-accent)");
+  path.setAttribute("stroke", "var(--tug-base-accent-default)");
   path.setAttribute("stroke-width", "3");
   path.setAttribute("filter", `url(#set-flash-glow-${uid})`);
   svg.appendChild(path);

@@ -1,7 +1,7 @@
 /**
- * TugButton styles -- tugways-specific CSS using var(--td-*) tokens.
+ * TugButton styles -- tugways-specific CSS using --tug-comp-button-* and --tug-base-* tokens.
  *
- * All colors reference --td-* semantic tokens exclusively. No hardcoded
+ * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugButton re-paints without React re-renders.
  *
@@ -18,7 +18,7 @@
  * Ghost variant intentionally has no border.
  */
 .tug-button-bordered {
-  border: 1px solid var(--td-border);
+  border: 1px solid var(--tug-base-border-default);
 }
 
 /* Ghost variant: invisible border so it occupies the same space as bordered variants */
@@ -26,21 +26,21 @@
   border: 1px solid transparent;
 }
 
-/* Primary variant: accent-2 fill with inverse text */
+/* Primary variant: accent-cool fill with inverse text (cyan, #35bcff) */
 .tug-button-primary {
-  background-color: var(--td-accent-2);
-  color: var(--td-text-inverse);
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-fg-inverse);
 }
 
 /* Destructive variant: bold red fill with white text */
 .tug-button-destructive {
-  background-color: var(--td-danger);
-  color: var(--td-text-inverse);
+  background-color: var(--tug-base-accent-danger);
+  color: var(--tug-base-fg-inverse);
 }
 
 /* Destructive variant: red-tinted border to communicate caution */
 .tug-button-destructive.tug-button-bordered {
-  border-color: var(--td-danger);
+  border-color: var(--tug-base-accent-danger);
 }
 
 /* ============================================================================
@@ -52,30 +52,30 @@
  * with CSS custom property color values. Override with explicit hover styles
  * using semantic tokens.
  *
- * Ghost variant uses var(--td-surface-control) instead of shadcn's
- * hover:bg-accent (which resolves to --td-accent-cool cyan via the bridge).
+ * Ghost variant uses --tug-base-surface-control instead of shadcn's
+ * hover:bg-accent (which resolves to accent-cool cyan via the bridge).
  *
  * [aria-disabled='true'] guard: chain-action disabled buttons stay visually
  * inert on hover -- no filter, background, or border-color changes.
  */
 .tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.25) saturate(1.1);
-  border-color: var(--td-border-soft);
+  border-color: var(--tug-base-border-muted);
 }
 
 .tug-button-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--td-surface);
-  border-color: var(--td-border-soft);
+  background-color: var(--tug-base-surface-default);
+  border-color: var(--tug-base-border-muted);
 }
 
 .tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--td-surface-control);
-  color: var(--td-text);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
 }
 
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.25) saturate(1.1);
-  border-color: var(--td-danger);
+  border-color: var(--tug-base-accent-danger);
 }
 
 /* ============================================================================
@@ -87,12 +87,12 @@
 }
 
 .tug-button-secondary:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--td-surface-control);
-  border-color: var(--td-border);
+  background-color: var(--tug-base-surface-control);
+  border-color: var(--tug-base-border-default);
 }
 
 .tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--td-surface);
+  background-color: var(--tug-base-surface-default);
 }
 
 .tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
@@ -105,9 +105,9 @@
 .tug-button-ghost,
 .tug-button-destructive {
   transition:
-    background-color var(--td-duration-fast) var(--td-easing-standard),
-    border-color var(--td-duration-fast) var(--td-easing-standard),
-    filter var(--td-duration-fast) var(--td-easing-standard);
+    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    border-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
+    filter var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 /* ============================================================================
@@ -184,15 +184,15 @@
 }
 
 .tug-button-state-on .tug-button-state-indicator {
-  background-color: var(--td-accent);
+  background-color: var(--tug-base-accent-default);
 }
 
 .tug-button-state-off .tug-button-state-indicator {
-  background-color: var(--td-border);
+  background-color: var(--tug-base-border-default);
 }
 
 .tug-button-state-mixed .tug-button-state-indicator {
-  background-color: var(--td-text-soft);
+  background-color: var(--tug-base-fg-muted);
 }
 
 /* ============================================================================
@@ -219,7 +219,7 @@
   border: 2px solid transparent;
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: tug-button-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
+  animation: tug-button-spin var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard) infinite;
 }
 
 @keyframes tug-button-spin {

@@ -3,7 +3,7 @@
  * Retains rules that are clearer as CSS than Tailwind utilities:
  * resize handle hit areas, snap guide borders, virtual sash hover, flash keyframes.
  * All other chrome styles are Tailwind utilities on React components.
- * Replaces cards-chrome.css (404 lines, now deleted). Uses --td-* tokens from tokens.css.
+ * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-base-* tokens from tug-tokens.css.
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
@@ -19,16 +19,16 @@
 
 /* ---- Card shadow: inactive by default, active when focused ---- */
 .tugcard {
-  box-shadow: var(--td-card-shadow-inactive);
+  box-shadow: var(--tug-base-card-shadow-inactive);
 }
 
 .card-frame[data-focused="true"] .tugcard {
-  box-shadow: var(--td-card-shadow-active);
+  box-shadow: var(--tug-base-card-shadow-active);
 }
 
 /* ---- Card focus: border-radius on focused, dim overlay on unfocused ---- */
 .card-frame[data-focused="true"] {
-  border-radius: var(--td-radius-md);
+  border-radius: var(--tug-base-radius-md);
 }
 
 .card-frame[data-focused="false"] {
@@ -39,20 +39,20 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--td-card-dim-overlay);
-  border-radius: var(--td-radius-md);
+  background: var(--tug-base-card-dim-overlay);
+  border-radius: var(--tug-base-radius-md);
   pointer-events: none;
   z-index: 2;
 }
 
 /* ---- Snap guide lines ---- */
 .snap-guide-line   { position: absolute; pointer-events: none; z-index: 9990; }
-.snap-guide-line-x { border-left: 1px dashed var(--td-accent-cool); width: 0; top: 0; bottom: 0; }
-.snap-guide-line-y { border-top: 1px dashed var(--td-accent-cool); height: 0; left: 0; right: 0; }
+.snap-guide-line-x { border-left: 1px dashed var(--tug-base-accent-cool-default); width: 0; top: 0; bottom: 0; }
+.snap-guide-line-y { border-top: 1px dashed var(--tug-base-accent-cool-default); height: 0; left: 0; right: 0; }
 
 /* ---- Virtual sash ---- */
 .virtual-sash          { position: absolute; z-index: 9950; background: transparent; }
-.virtual-sash:hover    { background: color-mix(in srgb, var(--td-text) 8%, transparent); }
+.virtual-sash:hover    { background: color-mix(in srgb, var(--tug-base-fg-default) 8%, transparent); }
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
@@ -84,11 +84,11 @@
   position: absolute;
   inset: -1px; /* extend over panel's 1px border so adjacent overlays share edges */
   pointer-events: none;
-  border: 3px solid var(--td-accent);
+  border: 3px solid var(--tug-base-accent-default);
   border-radius: inherit;
   box-shadow:
-    0 0 5px color-mix(in srgb, var(--td-accent) 60%, transparent),
-    inset 0 0 16px color-mix(in srgb, var(--td-accent) 20%, transparent);
+    0 0 5px color-mix(in srgb, var(--tug-base-accent-default) 60%, transparent),
+    inset 0 0 16px color-mix(in srgb, var(--tug-base-accent-default) 20%, transparent);
   animation: set-flash-fade 0.5s ease-out forwards;
   z-index: 2;
   box-sizing: border-box;

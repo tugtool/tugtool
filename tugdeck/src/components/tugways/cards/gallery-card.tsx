@@ -426,7 +426,7 @@ export function GalleryChainActionsContent() {
  * without further React reconciliation.
  *
  * Hooks used:
- * - useCSSVar: swaps --demo-bg between two --td-* color tokens
+ * - useCSSVar: swaps --demo-bg between two --tug-base-* color tokens
  * - useDOMClass: adds/removes the "demo-highlighted" class
  * - useDOMStyle: swaps border-width between "1px" and "3px"
  *
@@ -440,7 +440,7 @@ export function MutationModelDemo() {
   const [classOn, setClassOn] = useState(false);
   const [styleOn, setStyleOn] = useState(false);
 
-  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--td-accent)" : "var(--td-surface)");
+  useCSSVar(boxRef, "--demo-bg", varOn ? "var(--tug-base-accent-default)" : "var(--tug-base-surface-default)");
   useDOMClass(boxRef, "demo-highlighted", classOn);
   useDOMStyle(boxRef, "border-width", styleOn ? "3px" : "1px");
 

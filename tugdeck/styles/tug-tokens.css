@@ -4,7 +4,7 @@
  * Defines the --tug-base-* semantic token layer (source of truth).
  *
  * Import order (enforced in globals.css):
- *   1. tokens.css       — Tier 1 palette (--tways-*), motion durations, global multipliers
+ *   1. tokens.css       — Motion durations, global multipliers, Shiki bridge
  *   2. tug-tokens.css   — Tier 2 base tokens (--tug-base-*) [this file]
  *   3. tug-comp-tokens.css — Tier 3 component tokens (--tug-comp-*)
  *
@@ -70,15 +70,14 @@ body {
   --tug-base-focus-ring-offset: #1c1e22;
 
   /* --- Elevation / Overlay --- */
-  /* --tug-base-shadow-sm maps from --td-shadow-soft / --tways-shadow-soft */
+  /* --tug-base-shadow-sm: Brio default shadow opacity */
   --tug-base-shadow-xs: rgba(0, 0, 0, 0.2);
   --tug-base-shadow-sm: rgba(0, 0, 0, 0.5);
   --tug-base-shadow-md: rgba(0, 0, 0, 0.6);
   --tug-base-shadow-lg: rgba(0, 0, 0, 0.7);
   --tug-base-shadow-xl: rgba(0, 0, 0, 0.8);
-  /* --tug-base-shadow-card-active maps from --td-depth-raise / --tways-depth-raise.
-     Uses var(--tug-base-shadow-sm) per [D10] to preserve dynamic per-theme resolution
-     without requiring per-theme overrides of this compound token. */
+  /* --tug-base-shadow-card-active uses var(--tug-base-shadow-sm) per [D10] to preserve
+     dynamic per-theme resolution without requiring per-theme overrides of this compound token. */
   --tug-base-shadow-card-active: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px var(--tug-base-shadow-sm);
   --tug-base-shadow-card-inactive: 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   --tug-base-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -104,7 +103,7 @@ body {
   --tug-base-line-height-lg: 24px;
   --tug-base-line-height-xl: 28px;
   --tug-base-line-height-2xl: 32px;
-  /* Backward-compatibility unitless ratio tokens (for --td-line-tight / --td-line-normal aliases) */
+  /* Unitless ratio tokens for line-height */
   --tug-base-line-height-tight: 1.2;
   --tug-base-line-height-normal: 1.45;
 
@@ -192,8 +191,7 @@ body {
      === C. Selection / Highlight / Preview
      ====================================================================== */
 
-  /* --tug-base-selection-bg maps from --td-selection-bg.
-     Uses literal hex from accent-cool (not var()) per [D08].
+  /* --tug-base-selection-bg uses literal hex from accent-cool (not var()) per [D08].
      Theme overrides must update this with their theme-specific accent-cool value. */
   --tug-base-selection-bg: color-mix(in srgb, #35bcff 40%, transparent);
   --tug-base-selection-fg: #e6eaee;
@@ -211,15 +209,13 @@ body {
   /* --- Card --- */
   --tug-base-card-bg: #2b2e35;
   --tug-base-card-border: #5e656e;
-  /* --tug-base-card-shadow-active and -inactive map from --td-card-shadow-active/inactive */
+  /* --tug-base-card-shadow-active and -inactive: Brio default card elevation values */
   --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.4);
   --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.2);
   --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.15);
 
   /* --- Card Header --- */
-  /* Fallback values from tokens.css: --tways-header-active, --tways-header-inactive,
-     --tways-icon-active, --tways-icon-inactive are NOT defined in the Brio body block
-     in tokens.css — so the fallback literals below are the actual Brio values. */
+  /* Card header Brio defaults: literal hex values for zero-visual-regression. */
   --tug-base-card-header-bg-active: #44474c;
   --tug-base-card-header-bg-inactive: #34373c;
   --tug-base-card-header-bg-collapsed: #2e3138;
@@ -278,7 +274,7 @@ body {
   --tug-base-dock-button-badge-bg: #ff5a72;
   --tug-base-dock-button-badge-fg: #f2f7fb;
   --tug-base-dock-button-insertIndicator: #35bcff;
-  /* --tug-base-canvas-grid-line maps from --td-grid-color */
+  /* --tug-base-canvas-grid-line: Brio default grid line opacity */
   --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.05);
   --tug-base-canvas-grid-emphasis: rgba(255, 255, 255, 0.1);
   --tug-base-snap-guide: rgba(53, 188, 255, 0.6);
@@ -487,7 +483,7 @@ body {
   --tug-base-stat-trend-negative: #ff5a72;
   --tug-base-stat-trend-neutral: #7b828c;
 
-  /* --- Chart Series (literal Brio hex values matching --tways-accent-* per [D08]) --- */
+  /* --- Chart Series (literal Brio hex values per [D08]) --- */
   --tug-base-chart-series-warm: #ff8a38;
   --tug-base-chart-series-cool: #35bcff;
   --tug-base-chart-series-violet: #b08aff;
@@ -520,7 +516,7 @@ body {
      ====================================================================== */
 
   /* --- Syntax ---
-     Accent-derived tokens: literal Brio hex values sourced from --tways-accent-* per [D08].
+     Accent-derived tokens: literal Brio hex values per [D08].
      Text-derived tokens: var() references to --tug-base-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
   --tug-base-syntax-keyword: #35bcff;
@@ -546,7 +542,7 @@ body {
   --tug-base-terminal-cursor: #ff8a38;
   --tug-base-terminal-selection-bg: rgba(53, 188, 255, 0.3);
   --tug-base-terminal-border: #3a3e46;
-  /* ANSI color palette — derived from existing --tways-accent-* and standard ANSI values */
+  /* ANSI color palette — Brio hex values matching canonical accent and standard ANSI values */
   --tug-base-terminal-ansi-black: #282b32;
   --tug-base-terminal-ansi-red: #ff5a72;
   --tug-base-terminal-ansi-green: #72ce8f;

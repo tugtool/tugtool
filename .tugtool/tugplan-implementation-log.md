@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-07T20:04:02Z
+---
+
+## step-8: Integration checkpoint: restored --chart-1 through --chart-5 aliases wired to --tug-base-chart-series-*; verified zero --td-* and --tways-* references; build and CI script pass
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-7
+date: 2025-03-07T19:55:17Z
+---
+
+## step-7: Created check-legacy-tokens.sh CI script that greps for --td-*, --tways-*, and short-name alias definitions with allowlist support
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-6
+date: 2025-03-07T19:51:03Z
+---
+
+## step-6: Deleted all --tways-* palette declarations and --td-* aliases from tokens.css/bluenote.css/harmony.css; rewired Shiki bridge and chart aliases to --tug-base-*; updated comments in tug-tokens.css and brio.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-5
+date: 2025-03-07T19:38:37Z
+---
+
+## step-5: Deleted short-name shadcn bridge aliases from tokens.css; rewrote @theme block in globals.css to reference --tug-base-* tokens directly
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-4
+date: 2025-03-07T19:33:05Z
+---
+
+## step-4: Migrated 12 TypeScript files from --td-* to --tug-base-* tokens including inline SVG, style objects, JSDoc examples, test assertions, and UI labels
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-3
+date: 2025-03-07T19:24:57Z
+---
+
+## step-3: Migrated chrome.css from --td-* aliases to --tug-base-* tokens (12 replacements) with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-2
+date: 2025-03-07T19:20:53Z
+---
+
+## step-2: Migrated gallery-card.css, gallery-palette-content.css, globals.css body rules from --td-* aliases to --tug-base-* tokens with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
+step: step-1
+date: 2025-03-07T19:14:41Z
+---
+
+## step-1: Migrated tugcard.css, tug-button.css, tug-tab-bar.css, tug-dropdown.css from --td-* aliases to --tug-base-* and --tug-comp-* tokens with zero visual regression
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-7
 date: 2025-03-07T17:44:48Z
 ---
