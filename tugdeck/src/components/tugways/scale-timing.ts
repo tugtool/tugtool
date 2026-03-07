@@ -3,7 +3,7 @@
  *
  * Provides runtime access to the three global CSS custom properties defined on
  * :root in tokens.css:
- *   --tug-scale   continuous dimension multiplier (default 1)
+ *   --tug-zoom   continuous dimension multiplier (default 1)
  *   --tug-timing  continuous animation-duration multiplier (default 1)
  *   --tug-motion  binary motion toggle: 1 = on, 0 = off (default 1)
  *
@@ -13,9 +13,9 @@
  * set from first paint.
  */
 
-/** Read the current --tug-scale value from :root computed style. Returns 1 if unset or unparseable. */
-export function getTugScale(): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--tug-scale").trim();
+/** Read the current --tug-zoom value from :root computed style. Returns 1 if unset or unparseable. */
+export function getTugZoom(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--tug-zoom").trim();
   const value = parseFloat(raw);
   return isNaN(value) ? 1 : value;
 }

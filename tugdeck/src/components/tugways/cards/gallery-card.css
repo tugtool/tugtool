@@ -429,10 +429,7 @@
   font-weight: 600;
 }
 
-/* Live preview area: generous gap/padding to accommodate CSS transform scale()
-   layout-box caveat (visual size grows but layout box stays original size).
-   At high --tug-comp-button-scale values, buttons may visually overlap adjacent
-   elements; the 32px gap and 16px padding provide breathing room. */
+/* Live preview area for scale/timing demo buttons. */
 .cg-st-preview {
   display: flex;
   flex-direction: column;

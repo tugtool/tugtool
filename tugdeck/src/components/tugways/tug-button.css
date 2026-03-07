@@ -104,8 +104,6 @@
 .tug-button-secondary,
 .tug-button-ghost,
 .tug-button-destructive {
-  transform: scale(var(--tug-comp-button-scale));
-  transform-origin: top left;
   transition:
     background-color var(--td-duration-fast) var(--td-easing-standard),
     border-color var(--td-duration-fast) var(--td-easing-standard),

@@ -63,18 +63,19 @@
 
 .gp-canonical-strip {
   display: flex;
-  gap: 3px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  gap: 4px;
+  overflow: visible;
+  padding: 4px 4px 28px;
 }
 
 .gp-canonical-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
   cursor: pointer;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .gp-canonical-item--selected .gp-canonical-swatch {
@@ -83,7 +84,7 @@
 }
 
 .gp-canonical-swatch {
-  width: 26px;
+  width: 24px;
   height: 32px;
   border-radius: 3px;
   border: 1px solid transparent;
@@ -95,12 +96,17 @@
 }
 
 .gp-canonical-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
   font-size: 8px;
   font-family: var(--td-font-mono, monospace);
   color: var(--td-text-soft);
   user-select: none;
   white-space: nowrap;
-  text-align: center;
+  transform: rotate(60deg);
+  transform-origin: top left;
+  margin-top: 4px;
 }
 
 .gp-canonical-item--selected .gp-canonical-label {

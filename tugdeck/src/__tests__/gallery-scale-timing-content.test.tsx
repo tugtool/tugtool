@@ -4,7 +4,8 @@
  * Tests cover:
  * - GalleryScaleTimingContent renders without errors
  * - Scale slider is present with correct range and default value
- * - Moving scale slider (via React prop call) sets --tug-scale on :root
+ * - Scale slider sets --tug-zoom on :root via onCommit (pointer release)
+ * - Timing slider sets --tug-timing on :root continuously
  * - Motion toggle sets data-tug-motion="off" on body when unchecked
  *
  * Implementation note: happy-dom does not propagate fireEvent.change to React's
@@ -30,36 +31,40 @@ import { GalleryScaleTimingContent } from "@/components/tugways/cards/gallery-sc
 // only reliable way to test onChange side effects in this environment.
 // ---------------------------------------------------------------------------
 
-function invokeRangeOnChange(el: HTMLInputElement, value: string): void {
-  // Access the React internal fiber to retrieve the memoized props with onChange.
-  // The key is "__reactFiber$..." or "__reactProps$..." depending on React version.
+function getReactProps(el: HTMLElement): Record<string, unknown> | null {
   const key = Object.keys(el).find(
     (k) => k.startsWith("__reactProps$") || k.startsWith("__reactFiber$")
   );
-  if (!key) return;
+  if (!key) return null;
 
   const fiberOrProps = (el as unknown as Record<string, unknown>)[key];
 
-  // React 19 uses __reactProps$ which directly holds the props object.
-  let onChange: ((e: { target: { value: string } }) => void) | undefined;
   if (key.startsWith("__reactProps$")) {
-    const props = fiberOrProps as Record<string, unknown>;
-    onChange = props["onChange"] as typeof onChange;
-  } else {
-    // Traverse up the fiber chain to find memoizedProps.onChange
-    let fiber = fiberOrProps as { memoizedProps?: Record<string, unknown>; return?: unknown } | null;
-    while (fiber && !onChange) {
-      if (fiber.memoizedProps?.["onChange"]) {
-        onChange = fiber.memoizedProps["onChange"] as typeof onChange;
-      }
-      fiber = fiber.return as typeof fiber;
-    }
+    return fiberOrProps as Record<string, unknown>;
   }
 
+  // Traverse up the fiber chain to find memoizedProps
+  let fiber = fiberOrProps as { memoizedProps?: Record<string, unknown>; return?: unknown } | null;
+  while (fiber) {
+    if (fiber.memoizedProps) return fiber.memoizedProps;
+    fiber = fiber.return as typeof fiber;
+  }
+  return null;
+}
+
+function invokeRangeOnChange(el: HTMLInputElement, value: string): void {
+  const props = getReactProps(el);
+  const onChange = props?.["onChange"] as ((e: { target: { value: string } }) => void) | undefined;
   if (typeof onChange === "function") {
-    act(() => {
-      onChange!({ target: { value } });
-    });
+    act(() => { onChange!({ target: { value } }); });
+  }
+}
+
+function invokeRangeOnPointerUp(el: HTMLInputElement, value: string): void {
+  const props = getReactProps(el);
+  const onPointerUp = props?.["onPointerUp"] as ((e: { target: { value: string } }) => void) | undefined;
+  if (typeof onPointerUp === "function") {
+    act(() => { onPointerUp!({ target: { value } } as unknown as React.PointerEvent<HTMLInputElement>); });
   }
 }
 
@@ -70,12 +75,9 @@ function invokeRangeOnChange(el: HTMLInputElement, value: string): void {
 describe("GalleryScaleTimingContent – renders without errors", () => {
   afterEach(() => {
     cleanup();
-    document.documentElement.style.removeProperty("--tug-scale");
+    document.documentElement.style.removeProperty("--tug-zoom");
     document.documentElement.style.removeProperty("--tug-timing");
     document.documentElement.style.removeProperty("--tug-motion");
-    document.body.style.removeProperty("--tug-comp-button-scale");
-    document.body.style.removeProperty("--tug-comp-tab-scale");
-    document.body.style.removeProperty("--tug-comp-dock-scale");
     document.body.removeAttribute("data-tug-motion");
   });
 
@@ -151,61 +153,60 @@ describe("GalleryScaleTimingContent – renders without errors", () => {
     expect(motionCheck.type).toBe("checkbox");
     expect(motionCheck.checked).toBe(true);
   });
-
-  it("renders component-level scale sliders for button, tab, and dock", () => {
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(<GalleryScaleTimingContent />));
-    });
-    expect(container.querySelector("#st-button-scale")).not.toBeNull();
-    expect(container.querySelector("#st-tab-scale")).not.toBeNull();
-    expect(container.querySelector("#st-dock-scale")).not.toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Scale slider updates --tug-scale on :root and visually affects preview
+// Slider interactions
 // ---------------------------------------------------------------------------
 
-describe("GalleryScaleTimingContent – scale slider updates --tug-scale on :root", () => {
+describe("GalleryScaleTimingContent – slider interactions", () => {
   afterEach(() => {
     cleanup();
-    document.documentElement.style.removeProperty("--tug-scale");
+    document.documentElement.style.removeProperty("--tug-zoom");
     document.documentElement.style.removeProperty("--tug-timing");
     document.documentElement.style.removeProperty("--tug-motion");
-    document.body.style.removeProperty("--tug-comp-button-scale");
-    document.body.style.removeProperty("--tug-comp-tab-scale");
-    document.body.style.removeProperty("--tug-comp-dock-scale");
     document.body.removeAttribute("data-tug-motion");
   });
 
-  it("invoking scale slider onChange sets --tug-scale on document.documentElement", () => {
+  it("scale slider onCommit (pointer up) sets --tug-zoom on :root", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryScaleTimingContent />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.5");
-    const applied = document.documentElement.style.getPropertyValue("--tug-scale");
+    invokeRangeOnPointerUp(scaleInput, "1.5");
+    const applied = document.documentElement.style.getPropertyValue("--tug-zoom");
     expect(applied).toBe("1.5");
   });
 
-  it("after scale change, preview area still renders buttons (visually affected)", () => {
+  it("scale slider onChange alone does NOT set --tug-zoom (deferred to commit)", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryScaleTimingContent />));
+    });
+    const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
+    invokeRangeOnChange(scaleInput, "1.5");
+    // onChange only updates React state; CSS property is set on pointer release
+    const applied = document.documentElement.style.getPropertyValue("--tug-zoom");
+    expect(applied).toBe("");
+  });
+
+  it("after scale commit, preview area still renders buttons", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryScaleTimingContent />));
     });
     const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
     invokeRangeOnChange(scaleInput, "1.25");
-    // --tug-scale is set on :root; buttons in the preview are affected via
-    // --td-space-* tokens which now resolve through calc(Npx * var(--tug-scale))
+    invokeRangeOnPointerUp(scaleInput, "1.25");
     const preview = container.querySelector("[data-testid='st-preview']")!;
     const buttons = preview.querySelectorAll("button");
     expect(buttons.length).toBeGreaterThan(0);
-    expect(document.documentElement.style.getPropertyValue("--tug-scale")).toBe("1.25");
+    expect(document.documentElement.style.getPropertyValue("--tug-zoom")).toBe("1.25");
   });
 
-  it("invoking timing slider onChange sets --tug-timing on document.documentElement", () => {
+  it("timing slider onChange sets --tug-timing on :root", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryScaleTimingContent />));
@@ -245,25 +246,24 @@ describe("GalleryScaleTimingContent – scale slider updates --tug-scale on :roo
 describe("GalleryScaleTimingContent – cleanup on unmount", () => {
   afterEach(() => {
     cleanup();
-    document.documentElement.style.removeProperty("--tug-scale");
+    document.documentElement.style.removeProperty("--tug-zoom");
     document.documentElement.style.removeProperty("--tug-timing");
     document.documentElement.style.removeProperty("--tug-motion");
-    document.body.style.removeProperty("--tug-comp-button-scale");
-    document.body.style.removeProperty("--tug-comp-tab-scale");
-    document.body.style.removeProperty("--tug-comp-dock-scale");
     document.body.removeAttribute("data-tug-motion");
   });
 
-  it("removes --tug-scale from :root on unmount", () => {
+  it("removes --tug-zoom from :root on unmount", () => {
     let container!: HTMLElement;
     let unmount!: () => void;
     act(() => {
       ({ container, unmount } = render(<GalleryScaleTimingContent />));
     });
-    invokeRangeOnChange(container.querySelector("#st-scale") as HTMLInputElement, "1.5");
-    expect(document.documentElement.style.getPropertyValue("--tug-scale")).toBe("1.5");
+    const scaleInput = container.querySelector("#st-scale") as HTMLInputElement;
+    invokeRangeOnChange(scaleInput, "1.5");
+    invokeRangeOnPointerUp(scaleInput, "1.5");
+    expect(document.documentElement.style.getPropertyValue("--tug-zoom")).toBe("1.5");
     act(() => { unmount(); });
-    expect(document.documentElement.style.getPropertyValue("--tug-scale")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--tug-zoom")).toBe("");
   });
 
   it("removes data-tug-motion attribute from body on unmount", () => {

@@ -371,10 +371,10 @@ See [HVV Color Palette System](#hvv-color-palette-system) for the full design.
 
 ### 5. One Global Scale Controls All Dimensions
 
-A single `--tug-scale` value (default: `1`) multiplies every font size,
-spacing value, radius, icon size, and dimension in the system. Changing it
-resizes the entire UI — a major accessibility win. Each `Tug*` component also
-has its own component-level scale for fine-tuning relative proportions.
+A single `--tug-zoom` value (default: `1`) drives `zoom: var(--tug-zoom)` on
+`<body>`, scaling the entire UI — layout boxes, text, spacing, radii, icons,
+everything — with one number. No per-token `calc()` wiring is needed. Each
+`Tug*` component can optionally set `zoom` on its root element for fine-tuning.
 
 See [Global Scale System](#global-scale-system) for the full design.
 
@@ -576,89 +576,59 @@ was removed with the legacy anchor/smoothstep code.
 
 ## Global Scale System
 
-### The Problem
+### The Problem (Resolved)
 
-Resizing a design system today requires touching dozens of token definitions:
-every font size, every spacing value, every radius, every icon dimension. This
-makes accessibility-driven scaling (larger UI for low vision) or density-driven
-scaling (compact mode for power users) a massive coordination effort.
+Resizing a design system by wiring every dimension token through
+`calc(<base> * var(--tug-zoom))` requires touching hundreds of tokens and
+rewriting every component to consume those tokens. The original Phase 5d5b
+attempt proved this: only 10 tokens were wired, yet the actual UI uses Tailwind
+utility classes, inline JS styles, and hardcoded pixel values for dimensions.
+The calc()-based approach would have required rewriting every component.
 
-### Design: One Root Scale, Per-Component Overrides
+### Design: CSS Zoom
 
-**Root scale.** A single CSS custom property controls all dimensions:
+CSS `zoom` on `<body>` scales the entire UI — layout boxes, text, spacing,
+radii, icons, everything — with one property. No per-token `calc()` wiring
+needed. No component rewrites needed.
 
 ```css
-:root {
-  --tug-scale: 1;
+:root { --tug-zoom: 1; }
+body  { zoom: var(--tug-zoom); }
+```
+
+Setting `--tug-zoom: 1.25` makes the entire UI 25% larger. Setting
+`--tug-zoom: 0.85` produces a compact mode. The relationship between all
+elements is preserved because zoom scales everything uniformly. Unlike
+`transform: scale()`, CSS `zoom` affects layout boxes — scaled elements occupy
+their correct space without overlaps or gaps.
+
+**Component-level scale.** Each `Tug*` component family can optionally set
+`zoom` on its root element for fine-tuning relative proportions:
+
+```css
+.tug-tab-bar {
+  zoom: var(--tug-comp-tab-zoom, 1);
 }
 ```
 
-Every size-related token in the system includes `--tug-scale` as a factor:
+Zoom composes multiplicatively — a component with `zoom: 0.9` inside a body
+with `zoom: 1.25` renders at effective zoom `1.125`. Component-level zoom
+tokens default to `1` and are optional.
 
-```css
-:root {
-  --tug-base-font-size-md: calc(14px * var(--tug-scale));
-  --tug-base-font-size-sm: calc(12px * var(--tug-scale));
-  --tug-base-font-size-lg: calc(16px * var(--tug-scale));
-  --tug-base-space-md: calc(8px * var(--tug-scale));
-  --tug-base-space-lg: calc(12px * var(--tug-scale));
-  --tug-base-radius-md: calc(6px * var(--tug-scale));
-  --tug-base-icon-size-md: calc(16px * var(--tug-scale));
-  --tug-base-stroke-thin: calc(1px * var(--tug-scale));
-  /* ... every dimension token follows this pattern */
-}
-```
+**What scales:** Everything rendered — font sizes, spacing, radii, icon sizes,
+stroke widths, component internal dimensions (padding, gaps, min-heights),
+Tailwind utility classes, hardcoded pixel values, inline styles.
 
-Setting `--tug-scale: 1.25` makes the entire UI 25% larger. Setting
-`--tug-scale: 0.85` produces a compact mode. The relationship between all
-elements is preserved because every dimension scales by the same factor.
+**What doesn't scale:** Color, opacity, z-index, animation timing (that is the
+timing system's job).
 
-**Component-level scale.** Each `Tug*` component family has an optional
-component scale that multiplies on top of the root scale:
-
-```css
-.tug-button {
-  --tug-comp-scale: var(--tug-comp-button-scale, 1);
-  font-size: calc(var(--tug-base-font-size-md) * var(--tug-comp-scale));
-  padding: calc(var(--tug-base-space-xs) * var(--tug-comp-scale))
-           calc(var(--tug-base-space-sm) * var(--tug-comp-scale));
-  border-radius: calc(var(--tug-base-radius-sm) * var(--tug-comp-scale));
-}
-```
-
-The component scale defaults to `1`, meaning it inherits the global scale
-unchanged. A designer can set `--tug-comp-button-scale: 0.9` to make buttons
-slightly more compact than the rest of the UI, or `--tug-comp-tab-scale: 1.1`
-to make the tab bar slightly more spacious.
-
-**What scales and what doesn't.** The global scale affects:
-
-- Font sizes (all tiers).
-- Spacing tokens (all tiers).
-- Border radii.
-- Icon sizes.
-- Stroke widths (with a floor: strokes below 1px clamp to 1px).
-- Component internal dimensions (padding, gaps, min-heights).
-
-The global scale does **not** affect:
-
-- Border widths (kept at 1px for crispness — a 2x scale should not produce
-  2px borders).
-- Shadow offsets and blur radii (these are perceptual, not dimensional).
-- Opacity values.
-- Color values.
-- Z-index values.
-- Animation timing (that is the timing system's job).
-
-**Implementation note:** The `calc()` multiplication means CSS custom properties
-must be registered with `@property` as `<number>` or `<length>` for the
-multiplication to work correctly in all contexts. Alternatively, the palette
-engine can pre-compute scaled values at startup — the same injection pattern
-used for computed colors.
+**Gallery demo note:** The scale slider applies zoom on pointer release (not
+continuously) because zoom triggers a full layout recalculation. Continuous
+updates would cause visual thrashing.
 
 ### Accessibility Use Cases
 
-| `--tug-scale` | Use Case |
+| `--tug-zoom` | Use Case |
 |---------------|----------|
 | `0.85` | Compact/dense mode for power users |
 | `1.0` | Default |
@@ -888,7 +858,7 @@ other token is consumed.
 
 ```css
 :root {
-  --tug-scale: 1;    /* multiplies all dimensions */
+  --tug-zoom: 1;    /* multiplies all dimensions */
   --tug-timing: 1;   /* multiplies all durations */
   --tug-motion: 1;   /* 1 = motion on, 0 = motion off */
 }
@@ -899,7 +869,7 @@ Rules:
 - Set at the `:root` level.
 - Persisted in tugbank (`dev.tugtool.app` domain).
 - Overridable by user preferences, accessibility settings, or debug controls.
-- Every size token in Layer 1 includes `var(--tug-scale)` as a factor.
+- `--tug-zoom` drives `zoom` on `<body>` — all size tokens scale automatically without `calc()` wiring.
 - Every duration token in Layer 1 includes `var(--tug-timing)` as a factor.
 
 ### Layer 1: Canonical Semantics (`--tug-base-*`)
@@ -914,7 +884,7 @@ Rules:
 - All component styling eventually resolves from this layer.
 - No raw palette values in component CSS.
 - No `--td-*`, `--tways-*`, or legacy aliases after migration.
-- All size tokens include `calc(... * var(--tug-scale))`.
+- Size tokens are plain values — CSS `zoom` on body handles global scaling.
 - All duration tokens include `calc(... * var(--tug-timing))`.
 
 ### Layer 2: Component / Pattern Tokens (`--tug-comp-*`)
@@ -929,7 +899,7 @@ Examples:
 - `--tug-comp-button-primary-bg-rest: var(--tug-base-action-primary-bg-rest);`
 - `--tug-comp-tab-badge-bg: var(--tug-base-badge-accent-bg);`
 - `--tug-comp-card-header-bg-active: var(--tug-base-card-header-bg-active);`
-- `--tug-comp-button-scale: 1;` (component-level scale override)
+- `--tug-comp-button-zoom: 1;` (component-level zoom override)
 
 Rules:
 
@@ -937,7 +907,7 @@ Rules:
 - Must resolve entirely from `--tug-base-*`.
 - Should prefer family names like `control`, `button`, `field`, `menu`, `tab`,
   `card`, `table`, `inspector` over one-off widget names whenever possible.
-- Each component family may declare a `--tug-comp-<family>-scale` property
+- Each component family may declare a `--tug-comp-<family>-zoom` property
   (default `1`) that its internal dimensions multiply by.
 
 ---
@@ -1015,62 +985,62 @@ intentionally large because the roadmap is large.
 - `--tug-base-overlay-scrim`
 - `--tug-base-overlay-highlight`
 
-#### Typography (scaled)
+#### Typography
 
-All font size and line height tokens include `var(--tug-scale)`:
+Plain values — CSS `zoom` on body handles global scaling.
 
 - `--tug-base-font-family-sans`
 - `--tug-base-font-family-mono`
-- `--tug-base-font-size-2xs` = `calc(10px * var(--tug-scale))`
-- `--tug-base-font-size-xs` = `calc(11px * var(--tug-scale))`
-- `--tug-base-font-size-sm` = `calc(12px * var(--tug-scale))`
-- `--tug-base-font-size-md` = `calc(14px * var(--tug-scale))`
-- `--tug-base-font-size-lg` = `calc(16px * var(--tug-scale))`
-- `--tug-base-font-size-xl` = `calc(20px * var(--tug-scale))`
-- `--tug-base-font-size-2xl` = `calc(24px * var(--tug-scale))`
-- `--tug-base-line-height-2xs` = `calc(14px * var(--tug-scale))`
-- `--tug-base-line-height-xs` = `calc(16px * var(--tug-scale))`
-- `--tug-base-line-height-sm` = `calc(18px * var(--tug-scale))`
-- `--tug-base-line-height-md` = `calc(20px * var(--tug-scale))`
-- `--tug-base-line-height-lg` = `calc(24px * var(--tug-scale))`
-- `--tug-base-line-height-xl` = `calc(28px * var(--tug-scale))`
-- `--tug-base-line-height-2xl` = `calc(32px * var(--tug-scale))`
+- `--tug-base-font-size-2xs` = `10px`
+- `--tug-base-font-size-xs` = `11px`
+- `--tug-base-font-size-sm` = `12px`
+- `--tug-base-font-size-md` = `14px`
+- `--tug-base-font-size-lg` = `16px`
+- `--tug-base-font-size-xl` = `20px`
+- `--tug-base-font-size-2xl` = `24px`
+- `--tug-base-line-height-2xs` = `14px`
+- `--tug-base-line-height-xs` = `16px`
+- `--tug-base-line-height-sm` = `18px`
+- `--tug-base-line-height-md` = `20px`
+- `--tug-base-line-height-lg` = `24px`
+- `--tug-base-line-height-xl` = `28px`
+- `--tug-base-line-height-2xl` = `32px`
 
-#### Spacing (scaled)
+#### Spacing
 
-- `--tug-base-space-2xs` = `calc(2px * var(--tug-scale))`
-- `--tug-base-space-xs` = `calc(4px * var(--tug-scale))`
-- `--tug-base-space-sm` = `calc(6px * var(--tug-scale))`
-- `--tug-base-space-md` = `calc(8px * var(--tug-scale))`
-- `--tug-base-space-lg` = `calc(12px * var(--tug-scale))`
-- `--tug-base-space-xl` = `calc(16px * var(--tug-scale))`
-- `--tug-base-space-2xl` = `calc(24px * var(--tug-scale))`
+- `--tug-base-space-2xs` = `2px`
+- `--tug-base-space-xs` = `4px`
+- `--tug-base-space-sm` = `6px`
+- `--tug-base-space-md` = `8px`
+- `--tug-base-space-lg` = `12px`
+- `--tug-base-space-xl` = `16px`
+- `--tug-base-space-2xl` = `24px`
 
-#### Radius (scaled)
+#### Radius
 
-- `--tug-base-radius-2xs` = `calc(1px * var(--tug-scale))`
-- `--tug-base-radius-xs` = `calc(2px * var(--tug-scale))`
-- `--tug-base-radius-sm` = `calc(4px * var(--tug-scale))`
-- `--tug-base-radius-md` = `calc(6px * var(--tug-scale))`
-- `--tug-base-radius-lg` = `calc(8px * var(--tug-scale))`
-- `--tug-base-radius-xl` = `calc(12px * var(--tug-scale))`
-- `--tug-base-radius-2xl` = `calc(16px * var(--tug-scale))`
+- `--tug-base-radius-2xs` = `1px`
+- `--tug-base-radius-xs` = `2px`
+- `--tug-base-radius-sm` = `4px`
+- `--tug-base-radius-md` = `6px`
+- `--tug-base-radius-lg` = `8px`
+- `--tug-base-radius-xl` = `12px`
+- `--tug-base-radius-2xl` = `16px`
 
-#### Stroke (scaled with floor)
+#### Stroke
 
-- `--tug-base-stroke-hairline` = `max(1px, calc(0.5px * var(--tug-scale)))`
-- `--tug-base-stroke-thin` = `max(1px, calc(1px * var(--tug-scale)))`
-- `--tug-base-stroke-medium` = `calc(1.5px * var(--tug-scale))`
-- `--tug-base-stroke-thick` = `calc(2px * var(--tug-scale))`
+- `--tug-base-stroke-hairline` = `0.5px`
+- `--tug-base-stroke-thin` = `1px`
+- `--tug-base-stroke-medium` = `1.5px`
+- `--tug-base-stroke-thick` = `2px`
 
-#### Icon Size (scaled)
+#### Icon Size
 
-- `--tug-base-icon-size-2xs` = `calc(10px * var(--tug-scale))`
-- `--tug-base-icon-size-xs` = `calc(12px * var(--tug-scale))`
-- `--tug-base-icon-size-sm` = `calc(14px * var(--tug-scale))`
-- `--tug-base-icon-size-md` = `calc(16px * var(--tug-scale))`
-- `--tug-base-icon-size-lg` = `calc(20px * var(--tug-scale))`
-- `--tug-base-icon-size-xl` = `calc(24px * var(--tug-scale))`
+- `--tug-base-icon-size-2xs` = `10px`
+- `--tug-base-icon-size-xs` = `12px`
+- `--tug-base-icon-size-sm` = `14px`
+- `--tug-base-icon-size-md` = `16px`
+- `--tug-base-icon-size-lg` = `20px`
+- `--tug-base-icon-size-xl` = `24px`
 
 #### Motion (timed)
 
@@ -1626,15 +1596,15 @@ component-token families should be treated as expected parts of the system.
   - `--tug-comp-devOverlay-*`
   - `--tug-comp-keybindingEditor-*`
 - Scale overrides:
-  - `--tug-comp-button-scale`
-  - `--tug-comp-tab-scale`
-  - `--tug-comp-dock-scale`
-  - `--tug-comp-card-header-scale`
-  - `--tug-comp-field-scale`
-  - `--tug-comp-menu-scale`
-  - `--tug-comp-badge-scale`
-  - `--tug-comp-tooltip-scale`
-  - `--tug-comp-gauge-scale`
+  - `--tug-comp-button-zoom`
+  - `--tug-comp-tab-zoom`
+  - `--tug-comp-dock-zoom`
+  - `--tug-comp-card-header-zoom`
+  - `--tug-comp-field-zoom`
+  - `--tug-comp-menu-zoom`
+  - `--tug-comp-badge-zoom`
+  - `--tug-comp-tooltip-zoom`
+  - `--tug-comp-gauge-zoom`
 
 ---
 
@@ -1724,7 +1694,7 @@ The overlay should show:
   - `--tug-base-*` token it resolves from.
   - `--tug-{hue}[-preset]` palette value beneath that (including the hue family
     name, preset name, and HVV coordinates: vibrancy/value/canonical L).
-- Current `--tug-scale` and `--tug-timing` values and their effect on the
+- Current `--tug-zoom` and `--tug-timing` values and their effect on the
   inspected element's dimensions and transitions.
 
 ### Technical Direction
@@ -1759,7 +1729,7 @@ tugways style contract:
 - Which theme primitive supplied the value.
 - For HVV palette colors: which hue family, preset name, and HVV coordinates
   (vibrancy/value) produced the value.
-- What multiplier effects `--tug-scale` and `--tug-timing` have on the
+- What multiplier effects `--tug-zoom` and `--tug-timing` have on the
   element.
 
 This makes the style system navigable instead of mystical.
@@ -1782,9 +1752,9 @@ This makes the style system navigable instead of mystical.
 
 1. Implement the HVV palette engine (TypeScript utility + startup injection). **DONE** — `injectHvvCSS()` ships 242 CSS variables with P3 support.
 2. Add `--tug-{hue}[-preset]` computed variables and per-hue constants. **DONE.**
-3. Add `--tug-scale`, `--tug-timing`, `--tug-motion` global multipliers. **PARTIALLY DONE** — multipliers exist on `:root` but `--tug-scale` has minimal visible effect because most component dimensions are hardcoded (Tailwind classes, inline styles, pixel values) rather than token-based. Timing and motion work correctly.
+3. Add `--tug-zoom`, `--tug-timing`, `--tug-motion` global multipliers. **DONE** — `--tug-zoom` drives `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI. Timing and motion work correctly.
 4. Add `--tug-base-*` with scaled dimensions and timed durations.
-5. Add `--tug-comp-*` where needed, including component-level scale overrides.
+5. Add `--tug-comp-*` where needed, including component-level zoom overrides.
 6. Keep temporary aliases from old tokens to new tokens.
 
 ### Phase C: Migrate Consumers
@@ -1845,11 +1815,12 @@ static tables, verified by unit tests.
 
 ### 6. `calc()` with `var()` Browser Compatibility
 
-Mitigation: `calc(14px * var(--tug-scale))` works in all modern browsers. For
-older WebKit versions that don't support `calc()` in custom properties, the
-palette engine can pre-compute scaled values — the same injection mechanism used
-for computed colors. Since tugdeck targets a known WebView (WKWebView on macOS),
-browser compatibility is controlled.
+Mitigated. The zoom-based scale approach (`zoom: var(--tug-zoom)` on body)
+eliminates all `calc(<value> * var(--tug-zoom))` expressions for dimension
+tokens. The only remaining `calc()` usage is for duration tokens
+(`calc(<base> * var(--tug-timing))`), which works in all modern browsers.
+Since tugdeck targets a known WebView (WKWebView on macOS), browser
+compatibility is controlled.
 
 ### 7. Inspector Performance Overhead
 
@@ -1870,7 +1841,7 @@ results per element while hovered.
 8. The Tailwind/shadcn bridge points at the new canonical layer.
 9. The HVV palette engine computes 242 CSS variables (168 presets + 74
    constants) at startup, with P3 overrides in a `@media (color-gamut: p3)` block.
-10. `--tug-scale` resizes the entire UI when changed. Verified at 0.85, 1.0,
+10. `--tug-zoom` resizes the entire UI when changed. Verified at 0.85, 1.0,
     1.25, and 1.5.
 11. `--tug-timing` scales all animation durations when changed. Verified at 0.5,
     1.0, and 5.0.
@@ -1890,31 +1861,25 @@ Implementation status and remaining work across five sub-phases:
    CSS variables, P3 wide-gamut support, `hvvColor()` JS API. Shipped as
    `injectHvvCSS()`. All legacy anchor/smoothstep/tone code removed.
 
-2. **Phase 5d5b: Global Scale & Timing** — **PARTIALLY COMPLETE.** `--tug-scale`,
-   `--tug-timing`, `--tug-motion` exist on `:root`. Timing and motion work
-   correctly. However, `--tug-scale` has minimal visible effect because only
-   spacing and radius tokens (10 total) were wired through `calc()`, while the
-   actual components use Tailwind utility classes, inline JS styles, and hardcoded
-   pixel values for their dimensions. Component-level scale was implemented via
-   CSS `transform: scale()` (visual-only, doesn't affect layout boxes) instead of
-   `calc()`-based token multiplication. **Remediation needed in Phase 5d5c/5d5d:**
-   define the full scaled dimension token set (font sizes, icon sizes, stroke
-   widths), migrate components from hardcoded dimensions to tokens, and replace
-   CSS transform scaling with `calc()`-based component scaling.
+2. **Phase 5d5b: Global Scale & Timing** — **COMPLETE.** `--tug-zoom` drives
+   `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI with one number.
+   `--tug-timing` multiplies all durations via calc(). `--tug-motion` toggles
+   motion on/off. Gallery demo with scale slider (applies on release), timing
+   slider, and motion toggle. The zoom-based approach eliminates the need for
+   per-token `calc()` dimension wiring and component rewrites for scale — this
+   massively simplifies Phases 5d5c and 5d5d.
 
 3. **Phase 5d5c: Token Architecture** — Introduce `--tug-base-*` and
-   `--tug-comp-*` layers, define the full semantic taxonomy, temporary aliases
-   from old tokens to new tokens. **Must also include:** the complete scaled
-   dimension token set (font sizes, icon sizes, stroke widths wired through
-   `--tug-scale`) that Phase 5d5b deferred.
+   `--tug-comp-*` layers, define the full semantic taxonomy, wire accent/chart/
+   syntax tokens to HVV palette presets, temporary backward-compatibility aliases.
+   Spacing/radius/typography tokens are simple `var()` aliases (no `calc()`
+   scaling needed — zoom handles that). Focus: semantic naming and color wiring.
 
 4. **Phase 5d5d: Consumer Migration** — Migrate all CSS and TS consumers from
-   `--td-*`/`--tways-*` to new tokens, shadcn bridge cutover, remove legacy
-   aliases, search-based enforcement. **Must also include:** rewriting TugButton
-   and TugTabBar to use dimension tokens instead of Tailwind classes, inline
-   styles, and hardcoded pixel values, so that `--tug-scale` actually controls
-   their dimensions. Replace CSS `transform: scale()` with `calc()`-based
-   component-level scaling.
+   `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`, shadcn bridge
+   cutover, remove legacy aliases, search-based enforcement. This is purely a
+   naming migration — no component dimension rewrites needed (zoom handles
+   scaling). Optionally add per-component zoom for fine-tuned density.
 
 5. **Phase 5d5e: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
    HVV palette provenance display (hue/preset/vib/val), scale/timing readout.

@@ -121,7 +121,7 @@
 | [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
 | [D70] | HVV OKLCH palette: 24 hues with Hue/Vibrancy/Value axes, 7 presets, P3 support | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
 | [D71] | Token naming: `--tug-{hue}[-preset]`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
-| [D72] | Global scale: `--tug-scale` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
+| [D72] | Global scale: `--tug-zoom` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
 | [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
 | [D74] | Dev cascade inspector: `Ctrl+Option + hover` shows token resolution chain | Concept 22 | [#d74-cascade-inspector](#d74-cascade-inspector) |
 
@@ -148,7 +148,7 @@
 | Mutation transactions | Snapshot/preview/commit/cancel cycle for live-preview editing; appearance-zone only during preview | [#d64-mutation-transactions](#d64-mutation-transactions) |
 | Observable property store | Typed key-path store per card with observation; integrates with useSyncExternalStore for inspector UI | [#d67-property-store](#d67-property-store) |
 | HueVibVal (HVV) color palette | 24 OKLCH hue families with Hue/Vibrancy/Value axes, 7 semantic presets per hue, P3 support, runtime-generated | [#d70-computed-palette](#d70-computed-palette) |
-| Global scale and timing | `--tug-scale` multiplies all dimensions; `--tug-timing` multiplies all durations; `--tug-motion` toggles motion on/off | [#d72-global-scale](#d72-global-scale) |
+| Global scale and timing | `--tug-zoom` multiplies all dimensions; `--tug-timing` multiplies all durations; `--tug-motion` toggles motion on/off | [#d72-global-scale](#d72-global-scale) |
 
 ### External References
 
@@ -3561,19 +3561,20 @@ All legacy prefixes (`--td-*`, `--tways-*`) and aliases (`--background`, `--fore
 
 #### Global Scale {#d72-global-scale}
 
-**[D72] `--tug-scale` multiplies all dimensions.** A single `--tug-scale: 1` CSS custom property is the root multiplier for every font size, spacing value, radius, icon size, and stroke width in the system:
+**[D72] `--tug-zoom` controls UI density via CSS `zoom`.** A single `--tug-zoom: 1` CSS custom property on `:root` drives `zoom: var(--tug-zoom)` on `<body>`. This scales the entire UI — layout boxes, text, spacing, radii, icons, everything — with one number.
 
 ```css
---tug-base-font-size-md: calc(14px * var(--tug-scale));
---tug-base-space-md: calc(8px * var(--tug-scale));
---tug-base-radius-md: calc(6px * var(--tug-scale));
+:root { --tug-zoom: 1; }
+body  { zoom: var(--tug-zoom); }
 ```
 
-Setting `--tug-scale: 1.25` makes the entire UI 25% larger. Setting `--tug-scale: 0.85` produces compact mode. This is a major accessibility win.
+Setting `--tug-zoom: 1.25` makes the entire UI 25% larger. Setting `--tug-zoom: 0.85` produces compact mode. This is a major accessibility win. Unlike `transform: scale()`, CSS `zoom` affects layout boxes, so scaled elements occupy their correct space without overlaps or gaps.
 
-**Component-level scale.** Each `Tug*` component family has an optional `--tug-comp-<family>-scale` (default: `1`) that multiplies on top of the root scale, allowing fine-tuning of relative proportions (e.g., slightly compact buttons, slightly spacious tabs).
+No per-token `calc()` wiring is needed. Zoom scales all rendered content uniformly — Tailwind utility classes, hardcoded pixel values, inline styles, and token-driven dimensions all scale together. This eliminates the need to rewrite every dimension through `calc(<base> * var(--tug-zoom))`.
 
-**What scales:** Font sizes, spacing, radii, icon sizes, stroke widths (with 1px floor). **What doesn't scale:** Border widths (stay at specified values for crispness), shadow offsets/blur, opacity, color, z-index, timing.
+**Component-level scale.** Each `Tug*` component family can optionally set `zoom: var(--tug-comp-<family>-zoom, 1)` on its root element for fine-tuning relative proportions. Zoom composes multiplicatively — a component with `zoom: 0.9` inside a body with `zoom: 1.25` renders at effective zoom `1.125`.
+
+**What scales:** Everything rendered — font sizes, spacing, radii, icon sizes, stroke widths, component dimensions. **What doesn't scale:** Color, opacity, z-index, timing (that is the timing system's job).
 
 #### Global Timing {#d73-global-timing}
 
@@ -3605,7 +3606,7 @@ Easing curves are not affected by timing — they describe motion shape, not dur
 - Selected computed properties (background, foreground, border, shadow, radius, typography).
 - Full resolution chain: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`.
 - For HVV palette colors: hue family name, preset name, and HVV coordinates (vib/val/L).
-- Current `--tug-scale` and `--tug-timing` multiplier effects.
+- Current `--tug-zoom` and `--tug-timing` multiplier effects.
 - Pin/unpin support. Escape closes.
 
 Built on the existing inspector architecture: `StyleCascadeReader`, mutation transactions, property store, responder chain.
@@ -4095,7 +4096,7 @@ Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the 
 
 - **[D70] HueVibVal (HVV) OKLCH palette.** 24 named hue families with three axes: Hue (color family), Vibrancy (chroma 0–100), Value (lightness 0–100). Seven semantic presets per hue (canonical, accent, muted, light, subtle, dark, deep). Short-form CSS variable naming: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others. 242 CSS variables (168 presets + 74 per-hue constants) runtime-generated by the palette engine. P3 wide-gamut support via `@media (color-gamut: p3)` override block. The JS function `hvvColor()` provides programmatic color computation. Per-hue canonical lightness values are tuned via an interactive gallery editor.
 - **[D71] Three-layer token naming.** HVV palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
-- **[D72] Global scale.** `--tug-scale` (default: `1`) multiplies all font sizes, spacing, radii, icon sizes, and stroke widths via `calc()`. Per-component `--tug-comp-<family>-scale` (default: `1`) allows fine-tuning relative proportions. Border widths are excluded from scaling.
+- **[D72] Global scale.** `--tug-zoom` (default: `1`) drives CSS `zoom` on `<body>`, scaling the entire UI uniformly — all dimensions, text, spacing, radii, icons. Per-component `--tug-comp-<family>-zoom` (default: `1`) allows fine-tuning via zoom on the component root.
 - **[D73] Global timing.** `--tug-timing` (default: `1`) multiplies all animation durations. `--tug-motion` (default: `1`, set to `0` by `prefers-reduced-motion`) toggles motion on/off. `data-tug-motion="off"` on body provides CSS hook. Two controls because "slow motion for debugging" and "no motion for accessibility" are categorically different.
 - **[D74] Dev cascade inspector.** `Ctrl+Option + hover` shows token resolution chain for any component: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`, including hue/vibrancy/value provenance for computed colors and scale/timing effects.
 

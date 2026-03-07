@@ -1,7 +1,7 @@
 /**
  * Unit tests for scale-timing.ts JS helpers.
  *
- * Tests getTugScale, getTugTiming, and isTugMotionEnabled by setting inline
+ * Tests getTugZoom, getTugTiming, and isTugMotionEnabled by setting inline
  * CSS custom properties on document.documentElement and verifying the helpers
  * read them correctly.
  *
@@ -12,39 +12,39 @@
 import "./setup-rtl";
 
 import { describe, it, expect, afterEach } from "bun:test";
-import { getTugScale, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
+import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 
 // ---------------------------------------------------------------------------
-// getTugScale
+// getTugZoom
 // ---------------------------------------------------------------------------
 
-describe("getTugScale", () => {
+describe("getTugZoom", () => {
   afterEach(() => {
-    document.documentElement.style.removeProperty("--tug-scale");
+    document.documentElement.style.removeProperty("--tug-zoom");
   });
 
-  it("returns 1 when --tug-scale is not set", () => {
-    expect(getTugScale()).toBe(1);
+  it("returns 1 when --tug-zoom is not set", () => {
+    expect(getTugZoom()).toBe(1);
   });
 
-  it("returns 1 when --tug-scale is set to 1", () => {
-    document.documentElement.style.setProperty("--tug-scale", " 1");
-    expect(getTugScale()).toBe(1);
+  it("returns 1 when --tug-zoom is set to 1", () => {
+    document.documentElement.style.setProperty("--tug-zoom", " 1");
+    expect(getTugZoom()).toBe(1);
   });
 
-  it("returns 1.25 when --tug-scale is set to 1.25", () => {
-    document.documentElement.style.setProperty("--tug-scale", " 1.25");
-    expect(getTugScale()).toBe(1.25);
+  it("returns 1.25 when --tug-zoom is set to 1.25", () => {
+    document.documentElement.style.setProperty("--tug-zoom", " 1.25");
+    expect(getTugZoom()).toBe(1.25);
   });
 
-  it("returns 2 when --tug-scale is set to 2", () => {
-    document.documentElement.style.setProperty("--tug-scale", " 2");
-    expect(getTugScale()).toBe(2);
+  it("returns 2 when --tug-zoom is set to 2", () => {
+    document.documentElement.style.setProperty("--tug-zoom", " 2");
+    expect(getTugZoom()).toBe(2);
   });
 
-  it("returns 1 when --tug-scale is set to an invalid value", () => {
-    document.documentElement.style.setProperty("--tug-scale", " not-a-number");
-    expect(getTugScale()).toBe(1);
+  it("returns 1 when --tug-zoom is set to an invalid value", () => {
+    document.documentElement.style.setProperty("--tug-zoom", " not-a-number");
+    expect(getTugZoom()).toBe(1);
   });
 });
 

@@ -582,40 +582,40 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 ### Phase 5d5b: Global Scale & Timing (Concept 22, [D72]-[D73])
 
-**Goal**: A single `--tug-scale` value controls all UI dimensions. A single `--tug-timing` value controls all animation durations. A `--tug-motion` toggle disables motion entirely.
+**Goal**: A single `--tug-zoom` value controls all UI dimensions via CSS `zoom`. A single `--tug-timing` value controls all animation durations. A `--tug-motion` toggle disables motion entirely.
 
-**What to do**:
-1. Add `--tug-scale: 1`, `--tug-timing: 1`, and `--tug-motion: 1` to `:root` in `tokens.css`
-2. Add `prefers-reduced-motion` media query that sets `--tug-motion: 0`
-3. Implement `data-tug-motion` attribute management — set `data-tug-motion="off"` on `<body>` when `--tug-motion` is 0. Add global CSS rule that zeroes all animation/transition durations when off
-4. Define the scaled dimension token set: every font size, spacing, radius, icon size, and stroke width expressed as `calc(<base> * var(--tug-scale))`. Stroke tokens use `max(1px, calc(...))` floor. Border widths excluded from scaling
-5. Define the timed duration token set: every motion duration expressed as `calc(<base> * var(--tug-timing))`
-6. Define component-level scale tokens: `--tug-comp-button-scale`, `--tug-comp-tab-scale`, `--tug-comp-dock-scale`, etc. (all default to `1`)
-7. Implement JS integration helpers: `getTugScale()`, `getTugTiming()`, `isTugMotionEnabled()` for RAF-based animations and imperative style mutations
-8. Build gallery demo — scale slider (0.85–2.0) that resizes all gallery components live. Timing slider (0.1–10.0) that affects all gallery animations. Motion toggle. Component-level scale controls for buttons and tabs
-9. Verify: scale 0.85/1.0/1.25/1.5 produce correct proportions across all existing components. Timing 0.5/1.0/5.0 affect all animations. Motion off disables all animation. Component scales compose correctly with global scale
+**What was done**:
+1. Added `--tug-zoom: 1`, `--tug-timing: 1`, and `--tug-motion: 1` to `:root` in `tokens.css`
+2. Added `zoom: var(--tug-zoom)` on `<body>` — scales the entire UI (layout boxes, text, spacing, radii, icons) with one property. No per-token `calc()` wiring needed
+3. Added `prefers-reduced-motion` media query that sets `--tug-motion: 0`
+4. Implemented `data-tug-motion` attribute management with global CSS rule that zeroes all animation/transition durations when off
+5. Defined timed duration tokens: `--tug-base-motion-duration-{fast,moderate,slow,glacial}` expressed as `calc(<base> * var(--tug-timing))`
+6. Implemented JS helpers: `getTugScale()`, `getTugTiming()`, `isTugMotionEnabled()`, `initMotionObserver()`
+7. Built gallery demo with scale slider (0.85–2.0, applies on release to avoid layout thrash), timing slider (0.1–10.0), and motion toggle
+
+**Key design decision**: CSS `zoom` on `<body>` replaces the originally-proposed `calc(<base> * var(--tug-zoom))` pattern for every dimension token. Zoom scales everything uniformly — Tailwind utility classes, hardcoded pixel values, inline styles, and token-driven dimensions all scale together. This eliminates the need to rewrite every component to use scaled tokens, massively simplifying Phases 5d5c and 5d5d.
 
 **Files created/modified**:
-1. `tugdeck/styles/tokens.css` — global multipliers, scaled tokens, timed tokens
-2. `tugdeck/src/components/tugways/scale-timing.ts` — new: JS helpers
-3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — scale/timing demo
-4. `tugdeck/src/components/tugways/cards/gallery-card.css` — scale/timing demo styles
+1. `tugdeck/styles/tokens.css` — global multipliers on `:root`, `zoom` on body, timed duration tokens
+2. `tugdeck/src/components/tugways/scale-timing.ts` — JS helpers and motion observer
+3. `tugdeck/src/components/tugways/cards/gallery-scale-timing-content.tsx` — scale/timing demo tab
+4. `tugdeck/src/components/tugways/cards/gallery-card.css` — demo styles
 
-**Result**: The entire UI resizes by changing one number. All animations speed up or slow down by changing one number. Motion can be disabled entirely. Component-level scale overrides allow fine-tuning. JS-driven animations respect the same values.
+**Result**: The entire UI resizes by changing one number (zoom). All animations speed up or slow down by changing one number. Motion can be disabled entirely. JS-driven animations respect the same values.
 
-**Note**: Phase 5d5b can start anytime after Phase 5a2. It does not depend on Phase 5d5a (palette engine) — the two are independent and can run in parallel. It does not depend on Phases 5d1–5d4.
+**Note**: Phase 5d5b does not depend on Phase 5d5a (palette engine) — the two are independent.
 
 ### Phase 5d5c: Token Architecture (Concept 22, [D71])
 
 **Goal**: Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy. Temporary aliases bridge old tokens to new tokens. No consumer migration yet.
 
 **What to do**:
-1. Define the complete `--tug-base-*` semantic taxonomy in a new `tug-tokens.css` file — all ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, stroke, icon size, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
-2. Wire `--tug-base-*` accent tokens to HVV palette preset variables (e.g., `--tug-base-accent-default: var(--tug-orange)`, `--tug-base-accent-muted: var(--tug-orange-muted)`, `--tug-base-accent-subtle: var(--tug-orange-subtle)`). The seven HVV presets per hue (canonical, accent, muted, light, subtle, dark, deep) map naturally to semantic accent roles
+1. Define the complete `--tug-base-*` semantic taxonomy in a new `tug-tokens.css` file — all ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
+2. Wire `--tug-base-*` accent tokens to HVV palette preset variables (e.g., `--tug-base-accent-default: var(--tug-orange)`, `--tug-base-accent-muted: var(--tug-orange-muted)`, `--tug-base-accent-subtle: var(--tug-orange-subtle)`). The seven HVV presets per hue map naturally to semantic accent roles
 3. Wire chart and syntax color tokens to HVV hue presets (e.g., `--tug-base-chart-1: var(--tug-blue)`, `--tug-base-syntax-keyword: var(--tug-violet)`)
-4. Wire all dimension tokens through `var(--tug-scale)` from Phase 5d5b
-5. Wire all duration tokens through `var(--tug-timing)` from Phase 5d5b
-6. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. This ensures zero visual change while the new layer is being introduced
+4. Spacing, radius, typography, and icon size tokens are simple `var()` aliases (no `calc()` wiring needed — CSS `zoom` on body handles global scale)
+5. Duration tokens reference the existing `--tug-base-motion-duration-*` calc() tokens from Phase 5d5b
+6. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. Zero visual change while the new layer is introduced
 7. Define initial `--tug-comp-*` component token families where base semantics are too generic (dock buttons, titlebar controls, tab overflow, field metadata, gauge annotations)
 8. Verify: all existing components render identically with the backward-compatibility aliases in place. No visual diff in any theme (Brio, Bluenote, Harmony)
 
@@ -626,14 +626,14 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: The new token architecture exists in parallel with the old one. All new tokens are defined and wirable. Backward-compatibility aliases ensure zero visual regression. Migration can proceed incrementally in the next phase.
 
-**Note**: Phase 5d5c depends on Phase 5d5a (HVV palette engine must exist for accent/chart/syntax tokens to reference `--tug-{hue}[-preset]` variables) and Phase 5d5b (scale/timing multipliers must exist for dimension/duration tokens to reference). Theme-specific palette overrides are not needed for this phase — all three themes share the same HVV canonical L values. Per-theme tuning (if needed) would be done via future per-theme canonical L tables in `injectHvvCSS`. The old theme parameter protocol (`--tug-theme-lc-l-max`, `--tug-theme-hue-red`, etc.) was removed with the legacy code — themes no longer override palette parameters via CSS custom properties.
+**Note**: Phase 5d5c depends on Phase 5d5a (HVV palette engine must exist for accent/chart/syntax tokens to reference `--tug-{hue}[-preset]` variables) and Phase 5d5b (zoom-based scale and timing multipliers must exist). No per-token `calc()` scaling is needed — CSS `zoom` handles all dimension scaling at the body level.
 
 ### Phase 5d5d: Consumer Migration (Concept 22, [D71])
 
-**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement.
+**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement. No component rewrites for scale — CSS `zoom` handles all dimension scaling.
 
 **What to do**:
-1. Migrate tugways component CSS first — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, and all other `components/tugways/*.css` files
+1. Migrate tugways component CSS first — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, and all other `components/tugways/*.css` files. Token references change from `--td-*` to `--tug-base-*`; existing Tailwind classes, hardcoded pixels, and inline styles are left as-is (zoom handles scaling)
 2. Migrate chrome CSS — `chrome.css`, `card-frame` styles, `deck-canvas` styles
 3. Migrate `globals.css` — repoint the Tailwind v4 `@theme` bridge from legacy aliases to `--tug-base-*` tokens
 4. Migrate shadcn wrapper assumptions — update `components/ui/*.tsx` inline styles and any hardcoded token references
@@ -641,19 +641,20 @@ find any registered callbacks). This is fine — no errors, no crashes.
 6. Migrate runtime token readers/writers — update `StyleCascadeReader`, `MutationTransaction`, and any other TS code that references `--td-*` or `--tways-*` strings
 7. Remove backward-compatibility aliases from `tokens.css` — the old `--td-*`, `--tways-*`, and legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are deleted
 8. Add search-based enforcement: a CI-friendly script that greps for `--td-`, `--tways-`, and the legacy alias names, failing if any are found outside of migration documentation
-9. Verify: all three themes (Brio, Bluenote, Harmony) render correctly with zero visual diff. No `--td-*`, `--tways-*`, or legacy aliases remain in source
+9. Optionally add component-level zoom (`zoom: var(--tug-comp-<family>-zoom, 1)`) to component families that need fine-tuned density independent of the global scale
+10. Verify: all three themes (Brio, Bluenote, Harmony) render correctly with zero visual diff. No `--td-*`, `--tways-*`, or legacy aliases remain in source
 
 **Files modified** (many):
-1. `tugdeck/src/components/tugways/*.css` — all component CSS files
+1. `tugdeck/src/components/tugways/*.css` — all component CSS files (token rename only)
 2. `tugdeck/styles/chrome.css` — chrome token references
 3. `tugdeck/src/globals.css` — Tailwind bridge
 4. `tugdeck/src/components/ui/*.tsx` — shadcn wrapper token references
 5. `tugdeck/styles/tokens.css` — remove legacy aliases
 6. `tugdeck/src/components/tugways/*.ts` — runtime token readers
 
-**Result**: The migration is complete. Only `--tug-{hue}[-preset]` (HVV palette), `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression.
+**Result**: The migration is complete. Only `--tug-{hue}[-preset]` (HVV palette), `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression. No component rewrites were needed for scale — existing Tailwind classes and hardcoded dimensions scale correctly via CSS `zoom`.
 
-**Note**: Phase 5d5d depends on Phase 5d5c (new token layers must exist with backward-compatibility aliases before consumers can be migrated). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by allowing incremental migration with verification after each file group.
+**Note**: Phase 5d5d depends on Phase 5d5c (new token layers must exist with backward-compatibility aliases before consumers can be migrated). This phase is primarily a naming migration (`--td-*` → `--tug-base-*`), not a dimensional rewrite. The backward-compatibility aliases from 5d5c de-risk it by allowing incremental migration with verification after each file group.
 
 ### Phase 5d5e: Cascade Inspector (Concept 22, [D74])
 
@@ -664,7 +665,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 2. On pointer move with modifiers active: locate target with `elementFromPoint`, walk to nearest inspect root, read computed style, resolve token chain via `StyleCascadeReader`
 3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`)
 4. For HVV palette colors: display hue family name, preset name, and HVV coordinates (e.g., "orange canonical — vib:50, val:50, L:0.780")
-5. Display current `--tug-scale` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
+5. Display current `--tug-zoom` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
 6. Implement pin/unpin — clicking while inspecting pins the overlay so the user can stop hovering and examine details. `Escape` closes
 7. Highlight the target element with a dev-only overlay outline
 8. Add gallery demo section showing the inspector in action

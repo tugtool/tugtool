@@ -2,14 +2,9 @@
  * gallery-scale-timing-content.tsx -- Scale & Timing interactive demo tab.
  *
  * Interactive controls for the three global CSS multipliers:
- *   --tug-scale   dimension multiplier (range 0.85–2.0)
+ *   --tug-zoom   dimension multiplier (range 0.85–2.0), applied via CSS zoom on body
  *   --tug-timing  animation-duration multiplier (range 0.1–10.0)
  *   --tug-motion  binary motion toggle (0 or 1)
- *
- * And component-level scale tokens:
- *   --tug-comp-button-scale  (range 0.5–2.0)
- *   --tug-comp-tab-scale     (range 0.5–2.0)
- *   --tug-comp-dock-scale    (forward-declared, range 0.5–2.0)
  *
  * Rules of Tugways compliance:
  *   - Slider/toggle state uses useState for local UI state only [D40]
@@ -22,7 +17,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { TugButton } from "@/components/tugways/tug-button";
-import { getTugScale, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
+import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { Star } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -32,9 +27,6 @@ import { Star } from "lucide-react";
 const DEFAULT_SCALE = 1;
 const DEFAULT_TIMING = 1;
 const DEFAULT_MOTION = true;
-const DEFAULT_BUTTON_SCALE = 1;
-const DEFAULT_TAB_SCALE = 1;
-const DEFAULT_DOCK_SCALE = 1;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,10 +48,12 @@ interface SliderRowProps {
   step: number;
   value: number;
   onChange: (v: number) => void;
+  /** Called on pointer release — use for expensive CSS changes like zoom. */
+  onCommit?: (v: number) => void;
   note?: string;
 }
 
-function SliderRow({ label, id, min, max, step, value, onChange, note }: SliderRowProps) {
+function SliderRow({ label, id, min, max, step, value, onChange, onCommit, note }: SliderRowProps) {
   return (
     <div className="cg-control-group cg-st-slider-row">
       <label className="cg-control-label cg-st-slider-label" htmlFor={id}>
@@ -74,6 +68,12 @@ function SliderRow({ label, id, min, max, step, value, onChange, note }: SliderR
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
+        onPointerUp={(e) => onCommit?.(parseFloat((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => {
+          if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+            onCommit?.(parseFloat((e.target as HTMLInputElement).value));
+          }
+        }}
       />
       <span className="cg-st-value">{formatValue(value, step < 0.1 ? 2 : 1)}</span>
       {note && <span className="cg-st-note">{note}</span>}
@@ -88,10 +88,12 @@ function SliderRow({ label, id, min, max, step, value, onChange, note }: SliderR
 /**
  * GalleryScaleTimingContent -- Scale & Timing demo tab.
  *
- * Provides sliders and toggles for the global CSS multipliers and
- * component-level scale tokens. Sets CSS custom properties directly on
- * document.documentElement (for global tokens) or document.body (for
- * component-level tokens). Cleans up all changes on unmount.
+ * Provides sliders and toggles for the global CSS multipliers.
+ * Sets CSS custom properties directly on document.documentElement
+ * (for global tokens). Cleans up all changes on unmount.
+ *
+ * The scale slider applies CSS zoom on pointer release (not continuously)
+ * because zoom triggers a full layout recalculation.
  *
  * **Authoritative reference:** Spec S08 (#s08-gallery-tab)
  */
@@ -99,29 +101,29 @@ export function GalleryScaleTimingContent() {
   const [scale, setScaleState] = useState(DEFAULT_SCALE);
   const [timing, setTimingState] = useState(DEFAULT_TIMING);
   const [motionOn, setMotionOnState] = useState(DEFAULT_MOTION);
-  const [buttonScale, setButtonScaleState] = useState(DEFAULT_BUTTON_SCALE);
-  const [tabScale, setTabScaleState] = useState(DEFAULT_TAB_SCALE);
-  const [dockScale, setDockScaleState] = useState(DEFAULT_DOCK_SCALE);
 
   // JS helper readout state — updated whenever sliders change
   const [readout, setReadout] = useState(() => ({
-    scale: getTugScale(),
+    scale: getTugZoom(),
     timing: getTugTiming(),
     motionEnabled: isTugMotionEnabled(),
   }));
 
   const updateReadout = useCallback(() => {
     setReadout({
-      scale: getTugScale(),
+      scale: getTugZoom(),
       timing: getTugTiming(),
       motionEnabled: isTugMotionEnabled(),
     });
   }, []);
 
-  // Apply --tug-scale on :root
+  // Scale slider: track value in state (slider moves), apply zoom on commit
   const setScale = useCallback((v: number) => {
     setScaleState(v);
-    document.documentElement.style.setProperty("--tug-scale", String(v));
+  }, []);
+
+  const commitScale = useCallback((v: number) => {
+    document.documentElement.style.setProperty("--tug-zoom", String(v));
     updateReadout();
   }, [updateReadout]);
 
@@ -144,47 +146,20 @@ export function GalleryScaleTimingContent() {
     updateReadout();
   }, [updateReadout]);
 
-  // Apply --tug-comp-button-scale on body
-  const setButtonScale = useCallback((v: number) => {
-    setButtonScaleState(v);
-    document.body.style.setProperty("--tug-comp-button-scale", String(v));
-    updateReadout();
-  }, [updateReadout]);
-
-  // Apply --tug-comp-tab-scale on body
-  const setTabScale = useCallback((v: number) => {
-    setTabScaleState(v);
-    document.body.style.setProperty("--tug-comp-tab-scale", String(v));
-    updateReadout();
-  }, [updateReadout]);
-
-  // Apply --tug-comp-dock-scale on body (forward-declared, no consumer yet)
-  const setDockScale = useCallback((v: number) => {
-    setDockScaleState(v);
-    document.body.style.setProperty("--tug-comp-dock-scale", String(v));
-    updateReadout();
-  }, [updateReadout]);
-
   // Reset all multipliers to defaults
   const handleReset = useCallback(() => {
     setScale(DEFAULT_SCALE);
+    commitScale(DEFAULT_SCALE);
     setTiming(DEFAULT_TIMING);
     setMotionOn(DEFAULT_MOTION);
-    setButtonScale(DEFAULT_BUTTON_SCALE);
-    setTabScale(DEFAULT_TAB_SCALE);
-    setDockScale(DEFAULT_DOCK_SCALE);
-  }, [setScale, setTiming, setMotionOn, setButtonScale, setTabScale, setDockScale]);
+  }, [setScale, commitScale, setTiming, setMotionOn]);
 
   // Cleanup: restore all CSS custom properties to defaults on unmount.
-  // Prevents non-default state from persisting after switching away from this tab.
   useEffect(() => {
     return () => {
-      document.documentElement.style.removeProperty("--tug-scale");
+      document.documentElement.style.removeProperty("--tug-zoom");
       document.documentElement.style.removeProperty("--tug-timing");
       document.documentElement.style.removeProperty("--tug-motion");
-      document.body.style.removeProperty("--tug-comp-button-scale");
-      document.body.style.removeProperty("--tug-comp-tab-scale");
-      document.body.style.removeProperty("--tug-comp-dock-scale");
       document.body.removeAttribute("data-tug-motion");
     };
   }, []);
@@ -197,14 +172,15 @@ export function GalleryScaleTimingContent() {
         <div className="cg-section-title">Global Multipliers</div>
         <div className="cg-controls cg-st-controls">
           <SliderRow
-            label="--tug-scale"
+            label="--tug-zoom"
             id="st-scale"
             min={0.85}
             max={2.0}
             step={0.05}
             value={scale}
             onChange={setScale}
-            note="Scales all --td-space-* and --td-radius-* tokens"
+            onCommit={commitScale}
+            note="CSS zoom on body — scales entire UI including layout"
           />
           <SliderRow
             label="--tug-timing"
@@ -236,51 +212,12 @@ export function GalleryScaleTimingContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- Component-Level Scale ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Component Scale</div>
-        <div className="cg-controls cg-st-controls">
-          <SliderRow
-            label="--tug-comp-button-scale"
-            id="st-button-scale"
-            min={0.5}
-            max={2.0}
-            step={0.1}
-            value={buttonScale}
-            onChange={setButtonScale}
-            note="Scales all TugButton variants via CSS transform"
-          />
-          <SliderRow
-            label="--tug-comp-tab-scale"
-            id="st-tab-scale"
-            min={0.5}
-            max={2.0}
-            step={0.1}
-            value={tabScale}
-            onChange={setTabScale}
-            note="Scales .tug-tab-bar via CSS transform"
-          />
-          <SliderRow
-            label="--tug-comp-dock-scale"
-            id="st-dock-scale"
-            min={0.5}
-            max={2.0}
-            step={0.1}
-            value={dockScale}
-            onChange={setDockScale}
-            note="Forward-declared — no dock component yet"
-          />
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
       {/* ---- JS Helper Readout ---- */}
       <div className="cg-section">
         <div className="cg-section-title">JS Helper Readout</div>
         <div className="cg-st-readout" data-testid="st-readout">
           <div className="cg-st-readout-row">
-            <span className="cg-st-readout-fn">getTugScale()</span>
+            <span className="cg-st-readout-fn">getTugZoom()</span>
             <span className="cg-st-readout-value" data-testid="st-readout-scale">
               {formatValue(readout.scale)}
             </span>
