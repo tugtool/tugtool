@@ -28,6 +28,7 @@ import {
   L_LIGHT,
   PEAK_C_SCALE,
   HVV_PRESETS,
+  injectHvvCSS,
 } from "@/components/tugways/palette-engine";
 import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
 import {
@@ -952,5 +953,135 @@ describe("MAX_CHROMA_FOR_HUE (re-derived for HVV) — HVV Step 1", () => {
 
   it("spot-check: yellow cap is 0.045", () => {
     expect(MAX_CHROMA_FOR_HUE["yellow"]).toBe(0.045);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 2: injectHvvCSS() — Layer 1 presets and Layer 2 constants
+// ---------------------------------------------------------------------------
+
+describe("injectHvvCSS() — HVV Step 2", () => {
+  afterEach(() => {
+    const el = document.getElementById("tug-palette");
+    if (el) el.remove();
+  });
+
+  it("creates a <style id='tug-palette'> element in document.head", () => {
+    injectHvvCSS("brio");
+    const el = document.getElementById("tug-palette");
+    expect(el).not.toBeNull();
+    expect(el!.tagName.toLowerCase()).toBe("style");
+  });
+
+  it("CSS contains --tug-red: with an oklch value (canonical preset)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-red:");
+    expect(css).toContain("oklch(");
+  });
+
+  it("CSS contains --tug-red-accent: with an oklch value", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-red-accent:");
+    // Verify it is followed by an oklch value
+    expect(css).toMatch(/--tug-red-accent:\s*oklch\(/);
+  });
+
+  it("CSS contains all 7 preset variables for red", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    // canonical uses bare name; others append preset name
+    expect(css).toContain("--tug-red:");
+    expect(css).toContain("--tug-red-accent:");
+    expect(css).toContain("--tug-red-muted:");
+    expect(css).toContain("--tug-red-light:");
+    expect(css).toContain("--tug-red-subtle:");
+    expect(css).toContain("--tug-red-dark:");
+    expect(css).toContain("--tug-red-deep:");
+  });
+
+  it("total preset variable count is 168 (7 presets x 24 hues)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    // Count lines that assign oklch values to --tug-* vars (excludes constants)
+    const presetMatches = css.match(/--tug-\w+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
+    expect(presetMatches.length).toBe(168);
+  });
+
+  it("CSS contains --tug-red-h: 25 (per-hue hue angle constant)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-red-h: 25;");
+  });
+
+  it("CSS contains --tug-red-canon-l: with a numeric value", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toMatch(/--tug-red-canon-l:\s*[\d.]+;/);
+    // Verify it matches the known canonical L for red
+    expect(css).toContain(`--tug-red-canon-l: ${DEFAULT_CANONICAL_L["red"]};`);
+  });
+
+  it("CSS contains --tug-red-peak-c: with a numeric value", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toMatch(/--tug-red-peak-c:\s*[\d.]+;/);
+    // peak-c = MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE
+    const expectedPeakC = parseFloat((MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
+    expect(css).toContain(`--tug-red-peak-c: ${expectedPeakC};`);
+  });
+
+  it("CSS contains --tug-l-dark: 0.15 global constant", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain(`--tug-l-dark: ${L_DARK};`);
+  });
+
+  it("CSS contains --tug-l-light: 0.96 global constant", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain(`--tug-l-light: ${L_LIGHT};`);
+  });
+
+  it("total constant variable count is 74 (72 per-hue + 2 global)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    // Per-hue constants: -h, -canon-l, -peak-c for each of 24 hues = 72
+    const perHueH      = css.match(/--tug-\w+-h:\s*\d+;/g) ?? [];
+    const perHueCanonL = css.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const perHuePeakC  = css.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    expect(perHueH.length).toBe(24);
+    expect(perHueCanonL.length).toBe(24);
+    expect(perHuePeakC.length).toBe(24);
+    // Global constants: --tug-l-dark and --tug-l-light = 2
+    const globals = css.match(/--tug-l-(?:dark|light):\s*[\d.]+;/g) ?? [];
+    expect(globals.length).toBe(2);
+    // Total = 72 + 2 = 74
+    expect(perHueH.length + perHueCanonL.length + perHuePeakC.length + globals.length).toBe(74);
+  });
+
+  it("idempotent — calling twice creates only one style element", () => {
+    injectHvvCSS("brio");
+    injectHvvCSS("brio");
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+  });
+
+  it("second call replaces content (content is identical for same theme)", () => {
+    injectHvvCSS("brio");
+    const first = document.getElementById("tug-palette")!.textContent;
+    injectHvvCSS("brio");
+    const second = document.getElementById("tug-palette")!.textContent;
+    expect(first).toBe(second);
+  });
+
+  it("preset value for red canonical matches direct hvvColor call", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const match = css.match(/--tug-red:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const injected = match![1];
+    const expected = hvvColor("red", HVV_PRESETS["canonical"].vib, HVV_PRESETS["canonical"].val, DEFAULT_CANONICAL_L["red"]);
+    expect(injected).toBe(expected);
   });
 });

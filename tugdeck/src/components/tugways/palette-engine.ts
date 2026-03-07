@@ -536,11 +536,76 @@ export function tugPaletteVarName(hueName: string, intensity: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// CSS injection (legacy — kept for Step 5 removal)
+// CSS injection — HVV system (Step 2)
 // ---------------------------------------------------------------------------
 
 /** The id of the injected palette style element. */
 const PALETTE_STYLE_ID = "tug-palette";
+
+/**
+ * Inject the HVV CSS variable system into a `<style id="tug-palette">` element.
+ *
+ * Emits a single `:root { }` block containing:
+ *   - Layer 1: 168 semantic preset variables (7 presets × 24 hues) per Spec S01
+ *     - `--tug-{hue}` for canonical (vib=50, val=50)
+ *     - `--tug-{hue}-{preset}` for the other six presets
+ *   - Layer 2: 74 per-hue constant variables per Spec S02
+ *     - `--tug-{hue}-h` — OKLCH hue angle
+ *     - `--tug-{hue}-canon-l` — canonical lightness
+ *     - `--tug-{hue}-peak-c` — sRGB peak chroma (MAX_CHROMA_FOR_HUE × PEAK_C_SCALE)
+ *     - `--tug-l-dark` and `--tug-l-light` global constants
+ *
+ * Idempotent: replaces existing element content if already present.
+ * Uses pure DOM manipulation per Rules of Tugways [D08, D09, D40, D42].
+ *
+ * @param themeName - Theme name (reserved for future per-theme canonical L tables)
+ */
+export function injectHvvCSS(_themeName: string): void {
+  if (typeof document === "undefined") return;
+
+  const lines: string[] = [":root {"];
+
+  // Layer 1: semantic presets (168 vars = 7 presets × 24 hues)
+  // Layer 2: per-hue constants (72 vars = 3 per hue × 24 hues)
+  for (const [hueName, angle] of Object.entries(HUE_FAMILIES)) {
+    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
+    const peakC = (MAX_CHROMA_FOR_HUE[hueName] ?? 0.022) * PEAK_C_SCALE;
+
+    // Layer 1: canonical preset uses bare name; others append preset name
+    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
+      const color = hvvColor(hueName, vib, val, canonL);
+      if (presetName === "canonical") {
+        lines.push(`  --tug-${hueName}: ${color};`);
+      } else {
+        lines.push(`  --tug-${hueName}-${presetName}: ${color};`);
+      }
+    }
+
+    // Layer 2: per-hue constants
+    lines.push(`  --tug-${hueName}-h: ${angle};`);
+    lines.push(`  --tug-${hueName}-canon-l: ${canonL};`);
+    lines.push(`  --tug-${hueName}-peak-c: ${parseFloat(peakC.toFixed(4))};`);
+  }
+
+  // Layer 2: global constants (2 vars)
+  lines.push(`  --tug-l-dark: ${L_DARK};`);
+  lines.push(`  --tug-l-light: ${L_LIGHT};`);
+
+  lines.push("}");
+  const css = lines.join("\n");
+
+  let styleEl = document.getElementById(PALETTE_STYLE_ID) as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = PALETTE_STYLE_ID;
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = css;
+}
+
+// ---------------------------------------------------------------------------
+// CSS injection (legacy — kept for Step 5 removal)
+// ---------------------------------------------------------------------------
 
 /**
  * Read theme parameter overrides from computed styles on document.body.

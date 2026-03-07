@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-07T02:38:39Z
+---
+
+## step-2: Implemented injectHvvCSS(themeName) emitting 168 semantic preset CSS variables (7 presets x 24 hues) and 74 per-hue constants. Uses hvvColor() for computation, reuses PALETTE_STYLE_ID idempotency pattern, pure DOM manipulation per Rules of Tugways.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-1
 date: 2025-03-07T02:33:37Z
 ---
