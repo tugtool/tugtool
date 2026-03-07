@@ -266,6 +266,27 @@ export function GalleryScaleTimingContent() {
           <div className="cg-st-preview-row">
             <TugButton subtype="push" variant="secondary" size="md" loading>Loading</TugButton>
           </div>
+
+          {/* ---- Petals Spinner ---- */}
+          <div className="cg-st-preview-row">
+            <span className="cg-st-indicator-label">Petals</span>
+            {[18].map((sz) => (
+              <span
+                key={sz}
+                className="tug-petals"
+                style={{ "--tug-petals-size": `${sz}px` } as React.CSSProperties}
+              >
+                <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
+                <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
+              </span>
+            ))}
+          </div>
+
+          {/* ---- Pole Progress Bar ---- */}
+          <div className="cg-st-preview-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+            <span className="cg-st-indicator-label">Pole</span>
+            <div className="tug-pole"><div className="tug-pole-inner" /></div>
+          </div>
         </div>
       </div>
 
