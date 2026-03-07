@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-07T19:38:37Z
+---
+
+## step-5: Deleted short-name shadcn bridge aliases from tokens.css; rewrote @theme block in globals.css to reference --tug-base-* tokens directly
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-4
 date: 2025-03-07T19:33:05Z
 ---

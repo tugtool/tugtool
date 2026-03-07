@@ -4,55 +4,36 @@
 @import "../styles/tug-comp-tokens.css";
 
 /*
- * shadcn CSS variable bridge is already defined in tokens.css
- * under "Legacy aliases (runtime contracts - Table T06)".
- *
- * Variables provided by tokens.css:
- *   --background, --foreground, --card, --card-foreground,
- *   --muted, --muted-foreground, --popover, --popover-foreground,
- *   --border, --border-muted, --input, --ring,
- *   --primary, --primary-foreground,
- *   --secondary, --secondary-foreground,
- *   --accent, --accent-foreground,
- *   --destructive, --destructive-foreground,
- *   --success, --success-foreground,
- *   --warning, --warning-foreground,
- *   --info, --info-foreground,
- *   --radius, --radius-sm, --radius-lg
- *
- * Do NOT duplicate the variable definitions here. tokens.css is the source of truth.
- * The @theme block below registers these variables with Tailwind v4 so that
- * utility classes like bg-background, text-foreground, bg-primary etc. resolve.
- */
-
-/*
- * Tailwind v4 @theme registration: maps CSS custom properties from tokens.css
- * into Tailwind's theme namespace so utility classes work.
- * Without this block, classes like bg-primary and text-foreground will NOT resolve.
+ * Tailwind v4 @theme registration: maps --tug-base-* canonical tokens directly
+ * into Tailwind's theme namespace so utility classes work (bg-background,
+ * text-foreground, bg-primary, etc.). The shadcn short-name aliases
+ * (--background, --foreground, etc.) have been removed from tokens.css;
+ * this block now references --tug-base-* as the single source of truth.
+ * Table T02 defines the full mapping.
  */
 @theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius);
-  --radius-lg: var(--radius-lg);
+  --color-background: var(--tug-base-bg-app);
+  --color-foreground: var(--tug-base-fg-default);
+  --color-card: var(--tug-base-card-bg);
+  --color-card-foreground: var(--tug-base-fg-default);
+  --color-popover: var(--tug-base-surface-control);
+  --color-popover-foreground: var(--tug-base-fg-default);
+  --color-primary: var(--tug-base-accent-default);
+  --color-primary-foreground: var(--tug-base-fg-inverse);
+  --color-secondary: var(--tug-base-surface-control);
+  --color-secondary-foreground: var(--tug-base-fg-default);
+  --color-muted: var(--tug-base-surface-control);
+  --color-muted-foreground: var(--tug-base-fg-muted);
+  --color-accent: var(--tug-base-accent-cool-default);
+  --color-accent-foreground: var(--tug-base-bg-app);
+  --color-destructive: var(--tug-base-accent-danger);
+  --color-destructive-foreground: var(--tug-base-fg-inverse);
+  --color-border: var(--tug-base-border-default);
+  --color-input: var(--tug-base-border-default);
+  --color-ring: var(--tug-base-accent-cool-default);
+  --radius-sm: var(--tug-base-radius-sm);
+  --radius-md: var(--tug-base-radius-md);
+  --radius-lg: var(--tug-base-radius-lg);
 }
 
 /* Global resets (moved from inline <style> in index.html) */
