@@ -220,6 +220,65 @@ export function findMaxChroma(
 }
 
 // ---------------------------------------------------------------------------
+// OKLCH → linear Display P3 conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert OKLCH polar coordinates to linear Display P3 channels.
+ * Returns { r, g, b } where each channel is in [0, 1] for in-gamut colors.
+ *
+ * Pipeline (steps 1-3 identical to oklchToLinearSRGB):
+ *   1. OKLCH → OKLab (polar to Cartesian)
+ *   2. OKLab → LMS^ (inverse OKLab M1 matrix)
+ *   3. LMS^ cube (undo cube-root compression)
+ *   4. LMS → linear Display P3 (P3 M2 matrix, differs from sRGB)
+ *
+ * The LMS-to-linear-Display-P3 matrix is derived by composing the OKLab
+ * LMS→XYZ matrix (inverse of Ottosson M1) with the XYZ D65→Display-P3
+ * matrix from the CSS Color 4 specification:
+ *   https://www.w3.org/TR/css-color-4/#color-conversion-code
+ *
+ * Exported for use in isInP3Gamut and tests.
+ */
+export function oklchToLinearP3(L: number, C: number, h: number): { r: number; g: number; b: number } {
+  // Steps 1-3: identical to oklchToLinearSRGB
+  const hRad = (h * Math.PI) / 180;
+  const a = C * Math.cos(hRad);
+  const b = C * Math.sin(hRad);
+
+  const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
+  const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
+  const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  const lLMS = lHat * lHat * lHat;
+  const mLMS = mHat * mHat * mHat;
+  const sLMS = sHat * sHat * sHat;
+
+  // Step 4: LMS → linear Display P3
+  // Matrix = (XYZ_D65_to_P3) * inv(OKLab_M1_XYZ_to_LMS)
+  const r =  3.1281105290 * lLMS - 2.2570750183 * mLMS + 0.1293047883 * sLMS;
+  const g = -1.0911281610 * lLMS + 2.4132667618 * mLMS - 0.3221681709 * sLMS;
+  const bVal = -0.0260136498 * lLMS - 0.5080276490 * mLMS + 1.5333166822 * sLMS;
+
+  return { r, g, b: bVal };
+}
+
+/**
+ * Check if an OKLCH color is within the Display P3 gamut (all channels in [0, 1]).
+ * Allows a small epsilon for floating point rounding.
+ *
+ * Exported for use in _deriveChromaCaps and tests.
+ */
+export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
+  const { r, g, b } = oklchToLinearP3(L, C, h);
+  return (
+    r >= -epsilon && r <= 1 + epsilon &&
+    g >= -epsilon && g <= 1 + epsilon &&
+    b >= -epsilon && b <= 1 + epsilon
+  );
+}
+
+// ---------------------------------------------------------------------------
 // _deriveChromaCaps — parameterized chroma cap derivation helper
 // ---------------------------------------------------------------------------
 
@@ -358,6 +417,70 @@ export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
   magenta: 0.024,
   crimson: 0.022,
   coral:   0.019,
+};
+
+// ---------------------------------------------------------------------------
+// P3 chroma cap derivation helper and static table
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive per-hue P3 chroma caps using the same HVV L sample points as the
+ * sRGB derivation but with the Display P3 gamut checker and NO maxCap.
+ *
+ * P3 chroma values must be allowed to exceed DEFAULT_LC_PARAMS.cMax (0.22),
+ * which is the sRGB ceiling. Capping P3 at 0.22 would negate the purpose of
+ * P3 support. The result is the uncapped binary-search maximum safe chroma
+ * across [L_DARK, per-hue canonical L, L_LIGHT] for each hue.
+ *
+ * Not called at runtime. Run once to regenerate MAX_P3_CHROMA_FOR_HUE.
+ */
+export function _deriveP3ChromaCaps(): Record<string, number> {
+  const hvvLSamples = (hue: string): number[] => [
+    L_DARK,
+    DEFAULT_CANONICAL_L[hue] ?? 0.7,
+    L_LIGHT,
+  ];
+  return _deriveChromaCaps(hvvLSamples, isInP3Gamut);
+}
+
+/**
+ * Per-hue maximum chroma for Display P3 gamut safety.
+ *
+ * Hardcoded static table — not computed at runtime. Derived by calling
+ * _deriveP3ChromaCaps() once with HVV L sample points (L_DARK=0.15,
+ * per-hue canonical L, L_LIGHT=0.96) and the isInP3Gamut checker.
+ * No maxCap applied — P3 values intentionally exceed sRGB's 0.22 ceiling.
+ *
+ * All values are strictly greater than the corresponding MAX_CHROMA_FOR_HUE
+ * entries because the P3 gamut is strictly larger than sRGB.
+ *
+ * To regenerate: call _deriveP3ChromaCaps() and paste the output here.
+ */
+export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
+  cherry:  0.026,
+  red:     0.025,
+  tomato:  0.026,
+  flame:   0.027,
+  orange:  0.029,
+  amber:   0.033,
+  gold:    0.040,
+  yellow:  0.055,
+  lime:    0.061,
+  green:   0.082,
+  mint:    0.067,
+  teal:    0.050,
+  cyan:    0.045,
+  sky:     0.034,
+  blue:    0.026,
+  indigo:  0.022,
+  violet:  0.021,
+  purple:  0.022,
+  plum:    0.025,
+  pink:    0.034,
+  rose:    0.039,
+  magenta: 0.033,
+  crimson: 0.029,
+  coral:   0.025,
 };
 
 // ---------------------------------------------------------------------------
@@ -545,28 +668,32 @@ const PALETTE_STYLE_ID = "tug-palette";
 /**
  * Inject the HVV CSS variable system into a `<style id="tug-palette">` element.
  *
- * Emits a single `:root { }` block containing:
- *   - Layer 1: 168 semantic preset variables (7 presets × 24 hues) per Spec S01
- *     - `--tug-{hue}` for canonical (vib=50, val=50)
- *     - `--tug-{hue}-{preset}` for the other six presets
- *   - Layer 2: 74 per-hue constant variables per Spec S02
- *     - `--tug-{hue}-h` — OKLCH hue angle
- *     - `--tug-{hue}-canon-l` — canonical lightness
- *     - `--tug-{hue}-peak-c` — sRGB peak chroma (MAX_CHROMA_FOR_HUE × PEAK_C_SCALE)
- *     - `--tug-l-dark` and `--tug-l-light` global constants
+ * Emits two blocks:
+ *
+ * 1. `:root { }` — sRGB defaults:
+ *    - Layer 1: 168 semantic preset variables (7 presets × 24 hues) per Spec S01
+ *      - `--tug-{hue}` for canonical (vib=50, val=50)
+ *      - `--tug-{hue}-{preset}` for the other six presets
+ *    - Layer 2: 74 per-hue constant variables per Spec S02
+ *      - `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c` per hue
+ *      - `--tug-l-dark` and `--tug-l-light` global constants
+ *
+ * 2. `@media (color-gamut: p3) { :root { } }` — P3 overrides per Spec S03:
+ *    - All 168 presets recomputed with P3 peak chroma
+ *    - Per-hue `--tug-{hue}-peak-c` overridden with P3 values
+ *    - `-h` and `-canon-l` constants are gamut-independent, not overridden
  *
  * Idempotent: replaces existing element content if already present.
  * Uses pure DOM manipulation per Rules of Tugways [D08, D09, D40, D42].
  *
- * @param themeName - Theme name (reserved for future per-theme canonical L tables)
+ * @param _themeName - Theme name (reserved for future per-theme canonical L tables)
  */
 export function injectHvvCSS(_themeName: string): void {
   if (typeof document === "undefined") return;
 
   const lines: string[] = [":root {"];
 
-  // Layer 1: semantic presets (168 vars = 7 presets × 24 hues)
-  // Layer 2: per-hue constants (72 vars = 3 per hue × 24 hues)
+  // sRGB block: Layer 1 presets + Layer 2 constants
   for (const [hueName, angle] of Object.entries(HUE_FAMILIES)) {
     const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
     const peakC = (MAX_CHROMA_FOR_HUE[hueName] ?? 0.022) * PEAK_C_SCALE;
@@ -590,8 +717,33 @@ export function injectHvvCSS(_themeName: string): void {
   // Layer 2: global constants (2 vars)
   lines.push(`  --tug-l-dark: ${L_DARK};`);
   lines.push(`  --tug-l-light: ${L_LIGHT};`);
-
   lines.push("}");
+
+  // P3 override block: wider-gamut presets and peak-c constants
+  lines.push("@media (color-gamut: p3) {");
+  lines.push("  :root {");
+
+  for (const [hueName] of Object.entries(HUE_FAMILIES)) {
+    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
+    const p3PeakC = (MAX_P3_CHROMA_FOR_HUE[hueName] ?? 0.026) * PEAK_C_SCALE;
+
+    // P3 preset overrides (all 7 per hue, using P3 peak chroma)
+    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
+      const color = hvvColor(hueName, vib, val, canonL, p3PeakC);
+      if (presetName === "canonical") {
+        lines.push(`    --tug-${hueName}: ${color};`);
+      } else {
+        lines.push(`    --tug-${hueName}-${presetName}: ${color};`);
+      }
+    }
+
+    // P3 peak-c constant override
+    lines.push(`    --tug-${hueName}-peak-c: ${parseFloat(p3PeakC.toFixed(4))};`);
+  }
+
+  lines.push("  }");
+  lines.push("}");
+
   const css = lines.join("\n");
 
   let styleEl = document.getElementById(PALETTE_STYLE_ID) as HTMLStyleElement | null;

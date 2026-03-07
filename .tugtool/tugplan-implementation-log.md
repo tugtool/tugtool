@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-07T02:47:18Z
+---
+
+## step-3: Added oklchToLinearP3, isInP3Gamut, _deriveP3ChromaCaps, MAX_P3_CHROMA_FOR_HUE static table. Updated injectHvvCSS to emit @media (color-gamut: p3) block with P3-recomputed presets and peak-c overrides. All 24 P3 chroma values strictly exceed sRGB counterparts.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-2
 date: 2025-03-07T02:38:39Z
 ---

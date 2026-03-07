@@ -29,6 +29,9 @@ import {
   PEAK_C_SCALE,
   HVV_PRESETS,
   injectHvvCSS,
+  oklchToLinearP3,
+  isInP3Gamut,
+  MAX_P3_CHROMA_FOR_HUE,
 } from "@/components/tugways/palette-engine";
 import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
 import {
@@ -1001,11 +1004,12 @@ describe("injectHvvCSS() — HVV Step 2", () => {
     expect(css).toContain("--tug-red-deep:");
   });
 
-  it("total preset variable count is 168 (7 presets x 24 hues)", () => {
+  it("total preset variable count is 168 in sRGB block (7 presets x 24 hues)", () => {
     injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-    // Count lines that assign oklch values to --tug-* vars (excludes constants)
-    const presetMatches = css.match(/--tug-\w+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
+    // Scope to sRGB :root block only (before @media boundary)
+    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
+    const presetMatches = srgbBlock.match(/--tug-\w+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
     expect(presetMatches.length).toBe(168);
   });
 
@@ -1044,18 +1048,20 @@ describe("injectHvvCSS() — HVV Step 2", () => {
     expect(css).toContain(`--tug-l-light: ${L_LIGHT};`);
   });
 
-  it("total constant variable count is 74 (72 per-hue + 2 global)", () => {
+  it("total constant variable count is 74 in sRGB block (72 per-hue + 2 global)", () => {
     injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
+    // Scope to sRGB :root block only (before @media boundary)
+    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
     // Per-hue constants: -h, -canon-l, -peak-c for each of 24 hues = 72
-    const perHueH      = css.match(/--tug-\w+-h:\s*\d+;/g) ?? [];
-    const perHueCanonL = css.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
-    const perHuePeakC  = css.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    const perHueH      = srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? [];
+    const perHueCanonL = srgbBlock.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const perHuePeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
     expect(perHueH.length).toBe(24);
     expect(perHueCanonL.length).toBe(24);
     expect(perHuePeakC.length).toBe(24);
     // Global constants: --tug-l-dark and --tug-l-light = 2
-    const globals = css.match(/--tug-l-(?:dark|light):\s*[\d.]+;/g) ?? [];
+    const globals = srgbBlock.match(/--tug-l-(?:dark|light):\s*[\d.]+;/g) ?? [];
     expect(globals.length).toBe(2);
     // Total = 72 + 2 = 74
     expect(perHueH.length + perHueCanonL.length + perHuePeakC.length + globals.length).toBe(74);
@@ -1083,5 +1089,180 @@ describe("injectHvvCSS() — HVV Step 2", () => {
     const injected = match![1];
     const expected = hvvColor("red", HVV_PRESETS["canonical"].vib, HVV_PRESETS["canonical"].val, DEFAULT_CANONICAL_L["red"]);
     expect(injected).toBe(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 3: oklchToLinearP3 and isInP3Gamut — unit tests
+// ---------------------------------------------------------------------------
+
+describe("oklchToLinearP3() — HVV Step 3", () => {
+  it("returns an {r, g, b} object for a known OKLCH color", () => {
+    // Pure white in OKLCH: L=1, C=0, h=0 → channels near 1 in all gamuts.
+    // Matrix rounding means values are approximately 1, not exactly 1.
+    const result = oklchToLinearP3(1, 0, 0);
+    expect(result).toHaveProperty("r");
+    expect(result).toHaveProperty("g");
+    expect(result).toHaveProperty("b");
+    // Use precision 2 (±0.005) to accommodate matrix rounding in the P3 derivation
+    expect(result.r).toBeCloseTo(1, 2);
+    expect(result.g).toBeCloseTo(1, 2);
+    expect(result.b).toBeCloseTo(1, 2);
+  });
+
+  it("pure black OKLCH (L=0, C=0) maps to {r:0, g:0, b:0}", () => {
+    const result = oklchToLinearP3(0, 0, 0);
+    expect(result.r).toBeCloseTo(0, 3);
+    expect(result.g).toBeCloseTo(0, 3);
+    expect(result.b).toBeCloseTo(0, 3);
+  });
+
+  it("P3 channels differ from sRGB channels for a saturated color outside sRGB", () => {
+    // A vivid P3 green (hue ~145°, high chroma) is outside sRGB but inside P3.
+    // The two matrices should produce different channel values for the same OKLCH input.
+    const { oklchToLinearSRGB: srgbFn } = { oklchToLinearSRGB: (L: number, C: number, h: number) => {
+      const hRad = (h * Math.PI) / 180;
+      const a = C * Math.cos(hRad); const b = C * Math.sin(hRad);
+      const lH = L + 0.3963377774*a + 0.2158037573*b;
+      const mH = L - 0.1055613458*a - 0.0638541728*b;
+      const sH = L - 0.0894841775*a - 1.2914855480*b;
+      const l = lH**3, m = mH**3, s = sH**3;
+      return {
+        r:  4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+        g: -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+        b: -0.0041960863*l - 0.7034186147*m + 1.7076147010*s,
+      };
+    }};
+    const L = 0.7, C = 0.18, h = 145;
+    const srgb = srgbFn(L, C, h);
+    const p3 = oklchToLinearP3(L, C, h);
+    // P3 and sRGB matrices are different — channel values must differ
+    expect(p3.r).not.toBeCloseTo(srgb.r, 6);
+  });
+});
+
+describe("isInP3Gamut() — HVV Step 3", () => {
+  it("returns true for a neutral gray (inside every gamut)", () => {
+    // L=0.5, C=0 — pure achromatic, trivially inside P3
+    expect(isInP3Gamut(0.5, 0, 0)).toBe(true);
+  });
+
+  it("returns true for a color inside P3 but outside sRGB (vivid green at high chroma)", () => {
+    // Use a chroma value that is above MAX_CHROMA_FOR_HUE['green'] (0.069)
+    // but below MAX_P3_CHROMA_FOR_HUE['green'] (0.082), at canonical L for green.
+    const L = DEFAULT_CANONICAL_L["green"];  // 0.821
+    const h = HUE_FAMILIES["green"];         // 140
+    const C = 0.075; // between sRGB cap (0.069) and P3 cap (0.082)
+    expect(isInP3Gamut(L, C, h)).toBe(true);
+  });
+
+  it("returns false for a color clearly outside P3 gamut (extreme chroma)", () => {
+    // Chroma of 0.5 at a dark L is far outside any practical gamut
+    expect(isInP3Gamut(0.15, 0.5, 25)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 3: MAX_P3_CHROMA_FOR_HUE — all > MAX_CHROMA_FOR_HUE
+// ---------------------------------------------------------------------------
+
+describe("MAX_P3_CHROMA_FOR_HUE — HVV Step 3", () => {
+  it("has exactly 24 entries", () => {
+    expect(Object.keys(MAX_P3_CHROMA_FOR_HUE).length).toBe(24);
+  });
+
+  it("has an entry for every hue family", () => {
+    for (const name of Object.keys(HUE_FAMILIES)) {
+      expect(MAX_P3_CHROMA_FOR_HUE[name]).toBeDefined();
+    }
+  });
+
+  it("all P3 caps are strictly greater than corresponding sRGB caps", () => {
+    const violations: string[] = [];
+    for (const name of Object.keys(HUE_FAMILIES)) {
+      const p3 = MAX_P3_CHROMA_FOR_HUE[name];
+      const srgb = MAX_CHROMA_FOR_HUE[name];
+      if (p3 === undefined || srgb === undefined || p3 <= srgb) {
+        violations.push(`${name}: P3=${p3} sRGB=${srgb}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("spot-check: red P3=0.025 > sRGB=0.019", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBe(0.025);
+    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["red"]);
+  });
+
+  it("spot-check: green P3=0.082 > sRGB=0.069", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBe(0.082);
+    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["green"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 3: injectHvvCSS @media (color-gamut: p3) block
+// ---------------------------------------------------------------------------
+
+describe("injectHvvCSS() P3 @media block — HVV Step 3", () => {
+  afterEach(() => {
+    const el = document.getElementById("tug-palette");
+    if (el) el.remove();
+  });
+
+  it("output contains '@media (color-gamut: p3)'", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("@media (color-gamut: p3)");
+  });
+
+  it("P3 block contains --tug-red: with a wider-chroma oklch value than the sRGB block", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    // Split on the @media boundary to get sRGB block and P3 block separately
+    const mediaIdx = css.indexOf("@media (color-gamut: p3)");
+    expect(mediaIdx).toBeGreaterThan(0);
+    const srgbBlock = css.slice(0, mediaIdx);
+    const p3Block = css.slice(mediaIdx);
+
+    // Extract --tug-red canonical value from each block
+    const srgbMatch = srgbBlock.match(/--tug-red:\s*(oklch\([\d.]+ ([\d.]+) \d+\));/);
+    const p3Match = p3Block.match(/--tug-red:\s*(oklch\([\d.]+ ([\d.]+) \d+\));/);
+    expect(srgbMatch).not.toBeNull();
+    expect(p3Match).not.toBeNull();
+
+    const srgbC = parseFloat(srgbMatch![2]);
+    const p3C = parseFloat(p3Match![2]);
+    expect(p3C).toBeGreaterThan(srgbC);
+  });
+
+  it("P3 block contains --tug-red-peak-c: with value > sRGB --tug-red-peak-c:", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+
+    const mediaIdx = css.indexOf("@media (color-gamut: p3)");
+    const srgbBlock = css.slice(0, mediaIdx);
+    const p3Block = css.slice(mediaIdx);
+
+    const srgbPeakMatch = srgbBlock.match(/--tug-red-peak-c:\s*([\d.]+);/);
+    const p3PeakMatch = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
+    expect(srgbPeakMatch).not.toBeNull();
+    expect(p3PeakMatch).not.toBeNull();
+
+    const srgbPeak = parseFloat(srgbPeakMatch![1]);
+    const p3Peak = parseFloat(p3PeakMatch![1]);
+    expect(p3Peak).toBeGreaterThan(srgbPeak);
+  });
+
+  it("P3 peak-c for red equals MAX_P3_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const mediaIdx = css.indexOf("@media (color-gamut: p3)");
+    const p3Block = css.slice(mediaIdx);
+    const match = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
+    expect(match).not.toBeNull();
+    const expected = parseFloat((MAX_P3_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
+    expect(parseFloat(match![1])).toBeCloseTo(expected, 4);
   });
 });
