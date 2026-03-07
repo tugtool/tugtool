@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-07T04:42:59Z
+---
+
+## step-7: Registered gallery-scale-timing in GALLERY_DEFAULT_TABS and registerGalleryCards(). Updated gallery-card docstrings from nine to ten tabs. Updated test assertions for new tab count.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-6
 date: 2025-03-07T04:36:07Z
 ---
