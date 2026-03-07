@@ -13,7 +13,7 @@ protocol BridgeDelegate: AnyObject {
 }
 
 /// Main window containing the WKWebView for tugdeck dashboard
-class MainWindow: NSWindow, WKNavigationDelegate {
+class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
     private var contentController: WKUserContentController!
     weak var bridgeDelegate: BridgeDelegate?
@@ -46,6 +46,7 @@ class MainWindow: NSWindow, WKNavigationDelegate {
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
@@ -153,6 +154,44 @@ class MainWindow: NSWindow, WKNavigationDelegate {
         // Allow all navigation for auth flow
         decisionHandler(.allow)
     }
+
+    // MARK: - WKUIDelegate
+
+    /// Handle <input type="file"> — without this, file inputs are silently ignored in WKWebView.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        panel.begin { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    /// Handle blob URL downloads (e.g. Export JSON) — without this, <a download> navigates instead of downloading.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if let response = navigationResponse.response as? HTTPURLResponse,
+           let contentDisposition = response.value(forHTTPHeaderField: "Content-Disposition"),
+           contentDisposition.contains("attachment") {
+            decisionHandler(.download)
+            return
+        }
+        // For blob: URLs triggered by <a download>, WKWebView reports them as non-main-frame
+        // navigations with a blob scheme. Convert these to downloads.
+        if navigationResponse.response.url?.scheme == "blob" {
+            decisionHandler(.download)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
 }
 
 // MARK: - WKScriptMessageHandler
@@ -217,6 +256,18 @@ extension MainWindow: WKScriptMessageHandler {
             bridgeDelegate?.bridgeDevBadge(backend: backend, app: app)
         default:
             NSLog("MainWindow: unknown script message: %@", message.name)
+        }
+    }
+}
+
+// MARK: - WKDownloadDelegate
+
+extension MainWindow: WKDownloadDelegate {
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename
+        panel.begin { result in
+            completionHandler(result == .OK ? panel.url : nil)
         }
     }
 }

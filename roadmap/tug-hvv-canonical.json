@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "global": {
+    "l_dark": 0.15,
+    "l_light": 0.96
+  },
+  "hues": {
+    "cherry": {
+      "canonical_l": 0.619
+    },
+    "red": {
+      "canonical_l": 0.659
+    },
+    "tomato": {
+      "canonical_l": 0.704
+    },
+    "flame": {
+      "canonical_l": 0.74
+    },
+    "orange": {
+      "canonical_l": 0.78
+    },
+    "amber": {
+      "canonical_l": 0.821
+    },
+    "gold": {
+      "canonical_l": 0.852
+    },
+    "yellow": {
+      "canonical_l": 0.901
+    },
+    "lime": {
+      "canonical_l": 0.861
+    },
+    "green": {
+      "canonical_l": 0.821
+    },
+    "mint": {
+      "canonical_l": 0.807
+    },
+    "teal": {
+      "canonical_l": 0.803
+    },
+    "cyan": {
+      "canonical_l": 0.803
+    },
+    "sky": {
+      "canonical_l": 0.807
+    },
+    "blue": {
+      "canonical_l": 0.771
+    },
+    "indigo": {
+      "canonical_l": 0.744
+    },
+    "violet": {
+      "canonical_l": 0.708
+    },
+    "purple": {
+      "canonical_l": 0.686
+    },
+    "plum": {
+      "canonical_l": 0.731
+    },
+    "pink": {
+      "canonical_l": 0.794
+    },
+    "rose": {
+      "canonical_l": 0.758
+    },
+    "magenta": {
+      "canonical_l": 0.726
+    },
+    "crimson": {
+      "canonical_l": 0.668
+    },
+    "coral": {
+      "canonical_l": 0.632
+    }
+  }
+}

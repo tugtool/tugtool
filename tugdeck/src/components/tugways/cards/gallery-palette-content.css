@@ -1,7 +1,7 @@
 /**
- * Gallery Palette Content styles — Phase 5d5a.
+ * Gallery Palette Content styles — HueVibVal editor.
  *
- * Styles for the GalleryPaletteContent component and its sub-components.
+ * Styles for the HueVibVal canonical color tuning editor.
  * Builds on the cg-* class patterns from gallery-card.css.
  * All color tokens use var(--td-*) semantic tokens exclusively.
  */
@@ -15,7 +15,7 @@
 }
 
 /* ============================================================================
-   Action row (Reset / Lock buttons)
+   Action row (Export / Import / Reset buttons)
    ========================================================================= */
 
 .gp-action-row {
@@ -43,276 +43,6 @@
 }
 
 /* ============================================================================
-   Slider controls
-   ========================================================================= */
-
-.gp-controls {
-  /* Extends .cg-controls layout */
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-
-.gp-slider {
-  width: 100px;
-  cursor: pointer;
-  accent-color: var(--td-accent);
-}
-
-.gp-slider-value {
-  font-size: 10px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
-  min-width: 36px;
-  text-align: right;
-  user-select: none;
-}
-
-/* ============================================================================
-   Side-by-side comparison layout
-   ========================================================================= */
-
-.gp-comparison {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  overflow-x: auto;
-}
-
-.gp-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.gp-panel-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--td-text-soft);
-  user-select: none;
-  white-space: nowrap;
-  text-transform: capitalize;
-}
-
-/* ============================================================================
-   Swatch grid
-   ========================================================================= */
-
-.gp-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-x: auto;
-}
-
-.gp-grid-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.gp-grid-header {
-  margin-bottom: 2px;
-}
-
-.gp-header-corner {
-  /* Empty corner cell above hue labels */
-}
-
-.gp-hue-label {
-  font-size: 10px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
-  width: 52px;
-  flex-shrink: 0;
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.gp-stop-label {
-  font-size: 9px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text-soft);
-  width: 22px;
-  flex-shrink: 0;
-  text-align: center;
-  user-select: none;
-}
-
-.gp-swatch {
-  width: 22px;
-  height: 18px;
-  flex-shrink: 0;
-  border-radius: 2px;
-  cursor: default;
-}
-
-/* ============================================================================
-   Mode toggle (Anchors / Curves)
-   ========================================================================= */
-
-.gp-mode-toggle {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.gp-mode-btn {
-  font-size: 11px;
-  font-family: var(--td-font-sans);
-  color: var(--td-text-soft);
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
-  padding: 3px 10px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.gp-mode-btn:hover {
-  background-color: var(--td-surface);
-}
-
-.gp-mode-btn--active {
-  color: var(--td-text);
-  background-color: var(--td-surface);
-  border-color: var(--td-border-strong, var(--td-border));
-  font-weight: 500;
-}
-
-/* ============================================================================
-   Anchor mode: swatch appearance
-   ========================================================================= */
-
-.gp-anchor-swatch {
-  cursor: pointer;
-  border: 1px solid transparent;
-  box-sizing: border-box;
-}
-
-.gp-anchor-swatch:hover {
-  border-color: var(--td-border);
-}
-
-/* Anchor stops get a thicker border / dot indicator */
-.gp-anchor-swatch--is-anchor {
-  border: 2px solid var(--td-border-strong, var(--td-text-soft));
-}
-
-/* Selected swatch */
-.gp-anchor-swatch--selected {
-  outline: 2px solid var(--td-accent, #0066cc);
-  outline-offset: 1px;
-}
-
-/* ============================================================================
-   Anchor theme selector row
-   ========================================================================= */
-
-.gp-anchor-theme-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ============================================================================
-   Anchor inline editor
-   ========================================================================= */
-
-.gp-anchor-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  background-color: var(--td-surface-control);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
-  max-width: 320px;
-}
-
-.gp-anchor-editor-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.gp-anchor-editor-hue {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--td-text);
-  font-family: var(--td-font-mono, monospace);
-}
-
-.gp-anchor-editor-stop {
-  font-size: 11px;
-  color: var(--td-text-soft);
-  font-family: var(--td-font-mono, monospace);
-}
-
-.gp-anchor-editor-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.gp-anchor-editor-label {
-  font-size: 11px;
-  color: var(--td-text-soft);
-  font-family: var(--td-font-sans);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  min-width: 48px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.gp-anchor-input {
-  font-size: 11px;
-  font-family: var(--td-font-mono, monospace);
-  color: var(--td-text);
-  background-color: var(--td-surface);
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-xs);
-  padding: 2px 6px;
-  width: 72px;
-}
-
-.gp-anchor-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.gp-anchor-gamut-warning {
-  font-size: 10px;
-  color: #cc3333;
-  font-family: var(--td-font-sans);
-  white-space: nowrap;
-}
-
-.gp-anchor-editor-note {
-  font-size: 10px;
-  color: var(--td-text-soft);
-  font-style: italic;
-  font-family: var(--td-font-sans);
-}
-
-/* ============================================================================
-   Anchors panel wrapper
-   ========================================================================= */
-
-.gp-anchors-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-/* ============================================================================
    Import error message
    ========================================================================= */
 
@@ -328,10 +58,138 @@
 }
 
 /* ============================================================================
-   Visibility utility — used by mode toggle to hide inactive panel
-   while keeping its DOM nodes available (for backward-compat test queries)
+   Canonical color strip
    ========================================================================= */
 
-.gp-hidden {
-  display: none;
+.gp-canonical-strip {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.gp-canonical-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.gp-canonical-item--selected .gp-canonical-swatch {
+  outline: 2px solid var(--td-accent, #0066cc);
+  outline-offset: 1px;
+}
+
+.gp-canonical-swatch {
+  width: 26px;
+  height: 32px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.gp-canonical-swatch:hover {
+  border-color: var(--td-border);
+}
+
+.gp-canonical-label {
+  font-size: 8px;
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text-soft);
+  user-select: none;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.gp-canonical-item--selected .gp-canonical-label {
+  color: var(--td-accent, #0066cc);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   L Curve Editor (SVG)
+   ========================================================================= */
+
+.gp-curve-svg {
+  width: 100%;
+  max-width: 680px;
+  height: auto;
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+
+.gp-curve-axis-label {
+  font-size: 9px;
+  font-family: var(--td-font-mono, monospace);
+  fill: var(--td-text-soft, #888);
+}
+
+.gp-curve-hue-label {
+  font-size: 8px;
+  font-family: var(--td-font-mono, monospace);
+  fill: var(--td-text-soft, #888);
+  user-select: none;
+}
+
+.gp-curve-hue-label--selected {
+  fill: var(--td-accent, #0066cc);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   VibVal grid
+   ========================================================================= */
+
+.gp-vvgrid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.gp-vvgrid-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gp-vvgrid-corner {
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.gp-vvgrid-header-cell {
+  width: 28px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 9px;
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text-soft);
+  user-select: none;
+}
+
+.gp-vvgrid-row-label {
+  width: 28px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 4px;
+  font-size: 9px;
+  font-family: var(--td-font-mono, monospace);
+  color: var(--td-text-soft);
+  user-select: none;
+}
+
+.gp-vvgrid-cell {
+  width: 28px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+.gp-vvgrid-cell--canonical {
+  outline: 2px solid var(--td-accent, #0066cc);
+  outline-offset: 1px;
 }

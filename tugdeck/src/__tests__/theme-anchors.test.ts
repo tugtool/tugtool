@@ -5,10 +5,10 @@
  * - DEFAULT_ANCHOR_DATA has entries for all 24 hue names in all three themes
  * - Every hue in every theme has at least 3 anchors (stops 0, 50, 100)
  * - All anchor C values are <= MAX_CHROMA_FOR_HUE for that hue
- * - Brio stop-50 L for "yellow" is approximately 0.90 (Table T01 canonical value)
- * - Brio stop-50 L for "blue" is approximately 0.55 (Table T01 canonical value)
- * - Bluenote stop-50 L for "blue" is higher than brio stop-50 L for "blue"
- * - All 24 hues x 11 stops produce sRGB-safe oklch values via tugAnchoredColor with brio anchors
+ * - Tuned stop-50 L values match hand-tuned gallery export
+ * - All three themes share identical anchor values
+ * - Stop-50 and stop-100 C values pegged to MAX_CHROMA_FOR_HUE
+ * - All 24 hues x 11 stops produce parseable oklch strings
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
  */
@@ -35,36 +35,6 @@ function parseOklch(s: string): { L: number; C: number; h: number } | null {
   const m = s.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
   if (!m) return null;
   return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
-}
-
-/**
- * Convert OKLCH to linear sRGB for gamut safety checks.
- * Mirrors the private implementation in palette-engine.ts.
- */
-function oklchToLinearSRGB(L: number, C: number, h: number): { r: number; g: number; b: number } {
-  const hRad = (h * Math.PI) / 180;
-  const a = C * Math.cos(hRad);
-  const b = C * Math.sin(hRad);
-
-  const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
-  const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
-  const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
-
-  const lLMS = lHat * lHat * lHat;
-  const mLMS = mHat * mHat * mHat;
-  const sLMS = sHat * sHat * sHat;
-
-  const r = 4.0767416621 * lLMS - 3.3077115913 * mLMS + 0.2309699292 * sLMS;
-  const g = -1.2684380046 * lLMS + 2.6097574011 * mLMS - 0.3413193965 * sLMS;
-  const bVal = -0.0041960863 * lLMS - 0.7034186147 * mLMS + 1.7076147010 * sLMS;
-
-  return { r, g, b: bVal };
-}
-
-function isInSRGBGamut(L: number, C: number, h: number): boolean {
-  const { r, g, b } = oklchToLinearSRGB(L, C, h);
-  const eps = 0.005;
-  return r >= -eps && r <= 1 + eps && g >= -eps && g <= 1 + eps && b >= -eps && b <= 1 + eps;
 }
 
 const ALL_HUE_NAMES = Object.keys(HUE_FAMILIES);
@@ -147,23 +117,25 @@ describe("Minimum anchor coverage", () => {
 // Chroma cap enforcement
 // ---------------------------------------------------------------------------
 
-describe("Chroma cap enforcement", () => {
-  it("all anchor C values are <= MAX_CHROMA_FOR_HUE for that hue", () => {
+describe("Chroma pegged to MAX_CHROMA_FOR_HUE", () => {
+  it("stop-50 and stop-100 C values equal MAX_CHROMA_FOR_HUE for every hue", () => {
     const violations: string[] = [];
     for (const theme of ALL_THEMES) {
       for (const hue of ALL_HUE_NAMES) {
         const cap = MAX_CHROMA_FOR_HUE[hue];
-        for (const anchor of DEFAULT_ANCHOR_DATA[theme][hue].anchors) {
-          if (anchor.C > cap + 0.0001) {
-            violations.push(
-              `${theme}.${hue} stop=${anchor.stop}: C=${anchor.C} > cap=${cap}`,
-            );
-          }
+        const anchors = DEFAULT_ANCHOR_DATA[theme][hue].anchors;
+        const a50 = anchors.find((a) => a.stop === 50);
+        const a100 = anchors.find((a) => a.stop === 100);
+        if (a50 && Math.abs(a50.C - cap) > 0.0001) {
+          violations.push(`${theme}.${hue} stop=50: C=${a50.C} != cap=${cap}`);
+        }
+        if (a100 && Math.abs(a100.C - cap) > 0.0001) {
+          violations.push(`${theme}.${hue} stop=100: C=${a100.C} != cap=${cap}`);
         }
       }
     }
     if (violations.length > 0) {
-      throw new Error(`Chroma cap violations:\n${violations.join("\n")}`);
+      throw new Error(`Chroma peg violations:\n${violations.join("\n")}`);
     }
   });
 });
@@ -172,72 +144,39 @@ describe("Chroma cap enforcement", () => {
 // Table T01 canonical L values
 // ---------------------------------------------------------------------------
 
-describe("Table T01 canonical L values", () => {
-  it("brio stop-50 L for 'yellow' is approximately 0.90", () => {
+describe("Tuned stop-50 L values", () => {
+  it("brio stop-50 L for 'yellow' is approximately 0.94", () => {
     const anchor = BRIO_ANCHORS.yellow.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.90, 2);
+    expect(anchor!.L).toBeCloseTo(0.94, 2);
   });
 
-  it("brio stop-50 L for 'blue' is approximately 0.55", () => {
+  it("brio stop-50 L for 'blue' is approximately 0.86", () => {
     const anchor = BRIO_ANCHORS.blue.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.55, 2);
+    expect(anchor!.L).toBeCloseTo(0.86, 2);
   });
 
-  it("bluenote stop-50 L for 'blue' is higher than brio stop-50 L for 'blue'", () => {
-    const brioAnchor = BRIO_ANCHORS.blue.anchors.find((a) => a.stop === 50);
-    const bluenoteAnchor = BLUENOTE_ANCHORS.blue.anchors.find((a) => a.stop === 50);
-    expect(brioAnchor).toBeDefined();
-    expect(bluenoteAnchor).toBeDefined();
-    expect(bluenoteAnchor!.L).toBeGreaterThan(brioAnchor!.L);
+  it("all three themes share the same anchor values", () => {
+    for (const hue of ALL_HUE_NAMES) {
+      expect(BRIO_ANCHORS[hue]).toBe(BLUENOTE_ANCHORS[hue]);
+      expect(BRIO_ANCHORS[hue]).toBe(HARMONY_ANCHORS[hue]);
+    }
   });
 
-  it("brio stop-50 L for 'red' is approximately 0.65", () => {
+  it("brio stop-50 L for 'red' is approximately 0.79", () => {
     const anchor = BRIO_ANCHORS.red.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.65, 2);
-  });
-
-  it("harmony stop-50 L for 'blue' is between brio and bluenote values", () => {
-    const brioL = BRIO_ANCHORS.blue.anchors.find((a) => a.stop === 50)!.L;
-    const bluenoteL = BLUENOTE_ANCHORS.blue.anchors.find((a) => a.stop === 50)!.L;
-    const harmonyL = HARMONY_ANCHORS.blue.anchors.find((a) => a.stop === 50)!.L;
-    expect(harmonyL).toBeGreaterThan(brioL - 0.001);
-    expect(harmonyL).toBeLessThan(bluenoteL + 0.001);
+    expect(anchor!.L).toBeCloseTo(0.79, 2);
   });
 });
 
 // ---------------------------------------------------------------------------
-// sRGB gamut safety: all 24 hues x 11 standard stops via tugAnchoredColor
+// oklch string generation: all stops produce parseable oklch strings.
+// CSS oklch() handles gamut mapping at render time.
 // ---------------------------------------------------------------------------
 
-describe("Gamut safety via tugAnchoredColor with brio anchors", () => {
-  it("all 24 hues x 11 standard stops produce sRGB-safe oklch values", () => {
-    const violations: string[] = [];
-    for (const [hue, angle] of Object.entries(HUE_FAMILIES)) {
-      const hueAnchors = BRIO_ANCHORS[hue];
-      expect(hueAnchors).toBeDefined();
-      for (const stop of STANDARD_STOPS) {
-        const colorStr = tugAnchoredColor(hue, stop, hueAnchors);
-        const parsed = parseOklch(colorStr);
-        if (!parsed) {
-          violations.push(`${hue}@${stop}: failed to parse "${colorStr}"`);
-          continue;
-        }
-        if (!isInSRGBGamut(parsed.L, parsed.C, angle)) {
-          const { r, g, b } = oklchToLinearSRGB(parsed.L, parsed.C, angle);
-          violations.push(
-            `${hue}@${stop}: out of gamut r=${r.toFixed(3)} g=${g.toFixed(3)} b=${b.toFixed(3)}`,
-          );
-        }
-      }
-    }
-    if (violations.length > 0) {
-      throw new Error(`Gamut violations:\n${violations.join("\n")}`);
-    }
-  });
-
+describe("oklch string generation", () => {
   it("produces 264 parseable oklch strings (24 hues x 11 stops)", () => {
     let count = 0;
     for (const hue of ALL_HUE_NAMES) {

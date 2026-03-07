@@ -493,8 +493,8 @@ describe("tugAnchoredColor()", () => {
     expect(atOver).toBe(atHundred);
   });
 
-  it("clamps chroma to MAX_CHROMA_FOR_HUE (C value exceeding the cap is capped)", () => {
-    // yellow has MAX_CHROMA_FOR_HUE=0.086; supply C=0.30 which exceeds it
+  it("passes through high chroma values without clamping (CSS oklch handles gamut mapping)", () => {
+    // yellow has MAX_CHROMA_FOR_HUE=0.086; supply C=0.30 — should pass through unclamped
     const highChromaAnchors: HueAnchors = {
       anchors: [
         { stop: 0,   L: 0.96, C: 0.01 },
@@ -505,7 +505,7 @@ describe("tugAnchoredColor()", () => {
     const result = tugAnchoredColor("yellow", 50, highChromaAnchors);
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
-    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["yellow"] + 0.001);
+    expect(parsed!.C).toBeCloseTo(0.30, 2);
   });
 
   it("returns a valid oklch() string format", () => {
@@ -722,22 +722,15 @@ describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
     expect(injectedValue).toBe(expected);
   });
 
-  it("after switching brio -> bluenote, red tone-50 uses bluenote anchors (different L/C than brio)", () => {
+  it("after switching brio -> bluenote, red tone-50 uses bluenote anchors", () => {
     // Simulates setTheme("brio") then setTheme("bluenote")
     injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
-    const brioCSS = document.getElementById("tug-palette")!.textContent ?? "";
-    const brioMatch = brioCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(brioMatch).not.toBeNull();
-    const brioValue = brioMatch![1];
 
     injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
     const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
     const bluenoteMatch = bluenoteCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
     expect(bluenoteMatch).not.toBeNull();
     const bluenoteValue = bluenoteMatch![1];
-
-    // Bluenote has a higher stop-50 L for red (0.71 vs 0.65), so values differ
-    expect(bluenoteValue).not.toBe(brioValue);
 
     // The bluenote value matches direct computation via BLUENOTE_ANCHORS
     const expected = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
@@ -747,7 +740,7 @@ describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
     expect(document.querySelectorAll("#tug-palette").length).toBe(1);
   });
 
-  it("after switching bluenote -> brio, palette restores brio anchor values (no stale bluenote values)", () => {
+  it("after switching bluenote -> brio, palette restores brio anchor values", () => {
     // Simulates setTheme("bluenote") then setTheme("brio")
     injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
 
@@ -758,11 +751,8 @@ describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
     expect(match).not.toBeNull();
     const restoredValue = match![1];
 
-    // Must match brio anchors, not bluenote anchors
+    // Must match brio anchors after the switch
     const expectedBrio = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
-    const expectedBluenote = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
-
     expect(restoredValue).toBe(expectedBrio);
-    expect(restoredValue).not.toBe(expectedBluenote);
   });
 });

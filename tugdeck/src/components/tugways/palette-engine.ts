@@ -401,7 +401,9 @@ function interpolateAnchors(intensity: number, anchors: AnchorPoint[]): { L: num
  */
 export function tugAnchoredColor(hueName: string, intensity: number, hueAnchors: HueAnchors): string {
   const { L, C } = interpolateAnchors(intensity, hueAnchors.anchors);
-  return clampedOklchString(hueName, L, C);
+  const angle = HUE_FAMILIES[hueName] ?? 0;
+  const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString();
+  return `oklch(${fmtNum(L)} ${fmtNum(C)} ${angle})`;
 }
 
 /**
