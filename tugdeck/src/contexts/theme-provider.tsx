@@ -26,7 +26,6 @@ import React, {
 } from "react";
 import { postSettings } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
-import { injectHvvCSS } from "../components/tugways/palette-engine";
 import bluenoteCSS from "../../styles/bluenote.css?raw";
 import harmonyCSS from "../../styles/harmony.css?raw";
 
@@ -176,9 +175,6 @@ export function TugThemeProvider({
       // Brio: remove override so tokens.css defaults take over
       removeThemeCSS();
     }
-    // Re-inject HVV palette CSS after theme injection so the style element
-    // reflects the current theme name (reserved for future per-theme L tables).
-    injectHvvCSS(newTheme);
     setThemeState(newTheme);
     try {
       localStorage.setItem("td-theme", newTheme);

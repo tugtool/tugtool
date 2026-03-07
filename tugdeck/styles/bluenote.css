@@ -4,6 +4,10 @@
  *
  * Contains --tug-base-* overrides for all tokens that differ from Brio defaults.
  * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.
+ *
+ * Phase 5d5e: Chromatic tokens that resolved from hardcoded hex values have been
+ * removed. They now resolve from the shared HVV palette via tug-tokens.css.
+ * Only non-chromatic overrides (surfaces, grays, structural colors, shadows) remain.
  */
 body {
   /* --tug-base-* overrides — all color tokens that differ from Brio defaults. */
@@ -29,59 +33,24 @@ body {
   --tug-base-fg-disabled: #4a5560;
   --tug-base-fg-inverse: #edf1f3;
   --tug-base-fg-placeholder: #5b6871;
-  --tug-base-fg-link: #4bbde8;
-  --tug-base-fg-link-hover: #72cdef;
 
   /* Icon */
   --tug-base-icon-default: #a8b6bf;
   --tug-base-icon-muted: #6c7b85;
   --tug-base-icon-disabled: #4a5560;
-  --tug-base-icon-active: #4bbde8;
 
   /* Borders */
   --tug-base-border-default: #5b6871;
   --tug-base-border-muted: #79858d;
   --tug-base-border-strong: #8a9ba4;
   --tug-base-border-inverse: #dde4e8;
-  --tug-base-border-accent: #ff8434;
-  --tug-base-border-danger: #ff5162;
-  --tug-base-focus-ring-default: #4bbde8;
-  --tug-base-focus-ring-danger: #ff5162;
   --tug-base-focus-ring-offset: #2a3136;
 
   /* Elevation */
   --tug-base-shadow-sm: rgba(0, 0, 0, 0.44);
 
-  /* Accents — Bluenote-specific hex values */
-  --tug-base-accent-default: #ff8434;
-  --tug-base-accent-strong: #f27024;
-  --tug-base-accent-muted: #c46020;
-  --tug-base-accent-subtle: rgba(255, 132, 52, 0.15);
-  --tug-base-accent-cool-default: #4bbde8;
-  --tug-base-accent-positive: #73c382;
-  --tug-base-accent-warning: #ffe465;
-  --tug-base-accent-danger: #ff5162;
-  --tug-base-accent-info: #4bbde8;
-
-  /* Accent-derived interaction tokens */
-  --tug-base-accent-bg-subtle: rgba(255, 132, 52, 0.12);
-  --tug-base-accent-bg-emphasis: rgba(255, 132, 52, 0.24);
-  --tug-base-accent-border: #ff8434;
-  --tug-base-accent-border-hover: #f27024;
-  --tug-base-accent-underline-active: #ff8434;
-  --tug-base-accent-guide: rgba(255, 132, 52, 0.5);
-  --tug-base-accent-flash: rgba(255, 132, 52, 0.4);
-
   /* Selection */
-  --tug-base-selection-bg: color-mix(in srgb, #4bbde8 40%, transparent);
   --tug-base-selection-fg: #dde4e8;
-
-  /* Highlight / Preview */
-  --tug-base-highlight-dropTarget: rgba(75, 189, 232, 0.18);
-  --tug-base-highlight-preview: rgba(75, 189, 232, 0.12);
-  --tug-base-highlight-inspectorTarget: rgba(75, 189, 232, 0.22);
-  --tug-base-highlight-snapGuide: rgba(75, 189, 232, 0.5);
-  --tug-base-highlight-flash: rgba(255, 132, 52, 0.35);
 
   /* Card */
   --tug-base-card-bg: #3a454c;
@@ -95,10 +64,8 @@ body {
   --tug-base-card-header-bg-inactive: #2a3a44;
   --tug-base-card-header-bg-collapsed: #2e3a43;
   --tug-base-card-header-fg: #dde4e8;
-  --tug-base-card-header-icon-active: #4bbde8;
   --tug-base-card-header-icon-inactive: #6c7b85;
   --tug-base-card-header-divider: #3a4850;
-  --tug-base-card-header-button-fg-danger: #ff5162;
 
   /* Tab Bar */
   --tug-base-tab-bar-bg: #343c41;
@@ -106,51 +73,16 @@ body {
   --tug-base-tab-fg-rest: #79858d;
   --tug-base-tab-fg-active: #dde4e8;
   --tug-base-tab-close-fg-hover: #dde4e8;
-  --tug-base-tab-underline-active: #ff8434;
-  --tug-base-tab-dropTarget-border: #4bbde8;
-  --tug-base-tab-badge-bg: #ff8434;
-  --tug-base-tab-insertIndicator: #ff8434;
 
   /* Canvas / Grid */
   --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.04);
 
   /* Dock */
   --tug-base-dock-bg: #2a3136;
-  --tug-base-dock-indicator: #ff8434;
-  --tug-base-dock-button-fg-active: #ff8434;
-
-  /* Snap Sets */
-  --tug-base-set-member-border-collapsed: rgba(75, 189, 232, 0.3);
-  --tug-base-set-member-corner-squared: #4bbde8;
-  --tug-base-set-focused-outline: rgba(75, 189, 232, 0.5);
-  --tug-base-set-hull-flash: rgba(75, 189, 232, 0.25);
-  --tug-base-set-dropTarget: rgba(75, 189, 232, 0.18);
-
-  /* Actions */
-  --tug-base-action-primary-bg-rest: #ff8434;
-  --tug-base-action-primary-bg-hover: #f27024;
-  --tug-base-action-primary-bg-active: #e06018;
-  --tug-base-action-destructive-bg-rest: #ff5162;
-  --tug-base-action-destructive-bg-hover: #e84152;
-  --tug-base-action-destructive-bg-active: #d03445;
-  --tug-base-action-destructive-border: transparent;
-  --tug-base-border-danger: #ff5162;
-
-  /* Status / badge */
-  --tug-base-status-success: #73c382;
-  --tug-base-status-warning: #ffe465;
-  --tug-base-status-danger: #ff5162;
-  --tug-base-status-info: #4bbde8;
-  --tug-base-badge-accent-fg: #ff8434;
-  --tug-base-badge-success-fg: #73c382;
-  --tug-base-badge-warning-fg: #ffe465;
-  --tug-base-badge-danger-fg: #ff5162;
 
   /* Menus / Popovers */
   --tug-base-menu-bg: #3a454c;
   --tug-base-menu-border: #5b6871;
-  --tug-base-menu-item-fg-danger: #ff5162;
-  --tug-base-menu-item-icon-danger: #ff5162;
   --tug-base-popover-bg: #3a454c;
   --tug-base-popover-border: #5b6871;
   --tug-base-tooltip-bg: #3b4348;
@@ -166,58 +98,12 @@ body {
   --tug-base-scrollbar-thumb: #5b6871;
   --tug-base-scrollbar-thumb-hover: #79858d;
 
-  /* Syntax — accent-derived tokens with Bluenote accent-N hex values.
-     operator, punctuation, comment are NOT overridden (they use var(--tug-base-fg-*) per D09). */
-  --tug-base-syntax-keyword: #4bbde8;
-  --tug-base-syntax-string: #ff9a72;
-  --tug-base-syntax-number: #73c382;
-  --tug-base-syntax-function: #ffe465;
-  --tug-base-syntax-type: #73c382;
-  --tug-base-syntax-variable: #4bbde8;
-  --tug-base-syntax-constant: #4bbde8;
-  --tug-base-syntax-decorator: #ab7ee4;
-  --tug-base-syntax-tag: #4bbde8;
-  --tug-base-syntax-attribute: #4bbde8;
-
   /* Terminal */
   --tug-base-terminal-bg: #2a3237;
   --tug-base-terminal-fg: #dde4e8;
   --tug-base-terminal-fg-muted: #a8b6bf;
-  --tug-base-terminal-cursor: #ff8434;
-  --tug-base-terminal-selection-bg: rgba(75, 189, 232, 0.3);
-  --tug-base-terminal-ansi-red: #ff5162;
-  --tug-base-terminal-ansi-green: #73c382;
-  --tug-base-terminal-ansi-yellow: #ffe465;
-  --tug-base-terminal-ansi-blue: #4bbde8;
-  --tug-base-terminal-ansi-magenta: #ab7ee4;
-  --tug-base-terminal-ansi-cyan: #4bbde8;
   --tug-base-terminal-ansi-white: #dde4e8;
-
-  /* File status */
-  --tug-base-file-status-added: #73c382;
-  --tug-base-file-status-modified: #ffe465;
-  --tug-base-file-status-deleted: #ff5162;
-  --tug-base-file-status-renamed: #4bbde8;
-  --tug-base-diff-addition-bg: rgba(115, 195, 130, 0.12);
-  --tug-base-diff-addition-fg: #73c382;
-  --tug-base-diff-deletion-bg: rgba(255, 81, 98, 0.12);
-  --tug-base-diff-deletion-fg: #ff5162;
 
   /* Feed */
   --tug-base-feed-bg: #2a3136;
-  --tug-base-feed-step-active: #ff8434;
-  --tug-base-feed-step-complete: #73c382;
-  --tug-base-feed-step-error: #ff5162;
-  --tug-base-feed-stream-cursor: #ff8434;
-  --tug-base-feed-handoff: #4bbde8;
-
-  /* Chart series */
-  --tug-base-chart-series-warm: #ff8434;
-  --tug-base-chart-series-cool: #4bbde8;
-  --tug-base-chart-series-violet: #ab7ee4;
-  --tug-base-chart-series-rose: #ff5162;
-  --tug-base-chart-series-verdant: #73c382;
-  --tug-base-chart-series-golden: #ffe465;
-  --tug-base-chart-series-orchid: #ec76c9;
-  --tug-base-chart-series-coral: #ff9a72;
 }

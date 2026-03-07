@@ -7,13 +7,11 @@
  *   - Vibrancy (0-100): chroma axis; at vib=50, C equals the sRGB-safe max
  *   - Value (0-100): lightness axis; val=50 gives the per-hue canonical L
  *
- * CSS variable injection (`injectHvvCSS`) emits three layers:
- *   - Layer 1: 168 semantic preset variables (7 presets × 24 hues)
- *     Format: `--tug-{hue}` (canonical) and `--tug-{hue}-{preset}`
- *   - Layer 2: 74 per-hue constant variables (3 per hue + 2 global)
- *     Format: `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c`,
- *             `--tug-l-dark`, `--tug-l-light`
- *   - Layer 3: `@media (color-gamut: p3)` block with wider-gamut overrides
+ * The HVV palette is expressed as pure CSS in `tug-palette.css` (Phase 5d5e).
+ * This module provides `hvvColor()` for programmatic JS use and exports the
+ * authoritative source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L,
+ * MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css
+ * was derived from.
  *
  * @module components/tugways/palette-engine
  */
@@ -481,94 +479,3 @@ export function hvvColor(
   return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
 }
 
-// ---------------------------------------------------------------------------
-// injectHvvCSS — CSS variable injection
-// ---------------------------------------------------------------------------
-
-/** The id of the injected palette style element. */
-const PALETTE_STYLE_ID = "tug-palette";
-
-/**
- * Inject the HVV CSS variable system into a `<style id="tug-palette">` element.
- *
- * Emits two blocks:
- *
- * 1. `:root { }` — sRGB defaults:
- *    - Layer 1: 168 semantic preset variables (7 presets × 24 hues) per Spec S01
- *      - `--tug-{hue}` for canonical (vib=50, val=50)
- *      - `--tug-{hue}-{preset}` for the other six presets
- *    - Layer 2: 74 per-hue constant variables per Spec S02
- *      - `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c` per hue
- *      - `--tug-l-dark` and `--tug-l-light` global constants
- *
- * 2. `@media (color-gamut: p3) { :root { } }` — P3 overrides per Spec S03:
- *    - All 168 presets recomputed with P3 peak chroma
- *    - Per-hue `--tug-{hue}-peak-c` overridden with P3 values
- *    - `-h` and `-canon-l` constants are gamut-independent, not overridden
- *
- * Idempotent: replaces existing element content if already present.
- * Uses pure DOM manipulation per Rules of Tugways [D08, D09, D40, D42].
- *
- * @param _themeName - Theme name (reserved for future per-theme canonical L tables)
- */
-export function injectHvvCSS(_themeName: string): void {
-  if (typeof document === "undefined") return;
-
-  const lines: string[] = [":root {"];
-
-  // sRGB block: Layer 1 presets + Layer 2 constants
-  for (const [hueName, angle] of Object.entries(HUE_FAMILIES)) {
-    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
-    const peakC = (MAX_CHROMA_FOR_HUE[hueName] ?? 0.022) * PEAK_C_SCALE;
-
-    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
-      const color = hvvColor(hueName, vib, val, canonL);
-      if (presetName === "canonical") {
-        lines.push(`  --tug-${hueName}: ${color};`);
-      } else {
-        lines.push(`  --tug-${hueName}-${presetName}: ${color};`);
-      }
-    }
-
-    lines.push(`  --tug-${hueName}-h: ${angle};`);
-    lines.push(`  --tug-${hueName}-canon-l: ${canonL};`);
-    lines.push(`  --tug-${hueName}-peak-c: ${parseFloat(peakC.toFixed(4))};`);
-  }
-
-  lines.push(`  --tug-l-dark: ${L_DARK};`);
-  lines.push(`  --tug-l-light: ${L_LIGHT};`);
-  lines.push("}");
-
-  // P3 override block
-  lines.push("@media (color-gamut: p3) {");
-  lines.push("  :root {");
-
-  for (const [hueName] of Object.entries(HUE_FAMILIES)) {
-    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
-    const p3PeakC = (MAX_P3_CHROMA_FOR_HUE[hueName] ?? 0.026) * PEAK_C_SCALE;
-
-    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
-      const color = hvvColor(hueName, vib, val, canonL, p3PeakC);
-      if (presetName === "canonical") {
-        lines.push(`    --tug-${hueName}: ${color};`);
-      } else {
-        lines.push(`    --tug-${hueName}-${presetName}: ${color};`);
-      }
-    }
-
-    lines.push(`    --tug-${hueName}-peak-c: ${parseFloat(p3PeakC.toFixed(4))};`);
-  }
-
-  lines.push("  }");
-  lines.push("}");
-
-  const css = lines.join("\n");
-
-  let styleEl = document.getElementById(PALETTE_STYLE_ID) as HTMLStyleElement | null;
-  if (!styleEl) {
-    styleEl = document.createElement("style");
-    styleEl.id = PALETTE_STYLE_ID;
-    document.head.appendChild(styleEl);
-  }
-  styleEl.textContent = css;
-}

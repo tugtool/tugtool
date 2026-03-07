@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
+@import "../styles/tug-palette.css";
 @import "../styles/tug-tokens.css";
 @import "../styles/tug-comp-tokens.css";
 
