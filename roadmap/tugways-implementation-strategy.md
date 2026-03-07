@@ -554,30 +554,31 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Note**: Phase 5d4 depends on Phase 5d2 (explicit-target dispatch for inspector→card actions) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases, establishing the full inspector pipeline.
 
-### Phase 5d5a: Palette Engine (Concept 22, [D70])
+### Phase 5d5a: Palette Engine → HVV Runtime (Concept 22, [D70])
 
-**Goal**: A computed OKLCH color palette with 24 hue families and a continuous 0–100 intensity scale, runtime-generated and injectable as CSS custom properties. An interactive gallery demo for tuning the transfer function curve.
+**Status: COMPLETE**
 
-**What to do**:
-1. Implement `PaletteEngine` TypeScript module — defines the 24 hue families (name + OKLCH angle), the smoothstep-based transfer function mapping intensity (0–100) to OKLCH lightness and chroma, and a `tugPaletteColor(hueName, intensity)` function returning `oklch(...)` strings
-2. Implement `tugPaletteVarName(hueName, intensity)` — returns the CSS variable name in `--tug-palette-hue-<angle>-<name>-tone-<intensity>` format
-3. Implement standard-stop injection — at app startup and theme switch, compute 264 CSS variables (24 hues x 11 stops at 0, 10, 20, ..., 100) and inject into `<style id="tug-palette">`
-4. Implement per-hue chroma capping — `maxChromaForHue(hueAngle)` prevents OKLCH gamut clipping for sRGB displays, especially for yellows and greens at high intensity
-5. Implement theme parameter protocol — themes can override hue angles, L/C curve parameters, and chroma caps via CSS custom properties (`--tug-theme-hue-red`, `--tug-theme-lc-l-max`, etc.) consumed by the palette engine at load time
-6. Implement named tone aliases — `soft` (15), `default` (50), `strong` (75), `intense` (100) as convenience mappings
-7. Build interactive palette gallery demo — displays all 24 hues across the full 0–100 intensity range as a continuous gradient strip. Includes interactive controls for adjusting transfer function parameters (L/C anchors, curve type selection between smoothstep, bezier, and piecewise). Visual comparison mode to evaluate different curve shapes side by side
-8. Investigate transfer function alternatives — compare smoothstep, cubic bezier, and piecewise functions. Document findings on which produces the most designer-friendly gradient across hues (especially for yellow/green where OKLCH chroma limits differ significantly from blue/violet)
-9. Gamut-check all 24 hues at all standard stops for sRGB and P3 displays. Adjust chroma caps where needed
-10. Verify: palette injection < 1ms, `tugPaletteColor()` returns correct oklch strings, theme overrides shift colors correctly, gallery demo renders all 24x11 stops
+**Goal**: A computed OKLCH color palette with 24 hue families using the HueVibVal (HVV) system, runtime-generated and injectable as CSS custom properties. P3 wide-gamut support. An interactive gallery demo for canonical lightness tuning.
 
-**Files created/modified**:
-1. `tugdeck/src/components/tugways/palette-engine.ts` — new: PaletteEngine, tugPaletteColor, hue definitions, transfer function, injection
-2. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — palette demo tab
-3. `tugdeck/src/components/tugways/cards/gallery-card.css` — palette demo styles
+**What was done** (across three implementation rounds):
 
-**Result**: The computed palette is live. Any hue at any intensity is available as a CSS variable (standard stops) or via a TypeScript utility (arbitrary values). The gallery demo provides interactive curve tuning. The transfer function is validated across all hues.
+*Round 1 — Palette Engine (PR #93, commit 2858e85):* Initial smoothstep/anchor-based system with `tugPaletteColor()`, 264 CSS variables (24 hues × 11 stops), named tone aliases, per-hue chroma caps, theme parameter protocol, and an interactive gallery demo with smoothstep/bezier/piecewise curve comparison.
 
-**Note**: Phase 5d5a can start anytime after Phase 5a2 (basic infrastructure must exist). It does not depend on Phases 5d1–5d4. The palette engine is a standalone module that produces CSS variables — it has no coupling to the responder chain, mutation model, or property store.
+*Round 2 — Anchor Palette Engine (PR #94, commit 8898a8a):* Added anchor-point interpolation (`tugAnchoredColor`), per-theme anchor data (`theme-anchors.ts` with BRIO/BLUENOTE/HARMONY_ANCHORS), and `injectPaletteCSS(theme, anchorData)` wiring. Gallery editor gained piecewise transfer function with third breakpoint. Canonical lightness values were tuned interactively.
+
+*Round 3 — HVV Runtime (PR #95, commit 4fbdeda + fixup d3b7e33):* Complete replacement of the smoothstep/anchor system with HueVibVal. Promoted `hvvColor()` and canonical constants from the gallery editor to `palette-engine.ts`. Implemented `injectHvvCSS(themeName)` emitting three layers: 168 semantic preset CSS variables (7 presets × 24 hues), 74 per-hue constants, and `@media (color-gamut: p3)` overrides. Added `oklchToLinearP3`, `isInP3Gamut`, `MAX_P3_CHROMA_FOR_HUE`. Wired into `main.tsx` and `theme-provider.tsx`. Removed all legacy code: smoothstep, anchor types, `tugPaletteColor`, `tugAnchoredColor`, `TONE_ALIASES`, `theme-anchors.ts`, old `--tug-palette-hue-*` variable names. Post-merge fix: corrected chroma cap derivation to sample at canonical L only (not L_DARK/L_LIGHT extremes which crushed all chroma to near-zero).
+
+**Final state of files**:
+1. `tugdeck/src/components/tugways/palette-engine.ts` — HVV runtime: `hvvColor()`, `injectHvvCSS()`, `HUE_FAMILIES`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `DEFAULT_CANONICAL_L`, `HVV_PRESETS`, P3 gamut functions
+2. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — interactive palette gallery with canonical L editor, HVV grid, import/export
+3. `tugdeck/src/components/tugways/cards/gallery-palette-content.css` — gallery styles
+4. `tugdeck/src/components/tugways/theme-anchors.ts` — **deleted** (legacy anchor data removed)
+5. `tugdeck/src/main.tsx` — calls `injectHvvCSS(initialTheme)` at boot
+6. `tugdeck/src/contexts/theme-provider.tsx` — calls `injectHvvCSS(newTheme)` on theme switch
+
+**Result**: The HVV palette is live. 242 CSS variables (168 presets + 74 constants) plus P3 overrides are injected at boot and theme switch. `hvvColor()` provides programmatic color computation. The gallery editor enables interactive canonical L tuning. All legacy smoothstep/anchor code is removed.
+
+**Key lesson**: Chroma cap derivation must sample at the canonical lightness only — not at extreme L values (L_DARK=0.15, L_LIGHT=0.96) where the sRGB gamut is narrow. Sampling at extremes bottlenecks all caps to near-zero, producing grey colors. At extreme val values, CSS `oklch()` handles out-of-gamut colors via browser gamut mapping.
 
 ### Phase 5d5b: Global Scale & Timing (Concept 22, [D72]-[D73])
 
@@ -610,23 +611,22 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **What to do**:
 1. Define the complete `--tug-base-*` semantic taxonomy in a new `tug-tokens.css` file — all ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, stroke, icon size, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
-2. Wire `--tug-base-*` accent tokens to computed palette variables from Phase 5d5a (e.g., `--tug-base-accent-default: var(--tug-palette-hue-55-orange-tone-50)`)
-3. Wire all dimension tokens through `var(--tug-scale)` from Phase 5d5b
-4. Wire all duration tokens through `var(--tug-timing)` from Phase 5d5b
-5. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. This ensures zero visual change while the new layer is being introduced
-6. Define initial `--tug-comp-*` component token families where base semantics are too generic (dock buttons, titlebar controls, tab overflow, field metadata, gauge annotations)
-7. Verify: all existing components render identically with the backward-compatibility aliases in place. No visual diff in any theme (Brio, Bluenote, Harmony)
+2. Wire `--tug-base-*` accent tokens to HVV palette preset variables (e.g., `--tug-base-accent-default: var(--tug-orange)`, `--tug-base-accent-muted: var(--tug-orange-muted)`, `--tug-base-accent-subtle: var(--tug-orange-subtle)`). The seven HVV presets per hue (canonical, accent, muted, light, subtle, dark, deep) map naturally to semantic accent roles
+3. Wire chart and syntax color tokens to HVV hue presets (e.g., `--tug-base-chart-1: var(--tug-blue)`, `--tug-base-syntax-keyword: var(--tug-violet)`)
+4. Wire all dimension tokens through `var(--tug-scale)` from Phase 5d5b
+5. Wire all duration tokens through `var(--tug-timing)` from Phase 5d5b
+6. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. This ensures zero visual change while the new layer is being introduced
+7. Define initial `--tug-comp-*` component token families where base semantics are too generic (dock buttons, titlebar controls, tab overflow, field metadata, gauge annotations)
+8. Verify: all existing components render identically with the backward-compatibility aliases in place. No visual diff in any theme (Brio, Bluenote, Harmony)
 
 **Files created/modified**:
-1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy
+1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy, wired to `--tug-{hue}[-preset]` palette variables
 2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-comp-*` families
 3. `tugdeck/styles/tokens.css` — backward-compatibility aliases added
-4. `tugdeck/styles/bluenote.css` — palette engine parameter overrides
-5. `tugdeck/styles/harmony.css` — palette engine parameter overrides
 
 **Result**: The new token architecture exists in parallel with the old one. All new tokens are defined and wirable. Backward-compatibility aliases ensure zero visual regression. Migration can proceed incrementally in the next phase.
 
-**Note**: Phase 5d5c depends on Phase 5d5a (palette engine must exist for accent/chart/syntax tokens to reference computed palette variables) and Phase 5d5b (scale/timing multipliers must exist for dimension/duration tokens to reference). This is the coordination phase that brings the palette engine and multipliers together into a coherent semantic layer.
+**Note**: Phase 5d5c depends on Phase 5d5a (HVV palette engine must exist for accent/chart/syntax tokens to reference `--tug-{hue}[-preset]` variables) and Phase 5d5b (scale/timing multipliers must exist for dimension/duration tokens to reference). Theme-specific palette overrides are not needed for this phase — all three themes share the same HVV canonical L values. Per-theme tuning (if needed) would be done via future per-theme canonical L tables in `injectHvvCSS`. The old theme parameter protocol (`--tug-theme-lc-l-max`, `--tug-theme-hue-red`, etc.) was removed with the legacy code — themes no longer override palette parameters via CSS custom properties.
 
 ### Phase 5d5d: Consumer Migration (Concept 22, [D71])
 
@@ -651,7 +651,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 5. `tugdeck/styles/tokens.css` — remove legacy aliases
 6. `tugdeck/src/components/tugways/*.ts` — runtime token readers
 
-**Result**: The migration is complete. Only `--tug-palette-*`, `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression.
+**Result**: The migration is complete. Only `--tug-{hue}[-preset]` (HVV palette), `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression.
 
 **Note**: Phase 5d5d depends on Phase 5d5c (new token layers must exist with backward-compatibility aliases before consumers can be migrated). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by allowing incremental migration with verification after each file group.
 
@@ -662,8 +662,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
 **What to do**:
 1. Implement `StyleInspectorOverlay` singleton — tracks global modifier state for `Ctrl+Option`, manages overlay lifecycle
 2. On pointer move with modifiers active: locate target with `elementFromPoint`, walk to nearest inspect root, read computed style, resolve token chain via `StyleCascadeReader`
-3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-palette-*`)
-4. For computed palette colors: display hue family name, angle, and intensity number (e.g., "orange hue-55, tone 50")
+3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`)
+4. For HVV palette colors: display hue family name, preset name, and HVV coordinates (e.g., "orange canonical — vib:50, val:50, L:0.780")
 5. Display current `--tug-scale` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
 6. Implement pin/unpin — clicking while inspecting pins the overlay so the user can stop hovering and examine details. `Escape` closes
 7. Highlight the target element with a dev-only overlay outline
@@ -966,9 +966,9 @@ Phase 5d4 (Observable Properties) depends on Phase 5d2 (explicit-target dispatch
 Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
-Phase 5d5a (Palette Engine) can start anytime after Phase 5a2. It is a standalone module with no coupling to the responder chain, mutation model, or property store. It does not depend on Phases 5d1–5d4.
+Phase 5d5a (Palette Engine → HVV Runtime) is complete. It shipped a standalone HVV palette engine with no coupling to the responder chain, mutation model, or property store.
 Phase 5d5b (Global Scale & Timing) can start anytime after Phase 5a2. It is independent of Phase 5d5a — the two can run in parallel.
-Phase 5d5c (Token Architecture) depends on Phase 5d5a (palette variables for accent/chart/syntax tokens) and Phase 5d5b (scale/timing multipliers for dimension/duration tokens). It introduces the new layers with backward-compatibility aliases for zero-risk introduction.
+Phase 5d5c (Token Architecture) depends on Phase 5d5a (HVV palette variables for accent/chart/syntax tokens — complete) and Phase 5d5b (scale/timing multipliers for dimension/duration tokens). It introduces the new layers with backward-compatibility aliases for zero-risk introduction.
 Phase 5d5d (Consumer Migration) depends on Phase 5d5c (new token layers must exist before consumers migrate). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by enabling incremental migration.
 Phase 5d5e (Cascade Inspector) depends on Phase 5d5d (token migration must be complete so the inspector shows final names). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
 The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5d (Consumer Migration) should ideally complete before Phase 9 begins, so rebuilt cards use the new token names from the start.
@@ -1052,7 +1052,7 @@ The suggested plan sequence:
 17. `tugways-phase-5d2-control-action` — ActionEvent with payloads/phases, explicit-target dispatch, control/responder separation
 18. `tugways-phase-5d3-mutation-transactions` — snapshot/preview/commit/cancel, StyleCascadeReader, vertical-slice gallery demo
 19. `tugways-phase-5d4-observable-properties` — PropertyStore, usePropertyStore hook, inspector demo
-20. `tugways-phase-5d5a-palette-engine` — computed OKLCH palette, 24 hues x 0–100 intensity, transfer function, interactive gallery demo
+20. `tugways-phase-5d5a-palette-engine` — HVV OKLCH palette engine, 24 hues with Hue/Vibrancy/Value axes, 7 presets, P3 support, interactive gallery editor
 21. `tugways-phase-5d5b-scale-timing` — global scale, global timing, motion toggle, per-component scale, JS helpers
 22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-comp-*` layers, full semantic taxonomy, backward-compatibility aliases
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
