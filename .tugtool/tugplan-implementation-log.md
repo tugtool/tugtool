@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-07T04:36:07Z
+---
+
+## step-6: Created GalleryScaleTimingContent with scale/timing/motion sliders, component-level scale sliders, live TugButton preview, JS helper readout, reset button, useEffect cleanup. Added CSS styles and 15 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-5
 date: 2025-03-07T04:26:21Z
 ---
