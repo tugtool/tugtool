@@ -1,15 +1,18 @@
 /**
- * Tugways Token Architecture — Phase 5d5c
+ * Tugways Token Architecture — Phase 5d5e
  *
  * Defines the --tug-base-* semantic token layer (source of truth).
  *
  * Import order (enforced in globals.css):
- *   1. tokens.css       — Motion durations, global multipliers, Shiki bridge
- *   2. tug-tokens.css   — Tier 2 base tokens (--tug-base-*) [this file]
- *   3. tug-comp-tokens.css — Tier 3 component tokens (--tug-comp-*)
+ *   1. tokens.css          — Motion durations, global multipliers, Shiki bridge
+ *   2. tug-palette.css     — HVV palette vars (--tug-{hue}[-preset])
+ *   3. tug-tokens.css      — Tier 2 base tokens (--tug-base-*) [this file]
+ *   4. tug-comp-tokens.css — Tier 3 component tokens (--tug-comp-*)
  *
- * Color tokens use literal hex values for zero-visual-regression.
- * HVV palette var() references are deferred to Phase 5d5d.
+ * Chromatic color tokens resolve through var(--tug-{hue}[-preset]) palette
+ * references from tug-palette.css. Semi-transparent chromatic tokens use
+ * color-mix(in oklch, ...) per [D75]. Non-chromatic tokens (surfaces, grays,
+ * borders, shadows, typography, spacing) remain as literal values.
  * Spacing, radius, typography, icon-size: plain values (CSS zoom handles scaling).
  *
  * Motion durations fast/moderate/slow/glacial are defined in tokens.css and
@@ -42,8 +45,8 @@ body {
   --tug-base-fg-disabled: #4a5059;
   --tug-base-fg-inverse: #f2f7fb;
   --tug-base-fg-placeholder: #5e656e;
-  --tug-base-fg-link: #35bcff;
-  --tug-base-fg-link-hover: #62ccff;
+  --tug-base-fg-link: var(--tug-cyan);
+  --tug-base-fg-link-hover: var(--tug-cyan-light);
   --tug-base-fg-onAccent: #f2f7fb;
   --tug-base-fg-onDanger: #f2f7fb;
   --tug-base-fg-onWarning: #1c1e22;
@@ -53,7 +56,7 @@ body {
   --tug-base-icon-default: #bcc3cb;
   --tug-base-icon-muted: #7b828c;
   --tug-base-icon-disabled: #4a5059;
-  --tug-base-icon-active: #35bcff;
+  --tug-base-icon-active: var(--tug-cyan);
   --tug-base-icon-onAccent: #f2f7fb;
 
   /* --- Borders / Dividers / Focus --- */
@@ -61,12 +64,12 @@ body {
   --tug-base-border-muted: #7b828c;
   --tug-base-border-strong: #8a9099;
   --tug-base-border-inverse: #e6eaee;
-  --tug-base-border-accent: #ff8a38;
-  --tug-base-border-danger: #ff5a72;
+  --tug-base-border-accent: var(--tug-orange);
+  --tug-base-border-danger: var(--tug-red);
   --tug-base-divider-default: #3a3e46;
   --tug-base-divider-muted: #2e3138;
-  --tug-base-focus-ring-default: #35bcff;
-  --tug-base-focus-ring-danger: #ff5a72;
+  --tug-base-focus-ring-default: var(--tug-cyan);
+  --tug-base-focus-ring-danger: var(--tug-red);
   --tug-base-focus-ring-offset: #1c1e22;
 
   /* --- Elevation / Overlay --- */
@@ -164,43 +167,41 @@ body {
   --tug-base-motion-pattern-startup-reveal: opacity var(--tug-base-motion-duration-slow) var(--tug-base-motion-easing-enter);
 
   /* ======================================================================
-     === B. Accent System (literal hex values; HVV wiring deferred to 5d5d)
+     === B. Accent System (palette var() references — Phase 5d5e)
      ====================================================================== */
 
   /* Core accent tokens — Brio defaults */
-  --tug-base-accent-default: #ff8a38;
-  --tug-base-accent-strong: #f17627;
-  --tug-base-accent-muted: #c46025;
-  --tug-base-accent-subtle: rgba(255, 138, 56, 0.15);
-  --tug-base-accent-cool-default: #35bcff;
-  --tug-base-accent-positive: #72ce8f;
-  --tug-base-accent-warning: #ffe86b;
-  --tug-base-accent-danger: #ff5a72;
-  --tug-base-accent-info: #35bcff;
+  --tug-base-accent-default: var(--tug-orange);
+  --tug-base-accent-strong: var(--tug-orange-accent);
+  --tug-base-accent-muted: var(--tug-orange-muted);
+  --tug-base-accent-subtle: color-mix(in oklch, var(--tug-orange) 15%, transparent);
+  --tug-base-accent-cool-default: var(--tug-cyan);
+  --tug-base-accent-positive: var(--tug-green-accent);
+  --tug-base-accent-warning: var(--tug-yellow-accent);
+  --tug-base-accent-danger: var(--tug-red-accent);
+  --tug-base-accent-info: var(--tug-cyan-accent);
 
   /* Accent-derived interaction tokens */
-  --tug-base-accent-bg-subtle: rgba(255, 138, 56, 0.12);
-  --tug-base-accent-bg-emphasis: rgba(255, 138, 56, 0.24);
-  --tug-base-accent-border: #ff8a38;
-  --tug-base-accent-border-hover: #f17627;
-  --tug-base-accent-underline-active: #ff8a38;
-  --tug-base-accent-guide: rgba(255, 138, 56, 0.5);
-  --tug-base-accent-flash: rgba(255, 138, 56, 0.4);
+  --tug-base-accent-bg-subtle: color-mix(in oklch, var(--tug-orange) 12%, transparent);
+  --tug-base-accent-bg-emphasis: color-mix(in oklch, var(--tug-orange) 24%, transparent);
+  --tug-base-accent-border: var(--tug-orange);
+  --tug-base-accent-border-hover: var(--tug-orange-accent);
+  --tug-base-accent-underline-active: var(--tug-orange);
+  --tug-base-accent-guide: color-mix(in oklch, var(--tug-orange) 50%, transparent);
+  --tug-base-accent-flash: color-mix(in oklch, var(--tug-orange) 40%, transparent);
 
   /* ======================================================================
      === C. Selection / Highlight / Preview
      ====================================================================== */
 
-  /* --tug-base-selection-bg uses literal hex from accent-cool (not var()) per [D08].
-     Theme overrides must update this with their theme-specific accent-cool value. */
-  --tug-base-selection-bg: color-mix(in srgb, #35bcff 40%, transparent);
+  --tug-base-selection-bg: color-mix(in oklch, var(--tug-cyan) 40%, transparent);
   --tug-base-selection-fg: #e6eaee;
   --tug-base-highlight-hover: rgba(255, 255, 255, 0.05);
-  --tug-base-highlight-dropTarget: rgba(53, 188, 255, 0.18);
-  --tug-base-highlight-preview: rgba(53, 188, 255, 0.12);
-  --tug-base-highlight-inspectorTarget: rgba(53, 188, 255, 0.22);
-  --tug-base-highlight-snapGuide: rgba(53, 188, 255, 0.5);
-  --tug-base-highlight-flash: rgba(255, 138, 56, 0.35);
+  --tug-base-highlight-dropTarget: color-mix(in oklch, var(--tug-cyan) 18%, transparent);
+  --tug-base-highlight-preview: color-mix(in oklch, var(--tug-cyan) 12%, transparent);
+  --tug-base-highlight-inspectorTarget: color-mix(in oklch, var(--tug-cyan) 22%, transparent);
+  --tug-base-highlight-snapGuide: color-mix(in oklch, var(--tug-cyan) 50%, transparent);
+  --tug-base-highlight-flash: color-mix(in oklch, var(--tug-orange) 35%, transparent);
 
   /* ======================================================================
      === D. Workspace Chrome
@@ -220,20 +221,20 @@ body {
   --tug-base-card-header-bg-inactive: #34373c;
   --tug-base-card-header-bg-collapsed: #2e3138;
   --tug-base-card-header-fg: #e6eaee;
-  --tug-base-card-header-icon-active: #35bcff;
+  --tug-base-card-header-icon-active: var(--tug-cyan);
   --tug-base-card-header-icon-inactive: #7b828c;
   --tug-base-card-header-divider: #3a3e46;
   --tug-base-card-header-button-bg-hover: rgba(255, 255, 255, 0.08);
   --tug-base-card-header-button-bg-active: rgba(255, 255, 255, 0.12);
   --tug-base-card-header-button-fg: #bcc3cb;
-  --tug-base-card-header-button-fg-danger: #ff5a72;
-  --tug-base-card-header-button-fg-danger-hover: #ff7a8a;
+  --tug-base-card-header-button-fg-danger: var(--tug-red);
+  --tug-base-card-header-button-fg-danger-hover: var(--tug-red-light);
   --tug-base-card-accessory-bg: #23262d;
   --tug-base-card-accessory-border: #5e656e;
   --tug-base-card-findbar-bg: #1c1e22;
   --tug-base-card-findbar-border: #5e656e;
-  --tug-base-card-findbar-match: rgba(255, 232, 107, 0.3);
-  --tug-base-card-findbar-match-active: rgba(255, 138, 56, 0.5);
+  --tug-base-card-findbar-match: color-mix(in oklch, var(--tug-yellow) 30%, transparent);
+  --tug-base-card-findbar-match-active: color-mix(in oklch, var(--tug-orange) 50%, transparent);
 
   /* --- Tab Bar --- */
   --tug-base-tab-bar-bg: #23262d;
@@ -246,14 +247,14 @@ body {
   --tug-base-tab-fg-compact: #bcc3cb;
   --tug-base-tab-close-bg-hover: rgba(255, 255, 255, 0.1);
   --tug-base-tab-close-fg-hover: #e6eaee;
-  --tug-base-tab-underline-active: #ff8a38;
-  --tug-base-tab-dropTarget-bg: rgba(53, 188, 255, 0.12);
-  --tug-base-tab-dropTarget-border: #35bcff;
-  --tug-base-tab-badge-bg: #ff8a38;
+  --tug-base-tab-underline-active: var(--tug-orange);
+  --tug-base-tab-dropTarget-bg: color-mix(in oklch, var(--tug-cyan) 12%, transparent);
+  --tug-base-tab-dropTarget-border: var(--tug-cyan);
+  --tug-base-tab-badge-bg: var(--tug-orange);
   --tug-base-tab-badge-fg: #f2f7fb;
   --tug-base-tab-ghost-bg: rgba(255, 255, 255, 0.04);
   --tug-base-tab-ghost-border: rgba(255, 255, 255, 0.08);
-  --tug-base-tab-insertIndicator: #ff8a38;
+  --tug-base-tab-insertIndicator: var(--tug-orange);
   --tug-base-tab-overflow-trigger-bg: rgba(255, 255, 255, 0.06);
   --tug-base-tab-overflow-trigger-fg: #bcc3cb;
   --tug-base-tab-add-bg-hover: rgba(255, 255, 255, 0.08);
@@ -264,30 +265,30 @@ body {
   /* --- Dock / Canvas / Snap --- */
   --tug-base-dock-bg: #1c1e22;
   --tug-base-dock-border: #3a3e46;
-  --tug-base-dock-indicator: #ff8a38;
+  --tug-base-dock-indicator: var(--tug-orange);
   --tug-base-dock-menu-caret: #7b828c;
   --tug-base-dock-button-bg-hover: rgba(255, 255, 255, 0.08);
   --tug-base-dock-button-bg-active: rgba(255, 255, 255, 0.12);
   --tug-base-dock-button-fg: #7b828c;
-  --tug-base-dock-button-fg-active: #ff8a38;
-  --tug-base-dock-button-fg-attention: #ffe86b;
-  --tug-base-dock-button-badge-bg: #ff5a72;
+  --tug-base-dock-button-fg-active: var(--tug-orange);
+  --tug-base-dock-button-fg-attention: var(--tug-yellow);
+  --tug-base-dock-button-badge-bg: var(--tug-red);
   --tug-base-dock-button-badge-fg: #f2f7fb;
-  --tug-base-dock-button-insertIndicator: #35bcff;
+  --tug-base-dock-button-insertIndicator: var(--tug-cyan);
   /* --tug-base-canvas-grid-line: Brio default grid line opacity */
   --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.05);
   --tug-base-canvas-grid-emphasis: rgba(255, 255, 255, 0.1);
-  --tug-base-snap-guide: rgba(53, 188, 255, 0.6);
-  --tug-base-sash-hover: rgba(255, 138, 56, 0.4);
-  --tug-base-flash-perimeter: rgba(53, 188, 255, 0.7);
+  --tug-base-snap-guide: color-mix(in oklch, var(--tug-cyan) 60%, transparent);
+  --tug-base-sash-hover: color-mix(in oklch, var(--tug-orange) 40%, transparent);
+  --tug-base-flash-perimeter: color-mix(in oklch, var(--tug-cyan) 70%, transparent);
 
   /* --- Snap Sets --- */
-  --tug-base-set-member-border-collapsed: rgba(53, 188, 255, 0.3);
-  --tug-base-set-member-corner-squared: #35bcff;
-  --tug-base-set-focused-outline: rgba(53, 188, 255, 0.5);
-  --tug-base-set-hull-flash: rgba(53, 188, 255, 0.25);
-  --tug-base-set-breakout-flash: rgba(255, 138, 56, 0.35);
-  --tug-base-set-dropTarget: rgba(53, 188, 255, 0.18);
+  --tug-base-set-member-border-collapsed: color-mix(in oklch, var(--tug-cyan) 30%, transparent);
+  --tug-base-set-member-corner-squared: var(--tug-cyan);
+  --tug-base-set-focused-outline: color-mix(in oklch, var(--tug-cyan) 50%, transparent);
+  --tug-base-set-hull-flash: color-mix(in oklch, var(--tug-cyan) 25%, transparent);
+  --tug-base-set-breakout-flash: color-mix(in oklch, var(--tug-orange) 35%, transparent);
+  --tug-base-set-dropTarget: color-mix(in oklch, var(--tug-cyan) 18%, transparent);
 
   /* ======================================================================
      === E. Actions and Generic Controls
@@ -302,9 +303,9 @@ body {
   --tug-base-control-disabled-shadow: none;
 
   /* --- Generic Action Tokens --- */
-  --tug-base-action-primary-bg-rest: #ff8a38;
-  --tug-base-action-primary-bg-hover: #f17627;
-  --tug-base-action-primary-bg-active: #e06520;
+  --tug-base-action-primary-bg-rest: var(--tug-orange);
+  --tug-base-action-primary-bg-hover: var(--tug-orange-accent);
+  --tug-base-action-primary-bg-active: var(--tug-orange-dark);
   --tug-base-action-primary-fg: #f2f7fb;
   --tug-base-action-primary-border: transparent;
   --tug-base-action-secondary-bg-rest: #282b32;
@@ -314,9 +315,9 @@ body {
   --tug-base-action-secondary-border: #5e656e;
   --tug-base-action-ghost-bg-hover: rgba(255, 255, 255, 0.07);
   --tug-base-action-ghost-fg: #bcc3cb;
-  --tug-base-action-destructive-bg-rest: #ff5a72;
-  --tug-base-action-destructive-bg-hover: #e84a62;
-  --tug-base-action-destructive-bg-active: #d03d55;
+  --tug-base-action-destructive-bg-rest: var(--tug-red);
+  --tug-base-action-destructive-bg-hover: var(--tug-red-accent);
+  --tug-base-action-destructive-bg-active: var(--tug-red-dark);
   --tug-base-action-destructive-fg: #f2f7fb;
   --tug-base-action-destructive-border: transparent;
   --tug-base-action-disabled-bg: #23262d;
@@ -335,26 +336,26 @@ body {
   --tug-base-field-placeholder: #5e656e;
   --tug-base-field-border-rest: #5e656e;
   --tug-base-field-border-hover: #7b828c;
-  --tug-base-field-border-focus: #35bcff;
-  --tug-base-field-border-invalid: #ff5a72;
-  --tug-base-field-border-valid: #72ce8f;
+  --tug-base-field-border-focus: var(--tug-cyan);
+  --tug-base-field-border-invalid: var(--tug-red);
+  --tug-base-field-border-valid: var(--tug-green);
   --tug-base-field-border-disabled: #3a3e46;
   --tug-base-field-border-readOnly: #3a3e46;
   --tug-base-field-helper: #7b828c;
   --tug-base-field-label: #bcc3cb;
-  --tug-base-field-required: #ff5a72;
+  --tug-base-field-required: var(--tug-red);
   --tug-base-field-meta: #7b828c;
   --tug-base-field-counter: #7b828c;
-  --tug-base-field-limit: #ff5a72;
-  --tug-base-field-dirty: #ffe86b;
+  --tug-base-field-limit: var(--tug-red);
+  --tug-base-field-dirty: var(--tug-yellow);
   --tug-base-field-readOnly: #bcc3cb;
-  --tug-base-field-error: #ff5a72;
-  --tug-base-field-warning: #ffe86b;
-  --tug-base-field-success: #72ce8f;
+  --tug-base-field-error: var(--tug-red);
+  --tug-base-field-warning: var(--tug-yellow);
+  --tug-base-field-success: var(--tug-green);
 
   /* --- Toggle / Range Tokens --- */
   --tug-base-toggle-track-off: #3a3e46;
-  --tug-base-toggle-track-on: #ff8a38;
+  --tug-base-toggle-track-on: var(--tug-orange);
   --tug-base-toggle-track-disabled: #23262d;
   --tug-base-toggle-track-mixed: #7b828c;
   --tug-base-toggle-thumb: #f2f7fb;
@@ -365,11 +366,11 @@ body {
   --tug-base-checkmark-mixed: #bcc3cb;
   --tug-base-radio-dot: #f2f7fb;
   --tug-base-range-track: #3a3e46;
-  --tug-base-range-fill: #ff8a38;
+  --tug-base-range-fill: var(--tug-orange);
   --tug-base-range-thumb: #f2f7fb;
   --tug-base-range-thumb-disabled: #4a5059;
   --tug-base-range-tick: #5e656e;
-  --tug-base-range-scrub-active: rgba(255, 138, 56, 0.3);
+  --tug-base-range-scrub-active: color-mix(in oklch, var(--tug-orange) 30%, transparent);
   --tug-base-range-label: #7b828c;
   --tug-base-range-annotation: #7b828c;
   --tug-base-range-value: #e6eaee;
@@ -384,14 +385,14 @@ body {
   --tug-base-menu-border: #5e656e;
   --tug-base-menu-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   --tug-base-menu-item-bg-hover: rgba(255, 255, 255, 0.07);
-  --tug-base-menu-item-bg-selected: rgba(255, 138, 56, 0.15);
+  --tug-base-menu-item-bg-selected: color-mix(in oklch, var(--tug-orange) 15%, transparent);
   --tug-base-menu-item-fg: #e6eaee;
   --tug-base-menu-item-fg-disabled: #4a5059;
-  --tug-base-menu-item-fg-danger: #ff5a72;
+  --tug-base-menu-item-fg-danger: var(--tug-red);
   --tug-base-menu-item-meta: #7b828c;
   --tug-base-menu-item-shortcut: #7b828c;
   --tug-base-menu-item-icon: #bcc3cb;
-  --tug-base-menu-item-icon-danger: #ff5a72;
+  --tug-base-menu-item-icon-danger: var(--tug-red);
   --tug-base-menu-item-chevron: #7b828c;
   --tug-base-popover-bg: #2b2e35;
   --tug-base-popover-fg: #e6eaee;
@@ -409,43 +410,43 @@ body {
   --tug-base-sheet-border: #5e656e;
   --tug-base-toast-info-bg: #282b32;
   --tug-base-toast-info-fg: #e6eaee;
-  --tug-base-toast-success-bg: rgba(114, 206, 143, 0.15);
-  --tug-base-toast-success-fg: #72ce8f;
-  --tug-base-toast-warning-bg: rgba(255, 232, 107, 0.12);
-  --tug-base-toast-warning-fg: #ffe86b;
-  --tug-base-toast-danger-bg: rgba(255, 90, 114, 0.15);
-  --tug-base-toast-danger-fg: #ff5a72;
+  --tug-base-toast-success-bg: color-mix(in oklch, var(--tug-green) 15%, transparent);
+  --tug-base-toast-success-fg: var(--tug-green);
+  --tug-base-toast-warning-bg: color-mix(in oklch, var(--tug-yellow) 12%, transparent);
+  --tug-base-toast-warning-fg: var(--tug-yellow);
+  --tug-base-toast-danger-bg: color-mix(in oklch, var(--tug-red) 15%, transparent);
+  --tug-base-toast-danger-fg: var(--tug-red);
   --tug-base-alert-bg: #282b32;
   --tug-base-alert-fg: #e6eaee;
 
   /* --- Status / Badge / Progress / Skeleton / Banner --- */
   --tug-base-badge-neutral-bg: #3a3e46;
   --tug-base-badge-neutral-fg: #bcc3cb;
-  --tug-base-badge-accent-bg: rgba(255, 138, 56, 0.2);
-  --tug-base-badge-accent-fg: #ff8a38;
-  --tug-base-badge-success-bg: rgba(114, 206, 143, 0.2);
-  --tug-base-badge-success-fg: #72ce8f;
-  --tug-base-badge-warning-bg: rgba(255, 232, 107, 0.15);
-  --tug-base-badge-warning-fg: #ffe86b;
-  --tug-base-badge-danger-bg: rgba(255, 90, 114, 0.2);
-  --tug-base-badge-danger-fg: #ff5a72;
-  --tug-base-status-success: #72ce8f;
-  --tug-base-status-warning: #ffe86b;
-  --tug-base-status-danger: #ff5a72;
-  --tug-base-status-info: #35bcff;
+  --tug-base-badge-accent-bg: color-mix(in oklch, var(--tug-orange) 20%, transparent);
+  --tug-base-badge-accent-fg: var(--tug-orange);
+  --tug-base-badge-success-bg: color-mix(in oklch, var(--tug-green) 20%, transparent);
+  --tug-base-badge-success-fg: var(--tug-green);
+  --tug-base-badge-warning-bg: color-mix(in oklch, var(--tug-yellow) 15%, transparent);
+  --tug-base-badge-warning-fg: var(--tug-yellow);
+  --tug-base-badge-danger-bg: color-mix(in oklch, var(--tug-red) 20%, transparent);
+  --tug-base-badge-danger-fg: var(--tug-red);
+  --tug-base-status-success: var(--tug-green);
+  --tug-base-status-warning: var(--tug-yellow);
+  --tug-base-status-danger: var(--tug-red);
+  --tug-base-status-info: var(--tug-cyan);
   --tug-base-progress-track: #3a3e46;
-  --tug-base-progress-fill: #ff8a38;
-  --tug-base-spinner: #ff8a38;
+  --tug-base-progress-fill: var(--tug-orange);
+  --tug-base-spinner: var(--tug-orange);
   --tug-base-skeleton-base: #282b32;
   --tug-base-skeleton-highlight: #353a42;
   --tug-base-emptyState-fg: #7b828c;
   --tug-base-emptyState-icon: #5e656e;
-  --tug-base-banner-info-bg: rgba(53, 188, 255, 0.12);
-  --tug-base-banner-info-fg: #35bcff;
-  --tug-base-banner-warning-bg: rgba(255, 232, 107, 0.12);
-  --tug-base-banner-warning-fg: #ffe86b;
-  --tug-base-banner-danger-bg: rgba(255, 90, 114, 0.12);
-  --tug-base-banner-danger-fg: #ff5a72;
+  --tug-base-banner-info-bg: color-mix(in oklch, var(--tug-cyan) 12%, transparent);
+  --tug-base-banner-info-fg: var(--tug-cyan);
+  --tug-base-banner-warning-bg: color-mix(in oklch, var(--tug-yellow) 12%, transparent);
+  --tug-base-banner-warning-fg: var(--tug-yellow);
+  --tug-base-banner-danger-bg: color-mix(in oklch, var(--tug-red) 12%, transparent);
+  --tug-base-banner-danger-fg: var(--tug-red);
   --tug-base-kbd-bg: #282b32;
   --tug-base-kbd-fg: #bcc3cb;
   --tug-base-kbd-border: #5e656e;
@@ -469,45 +470,45 @@ body {
   --tug-base-table-row-bg: transparent;
   --tug-base-table-row-bg-striped: rgba(255, 255, 255, 0.02);
   --tug-base-table-row-bg-hover: rgba(255, 255, 255, 0.04);
-  --tug-base-table-row-bg-selected: rgba(255, 138, 56, 0.1);
+  --tug-base-table-row-bg-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
   --tug-base-table-row-border: #2e3138;
   --tug-base-table-cell-divider: #3a3e46;
   --tug-base-table-sortIndicator: #7b828c;
   --tug-base-list-row-hover: rgba(255, 255, 255, 0.04);
-  --tug-base-list-row-selected: rgba(255, 138, 56, 0.1);
+  --tug-base-list-row-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
 
   /* --- Stat / Trend --- */
   --tug-base-stat-label: #7b828c;
   --tug-base-stat-value: #e6eaee;
-  --tug-base-stat-trend-positive: #72ce8f;
-  --tug-base-stat-trend-negative: #ff5a72;
+  --tug-base-stat-trend-positive: var(--tug-green);
+  --tug-base-stat-trend-negative: var(--tug-red);
   --tug-base-stat-trend-neutral: #7b828c;
 
-  /* --- Chart Series (literal Brio hex values per [D08]) --- */
-  --tug-base-chart-series-warm: #ff8a38;
-  --tug-base-chart-series-cool: #35bcff;
-  --tug-base-chart-series-violet: #b08aff;
-  --tug-base-chart-series-rose: #ff5a72;
-  --tug-base-chart-series-verdant: #72ce8f;
-  --tug-base-chart-series-golden: #ffe86b;
-  --tug-base-chart-series-orchid: #f07fd0;
-  --tug-base-chart-series-coral: #ffa37a;
+  /* --- Chart Series (palette var() references — Phase 5d5e) --- */
+  --tug-base-chart-series-warm: var(--tug-orange);
+  --tug-base-chart-series-cool: var(--tug-cyan);
+  --tug-base-chart-series-violet: var(--tug-violet);
+  --tug-base-chart-series-rose: var(--tug-red);
+  --tug-base-chart-series-verdant: var(--tug-green);
+  --tug-base-chart-series-golden: var(--tug-yellow);
+  --tug-base-chart-series-orchid: var(--tug-pink);
+  --tug-base-chart-series-coral: var(--tug-coral-muted);
   /* Chart infrastructure tokens */
   --tug-base-chart-grid: rgba(255, 255, 255, 0.06);
   --tug-base-chart-axis: #5e656e;
   --tug-base-chart-tick: #5e656e;
-  --tug-base-chart-threshold-warning: #ffe86b;
-  --tug-base-chart-threshold-danger: #ff5a72;
+  --tug-base-chart-threshold-warning: var(--tug-yellow);
+  --tug-base-chart-threshold-danger: var(--tug-red);
 
   /* --- Gauge --- */
   --tug-base-gauge-track: #3a3e46;
-  --tug-base-gauge-fill: #ff8a38;
+  --tug-base-gauge-fill: var(--tug-orange);
   --tug-base-gauge-needle: #e6eaee;
   --tug-base-gauge-tick-major: #7b828c;
   --tug-base-gauge-tick-minor: #4a5059;
   --tug-base-gauge-readout: #e6eaee;
-  --tug-base-gauge-threshold-warning: #ffe86b;
-  --tug-base-gauge-threshold-danger: #ff5a72;
+  --tug-base-gauge-threshold-warning: var(--tug-yellow);
+  --tug-base-gauge-threshold-danger: var(--tug-red);
   --tug-base-gauge-unit: #7b828c;
   --tug-base-gauge-annotation: #7b828c;
 
@@ -516,47 +517,47 @@ body {
      ====================================================================== */
 
   /* --- Syntax ---
-     Accent-derived tokens: literal Brio hex values per [D08].
+     Accent-derived tokens: palette var() references per Phase 5d5e.
      Text-derived tokens: var() references to --tug-base-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
-  --tug-base-syntax-keyword: #35bcff;
-  --tug-base-syntax-string: #ffa37a;
-  --tug-base-syntax-number: #72ce8f;
-  --tug-base-syntax-function: #ffe86b;
-  --tug-base-syntax-type: #72ce8f;
-  --tug-base-syntax-variable: #35bcff;
+  --tug-base-syntax-keyword: var(--tug-cyan);
+  --tug-base-syntax-string: var(--tug-coral-muted);
+  --tug-base-syntax-number: var(--tug-green);
+  --tug-base-syntax-function: var(--tug-yellow);
+  --tug-base-syntax-type: var(--tug-green);
+  --tug-base-syntax-variable: var(--tug-cyan);
   /* text-derived — inherits per-theme via fg-muted override */
   --tug-base-syntax-comment: var(--tug-base-fg-muted);
   /* text-derived — inherits per-theme via fg-default override */
   --tug-base-syntax-operator: var(--tug-base-fg-default);
   --tug-base-syntax-punctuation: var(--tug-base-fg-default);
-  --tug-base-syntax-constant: #35bcff;
-  --tug-base-syntax-decorator: #b08aff;
-  --tug-base-syntax-tag: #35bcff;
-  --tug-base-syntax-attribute: #35bcff;
+  --tug-base-syntax-constant: var(--tug-cyan);
+  --tug-base-syntax-decorator: var(--tug-violet);
+  --tug-base-syntax-tag: var(--tug-cyan);
+  --tug-base-syntax-attribute: var(--tug-cyan);
 
   /* --- Terminal --- */
   --tug-base-terminal-bg: #191c22;
   --tug-base-terminal-fg: #e6eaee;
   --tug-base-terminal-fg-muted: #bcc3cb;
-  --tug-base-terminal-cursor: #ff8a38;
-  --tug-base-terminal-selection-bg: rgba(53, 188, 255, 0.3);
+  --tug-base-terminal-cursor: var(--tug-orange);
+  --tug-base-terminal-selection-bg: color-mix(in oklch, var(--tug-cyan) 30%, transparent);
   --tug-base-terminal-border: #3a3e46;
-  /* ANSI color palette — Brio hex values matching canonical accent and standard ANSI values */
+  /* ANSI color palette — palette var() references per Phase 5d5e */
   --tug-base-terminal-ansi-black: #282b32;
-  --tug-base-terminal-ansi-red: #ff5a72;
-  --tug-base-terminal-ansi-green: #72ce8f;
-  --tug-base-terminal-ansi-yellow: #ffe86b;
-  --tug-base-terminal-ansi-blue: #35bcff;
-  --tug-base-terminal-ansi-magenta: #b08aff;
-  --tug-base-terminal-ansi-cyan: #35bcff;
+  --tug-base-terminal-ansi-red: var(--tug-red);
+  --tug-base-terminal-ansi-green: var(--tug-green);
+  --tug-base-terminal-ansi-yellow: var(--tug-yellow);
+  --tug-base-terminal-ansi-blue: var(--tug-cyan);
+  --tug-base-terminal-ansi-magenta: var(--tug-violet);
+  --tug-base-terminal-ansi-cyan: var(--tug-cyan);
   --tug-base-terminal-ansi-white: #e6eaee;
 
   /* --- Conversation / Chat / Code Block --- */
   --tug-base-chat-transcript-bg: #1c1e22;
   --tug-base-chat-message-user-bg: #282b32;
   --tug-base-chat-message-assistant-bg: #23262d;
-  --tug-base-chat-message-system-bg: rgba(53, 188, 255, 0.07);
+  --tug-base-chat-message-system-bg: color-mix(in oklch, var(--tug-cyan) 7%, transparent);
   --tug-base-chat-message-border: #3a3e46;
   --tug-base-chat-composer-bg: #282b32;
   --tug-base-chat-composer-border: #5e656e;
@@ -570,29 +571,29 @@ body {
 
   /* --- Files / Git / Tree --- */
   --tug-base-tree-row-bg-hover: rgba(255, 255, 255, 0.04);
-  --tug-base-tree-row-bg-selected: rgba(255, 138, 56, 0.1);
-  --tug-base-tree-row-bg-current: rgba(53, 188, 255, 0.1);
+  --tug-base-tree-row-bg-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
+  --tug-base-tree-row-bg-current: color-mix(in oklch, var(--tug-cyan) 10%, transparent);
   --tug-base-tree-row-fg: #e6eaee;
   --tug-base-tree-chevron: #5e656e;
-  --tug-base-file-status-added: #72ce8f;
-  --tug-base-file-status-modified: #ffe86b;
-  --tug-base-file-status-deleted: #ff5a72;
-  --tug-base-file-status-renamed: #35bcff;
-  --tug-base-diff-addition-bg: rgba(114, 206, 143, 0.12);
-  --tug-base-diff-addition-fg: #72ce8f;
-  --tug-base-diff-deletion-bg: rgba(255, 90, 114, 0.12);
-  --tug-base-diff-deletion-fg: #ff5a72;
+  --tug-base-file-status-added: var(--tug-green);
+  --tug-base-file-status-modified: var(--tug-yellow);
+  --tug-base-file-status-deleted: var(--tug-red);
+  --tug-base-file-status-renamed: var(--tug-cyan);
+  --tug-base-diff-addition-bg: color-mix(in oklch, var(--tug-green) 12%, transparent);
+  --tug-base-diff-addition-fg: var(--tug-green);
+  --tug-base-diff-deletion-bg: color-mix(in oklch, var(--tug-red) 12%, transparent);
+  --tug-base-diff-deletion-fg: var(--tug-red);
 
   /* --- Workflow / Feed Progress --- */
   --tug-base-feed-bg: #1c1e22;
   --tug-base-feed-border: #3a3e46;
   --tug-base-feed-step-bg: #23262d;
   --tug-base-feed-step-fg: #bcc3cb;
-  --tug-base-feed-step-active: #ff8a38;
-  --tug-base-feed-step-complete: #72ce8f;
-  --tug-base-feed-step-error: #ff5a72;
-  --tug-base-feed-stream-cursor: #ff8a38;
-  --tug-base-feed-handoff: #35bcff;
+  --tug-base-feed-step-active: var(--tug-orange);
+  --tug-base-feed-step-complete: var(--tug-green);
+  --tug-base-feed-step-error: var(--tug-red);
+  --tug-base-feed-stream-cursor: var(--tug-orange);
+  --tug-base-feed-handoff: var(--tug-cyan);
 
   /* ======================================================================
      === I. Inspector / Dev Tooling
@@ -605,25 +606,25 @@ body {
   --tug-base-inspector-field-bg: #1c1e22;
   --tug-base-inspector-field-border: #3a3e46;
   --tug-base-inspector-field-readOnly: #23262d;
-  --tug-base-inspector-field-inherited: rgba(53, 188, 255, 0.08);
+  --tug-base-inspector-field-inherited: color-mix(in oklch, var(--tug-cyan) 8%, transparent);
   --tug-base-inspector-field-default: #23262d;
-  --tug-base-inspector-field-preview: rgba(255, 138, 56, 0.1);
-  --tug-base-inspector-field-cancelled: rgba(255, 90, 114, 0.1);
-  --tug-base-inspector-target-outline: #35bcff;
-  --tug-base-inspector-preview-outline: #ff8a38;
-  --tug-base-inspector-source-token: #b08aff;
-  --tug-base-inspector-source-class: #72ce8f;
-  --tug-base-inspector-source-inline: #ffe86b;
-  --tug-base-inspector-source-preview: #ffa37a;
+  --tug-base-inspector-field-preview: color-mix(in oklch, var(--tug-orange) 10%, transparent);
+  --tug-base-inspector-field-cancelled: color-mix(in oklch, var(--tug-red) 10%, transparent);
+  --tug-base-inspector-target-outline: var(--tug-cyan);
+  --tug-base-inspector-preview-outline: var(--tug-orange);
+  --tug-base-inspector-source-token: var(--tug-violet);
+  --tug-base-inspector-source-class: var(--tug-green);
+  --tug-base-inspector-source-inline: var(--tug-yellow);
+  --tug-base-inspector-source-preview: var(--tug-coral-muted);
   --tug-base-inspector-emptyState-fg: #7b828c;
   --tug-base-inspector-emptyState-icon: #5e656e;
   --tug-base-inspector-swatch-border: #5e656e;
   --tug-base-inspector-scrub-track: #3a3e46;
   --tug-base-inspector-scrub-thumb: #7b828c;
-  --tug-base-inspector-scrub-active: #ff8a38;
+  --tug-base-inspector-scrub-active: var(--tug-orange);
   --tug-base-dev-overlay-bg: rgba(28, 30, 34, 0.92);
   --tug-base-dev-overlay-fg: #e6eaee;
   --tug-base-dev-overlay-border: #5e656e;
-  --tug-base-dev-overlay-targetHighlight: rgba(53, 188, 255, 0.3);
+  --tug-base-dev-overlay-targetHighlight: color-mix(in oklch, var(--tug-cyan) 30%, transparent);
   --tug-base-dev-overlay-targetDim: rgba(0, 0, 0, 0.5);
 }
