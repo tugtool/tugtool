@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-07T17:16:55Z
+---
+
+## step-2: Verified sections B-D tokens (accent, selection/highlight, workspace chrome) already present from step-1. All values confirmed correct against plan specs. No file changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-1
 date: 2025-03-07T17:12:56Z
 ---
