@@ -20,10 +20,10 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 
 import {
   GalleryPaletteContent,
-  hvvColor,
   buildExportPayload,
   parseImportPayload,
 } from "@/components/tugways/cards/gallery-palette-content";
+import { hvvColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Render tests
@@ -207,16 +207,21 @@ describe("hvvColor – pure unit tests", () => {
     expect(result).toMatch(/oklch\(0\.79 /);
   });
 
-  it("vib=50 produces sRGB-safe chroma (MAX_CHROMA_FOR_HUE)", () => {
-    // red MAX_CHROMA_FOR_HUE = 0.169, peak = 0.338, vib=50 → 0.169
+  it("vib=50 produces sRGB-safe chroma (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = MAX_CHROMA_FOR_HUE)", () => {
+    // vib=50 → C = (50/100) * (MAX_CHROMA * 2) = MAX_CHROMA
+    const maxC = MAX_CHROMA_FOR_HUE["red"];
+    const expectedC = parseFloat(maxC.toFixed(4)).toString();
     const result = hvvColor("red", 50, 50, 0.79);
-    expect(result).toContain("0.169");
+    expect(result).toContain(expectedC);
   });
 
   it("vib=100 produces 2x sRGB max chroma (P3 territory)", () => {
-    // red peak = 0.169 * 2 = 0.338
+    // vib=100 → C = MAX_CHROMA * 2
+    const maxC = MAX_CHROMA_FOR_HUE["red"];
+    const peakC = maxC * 2;
+    const expectedC = parseFloat(peakC.toFixed(4)).toString();
     const result = hvvColor("red", 100, 50, 0.79);
-    expect(result).toContain("0.338");
+    expect(result).toContain(expectedC);
   });
 
   it("produces valid oklch for all 24 hue names", () => {

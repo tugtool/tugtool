@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-07T02:33:37Z
+---
+
+## step-1: Promoted hvvColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, HVV_PRESETS to palette-engine.ts. Refactored _deriveChromaCaps with parameterized signature. Re-derived MAX_CHROMA_FOR_HUE for HVV L range. Exported oklchToLinearSRGB, isInSRGBGamut, findMaxChroma. Updated gallery-palette-content.tsx imports and tests.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-7
 date: 2025-03-06T19:20:08Z
 ---

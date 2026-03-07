@@ -1,15 +1,10 @@
 /**
- * Palette Engine tests — Step 1 (Phase 5d5a).
+ * Palette Engine tests — HVV Runtime (Steps 1+).
  *
  * Tests cover:
- * - tugPaletteColor() returns valid oklch strings with correct L/C values
- * - tugPaletteVarName() returns correct CSS variable name format
- * - Intensity clamping (negative -> 0, >100 -> 100)
- * - All 24 hues x 11 standard stops produce sRGB-safe oklch values
- * - Per-hue chroma caps: yellow has lower chroma than blue at high intensity
- * - injectPaletteCSS() injects all variables into DOM (happy-dom integration)
- * - Named tone alias injection matches numeric stop values
- * - Idempotent injection: calling twice does not create duplicate elements
+ * - Legacy: tugPaletteColor(), tugPaletteVarName(), injectPaletteCSS() (still present, removed in Step 5)
+ * - HVV Step 1: hvvColor(), DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, HVV_PRESETS
+ * - HVV Step 1: MAX_CHROMA_FOR_HUE re-derived with HVV L sample points
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
  */
@@ -27,6 +22,12 @@ import {
   tugPaletteVarName,
   injectPaletteCSS,
   tugAnchoredColor,
+  hvvColor,
+  DEFAULT_CANONICAL_L,
+  L_DARK,
+  L_LIGHT,
+  PEAK_C_SCALE,
+  HVV_PRESETS,
 } from "@/components/tugways/palette-engine";
 import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
 import {
@@ -149,23 +150,28 @@ describe("tugPaletteColor()", () => {
     expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
   });
 
-  it("'blue' at intensity 100 has lower chroma than 'red' at intensity 100 (per-hue caps)", () => {
-    // In OKLCH space, blue (230°) has a tighter gamut boundary than red (25°)
-    // at dark tones (L=0.42), so blue's chroma cap is lower than red's.
-    // This verifies that per-hue chroma caps produce different values per hue.
+  it("'blue' and 'red' at intensity 100 have different chroma caps (per-hue caps differ)", () => {
+    // With HVV L sample points (L_DARK=0.15, canonical L, L_LIGHT=0.96),
+    // the gamut boundary at L_DARK=0.15 changes relative ordering:
+    // blue (230°, cap=0.023) > red (25°, cap=0.019) at HVV L range.
+    // This test documents the actual ordering and verifies caps are distinct.
     const blueResult = tugPaletteColor("blue", 100);
     const redResult = tugPaletteColor("red", 100);
     const blue = parseOklch(blueResult);
     const red = parseOklch(redResult);
     expect(blue).not.toBeNull();
     expect(red).not.toBeNull();
-    expect(blue!.C).toBeLessThan(red!.C);
+    // Caps must be distinct (not equal)
+    expect(blue!.C).not.toBe(red!.C);
+    // Both are well below cMax (0.22)
+    expect(blue!.C).toBeLessThan(DEFAULT_LC_PARAMS.cMax);
+    expect(red!.C).toBeLessThan(DEFAULT_LC_PARAMS.cMax);
   });
 
   it("'yellow' and 'blue' at intensity 100 have different chroma due to per-hue caps", () => {
-    // The plan's original expectation was yellow < blue, but empirical OKLCH gamut
-    // checking shows the reverse: yellow (90°) cap=0.086 > blue (230°) cap=0.083.
-    // Yellow can hold slightly more chroma than blue at dark tones in OKLCH space.
+    // With HVV-derived chroma caps (sampled at L_DARK=0.15, canonical L, L_LIGHT=0.96):
+    // yellow (90°) cap=0.045 > blue (230°) cap=0.023.
+    // Yellow can hold more chroma than blue across the HVV L range in OKLCH space.
     // This test documents the ACTUAL ordering and confirms the caps ARE distinct,
     // which is the essential property the plan intends to verify.
     const yellowResult = tugPaletteColor("yellow", 100);
@@ -174,7 +180,7 @@ describe("tugPaletteColor()", () => {
     const blue = parseOklch(blueResult);
     expect(yellow).not.toBeNull();
     expect(blue).not.toBeNull();
-    // Actual ordering: yellow (0.086) > blue (0.083) — per-hue caps differ.
+    // Actual ordering: yellow (0.045) > blue (0.023) — per-hue caps differ.
     expect(yellow!.C).toBeGreaterThan(blue!.C);
     // Both caps are well below cMax (0.22) — gamut constraint is active for both.
     expect(yellow!.C).toBeLessThan(DEFAULT_LC_PARAMS.cMax);
@@ -472,13 +478,14 @@ describe("tugAnchoredColor()", () => {
     expect(parsed!.L).toBeCloseTo(0.805, 3);
   });
 
-  it("returns oklch with exact L and C at stop 100", () => {
+  it("returns oklch with exact L and C at stop 100 (no chroma clamping in tugAnchoredColor)", () => {
     const result = tugAnchoredColor("red", 100, RED_ANCHORS);
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.42, 4);
-    // C=0.17 is above MAX_CHROMA_FOR_HUE['red']=0.169 so it will be clamped
-    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
+    // tugAnchoredColor does not clamp chroma — it passes C directly to oklch()
+    // C=0.17 from the anchor fixture is returned as-is
+    expect(parsed!.C).toBeCloseTo(0.17, 4);
   });
 
   it("clamps intensity below 0 to 0", () => {
@@ -754,5 +761,196 @@ describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
     // Must match brio anchors after the switch
     const expectedBrio = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
     expect(restoredValue).toBe(expectedBrio);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 1: hvvColor() — promoted from gallery-palette-content.tsx
+// ---------------------------------------------------------------------------
+
+/** Parse an oklch() string into numeric components (shared helper). */
+function parseHvvOklch(s: string): { L: number; C: number; h: number } | null {
+  const m = s.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
+  if (!m) return null;
+  return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
+}
+
+describe("hvvColor() — HVV Step 1", () => {
+  it("hvvColor('red', 50, 50, 0.659) returns valid oklch string with L=0.659", () => {
+    const result = hvvColor("red", 50, 50, 0.659);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.659, 3);
+    expect(result).toMatch(/^oklch\(/);
+  });
+
+  it("hvvColor('red', 0, 50, 0.659) returns oklch with C=0 (zero vibrancy)", () => {
+    const result = hvvColor("red", 0, 50, 0.659);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBe(0);
+  });
+
+  it("hvvColor('red', 50, 0, 0.659) returns oklch with L=0.15 (val=0 gives L_DARK)", () => {
+    const result = hvvColor("red", 50, 0, 0.659);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(L_DARK, 3);
+  });
+
+  it("hvvColor('red', 50, 100, 0.659) returns oklch with L=0.96 (val=100 gives L_LIGHT)", () => {
+    const result = hvvColor("red", 50, 100, 0.659);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(L_LIGHT, 3);
+  });
+
+  it("hvvColor('red', 100, 50, 0.659) returns oklch with C = MAX_CHROMA_FOR_HUE['red'] * 2", () => {
+    const result = hvvColor("red", 100, 50, 0.659);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    const expectedC = MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE;
+    expect(parsed!.C).toBeCloseTo(expectedC, 4);
+  });
+
+  it("hvvColor('red', 100, 50, 0.659, 0.5) returns oklch with C = 0.5 (explicit peakChroma override)", () => {
+    const result = hvvColor("red", 100, 50, 0.659, 0.5);
+    const parsed = parseHvvOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBeCloseTo(0.5, 4);
+  });
+
+  it("hvvColor with no peakChroma matches hvvColor with explicit default peakChroma", () => {
+    const defaultPeak = MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE;
+    const withDefault = hvvColor("red", 50, 50, 0.659);
+    const withExplicit = hvvColor("red", 50, 50, 0.659, defaultPeak);
+    expect(withDefault).toBe(withExplicit);
+  });
+
+  it("all 24 hue names produce valid oklch strings at canonical (50/50)", () => {
+    for (const [hueName] of Object.entries(HUE_FAMILIES)) {
+      const canonL = DEFAULT_CANONICAL_L[hueName];
+      expect(canonL).toBeDefined();
+      const result = hvvColor(hueName, 50, 50, canonL);
+      expect(result).toMatch(/^oklch\(/);
+      const parsed = parseHvvOklch(result);
+      expect(parsed).not.toBeNull();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 1: HVV_PRESETS
+// ---------------------------------------------------------------------------
+
+describe("HVV_PRESETS — HVV Step 1", () => {
+  it("has exactly 7 entries", () => {
+    expect(Object.keys(HVV_PRESETS).length).toBe(7);
+  });
+
+  it("canonical preset has vib=50, val=50", () => {
+    expect(HVV_PRESETS["canonical"]).toEqual({ vib: 50, val: 50 });
+  });
+
+  it("accent preset has vib=80, val=50", () => {
+    expect(HVV_PRESETS["accent"]).toEqual({ vib: 80, val: 50 });
+  });
+
+  it("muted preset has vib=25, val=55", () => {
+    expect(HVV_PRESETS["muted"]).toEqual({ vib: 25, val: 55 });
+  });
+
+  it("light preset has vib=30, val=82", () => {
+    expect(HVV_PRESETS["light"]).toEqual({ vib: 30, val: 82 });
+  });
+
+  it("subtle preset has vib=15, val=92", () => {
+    expect(HVV_PRESETS["subtle"]).toEqual({ vib: 15, val: 92 });
+  });
+
+  it("dark preset has vib=50, val=25", () => {
+    expect(HVV_PRESETS["dark"]).toEqual({ vib: 50, val: 25 });
+  });
+
+  it("deep preset has vib=70, val=15", () => {
+    expect(HVV_PRESETS["deep"]).toEqual({ vib: 70, val: 15 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 1: DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE
+// ---------------------------------------------------------------------------
+
+describe("DEFAULT_CANONICAL_L — HVV Step 1", () => {
+  it("has exactly 24 entries", () => {
+    expect(Object.keys(DEFAULT_CANONICAL_L).length).toBe(24);
+  });
+
+  it("cherry canonical L is 0.619", () => {
+    expect(DEFAULT_CANONICAL_L["cherry"]).toBe(0.619);
+  });
+
+  it("yellow canonical L is 0.901", () => {
+    expect(DEFAULT_CANONICAL_L["yellow"]).toBe(0.901);
+  });
+
+  it("all canonical L values are above 0.555 (piecewise min() constraint)", () => {
+    for (const [hue, l] of Object.entries(DEFAULT_CANONICAL_L)) {
+      expect(l).toBeGreaterThan(0.555);
+      void hue;
+    }
+  });
+
+  it("has entries for all 24 hue families", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(DEFAULT_CANONICAL_L[hue]).toBeDefined();
+    }
+  });
+});
+
+describe("L_DARK, L_LIGHT, PEAK_C_SCALE constants — HVV Step 1", () => {
+  it("L_DARK is 0.15", () => {
+    expect(L_DARK).toBe(0.15);
+  });
+
+  it("L_LIGHT is 0.96", () => {
+    expect(L_LIGHT).toBe(0.96);
+  });
+
+  it("PEAK_C_SCALE is 2", () => {
+    expect(PEAK_C_SCALE).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HVV Step 1: MAX_CHROMA_FOR_HUE — re-derived with HVV L sample points
+// ---------------------------------------------------------------------------
+
+describe("MAX_CHROMA_FOR_HUE (re-derived for HVV) — HVV Step 1", () => {
+  it("has an entry for every hue family", () => {
+    for (const name of Object.keys(HUE_FAMILIES)) {
+      expect(MAX_CHROMA_FOR_HUE[name]).toBeDefined();
+      expect(typeof MAX_CHROMA_FOR_HUE[name]).toBe("number");
+    }
+  });
+
+  it("all caps are positive and at most cMax (0.22)", () => {
+    for (const [name, cap] of Object.entries(MAX_CHROMA_FOR_HUE)) {
+      expect(cap).toBeGreaterThan(0);
+      expect(cap).toBeLessThanOrEqual(DEFAULT_LC_PARAMS.cMax + 0.001);
+      void name;
+    }
+  });
+
+  it("spot-check: red cap is 0.019 (HVV L_DARK=0.15 limits chroma at dark tones)", () => {
+    expect(MAX_CHROMA_FOR_HUE["red"]).toBe(0.019);
+  });
+
+  it("spot-check: green cap is 0.069 (wider gamut at green hue angle)", () => {
+    expect(MAX_CHROMA_FOR_HUE["green"]).toBe(0.069);
+  });
+
+  it("spot-check: yellow cap is 0.045", () => {
+    expect(MAX_CHROMA_FOR_HUE["yellow"]).toBe(0.045);
   });
 });
