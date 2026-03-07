@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-07T17:44:48Z
+---
+
+## step-7: All 9 automated integration checks pass: token counts (488 base, 84 comp), zero raw comp values, alias completeness, full chain verification, duration non-redefinition, import order, theme overrides, build success. Visual inspection deferred to user.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-6
+date: 2025-03-07T17:40:42Z
+---
+
+## step-6: Created tug-comp-tokens.css with 82 --tug-comp-* tokens for button, tab-bar, card, dropdown families. All resolve from --tug-base-* via var(). Added @import in globals.css. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-5
+date: 2025-03-07T17:36:22Z
+---
+
+## step-5: Added --tug-base-* override sections to bluenote.css and harmony.css. All color tokens overridden with theme-specific hex values. D09/D10 compliance verified. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-4
+date: 2025-03-07T17:26:41Z
+---
+
+## step-4: Repointed all --td-* semantic tokens in tokens.css from var(--tways-*) to var(--tug-base-*). 66 references updated. Tier 1 palette, shadcn bridges, chart/accent-N tokens unchanged. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-3
+date: 2025-03-07T17:21:34Z
+---
+
+## step-3: Verified sections E-I tokens (controls/actions/fields, menus/overlays/feedback, tables/stats/charts, syntax/terminal/chat, inspector/dev-overlay) already present from step-1. D08 and D09 compliance confirmed. No file changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-2
+date: 2025-03-07T17:16:55Z
+---
+
+## step-2: Verified sections B-D tokens (accent, selection/highlight, workspace chrome) already present from step-1. All values confirmed correct against plan specs. No file changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
+step: step-1
+date: 2025-03-07T17:12:56Z
+---
+
+## step-1: Created tugdeck/styles/tug-tokens.css with 475 --tug-base-* token declarations covering all taxonomy sections A-I. Added @import in globals.css after tokens.css. Build passes, token count 488.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-8
 date: 2025-03-07T04:53:03Z
 ---

@@ -1,0 +1,134 @@
+/**
+ * Tugways Component Token Layer — Phase 5d5c
+ *
+ * Defines --tug-comp-* tokens for the four existing component families.
+ * Every token MUST resolve from --tug-base-* via var() — no raw values.
+ *
+ * Component families covered:
+ *   tug-button   — maps to --tug-base-action-*
+ *   tug-tab-bar  — maps to --tug-base-tab-*
+ *   tugcard      — maps to --tug-base-card-* and --tug-base-surface-*
+ *   tug-dropdown — maps to --tug-base-menu-*
+ *
+ * Import order (enforced in globals.css):
+ *   1. tokens.css
+ *   2. tug-tokens.css  (--tug-base-* must be defined before this file)
+ *   3. tug-comp-tokens.css  [this file]
+ */
+
+body {
+  /* ======================================================================
+     === tug-button family
+     Maps to --tug-base-action-* tokens.
+     ====================================================================== */
+
+  /* Primary variant */
+  --tug-comp-button-primary-bg-rest: var(--tug-base-action-primary-bg-rest);
+  --tug-comp-button-primary-bg-hover: var(--tug-base-action-primary-bg-hover);
+  --tug-comp-button-primary-bg-active: var(--tug-base-action-primary-bg-active);
+  --tug-comp-button-primary-fg: var(--tug-base-action-primary-fg);
+  --tug-comp-button-primary-border: var(--tug-base-action-primary-border);
+
+  /* Secondary variant */
+  --tug-comp-button-secondary-bg-rest: var(--tug-base-action-secondary-bg-rest);
+  --tug-comp-button-secondary-bg-hover: var(--tug-base-action-secondary-bg-hover);
+  --tug-comp-button-secondary-bg-active: var(--tug-base-action-secondary-bg-active);
+  --tug-comp-button-secondary-fg: var(--tug-base-action-secondary-fg);
+  --tug-comp-button-secondary-border: var(--tug-base-action-secondary-border);
+
+  /* Ghost variant */
+  --tug-comp-button-ghost-bg-hover: var(--tug-base-action-ghost-bg-hover);
+  --tug-comp-button-ghost-fg: var(--tug-base-action-ghost-fg);
+
+  /* Destructive variant */
+  --tug-comp-button-destructive-bg-rest: var(--tug-base-action-destructive-bg-rest);
+  --tug-comp-button-destructive-bg-hover: var(--tug-base-action-destructive-bg-hover);
+  --tug-comp-button-destructive-bg-active: var(--tug-base-action-destructive-bg-active);
+  --tug-comp-button-destructive-fg: var(--tug-base-action-destructive-fg);
+  --tug-comp-button-destructive-border: var(--tug-base-action-destructive-border);
+
+  /* Disabled state */
+  --tug-comp-button-disabled-bg: var(--tug-base-action-disabled-bg);
+  --tug-comp-button-disabled-fg: var(--tug-base-action-disabled-fg);
+  --tug-comp-button-disabled-border: var(--tug-base-action-disabled-border);
+
+  /* ======================================================================
+     === tug-tab-bar family
+     Maps to --tug-base-tab-* tokens.
+     ====================================================================== */
+
+  --tug-comp-tab-bar-bg: var(--tug-base-tab-bar-bg);
+  --tug-comp-tab-bg-rest: var(--tug-base-tab-bg-rest);
+  --tug-comp-tab-bg-hover: var(--tug-base-tab-bg-hover);
+  --tug-comp-tab-bg-active: var(--tug-base-tab-bg-active);
+  --tug-comp-tab-bg-compact: var(--tug-base-tab-bg-compact);
+  --tug-comp-tab-fg-rest: var(--tug-base-tab-fg-rest);
+  --tug-comp-tab-fg-active: var(--tug-base-tab-fg-active);
+  --tug-comp-tab-fg-compact: var(--tug-base-tab-fg-compact);
+  --tug-comp-tab-close-bg-hover: var(--tug-base-tab-close-bg-hover);
+  --tug-comp-tab-close-fg-hover: var(--tug-base-tab-close-fg-hover);
+  --tug-comp-tab-underline-active: var(--tug-base-tab-underline-active);
+  --tug-comp-tab-dropTarget-bg: var(--tug-base-tab-dropTarget-bg);
+  --tug-comp-tab-dropTarget-border: var(--tug-base-tab-dropTarget-border);
+  --tug-comp-tab-badge-bg: var(--tug-base-tab-badge-bg);
+  --tug-comp-tab-badge-fg: var(--tug-base-tab-badge-fg);
+  --tug-comp-tab-ghost-bg: var(--tug-base-tab-ghost-bg);
+  --tug-comp-tab-ghost-border: var(--tug-base-tab-ghost-border);
+  --tug-comp-tab-insertIndicator: var(--tug-base-tab-insertIndicator);
+  --tug-comp-tab-overflow-trigger-bg: var(--tug-base-tab-overflow-trigger-bg);
+  --tug-comp-tab-overflow-trigger-fg: var(--tug-base-tab-overflow-trigger-fg);
+  --tug-comp-tab-add-bg-hover: var(--tug-base-tab-add-bg-hover);
+  --tug-comp-tab-add-fg: var(--tug-base-tab-add-fg);
+  --tug-comp-tab-typePicker-bg: var(--tug-base-tab-typePicker-bg);
+  --tug-comp-tab-typePicker-fg: var(--tug-base-tab-typePicker-fg);
+
+  /* ======================================================================
+     === tugcard family
+     Maps to --tug-base-card-* and --tug-base-surface-* tokens.
+     ====================================================================== */
+
+  --tug-comp-card-bg: var(--tug-base-card-bg);
+  --tug-comp-card-border: var(--tug-base-card-border);
+  --tug-comp-card-header-bg-active: var(--tug-base-card-header-bg-active);
+  --tug-comp-card-header-bg-inactive: var(--tug-base-card-header-bg-inactive);
+  --tug-comp-card-header-bg-collapsed: var(--tug-base-card-header-bg-collapsed);
+  --tug-comp-card-header-fg: var(--tug-base-card-header-fg);
+  --tug-comp-card-header-icon-active: var(--tug-base-card-header-icon-active);
+  --tug-comp-card-header-icon-inactive: var(--tug-base-card-header-icon-inactive);
+  --tug-comp-card-header-divider: var(--tug-base-card-header-divider);
+  --tug-comp-card-header-button-bg-hover: var(--tug-base-card-header-button-bg-hover);
+  --tug-comp-card-header-button-bg-active: var(--tug-base-card-header-button-bg-active);
+  --tug-comp-card-header-button-fg: var(--tug-base-card-header-button-fg);
+  --tug-comp-card-header-button-fg-danger: var(--tug-base-card-header-button-fg-danger);
+  --tug-comp-card-header-button-fg-danger-hover: var(--tug-base-card-header-button-fg-danger-hover);
+  --tug-comp-card-content-bg: var(--tug-base-surface-content);
+  --tug-comp-card-accessory-bg: var(--tug-base-card-accessory-bg);
+  --tug-comp-card-accessory-border: var(--tug-base-card-accessory-border);
+  --tug-comp-card-shadow-active: var(--tug-base-card-shadow-active);
+  --tug-comp-card-shadow-inactive: var(--tug-base-card-shadow-inactive);
+  --tug-comp-card-dim-overlay: var(--tug-base-card-dim-overlay);
+  --tug-comp-card-findbar-bg: var(--tug-base-card-findbar-bg);
+  --tug-comp-card-findbar-border: var(--tug-base-card-findbar-border);
+  --tug-comp-card-findbar-match: var(--tug-base-card-findbar-match);
+  --tug-comp-card-findbar-match-active: var(--tug-base-card-findbar-match-active);
+
+  /* ======================================================================
+     === tug-dropdown family
+     Maps to --tug-base-menu-* and --tug-base-surface-* tokens.
+     ====================================================================== */
+
+  --tug-comp-dropdown-bg: var(--tug-base-menu-bg);
+  --tug-comp-dropdown-fg: var(--tug-base-menu-fg);
+  --tug-comp-dropdown-border: var(--tug-base-menu-border);
+  --tug-comp-dropdown-shadow: var(--tug-base-menu-shadow);
+  --tug-comp-dropdown-item-bg-hover: var(--tug-base-menu-item-bg-hover);
+  --tug-comp-dropdown-item-bg-selected: var(--tug-base-menu-item-bg-selected);
+  --tug-comp-dropdown-item-fg: var(--tug-base-menu-item-fg);
+  --tug-comp-dropdown-item-fg-disabled: var(--tug-base-menu-item-fg-disabled);
+  --tug-comp-dropdown-item-fg-danger: var(--tug-base-menu-item-fg-danger);
+  --tug-comp-dropdown-item-meta: var(--tug-base-menu-item-meta);
+  --tug-comp-dropdown-item-shortcut: var(--tug-base-menu-item-shortcut);
+  --tug-comp-dropdown-item-icon: var(--tug-base-menu-item-icon);
+  --tug-comp-dropdown-item-icon-danger: var(--tug-base-menu-item-icon-danger);
+  --tug-comp-dropdown-item-chevron: var(--tug-base-menu-item-chevron);
+}
