@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-07T17:36:22Z
+---
+
+## step-5: Added --tug-base-* override sections to bluenote.css and harmony.css. All color tokens overridden with theme-specific hex values. D09/D10 compliance verified. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-4
 date: 2025-03-07T17:26:41Z
 ---
