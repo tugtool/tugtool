@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-07T23:22:09Z
+---
+
+## step-11: Removed injectHvvCSS test sections (~200 lines). Added 10 new tug-palette.css verification tests covering variable counts, formula patterns, neutral ramp, and P3 overrides. 74 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-10
 date: 2025-03-07T23:14:48Z
 ---

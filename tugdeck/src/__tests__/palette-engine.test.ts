@@ -1,5 +1,5 @@
 /**
- * Palette Engine tests — HVV Runtime.
+ * Palette Engine tests — HVV Runtime + tug-palette.css verification.
  *
  * Tests cover:
  * - HUE_FAMILIES and MAX_CHROMA_FOR_HUE tables
@@ -9,14 +9,16 @@
  * - HVV_PRESETS: 7 entries with correct vib/val
  * - MAX_P3_CHROMA_FOR_HUE: all > corresponding sRGB caps
  * - oklchToLinearP3 and isInP3Gamut: P3 gamut conversion and checking
- * - injectHvvCSS(): Layer 1 presets (168), Layer 2 constants (74), P3 @media block
  * - Gamut safety: all 24 hues × 7 presets produce valid oklch strings
+ * - tug-palette.css: verifies static palette file structure and contents
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
  */
 import "./setup-rtl";
 
-import { describe, it, expect, afterEach } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { describe, it, expect } from "bun:test";
 
 import {
   HUE_FAMILIES,
@@ -35,7 +37,6 @@ import {
   PEAK_C_SCALE,
   HVV_PRESETS,
   MAX_P3_CHROMA_FOR_HUE,
-  injectHvvCSS,
 } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -347,160 +348,186 @@ describe("isInP3Gamut()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// injectHvvCSS() — Layer 1 presets and Layer 2 constants
+// tug-palette.css — static palette file verification
 // ---------------------------------------------------------------------------
 
-describe("injectHvvCSS() — Layer 1 and Layer 2", () => {
-  afterEach(() => {
-    const el = document.getElementById("tug-palette");
-    if (el) el.remove();
+// Resolve the CSS file relative to the tugdeck root
+const TUG_PALETTE_CSS = readFileSync(
+  join(import.meta.dir, "../../styles/tug-palette.css"),
+  "utf8"
+);
+
+describe("tug-palette.css — per-hue constants", () => {
+  it("contains all 24 --tug-{hue}-h variables", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
+    }
   });
 
-  it("creates a <style id='tug-palette'> element in document.head", () => {
-    injectHvvCSS("brio");
-    const el = document.getElementById("tug-palette");
-    expect(el).not.toBeNull();
-    expect(el!.tagName.toLowerCase()).toBe("style");
+  it("all 24 --tug-{hue}-h values match HUE_FAMILIES angles", () => {
+    for (const [hue, angle] of Object.entries(HUE_FAMILIES)) {
+      const pattern = new RegExp(`--tug-${hue}-h:\\s*${angle};`);
+      expect(TUG_PALETTE_CSS).toMatch(pattern);
+    }
   });
 
-  it("CSS contains --tug-red: with an oklch value (canonical preset)", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain("--tug-red:");
-    expect(css).toContain("oklch(");
+  it("contains all 24 --tug-{hue}-canon-l variables", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canon-l:`);
+    }
   });
 
-  it("CSS contains --tug-red-accent: with an oklch value", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toMatch(/--tug-red-accent:\s*oklch\(/);
+  it("all 24 --tug-{hue}-canon-l values match DEFAULT_CANONICAL_L", () => {
+    for (const [hue, canonL] of Object.entries(DEFAULT_CANONICAL_L)) {
+      // Match the numeric value (may be formatted without trailing zeros)
+      const valStr = canonL.toString();
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canon-l: ${valStr}`);
+    }
   });
 
-  it("CSS contains all 7 preset variables for red", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain("--tug-red:");
-    expect(css).toContain("--tug-red-accent:");
-    expect(css).toContain("--tug-red-muted:");
-    expect(css).toContain("--tug-red-light:");
-    expect(css).toContain("--tug-red-subtle:");
-    expect(css).toContain("--tug-red-dark:");
-    expect(css).toContain("--tug-red-deep:");
+  it("contains all 24 --tug-{hue}-peak-c variables", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
+    }
   });
 
-  it("total preset variable count is 168 in the sRGB block (7 x 24)", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
-    const presets = srgbBlock.match(/--tug-\w+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
-    expect(presets.length).toBe(168);
-  });
-
-  it("CSS contains --tug-red-h: 25 (per-hue hue angle constant)", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain("--tug-red-h: 25;");
-  });
-
-  it("CSS contains --tug-red-canon-l: matching DEFAULT_CANONICAL_L['red']", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain(`--tug-red-canon-l: ${DEFAULT_CANONICAL_L["red"]};`);
-  });
-
-  it("CSS contains --tug-red-peak-c: matching MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const expectedPeakC = parseFloat((MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
-    expect(css).toContain(`--tug-red-peak-c: ${expectedPeakC};`);
-  });
-
-  it("CSS contains --tug-l-dark: 0.15 and --tug-l-light: 0.96", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain(`--tug-l-dark: ${L_DARK};`);
-    expect(css).toContain(`--tug-l-light: ${L_LIGHT};`);
-  });
-
-  it("total constant count is 74 in the sRGB block (72 per-hue + 2 global)", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
-    const perHueH      = srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? [];
-    const perHueCanonL = srgbBlock.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
-    const perHuePeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
-    const globals      = srgbBlock.match(/--tug-l-(?:dark|light):\s*[\d.]+;/g) ?? [];
-    expect(perHueH.length).toBe(24);
-    expect(perHueCanonL.length).toBe(24);
-    expect(perHuePeakC.length).toBe(24);
-    expect(globals.length).toBe(2);
-    expect(perHueH.length + perHueCanonL.length + perHuePeakC.length + globals.length).toBe(74);
-  });
-
-  it("idempotent — calling twice creates only one style element", () => {
-    injectHvvCSS("brio");
-    injectHvvCSS("brio");
-    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
-  });
-
-  it("preset value for red canonical matches direct hvvColor call", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const match = css.match(/--tug-red:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    const expected = hvvColor("red", HVV_PRESETS["canonical"].vib, HVV_PRESETS["canonical"].val, DEFAULT_CANONICAL_L["red"]);
-    expect(match![1]).toBe(expected);
+  it("total per-hue constant count is 72 (24 hues × 3 constants)", () => {
+    const hVars     = (TUG_PALETTE_CSS.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
+    const canonLVars = TUG_PALETTE_CSS.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const peakCVars  = TUG_PALETTE_CSS.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    // Only count the sRGB block (before @media)
+    const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
+    const srgbH      = (srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
+    const srgbCanonL = srgbBlock.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const srgbPeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    expect(srgbH.length).toBe(24);
+    expect(srgbCanonL.length).toBe(24);
+    expect(srgbPeakC.length).toBe(24);
+    void hVars; void canonLVars; void peakCVars;
   });
 });
 
-// ---------------------------------------------------------------------------
-// injectHvvCSS() — P3 @media block
-// ---------------------------------------------------------------------------
-
-describe("injectHvvCSS() — P3 @media block", () => {
-  afterEach(() => {
-    const el = document.getElementById("tug-palette");
-    if (el) el.remove();
+describe("tug-palette.css — global lightness anchors", () => {
+  it("contains --tug-l-dark: 0.15", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-l-dark: 0.15;");
   });
 
-  it("output contains '@media (color-gamut: p3)'", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain("@media (color-gamut: p3)");
+  it("contains --tug-l-light: 0.96", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-l-light: 0.96;");
+  });
+});
+
+describe("tug-palette.css — chromatic preset formulas (168 = 24 × 7)", () => {
+  it("contains all 7 preset variables for red", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-red:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-accent:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-muted:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-light:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-subtle:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-dark:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-deep:");
   });
 
-  it("P3 block contains --tug-red: with wider chroma than the sRGB block", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const mediaIdx = css.indexOf("@media (color-gamut: p3)");
-    const srgbBlock = css.slice(0, mediaIdx);
-    const p3Block   = css.slice(mediaIdx);
-    const srgbMatch = srgbBlock.match(/--tug-red:\s*oklch\([\d.]+ ([\d.]+) \d+\);/);
-    const p3Match   = p3Block.match(/--tug-red:\s*oklch\([\d.]+ ([\d.]+) \d+\);/);
+  it("contains all 7 preset variables for all 24 hues", () => {
+    const presetSuffixes = ["", "-accent", "-muted", "-light", "-subtle", "-dark", "-deep"];
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      for (const suffix of presetSuffixes) {
+        expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}${suffix}:`);
+      }
+    }
+  });
+
+  it("total chromatic preset variable count is 168 in the sRGB block (7 × 24)", () => {
+    const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
+    const hueNames = Object.keys(HUE_FAMILIES).join("|");
+    // Only count chromatic hue presets, not neutral/black/white
+    const chromaticPattern = new RegExp(`--tug-(?:${hueNames})(?:-(?:accent|muted|light|subtle|dark|deep))?:\\s*oklch\\(`, "g");
+    const presets = srgbBlock.match(chromaticPattern) ?? [];
+    expect(presets.length).toBe(168);
+  });
+
+  it("preset formulas use oklch( and calc( patterns", () => {
+    expect(TUG_PALETTE_CSS).toContain("oklch(");
+    expect(TUG_PALETTE_CSS).toContain("calc(");
+  });
+
+  it("preset formulas reference var(--tug-{hue}-canon-l) and var(--tug-{hue}-peak-c)", () => {
+    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-canon-l)");
+    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-peak-c)");
+  });
+});
+
+describe("tug-palette.css — neutral ramp and anchors", () => {
+  it("contains --tug-neutral", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral:");
+  });
+
+  it("contains --tug-neutral-deep", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-deep:");
+  });
+
+  it("contains --tug-black", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-black:");
+  });
+
+  it("contains --tug-white", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-white:");
+  });
+
+  it("--tug-black is oklch(0 0 0)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-black: oklch(0 0 0)");
+  });
+
+  it("--tug-white is oklch(1 0 0)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-white: oklch(1 0 0)");
+  });
+
+  it("all neutral variables use C=0 (achromatic)", () => {
+    const neutralLines = TUG_PALETTE_CSS.match(/--tug-neutral[^:]*:\s*oklch\([^;]+\);/g) ?? [];
+    expect(neutralLines.length).toBeGreaterThan(0);
+    for (const line of neutralLines) {
+      // oklch(L 0 0) pattern — C must be 0
+      expect(line).toMatch(/oklch\([\d.]+ 0 0\)/);
+    }
+  });
+});
+
+describe("tug-palette.css — P3 @media block", () => {
+  it("contains @media (color-gamut: p3) block", () => {
+    expect(TUG_PALETTE_CSS).toContain("@media (color-gamut: p3)");
+  });
+
+  it("P3 block contains 24 peak-c overrides (one per hue)", () => {
+    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
+    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
+    const peakCOverrides = p3Block.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    expect(peakCOverrides.length).toBe(24);
+  });
+
+  it("P3 --tug-red-peak-c is greater than sRGB --tug-red-peak-c", () => {
+    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
+    const srgbBlock = TUG_PALETTE_CSS.slice(0, mediaIdx);
+    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
+    const srgbMatch = srgbBlock.match(/--tug-red-peak-c:\s*([\d.]+);/);
+    const p3Match   = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
     expect(srgbMatch).not.toBeNull();
     expect(p3Match).not.toBeNull();
     expect(parseFloat(p3Match![1])).toBeGreaterThan(parseFloat(srgbMatch![1]));
   });
 
-  it("P3 --tug-red-peak-c: is greater than sRGB --tug-red-peak-c:", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const mediaIdx  = css.indexOf("@media (color-gamut: p3)");
-    const srgbBlock = css.slice(0, mediaIdx);
-    const p3Block   = css.slice(mediaIdx);
-    const srgbPeak = parseFloat(srgbBlock.match(/--tug-red-peak-c:\s*([\d.]+);/)![1]);
-    const p3Peak   = parseFloat(p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/)![1]);
-    expect(p3Peak).toBeGreaterThan(srgbPeak);
+  it("P3 block does NOT contain preset formula overrides (only peak-c is overridden)", () => {
+    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
+    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
+    // No preset variables (canonical, accent, muted, etc.) should appear in the P3 block
+    const presetVars = p3Block.match(/--tug-[a-z]+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
+    expect(presetVars.length).toBe(0);
   });
 
-  it("P3 peak-c for red equals MAX_P3_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const p3Block = css.slice(css.indexOf("@media (color-gamut: p3)"));
-    const match = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
-    expect(match).not.toBeNull();
-    const expected = parseFloat((MAX_P3_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
-    expect(parseFloat(match![1])).toBeCloseTo(expected, 4);
+  it("P3 block does NOT override hue angles or canon-l (gamut-independent)", () => {
+    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
+    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
+    expect(p3Block).not.toMatch(/--tug-\w+-h:\s*\d+;/);
+    expect(p3Block).not.toMatch(/--tug-\w+-canon-l:\s*[\d.]+;/);
   });
 });
 
@@ -536,14 +563,5 @@ describe("Gamut safety: all 24 hues x 7 presets", () => {
       }
     }
     expect(count).toBe(168);
-  });
-
-  it("injectHvvCSS output contains oklch values for all 168 sRGB presets", () => {
-    injectHvvCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
-    const presets = srgbBlock.match(/:\s*oklch\([^;]+\);/g) ?? [];
-    expect(presets.length).toBe(168);
-    document.getElementById("tug-palette")?.remove();
   });
 });
