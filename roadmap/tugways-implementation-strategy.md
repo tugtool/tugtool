@@ -607,56 +607,86 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 ### Phase 5d5c: Token Architecture (Concept 22, [D71])
 
+**Status: COMPLETE** (2026-03-06)
+
 **Goal**: Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy. Temporary aliases bridge old tokens to new tokens. No consumer migration yet.
 
-**What to do**:
-1. Define the complete `--tug-base-*` semantic taxonomy in a new `tug-tokens.css` file — all ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
-2. Wire `--tug-base-*` accent tokens to HVV palette preset variables (e.g., `--tug-base-accent-default: var(--tug-orange)`, `--tug-base-accent-muted: var(--tug-orange-muted)`, `--tug-base-accent-subtle: var(--tug-orange-subtle)`). The seven HVV presets per hue map naturally to semantic accent roles
-3. Wire chart and syntax color tokens to HVV hue presets (e.g., `--tug-base-chart-1: var(--tug-blue)`, `--tug-base-syntax-keyword: var(--tug-violet)`)
-4. Spacing, radius, typography, and icon size tokens are simple `var()` aliases (no `calc()` wiring needed — CSS `zoom` on body handles global scale)
-5. Duration tokens reference the existing `--tug-base-motion-duration-*` calc() tokens from Phase 5d5b
-6. Create temporary backward-compatibility aliases: every `--td-*` and `--tways-*` token gets an alias that points to the equivalent `--tug-base-*` token. Zero visual change while the new layer is introduced
-7. Define initial `--tug-comp-*` component token families where base semantics are too generic (dock buttons, titlebar controls, tab overflow, field metadata, gauge annotations)
-8. Verify: all existing components render identically with the backward-compatibility aliases in place. No visual diff in any theme (Brio, Bluenote, Harmony)
+**What was done**:
+1. Defined the complete `--tug-base-*` semantic taxonomy in `tug-tokens.css` — ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
+2. Created `tug-comp-tokens.css` with initial `--tug-comp-*` component token families
+3. Created temporary backward-compatibility aliases in `tokens.css` — every `--td-*` and `--tways-*` token got an alias pointing to the equivalent `--tug-base-*` token
+4. Created theme override files: `bluenote.css` (~139 overrides) and `harmony.css` (~304 overrides) with theme-specific `--tug-base-*` values
+5. Verified: all existing components render identically with the backward-compatibility aliases in place across all three themes
+
+**What was deferred**: All chromatic `--tug-base-*` tokens were defined with hardcoded hex values instead of `var(--tug-{hue}[-preset])` palette references. The intent was to wire accent, chart, syntax, and status tokens to the HVV palette, but this was deferred in favor of getting the naming architecture in place first. The palette integration is now Phase 5d5e.
 
 **Files created/modified**:
-1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy, wired to `--tug-{hue}[-preset]` palette variables
+1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy (hardcoded hex values, not HVV-wired)
 2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-comp-*` families
 3. `tugdeck/styles/tokens.css` — backward-compatibility aliases added
+4. `tugdeck/styles/bluenote.css` — new: Bluenote theme overrides
+5. `tugdeck/styles/harmony.css` — new: Harmony theme overrides
 
-**Result**: The new token architecture exists in parallel with the old one. All new tokens are defined and wirable. Backward-compatibility aliases ensure zero visual regression. Migration can proceed incrementally in the next phase.
-
-**Note**: Phase 5d5c depends on Phase 5d5a (HVV palette engine must exist for accent/chart/syntax tokens to reference `--tug-{hue}[-preset]` variables) and Phase 5d5b (zoom-based scale and timing multipliers must exist). No per-token `calc()` scaling is needed — CSS `zoom` handles all dimension scaling at the body level.
+**Result**: The new token architecture exists in parallel with the old one. All new tokens are defined. Backward-compatibility aliases ensure zero visual regression. However, chromatic tokens use hardcoded hex values rather than resolving from the HVV palette — the palette integration that connects Layer 0 to Layer 1 is deferred to Phase 5d5e.
 
 ### Phase 5d5d: Consumer Migration (Concept 22, [D71])
 
-**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement. No component rewrites for scale — CSS `zoom` handles all dimension scaling.
+**Status: COMPLETE** (2026-03-07, PR #98)
+
+**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement.
+
+**What was done**:
+1. Migrated 6 tugways component CSS files — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, `tug-tab-bar-animations.css` (169 var references updated)
+2. Migrated chrome CSS — `chrome.css` (12 replacements)
+3. Migrated `globals.css` — rewrote the Tailwind v4 `@theme` bridge to reference `--tug-base-*` directly
+4. Migrated `tokens.css` — Shiki bridge, chart aliases, motion tokens, scrollbar styling
+5. Migrated 12 TypeScript files — inline SVG, style objects, JSDoc, test assertions
+6. Removed backward-compatibility aliases from `tokens.css`
+7. Added `tugdeck/scripts/check-legacy-tokens.sh` — CI enforcement script that greps for `--td-`, `--tways-`, and legacy alias names
+8. Verified all three themes render correctly. 923/924 tests pass (1 pre-existing unrelated failure)
+
+**Files modified**:
+1. `tugdeck/src/components/tugways/*.css` — 6 component CSS files
+2. `tugdeck/styles/chrome.css` — chrome token references
+3. `tugdeck/styles/tokens.css` — Shiki bridge, chart aliases, removed legacy aliases
+4. `tugdeck/src/globals.css` — Tailwind bridge rewritten
+5. 12 TypeScript files — inline style references
+6. `tugdeck/scripts/check-legacy-tokens.sh` — new: CI enforcement
+
+**Result**: The migration is complete. All consumers point at `--tug-base-*` and `--tug-comp-*` tokens. No `--td-*`, `--tways-*`, or legacy aliases remain. CI enforcement prevents regression. However, the `--tug-base-*` tokens themselves still resolve to hardcoded hex values — the palette integration connecting Layer 0 (HVV palette) to Layer 1 (semantic tokens) is Phase 5d5e.
+
+### Phase 5d5e: Palette Engine Integration (Concept 22, [D70], [D71], [D75])
+
+**Goal**: Wire the HVV palette engine to the semantic token layer. Convert the palette from JS-injected `oklch()` strings to pure CSS formulas. Add neutral ramp. Replace all hardcoded hex color values in `--tug-base-*` chromatic tokens with `var(--tug-{hue}[-preset])` references.
 
 **What to do**:
-1. Migrate tugways component CSS first — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, and all other `components/tugways/*.css` files. Token references change from `--td-*` to `--tug-base-*`; existing Tailwind classes, hardcoded pixels, and inline styles are left as-is (zoom handles scaling)
-2. Migrate chrome CSS — `chrome.css`, `card-frame` styles, `deck-canvas` styles
-3. Migrate `globals.css` — repoint the Tailwind v4 `@theme` bridge from legacy aliases to `--tug-base-*` tokens
-4. Migrate shadcn wrapper assumptions — update `components/ui/*.tsx` inline styles and any hardcoded token references
-5. Migrate chart and syntax consumers — update any TypeScript that reads token values via `getComputedStyle` or sets them via inline styles
-6. Migrate runtime token readers/writers — update `StyleCascadeReader`, `MutationTransaction`, and any other TS code that references `--td-*` or `--tways-*` strings
-7. Remove backward-compatibility aliases from `tokens.css` — the old `--td-*`, `--tways-*`, and legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are deleted
-8. Add search-based enforcement: a CI-friendly script that greps for `--td-`, `--tways-`, and the legacy alias names, failing if any are found outside of migration documentation
-9. Optionally add component-level zoom (`zoom: var(--tug-comp-<family>-zoom, 1)`) to component families that need fine-tuned density independent of the global scale
-10. Verify: all three themes (Brio, Bluenote, Harmony) render correctly with zero visual diff. No `--td-*`, `--tways-*`, or legacy aliases remain in source
+1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-hvv-canonical.json`
+2. Define the 168 chromatic preset variables as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. For val=50 presets (canonical, accent, muted): L = `var(--tug-{hue}-canon-l)`, C = `calc(vib/100 * var(--tug-{hue}-peak-c))`. For val≠50 presets (light, subtle, dark, deep): L via `min()` piecewise mapping
+3. Add `--tug-neutral-*` achromatic ramp (7 presets with C=0) plus `--tug-black` and `--tug-white` anchors [D75]
+4. Add `@media (color-gamut: p3)` block that overrides `--tug-{hue}-peak-c` with wider P3 chroma caps — preset formulas automatically produce richer colors since they reference `peak-c`
+5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to HVV palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`
+6. Update theme override files (`bluenote.css`, `harmony.css`) — replace hardcoded hex overrides with hue reassignments (e.g., Bluenote's accent becomes `var(--tug-blue)` instead of a hardcoded blue hex). Theme differentiation becomes "which hues map to which roles" rather than "which hex values"
+7. Remove `injectHvvCSS()` runtime injection — the palette is now static CSS. Retain `hvvColor()` in `palette-engine.ts` for programmatic JS use (color pickers, data viz, inline styles)
+8. Remove `injectHvvCSS` calls from `main.tsx` and `theme-provider.tsx`
+9. Verify: all three themes render correctly with palette-derived colors. Chromatic tokens resolve through the palette. Inspector shows full chain. `bun test` passes
 
-**Files modified** (many):
-1. `tugdeck/src/components/tugways/*.css` — all component CSS files (token rename only)
-2. `tugdeck/styles/chrome.css` — chrome token references
-3. `tugdeck/src/globals.css` — Tailwind bridge
-4. `tugdeck/src/components/ui/*.tsx` — shadcn wrapper token references
-5. `tugdeck/styles/tokens.css` — remove legacy aliases
-6. `tugdeck/src/components/tugways/*.ts` — runtime token readers
+**Files created/modified**:
+1. `tugdeck/styles/tug-palette.css` — new: per-hue constants, preset formulas, neutral ramp, P3 overrides
+2. `tugdeck/styles/tug-tokens.css` — modified: chromatic tokens rewired from hex to `var(--tug-{hue}[-preset])`
+3. `tugdeck/styles/bluenote.css` — modified: hex overrides → hue reassignments
+4. `tugdeck/styles/harmony.css` — modified: hex overrides → hue reassignments
+5. `tugdeck/src/globals.css` — modified: import `tug-palette.css` in the correct order
+6. `tugdeck/src/components/tugways/palette-engine.ts` — modified: remove `injectHvvCSS`, keep `hvvColor()` and constants
+7. `tugdeck/src/main.tsx` — modified: remove `injectHvvCSS` call
+8. `tugdeck/src/contexts/theme-provider.tsx` — modified: remove `injectHvvCSS` call
 
-**Result**: The migration is complete. Only `--tug-{hue}[-preset]` (HVV palette), `--tug-base-*`, and `--tug-comp-*` tokens exist. The codebase is clean. Enforcement prevents regression. No component rewrites were needed for scale — existing Tailwind classes and hardcoded dimensions scale correctly via CSS `zoom`.
+**Result**: The color system is fully connected. `--tug-base-*` semantic tokens resolve through `var(--tug-{hue}[-preset])` palette variables, which are pure CSS `oklch()` formulas built from per-hue constants. Themes differentiate by overriding hue assignments. The palette is inspectable in static CSS — no JS injection needed. Neutrals and chromatic colors use the same system. Opacity is available via CSS relative color syntax at the point of use.
 
-**Note**: Phase 5d5d depends on Phase 5d5c (new token layers must exist with backward-compatibility aliases before consumers can be migrated). This phase is primarily a naming migration (`--td-*` → `--tug-base-*`), not a dimensional rewrite. The backward-compatibility aliases from 5d5c de-risk it by allowing incremental migration with verification after each file group.
+**Key design insight**: The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. CSS `oklch()` natively accepts `calc()` expressions. This eliminates JS runtime injection and makes the entire palette inspectable, debuggable, and composable in standard CSS.
 
-### Phase 5d5e: Cascade Inspector (Concept 22, [D74])
+**Note**: Phase 5d5e depends on Phase 5d5d (consumers must already reference `--tug-base-*` tokens). It does not depend on any other phase. This is the critical integration step that connects the HVV palette engine (Phase 5d5a) to the semantic token layer (Phase 5d5c) through the consumer migration (Phase 5d5d).
+
+### Phase 5d5f: Cascade Inspector (Concept 22, [D74])
 
 **Goal**: A dev-mode `Ctrl+Option + hover` overlay that shows the full token resolution chain for any inspected component.
 
@@ -678,7 +708,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Result**: The style system is navigable. Developers can point at any element and see exactly which tokens are in play, where they come from, and how scale/timing affect them. The computed palette provenance makes OKLCH color choices transparent.
 
-**Note**: Phase 5d5e depends on Phase 5d5d (token migration must be complete so the inspector shows the final token names, not legacy aliases). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
+**Note**: Phase 5d5f depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain from `--tug-comp-*` through `--tug-base-*` to `--tug-{hue}[-preset]` palette variables). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -923,19 +953,23 @@ Responder Chain  Mutation Model                              │
     Theme Token Overhaul (can run in parallel with 5b–8e):
 
          Phase 5d5a: ◄─── (5a2)    Phase 5d5b: ◄─── (5a2)
-         Palette Engine             Scale & Timing
+         Palette Engine ✓          Scale & Timing ✓
              │                          │
              └────────────┬─────────────┘
                           ▼
-                  Phase 5d5c: ◄─── (5d5a + 5d5b)
+                  Phase 5d5c: ◄─── (5d5a + 5d5b) ✓
                   Token Architecture
                           │
                           ▼
-                  Phase 5d5d: ◄─── (5d5c)
+                  Phase 5d5d: ◄─── (5d5c) ✓
                   Consumer Migration
                           │
                           ▼
-                  Phase 5d5e: ◄─── (5d5d, benefits from 5d3 + 5d4)
+                  Phase 5d5e: ◄─── (5d5d)
+                  Palette Engine Integration
+                          │
+                          ▼
+                  Phase 5d5f: ◄─── (5d5e, benefits from 5d3 + 5d4)
                   Cascade Inspector
 ```
 
@@ -968,11 +1002,12 @@ Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/ba
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
 Phase 5d5a (Palette Engine → HVV Runtime) is complete. It shipped a standalone HVV palette engine with no coupling to the responder chain, mutation model, or property store.
-Phase 5d5b (Global Scale & Timing) can start anytime after Phase 5a2. It is independent of Phase 5d5a — the two can run in parallel.
-Phase 5d5c (Token Architecture) depends on Phase 5d5a (HVV palette variables for accent/chart/syntax tokens — complete) and Phase 5d5b (scale/timing multipliers for dimension/duration tokens). It introduces the new layers with backward-compatibility aliases for zero-risk introduction.
-Phase 5d5d (Consumer Migration) depends on Phase 5d5c (new token layers must exist before consumers migrate). This is the highest-risk phase — it touches many files. The backward-compatibility aliases from 5d5c de-risk it by enabling incremental migration.
-Phase 5d5e (Cascade Inspector) depends on Phase 5d5d (token migration must be complete so the inspector shows final names). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
-The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5d (Consumer Migration) should ideally complete before Phase 9 begins, so rebuilt cards use the new token names from the start.
+Phase 5d5b (Global Scale & Timing) is complete. CSS `zoom` on `<body>` scales the entire UI with one number.
+Phase 5d5c (Token Architecture) is complete. Introduced the full `--tug-base-*` and `--tug-comp-*` taxonomy with backward-compatibility aliases. Chromatic tokens used hardcoded hex values — palette integration was deferred.
+Phase 5d5d (Consumer Migration) is complete (PR #98). All consumers migrated from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Legacy aliases removed. CI enforcement added.
+Phase 5d5e (Palette Engine Integration) depends on Phase 5d5d (consumers must already reference `--tug-base-*`). This is the critical missing step — it wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` palette variables, converts the palette to pure CSS formulas (no JS injection), and adds the neutral ramp. This connects the HVV palette engine to the consumer-facing tokens.
+Phase 5d5f (Cascade Inspector) depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
+The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5e (Palette Engine Integration) should ideally complete before Phase 9 begins, so rebuilt cards use palette-derived colors from the start.
 
 ## Estimated Scope
 
@@ -1001,7 +1036,8 @@ The 5d5 sub-phases are an enhancement track that can run in parallel with Phases
 | 5d5b | ~4 files | ~300 lines |
 | 5d5c | ~5 files | ~600 lines |
 | 5d5d | ~20 files | ~500 lines (net change, mostly renames) |
-| 5d5e | ~3 files | ~400 lines |
+| 5d5e | ~8 files | ~500 lines |
+| 5d5f | ~3 files | ~400 lines |
 | 5e | ~10 files | ~1500 lines |
 | 5f | ~6 files | ~500 lines |
 | 6 | ~4 files | ~400 lines |
@@ -1018,7 +1054,7 @@ codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
 lines of reusable UI primitives, the control action/transaction/property
 infrastructure (Phases 5d2–5d4) adds ~900 lines, the inspector panels (Phase 8e)
 add ~800 lines, tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
-for typed persistence, and the theme token overhaul (Phases 5d5a–5d5e) adds
+for typed persistence, and the theme token overhaul (Phases 5d5a–5d5f) adds
 ~2200 lines of palette engine, scaled/timed tokens, semantic taxonomy, and
 cascade inspector. The triple-registration redundancy is gone, the adapter
 layer is gone, and the component abstractions do more with less code.
@@ -1057,7 +1093,8 @@ The suggested plan sequence:
 21. `tugways-phase-5d5b-scale-timing` — global scale, global timing, motion toggle, per-component scale, JS helpers
 22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-comp-*` layers, full semantic taxonomy, backward-compatibility aliases
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
-24. `tugways-phase-5d5e-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
+24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to HVV palette, neutral ramp, remove JS injection
+25. `tugways-phase-5d5f-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
 25. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
 26. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
 27. `tugways-phase-6-feed` — feed hooks, data flow

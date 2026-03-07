@@ -520,37 +520,42 @@ per hue with fixed vib/val mappings:
 7 presets × 24 hues = 168 preset variables, plus 74 per-hue constants
 (3 per hue + 2 global) = 242 total CSS variables in the sRGB block.
 
-### Runtime Architecture (Implemented)
+### Runtime Architecture (Transitioning to Pure CSS)
 
-**Injection.** At app startup and theme switch, `injectHvvCSS(themeName)` creates
-or replaces a `<style id="tug-palette">` element containing:
+**Current state.** The palette engine (`palette-engine.ts`) injects CSS variables
+via `injectHvvCSS(themeName)` at app startup and theme switch. This JS injection
+approach is being replaced by pure CSS formulas in Phase 5d5e.
 
-1. A `:root {}` block with 168 preset variables and 74 per-hue constants (sRGB)
-2. A `@media (color-gamut: p3) { :root {} }` block with wider-gamut preset and
-   peak-c overrides for P3 displays
+**Target state (Phase 5d5e).** Per-hue constants and preset formulas are defined
+in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 
 ```css
 :root {
-  --tug-red: oklch(0.659 0.173 25);
-  --tug-red-accent: oklch(0.659 0.277 25);
-  --tug-red-muted: oklch(0.708 0.087 25);
-  --tug-red-light: oklch(0.852 0.104 25);
-  --tug-red-subtle: oklch(0.920 0.052 25);
-  --tug-red-dark: oklch(0.404 0.173 25);
-  --tug-red-deep: oklch(0.290 0.242 25);
+  /* Per-hue constants (static, from tug-hvv-canonical.json): */
   --tug-red-h: 25;
   --tug-red-canon-l: 0.659;
   --tug-red-peak-c: 0.346;
   /* ... 23 more hues ... */
   --tug-l-dark: 0.15;
   --tug-l-light: 0.96;
+
+  /* Presets as pure CSS formulas: */
+  --tug-red: oklch(var(--tug-red-canon-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-accent: oklch(var(--tug-red-canon-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
+  /* ... */
+
+  /* Neutral ramp (achromatic): */
+  --tug-neutral: oklch(0.555 0 0);
+  --tug-neutral-light: oklch(0.812 0 0);
+  --tug-black: oklch(0 0 0);
+  --tug-white: oklch(1 0 0);
 }
 
 @media (color-gamut: p3) {
   :root {
-    --tug-red: oklch(0.659 0.217 25);
-    /* ... wider-gamut overrides ... */
+    /* Only peak-c overrides needed — preset formulas auto-produce wider colors */
     --tug-red-peak-c: 0.434;
+    /* ... */
   }
 }
 ```
@@ -558,19 +563,21 @@ or replaces a `<style id="tug-palette">` element containing:
 **Programmatic use.** For arbitrary vib/val combinations beyond the 7 presets,
 the TypeScript function `hvvColor(hueName, vib, val, canonicalL)` returns a raw
 `oklch(...)` string. Used in inline styles, color pickers, and data
-visualization.
+visualization. Retained in `palette-engine.ts` after JS injection is removed.
 
-**P3 wide-gamut support.** The `oklchToLinearP3` conversion uses the same OKLab
-pipeline as sRGB but with the LMS-to-Display-P3 matrix. A separate
-`MAX_P3_CHROMA_FOR_HUE` table (derived via the same binary-search method) allows
-wider chroma values on P3-capable displays. The `@media (color-gamut: p3)` block
-overrides preset values and peak-c constants with these wider values.
+**P3 wide-gamut support.** A `@media (color-gamut: p3)` block overrides
+`--tug-{hue}-peak-c` constants with wider P3 chroma caps. The preset formulas
+reference `peak-c`, so they automatically produce richer colors — no separate
+P3 preset definitions needed.
+
+**Opacity.** Semi-transparent variants use CSS relative color syntax at the
+point of use: `oklch(from var(--tug-orange) l c h / 0.5)` or
+`color-mix(in oklch, var(--tug-orange) 50%, transparent)`. No precomputed
+alpha variants needed.
 
 **Theme influence.** All three themes (Brio, Bluenote, Harmony) currently share
 the same canonical L values and hue angles. Per-theme tuning (if needed) would
-be done via future per-theme canonical L tables passed to `injectHvvCSS`. The old
-theme parameter protocol (`--tug-theme-lc-l-max`, `--tug-theme-hue-red`, etc.)
-was removed with the legacy anchor/smoothstep code.
+override per-hue constants in theme-specific CSS files.
 
 ---
 
@@ -822,8 +829,10 @@ The important distinction:
 
 Purpose:
 
-- Computed color values from the HVV palette engine.
-- Injected at runtime by `injectHvvCSS()` into `<style id="tug-palette">`.
+- Color primitives defined as pure CSS `oklch()` + `calc()` formulas.
+- Declared in a static `tug-palette.css` file — no JS injection required.
+- Includes chromatic presets (24 hues × 7 presets), achromatic neutral ramp,
+  black/white anchors, per-hue constants, and P3 overrides.
 - No component or app-role meaning — purely color primitives.
 
 Examples:
@@ -832,22 +841,28 @@ Examples:
 - `--tug-red-accent` — red accent preset (vib=80, val=50)
 - `--tug-orange-subtle` — orange subtle preset (vib=15, val=92)
 - `--tug-violet-dark` — violet dark preset (vib=50, val=25)
+- `--tug-neutral` — mid gray (val=50, C=0)
+- `--tug-neutral-light` — light gray (val=82, C=0)
+- `--tug-black` — pure black (oklch(0 0 0))
+- `--tug-white` — pure white (oklch(1 0 0))
 - `--tug-red-h: 25` — hue angle constant
 - `--tug-red-canon-l: 0.659` — canonical lightness constant
 - `--tug-red-peak-c: 0.346` — peak chroma constant
 - `--tug-l-dark: 0.15` — global dark lightness
 - `--tug-l-light: 0.96` — global light lightness
 
-Neutral scale tokens (`--tways-surface-*`, etc.) remain declared statically per
-theme until the full `--tug-base-*` migration replaces them.
-
 Rules:
 
-- Chromatic tokens are computed at runtime by the HVV palette engine.
-- 242 CSS variables total: 168 presets (7 × 24 hues) + 74 constants.
-- P3 wide-gamut overrides in `@media (color-gamut: p3)` block.
+- Chromatic presets are pure CSS formulas: `oklch(L-calc C-calc h-const)`.
+- Per-hue constants (the only values requiring computation) are static —
+  derived from `tug-hvv-canonical.json` and hardcoded in the CSS file.
+- 242+ CSS variables: 168 chromatic presets + 74 constants + neutral ramp.
+- P3 support: `@media (color-gamut: p3)` overrides `--tug-{hue}-peak-c`
+  with wider chroma caps; preset formulas auto-produce richer colors.
+- Opacity: CSS relative color syntax (`oklch(from var(...) l c h / alpha)`)
+  or `color-mix()` applied at point of use — no precomputed alpha variants.
 - All three themes share the same canonical L values and hue angles for now.
-- Per-theme tuning (if needed) via future per-theme canonical L tables.
+- Per-theme tuning (if needed) via overriding per-hue constants in theme CSS.
 - No direct component usage — components consume `--tug-base-*` semantics
   that reference these palette variables.
 
@@ -1750,11 +1765,12 @@ This makes the style system navigable instead of mystical.
 
 ### Phase B: Introduce New Layers
 
-1. Implement the HVV palette engine (TypeScript utility + startup injection). **DONE** — `injectHvvCSS()` ships 242 CSS variables with P3 support.
+1. Implement the HVV palette engine (TypeScript utility + startup injection). **DONE** — `injectHvvCSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
 2. Add `--tug-{hue}[-preset]` computed variables and per-hue constants. **DONE.**
 3. Add `--tug-zoom`, `--tug-timing`, `--tug-motion` global multipliers. **DONE** — `--tug-zoom` drives `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI. Timing and motion work correctly.
-4. Add `--tug-base-*` with scaled dimensions and timed durations.
-5. Add `--tug-comp-*` where needed, including component-level zoom overrides.
+4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not HVV palette references. Phase 5d5e will wire them.
+5. Add `--tug-comp-*` where needed, including component-level zoom overrides. **DONE** (Phase 5d5c).
+6. Add `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors. Planned for Phase 5d5e.
 6. Keep temporary aliases from old tokens to new tokens.
 
 ### Phase C: Migrate Consumers
@@ -1854,7 +1870,7 @@ results per element while hovered.
 
 ## Recommended Next Steps
 
-Implementation status and remaining work across five sub-phases:
+Implementation status and remaining work across six sub-phases:
 
 1. **Phase 5d5a: HVV Palette Engine** — **COMPLETE.** HueVibVal palette engine
    with 24 hue families, 7 presets per hue, short-form `--tug-{hue}[-preset]`
@@ -1869,19 +1885,32 @@ Implementation status and remaining work across five sub-phases:
    per-token `calc()` dimension wiring and component rewrites for scale — this
    massively simplifies Phases 5d5c and 5d5d.
 
-3. **Phase 5d5c: Token Architecture** — Introduce `--tug-base-*` and
-   `--tug-comp-*` layers, define the full semantic taxonomy, wire accent/chart/
-   syntax tokens to HVV palette presets, temporary backward-compatibility aliases.
-   Spacing/radius/typography tokens are simple `var()` aliases (no `calc()`
-   scaling needed — zoom handles that). Focus: semantic naming and color wiring.
+3. **Phase 5d5c: Token Architecture** — **COMPLETE.** Introduced `--tug-base-*`
+   and `--tug-comp-*` token layers with the full semantic taxonomy (~300 tokens)
+   in `tug-tokens.css` and `tug-comp-tokens.css`. Added temporary backward-
+   compatibility aliases in `tokens.css`. Theme override files (`bluenote.css`,
+   `harmony.css`) created. However, all chromatic `--tug-base-*` tokens used
+   hardcoded hex values instead of `var(--tug-{hue})` palette references —
+   the HVV palette integration was deferred and is now Phase 5d5e.
 
-4. **Phase 5d5d: Consumer Migration** — Migrate all CSS and TS consumers from
-   `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`, shadcn bridge
-   cutover, remove legacy aliases, search-based enforcement. This is purely a
-   naming migration — no component dimension rewrites needed (zoom handles
-   scaling). Optionally add per-component zoom for fine-tuned density.
+4. **Phase 5d5d: Consumer Migration** — **COMPLETE.** Migrated all CSS and TS
+   consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`.
+   Rewrote the Tailwind/shadcn `@theme` bridge. Removed legacy aliases. Added
+   `check-legacy-tokens.sh` CI enforcement script. Merged as PR #98. All
+   consumers now point at `--tug-base-*` tokens — but those tokens still
+   resolve to hardcoded hex values, not the HVV palette.
 
-5. **Phase 5d5e: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
+5. **Phase 5d5e: Palette Engine Integration** — Wire `--tug-base-*` chromatic
+   tokens to the HVV palette. Convert the palette layer from JS-injected
+   `oklch()` strings to pure CSS formulas using `oklch()` + `calc()` + per-hue
+   constants. Add `--tug-neutral-*` achromatic ramp [D75]. Wire accent, chart,
+   syntax, status, and all other chromatic semantic tokens to `var(--tug-{hue}
+   [-preset])` references as specified in the proposal. Update theme override
+   files (`bluenote.css`, `harmony.css`) to override hue assignments rather
+   than hardcoded hex values. This is the missing link between the implemented
+   palette engine and the consumer-facing tokens.
+
+6. **Phase 5d5f: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
    HVV palette provenance display (hue/preset/vib/val), scale/timing readout.
 
 Each sub-phase has its own tugplan. See `tugways-implementation-strategy.md` for
