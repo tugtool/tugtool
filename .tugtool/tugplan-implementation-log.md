@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-07T17:26:41Z
+---
+
+## step-4: Repointed all --td-* semantic tokens in tokens.css from var(--tways-*) to var(--tug-base-*). 66 references updated. Tier 1 palette, shadcn bridges, chart/accent-N tokens unchanged. Build passes.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-3
 date: 2025-03-07T17:21:34Z
 ---
