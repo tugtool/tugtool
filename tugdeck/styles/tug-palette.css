@@ -1,0 +1,160 @@
+/**
+ * tug-palette.css — HVV Palette Engine (Pure CSS)
+ *
+ * Static HVV palette: per-hue constants, chromatic preset formulas, neutral
+ * ramp, black/white anchors, and P3 gamut overrides. Replaces the runtime
+ * injectHvvCSS() JavaScript injection introduced in Phase 5d5a.
+ *
+ * Import order (in globals.css):
+ *   1. tug-palette.css   — palette variables (this file)
+ *   2. tug-tokens.css    — semantic tokens (reference palette vars)
+ *   3. theme/*.css       — theme overrides (can override per-hue constants)
+ *
+ * All variables are scoped to `body` to match tug-tokens.css cascade scope.
+ * Theme files can override individual --tug-{hue}-* constants to tune colors.
+ *
+ * Per-hue constant names:
+ *   --tug-{hue}-h        OKLCH hue angle (degrees) from HUE_FAMILIES
+ *   --tug-{hue}-CANL     Canonical lightness at vib=50, val=50 from DEFAULT_CANONICAL_L
+ *   --tug-{hue}-PEAKC    Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (2)
+ *
+ * Global constants:
+ *   --tug-l-dark   Lightness at val=0 (0.15)
+ *   --tug-l-light  Lightness at val=100 (0.96)
+ *
+ * Phase: 5d5e — Palette Engine Integration
+ */
+
+body {
+  /* -------------------------------------------------------------------------
+   * Global lightness anchors
+   * Source: L_DARK = 0.15, L_LIGHT = 0.96 from palette-engine.ts
+   * ------------------------------------------------------------------------- */
+  --tug-l-dark: 0.15;
+  --tug-l-light: 0.96;
+
+  /* -------------------------------------------------------------------------
+   * Per-hue constants (72 = 24 hues x 3)
+   * Source: HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE * PEAK_C_SCALE(2)
+   * ------------------------------------------------------------------------- */
+
+  /* cherry — hue angle 10 */
+  --tug-cherry-h: 10;
+  --tug-cherry-canon-l: 0.619;
+  --tug-cherry-peak-c: 0.44;
+
+  /* red — hue angle 25 */
+  --tug-red-h: 25;
+  --tug-red-canon-l: 0.659;
+  --tug-red-peak-c: 0.44;
+
+  /* tomato — hue angle 35 */
+  --tug-tomato-h: 35;
+  --tug-tomato-canon-l: 0.704;
+  --tug-tomato-peak-c: 0.374;
+
+  /* flame — hue angle 45 */
+  --tug-flame-h: 45;
+  --tug-flame-canon-l: 0.74;
+  --tug-flame-peak-c: 0.33;
+
+  /* orange — hue angle 55 */
+  --tug-orange-h: 55;
+  --tug-orange-canon-l: 0.78;
+  --tug-orange-peak-c: 0.292;
+
+  /* amber — hue angle 65 */
+  --tug-amber-h: 65;
+  --tug-amber-canon-l: 0.821;
+  --tug-amber-peak-c: 0.26;
+
+  /* gold — hue angle 75 */
+  --tug-gold-h: 75;
+  --tug-gold-canon-l: 0.852;
+  --tug-gold-peak-c: 0.25;
+
+  /* yellow — hue angle 90 */
+  --tug-yellow-h: 90;
+  --tug-yellow-canon-l: 0.901;
+  --tug-yellow-peak-c: 0.25;
+
+  /* lime — hue angle 115 */
+  --tug-lime-h: 115;
+  --tug-lime-canon-l: 0.861;
+  --tug-lime-peak-c: 0.384;
+
+  /* green — hue angle 140 */
+  --tug-green-h: 140;
+  --tug-green-canon-l: 0.821;
+  --tug-green-peak-c: 0.44;
+
+  /* mint — hue angle 155 */
+  --tug-mint-h: 155;
+  --tug-mint-canon-l: 0.807;
+  --tug-mint-peak-c: 0.392;
+
+  /* teal — hue angle 175 */
+  --tug-teal-h: 175;
+  --tug-teal-canon-l: 0.803;
+  --tug-teal-peak-c: 0.298;
+
+  /* cyan — hue angle 200 */
+  --tug-cyan-h: 200;
+  --tug-cyan-canon-l: 0.803;
+  --tug-cyan-peak-c: 0.268;
+
+  /* sky — hue angle 215 */
+  --tug-sky-h: 215;
+  --tug-sky-canon-l: 0.807;
+  --tug-sky-peak-c: 0.28;
+
+  /* blue — hue angle 230 */
+  --tug-blue-h: 230;
+  --tug-blue-canon-l: 0.771;
+  --tug-blue-peak-c: 0.286;
+
+  /* cobalt — hue angle 250 */
+  --tug-cobalt-h: 250;
+  --tug-cobalt-canon-l: 0.744;
+  --tug-cobalt-peak-c: 0.27;
+
+  /* violet — hue angle 270 */
+  --tug-violet-h: 270;
+  --tug-violet-canon-l: 0.708;
+  --tug-violet-peak-c: 0.298;
+
+  /* purple — hue angle 285 */
+  --tug-purple-h: 285;
+  --tug-purple-canon-l: 0.686;
+  --tug-purple-peak-c: 0.338;
+
+  /* plum — hue angle 300 */
+  --tug-plum-h: 300;
+  --tug-plum-canon-l: 0.731;
+  --tug-plum-peak-c: 0.322;
+
+  /* pink — hue angle 320 */
+  --tug-pink-h: 320;
+  --tug-pink-canon-l: 0.794;
+  --tug-pink-peak-c: 0.334;
+
+  /* rose — hue angle 335 */
+  --tug-rose-h: 335;
+  --tug-rose-canon-l: 0.758;
+  --tug-rose-peak-c: 0.422;
+
+  /* magenta — hue angle 345 */
+  --tug-magenta-h: 345;
+  --tug-magenta-canon-l: 0.726;
+  --tug-magenta-peak-c: 0.424;
+
+  /* berry — hue angle 355 */
+  --tug-berry-h: 355;
+  --tug-berry-canon-l: 0.668;
+  --tug-berry-peak-c: 0.44;
+
+  /* coral — hue angle 20 */
+  --tug-coral-h: 20;
+  --tug-coral-canon-l: 0.632;
+  --tug-coral-peak-c: 0.44;
+}
