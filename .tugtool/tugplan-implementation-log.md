@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-07T17:21:34Z
+---
+
+## step-3: Verified sections E-I tokens (controls/actions/fields, menus/overlays/feedback, tables/stats/charts, syntax/terminal/chat, inspector/dev-overlay) already present from step-1. D08 and D09 compliance confirmed. No file changes needed.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-2
 date: 2025-03-07T17:16:55Z
 ---
