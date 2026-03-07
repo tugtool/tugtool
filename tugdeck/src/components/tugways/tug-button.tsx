@@ -174,7 +174,7 @@ function Spinner() {
  * (primary, secondary, ghost, destructive), three sizes (sm, md, lg),
  * loading state, direct-action mode (onClick), and chain-action mode (action).
  *
- * All colors use var(--td-*) semantic tokens for zero-re-render theme switching.
+ * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  */
 export function TugButton({
   subtype = "push",

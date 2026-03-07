@@ -123,7 +123,7 @@ function LCurveEditor({
         y={CURVE_PAD.top}
         width={PLOT_W}
         height={PLOT_H}
-        fill="var(--td-surface, #1a1a1a)"
+        fill="var(--tug-base-surface-default, #1a1a1a)"
         rx={4}
       />
 
@@ -135,7 +135,7 @@ function LCurveEditor({
             y1={lToY(l)}
             x2={CURVE_PAD.left + PLOT_W}
             y2={lToY(l)}
-            stroke="var(--td-border, #333)"
+            stroke="var(--tug-base-border-default, #333)"
             strokeWidth={0.5}
           />
           <text
@@ -153,7 +153,7 @@ function LCurveEditor({
       <polyline
         points={polyPoints}
         fill="none"
-        stroke="var(--td-text-soft, #888)"
+        stroke="var(--tug-base-fg-muted, #888)"
         strokeWidth={1.5}
         strokeLinejoin="round"
       />
@@ -182,7 +182,7 @@ function LCurveEditor({
                 cy={cy}
                 r={9}
                 fill="none"
-                stroke="var(--td-accent, #0066cc)"
+                stroke="var(--tug-base-accent-default, #0066cc)"
                 strokeWidth={2}
               />
             )}
@@ -192,7 +192,7 @@ function LCurveEditor({
               cy={cy}
               r={6}
               fill={dotColor}
-              stroke={isSelected ? "var(--td-accent, #0066cc)" : "var(--td-border, #555)"}
+              stroke={isSelected ? "var(--tug-base-accent-default, #0066cc)" : "var(--tug-base-border-default, #555)"}
               strokeWidth={1.5}
               style={{ cursor: "ns-resize" }}
               onPointerDown={(e) => handlePointerDown(name, e)}

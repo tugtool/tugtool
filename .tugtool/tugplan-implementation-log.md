@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-07T19:33:05Z
+---
+
+## step-4: Migrated 12 TypeScript files from --td-* to --tug-base-* tokens including inline SVG, style objects, JSDoc examples, test assertions, and UI labels
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-3
 date: 2025-03-07T19:24:57Z
 ---

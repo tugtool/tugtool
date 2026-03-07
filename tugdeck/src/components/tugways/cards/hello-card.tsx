@@ -22,7 +22,7 @@ import { Tugcard } from "@/components/tugways/tugcard";
 /**
  * Card-specific content for the Hello test card.
  *
- * Renders a centered title and a short message using `--td-*` semantic tokens.
+ * Renders a centered title and a short message using `--tug-base-*` semantic tokens.
  */
 export function HelloCardContent() {
   return (
@@ -36,8 +36,8 @@ export function HelloCardContent() {
         height: "100%",
         gap: "8px",
         padding: "16px",
-        color: "var(--td-text)",
-        fontFamily: "var(--td-font-sans)",
+        color: "var(--tug-base-fg-default)",
+        fontFamily: "var(--tug-base-font-family-sans)",
       }}
     >
       <p
@@ -46,7 +46,7 @@ export function HelloCardContent() {
           margin: 0,
           fontSize: "1.25rem",
           fontWeight: 600,
-          color: "var(--td-text)",
+          color: "var(--tug-base-fg-default)",
         }}
       >
         Hello
@@ -56,7 +56,7 @@ export function HelloCardContent() {
         style={{
           margin: 0,
           fontSize: "0.875rem",
-          color: "var(--td-text-muted, var(--td-text))",
+          color: "var(--tug-base-fg-muted, var(--tug-base-fg-default))",
         }}
       >
         This is a test card.

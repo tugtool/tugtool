@@ -60,11 +60,11 @@ const BLINK_DURATION_MS = 250;
  * TugDropdown -- tugways dropdown menu component.
  *
  * Renders a Radix-based dropdown via shadcn's DropdownMenu primitives.
- * Uses `--td-*` semantic tokens for all visual properties.
+ * Uses `--tug-base-*` semantic tokens for all visual properties.
  * The content renders into a Radix portal (document root), avoiding
  * z-index conflicts with CardFrame and other stacked elements.
  *
- * All colors use var(--td-*) semantic tokens for zero-re-render theme switching.
+ * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  *
  * Selection behavior (Rule 4 compliant):
  * - `onSelect` is intercepted; Radix close is prevented via event.preventDefault().
