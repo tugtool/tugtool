@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-07T22:46:28Z
+---
+
+## step-6: Added @import tug-palette.css to globals.css after tokens.css and before tug-tokens.css, completing CSS cascade integration
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-5
 date: 2025-03-07T22:44:09Z
 ---
