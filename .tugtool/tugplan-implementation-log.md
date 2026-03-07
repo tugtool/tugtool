@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-07T03:05:45Z
+---
+
+## step-6: Final integration checkpoint: all exit criteria verified. Zero legacy references, correct CSS variable counts (168 presets + 74 constants + P3 overrides), all tests pass, hvvColor is sole color computation function.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-5
 date: 2025-03-07T03:01:39Z
 ---
