@@ -59,6 +59,36 @@
 }
 
 /* ============================================================================
+   Global Multiplier Tokens
+   ========================================================================= */
+
+:root {
+  --tug-scale: 1;
+  --tug-timing: 1;
+  --tug-motion: 1;
+}
+
+/* Motion-off rule: JS sets data-tug-motion="off" on body when --tug-motion is 0 */
+body[data-tug-motion="off"],
+body[data-tug-motion="off"] * {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* CSS-only reduced-motion fallback: immediate suppression without waiting for JS */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tug-motion: 0;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+
+/* ============================================================================
    body - Brio Theme (Default)
    ========================================================================= */
 
@@ -147,7 +177,6 @@ body {
   --td-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --td-easing-enter: cubic-bezier(0, 0, 0, 1);
   --td-easing-exit: cubic-bezier(0.2, 0, 1, 1);
-  --td-duration-scalar: 1;
 
   /* Tier 2: Semantic Tokens (--td-* mapped to --tways-*) */
   /* Surface tokens (Table T01) */
@@ -311,12 +340,6 @@ body {
   --syntax-decorator: var(--td-syntax-decorator);
   --syntax-tag: var(--td-syntax-tag);
   --syntax-attribute: var(--td-syntax-attribute);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body {
-    --td-duration-scalar: 0.001;
-  }
 }
 
 /* ============================================================================

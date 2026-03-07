@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-07T04:09:17Z
+---
+
+## step-1: Added --tug-scale, --tug-timing, --tug-motion to :root in tokens.css. Added motion-off CSS rule and CSS-only prefers-reduced-motion fallback. Removed all --td-duration-scalar references including spinner hack in tug-button.css.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-6
 date: 2025-03-07T03:05:45Z
 ---

@@ -221,8 +221,6 @@
   border-top-color: currentColor;
   border-radius: 50%;
   animation: tug-button-spin var(--td-duration-moderate) var(--td-easing-standard) infinite;
-  /* Respect reduced-motion preference via the scalar token */
-  animation-duration: calc(var(--td-duration-moderate) / var(--td-duration-scalar, 1));
 }
 
 @keyframes tug-button-spin {
