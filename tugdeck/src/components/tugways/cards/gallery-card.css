@@ -491,8 +491,8 @@
   height: 0.5em;
   border-radius: 50%;
   background-color: var(--tug-base-spinner, currentColor);
-  animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--td-easing-standard) infinite,
-             tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--td-easing-standard) infinite;
+  animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite,
+             tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite;
 }
 
 /* Ring placement: each petal rotated 45deg apart, offset outward by 0.5em */
