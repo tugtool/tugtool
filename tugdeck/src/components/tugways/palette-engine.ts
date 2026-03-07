@@ -1,17 +1,19 @@
 /**
- * Palette Engine — Tugways Phase 5d5b
+ * Palette Engine — Tugways HVV Runtime
  *
- * Computes a continuous OKLCH color palette from 24 named hue families.
- * Supports two transfer functions:
- *   - Legacy smoothstep curve (tugPaletteColor, unchanged from Phase 5d5a)
- *   - Per-hue anchor-based linear interpolation (tugAnchoredColor, new in 5d5b)
- * Per-hue chroma caps prevent sRGB gamut clipping at all standard stops.
- * Injects all palette CSS variables into a <style id="tug-palette"> element.
+ * Computes a continuous OKLCH color palette from 24 named hue families using
+ * the HueVibVal (HVV) system. Each color is defined by three axes:
+ *   - Hue: one of 24 named color families mapped to OKLCH hue angles
+ *   - Vibrancy (0-100): chroma axis; at vib=50, C equals the sRGB-safe max
+ *   - Value (0-100): lightness axis; val=50 gives the per-hue canonical L
  *
- * Public API surface: see Spec S01 (#s01-core-functions).
- *
- * CSS variable format: --tug-palette-hue-<angle>-<name>-tone-<intensity>
- * Named aliases:       --tug-palette-hue-<angle>-<name>-<alias>
+ * CSS variable injection (`injectHvvCSS`) emits three layers:
+ *   - Layer 1: 168 semantic preset variables (7 presets × 24 hues)
+ *     Format: `--tug-{hue}` (canonical) and `--tug-{hue}-{preset}`
+ *   - Layer 2: 74 per-hue constant variables (3 per hue + 2 global)
+ *     Format: `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c`,
+ *             `--tug-l-dark`, `--tug-l-light`
+ *   - Layer 3: `@media (color-gamut: p3)` block with wider-gamut overrides
  *
  * @module components/tugways/palette-engine
  */
@@ -53,27 +55,28 @@ export const HUE_FAMILIES: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// LCParams — Transfer function anchor parameters
+// LCParams — Chroma derivation parameters
 // ---------------------------------------------------------------------------
 
 /**
- * Transfer function anchor parameters.
- * Defines the L (lightness) and C (chroma) range for the palette.
+ * Parameters that bound the chroma derivation search space.
+ * `cMax` is the sRGB ceiling used by `_deriveChromaCaps` for the sRGB table.
+ * `lMin` / `lMax` are retained for reference but not used by the HVV runtime.
  */
 export interface LCParams {
-  /** L value at intensity 0 (near-white) */
+  /** L value at intensity 0 (near-white) — legacy, kept for reference */
   lMax: number;
-  /** L value at intensity 100 (deep/saturated) */
+  /** L value at intensity 100 (deep) — legacy, kept for reference */
   lMin: number;
-  /** C value at intensity 0 (near-neutral) */
+  /** C value at intensity 0 (near-neutral) — legacy, kept for reference */
   cMin: number;
-  /** C value at intensity 100 (most saturated) */
+  /** Maximum chroma cap for sRGB derivation */
   cMax: number;
 }
 
 /**
- * Default LC anchor parameters.
- * Starting values per D01: L_MAX=0.96, L_MIN=0.42, C_MIN=0.01, C_MAX=0.22
+ * Default LC parameters.
+ * cMax=0.22 is the sRGB chroma ceiling used when re-deriving MAX_CHROMA_FOR_HUE.
  */
 export const DEFAULT_LC_PARAMS: LCParams = {
   lMax: 0.96,
@@ -83,54 +86,7 @@ export const DEFAULT_LC_PARAMS: LCParams = {
 };
 
 // ---------------------------------------------------------------------------
-// TONE_ALIASES — Named tone alias mappings
-// ---------------------------------------------------------------------------
-
-/**
- * Named tone aliases mapping semantic names to intensity values.
- * soft=15, default=50, strong=75, intense=100
- */
-export const TONE_ALIASES: Record<string, number> = {
-  soft:    15,
-  default: 50,
-  strong:  75,
-  intense: 100,
-};
-
-// ---------------------------------------------------------------------------
-// Standard stops
-// ---------------------------------------------------------------------------
-
-/** The 11 standard intensity stops (Spec S03). */
-const STANDARD_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
-// ---------------------------------------------------------------------------
-// Transfer function — smoothstep
-// ---------------------------------------------------------------------------
-
-/**
- * Smoothstep easing: compresses extremes, expands midrange.
- * Input t must be in [0, 1].
- */
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * Map intensity [0, 100] to OKLCH L and C values using the smoothstep curve.
- * At intensity 0: high L (near-white), low C (near-neutral).
- * At intensity 100: low L (deep), high C (saturated).
- */
-function intensityToLC(intensity: number, params: LCParams = DEFAULT_LC_PARAMS): { L: number; C: number } {
-  const t = Math.max(0, Math.min(100, intensity)) / 100;
-  const s = smoothstep(t);
-  const L = params.lMax + s * (params.lMin - params.lMax);
-  const C = params.cMin + s * (params.cMax - params.cMin);
-  return { L, C };
-}
-
-// ---------------------------------------------------------------------------
-// OKLCH → sRGB conversion (private, for gamut validation)
+// OKLCH → linear sRGB conversion
 // ---------------------------------------------------------------------------
 
 /**
@@ -139,35 +95,27 @@ function intensityToLC(intensity: number, params: LCParams = DEFAULT_LC_PARAMS):
  *
  * Pipeline (per Bjorn Ottosson's canonical OKLab specification):
  *   1. OKLCH → OKLab (polar to Cartesian)
- *   2. OKLab → LMS (inverse OKLab matrix)
- *   3. LMS cube (undo cube-root compression)
- *   4. LMS → linear sRGB (second matrix)
+ *   2. OKLab → LMS^ (inverse OKLab M1 matrix)
+ *   3. LMS^ cube (undo cube-root compression)
+ *   4. LMS → linear sRGB (M2 matrix)
  *
  * Matrices from: https://bottosson.github.io/posts/oklab/
+ *
+ * Exported for use in gamut-safety tests and _deriveChromaCaps.
  */
-function oklchToLinearSRGB(L: number, C: number, h: number): { r: number; g: number; b: number } {
-  // Step 1: OKLCH polar → OKLab Cartesian
+export function oklchToLinearSRGB(L: number, C: number, h: number): { r: number; g: number; b: number } {
   const hRad = (h * Math.PI) / 180;
   const a = C * Math.cos(hRad);
   const b = C * Math.sin(hRad);
 
-  // Step 2: OKLab → LMS^ (via inverse OKLab M1 matrix)
-  // l^ = L + 0.3963377774 * a + 0.2158037573 * b
-  // m^ = L - 0.1055613458 * a - 0.0638541728 * b
-  // s^ = L - 0.0894841775 * a - 1.2914855480 * b
   const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
   const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
   const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
 
-  // Step 3: Undo cube-root compression (LMS^ → LMS)
   const lLMS = lHat * lHat * lHat;
   const mLMS = mHat * mHat * mHat;
   const sLMS = sHat * sHat * sHat;
 
-  // Step 4: LMS → linear sRGB (M2 matrix)
-  //  r =  4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
-  //  g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
-  //  b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
   const r =  4.0767416621 * lLMS - 3.3077115913 * mLMS + 0.2309699292 * sLMS;
   const g = -1.2684380046 * lLMS + 2.6097574011 * mLMS - 0.3413193965 * sLMS;
   const bVal = -0.0041960863 * lLMS - 0.7034186147 * mLMS + 1.7076147010 * sLMS;
@@ -178,8 +126,10 @@ function oklchToLinearSRGB(L: number, C: number, h: number): { r: number; g: num
 /**
  * Check if an OKLCH color is within the sRGB gamut (all channels in [0, 1]).
  * Allows a small epsilon for floating point rounding.
+ *
+ * Exported for use in gamut-safety tests and _deriveChromaCaps.
  */
-function isInSRGBGamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
+export function isInSRGBGamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
   const { r, g, b } = oklchToLinearSRGB(L, C, h);
   return (
     r >= -epsilon && r <= 1 + epsilon &&
@@ -189,314 +139,429 @@ function isInSRGBGamut(L: number, C: number, h: number, epsilon = 0.001): boolea
 }
 
 /**
- * Find the maximum chroma at a given L and hue angle that stays in sRGB gamut.
- * Binary search in [0, maxSearch] with given precision.
+ * Find the maximum chroma at a given L and hue angle that stays within the
+ * specified gamut. Binary search in [0, maxSearch].
+ *
+ * @param L - OKLCH lightness
+ * @param h - OKLCH hue angle (degrees)
+ * @param maxSearch - upper bound for binary search (default 0.4)
+ * @param steps - number of binary search iterations (default 32)
+ * @param gamutCheck - gamut boundary function (defaults to isInSRGBGamut)
  */
-function findMaxChroma(L: number, h: number, maxSearch = 0.4, steps = 32): number {
+export function findMaxChroma(
+  L: number,
+  h: number,
+  maxSearch = 0.4,
+  steps = 32,
+  gamutCheck: (L: number, C: number, h: number, epsilon?: number) => boolean = isInSRGBGamut,
+): number {
   let lo = 0;
   let hi = maxSearch;
   for (let i = 0; i < steps; i++) {
     const mid = (lo + hi) / 2;
-    if (isInSRGBGamut(L, mid, h)) {
+    if (gamutCheck(L, mid, h)) {
       lo = mid;
     } else {
       hi = mid;
     }
   }
-  // Apply a small safety margin
   return lo * 0.98;
 }
 
 // ---------------------------------------------------------------------------
-// MAX_CHROMA_FOR_HUE — Per-hue chroma caps (hardcoded static table, [D02])
+// OKLCH → linear Display P3 conversion
 // ---------------------------------------------------------------------------
 
 /**
- * Regeneration helper (not called at runtime).
+ * Convert OKLCH polar coordinates to linear Display P3 channels.
+ * Returns { r, g, b } where each channel is in [0, 1] for in-gamut colors.
  *
- * Run this function once to recompute the MAX_CHROMA_FOR_HUE table when
- * DEFAULT_LC_PARAMS changes.  The results are pasted into the literal table
- * below.  Derivation: binary-search the maximum chroma at both L_MIN and the
- * midpoint L (≈0.69), take the minimum across both, and apply a 2% safety
- * margin.  All values are capped at DEFAULT_LC_PARAMS.cMax (0.22).
+ * Pipeline (steps 1-3 identical to oklchToLinearSRGB):
+ *   1. OKLCH → OKLab (polar to Cartesian)
+ *   2. OKLab → LMS^ (inverse OKLab M1 matrix)
+ *   3. LMS^ cube (undo cube-root compression)
+ *   4. LMS → linear Display P3 (P3 M2 matrix)
  *
- * Per decision [D02]: per-hue chroma caps are a static constant table, not
- * computed at runtime, so injection latency is unaffected.
+ * The LMS-to-linear-Display-P3 matrix is derived by composing the OKLab
+ * LMS→XYZ matrix (inverse of Ottosson M1) with the XYZ D65→Display-P3
+ * matrix from the CSS Color 4 specification:
+ *   https://www.w3.org/TR/css-color-4/#color-conversion-code
+ *
+ * Exported for use in isInP3Gamut and tests.
  */
-function _deriveChromaCaps(): Record<string, number> {
+export function oklchToLinearP3(L: number, C: number, h: number): { r: number; g: number; b: number } {
+  const hRad = (h * Math.PI) / 180;
+  const a = C * Math.cos(hRad);
+  const b = C * Math.sin(hRad);
+
+  const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
+  const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
+  const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  const lLMS = lHat * lHat * lHat;
+  const mLMS = mHat * mHat * mHat;
+  const sLMS = sHat * sHat * sHat;
+
+  // Step 4: LMS → linear Display P3
+  // Matrix = (XYZ_D65_to_P3) * inv(OKLab_M1_XYZ_to_LMS)
+  const r =  3.1281105290 * lLMS - 2.2570750183 * mLMS + 0.1293047883 * sLMS;
+  const g = -1.0911281610 * lLMS + 2.4132667618 * mLMS - 0.3221681709 * sLMS;
+  const bVal = -0.0260136498 * lLMS - 0.5080276490 * mLMS + 1.5333166822 * sLMS;
+
+  return { r, g, b: bVal };
+}
+
+/**
+ * Check if an OKLCH color is within the Display P3 gamut (all channels in [0, 1]).
+ * Allows a small epsilon for floating point rounding.
+ *
+ * Exported for use in _deriveChromaCaps and tests.
+ */
+export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): boolean {
+  const { r, g, b } = oklchToLinearP3(L, C, h);
+  return (
+    r >= -epsilon && r <= 1 + epsilon &&
+    g >= -epsilon && g <= 1 + epsilon &&
+    b >= -epsilon && b <= 1 + epsilon
+  );
+}
+
+// ---------------------------------------------------------------------------
+// _deriveChromaCaps — parameterized chroma cap derivation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive per-hue chroma caps using binary search across L sample points.
+ *
+ * For each hue in HUE_FAMILIES, binary-searches the maximum safe chroma at
+ * each L sample point (via findMaxChroma with the provided gamutCheck), takes
+ * the minimum across all sample points, applies the 2% safety margin (inside
+ * findMaxChroma), and optionally caps at maxCap.
+ *
+ * Per Spec S06:
+ * - sRGB derivation: _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
+ * - P3 derivation:  _deriveChromaCaps(hvvLSamples, isInP3Gamut) — no maxCap
+ *
+ * Not called at runtime. Run once to regenerate static tables.
+ */
+export function _deriveChromaCaps(
+  lSamples: (hue: string) => number[],
+  gamutCheck: (L: number, C: number, h: number, epsilon?: number) => boolean,
+  maxCap?: number,
+): Record<string, number> {
   const caps: Record<string, number> = {};
-  const L = DEFAULT_LC_PARAMS.lMin;
   for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
-    const capAtLMin = findMaxChroma(L, angle);
-    const capAtMid = findMaxChroma(0.69, angle);
-    const cap = Math.min(capAtLMin, capAtMid, DEFAULT_LC_PARAMS.cMax);
+    const samples = lSamples(name);
+    const minSafe = Math.min(...samples.map((L) => findMaxChroma(L, angle, 0.4, 32, gamutCheck)));
+    const cap = maxCap !== undefined ? Math.min(minSafe, maxCap) : minSafe;
     caps[name] = Math.round(cap * 1000) / 1000;
   }
   return caps;
 }
 
+// ---------------------------------------------------------------------------
+// HVV Constants
+// ---------------------------------------------------------------------------
+
+/** Lightness at val=0 (very dark). */
+export const L_DARK = 0.15;
+
+/** Lightness at val=100 (very light). */
+export const L_LIGHT = 0.96;
+
 /**
- * Per-hue maximum chroma for sRGB gamut safety.
- *
- * Hardcoded static table per decision [D02] — not computed at runtime.
- * Values were derived by running _deriveChromaCaps() once with the binary-
- * search gamut checker against DEFAULT_LC_PARAMS (L_MIN=0.42, L_MID≈0.69).
- * Each cap is the minimum safe chroma across all standard stops for that hue,
- * with a 2% safety margin, capped at cMax=0.22.
- *
- * To regenerate: call _deriveChromaCaps() and paste the output here.
+ * Peak chroma scale factor. Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE.
+ * At vib=50, C equals the sRGB-safe max; above 50 pushes into P3.
  */
-export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
-  cherry:  0.167,
-  red:     0.169,
-  tomato:  0.147,
-  flame:   0.120,
-  orange:  0.104,
-  amber:   0.094,
-  gold:    0.089,
-  yellow:  0.086,
-  lime:    0.095,
-  green:   0.135,
-  mint:    0.103,
-  teal:    0.079,
-  cyan:    0.071,
-  sky:     0.074,
-  blue:    0.083,
-  indigo:  0.118,
-  violet:  0.159,
-  purple:  0.167,
-  plum:    0.189,
-  pink:    0.200,
-  rose:    0.185,
-  magenta: 0.177,
-  crimson: 0.171,
-  coral:   0.167,
+export const PEAK_C_SCALE = 2;
+
+/**
+ * Default canonical L values for all 24 hue families (Table T02).
+ * These are the reference lightness values at vib=50, val=50.
+ * Must remain above 0.555 (piecewise min() constraint, D04).
+ */
+export const DEFAULT_CANONICAL_L: Record<string, number> = {
+  cherry: 0.619,
+  red:    0.659,
+  tomato: 0.704,
+  flame:  0.740,
+  orange: 0.780,
+  amber:  0.821,
+  gold:   0.852,
+  yellow: 0.901,
+  lime:   0.861,
+  green:  0.821,
+  mint:   0.807,
+  teal:   0.803,
+  cyan:   0.803,
+  sky:    0.807,
+  blue:   0.771,
+  indigo: 0.744,
+  violet: 0.708,
+  purple: 0.686,
+  plum:   0.731,
+  pink:   0.794,
+  rose:   0.758,
+  magenta:0.726,
+  crimson:0.668,
+  coral:  0.632,
+};
+
+/**
+ * Seven semantic presets per hue. Each preset maps a name to {vib, val}.
+ * Per List L04 in the plan specification.
+ */
+export const HVV_PRESETS: Record<string, { vib: number; val: number }> = {
+  canonical: { vib: 50, val: 50 },
+  accent:    { vib: 80, val: 50 },
+  muted:     { vib: 25, val: 55 },
+  light:     { vib: 30, val: 82 },
+  subtle:    { vib: 15, val: 92 },
+  dark:      { vib: 50, val: 25 },
+  deep:      { vib: 70, val: 15 },
 };
 
 // ---------------------------------------------------------------------------
-// Core palette functions
+// MAX_CHROMA_FOR_HUE — Per-hue sRGB chroma caps (HVV L range)
 // ---------------------------------------------------------------------------
 
 /**
- * Build a clamped oklch() CSS string from raw L, C, and hue name.
- * Clamps C to min(C, MAX_CHROMA_FOR_HUE[hueName]).
+ * Per-hue maximum chroma for sRGB gamut safety.
  *
- * Composable helper: callers supply their own L/C values (e.g., from an
- * alternative transfer function) and get chroma capping + string formatting
- * without reimplementing either.
- */
-export function clampedOklchString(hueName: string, L: number, C: number): string {
-  const maxC = MAX_CHROMA_FOR_HUE[hueName] ?? DEFAULT_LC_PARAMS.cMax;
-  const clampedC = Math.min(C, maxC);
-  const angle = HUE_FAMILIES[hueName] ?? 0;
-  // Format to 4 decimal places for precision, trim trailing zeros
-  const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString();
-  return `oklch(${fmtNum(L)} ${fmtNum(clampedC)} ${angle})`;
-}
-
-/**
- * Compute an oklch() CSS color string for a given hue and intensity.
- * Clamps intensity to [0, 100]. Applies per-hue chroma cap.
- * Uses the default smoothstep transfer function internally.
- */
-export function tugPaletteColor(hueName: string, intensity: number, params?: LCParams): string {
-  const p = params ?? DEFAULT_LC_PARAMS;
-  const { L, C } = intensityToLC(intensity, p);
-  return clampedOklchString(hueName, L, C);
-}
-
-// ---------------------------------------------------------------------------
-// Anchor-based interpolation types (Phase 5d5b)
-// ---------------------------------------------------------------------------
-
-/**
- * A single hand-tuned anchor point for per-hue palette interpolation.
- * Specifies the target L (lightness) and C (chroma) at a given intensity stop.
- */
-export interface AnchorPoint {
-  /** Intensity stop in [0, 100]. */
-  stop: number;
-  /** OKLCH lightness at this stop (typically in [0, 1]). */
-  L: number;
-  /** OKLCH chroma at this stop (before per-hue capping). */
-  C: number;
-}
-
-/**
- * Complete anchor data for a single hue family.
- * Must include at least stops 0, 50, and 100.
- * Anchors must be sorted by stop in ascending order.
- */
-export interface HueAnchors {
-  /** Sorted array of anchor points (ascending by stop). */
-  anchors: AnchorPoint[];
-}
-
-/**
- * Anchor data for all hue families within a single theme.
- * Keys are hue family names (matching HUE_FAMILIES).
- */
-export type ThemeHueAnchors = Record<string, HueAnchors>;
-
-/**
- * Anchor data for all themes.
- * Keys are theme names (e.g., "brio", "bluenote", "harmony").
- */
-export type ThemeAnchorData = Record<string, ThemeHueAnchors>;
-
-// ---------------------------------------------------------------------------
-// Anchor interpolation (Phase 5d5b)
-// ---------------------------------------------------------------------------
-
-/**
- * Linearly interpolate L and C between surrounding anchor points.
+ * Hardcoded static table — not computed at runtime.
+ * Derived using HVV L sample points per [D08]:
+ *   lSamples(hue) = [L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]
+ * Binary-searched max chroma at each sample, minimum taken, 2% safety margin
+ * applied, capped at DEFAULT_LC_PARAMS.cMax (0.22).
  *
- * Clamps intensity to [0, 100].
- * Returns the anchor's exact L/C when intensity matches a stop exactly.
- * Anchors must be sorted ascending by stop.
+ * To regenerate: call _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
+ * where hvvLSamples(hue) = [L_DARK, DEFAULT_CANONICAL_L[hue], L_LIGHT].
  */
-function interpolateAnchors(intensity: number, anchors: AnchorPoint[]): { L: number; C: number } {
-  const clamped = Math.max(0, Math.min(100, intensity));
+export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
+  cherry:  0.020,
+  red:     0.019,
+  tomato:  0.020,
+  flame:   0.021,
+  orange:  0.023,
+  amber:   0.026,
+  gold:    0.032,
+  yellow:  0.045,
+  lime:    0.050,
+  green:   0.069,
+  mint:    0.048,
+  teal:    0.037,
+  cyan:    0.033,
+  sky:     0.031,
+  blue:    0.023,
+  indigo:  0.019,
+  violet:  0.019,
+  purple:  0.019,
+  plum:    0.022,
+  pink:    0.030,
+  rose:    0.029,
+  magenta: 0.024,
+  crimson: 0.022,
+  coral:   0.019,
+};
 
-  // Exact match
-  for (const anchor of anchors) {
-    if (anchor.stop === clamped) {
-      return { L: anchor.L, C: anchor.C };
-    }
+// ---------------------------------------------------------------------------
+// MAX_P3_CHROMA_FOR_HUE — Per-hue Display P3 chroma caps (HVV L range)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive per-hue P3 chroma caps using the same HVV L sample points as sRGB
+ * but with the Display P3 gamut checker and NO maxCap.
+ *
+ * P3 chroma values must exceed DEFAULT_LC_PARAMS.cMax (0.22 — the sRGB
+ * ceiling). The result is the uncapped maximum safe chroma across
+ * [L_DARK, per-hue canonical L, L_LIGHT] for each hue.
+ *
+ * Not called at runtime. Run once to regenerate MAX_P3_CHROMA_FOR_HUE.
+ */
+export function _deriveP3ChromaCaps(): Record<string, number> {
+  const hvvLSamples = (hue: string): number[] => [
+    L_DARK,
+    DEFAULT_CANONICAL_L[hue] ?? 0.7,
+    L_LIGHT,
+  ];
+  return _deriveChromaCaps(hvvLSamples, isInP3Gamut);
+}
+
+/**
+ * Per-hue maximum chroma for Display P3 gamut safety.
+ *
+ * Hardcoded static table — not computed at runtime. Derived by calling
+ * _deriveP3ChromaCaps() once with HVV L sample points and the isInP3Gamut
+ * checker. No maxCap applied — P3 values intentionally exceed sRGB's 0.22.
+ *
+ * All values are strictly greater than the corresponding MAX_CHROMA_FOR_HUE
+ * entries because the P3 gamut is strictly larger than sRGB.
+ *
+ * To regenerate: call _deriveP3ChromaCaps() and paste the output here.
+ */
+export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
+  cherry:  0.026,
+  red:     0.025,
+  tomato:  0.026,
+  flame:   0.027,
+  orange:  0.029,
+  amber:   0.033,
+  gold:    0.040,
+  yellow:  0.055,
+  lime:    0.061,
+  green:   0.082,
+  mint:    0.067,
+  teal:    0.050,
+  cyan:    0.045,
+  sky:     0.034,
+  blue:    0.026,
+  indigo:  0.022,
+  violet:  0.021,
+  purple:  0.022,
+  plum:    0.025,
+  pink:    0.034,
+  rose:    0.039,
+  magenta: 0.033,
+  crimson: 0.029,
+  coral:   0.025,
+};
+
+// ---------------------------------------------------------------------------
+// hvvColor — HVV color computation function
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute an oklch() CSS string from hue name, vibrancy (0-100), value (0-100),
+ * and canonical lightness.
+ *
+ * val → L: piecewise linear through canonicalL at val=50.
+ *   val=0   → L_DARK (0.15)
+ *   val=50  → canonicalL
+ *   val=100 → L_LIGHT (0.96)
+ *
+ * vib → C: linear from 0 to peakC.
+ *   vib=0   → C=0 (achromatic)
+ *   vib=50  → C = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = sRGB max
+ *   vib=100 → C = peakC = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE
+ *
+ * @param hueName - One of the 24 hue family names in HUE_FAMILIES
+ * @param vib - Vibrancy axis, 0-100
+ * @param val - Value axis, 0-100
+ * @param canonicalL - Canonical lightness for this hue at vib=50, val=50
+ * @param peakChroma - Optional peak chroma override. When omitted, defaults to
+ *   MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE (sRGB-derived). When provided,
+ *   allows P3-wider chroma (e.g., MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE).
+ * @returns An `oklch(L C h)` CSS string.
+ */
+export function hvvColor(
+  hueName: string,
+  vib: number,
+  val: number,
+  canonicalL: number,
+  peakChroma?: number,
+): string {
+  const h = HUE_FAMILIES[hueName] ?? 0;
+  const maxC = MAX_CHROMA_FOR_HUE[hueName] ?? 0.022;
+  const peakC = peakChroma !== undefined ? peakChroma : maxC * PEAK_C_SCALE;
+
+  // val → L: piecewise through canonicalL at val=50
+  let L: number;
+  if (val <= 50) {
+    L = L_DARK + (val / 50) * (canonicalL - L_DARK);
+  } else {
+    L = canonicalL + ((val - 50) / 50) * (L_LIGHT - canonicalL);
   }
 
-  // Find surrounding anchors
-  let lo = anchors[0];
-  let hi = anchors[anchors.length - 1];
-  for (let i = 0; i < anchors.length - 1; i++) {
-    if (anchors[i].stop <= clamped && anchors[i + 1].stop >= clamped) {
-      lo = anchors[i];
-      hi = anchors[i + 1];
-      break;
-    }
-  }
+  // vib → C: linear 0 → peakC
+  const C = (vib / 100) * peakC;
 
-  // Linear interpolation
-  const range = hi.stop - lo.stop;
-  if (range === 0) {
-    return { L: lo.L, C: lo.C };
-  }
-  const t = (clamped - lo.stop) / range;
-  return {
-    L: lo.L + t * (hi.L - lo.L),
-    C: lo.C + t * (hi.C - lo.C),
-  };
-}
-
-/**
- * Compute an oklch() CSS color string using per-hue anchor-based interpolation.
- *
- * Linearly interpolates L and C between the surrounding anchor points,
- * then delegates to clampedOklchString for per-hue chroma capping and formatting.
- *
- * @param hueName  - Hue family name (must be a key of HUE_FAMILIES).
- * @param intensity - Intensity in [0, 100]; clamped if outside range.
- * @param hueAnchors - Anchor data for this hue family.
- * @returns A valid oklch() CSS string with gamut-safe chroma.
- */
-export function tugAnchoredColor(hueName: string, intensity: number, hueAnchors: HueAnchors): string {
-  const { L, C } = interpolateAnchors(intensity, hueAnchors.anchors);
-  const angle = HUE_FAMILIES[hueName] ?? 0;
-  const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString();
-  return `oklch(${fmtNum(L)} ${fmtNum(C)} ${angle})`;
-}
-
-/**
- * Return the CSS custom property name for a palette color.
- * Format: --tug-palette-hue-<angle>-<name>-tone-<intensity>
- */
-export function tugPaletteVarName(hueName: string, intensity: number): string {
-  const angle = HUE_FAMILIES[hueName] ?? 0;
-  return `--tug-palette-hue-${angle}-${hueName}-tone-${intensity}`;
+  const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
+  return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
 }
 
 // ---------------------------------------------------------------------------
-// CSS injection
+// injectHvvCSS — CSS variable injection
 // ---------------------------------------------------------------------------
 
 /** The id of the injected palette style element. */
 const PALETTE_STYLE_ID = "tug-palette";
 
 /**
- * Read theme parameter overrides from computed styles on document.body.
- * Falls back to DEFAULT_LC_PARAMS when properties are absent.
- */
-function readThemeParams(): LCParams {
-  // Guard for non-browser environments (tests without DOM)
-  if (typeof document === "undefined") {
-    return { ...DEFAULT_LC_PARAMS };
-  }
-  const cs = getComputedStyle(document.body);
-  const readNum = (prop: string, fallback: number): number => {
-    const raw = cs.getPropertyValue(prop).trim();
-    if (!raw) return fallback;
-    const parsed = parseFloat(raw);
-    return isNaN(parsed) ? fallback : parsed;
-  };
-  return {
-    lMax: readNum("--tug-theme-lc-l-max", DEFAULT_LC_PARAMS.lMax),
-    lMin: readNum("--tug-theme-lc-l-min", DEFAULT_LC_PARAMS.lMin),
-    cMin: readNum("--tug-theme-lc-c-min", DEFAULT_LC_PARAMS.cMin),
-    cMax: readNum("--tug-theme-lc-c-max", DEFAULT_LC_PARAMS.cMax),
-  };
-}
-
-/**
- * Inject all palette CSS variables into a <style id="tug-palette"> element.
+ * Inject the HVV CSS variable system into a `<style id="tug-palette">` element.
  *
- * Injects:
- * - 264 numeric stop variables (24 hues × 11 stops: 0,10,20,...,100)
- * - 96 named tone alias variables (24 hues × 4 aliases: soft/default/strong/intense)
- * Total: 360 variables
+ * Emits two blocks:
  *
- * When `anchorData` is provided, each hue uses per-hue anchor interpolation
- * (`tugAnchoredColor`) instead of the smoothstep transfer function.
- * When `anchorData` is omitted, the existing smoothstep behavior is preserved
- * (`tugPaletteColor` with theme parameter overrides from getComputedStyle).
+ * 1. `:root { }` — sRGB defaults:
+ *    - Layer 1: 168 semantic preset variables (7 presets × 24 hues) per Spec S01
+ *      - `--tug-{hue}` for canonical (vib=50, val=50)
+ *      - `--tug-{hue}-{preset}` for the other six presets
+ *    - Layer 2: 74 per-hue constant variables per Spec S02
+ *      - `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c` per hue
+ *      - `--tug-l-dark` and `--tug-l-light` global constants
  *
- * Hue angles always come from the static HUE_FAMILIES constant.
+ * 2. `@media (color-gamut: p3) { :root { } }` — P3 overrides per Spec S03:
+ *    - All 168 presets recomputed with P3 peak chroma
+ *    - Per-hue `--tug-{hue}-peak-c` overridden with P3 values
+ *    - `-h` and `-canon-l` constants are gamut-independent, not overridden
+ *
  * Idempotent: replaces existing element content if already present.
+ * Uses pure DOM manipulation per Rules of Tugways [D08, D09, D40, D42].
+ *
+ * @param _themeName - Theme name (reserved for future per-theme canonical L tables)
  */
-export function injectPaletteCSS(_themeName: string, anchorData?: ThemeHueAnchors): void {
+export function injectHvvCSS(_themeName: string): void {
   if (typeof document === "undefined") return;
-
-  // Only read theme LC params when not using anchor data (backward-compat path).
-  const params = anchorData ? DEFAULT_LC_PARAMS : readThemeParams();
 
   const lines: string[] = [":root {"];
 
-  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
-    // Per-intensity color computation: anchor path or smoothstep fallback.
-    const makeOklch = (intensity: number): string => {
-      if (anchorData) {
-        const hueAnchors = anchorData[name];
-        if (hueAnchors) {
-          return tugAnchoredColor(name, intensity, hueAnchors);
-        }
+  // sRGB block: Layer 1 presets + Layer 2 constants
+  for (const [hueName, angle] of Object.entries(HUE_FAMILIES)) {
+    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
+    const peakC = (MAX_CHROMA_FOR_HUE[hueName] ?? 0.022) * PEAK_C_SCALE;
+
+    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
+      const color = hvvColor(hueName, vib, val, canonL);
+      if (presetName === "canonical") {
+        lines.push(`  --tug-${hueName}: ${color};`);
+      } else {
+        lines.push(`  --tug-${hueName}-${presetName}: ${color};`);
       }
-      return tugPaletteColor(name, intensity, params);
-    };
-
-    // Numeric stops
-    for (const stop of STANDARD_STOPS) {
-      lines.push(`  --tug-palette-hue-${angle}-${name}-tone-${stop}: ${makeOklch(stop)};`);
     }
 
-    // Named tone aliases (soft=15, default=50, strong=75, intense=100)
-    for (const [alias, intensity] of Object.entries(TONE_ALIASES)) {
-      lines.push(`  --tug-palette-hue-${angle}-${name}-${alias}: ${makeOklch(intensity)};`);
-    }
+    lines.push(`  --tug-${hueName}-h: ${angle};`);
+    lines.push(`  --tug-${hueName}-canon-l: ${canonL};`);
+    lines.push(`  --tug-${hueName}-peak-c: ${parseFloat(peakC.toFixed(4))};`);
   }
 
+  lines.push(`  --tug-l-dark: ${L_DARK};`);
+  lines.push(`  --tug-l-light: ${L_LIGHT};`);
   lines.push("}");
+
+  // P3 override block
+  lines.push("@media (color-gamut: p3) {");
+  lines.push("  :root {");
+
+  for (const [hueName] of Object.entries(HUE_FAMILIES)) {
+    const canonL = DEFAULT_CANONICAL_L[hueName] ?? 0.7;
+    const p3PeakC = (MAX_P3_CHROMA_FOR_HUE[hueName] ?? 0.026) * PEAK_C_SCALE;
+
+    for (const [presetName, { vib, val }] of Object.entries(HVV_PRESETS)) {
+      const color = hvvColor(hueName, vib, val, canonL, p3PeakC);
+      if (presetName === "canonical") {
+        lines.push(`    --tug-${hueName}: ${color};`);
+      } else {
+        lines.push(`    --tug-${hueName}-${presetName}: ${color};`);
+      }
+    }
+
+    lines.push(`    --tug-${hueName}-peak-c: ${parseFloat(p3PeakC.toFixed(4))};`);
+  }
+
+  lines.push("  }");
+  lines.push("}");
+
   const css = lines.join("\n");
 
-  // Create or replace the palette style element
   let styleEl = document.getElementById(PALETTE_STYLE_ID) as HTMLStyleElement | null;
   if (!styleEl) {
     styleEl = document.createElement("style");

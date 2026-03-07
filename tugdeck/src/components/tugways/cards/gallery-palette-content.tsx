@@ -23,7 +23,10 @@
 import React, { useState, useRef } from "react";
 import {
   HUE_FAMILIES,
-  MAX_CHROMA_FOR_HUE,
+  hvvColor,
+  DEFAULT_CANONICAL_L,
+  L_DARK,
+  L_LIGHT,
 } from "@/components/tugways/palette-engine";
 import "./gallery-palette-content.css";
 
@@ -33,67 +36,8 @@ import "./gallery-palette-content.css";
 
 const HUE_NAMES = Object.keys(HUE_FAMILIES);
 
-/** Lightness at val=0 (very dark). */
-const L_DARK = 0.15;
-
-/** Lightness at val=100 (very light). */
-const L_LIGHT = 0.96;
-
-/** Peak chroma is 2x sRGB max — pushes into P3; CSS gamut-maps the rest. */
-const PEAK_C_SCALE = 2;
-
 const VIB_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const VAL_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
-
-// ---------------------------------------------------------------------------
-// Default canonical L values (from gallery tuning)
-// ---------------------------------------------------------------------------
-
-const DEFAULT_CANONICAL_L: Record<string, number> = {
-  cherry: 0.619, red: 0.659, tomato: 0.704, flame: 0.740, orange: 0.780,
-  amber: 0.821, gold: 0.852, yellow: 0.901, lime: 0.861, green: 0.821,
-  mint: 0.807, teal: 0.803, cyan: 0.803, sky: 0.807, blue: 0.771,
-  indigo: 0.744, violet: 0.708, purple: 0.686, plum: 0.731, pink: 0.794,
-  rose: 0.758, magenta: 0.726, crimson: 0.668, coral: 0.632,
-};
-
-// ---------------------------------------------------------------------------
-// HVV color computation
-// ---------------------------------------------------------------------------
-
-/**
- * Compute an oklch() CSS string from hue name, vibrancy, and value.
- *
- * val -> L: piecewise linear through canonical L at val=50.
- * vib -> C: linear from 0 to peakC (= MAX_CHROMA * PEAK_C_SCALE).
- *   At vib=50, C equals the sRGB-safe max; above 50 pushes into P3.
- *
- * CSS oklch() handles gamut mapping automatically.
- */
-export function hvvColor(
-  hueName: string,
-  vib: number,
-  val: number,
-  canonicalL: number,
-): string {
-  const h = HUE_FAMILIES[hueName] ?? 0;
-  const maxC = MAX_CHROMA_FOR_HUE[hueName] ?? 0.22;
-  const peakC = maxC * PEAK_C_SCALE;
-
-  // val -> L: piecewise through canonicalL at val=50
-  let L: number;
-  if (val <= 50) {
-    L = L_DARK + (val / 50) * (canonicalL - L_DARK);
-  } else {
-    L = canonicalL + ((val - 50) / 50) * (L_LIGHT - canonicalL);
-  }
-
-  // vib -> C: linear 0 -> peakC
-  const C = (vib / 100) * peakC;
-
-  const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
-  return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
-}
 
 // ---------------------------------------------------------------------------
 // SVG curve coordinate helpers (constants, outside component)

@@ -1,39 +1,42 @@
 /**
- * Palette Engine tests — Step 1 (Phase 5d5a).
+ * Palette Engine tests — HVV Runtime.
  *
  * Tests cover:
- * - tugPaletteColor() returns valid oklch strings with correct L/C values
- * - tugPaletteVarName() returns correct CSS variable name format
- * - Intensity clamping (negative -> 0, >100 -> 100)
- * - All 24 hues x 11 standard stops produce sRGB-safe oklch values
- * - Per-hue chroma caps: yellow has lower chroma than blue at high intensity
- * - injectPaletteCSS() injects all variables into DOM (happy-dom integration)
- * - Named tone alias injection matches numeric stop values
- * - Idempotent injection: calling twice does not create duplicate elements
+ * - HUE_FAMILIES and MAX_CHROMA_FOR_HUE tables
+ * - oklchToLinearSRGB, isInSRGBGamut, findMaxChroma, _deriveChromaCaps utilities
+ * - hvvColor(): val→L piecewise, vib→C linear, optional peakChroma override
+ * - DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE constants
+ * - HVV_PRESETS: 7 entries with correct vib/val
+ * - MAX_P3_CHROMA_FOR_HUE: all > corresponding sRGB caps
+ * - oklchToLinearP3 and isInP3Gamut: P3 gamut conversion and checking
+ * - injectHvvCSS(): Layer 1 presets (168), Layer 2 constants (74), P3 @media block
+ * - Gamut safety: all 24 hues × 7 presets produce valid oklch strings
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
  */
 import "./setup-rtl";
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, afterEach } from "bun:test";
 
 import {
   HUE_FAMILIES,
   MAX_CHROMA_FOR_HUE,
   DEFAULT_LC_PARAMS,
-  TONE_ALIASES,
-  tugPaletteColor,
-  clampedOklchString,
-  tugPaletteVarName,
-  injectPaletteCSS,
-  tugAnchoredColor,
+  oklchToLinearSRGB,
+  isInSRGBGamut,
+  findMaxChroma,
+  oklchToLinearP3,
+  isInP3Gamut,
+  _deriveChromaCaps,
+  hvvColor,
+  DEFAULT_CANONICAL_L,
+  L_DARK,
+  L_LIGHT,
+  PEAK_C_SCALE,
+  HVV_PRESETS,
+  MAX_P3_CHROMA_FOR_HUE,
+  injectHvvCSS,
 } from "@/components/tugways/palette-engine";
-import type { HueAnchors, ThemeHueAnchors } from "@/components/tugways/palette-engine";
-import {
-  DEFAULT_ANCHOR_DATA,
-  BRIO_ANCHORS,
-  BLUENOTE_ANCHORS,
-} from "@/components/tugways/theme-anchors";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,41 +49,8 @@ function parseOklch(s: string): { L: number; C: number; h: number } | null {
   return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
 }
 
-/**
- * Convert OKLCH to linear sRGB for gamut safety checks.
- * Mirrors the private implementation in palette-engine.ts.
- */
-function oklchToLinearSRGB(L: number, C: number, h: number): { r: number; g: number; b: number } {
-  const hRad = (h * Math.PI) / 180;
-  const a = C * Math.cos(hRad);
-  const b = C * Math.sin(hRad);
-
-  const lHat = L + 0.3963377774 * a + 0.2158037573 * b;
-  const mHat = L - 0.1055613458 * a - 0.0638541728 * b;
-  const sHat = L - 0.0894841775 * a - 1.2914855480 * b;
-
-  const lLMS = lHat * lHat * lHat;
-  const mLMS = mHat * mHat * mHat;
-  const sLMS = sHat * sHat * sHat;
-
-  const r = 4.0767416621 * lLMS - 3.3077115913 * mLMS + 0.2309699292 * sLMS;
-  const g = -1.2684380046 * lLMS + 2.6097574011 * mLMS - 0.3413193965 * sLMS;
-  const bVal = -0.0041960863 * lLMS - 0.7034186147 * mLMS + 1.7076147010 * sLMS;
-
-  return { r, g, b: bVal };
-}
-
-function isInSRGBGamut(L: number, C: number, h: number): boolean {
-  const { r, g, b } = oklchToLinearSRGB(L, C, h);
-  const eps = 0.005; // small epsilon for floating point
-  return r >= -eps && r <= 1 + eps && g >= -eps && g <= 1 + eps && b >= -eps && b <= 1 + eps;
-}
-
-// Standard stops
-const STANDARD_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
 // ---------------------------------------------------------------------------
-// HUE_FAMILIES and constants
+// HUE_FAMILIES
 // ---------------------------------------------------------------------------
 
 describe("HUE_FAMILIES", () => {
@@ -88,7 +58,7 @@ describe("HUE_FAMILIES", () => {
     expect(Object.keys(HUE_FAMILIES).length).toBe(24);
   });
 
-  it("contains expected hue names", () => {
+  it("contains expected hue names and angles", () => {
     expect(HUE_FAMILIES["cherry"]).toBe(10);
     expect(HUE_FAMILIES["red"]).toBe(25);
     expect(HUE_FAMILIES["yellow"]).toBe(90);
@@ -96,6 +66,10 @@ describe("HUE_FAMILIES", () => {
     expect(HUE_FAMILIES["crimson"]).toBe(355);
   });
 });
+
+// ---------------------------------------------------------------------------
+// MAX_CHROMA_FOR_HUE (HVV L-range derivation)
+// ---------------------------------------------------------------------------
 
 describe("MAX_CHROMA_FOR_HUE", () => {
   it("has an entry for every hue family", () => {
@@ -105,654 +79,472 @@ describe("MAX_CHROMA_FOR_HUE", () => {
     }
   });
 
-  it("all caps are positive and at most cMax", () => {
+  it("all caps are positive and at most cMax (0.22)", () => {
     for (const [name, cap] of Object.entries(MAX_CHROMA_FOR_HUE)) {
       expect(cap).toBeGreaterThan(0);
       expect(cap).toBeLessThanOrEqual(DEFAULT_LC_PARAMS.cMax + 0.001);
-      void name; // used in loop key
+      void name;
+    }
+  });
+
+  it("spot-check: red=0.019, green=0.069, yellow=0.045", () => {
+    expect(MAX_CHROMA_FOR_HUE["red"]).toBe(0.019);
+    expect(MAX_CHROMA_FOR_HUE["green"]).toBe(0.069);
+    expect(MAX_CHROMA_FOR_HUE["yellow"]).toBe(0.045);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// oklchToLinearSRGB and isInSRGBGamut (exported utilities)
+// ---------------------------------------------------------------------------
+
+describe("oklchToLinearSRGB()", () => {
+  it("returns {r, g, b} object", () => {
+    const result = oklchToLinearSRGB(0.5, 0, 0);
+    expect(result).toHaveProperty("r");
+    expect(result).toHaveProperty("g");
+    expect(result).toHaveProperty("b");
+  });
+
+  it("achromatic (C=0) gives equal r, g, b channels", () => {
+    const { r, g, b } = oklchToLinearSRGB(0.5, 0, 0);
+    expect(r).toBeCloseTo(g, 5);
+    expect(g).toBeCloseTo(b, 5);
+  });
+});
+
+describe("isInSRGBGamut()", () => {
+  it("returns true for a neutral gray", () => {
+    expect(isInSRGBGamut(0.5, 0, 0)).toBe(true);
+  });
+
+  it("returns false for extreme chroma far outside sRGB", () => {
+    expect(isInSRGBGamut(0.15, 0.5, 25)).toBe(false);
+  });
+});
+
+describe("findMaxChroma()", () => {
+  it("returns a positive value for a mid-range L and hue", () => {
+    const cap = findMaxChroma(0.65, 25);
+    expect(cap).toBeGreaterThan(0);
+    expect(cap).toBeLessThan(0.4);
+  });
+
+  it("accepts an alternative gamut checker (P3 yields higher cap than sRGB)", () => {
+    const srgbCap = findMaxChroma(0.65, 25);
+    const p3Cap   = findMaxChroma(0.65, 25, 0.4, 32, isInP3Gamut);
+    expect(p3Cap).toBeGreaterThan(srgbCap);
+  });
+});
+
+describe("_deriveChromaCaps()", () => {
+  it("returns a record with 24 entries when called with HVV L samples", () => {
+    const hvvLSamples = (hue: string) => [L_DARK, DEFAULT_CANONICAL_L[hue] ?? 0.7, L_LIGHT];
+    const caps = _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax);
+    expect(Object.keys(caps).length).toBe(24);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE
+// ---------------------------------------------------------------------------
+
+describe("DEFAULT_CANONICAL_L", () => {
+  it("has exactly 24 entries", () => {
+    expect(Object.keys(DEFAULT_CANONICAL_L).length).toBe(24);
+  });
+
+  it("has entries for all 24 hue families", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(DEFAULT_CANONICAL_L[hue]).toBeDefined();
+    }
+  });
+
+  it("cherry=0.619, yellow=0.901", () => {
+    expect(DEFAULT_CANONICAL_L["cherry"]).toBe(0.619);
+    expect(DEFAULT_CANONICAL_L["yellow"]).toBe(0.901);
+  });
+
+  it("all canonical L values are above 0.555 (piecewise min() constraint)", () => {
+    for (const [hue, l] of Object.entries(DEFAULT_CANONICAL_L)) {
+      expect(l).toBeGreaterThan(0.555);
+      void hue;
     }
   });
 });
 
-describe("TONE_ALIASES", () => {
-  it("has soft=15, default=50, strong=75, intense=100", () => {
-    expect(TONE_ALIASES["soft"]).toBe(15);
-    expect(TONE_ALIASES["default"]).toBe(50);
-    expect(TONE_ALIASES["strong"]).toBe(75);
-    expect(TONE_ALIASES["intense"]).toBe(100);
+describe("L_DARK, L_LIGHT, PEAK_C_SCALE", () => {
+  it("L_DARK is 0.15", () => { expect(L_DARK).toBe(0.15); });
+  it("L_LIGHT is 0.96", () => { expect(L_LIGHT).toBe(0.96); });
+  it("PEAK_C_SCALE is 2", () => { expect(PEAK_C_SCALE).toBe(2); });
+});
+
+// ---------------------------------------------------------------------------
+// HVV_PRESETS
+// ---------------------------------------------------------------------------
+
+describe("HVV_PRESETS", () => {
+  it("has exactly 7 entries", () => {
+    expect(Object.keys(HVV_PRESETS).length).toBe(7);
+  });
+
+  it("canonical: vib=50, val=50", () => {
+    expect(HVV_PRESETS["canonical"]).toEqual({ vib: 50, val: 50 });
+  });
+  it("accent: vib=80, val=50", () => {
+    expect(HVV_PRESETS["accent"]).toEqual({ vib: 80, val: 50 });
+  });
+  it("muted: vib=25, val=55", () => {
+    expect(HVV_PRESETS["muted"]).toEqual({ vib: 25, val: 55 });
+  });
+  it("light: vib=30, val=82", () => {
+    expect(HVV_PRESETS["light"]).toEqual({ vib: 30, val: 82 });
+  });
+  it("subtle: vib=15, val=92", () => {
+    expect(HVV_PRESETS["subtle"]).toEqual({ vib: 15, val: 92 });
+  });
+  it("dark: vib=50, val=25", () => {
+    expect(HVV_PRESETS["dark"]).toEqual({ vib: 50, val: 25 });
+  });
+  it("deep: vib=70, val=15", () => {
+    expect(HVV_PRESETS["deep"]).toEqual({ vib: 70, val: 15 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// tugPaletteColor()
+// hvvColor()
 // ---------------------------------------------------------------------------
 
-describe("tugPaletteColor()", () => {
-  it("returns a valid oklch() string format", () => {
-    const result = tugPaletteColor("red", 50);
-    expect(result).toMatch(/^oklch\([\d.]+ [\d.]+ \d+\)$/);
-  });
-
-  it("'red' at intensity 0 has L near 0.96 and very low C", () => {
-    const result = tugPaletteColor("red", 0);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.96, 2);
-    expect(parsed!.C).toBeLessThan(0.02);
-  });
-
-  it("'red' at intensity 100 has L near 0.42 and C capped by MAX_CHROMA_FOR_HUE['red']", () => {
-    const result = tugPaletteColor("red", 100);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.42, 2);
-    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
-  });
-
-  it("'blue' at intensity 100 has lower chroma than 'red' at intensity 100 (per-hue caps)", () => {
-    // In OKLCH space, blue (230°) has a tighter gamut boundary than red (25°)
-    // at dark tones (L=0.42), so blue's chroma cap is lower than red's.
-    // This verifies that per-hue chroma caps produce different values per hue.
-    const blueResult = tugPaletteColor("blue", 100);
-    const redResult = tugPaletteColor("red", 100);
-    const blue = parseOklch(blueResult);
-    const red = parseOklch(redResult);
-    expect(blue).not.toBeNull();
-    expect(red).not.toBeNull();
-    expect(blue!.C).toBeLessThan(red!.C);
-  });
-
-  it("'yellow' and 'blue' at intensity 100 have different chroma due to per-hue caps", () => {
-    // The plan's original expectation was yellow < blue, but empirical OKLCH gamut
-    // checking shows the reverse: yellow (90°) cap=0.086 > blue (230°) cap=0.083.
-    // Yellow can hold slightly more chroma than blue at dark tones in OKLCH space.
-    // This test documents the ACTUAL ordering and confirms the caps ARE distinct,
-    // which is the essential property the plan intends to verify.
-    const yellowResult = tugPaletteColor("yellow", 100);
-    const blueResult = tugPaletteColor("blue", 100);
-    const yellow = parseOklch(yellowResult);
-    const blue = parseOklch(blueResult);
-    expect(yellow).not.toBeNull();
-    expect(blue).not.toBeNull();
-    // Actual ordering: yellow (0.086) > blue (0.083) — per-hue caps differ.
-    expect(yellow!.C).toBeGreaterThan(blue!.C);
-    // Both caps are well below cMax (0.22) — gamut constraint is active for both.
-    expect(yellow!.C).toBeLessThan(DEFAULT_LC_PARAMS.cMax);
-    expect(blue!.C).toBeLessThan(DEFAULT_LC_PARAMS.cMax);
-  });
-
-  it("clamps intensity < 0 to 0", () => {
-    const atNeg = tugPaletteColor("red", -10);
-    const atZero = tugPaletteColor("red", 0);
-    expect(atNeg).toBe(atZero);
-  });
-
-  it("clamps intensity > 100 to 100", () => {
-    const atOver = tugPaletteColor("red", 110);
-    const atHundred = tugPaletteColor("red", 100);
-    expect(atOver).toBe(atHundred);
-  });
-
-  it("returns different colors for different intensities", () => {
-    const at25 = tugPaletteColor("blue", 25);
-    const at75 = tugPaletteColor("blue", 75);
-    expect(at25).not.toBe(at75);
-  });
-
-  it("accepts custom LCParams", () => {
-    const customParams = { lMax: 0.9, lMin: 0.5, cMin: 0.02, cMax: 0.18 };
-    const withCustom = tugPaletteColor("red", 50, customParams);
-    const withDefault = tugPaletteColor("red", 50);
-    // Custom params produce different output than defaults
-    expect(withCustom).not.toBe(withDefault);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// clampedOklchString()
-// ---------------------------------------------------------------------------
-
-describe("clampedOklchString()", () => {
+describe("hvvColor()", () => {
   it("returns a valid oklch() string", () => {
-    const result = clampedOklchString("red", 0.7, 0.15);
-    expect(result).toMatch(/^oklch\([\d.]+ [\d.]+ \d+\)$/);
+    expect(hvvColor("red", 50, 50, 0.659)).toMatch(/^oklch\(/);
   });
 
-  it("clamps chroma to MAX_CHROMA_FOR_HUE for the given hue", () => {
-    // Pass an excessive chroma that should be clamped
-    const result = clampedOklchString("yellow", 0.5, 0.99);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["yellow"] + 0.001);
+  it("val=50 produces canonical L", () => {
+    const parsed = parseOklch(hvvColor("red", 50, 50, 0.659));
+    expect(parsed!.L).toBeCloseTo(0.659, 3);
   });
 
-  it("does not clamp when C is below the cap", () => {
-    const c = 0.01;
-    const result = clampedOklchString("red", 0.8, c);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.C).toBeCloseTo(c, 3);
+  it("vib=0 produces C=0 (achromatic)", () => {
+    const parsed = parseOklch(hvvColor("red", 0, 50, 0.659));
+    expect(parsed!.C).toBe(0);
   });
 
-  it("uses the correct hue angle for the hue family", () => {
-    const result = clampedOklchString("red", 0.7, 0.1);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.h).toBe(HUE_FAMILIES["red"]); // 25
-  });
-});
-
-// ---------------------------------------------------------------------------
-// tugPaletteVarName()
-// ---------------------------------------------------------------------------
-
-describe("tugPaletteVarName()", () => {
-  it("returns correct format for 'red' at intensity 50", () => {
-    expect(tugPaletteVarName("red", 50)).toBe("--tug-palette-hue-25-red-tone-50");
+  it("val=0 produces L=L_DARK (0.15)", () => {
+    const parsed = parseOklch(hvvColor("red", 50, 0, 0.659));
+    expect(parsed!.L).toBeCloseTo(L_DARK, 3);
   });
 
-  it("returns correct format for 'blue' at intensity 0", () => {
-    expect(tugPaletteVarName("blue", 0)).toBe("--tug-palette-hue-230-blue-tone-0");
+  it("val=100 produces L=L_LIGHT (0.96)", () => {
+    const parsed = parseOklch(hvvColor("red", 50, 100, 0.659));
+    expect(parsed!.L).toBeCloseTo(L_LIGHT, 3);
   });
 
-  it("returns correct format for 'orange' at intensity 100", () => {
-    expect(tugPaletteVarName("orange", 100)).toBe("--tug-palette-hue-55-orange-tone-100");
+  it("vib=100 with no peakChroma gives C = MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
+    const parsed = parseOklch(hvvColor("red", 100, 50, 0.659));
+    expect(parsed!.C).toBeCloseTo(MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE, 4);
   });
 
-  it("returns correct format for 'yellow' at intensity 10", () => {
-    expect(tugPaletteVarName("yellow", 10)).toBe("--tug-palette-hue-90-yellow-tone-10");
+  it("explicit peakChroma=0.5 overrides default", () => {
+    const parsed = parseOklch(hvvColor("red", 100, 50, 0.659, 0.5));
+    expect(parsed!.C).toBeCloseTo(0.5, 4);
+  });
+
+  it("no peakChroma matches explicit default peakChroma", () => {
+    const defaultPeak = MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE;
+    expect(hvvColor("red", 50, 50, 0.659)).toBe(hvvColor("red", 50, 50, 0.659, defaultPeak));
+  });
+
+  it("all 24 hue names produce valid oklch strings at canonical (50/50)", () => {
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const result = hvvColor(hueName, 50, 50, DEFAULT_CANONICAL_L[hueName]);
+      expect(result).toMatch(/^oklch\(/);
+      expect(parseOklch(result)).not.toBeNull();
+    }
   });
 });
 
 // ---------------------------------------------------------------------------
-// Gamut safety: all 24 hues x 11 standard stops
+// MAX_P3_CHROMA_FOR_HUE
 // ---------------------------------------------------------------------------
 
-describe("Gamut safety: all 24 hues x 11 standard stops", () => {
-  it("all standard stops produce sRGB-safe oklch values", () => {
+describe("MAX_P3_CHROMA_FOR_HUE", () => {
+  it("has exactly 24 entries", () => {
+    expect(Object.keys(MAX_P3_CHROMA_FOR_HUE).length).toBe(24);
+  });
+
+  it("all P3 caps are strictly greater than corresponding sRGB caps", () => {
     const violations: string[] = [];
-    for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
-      for (const stop of STANDARD_STOPS) {
-        const colorStr = tugPaletteColor(name, stop);
-        const parsed = parseOklch(colorStr);
-        if (!parsed) {
-          violations.push(`${name}@${stop}: failed to parse`);
-          continue;
-        }
-        if (!isInSRGBGamut(parsed.L, parsed.C, angle)) {
-          const { r, g, b } = oklchToLinearSRGB(parsed.L, parsed.C, angle);
-          violations.push(`${name}@${stop}: out of gamut r=${r.toFixed(3)} g=${g.toFixed(3)} b=${b.toFixed(3)}`);
-        }
+    for (const name of Object.keys(HUE_FAMILIES)) {
+      const p3   = MAX_P3_CHROMA_FOR_HUE[name];
+      const srgb = MAX_CHROMA_FOR_HUE[name];
+      if (p3 === undefined || srgb === undefined || p3 <= srgb) {
+        violations.push(`${name}: P3=${p3} sRGB=${srgb}`);
       }
     }
-    if (violations.length > 0) {
-      throw new Error(`Gamut violations:\n${violations.join("\n")}`);
-    }
+    expect(violations).toEqual([]);
   });
 
-  it("all 24 hues produce parseable oklch strings at all 11 stops", () => {
-    let count = 0;
-    for (const name of Object.keys(HUE_FAMILIES)) {
-      for (const stop of STANDARD_STOPS) {
-        const result = tugPaletteColor(name, stop);
-        expect(result).toMatch(/^oklch\(/);
-        const parsed = parseOklch(result);
-        expect(parsed).not.toBeNull();
-        count++;
-      }
-    }
-    expect(count).toBe(24 * 11); // 264
+  it("spot-check: red P3=0.025 > sRGB=0.019", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBe(0.025);
+    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["red"]);
+  });
+
+  it("spot-check: green P3=0.082 > sRGB=0.069", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBe(0.082);
+    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["green"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// injectPaletteCSS() — DOM integration tests
+// oklchToLinearP3() and isInP3Gamut()
 // ---------------------------------------------------------------------------
 
-describe("injectPaletteCSS() – DOM integration", () => {
+describe("oklchToLinearP3()", () => {
+  it("returns an {r, g, b} object", () => {
+    const result = oklchToLinearP3(0.5, 0, 0);
+    expect(result).toHaveProperty("r");
+    expect(result).toHaveProperty("g");
+    expect(result).toHaveProperty("b");
+  });
+
+  it("pure black (L=0, C=0) maps to {r≈0, g≈0, b≈0}", () => {
+    const { r, g, b } = oklchToLinearP3(0, 0, 0);
+    expect(r).toBeCloseTo(0, 3);
+    expect(g).toBeCloseTo(0, 3);
+    expect(b).toBeCloseTo(0, 3);
+  });
+
+  it("near-white (L=1, C=0) maps to channels near 1 (precision 2 for matrix rounding)", () => {
+    const { r, g, b } = oklchToLinearP3(1, 0, 0);
+    expect(r).toBeCloseTo(1, 2);
+    expect(g).toBeCloseTo(1, 2);
+    expect(b).toBeCloseTo(1, 2);
+  });
+
+  it("P3 channels differ from sRGB channels for a saturated color", () => {
+    const L = 0.7, C = 0.15, h = 145;
+    const srgb = oklchToLinearSRGB(L, C, h);
+    const p3   = oklchToLinearP3(L, C, h);
+    expect(p3.r).not.toBeCloseTo(srgb.r, 6);
+  });
+});
+
+describe("isInP3Gamut()", () => {
+  it("returns true for a neutral gray", () => {
+    expect(isInP3Gamut(0.5, 0, 0)).toBe(true);
+  });
+
+  it("returns true for a color inside P3 but outside sRGB", () => {
+    // Chroma between sRGB cap (0.069) and P3 cap (0.082) for green at canonical L
+    const L = DEFAULT_CANONICAL_L["green"];
+    const h = HUE_FAMILIES["green"];
+    expect(isInP3Gamut(L, 0.075, h)).toBe(true);
+  });
+
+  it("returns false for extreme chroma outside P3", () => {
+    expect(isInP3Gamut(0.15, 0.5, 25)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectHvvCSS() — Layer 1 presets and Layer 2 constants
+// ---------------------------------------------------------------------------
+
+describe("injectHvvCSS() — Layer 1 and Layer 2", () => {
   afterEach(() => {
-    // Clean up injected style element between tests
     const el = document.getElementById("tug-palette");
     if (el) el.remove();
   });
 
   it("creates a <style id='tug-palette'> element in document.head", () => {
-    injectPaletteCSS("brio");
+    injectHvvCSS("brio");
     const el = document.getElementById("tug-palette");
     expect(el).not.toBeNull();
     expect(el!.tagName.toLowerCase()).toBe("style");
   });
 
-  it("textContent contains '--tug-palette-hue-25-red-tone-50:' with an oklch value", () => {
-    injectPaletteCSS("brio");
-    const el = document.getElementById("tug-palette");
-    expect(el).not.toBeNull();
-    expect(el!.textContent).toContain("--tug-palette-hue-25-red-tone-50:");
-    expect(el!.textContent).toContain("oklch(");
-  });
-
-  it("textContent contains all 264 numeric stop variable declarations (spot-check first and last hue)", () => {
-    injectPaletteCSS("brio");
+  it("CSS contains --tug-red: with an oklch value (canonical preset)", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    // First hue by insertion order: cherry (angle=10), stops 0, 50, 100
-    expect(css).toContain("--tug-palette-hue-10-cherry-tone-0:");
-    expect(css).toContain("--tug-palette-hue-10-cherry-tone-50:");
-    expect(css).toContain("--tug-palette-hue-10-cherry-tone-100:");
-
-    // red (angle=25), stops 0, 50, 100
-    expect(css).toContain("--tug-palette-hue-25-red-tone-0:");
-    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
-    expect(css).toContain("--tug-palette-hue-25-red-tone-100:");
-
-    // Count total variable declarations
-    const matches = css.match(/--tug-palette-hue-\d+-\w+-tone-\d+:/g) ?? [];
-    expect(matches.length).toBe(24 * 11); // 264
-  });
-
-  it("textContent contains named tone aliases", () => {
-    injectPaletteCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    // red soft alias (tone-15)
-    expect(css).toContain("--tug-palette-hue-25-red-soft:");
-    expect(css).toContain("--tug-palette-hue-25-red-default:");
-    expect(css).toContain("--tug-palette-hue-25-red-strong:");
-    expect(css).toContain("--tug-palette-hue-25-red-intense:");
-
-    // Count total alias declarations
-    const aliasMatches = css.match(/--tug-palette-hue-\d+-\w+-(soft|default|strong|intense):/g) ?? [];
-    expect(aliasMatches.length).toBe(24 * 4); // 96
-  });
-
-  it("named alias '--tug-palette-hue-25-red-soft:' has same value as tugPaletteColor('red', 15)", () => {
-    // TONE_ALIASES.soft = 15. The injected alias must compute the same oklch value
-    // as calling tugPaletteColor('red', 15) directly.
-    // Note: tone-15 is not a standard stop (stops are 0,10,20,...100), so there
-    // is no --tug-palette-hue-25-red-tone-15 variable. The alias value is computed
-    // fresh from intensity 15.
-    injectPaletteCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    // The expected value is what tugPaletteColor computes for intensity 15
-    const expectedValue = tugPaletteColor("red", 15);
-
-    // Extract the injected soft alias value
-    const softMatch = css.match(/--tug-palette-hue-25-red-soft:\s*(oklch\([^;]+\));/);
-    expect(softMatch).not.toBeNull();
-    const softValue = softMatch![1];
-
-    expect(softValue).toBe(expectedValue);
-  });
-
-  it("calling injectPaletteCSS twice does not create duplicate style elements", () => {
-    injectPaletteCSS("brio");
-    injectPaletteCSS("brio");
-
-    const elements = document.head.querySelectorAll("#tug-palette");
-    expect(elements.length).toBe(1);
-  });
-
-  it("second call replaces content (idempotent)", () => {
-    injectPaletteCSS("brio");
-    const firstContent = document.getElementById("tug-palette")!.textContent;
-    injectPaletteCSS("brio");
-    const secondContent = document.getElementById("tug-palette")!.textContent;
-    expect(firstContent).toBe(secondContent);
-  });
-
-  it("total variable count is 360 (264 numeric + 96 aliases)", () => {
-    injectPaletteCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const allVars = css.match(/--tug-palette-[^:]+:/g) ?? [];
-    expect(allVars.length).toBe(360);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Consistency: tugPaletteColor matches injection
-// ---------------------------------------------------------------------------
-
-describe("tugPaletteColor output matches injection values", () => {
-  beforeEach(() => {
-    const el = document.getElementById("tug-palette");
-    if (el) el.remove();
-  });
-  afterEach(() => {
-    const el = document.getElementById("tug-palette");
-    if (el) el.remove();
-  });
-
-  it("injected tone-50 value for 'red' matches tugPaletteColor('red', 50)", () => {
-    injectPaletteCSS("brio");
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    const injectedValue = match![1];
-    const computed = tugPaletteColor("red", 50);
-    expect(injectedValue).toBe(computed);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// tugAnchoredColor() — Phase 5d5b anchor interpolation
-// ---------------------------------------------------------------------------
-
-/** Shared three-stop anchor fixture for all tugAnchoredColor tests. */
-const RED_ANCHORS: HueAnchors = {
-  anchors: [
-    { stop: 0,   L: 0.96, C: 0.01 },
-    { stop: 50,  L: 0.65, C: 0.12 },
-    { stop: 100, L: 0.42, C: 0.17 },
-  ],
-};
-
-describe("tugAnchoredColor()", () => {
-  it("returns oklch with exact L and C at stop 0", () => {
-    const result = tugAnchoredColor("red", 0, RED_ANCHORS);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.96, 4);
-    expect(parsed!.C).toBeCloseTo(0.01, 4);
-  });
-
-  it("returns oklch with exact L and C at stop 50", () => {
-    const result = tugAnchoredColor("red", 50, RED_ANCHORS);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.65, 4);
-    expect(parsed!.C).toBeCloseTo(0.12, 4);
-  });
-
-  it("returns interpolated L=0.805 at intensity 25 (midpoint between stop-0 and stop-50)", () => {
-    // L: 0.96 + 0.5*(0.65-0.96) = 0.96 - 0.155 = 0.805
-    const result = tugAnchoredColor("red", 25, RED_ANCHORS);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.805, 3);
-  });
-
-  it("returns oklch with exact L and C at stop 100", () => {
-    const result = tugAnchoredColor("red", 100, RED_ANCHORS);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.L).toBeCloseTo(0.42, 4);
-    // C=0.17 is above MAX_CHROMA_FOR_HUE['red']=0.169 so it will be clamped
-    expect(parsed!.C).toBeLessThanOrEqual(MAX_CHROMA_FOR_HUE["red"] + 0.001);
-  });
-
-  it("clamps intensity below 0 to 0", () => {
-    const atNeg = tugAnchoredColor("red", -5, RED_ANCHORS);
-    const atZero = tugAnchoredColor("red", 0, RED_ANCHORS);
-    expect(atNeg).toBe(atZero);
-  });
-
-  it("clamps intensity above 100 to 100", () => {
-    const atOver = tugAnchoredColor("red", 150, RED_ANCHORS);
-    const atHundred = tugAnchoredColor("red", 100, RED_ANCHORS);
-    expect(atOver).toBe(atHundred);
-  });
-
-  it("passes through high chroma values without clamping (CSS oklch handles gamut mapping)", () => {
-    // yellow has MAX_CHROMA_FOR_HUE=0.086; supply C=0.30 — should pass through unclamped
-    const highChromaAnchors: HueAnchors = {
-      anchors: [
-        { stop: 0,   L: 0.96, C: 0.01 },
-        { stop: 50,  L: 0.90, C: 0.30 },
-        { stop: 100, L: 0.70, C: 0.30 },
-      ],
-    };
-    const result = tugAnchoredColor("yellow", 50, highChromaAnchors);
-    const parsed = parseOklch(result);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.C).toBeCloseTo(0.30, 2);
-  });
-
-  it("returns a valid oklch() string format", () => {
-    const result = tugAnchoredColor("blue", 50, RED_ANCHORS);
-    expect(result).toMatch(/^oklch\([\d.]+ [\d.]+ \d+\)$/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Step-3 integration: boot-time and theme-switch wiring
-// ---------------------------------------------------------------------------
-
-describe("injectPaletteCSS – boot and theme-switch integration (step-3)", () => {
-  afterEach(() => {
-    // Remove palette element and any theme override element between tests
-    const palette = document.getElementById("tug-palette");
-    if (palette) palette.remove();
-    const themeOverride = document.getElementById("tug-theme-override");
-    if (themeOverride) themeOverride.remove();
-  });
-
-  it("after boot-time injection, --tug-palette-hue-55-orange-tone-50 is present in the style element", () => {
-    // Simulates main.tsx: applyInitialTheme(initialTheme) then injectPaletteCSS(initialTheme)
-    injectPaletteCSS("brio");
-    const css = document.getElementById("tug-palette")?.textContent ?? "";
-    expect(css).toContain("--tug-palette-hue-55-orange-tone-50:");
+    expect(css).toContain("--tug-red:");
     expect(css).toContain("oklch(");
   });
 
-  it("after theme switch from brio to bluenote, palette variables are still present (re-injected)", () => {
-    // Simulates the setTheme("bluenote") call sequence in TugThemeProvider:
-    //   injectThemeCSS / removeThemeCSS  →  injectPaletteCSS(newTheme)
-    // We test the palette injection step directly.
-    injectPaletteCSS("brio");
-    expect(document.getElementById("tug-palette")).not.toBeNull();
-
-    // Theme switch: re-inject with new theme name
-    injectPaletteCSS("bluenote");
-
-    // Palette element must still exist (not removed during theme switch)
-    const el = document.getElementById("tug-palette");
-    expect(el).not.toBeNull();
-    // Still contains all the expected variables
-    const css = el!.textContent ?? "";
-    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
-    expect(css).toContain("--tug-palette-hue-55-orange-tone-50:");
-    // Only one palette element exists after the switch
-    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
-  });
-
-  it("after switching bluenote → brio, palette uses default anchors (no stale overrides)", () => {
-    // Simulates: setTheme("bluenote") then setTheme("brio").
-    // In happy-dom, getComputedStyle does not read injected <style> textContent,
-    // so theme CSS custom property overrides are never active in the test
-    // environment. Both calls produce the same (default-param) palette output,
-    // which directly verifies there are no stale values from the prior theme.
-    injectPaletteCSS("bluenote");
-    const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
-
-    injectPaletteCSS("brio");
-    const brioCSS = document.getElementById("tug-palette")!.textContent ?? "";
-
-    // Without real theme CSS properties active, both produce identical output —
-    // confirming there is no stale state carried between calls.
-    expect(brioCSS).toBe(bluenoteCSS);
-
-    // Orange tone-50 is present with a valid oklch value under brio defaults.
-    const match = brioCSS.match(/--tug-palette-hue-55-orange-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    // The value matches direct computation with default params.
-    expect(match![1]).toBe(tugPaletteColor("orange", 50));
-  });
-
-  it("palette element is the same DOM node after multiple theme switches (no duplicate creation)", () => {
-    injectPaletteCSS("brio");
-    const firstEl = document.getElementById("tug-palette");
-    expect(firstEl).not.toBeNull();
-
-    injectPaletteCSS("bluenote");
-    injectPaletteCSS("brio");
-
-    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
-    // Content is still valid after three switches
+  it("CSS contains --tug-red-accent: with an oklch value", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain(":root {");
-    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
+    expect(css).toMatch(/--tug-red-accent:\s*oklch\(/);
+  });
+
+  it("CSS contains all 7 preset variables for red", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-red:");
+    expect(css).toContain("--tug-red-accent:");
+    expect(css).toContain("--tug-red-muted:");
+    expect(css).toContain("--tug-red-light:");
+    expect(css).toContain("--tug-red-subtle:");
+    expect(css).toContain("--tug-red-dark:");
+    expect(css).toContain("--tug-red-deep:");
+  });
+
+  it("total preset variable count is 168 in the sRGB block (7 x 24)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
+    const presets = srgbBlock.match(/--tug-\w+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
+    expect(presets.length).toBe(168);
+  });
+
+  it("CSS contains --tug-red-h: 25 (per-hue hue angle constant)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("--tug-red-h: 25;");
+  });
+
+  it("CSS contains --tug-red-canon-l: matching DEFAULT_CANONICAL_L['red']", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain(`--tug-red-canon-l: ${DEFAULT_CANONICAL_L["red"]};`);
+  });
+
+  it("CSS contains --tug-red-peak-c: matching MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const expectedPeakC = parseFloat((MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
+    expect(css).toContain(`--tug-red-peak-c: ${expectedPeakC};`);
+  });
+
+  it("CSS contains --tug-l-dark: 0.15 and --tug-l-light: 0.96", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain(`--tug-l-dark: ${L_DARK};`);
+    expect(css).toContain(`--tug-l-light: ${L_LIGHT};`);
+  });
+
+  it("total constant count is 74 in the sRGB block (72 per-hue + 2 global)", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
+    const perHueH      = srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? [];
+    const perHueCanonL = srgbBlock.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const perHuePeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
+    const globals      = srgbBlock.match(/--tug-l-(?:dark|light):\s*[\d.]+;/g) ?? [];
+    expect(perHueH.length).toBe(24);
+    expect(perHueCanonL.length).toBe(24);
+    expect(perHuePeakC.length).toBe(24);
+    expect(globals.length).toBe(2);
+    expect(perHueH.length + perHueCanonL.length + perHuePeakC.length + globals.length).toBe(74);
+  });
+
+  it("idempotent — calling twice creates only one style element", () => {
+    injectHvvCSS("brio");
+    injectHvvCSS("brio");
+    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
+  });
+
+  it("preset value for red canonical matches direct hvvColor call", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    const match = css.match(/--tug-red:\s*(oklch\([^;]+\));/);
+    expect(match).not.toBeNull();
+    const expected = hvvColor("red", HVV_PRESETS["canonical"].vib, HVV_PRESETS["canonical"].val, DEFAULT_CANONICAL_L["red"]);
+    expect(match![1]).toBe(expected);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Step-3: injectPaletteCSS with anchor data
+// injectHvvCSS() — P3 @media block
 // ---------------------------------------------------------------------------
 
-/**
- * Build a minimal ThemeHueAnchors fixture covering all 24 hues.
- * Uses a simple 3-stop structure (stops 0, 50, 100) with distinct L values
- * so that anchor-based output is detectably different from smoothstep output.
- */
-function buildTestAnchors(): ThemeHueAnchors {
-  const anchors: ThemeHueAnchors = {};
-  for (const name of Object.keys(HUE_FAMILIES)) {
-    const cap = MAX_CHROMA_FOR_HUE[name] ?? 0.1;
-    anchors[name] = {
-      anchors: [
-        { stop: 0,   L: 0.96, C: 0.01 },
-        { stop: 50,  L: 0.65, C: Math.min(cap * 0.75, cap) },
-        { stop: 100, L: 0.42, C: Math.min(cap * 0.95, cap) },
-      ],
-    };
-  }
-  return anchors;
-}
-
-describe("injectPaletteCSS() with anchor data (step-3)", () => {
+describe("injectHvvCSS() — P3 @media block", () => {
   afterEach(() => {
     const el = document.getElementById("tug-palette");
     if (el) el.remove();
   });
 
-  it("injectPaletteCSS('brio') without anchors produces same CSS as before (behavior-preserving refactor)", () => {
-    // The first call captures output from the refactored smoothstep path.
-    // The second call must produce identical output (same params, same hue angles).
-    injectPaletteCSS("brio");
-    const firstCSS = document.getElementById("tug-palette")!.textContent ?? "";
-
-    document.getElementById("tug-palette")!.remove();
-
-    injectPaletteCSS("brio");
-    const secondCSS = document.getElementById("tug-palette")!.textContent ?? "";
-
-    expect(firstCSS).toBe(secondCSS);
-
-    // Spot-check: red tone-50 value matches tugPaletteColor directly
-    const match = firstCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    expect(match![1]).toBe(tugPaletteColor("red", 50));
+  it("output contains '@media (color-gamut: p3)'", () => {
+    injectHvvCSS("brio");
+    const css = document.getElementById("tug-palette")!.textContent ?? "";
+    expect(css).toContain("@media (color-gamut: p3)");
   });
 
-  it("injectPaletteCSS with testAnchors produces CSS with 264 numeric stop + 96 alias variables", () => {
-    const testAnchors = buildTestAnchors();
-    injectPaletteCSS("brio", testAnchors);
+  it("P3 block contains --tug-red: with wider chroma than the sRGB block", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    const numericVars = css.match(/--tug-palette-hue-\d+-\w+-tone-\d+:/g) ?? [];
-    expect(numericVars.length).toBe(24 * 11); // 264
-
-    const aliasVars = css.match(/--tug-palette-hue-\d+-\w+-(soft|default|strong|intense):/g) ?? [];
-    expect(aliasVars.length).toBe(24 * 4); // 96
+    const mediaIdx = css.indexOf("@media (color-gamut: p3)");
+    const srgbBlock = css.slice(0, mediaIdx);
+    const p3Block   = css.slice(mediaIdx);
+    const srgbMatch = srgbBlock.match(/--tug-red:\s*oklch\([\d.]+ ([\d.]+) \d+\);/);
+    const p3Match   = p3Block.match(/--tug-red:\s*oklch\([\d.]+ ([\d.]+) \d+\);/);
+    expect(srgbMatch).not.toBeNull();
+    expect(p3Match).not.toBeNull();
+    expect(parseFloat(p3Match![1])).toBeGreaterThan(parseFloat(srgbMatch![1]));
   });
 
-  it("anchor-based injection: --tug-palette-hue-25-red-tone-50 matches tugAnchoredColor('red', 50, ...)", () => {
-    const testAnchors = buildTestAnchors();
-    injectPaletteCSS("brio", testAnchors);
+  it("P3 --tug-red-peak-c: is greater than sRGB --tug-red-peak-c:", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    const injectedValue = match![1];
-
-    const expected = tugAnchoredColor("red", 50, testAnchors["red"]);
-    expect(injectedValue).toBe(expected);
+    const mediaIdx  = css.indexOf("@media (color-gamut: p3)");
+    const srgbBlock = css.slice(0, mediaIdx);
+    const p3Block   = css.slice(mediaIdx);
+    const srgbPeak = parseFloat(srgbBlock.match(/--tug-red-peak-c:\s*([\d.]+);/)![1]);
+    const p3Peak   = parseFloat(p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/)![1]);
+    expect(p3Peak).toBeGreaterThan(srgbPeak);
   });
 
-  it("anchor-based soft alias --tug-palette-hue-25-red-soft matches tugAnchoredColor('red', 15, ...)", () => {
-    const testAnchors = buildTestAnchors();
-    injectPaletteCSS("brio", testAnchors);
+  it("P3 peak-c for red equals MAX_P3_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    const match = css.match(/--tug-palette-hue-25-red-soft:\s*(oklch\([^;]+\));/);
+    const p3Block = css.slice(css.indexOf("@media (color-gamut: p3)"));
+    const match = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
     expect(match).not.toBeNull();
-    const injectedValue = match![1];
-
-    // TONE_ALIASES.soft = 15 — this is an interpolated stop (between 0 and 50 anchors)
-    const expected = tugAnchoredColor("red", 15, testAnchors["red"]);
-    expect(injectedValue).toBe(expected);
-  });
-
-  it("calling injectPaletteCSS twice (once with anchors, once without) produces only one style element", () => {
-    const testAnchors = buildTestAnchors();
-    injectPaletteCSS("brio", testAnchors);
-    injectPaletteCSS("brio");
-
-    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
-    // Second call (no anchors) replaces content with smoothstep values
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-    expect(css).toContain("--tug-palette-hue-25-red-tone-50:");
-    // The value should match the smoothstep path
-    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    expect(match![1]).toBe(tugPaletteColor("red", 50));
+    const expected = parseFloat((MAX_P3_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE).toFixed(4));
+    expect(parseFloat(match![1])).toBeCloseTo(expected, 4);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Step-4: wiring DEFAULT_ANCHOR_DATA into call sites
+// Gamut safety: all 24 hues x 7 presets
 // ---------------------------------------------------------------------------
 
-describe("injectPaletteCSS() with DEFAULT_ANCHOR_DATA (step-4)", () => {
-  afterEach(() => {
-    const el = document.getElementById("tug-palette");
-    if (el) el.remove();
+describe("Gamut safety: all 24 hues x 7 presets", () => {
+  it("all 168 sRGB presets produce parseable oklch strings", () => {
+    let count = 0;
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const canonL = DEFAULT_CANONICAL_L[hueName];
+      for (const { vib, val } of Object.values(HVV_PRESETS)) {
+        const result = hvvColor(hueName, vib, val, canonL);
+        expect(result).toMatch(/^oklch\(/);
+        expect(parseOklch(result)).not.toBeNull();
+        count++;
+      }
+    }
+    expect(count).toBe(168);
   });
 
-  it("after boot with brio, red tone-50 matches tugAnchoredColor with BRIO_ANCHORS", () => {
-    // Simulates main.tsx: injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme])
-    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
+  it("all 168 P3 presets produce parseable oklch strings", () => {
+    let count = 0;
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const canonL  = DEFAULT_CANONICAL_L[hueName];
+      const p3PeakC = MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE;
+      for (const { vib, val } of Object.values(HVV_PRESETS)) {
+        const result = hvvColor(hueName, vib, val, canonL, p3PeakC);
+        expect(result).toMatch(/^oklch\(/);
+        expect(parseOklch(result)).not.toBeNull();
+        count++;
+      }
+    }
+    expect(count).toBe(168);
+  });
+
+  it("injectHvvCSS output contains oklch values for all 168 sRGB presets", () => {
+    injectHvvCSS("brio");
     const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    const injectedValue = match![1];
-
-    const expected = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
-    expect(injectedValue).toBe(expected);
-  });
-
-  it("after switching brio -> bluenote, red tone-50 uses bluenote anchors", () => {
-    // Simulates setTheme("brio") then setTheme("bluenote")
-    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
-
-    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
-    const bluenoteCSS = document.getElementById("tug-palette")!.textContent ?? "";
-    const bluenoteMatch = bluenoteCSS.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(bluenoteMatch).not.toBeNull();
-    const bluenoteValue = bluenoteMatch![1];
-
-    // The bluenote value matches direct computation via BLUENOTE_ANCHORS
-    const expected = tugAnchoredColor("red", 50, BLUENOTE_ANCHORS["red"]);
-    expect(bluenoteValue).toBe(expected);
-
-    // Only one palette element exists after the switch
-    expect(document.querySelectorAll("#tug-palette").length).toBe(1);
-  });
-
-  it("after switching bluenote -> brio, palette restores brio anchor values", () => {
-    // Simulates setTheme("bluenote") then setTheme("brio")
-    injectPaletteCSS("bluenote", DEFAULT_ANCHOR_DATA["bluenote"]);
-
-    injectPaletteCSS("brio", DEFAULT_ANCHOR_DATA["brio"]);
-    const css = document.getElementById("tug-palette")!.textContent ?? "";
-
-    const match = css.match(/--tug-palette-hue-25-red-tone-50:\s*(oklch\([^;]+\));/);
-    expect(match).not.toBeNull();
-    const restoredValue = match![1];
-
-    // Must match brio anchors after the switch
-    const expectedBrio = tugAnchoredColor("red", 50, BRIO_ANCHORS["red"]);
-    expect(restoredValue).toBe(expectedBrio);
+    const srgbBlock = css.slice(0, css.indexOf("@media (color-gamut: p3)"));
+    const presets = srgbBlock.match(/:\s*oklch\([^;]+\);/g) ?? [];
+    expect(presets.length).toBe(168);
+    document.getElementById("tug-palette")?.remove();
   });
 });
