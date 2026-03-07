@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-07T19:55:17Z
+---
+
+## step-7: Created check-legacy-tokens.sh CI script that greps for --td-*, --tways-*, and short-name alias definitions with allowlist support
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-6
 date: 2025-03-07T19:51:03Z
 ---
