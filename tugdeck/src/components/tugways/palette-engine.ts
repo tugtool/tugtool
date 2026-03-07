@@ -329,39 +329,44 @@ export const HVV_PRESETS: Record<string, { vib: number; val: number }> = {
  * Per-hue maximum chroma for sRGB gamut safety.
  *
  * Hardcoded static table — not computed at runtime.
- * Derived using HVV L sample points per [D08]:
- *   lSamples(hue) = [L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]
- * Binary-searched max chroma at each sample, minimum taken, 2% safety margin
- * applied, capped at DEFAULT_LC_PARAMS.cMax (0.22).
+ * Derived at the per-hue canonical L only (not L_DARK/L_LIGHT extremes):
+ *   lSamples(hue) = [DEFAULT_CANONICAL_L[hue]]
+ * Binary-searched max chroma at canonical L, 2% safety margin applied,
+ * capped at DEFAULT_LC_PARAMS.cMax (0.22).
  *
- * To regenerate: call _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
- * where hvvLSamples(hue) = [L_DARK, DEFAULT_CANONICAL_L[hue], L_LIGHT].
+ * Sampling at only canonical L keeps chroma caps high so canonical colors
+ * (vib=50, val=50) are vibrant. At extreme val values (near L_DARK/L_LIGHT),
+ * chroma naturally exceeds the narrow gamut at those lightness levels, but
+ * CSS oklch() handles this via browser gamut mapping.
+ *
+ * To regenerate: call _deriveChromaCaps(canonLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
+ * where canonLSamples(hue) = [DEFAULT_CANONICAL_L[hue]].
  */
 export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
-  cherry:  0.020,
-  red:     0.019,
-  tomato:  0.020,
-  flame:   0.021,
-  orange:  0.023,
-  amber:   0.026,
-  gold:    0.032,
-  yellow:  0.045,
-  lime:    0.050,
-  green:   0.069,
-  mint:    0.048,
-  teal:    0.037,
-  cyan:    0.033,
-  sky:     0.031,
-  blue:    0.023,
-  indigo:  0.019,
-  violet:  0.019,
-  purple:  0.019,
-  plum:    0.022,
-  pink:    0.030,
-  rose:    0.029,
-  magenta: 0.024,
-  crimson: 0.022,
-  coral:   0.019,
+  cherry:  0.220,
+  red:     0.220,
+  tomato:  0.187,
+  flame:   0.165,
+  orange:  0.146,
+  amber:   0.130,
+  gold:    0.125,
+  yellow:  0.125,
+  lime:    0.192,
+  green:   0.220,
+  mint:    0.196,
+  teal:    0.149,
+  cyan:    0.134,
+  sky:     0.140,
+  blue:    0.143,
+  indigo:  0.135,
+  violet:  0.149,
+  purple:  0.169,
+  plum:    0.161,
+  pink:    0.167,
+  rose:    0.211,
+  magenta: 0.212,
+  crimson: 0.220,
+  coral:   0.220,
 };
 
 // ---------------------------------------------------------------------------
@@ -369,30 +374,27 @@ export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Derive per-hue P3 chroma caps using the same HVV L sample points as sRGB
- * but with the Display P3 gamut checker and NO maxCap.
+ * Derive per-hue P3 chroma caps at canonical L only with the Display P3
+ * gamut checker and NO maxCap.
  *
- * P3 chroma values must exceed DEFAULT_LC_PARAMS.cMax (0.22 — the sRGB
- * ceiling). The result is the uncapped maximum safe chroma across
- * [L_DARK, per-hue canonical L, L_LIGHT] for each hue.
+ * P3 chroma values exceed their sRGB counterparts because the P3 gamut
+ * is strictly wider than sRGB.
  *
  * Not called at runtime. Run once to regenerate MAX_P3_CHROMA_FOR_HUE.
  */
 export function _deriveP3ChromaCaps(): Record<string, number> {
-  const hvvLSamples = (hue: string): number[] => [
-    L_DARK,
+  const canonLSamples = (hue: string): number[] => [
     DEFAULT_CANONICAL_L[hue] ?? 0.7,
-    L_LIGHT,
   ];
-  return _deriveChromaCaps(hvvLSamples, isInP3Gamut);
+  return _deriveChromaCaps(canonLSamples, isInP3Gamut);
 }
 
 /**
  * Per-hue maximum chroma for Display P3 gamut safety.
  *
  * Hardcoded static table — not computed at runtime. Derived by calling
- * _deriveP3ChromaCaps() once with HVV L sample points and the isInP3Gamut
- * checker. No maxCap applied — P3 values intentionally exceed sRGB's 0.22.
+ * _deriveP3ChromaCaps() once at canonical L with the isInP3Gamut checker.
+ * No maxCap applied — P3 values intentionally exceed sRGB's 0.22.
  *
  * All values are strictly greater than the corresponding MAX_CHROMA_FOR_HUE
  * entries because the P3 gamut is strictly larger than sRGB.
@@ -400,30 +402,30 @@ export function _deriveP3ChromaCaps(): Record<string, number> {
  * To regenerate: call _deriveP3ChromaCaps() and paste the output here.
  */
 export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
-  cherry:  0.026,
-  red:     0.025,
-  tomato:  0.026,
-  flame:   0.027,
-  orange:  0.029,
-  amber:   0.033,
-  gold:    0.040,
-  yellow:  0.055,
-  lime:    0.061,
-  green:   0.082,
-  mint:    0.067,
-  teal:    0.050,
-  cyan:    0.045,
-  sky:     0.034,
-  blue:    0.026,
-  indigo:  0.022,
-  violet:  0.021,
-  purple:  0.022,
-  plum:    0.025,
-  pink:    0.034,
-  rose:    0.039,
-  magenta: 0.033,
-  crimson: 0.029,
-  coral:   0.025,
+  cherry:  0.275,
+  red:     0.282,
+  tomato:  0.236,
+  flame:   0.209,
+  orange:  0.185,
+  amber:   0.163,
+  gold:    0.156,
+  yellow:  0.153,
+  lime:    0.223,
+  green:   0.305,
+  mint:    0.271,
+  teal:    0.202,
+  cyan:    0.180,
+  sky:     0.168,
+  blue:    0.155,
+  indigo:  0.146,
+  violet:  0.162,
+  purple:  0.184,
+  plum:    0.176,
+  pink:    0.184,
+  rose:    0.280,
+  magenta: 0.278,
+  crimson: 0.303,
+  coral:   0.281,
 };
 
 // ---------------------------------------------------------------------------

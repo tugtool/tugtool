@@ -87,10 +87,10 @@ describe("MAX_CHROMA_FOR_HUE", () => {
     }
   });
 
-  it("spot-check: red=0.019, green=0.069, yellow=0.045", () => {
-    expect(MAX_CHROMA_FOR_HUE["red"]).toBe(0.019);
-    expect(MAX_CHROMA_FOR_HUE["green"]).toBe(0.069);
-    expect(MAX_CHROMA_FOR_HUE["yellow"]).toBe(0.045);
+  it("spot-check: red=0.220, green=0.220, yellow=0.125", () => {
+    expect(MAX_CHROMA_FOR_HUE["red"]).toBe(0.220);
+    expect(MAX_CHROMA_FOR_HUE["green"]).toBe(0.220);
+    expect(MAX_CHROMA_FOR_HUE["yellow"]).toBe(0.125);
   });
 });
 
@@ -285,13 +285,13 @@ describe("MAX_P3_CHROMA_FOR_HUE", () => {
     expect(violations).toEqual([]);
   });
 
-  it("spot-check: red P3=0.025 > sRGB=0.019", () => {
-    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBe(0.025);
+  it("spot-check: red P3=0.282 > sRGB=0.220", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBe(0.282);
     expect(MAX_P3_CHROMA_FOR_HUE["red"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["red"]);
   });
 
-  it("spot-check: green P3=0.082 > sRGB=0.069", () => {
-    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBe(0.082);
+  it("spot-check: green P3=0.305 > sRGB=0.220", () => {
+    expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBe(0.305);
     expect(MAX_P3_CHROMA_FOR_HUE["green"]).toBeGreaterThan(MAX_CHROMA_FOR_HUE["green"]);
   });
 });
@@ -336,10 +336,9 @@ describe("isInP3Gamut()", () => {
   });
 
   it("returns true for a color inside P3 but outside sRGB", () => {
-    // Chroma between sRGB cap (0.069) and P3 cap (0.082) for green at canonical L
-    const L = DEFAULT_CANONICAL_L["green"];
-    const h = HUE_FAMILIES["green"];
-    expect(isInP3Gamut(L, 0.075, h)).toBe(true);
+    // C=0.24 at L=0.7, h=140: outside sRGB but inside P3
+    expect(isInP3Gamut(0.7, 0.24, 140)).toBe(true);
+    expect(isInSRGBGamut(0.7, 0.24, 140)).toBe(false);
   });
 
   it("returns false for extreme chroma outside P3", () => {
