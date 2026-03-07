@@ -15,12 +15,17 @@
  *
  * Per-hue constant names:
  *   --tug-{hue}-h        OKLCH hue angle (degrees) from HUE_FAMILIES
- *   --tug-{hue}-CANL     Canonical lightness at vib=50, val=50 from DEFAULT_CANONICAL_L
- *   --tug-{hue}-PEAKC    Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (2)
+ *   --tug-{hue}-canon-l  Canonical lightness at vib=50, val=50
+ *   --tug-{hue}-peak-c   Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (2)
  *
  * Global constants:
  *   --tug-l-dark   Lightness at val=0 (0.15)
  *   --tug-l-light  Lightness at val=100 (0.96)
+ *
+ * Preset tuning knobs:
+ *   --tug-preset-{name}-l   L coefficient (how far toward light or dark)
+ *   --tug-preset-{name}-c   C coefficient (fraction of peak chroma)
+ *   Change one knob, all 24 hues update.
  *
  * Phase: 5d5e — Palette Engine Integration
  */
@@ -32,6 +37,30 @@ body {
    * ------------------------------------------------------------------------- */
   --tug-l-dark: 0.15;
   --tug-l-light: 0.96;
+
+  /* -------------------------------------------------------------------------
+   * Preset tuning knobs (12 coefficients — the math, defined once)
+   *
+   * L coefficients control lightness position between anchors:
+   *   Upper segment (val > 50): L = canon-l + knob * (l-light - canon-l)
+   *   Lower segment (val < 50): L = l-dark  + knob * (canon-l - l-dark)
+   *   At val=50 (canonical, accent): L = canon-l directly (no L knob)
+   *
+   * C coefficients control chroma as a fraction of peak-c:
+   *   C = knob * peak-c
+   * ------------------------------------------------------------------------- */
+  --tug-preset-canonical-c: 0.5;
+  --tug-preset-accent-c:    0.6;
+  --tug-preset-muted-l:     0.1;
+  --tug-preset-muted-c:     0.25;
+  --tug-preset-light-l:     0.64;
+  --tug-preset-light-c:     0.3;
+  --tug-preset-subtle-l:    0.84;
+  --tug-preset-subtle-c:    0.15;
+  --tug-preset-dark-l:      0.5;
+  --tug-preset-dark-c:      0.5;
+  --tug-preset-deep-l:      0.3;
+  --tug-preset-deep-c:      0.7;
 
   /* -------------------------------------------------------------------------
    * Per-hue constants (72 = 24 hues x 3)
@@ -160,231 +189,227 @@ body {
 
   /* -------------------------------------------------------------------------
    * Chromatic preset formulas (168 = 24 hues x 7 presets)
-   * Preset formula reference (Table T02):
-   *   canonical  vib=50 val=50  L=canon-l                   C=0.5  * peak-c
-   *   accent     vib=80 val=50  L=canon-l                   C=0.8  * peak-c
-   *   muted      vib=25 val=55  L=canon-l + 0.1  * (l-light - canon-l)  C=0.25 * peak-c
-   *   light      vib=30 val=82  L=canon-l + 0.64 * (l-light - canon-l)  C=0.3  * peak-c
-   *   subtle     vib=15 val=92  L=canon-l + 0.84 * (l-light - canon-l)  C=0.15 * peak-c
-   *   dark       vib=50 val=25  L=l-dark  + 0.5  * (canon-l - l-dark)   C=0.5  * peak-c
-   *   deep       vib=70 val=15  L=l-dark  + 0.3  * (canon-l - l-dark)   C=0.7  * peak-c
+   *
+   * Each preset references the tuning knobs above — change a knob,
+   * all 24 hues update. The per-hue declarations are needed because
+   * each output variable name (--tug-{hue}-{preset}) is unique.
    * ------------------------------------------------------------------------- */
 
   /* cherry */
-  --tug-cherry: oklch(var(--tug-cherry-canon-l) calc(0.5 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-accent: oklch(var(--tug-cherry-canon-l) calc(0.8 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-muted: oklch(calc(var(--tug-cherry-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(0.25 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-light: oklch(calc(var(--tug-cherry-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(0.3 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-subtle: oklch(calc(var(--tug-cherry-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(0.15 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-cherry-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
-  --tug-cherry-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-cherry-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry: oklch(var(--tug-cherry-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-accent: oklch(var(--tug-cherry-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-muted: oklch(calc(var(--tug-cherry-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-light: oklch(calc(var(--tug-cherry-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-subtle: oklch(calc(var(--tug-cherry-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-cherry-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-cherry-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
+  --tug-cherry-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-cherry-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-cherry-peak-c)) var(--tug-cherry-h));
 
   /* red */
-  --tug-red: oklch(var(--tug-red-canon-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-accent: oklch(var(--tug-red-canon-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-muted: oklch(calc(var(--tug-red-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(0.25 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-light: oklch(calc(var(--tug-red-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(0.3 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-subtle: oklch(calc(var(--tug-red-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(0.15 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-red-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-red-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red: oklch(var(--tug-red-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-accent: oklch(var(--tug-red-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-muted: oklch(calc(var(--tug-red-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-light: oklch(calc(var(--tug-red-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-subtle: oklch(calc(var(--tug-red-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-red-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-red-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-red-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-red-peak-c)) var(--tug-red-h));
 
   /* tomato */
-  --tug-tomato: oklch(var(--tug-tomato-canon-l) calc(0.5 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-accent: oklch(var(--tug-tomato-canon-l) calc(0.8 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-muted: oklch(calc(var(--tug-tomato-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(0.25 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-light: oklch(calc(var(--tug-tomato-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(0.3 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-subtle: oklch(calc(var(--tug-tomato-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(0.15 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-tomato-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
-  --tug-tomato-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-tomato-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato: oklch(var(--tug-tomato-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-accent: oklch(var(--tug-tomato-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-muted: oklch(calc(var(--tug-tomato-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-light: oklch(calc(var(--tug-tomato-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-subtle: oklch(calc(var(--tug-tomato-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-tomato-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-tomato-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
+  --tug-tomato-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-tomato-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-tomato-peak-c)) var(--tug-tomato-h));
 
   /* flame */
-  --tug-flame: oklch(var(--tug-flame-canon-l) calc(0.5 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-accent: oklch(var(--tug-flame-canon-l) calc(0.8 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-muted: oklch(calc(var(--tug-flame-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(0.25 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-light: oklch(calc(var(--tug-flame-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(0.3 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-subtle: oklch(calc(var(--tug-flame-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(0.15 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-flame-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-flame-peak-c)) var(--tug-flame-h));
-  --tug-flame-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-flame-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame: oklch(var(--tug-flame-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-accent: oklch(var(--tug-flame-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-muted: oklch(calc(var(--tug-flame-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-light: oklch(calc(var(--tug-flame-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-subtle: oklch(calc(var(--tug-flame-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-flame-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-flame-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
+  --tug-flame-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-flame-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-flame-peak-c)) var(--tug-flame-h));
 
   /* orange */
-  --tug-orange: oklch(var(--tug-orange-canon-l) calc(0.5 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-accent: oklch(var(--tug-orange-canon-l) calc(0.8 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-muted: oklch(calc(var(--tug-orange-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(0.25 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-light: oklch(calc(var(--tug-orange-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(0.3 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-subtle: oklch(calc(var(--tug-orange-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(0.15 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-orange-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-orange-peak-c)) var(--tug-orange-h));
-  --tug-orange-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-orange-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange: oklch(var(--tug-orange-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-accent: oklch(var(--tug-orange-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-muted: oklch(calc(var(--tug-orange-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-light: oklch(calc(var(--tug-orange-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-subtle: oklch(calc(var(--tug-orange-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-orange-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-orange-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
+  --tug-orange-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-orange-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-orange-peak-c)) var(--tug-orange-h));
 
   /* amber */
-  --tug-amber: oklch(var(--tug-amber-canon-l) calc(0.5 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-accent: oklch(var(--tug-amber-canon-l) calc(0.8 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-muted: oklch(calc(var(--tug-amber-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(0.25 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-light: oklch(calc(var(--tug-amber-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(0.3 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-subtle: oklch(calc(var(--tug-amber-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(0.15 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-amber-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-amber-peak-c)) var(--tug-amber-h));
-  --tug-amber-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-amber-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber: oklch(var(--tug-amber-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-accent: oklch(var(--tug-amber-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-muted: oklch(calc(var(--tug-amber-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-light: oklch(calc(var(--tug-amber-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-subtle: oklch(calc(var(--tug-amber-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-amber-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-amber-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
+  --tug-amber-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-amber-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-amber-peak-c)) var(--tug-amber-h));
 
   /* gold */
-  --tug-gold: oklch(var(--tug-gold-canon-l) calc(0.5 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-accent: oklch(var(--tug-gold-canon-l) calc(0.8 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-muted: oklch(calc(var(--tug-gold-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(0.25 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-light: oklch(calc(var(--tug-gold-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(0.3 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-subtle: oklch(calc(var(--tug-gold-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(0.15 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-gold-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-gold-peak-c)) var(--tug-gold-h));
-  --tug-gold-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-gold-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold: oklch(var(--tug-gold-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-accent: oklch(var(--tug-gold-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-muted: oklch(calc(var(--tug-gold-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-light: oklch(calc(var(--tug-gold-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-subtle: oklch(calc(var(--tug-gold-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-gold-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-gold-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
+  --tug-gold-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-gold-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-gold-peak-c)) var(--tug-gold-h));
 
   /* yellow */
-  --tug-yellow: oklch(var(--tug-yellow-canon-l) calc(0.5 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-accent: oklch(var(--tug-yellow-canon-l) calc(0.8 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-muted: oklch(calc(var(--tug-yellow-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(0.25 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-light: oklch(calc(var(--tug-yellow-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(0.3 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-subtle: oklch(calc(var(--tug-yellow-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(0.15 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-yellow-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
-  --tug-yellow-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-yellow-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow: oklch(var(--tug-yellow-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-accent: oklch(var(--tug-yellow-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-muted: oklch(calc(var(--tug-yellow-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-light: oklch(calc(var(--tug-yellow-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-subtle: oklch(calc(var(--tug-yellow-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-yellow-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-yellow-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
+  --tug-yellow-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-yellow-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-yellow-peak-c)) var(--tug-yellow-h));
 
   /* lime */
-  --tug-lime: oklch(var(--tug-lime-canon-l) calc(0.5 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-accent: oklch(var(--tug-lime-canon-l) calc(0.8 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-muted: oklch(calc(var(--tug-lime-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(0.25 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-light: oklch(calc(var(--tug-lime-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(0.3 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-subtle: oklch(calc(var(--tug-lime-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(0.15 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-lime-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-lime-peak-c)) var(--tug-lime-h));
-  --tug-lime-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-lime-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime: oklch(var(--tug-lime-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-accent: oklch(var(--tug-lime-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-muted: oklch(calc(var(--tug-lime-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-light: oklch(calc(var(--tug-lime-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-subtle: oklch(calc(var(--tug-lime-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-lime-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-lime-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
+  --tug-lime-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-lime-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-lime-peak-c)) var(--tug-lime-h));
 
   /* green */
-  --tug-green: oklch(var(--tug-green-canon-l) calc(0.5 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-accent: oklch(var(--tug-green-canon-l) calc(0.8 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-muted: oklch(calc(var(--tug-green-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(0.25 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-light: oklch(calc(var(--tug-green-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(0.3 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-subtle: oklch(calc(var(--tug-green-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(0.15 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-green-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-green-peak-c)) var(--tug-green-h));
-  --tug-green-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-green-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green: oklch(var(--tug-green-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-accent: oklch(var(--tug-green-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-muted: oklch(calc(var(--tug-green-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-light: oklch(calc(var(--tug-green-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-subtle: oklch(calc(var(--tug-green-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-green-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-green-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-green-peak-c)) var(--tug-green-h));
+  --tug-green-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-green-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-green-peak-c)) var(--tug-green-h));
 
   /* mint */
-  --tug-mint: oklch(var(--tug-mint-canon-l) calc(0.5 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-accent: oklch(var(--tug-mint-canon-l) calc(0.8 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-muted: oklch(calc(var(--tug-mint-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(0.25 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-light: oklch(calc(var(--tug-mint-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(0.3 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-subtle: oklch(calc(var(--tug-mint-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(0.15 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-mint-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-mint-peak-c)) var(--tug-mint-h));
-  --tug-mint-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-mint-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint: oklch(var(--tug-mint-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-accent: oklch(var(--tug-mint-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-muted: oklch(calc(var(--tug-mint-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-light: oklch(calc(var(--tug-mint-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-subtle: oklch(calc(var(--tug-mint-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-mint-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-mint-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
+  --tug-mint-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-mint-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-mint-peak-c)) var(--tug-mint-h));
 
   /* teal */
-  --tug-teal: oklch(var(--tug-teal-canon-l) calc(0.5 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-accent: oklch(var(--tug-teal-canon-l) calc(0.8 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-muted: oklch(calc(var(--tug-teal-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(0.25 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-light: oklch(calc(var(--tug-teal-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(0.3 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-subtle: oklch(calc(var(--tug-teal-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(0.15 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-teal-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-teal-peak-c)) var(--tug-teal-h));
-  --tug-teal-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-teal-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal: oklch(var(--tug-teal-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-accent: oklch(var(--tug-teal-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-muted: oklch(calc(var(--tug-teal-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-light: oklch(calc(var(--tug-teal-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-subtle: oklch(calc(var(--tug-teal-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-teal-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-teal-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
+  --tug-teal-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-teal-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-teal-peak-c)) var(--tug-teal-h));
 
   /* cyan */
-  --tug-cyan: oklch(var(--tug-cyan-canon-l) calc(0.5 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-accent: oklch(var(--tug-cyan-canon-l) calc(0.8 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-muted: oklch(calc(var(--tug-cyan-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(0.25 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-light: oklch(calc(var(--tug-cyan-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(0.3 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-subtle: oklch(calc(var(--tug-cyan-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(0.15 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-cyan-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
-  --tug-cyan-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-cyan-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan: oklch(var(--tug-cyan-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-accent: oklch(var(--tug-cyan-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-muted: oklch(calc(var(--tug-cyan-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-light: oklch(calc(var(--tug-cyan-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-subtle: oklch(calc(var(--tug-cyan-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-cyan-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-cyan-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
+  --tug-cyan-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-cyan-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-cyan-peak-c)) var(--tug-cyan-h));
 
   /* sky */
-  --tug-sky: oklch(var(--tug-sky-canon-l) calc(0.5 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-accent: oklch(var(--tug-sky-canon-l) calc(0.8 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-muted: oklch(calc(var(--tug-sky-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(0.25 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-light: oklch(calc(var(--tug-sky-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(0.3 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-subtle: oklch(calc(var(--tug-sky-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(0.15 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-sky-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-sky-peak-c)) var(--tug-sky-h));
-  --tug-sky-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-sky-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky: oklch(var(--tug-sky-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-accent: oklch(var(--tug-sky-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-muted: oklch(calc(var(--tug-sky-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-light: oklch(calc(var(--tug-sky-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-subtle: oklch(calc(var(--tug-sky-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-sky-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-sky-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
+  --tug-sky-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-sky-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-sky-peak-c)) var(--tug-sky-h));
 
   /* blue */
-  --tug-blue: oklch(var(--tug-blue-canon-l) calc(0.5 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-accent: oklch(var(--tug-blue-canon-l) calc(0.8 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-muted: oklch(calc(var(--tug-blue-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(0.25 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-light: oklch(calc(var(--tug-blue-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(0.3 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-subtle: oklch(calc(var(--tug-blue-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(0.15 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-blue-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-blue-peak-c)) var(--tug-blue-h));
-  --tug-blue-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-blue-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue: oklch(var(--tug-blue-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-accent: oklch(var(--tug-blue-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-muted: oklch(calc(var(--tug-blue-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-light: oklch(calc(var(--tug-blue-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-subtle: oklch(calc(var(--tug-blue-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-blue-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-blue-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
+  --tug-blue-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-blue-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-blue-peak-c)) var(--tug-blue-h));
 
   /* cobalt */
-  --tug-cobalt: oklch(var(--tug-cobalt-canon-l) calc(0.5 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-accent: oklch(var(--tug-cobalt-canon-l) calc(0.8 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-muted: oklch(calc(var(--tug-cobalt-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(0.25 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-light: oklch(calc(var(--tug-cobalt-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(0.3 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-subtle: oklch(calc(var(--tug-cobalt-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(0.15 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-cobalt-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
-  --tug-cobalt-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-cobalt-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt: oklch(var(--tug-cobalt-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-accent: oklch(var(--tug-cobalt-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-muted: oklch(calc(var(--tug-cobalt-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-light: oklch(calc(var(--tug-cobalt-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-subtle: oklch(calc(var(--tug-cobalt-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-cobalt-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-cobalt-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
+  --tug-cobalt-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-cobalt-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-cobalt-peak-c)) var(--tug-cobalt-h));
 
   /* violet */
-  --tug-violet: oklch(var(--tug-violet-canon-l) calc(0.5 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-accent: oklch(var(--tug-violet-canon-l) calc(0.8 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-muted: oklch(calc(var(--tug-violet-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(0.25 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-light: oklch(calc(var(--tug-violet-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(0.3 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-subtle: oklch(calc(var(--tug-violet-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(0.15 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-violet-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-violet-peak-c)) var(--tug-violet-h));
-  --tug-violet-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-violet-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet: oklch(var(--tug-violet-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-accent: oklch(var(--tug-violet-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-muted: oklch(calc(var(--tug-violet-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-light: oklch(calc(var(--tug-violet-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-subtle: oklch(calc(var(--tug-violet-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-violet-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-violet-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
+  --tug-violet-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-violet-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-violet-peak-c)) var(--tug-violet-h));
 
   /* purple */
-  --tug-purple: oklch(var(--tug-purple-canon-l) calc(0.5 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-accent: oklch(var(--tug-purple-canon-l) calc(0.8 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-muted: oklch(calc(var(--tug-purple-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(0.25 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-light: oklch(calc(var(--tug-purple-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(0.3 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-subtle: oklch(calc(var(--tug-purple-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(0.15 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-purple-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-purple-peak-c)) var(--tug-purple-h));
-  --tug-purple-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-purple-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple: oklch(var(--tug-purple-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-accent: oklch(var(--tug-purple-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-muted: oklch(calc(var(--tug-purple-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-light: oklch(calc(var(--tug-purple-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-subtle: oklch(calc(var(--tug-purple-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-purple-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-purple-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
+  --tug-purple-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-purple-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-purple-peak-c)) var(--tug-purple-h));
 
   /* plum */
-  --tug-plum: oklch(var(--tug-plum-canon-l) calc(0.5 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-accent: oklch(var(--tug-plum-canon-l) calc(0.8 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-muted: oklch(calc(var(--tug-plum-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(0.25 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-light: oklch(calc(var(--tug-plum-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(0.3 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-subtle: oklch(calc(var(--tug-plum-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(0.15 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-plum-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-plum-peak-c)) var(--tug-plum-h));
-  --tug-plum-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-plum-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum: oklch(var(--tug-plum-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-accent: oklch(var(--tug-plum-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-muted: oklch(calc(var(--tug-plum-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-light: oklch(calc(var(--tug-plum-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-subtle: oklch(calc(var(--tug-plum-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-plum-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-plum-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
+  --tug-plum-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-plum-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-plum-peak-c)) var(--tug-plum-h));
 
   /* pink */
-  --tug-pink: oklch(var(--tug-pink-canon-l) calc(0.5 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-accent: oklch(var(--tug-pink-canon-l) calc(0.8 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-muted: oklch(calc(var(--tug-pink-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(0.25 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-light: oklch(calc(var(--tug-pink-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(0.3 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-subtle: oklch(calc(var(--tug-pink-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(0.15 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-pink-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-pink-peak-c)) var(--tug-pink-h));
-  --tug-pink-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-pink-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink: oklch(var(--tug-pink-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-accent: oklch(var(--tug-pink-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-muted: oklch(calc(var(--tug-pink-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-light: oklch(calc(var(--tug-pink-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-subtle: oklch(calc(var(--tug-pink-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-pink-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-pink-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
+  --tug-pink-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-pink-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-pink-peak-c)) var(--tug-pink-h));
 
   /* rose */
-  --tug-rose: oklch(var(--tug-rose-canon-l) calc(0.5 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-accent: oklch(var(--tug-rose-canon-l) calc(0.8 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-muted: oklch(calc(var(--tug-rose-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(0.25 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-light: oklch(calc(var(--tug-rose-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(0.3 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-subtle: oklch(calc(var(--tug-rose-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(0.15 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-rose-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-rose-peak-c)) var(--tug-rose-h));
-  --tug-rose-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-rose-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose: oklch(var(--tug-rose-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-accent: oklch(var(--tug-rose-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-muted: oklch(calc(var(--tug-rose-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-light: oklch(calc(var(--tug-rose-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-subtle: oklch(calc(var(--tug-rose-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-rose-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-rose-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
+  --tug-rose-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-rose-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-rose-peak-c)) var(--tug-rose-h));
 
   /* magenta */
-  --tug-magenta: oklch(var(--tug-magenta-canon-l) calc(0.5 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-accent: oklch(var(--tug-magenta-canon-l) calc(0.8 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-muted: oklch(calc(var(--tug-magenta-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(0.25 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-light: oklch(calc(var(--tug-magenta-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(0.3 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-subtle: oklch(calc(var(--tug-magenta-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(0.15 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-magenta-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
-  --tug-magenta-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-magenta-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta: oklch(var(--tug-magenta-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-accent: oklch(var(--tug-magenta-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-muted: oklch(calc(var(--tug-magenta-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-light: oklch(calc(var(--tug-magenta-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-subtle: oklch(calc(var(--tug-magenta-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-magenta-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-magenta-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
+  --tug-magenta-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-magenta-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-magenta-peak-c)) var(--tug-magenta-h));
 
   /* berry */
-  --tug-berry: oklch(var(--tug-berry-canon-l) calc(0.5 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-accent: oklch(var(--tug-berry-canon-l) calc(0.8 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-muted: oklch(calc(var(--tug-berry-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(0.25 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-light: oklch(calc(var(--tug-berry-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(0.3 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-subtle: oklch(calc(var(--tug-berry-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(0.15 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-berry-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-berry-peak-c)) var(--tug-berry-h));
-  --tug-berry-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-berry-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry: oklch(var(--tug-berry-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-accent: oklch(var(--tug-berry-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-muted: oklch(calc(var(--tug-berry-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-light: oklch(calc(var(--tug-berry-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-subtle: oklch(calc(var(--tug-berry-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-berry-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-berry-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
+  --tug-berry-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-berry-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-berry-peak-c)) var(--tug-berry-h));
 
   /* coral */
-  --tug-coral: oklch(var(--tug-coral-canon-l) calc(0.5 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-accent: oklch(var(--tug-coral-canon-l) calc(0.8 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-muted: oklch(calc(var(--tug-coral-canon-l) + 0.1 * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(0.25 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-light: oklch(calc(var(--tug-coral-canon-l) + 0.64 * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(0.3 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-subtle: oklch(calc(var(--tug-coral-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(0.15 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-coral-peak-c)) var(--tug-coral-h));
-  --tug-coral-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral: oklch(var(--tug-coral-canon-l) calc(var(--tug-preset-canonical-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-accent: oklch(var(--tug-coral-canon-l) calc(var(--tug-preset-accent-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-muted: oklch(calc(var(--tug-coral-canon-l) + var(--tug-preset-muted-l) * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(var(--tug-preset-muted-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-light: oklch(calc(var(--tug-coral-canon-l) + var(--tug-preset-light-l) * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(var(--tug-preset-light-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-subtle: oklch(calc(var(--tug-coral-canon-l) + var(--tug-preset-subtle-l) * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(var(--tug-preset-subtle-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-dark: oklch(calc(var(--tug-l-dark) + var(--tug-preset-dark-l) * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-dark-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
+  --tug-coral-deep: oklch(calc(var(--tug-l-dark) + var(--tug-preset-deep-l) * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(var(--tug-preset-deep-c) * var(--tug-coral-peak-c)) var(--tug-coral-h));
 
   /* -------------------------------------------------------------------------
    * Neutral ramp (7 presets) and black/white anchors — static oklch() literals

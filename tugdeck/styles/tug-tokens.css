@@ -175,7 +175,7 @@ body {
   --tug-base-accent-strong: var(--tug-orange-accent);
   --tug-base-accent-muted: var(--tug-orange-muted);
   --tug-base-accent-subtle: color-mix(in oklch, var(--tug-orange) 15%, transparent);
-  --tug-base-accent-cool-default: var(--tug-cyan);
+  --tug-base-accent-cool-default: var(--tug-cobalt-accent);
   --tug-base-accent-positive: var(--tug-green-accent);
   --tug-base-accent-warning: var(--tug-yellow-accent);
   --tug-base-accent-danger: var(--tug-red-accent);
