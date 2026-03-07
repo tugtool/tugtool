@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-07T22:44:09Z
+---
+
+## step-5: Verification-only step: confirmed tug-palette.css has 275 --tug-* declarations with correct file structure (body block + P3 media block)
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-4
 date: 2025-03-07T22:42:02Z
 ---
