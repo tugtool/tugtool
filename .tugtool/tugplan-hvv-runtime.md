@@ -143,7 +143,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### [D02] Short-form CSS variable naming (DECIDED) {#d02-short-names}
 
-**Decision:** CSS variables use `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for presets, and `--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c` for per-hue constants. Global constants: `--tug-l-dark`, `--tug-l-light`.
+**Decision:** CSS variables use `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for presets, and `--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c` for per-hue constants. Global constants: `--tug-l-dark`, `--tug-l-light`.
 
 **Rationale:**
 - Short names are easier to type and read in CSS
@@ -179,7 +179,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 **Implications:**
 - Gallery editor must enforce canonical L floor of 0.555
-- Per-hue constants (canon-l, peak-c) enable CSS-only color derivation
+- Per-hue constants (canonical-l, peak-c) enable CSS-only color derivation
 
 #### [D05] P3 support via @media block (DECIDED) {#d05-p3-media}
 
@@ -280,7 +280,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 | Variable | Description |
 |----------|-------------|
 | `--tug-{hue}-h` | OKLCH hue angle (degrees) |
-| `--tug-{hue}-canon-l` | Canonical lightness for this hue |
+| `--tug-{hue}-canonical-l` | Canonical lightness for this hue |
 | `--tug-{hue}-peak-c` | Peak chroma for this hue (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE) |
 | `--tug-l-dark` | Global dark lightness (0.15) |
 | `--tug-l-light` | Global light lightness (0.96) |
@@ -292,7 +292,7 @@ Inside `@media (color-gamut: p3) { :root { ... } }`, emit:
 - All 168 presets recomputed with P3 peak chroma (MAX_P3_CHROMA_FOR_HUE * PEAK_C_SCALE)
 - Per-hue `--tug-{hue}-peak-c` overridden with P3 peak chroma values
 
-The sRGB per-hue constants (`-h` and `-canon-l`) are not overridden since they are gamut-independent.
+The sRGB per-hue constants (`-h` and `-canonical-l`) are not overridden since they are gamut-independent.
 
 The `oklchToLinearP3` conversion uses the same OKLab pipeline as `oklchToLinearSRGB` (steps 1-3 are identical) but substitutes the LMS-to-linear-Display-P3 matrix in step 4. Matrix coefficients are derived from the Display P3 primaries and D65 white point per the CSS Color 4 specification: https://www.w3.org/TR/css-color-4/#color-conversion-code
 
@@ -542,7 +542,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Use hvvColor to compute each preset's oklch value with DEFAULT_CANONICAL_L
 - [ ] Reuse existing PALETTE_STYLE_ID ('tug-palette') and idempotency pattern
 - [ ] Export injectHvvCSS from palette-engine.ts
-- [ ] Variable naming per [D02]: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canon-l/peak-c` for constants
+- [ ] Variable naming per [D02]: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canonical-l/peak-c` for constants
 
 **Tests:** (new tests added to palette-engine.test.ts alongside existing legacy tests, which still compile at this step)
 - [ ] Integration test: injectHvvCSS('brio') creates `<style id="tug-palette">` element
@@ -551,7 +551,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Integration test: CSS contains all 7 preset names for red (canonical, accent, muted, light, subtle, dark, deep)
 - [ ] Integration test: total preset variable count is 168 (regex count of `--tug-{hue}` patterns)
 - [ ] Integration test: CSS contains `--tug-red-h: 25` (per-hue constant)
-- [ ] Integration test: CSS contains `--tug-red-canon-l:` with value
+- [ ] Integration test: CSS contains `--tug-red-canonical-l:` with value
 - [ ] Integration test: CSS contains `--tug-red-peak-c:` with value
 - [ ] Integration test: CSS contains `--tug-l-dark: 0.15` and `--tug-l-light: 0.96`
 - [ ] Integration test: total constant variable count is 74

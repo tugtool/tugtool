@@ -3519,7 +3519,7 @@ Each color is defined by three axes:
 - **Vibrancy (vib, 0–100)**: chroma scaling. At vib=50, chroma equals the sRGB-safe max for that hue. Above 50 pushes into P3 gamut on capable displays.
 - **Value (val, 0–100)**: lightness scaling via piecewise linear mapping. val=0 → L_DARK (0.15), val=50 → per-hue canonical L, val=100 → L_LIGHT (0.96).
 
-Token naming format: `--tug-{hue}` for canonical presets, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canon-l/peak-c` for per-hue constants, `--tug-l-dark/l-light` for globals.
+Token naming format: `--tug-{hue}` for canonical presets, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canonical-l/peak-c` for per-hue constants, `--tug-l-dark/l-light` for globals.
 
 Examples: `--tug-red` (canonical), `--tug-red-accent`, `--tug-blue-muted`, `--tug-green-peak-c`.
 
@@ -3539,27 +3539,27 @@ Per-hue chroma caps are derived by binary-searching the maximum safe chroma at e
 
 **Static CSS architecture.** The palette is defined entirely in static CSS using `oklch()` + `calc()` formulas — no JavaScript injection required. The architecture has two tiers:
 
-1. **Per-hue constants** (74 variables): Static values in a CSS file, derived from `tug-hvv-canonical.json`. These are the only values that require computation (gamut boundary binary search), and they change only when canonical L values are retuned. Three constants per hue (`-h`, `-canon-l`, `-peak-c`) plus two globals (`--tug-l-dark`, `--tug-l-light`).
+1. **Per-hue constants** (74 variables): Static values in a CSS file, derived from `tug-hvv-canonical.json`. These are the only values that require computation (gamut boundary binary search), and they change only when canonical L values are retuned. Three constants per hue (`-h`, `-canonical-l`, `-peak-c`) plus two globals (`--tug-l-dark`, `--tug-l-light`).
 
-2. **Preset formulas** (168 variables): Pure CSS using `oklch()` with `calc()` and the per-hue constants. No precomputation needed. For val=50 presets (canonical, accent, muted), the lightness is simply `var(--tug-{hue}-canon-l)`. For val≠50 presets (light, subtle, dark, deep), the piecewise linear L mapping uses `min()`:
+2. **Preset formulas** (168 variables): Pure CSS using `oklch()` with `calc()` and the per-hue constants. No precomputation needed. For val=50 presets (canonical, accent, muted), the lightness is simply `var(--tug-{hue}-canonical-l)`. For val≠50 presets (light, subtle, dark, deep), the piecewise linear L mapping uses `min()`:
 
 ```css
 /* Per-hue constants (static, from canonical.json): */
 --tug-red-h: 25;
---tug-red-canon-l: 0.659;
+--tug-red-canonical-l: 0.659;
 --tug-red-peak-c: 0.346;
 
-/* Canonical preset — val=50, vib=50: L = canon-l, C = 0.5 * peak-c */
---tug-red: oklch(var(--tug-red-canon-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
+/* Canonical preset — val=50, vib=50: L = canonical-l, C = 0.5 * peak-c */
+--tug-red: oklch(var(--tug-red-canonical-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
 
-/* Accent preset — val=50, vib=80: L = canon-l, C = 0.8 * peak-c */
---tug-red-accent: oklch(var(--tug-red-canon-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
+/* Accent preset — val=50, vib=80: L = canonical-l, C = 0.8 * peak-c */
+--tug-red-accent: oklch(var(--tug-red-canonical-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
 
 /* Dark preset — val=25, vib=50: L via min() piecewise, C = 0.5 * peak-c */
 --tug-red-dark: oklch(
   min(
-    calc(var(--tug-l-dark) + (var(--tug-red-canon-l) - var(--tug-l-dark)) * 25 / 50),
-    calc(var(--tug-red-canon-l) + (var(--tug-l-light) - var(--tug-red-canon-l)) * (25 - 50) / 50)
+    calc(var(--tug-l-dark) + (var(--tug-red-canonical-l) - var(--tug-l-dark)) * 25 / 50),
+    calc(var(--tug-red-canonical-l) + (var(--tug-l-light) - var(--tug-red-canonical-l)) * (25 - 50) / 50)
   )
   calc(0.5 * var(--tug-red-peak-c))
   var(--tug-red-h)
@@ -3574,8 +3574,8 @@ Per-hue chroma caps are derived by binary-searching the maximum safe chroma at e
 /* Custom color: red at vib=60, val=70 */
 color: oklch(
   min(
-    calc(var(--tug-l-dark) + (var(--tug-red-canon-l) - var(--tug-l-dark)) * 70 / 50),
-    calc(var(--tug-red-canon-l) + (var(--tug-l-light) - var(--tug-red-canon-l)) * (70 - 50) / 50)
+    calc(var(--tug-l-dark) + (var(--tug-red-canonical-l) - var(--tug-l-dark)) * 70 / 50),
+    calc(var(--tug-red-canonical-l) + (var(--tug-l-light) - var(--tug-red-canonical-l)) * (70 - 50) / 50)
   )
   calc(0.6 * var(--tug-red-peak-c))
   var(--tug-red-h)
@@ -3629,7 +3629,7 @@ No precomputed alpha variants are needed. The palette system produces opaque col
 
 **[D71] `--tug-{hue}[-preset]` / `--tug-base-*` / `--tug-comp-*` replace `--tways-*`/`--td-*`.**
 
-- **Layer 0 (HVV palette)**: Pure CSS formulas using `oklch()` + `calc()` and per-hue constants. Short-form naming: `--tug-{hue}` (canonical), `--tug-{hue}-{preset}`, `--tug-{hue}-h/canon-l/peak-c`, `--tug-l-dark/l-light`. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. 242+ CSS variables defined in a static CSS file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. No direct component usage of raw palette variables.
+- **Layer 0 (HVV palette)**: Pure CSS formulas using `oklch()` + `calc()` and per-hue constants. Short-form naming: `--tug-{hue}` (canonical), `--tug-{hue}-{preset}`, `--tug-{hue}-h/canonical-l/peak-c`, `--tug-l-dark/l-light`. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. 242+ CSS variables defined in a static CSS file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. No direct component usage of raw palette variables.
 - **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer. Chromatic tokens wire to HVV presets (e.g., `--tug-base-accent-default: var(--tug-orange)`). Achromatic tokens (surfaces, foreground, borders) wire to `--tug-neutral-*` or remain literal values where no palette mapping applies.
 - **Layer 2 (`--tug-comp-*`)**: Component/pattern bindings. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
 
@@ -4188,7 +4188,7 @@ Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` 
 
 **Three key decisions:**
 
-- **[D70] revised — Pure CSS palette formulas.** The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. Since CSS `oklch()` natively accepts `calc()` expressions, the 168 preset variables can be defined as static CSS formulas rather than JS-injected strings. Per-hue constants (`--tug-{hue}-h`, `-canon-l`, `-peak-c`) are the only values requiring computation (gamut boundary binary search) and change only when canonical L is retuned. P3 support simplifies: `@media (color-gamut: p3)` overrides `peak-c` constants, and the preset formulas automatically produce wider-gamut colors. This eliminates `injectHvvCSS()` entirely — `hvvColor()` is retained for programmatic JS use only.
+- **[D70] revised — Pure CSS palette formulas.** The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. Since CSS `oklch()` natively accepts `calc()` expressions, the 168 preset variables can be defined as static CSS formulas rather than JS-injected strings. Per-hue constants (`--tug-{hue}-h`, `-canonical-l`, `-peak-c`) are the only values requiring computation (gamut boundary binary search) and change only when canonical L is retuned. P3 support simplifies: `@media (color-gamut: p3)` overrides `peak-c` constants, and the preset formulas automatically produce wider-gamut colors. This eliminates `injectHvvCSS()` entirely — `hvvColor()` is retained for programmatic JS use only.
 
 - **[D75] Neutral ramp and opacity.** The HVV system extends to achromatic colors via `--tug-neutral-*` (the val axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
 

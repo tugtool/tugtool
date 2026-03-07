@@ -73,7 +73,7 @@ step: step-1
 date: 2025-03-07T22:28:34Z
 ---
 
-## step-1: Created tugdeck/styles/tug-palette.css with 72 per-hue CSS custom properties (24 hues x 3: -h, -canon-l, -peak-c) and 2 global constants (--tug-l-dark, --tug-l-light) inside a body{} selector
+## step-1: Created tugdeck/styles/tug-palette.css with 72 per-hue CSS custom properties (24 hues x 3: -h, -canonical-l, -peak-c) and 2 global constants (--tug-l-dark, --tug-l-light) inside a body{} selector
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md

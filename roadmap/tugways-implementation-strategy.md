@@ -660,8 +660,8 @@ find any registered callbacks). This is fine — no errors, no crashes.
 **Goal**: Wire the HVV palette engine to the semantic token layer. Convert the palette from JS-injected `oklch()` strings to pure CSS formulas. Add neutral ramp. Replace all hardcoded hex color values in `--tug-base-*` chromatic tokens with `var(--tug-{hue}[-preset])` references.
 
 **What to do**:
-1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canon-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-hvv-canonical.json`
-2. Define the 168 chromatic preset variables as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. For val=50 presets (canonical, accent, muted): L = `var(--tug-{hue}-canon-l)`, C = `calc(vib/100 * var(--tug-{hue}-peak-c))`. For val≠50 presets (light, subtle, dark, deep): L via `min()` piecewise mapping
+1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-hvv-canonical.json`
+2. Define the 168 chromatic preset variables as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. For val=50 presets (canonical, accent, muted): L = `var(--tug-{hue}-canonical-l)`, C = `calc(vib/100 * var(--tug-{hue}-peak-c))`. For val≠50 presets (light, subtle, dark, deep): L via `min()` piecewise mapping
 3. Add `--tug-neutral-*` achromatic ramp (7 presets with C=0) plus `--tug-black` and `--tug-white` anchors [D75]
 4. Add `@media (color-gamut: p3)` block that overrides `--tug-{hue}-peak-c` with wider P3 chroma caps — preset formulas automatically produce richer colors since they reference `peak-c`
 5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to HVV palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`

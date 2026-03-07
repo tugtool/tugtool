@@ -365,7 +365,7 @@ more expressive model built on three axes:
 
 CSS variables use short-form naming: `--tug-{hue}` for canonical colors,
 `--tug-{hue}-{preset}` for the 7 named presets, and `--tug-{hue}-h`,
-`--tug-{hue}-canon-l`, `--tug-{hue}-peak-c` for per-hue constants.
+`--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c` for per-hue constants.
 
 See [HVV Color Palette System](#hvv-color-palette-system) for the full design.
 
@@ -448,7 +448,7 @@ so that the "default" color for each hue sits at a visually balanced lightness.
 - `--tug-{hue}` — canonical color (vib=50, val=50)
 - `--tug-{hue}-{preset}` — named preset (e.g., `--tug-red-accent`)
 - `--tug-{hue}-h` — hue angle constant
-- `--tug-{hue}-canon-l` — canonical lightness constant
+- `--tug-{hue}-canonical-l` — canonical lightness constant
 - `--tug-{hue}-peak-c` — peak chroma constant (MAX_CHROMA × 2)
 - `--tug-l-dark` — global dark lightness (0.15)
 - `--tug-l-light` — global light lightness (0.96)
@@ -533,15 +533,15 @@ in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 :root {
   /* Per-hue constants (static, from tug-hvv-canonical.json): */
   --tug-red-h: 25;
-  --tug-red-canon-l: 0.659;
+  --tug-red-canonical-l: 0.659;
   --tug-red-peak-c: 0.346;
   /* ... 23 more hues ... */
   --tug-l-dark: 0.15;
   --tug-l-light: 0.96;
 
   /* Presets as pure CSS formulas: */
-  --tug-red: oklch(var(--tug-red-canon-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
-  --tug-red-accent: oklch(var(--tug-red-canon-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red: oklch(var(--tug-red-canonical-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
+  --tug-red-accent: oklch(var(--tug-red-canonical-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
   /* ... */
 
   /* Neutral ramp (achromatic): */
@@ -846,7 +846,7 @@ Examples:
 - `--tug-black` — pure black (oklch(0 0 0))
 - `--tug-white` — pure white (oklch(1 0 0))
 - `--tug-red-h: 25` — hue angle constant
-- `--tug-red-canon-l: 0.659` — canonical lightness constant
+- `--tug-red-canonical-l: 0.659` — canonical lightness constant
 - `--tug-red-peak-c: 0.346` — peak chroma constant
 - `--tug-l-dark: 0.15` — global dark lightness
 - `--tug-l-light: 0.96` — global light lightness

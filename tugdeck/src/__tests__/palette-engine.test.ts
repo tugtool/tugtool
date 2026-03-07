@@ -371,17 +371,17 @@ describe("tug-palette.css — per-hue constants", () => {
     }
   });
 
-  it("contains all 24 --tug-{hue}-canon-l variables", () => {
+  it("contains all 24 --tug-{hue}-canonical-l variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canon-l:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
     }
   });
 
-  it("all 24 --tug-{hue}-canon-l values match DEFAULT_CANONICAL_L", () => {
+  it("all 24 --tug-{hue}-canonical-l values match DEFAULT_CANONICAL_L", () => {
     for (const [hue, canonL] of Object.entries(DEFAULT_CANONICAL_L)) {
       // Match the numeric value (may be formatted without trailing zeros)
       const valStr = canonL.toString();
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canon-l: ${valStr}`);
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l: ${valStr}`);
     }
   });
 
@@ -393,12 +393,12 @@ describe("tug-palette.css — per-hue constants", () => {
 
   it("total per-hue constant count is 72 (24 hues × 3 constants)", () => {
     const hVars     = (TUG_PALETTE_CSS.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
-    const canonLVars = TUG_PALETTE_CSS.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const canonLVars = TUG_PALETTE_CSS.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
     const peakCVars  = TUG_PALETTE_CSS.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
     // Only count the sRGB block (before @media)
     const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
     const srgbH      = (srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
-    const srgbCanonL = srgbBlock.match(/--tug-\w+-canon-l:\s*[\d.]+;/g) ?? [];
+    const srgbCanonL = srgbBlock.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
     const srgbPeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
     expect(srgbH.length).toBe(24);
     expect(srgbCanonL.length).toBe(24);
@@ -451,8 +451,8 @@ describe("tug-palette.css — chromatic preset formulas (168 = 24 × 7)", () => 
     expect(TUG_PALETTE_CSS).toContain("calc(");
   });
 
-  it("preset formulas reference var(--tug-{hue}-canon-l) and var(--tug-{hue}-peak-c)", () => {
-    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-canon-l)");
+  it("preset formulas reference var(--tug-{hue}-canonical-l) and var(--tug-{hue}-peak-c)", () => {
+    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-canonical-l)");
     expect(TUG_PALETTE_CSS).toContain("var(--tug-red-peak-c)");
   });
 });
@@ -523,11 +523,11 @@ describe("tug-palette.css — P3 @media block", () => {
     expect(presetVars.length).toBe(0);
   });
 
-  it("P3 block does NOT override hue angles or canon-l (gamut-independent)", () => {
+  it("P3 block does NOT override hue angles or canonical-l (gamut-independent)", () => {
     const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
     const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
     expect(p3Block).not.toMatch(/--tug-\w+-h:\s*\d+;/);
-    expect(p3Block).not.toMatch(/--tug-\w+-canon-l:\s*[\d.]+;/);
+    expect(p3Block).not.toMatch(/--tug-\w+-canonical-l:\s*[\d.]+;/);
   });
 });
 

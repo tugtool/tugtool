@@ -84,7 +84,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Neutral canonical L value for val=50 (DECIDED) {#q01-neutral-canon-l}
+#### [Q01] Neutral canonical L value for val=50 (DECIDED) {#q01-neutral-canonical-l}
 
 **Question:** What lightness value should `--tug-neutral` (val=50) use?
 
@@ -167,7 +167,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 **Implications:**
 - Each preset formula is a straightforward `oklch(calc(...) calc(...) var(--tug-{hue}-h))` expression
-- The per-hue constants (`--tug-{hue}-canon-l`, `--tug-{hue}-peak-c`, `--tug-{hue}-h`) plus globals (`--tug-l-dark`, `--tug-l-light`) are sufficient
+- The per-hue constants (`--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`, `--tug-{hue}-h`) plus globals (`--tug-l-dark`, `--tug-l-light`) are sufficient
 
 #### [D05] No cross-hue reassignment in 5d5e (DECIDED) {#d05-no-cross-hue}
 
@@ -210,7 +210,7 @@ Each hue gets three constants derived from `palette-engine.ts` (72 = 24 hues x 3
 | Variable | Source | Example (orange) |
 |----------|--------|-----------------|
 | `--tug-{hue}-h` | `HUE_FAMILIES[hue]` | `--tug-orange-h: 55` |
-| `--tug-{hue}-canon-l` | `DEFAULT_CANONICAL_L[hue]` | `--tug-orange-canon-l: 0.780` |
+| `--tug-{hue}-canonical-l` | `DEFAULT_CANONICAL_L[hue]` | `--tug-orange-canonical-l: 0.780` |
 | `--tug-{hue}-peak-c` | `MAX_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE` | `--tug-orange-peak-c: 0.292` |
 
 Global constants (2):
@@ -228,18 +228,18 @@ Each preset has fixed `vib` and `val` values from `HVV_PRESETS`. The CSS formula
 
 | Preset | vib | val | L formula | C formula |
 |--------|-----|-----|-----------|-----------|
-| canonical | 50 | 50 | `var(--tug-{hue}-canon-l)` | `calc(0.5 * var(--tug-{hue}-peak-c))` |
-| accent | 80 | 50 | `var(--tug-{hue}-canon-l)` | `calc(0.8 * var(--tug-{hue}-peak-c))` |
-| muted | 25 | 55 | `calc(var(--tug-{hue}-canon-l) + (55 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canon-l)))` | `calc(0.25 * var(--tug-{hue}-peak-c))` |
-| light | 30 | 82 | `calc(var(--tug-{hue}-canon-l) + (82 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canon-l)))` | `calc(0.3 * var(--tug-{hue}-peak-c))` |
-| subtle | 15 | 92 | `calc(var(--tug-{hue}-canon-l) + (92 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canon-l)))` | `calc(0.15 * var(--tug-{hue}-peak-c))` |
-| dark | 50 | 25 | `calc(var(--tug-l-dark) + 25 / 50 * (var(--tug-{hue}-canon-l) - var(--tug-l-dark)))` | `calc(0.5 * var(--tug-{hue}-peak-c))` |
-| deep | 70 | 15 | `calc(var(--tug-l-dark) + 15 / 50 * (var(--tug-{hue}-canon-l) - var(--tug-l-dark)))` | `calc(0.7 * var(--tug-{hue}-peak-c))` |
+| canonical | 50 | 50 | `var(--tug-{hue}-canonical-l)` | `calc(0.5 * var(--tug-{hue}-peak-c))` |
+| accent | 80 | 50 | `var(--tug-{hue}-canonical-l)` | `calc(0.8 * var(--tug-{hue}-peak-c))` |
+| muted | 25 | 55 | `calc(var(--tug-{hue}-canonical-l) + (55 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canonical-l)))` | `calc(0.25 * var(--tug-{hue}-peak-c))` |
+| light | 30 | 82 | `calc(var(--tug-{hue}-canonical-l) + (82 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canonical-l)))` | `calc(0.3 * var(--tug-{hue}-peak-c))` |
+| subtle | 15 | 92 | `calc(var(--tug-{hue}-canonical-l) + (92 - 50) / 50 * (var(--tug-l-light) - var(--tug-{hue}-canonical-l)))` | `calc(0.15 * var(--tug-{hue}-peak-c))` |
+| dark | 50 | 25 | `calc(var(--tug-l-dark) + 25 / 50 * (var(--tug-{hue}-canonical-l) - var(--tug-l-dark)))` | `calc(0.5 * var(--tug-{hue}-peak-c))` |
+| deep | 70 | 15 | `calc(var(--tug-l-dark) + 15 / 50 * (var(--tug-{hue}-canonical-l) - var(--tug-l-dark)))` | `calc(0.7 * var(--tug-{hue}-peak-c))` |
 
 CSS output pattern:
 ```css
---tug-orange: oklch(var(--tug-orange-canon-l) calc(0.5 * var(--tug-orange-peak-c)) var(--tug-orange-h));
---tug-orange-accent: oklch(var(--tug-orange-canon-l) calc(0.8 * var(--tug-orange-peak-c)) var(--tug-orange-h));
+--tug-orange: oklch(var(--tug-orange-canonical-l) calc(0.5 * var(--tug-orange-peak-c)) var(--tug-orange-h));
+--tug-orange-accent: oklch(var(--tug-orange-canonical-l) calc(0.8 * var(--tug-orange-peak-c)) var(--tug-orange-h));
 ```
 
 #### Neutral Ramp {#neutral-ramp}
@@ -510,7 +510,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Tasks:**
 - [ ] Create `tugdeck/styles/tug-palette.css` with `body { }` selector
-- [ ] For each of the 24 hues in HUE_FAMILIES, emit three constants: `--tug-{hue}-h` (hue angle), `--tug-{hue}-canon-l` (canonical L), `--tug-{hue}-peak-c` (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE)
+- [ ] For each of the 24 hues in HUE_FAMILIES, emit three constants: `--tug-{hue}-h` (hue angle), `--tug-{hue}-canonical-l` (canonical L), `--tug-{hue}-peak-c` (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE)
 - [ ] Emit global constants: `--tug-l-dark: 0.15` and `--tug-l-light: 0.96`
 - [ ] Add file header comment documenting the purpose and import order
 
@@ -519,7 +519,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Checkpoint:**
 - [ ] `grep -c "peak-c" tugdeck/styles/tug-palette.css` returns 24 (one per hue)
-- [ ] `grep -c "canon-l" tugdeck/styles/tug-palette.css` returns 24
+- [ ] `grep -c "canonical-l" tugdeck/styles/tug-palette.css` returns 24
 - [ ] `grep -cE '\-\-tug-\w+-h:\s' tugdeck/styles/tug-palette.css` returns 24
 
 ---
@@ -537,7 +537,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Tasks:**
 - [ ] For each hue and preset, generate the CSS formula using the appropriate L and C expressions from Table T02
-- [ ] For val=50 presets (canonical, accent): L = `var(--tug-{hue}-canon-l)` directly
+- [ ] For val=50 presets (canonical, accent): L = `var(--tug-{hue}-canonical-l)` directly
 - [ ] For val>50 presets (muted val=55, light val=82, subtle val=92): L via upper segment calc
 - [ ] For val<50 presets (dark val=25, deep val=15): L via lower segment calc
 - [ ] C formula for all presets: `calc(vib/100 * var(--tug-{hue}-peak-c))`
@@ -548,7 +548,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Checkpoint:**
 - [ ] `grep -c "oklch(" tugdeck/styles/tug-palette.css` returns at least 168 (presets)
-- [ ] `grep "tug-orange:" tugdeck/styles/tug-palette.css` shows oklch formula with canon-l and peak-c references
+- [ ] `grep "tug-orange:" tugdeck/styles/tug-palette.css` shows oklch formula with canonical-l and peak-c references
 - [ ] `grep "tug-orange-accent:" tugdeck/styles/tug-palette.css` shows oklch formula with 0.8 * peak-c
 
 ---
@@ -593,7 +593,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 **Tasks:**
 - [ ] Add `@media (color-gamut: p3) { body { } }` block at the end of tug-palette.css
 - [ ] For each of the 24 hues, override `--tug-{hue}-peak-c` with `MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE`
-- [ ] Do NOT override `-h` or `-canon-l` constants (they are gamut-independent)
+- [ ] Do NOT override `-h` or `-canonical-l` constants (they are gamut-independent)
 - [ ] Do NOT redefine preset formulas (they reference `peak-c` and auto-produce richer colors)
 
 **Tests:**
@@ -810,7 +810,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 - [ ] Remove `injectHvvCSS` from the import statement
 - [ ] Add new test file or section: read `tug-palette.css` as text and verify:
   - Contains all 24 `--tug-{hue}-h` variables with correct hue angles
-  - Contains all 24 `--tug-{hue}-canon-l` variables with correct L values
+  - Contains all 24 `--tug-{hue}-canonical-l` variables with correct L values
   - Contains all 24 `--tug-{hue}-peak-c` variables with correct peak-c values
   - Contains all 168 preset variables (7 per hue, correct naming)
   - Contains `--tug-neutral` through `--tug-neutral-deep` plus `--tug-black` and `--tug-white`
