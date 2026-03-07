@@ -242,17 +242,31 @@ body {
   --td-shadow-soft: var(--tways-shadow-soft);
   --td-depth-raise: var(--tways-depth-raise);
 
-  /* Spacing and radius tokens */
-  --td-space-1: var(--tways-space-1);
-  --td-space-2: var(--tways-space-2);
-  --td-space-3: var(--tways-space-3);
-  --td-space-4: var(--tways-space-4);
-  --td-space-5: var(--tways-space-5);
-  --td-space-6: var(--tways-space-6);
-  --td-radius-xs: var(--tways-radius-xs);
-  --td-radius-sm: var(--tways-radius-sm);
-  --td-radius-md: var(--tways-radius-md);
-  --td-radius-lg: var(--tways-radius-lg);
+  /* Scaled base space tokens (Tier 2, calc-based via --tug-scale) */
+  --tug-base-space-1: calc(2px * var(--tug-scale));
+  --tug-base-space-2: calc(4px * var(--tug-scale));
+  --tug-base-space-3: calc(6px * var(--tug-scale));
+  --tug-base-space-4: calc(8px * var(--tug-scale));
+  --tug-base-space-5: calc(12px * var(--tug-scale));
+  --tug-base-space-6: calc(16px * var(--tug-scale));
+
+  /* Scaled base radius tokens (Tier 2, calc-based via --tug-scale) */
+  --tug-base-radius-xs: calc(2px * var(--tug-scale));
+  --tug-base-radius-sm: calc(4px * var(--tug-scale));
+  --tug-base-radius-md: calc(6px * var(--tug-scale));
+  --tug-base-radius-lg: calc(8px * var(--tug-scale));
+
+  /* Spacing and radius tokens (rewired through scaled base tokens) */
+  --td-space-1: var(--tug-base-space-1);
+  --td-space-2: var(--tug-base-space-2);
+  --td-space-3: var(--tug-base-space-3);
+  --td-space-4: var(--tug-base-space-4);
+  --td-space-5: var(--tug-base-space-5);
+  --td-space-6: var(--tug-base-space-6);
+  --td-radius-xs: var(--tug-base-radius-xs);
+  --td-radius-sm: var(--tug-base-radius-sm);
+  --td-radius-md: var(--tug-base-radius-md);
+  --td-radius-lg: var(--tug-base-radius-lg);
 
   /* Typography tokens */
   --td-font-sans: var(--tways-font-sans);

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-07T04:12:29Z
+---
+
+## step-2: Added --tug-base-space-1..6 and --tug-base-radius-xs..lg as calc(px * var(--tug-scale)). Rewired --td-space-* and --td-radius-* to point through new scaled base tokens.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-1
 date: 2025-03-07T04:09:17Z
 ---
