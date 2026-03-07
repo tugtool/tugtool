@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-07T17:44:48Z
+---
+
+## step-7: All 9 automated integration checks pass: token counts (488 base, 84 comp), zero raw comp values, alias completeness, full chain verification, duration non-redefinition, import order, theme overrides, build success. Visual inspection deferred to user.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5c-token-architecture.md
+
+---
+
+---
 step: step-6
 date: 2025-03-07T17:40:42Z
 ---
