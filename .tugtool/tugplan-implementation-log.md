@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-07T20:04:02Z
+---
+
+## step-8: Integration checkpoint: restored --chart-1 through --chart-5 aliases wired to --tug-base-chart-series-*; verified zero --td-* and --tways-* references; build and CI script pass
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5d-consumer-migration.md
+
+---
+
+---
 step: step-7
 date: 2025-03-07T19:55:17Z
 ---

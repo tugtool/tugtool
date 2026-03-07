@@ -101,6 +101,13 @@ body {
   --tug-base-motion-duration-slow: calc(350ms * var(--tug-timing));
   --tug-base-motion-duration-glacial: calc(500ms * var(--tug-timing));
 
+  /* Chart aliases (runtime contract for stats-card.ts consumers) */
+  --chart-1: var(--tug-base-chart-series-verdant); /* legacy-token-allowlist */
+  --chart-2: var(--tug-base-chart-series-cool); /* legacy-token-allowlist */
+  --chart-3: var(--tug-base-chart-series-golden); /* legacy-token-allowlist */
+  --chart-4: var(--tug-base-chart-series-rose); /* legacy-token-allowlist */
+  --chart-5: var(--tug-base-chart-series-violet); /* legacy-token-allowlist */
+
   /* Shiki CSS variable bridge tokens (Spec S01) */
   --syntax-foreground: var(--tug-base-fg-default);
   --syntax-background: var(--tug-base-surface-control);
