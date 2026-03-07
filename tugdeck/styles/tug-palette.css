@@ -402,3 +402,39 @@ body {
   --tug-black: oklch(0 0 0);
   --tug-white: oklch(1 0 0);
 }
+
+/* ---------------------------------------------------------------------------
+ * P3 gamut overrides — wider peak chroma on Display P3 displays
+ * Only --tug-{hue}-peak-c is overridden; preset formulas reference peak-c and
+ * automatically produce richer colors. Hue angles and canonical L are
+ * gamut-independent and are NOT overridden here.
+ * Source: MAX_P3_CHROMA_FOR_HUE * PEAK_C_SCALE(2) from palette-engine.ts
+ * --------------------------------------------------------------------------- */
+@media (color-gamut: p3) {
+  body {
+    --tug-cherry-peak-c: 0.55;
+    --tug-red-peak-c: 0.564;
+    --tug-tomato-peak-c: 0.472;
+    --tug-flame-peak-c: 0.418;
+    --tug-orange-peak-c: 0.37;
+    --tug-amber-peak-c: 0.326;
+    --tug-gold-peak-c: 0.312;
+    --tug-yellow-peak-c: 0.306;
+    --tug-lime-peak-c: 0.446;
+    --tug-green-peak-c: 0.61;
+    --tug-mint-peak-c: 0.542;
+    --tug-teal-peak-c: 0.404;
+    --tug-cyan-peak-c: 0.36;
+    --tug-sky-peak-c: 0.336;
+    --tug-blue-peak-c: 0.31;
+    --tug-cobalt-peak-c: 0.292;
+    --tug-violet-peak-c: 0.324;
+    --tug-purple-peak-c: 0.368;
+    --tug-plum-peak-c: 0.352;
+    --tug-pink-peak-c: 0.368;
+    --tug-rose-peak-c: 0.56;
+    --tug-magenta-peak-c: 0.556;
+    --tug-berry-peak-c: 0.606;
+    --tug-coral-peak-c: 0.562;
+  }
+}

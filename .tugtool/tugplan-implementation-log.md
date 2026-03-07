@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-07T22:42:02Z
+---
+
+## step-4: Added @media (color-gamut: p3) block with 24 --tug-{hue}-peak-c overrides for wider gamut displays
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-3
 date: 2025-03-07T22:38:06Z
 ---
