@@ -25,7 +25,7 @@
 /**
  * 24 hue family names mapped to OKLCH hue angles (degrees).
  * Angle values derived from the Tugways Phase 5d5a theme overhaul proposal.
- * cherry=10 through crimson=355.
+ * cherry=10 through berry=355.
  */
 export const HUE_FAMILIES: Record<string, number> = {
   cherry:  10,
@@ -43,14 +43,14 @@ export const HUE_FAMILIES: Record<string, number> = {
   cyan:   200,
   sky:    215,
   blue:   230,
-  indigo: 250,
+  cobalt: 250,
   violet: 270,
   purple: 285,
   plum:   300,
   pink:   320,
   rose:   335,
   magenta:345,
-  crimson:355,
+  berry:  355,
   coral:   20,
 };
 
@@ -296,14 +296,14 @@ export const DEFAULT_CANONICAL_L: Record<string, number> = {
   cyan:   0.803,
   sky:    0.807,
   blue:   0.771,
-  indigo: 0.744,
+  cobalt: 0.744,
   violet: 0.708,
   purple: 0.686,
   plum:   0.731,
   pink:   0.794,
   rose:   0.758,
   magenta:0.726,
-  crimson:0.668,
+  berry:  0.668,
   coral:  0.632,
 };
 
@@ -358,14 +358,14 @@ export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
   cyan:    0.134,
   sky:     0.140,
   blue:    0.143,
-  indigo:  0.135,
+  cobalt:  0.135,
   violet:  0.149,
   purple:  0.169,
   plum:    0.161,
   pink:    0.167,
   rose:    0.211,
   magenta: 0.212,
-  crimson: 0.220,
+  berry:   0.220,
   coral:   0.220,
 };
 
@@ -417,14 +417,14 @@ export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
   cyan:    0.180,
   sky:     0.168,
   blue:    0.155,
-  indigo:  0.146,
+  cobalt:  0.146,
   violet:  0.162,
   purple:  0.184,
   plum:    0.176,
   pink:    0.184,
   rose:    0.280,
   magenta: 0.278,
-  crimson: 0.303,
+  berry:   0.303,
   coral:   0.281,
 };
 

@@ -74,7 +74,7 @@ The palette engine is a standalone module with no coupling to the responder chai
 
 #### Assumptions {#assumptions}
 
-- The 24 hue name-to-angle table from the theme overhaul proposal is used as-is (cherry=10 through crimson=355).
+- The 24 hue name-to-angle table from the theme overhaul proposal is used as-is (cherry=10 through berry=355).
 - The smoothstep transfer function anchors (L_MAX=0.96, L_MIN=0.42, C_MIN=0.01, C_MAX=0.22) are the starting point; the implementer adjusts after gamut-checking all 24 hues.
 - Named tone aliases map to fixed intensities: soft=15, default=50, strong=75, intense=100.
 - Per-hue chroma caps are hardcoded as a TypeScript constant table, not derived dynamically.
@@ -395,7 +395,7 @@ The palette demo is registered as `componentId: "gallery-palette"` in the `"deve
 - New file: `tugdeck/src/__tests__/palette-engine.test.ts` (unit and integration tests; imports `./setup-rtl` first, then `bun:test`, following the project convention for tests that need DOM globals)
 
 **Tasks:**
-- [ ] Create `palette-engine.ts` with `HUE_FAMILIES` constant mapping all 24 hue names to OKLCH angles (cherry=10 through crimson=355)
+- [ ] Create `palette-engine.ts` with `HUE_FAMILIES` constant mapping all 24 hue names to OKLCH angles (cherry=10 through berry=355)
 - [ ] Implement `DEFAULT_LC_PARAMS` with starting anchors: L_MAX=0.96, L_MIN=0.42, C_MIN=0.01, C_MAX=0.22
 - [ ] Implement `smoothstep(t)` helper: `t * t * (3 - 2 * t)`
 - [ ] Implement `intensityToLC(intensity, params?)` returning `{ L, C }` using smoothstep curve

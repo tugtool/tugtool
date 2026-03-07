@@ -287,7 +287,7 @@
           }
         ]
       },
-      "indigo": {
+      "cobalt": {
         "anchors": [
           {
             "stop": 0,
@@ -420,7 +420,7 @@
           }
         ]
       },
-      "crimson": {
+      "berry": {
         "anchors": [
           {
             "stop": 0,
@@ -745,7 +745,7 @@
           }
         ]
       },
-      "indigo": {
+      "cobalt": {
         "anchors": [
           {
             "stop": 0,
@@ -878,7 +878,7 @@
           }
         ]
       },
-      "crimson": {
+      "berry": {
         "anchors": [
           {
             "stop": 0,
@@ -1203,7 +1203,7 @@
           }
         ]
       },
-      "indigo": {
+      "cobalt": {
         "anchors": [
           {
             "stop": 0,
@@ -1336,7 +1336,7 @@
           }
         ]
       },
-      "crimson": {
+      "berry": {
         "anchors": [
           {
             "stop": 0,

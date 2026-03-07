@@ -3511,7 +3511,7 @@ The inspector doesn't import the card's internal code. It discovers available pr
 
 #### Computed OKLCH Color Palette — HueVibVal (HVV) {#d70-computed-palette}
 
-**[D70] 24 hue families with HueVibVal (Hue/Vibrancy/Value) axes, runtime-generated.** Instead of hardcoded hex values per theme, the palette is computed from OKLCH parameters using the HVV system. 24 named hue families (cherry, red, tomato, flame, orange, amber, gold, yellow, lime, green, mint, teal, cyan, sky, blue, indigo, violet, purple, plum, pink, rose, magenta, crimson, coral) each mapped to specific OKLCH hue angles.
+**[D70] 24 hue families with HueVibVal (Hue/Vibrancy/Value) axes, runtime-generated.** Instead of hardcoded hex values per theme, the palette is computed from OKLCH parameters using the HVV system. 24 named hue families (cherry, red, tomato, flame, orange, amber, gold, yellow, lime, green, mint, teal, cyan, sky, blue, cobalt, violet, purple, plum, pink, rose, magenta, berry, coral) each mapped to specific OKLCH hue angles.
 
 Each color is defined by three axes:
 - **Hue**: one of 24 named color families mapped to OKLCH hue angles (cherry=10° through coral=20°)

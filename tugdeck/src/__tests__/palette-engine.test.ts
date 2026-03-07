@@ -63,7 +63,7 @@ describe("HUE_FAMILIES", () => {
     expect(HUE_FAMILIES["red"]).toBe(25);
     expect(HUE_FAMILIES["yellow"]).toBe(90);
     expect(HUE_FAMILIES["blue"]).toBe(230);
-    expect(HUE_FAMILIES["crimson"]).toBe(355);
+    expect(HUE_FAMILIES["berry"]).toBe(355);
   });
 });
 

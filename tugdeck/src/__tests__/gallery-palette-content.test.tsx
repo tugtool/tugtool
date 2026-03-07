@@ -228,8 +228,8 @@ describe("hvvColor – pure unit tests", () => {
     const hueNames = [
       "cherry", "red", "tomato", "flame", "orange", "amber",
       "gold", "yellow", "lime", "green", "mint", "teal",
-      "cyan", "sky", "blue", "indigo", "violet", "purple",
-      "plum", "pink", "rose", "magenta", "crimson", "coral",
+      "cyan", "sky", "blue", "cobalt", "violet", "purple",
+      "plum", "pink", "rose", "magenta", "berry", "coral",
     ];
     for (const name of hueNames) {
       const result = hvvColor(name, 50, 50, 0.8);
@@ -262,8 +262,8 @@ describe("buildExportPayload – pure unit tests", () => {
     const names = [
       "cherry", "red", "tomato", "flame", "orange", "amber",
       "gold", "yellow", "lime", "green", "mint", "teal",
-      "cyan", "sky", "blue", "indigo", "violet", "purple",
-      "plum", "pink", "rose", "magenta", "crimson", "coral",
+      "cyan", "sky", "blue", "cobalt", "violet", "purple",
+      "plum", "pink", "rose", "magenta", "berry", "coral",
     ];
     for (const n of names) canonical[n] = 0.8;
     const json = buildExportPayload(canonical);

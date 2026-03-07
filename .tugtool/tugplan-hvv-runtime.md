@@ -249,7 +249,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 | Term | Definition |
 |------|-----------|
-| Hue | One of 24 named color families (cherry through crimson), mapped to OKLCH hue angles |
+| Hue | One of 24 named color families (cherry through berry), mapped to OKLCH hue angles |
 | Vibrancy (vib) | Chroma axis scaled 0-100. At vib=50, chroma equals the sRGB-safe max. Above 50 pushes into P3 |
 | Value (val) | Lightness axis scaled 0-100. val=50 produces the canonical lightness for the hue |
 | Canonical color | The reference color for a hue at vib=50, val=50 |
@@ -359,14 +359,14 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 | cyan | 0.803 |
 | sky | 0.807 |
 | blue | 0.771 |
-| indigo | 0.744 |
+| cobalt | 0.744 |
 | violet | 0.708 |
 | purple | 0.686 |
 | plum | 0.731 |
 | pink | 0.794 |
 | rose | 0.758 |
 | magenta | 0.726 |
-| crimson | 0.668 |
+| berry | 0.668 |
 | coral | 0.632 |
 
 **List L01: Symbols to keep in palette-engine.ts** {#l01-keep-symbols}

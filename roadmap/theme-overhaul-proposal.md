@@ -430,14 +430,14 @@ per-hue **canonical lightness** tuned for visual balance at vib=50, val=50:
 | `cyan` | 200 | 0.803 |
 | `sky` | 215 | 0.807 |
 | `blue` | 230 | 0.771 |
-| `indigo` | 250 | 0.744 |
+| `cobalt` | 250 | 0.744 |
 | `violet` | 270 | 0.708 |
 | `purple` | 285 | 0.686 |
 | `plum` | 300 | 0.731 |
 | `pink` | 320 | 0.794 |
 | `rose` | 335 | 0.758 |
 | `magenta` | 345 | 0.726 |
-| `crimson` | 355 | 0.668 |
+| `berry` | 355 | 0.668 |
 
 Note: The hue angles are adjusted so names land on perceptually distinct,
 recognizable colors. Canonical L values are tuned per-hue (all must be > 0.555)

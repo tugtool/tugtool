@@ -77,7 +77,7 @@ This phase replaces the global curve with per-hue anchor colors at configurable 
 
 #### Assumptions {#assumptions}
 
-- The 24 hue families and their OKLCH angle assignments (cherry=10 through crimson=355) remain unchanged.
+- The 24 hue families and their OKLCH angle assignments (cherry=10 through berry=355) remain unchanged.
 - The CSS variable naming convention and named aliases (soft/default/strong/intense) are unchanged.
 - The gallery tuning UI will use local React `useState` for all anchor editing state, consistent with Rules of Tugways compliance.
 - The existing smoothstep, bezier, and piecewise curve modes remain available in the gallery as comparison references, not as the primary production mode.
@@ -263,14 +263,14 @@ Edge cases:
 | cyan | 200 | 0.68 | Material cyan 500 |
 | sky | 215 | 0.62 | Light blue |
 | blue | 230 | 0.55 | Material blue 500, Apple systemBlue |
-| indigo | 250 | 0.50 | Material indigo 500, Apple systemIndigo |
+| cobalt | 250 | 0.50 | Material indigo 500, Apple systemIndigo |
 | violet | 270 | 0.55 | Material purple 500 |
 | purple | 285 | 0.55 | Apple systemPurple |
 | plum | 300 | 0.58 | Deep purple-pink |
 | pink | 320 | 0.68 | Material pink 500, Apple systemPink |
 | rose | 335 | 0.65 | Warm pink |
 | magenta | 345 | 0.62 | Deep pink-red |
-| crimson | 355 | 0.60 | Deep red |
+| berry | 355 | 0.60 | Deep red |
 | coral | 20 | 0.68 | Warm red-orange |
 
 These values are starting points. Final values are determined by gallery tuning and exported as JSON.
