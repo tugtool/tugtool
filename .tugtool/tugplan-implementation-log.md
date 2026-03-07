@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-07T04:53:03Z
+---
+
+## step-8: Integration checkpoint: fixed scale-timing.test.ts missing setup-rtl import that caused 13 tests to silently fail. All checks pass: build clean, 923/924 tests pass, zero duration-scalar references.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5b-scale-timing.md
+
+---
+
+---
 step: step-7
 date: 2025-03-07T04:42:59Z
 ---

@@ -9,6 +9,7 @@
  * window.matchMedia, which is not implemented in happy-dom. Its behavior is
  * verified visually via the gallery Scale & Timing tab.
  */
+import "./setup-rtl";
 
 import { describe, it, expect, afterEach } from "bun:test";
 import { getTugScale, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
