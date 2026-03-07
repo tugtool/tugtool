@@ -457,7 +457,7 @@
   color: var(--td-text-soft);
   user-select: none;
   white-space: nowrap;
-  min-width: 72px;
+  min-width: 30px;
 }
 
 /* --- Petals: spinning petal indicator ---

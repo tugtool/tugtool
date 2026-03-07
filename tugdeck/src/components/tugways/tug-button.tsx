@@ -160,7 +160,10 @@ const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
 function Spinner() {
   return (
     <span className="tug-button-spinner-overlay" aria-hidden="true">
-      <span className="tug-button-spinner" />
+      <span className="tug-petals" style={{ "--tug-petals-size": "18px" } as React.CSSProperties}>
+        <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
+        <span className="petal" /><span className="petal" /><span className="petal" /><span className="petal" />
+      </span>
     </span>
   );
 }
@@ -407,7 +410,7 @@ export function TugButton({
     <Button
       variant={shadcnVariant}
       size={resolvedShadcnSize}
-      disabled={disabled || loading}
+      disabled={disabled}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
       aria-busy={loading ? "true" : undefined}

@@ -283,9 +283,11 @@ export function GalleryScaleTimingContent() {
           </div>
 
           {/* ---- Pole Progress Bar ---- */}
-          <div className="cg-st-preview-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+          <div className="cg-st-preview-row">
             <span className="cg-st-indicator-label">Pole</span>
-            <div className="tug-pole"><div className="tug-pole-inner" /></div>
+            <div style={{ width: "30%" }}>
+              <div className="tug-pole"><div className="tug-pole-inner" /></div>
+            </div>
           </div>
         </div>
       </div>

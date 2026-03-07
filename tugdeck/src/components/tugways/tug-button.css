@@ -202,7 +202,6 @@
 .tug-button-loading {
   position: relative;
   pointer-events: none;
-  opacity: 0.75;
 }
 
 .tug-button-spinner-overlay {
