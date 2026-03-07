@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-07T03:01:39Z
+---
+
+## step-5: Removed all List L02 legacy symbols from palette-engine.ts. Deleted theme-anchors.ts and theme-anchors.test.ts. Rewrote palette-engine.test.ts removing legacy test blocks, keeping HVV tests. Added gamut safety test for 24 hues x 7 presets. Clean break complete.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-4
 date: 2025-03-07T02:51:12Z
 ---
