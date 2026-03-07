@@ -385,4 +385,20 @@ body {
   --tug-coral-subtle: oklch(calc(var(--tug-coral-canon-l) + 0.84 * (var(--tug-l-light) - var(--tug-coral-canon-l))) calc(0.15 * var(--tug-coral-peak-c)) var(--tug-coral-h));
   --tug-coral-dark: oklch(calc(var(--tug-l-dark) + 0.5 * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(0.5 * var(--tug-coral-peak-c)) var(--tug-coral-h));
   --tug-coral-deep: oklch(calc(var(--tug-l-dark) + 0.3 * (var(--tug-coral-canon-l) - var(--tug-l-dark))) calc(0.7 * var(--tug-coral-peak-c)) var(--tug-coral-h));
+
+  /* -------------------------------------------------------------------------
+   * Neutral ramp (7 presets) and black/white anchors — static oklch() literals
+   * C=0 for all neutrals (achromatic). L values per Table T03 / [D75].
+   * canonical L for neutral is 0.555 (val=50 midpoint).
+   * --tug-black and --tug-white are absolute anchors, independent of val→L.
+   * ------------------------------------------------------------------------- */
+  --tug-neutral: oklch(0.555 0 0);
+  --tug-neutral-accent: oklch(0.555 0 0);
+  --tug-neutral-muted: oklch(0.595 0 0);
+  --tug-neutral-light: oklch(0.812 0 0);
+  --tug-neutral-subtle: oklch(0.907 0 0);
+  --tug-neutral-dark: oklch(0.352 0 0);
+  --tug-neutral-deep: oklch(0.211 0 0);
+  --tug-black: oklch(0 0 0);
+  --tug-white: oklch(1 0 0);
 }

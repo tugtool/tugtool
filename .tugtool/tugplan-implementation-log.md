@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-07T22:38:06Z
+---
+
+## step-3: Added 7 neutral preset variables (static oklch literals with C=0 per Table T03) plus --tug-black and --tug-white anchors
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-2
 date: 2025-03-07T22:35:03Z
 ---
