@@ -2,21 +2,13 @@
 
 ## The Idea
 
-Tear down the current tugdeck frontend to a minimal canvas shell, then build
-the tugways design system back up from scratch — cleanly, one concept at a time,
-following the architecture defined in `design-system-concepts.md`.
+Tear down the current tugdeck frontend to a minimal canvas shell, then build the tugways design system back up from scratch — cleanly, one concept at a time, following the architecture defined in `design-system-concepts.md`.
 
-The retronow-unified-review model is the inspiration: build components in
-isolation, see them visually, iterate, integrate. The app itself becomes the
-proving ground. Mac-native menu commands (via `sendControl` WebSocket frames)
-are the initial mechanism for triggering UI creation before the dock exists.
+The retronow-unified-review model is the inspiration: build components in isolation, see them visually, iterate, integrate. The app itself becomes the proving ground. Mac-native menu commands (via `sendControl` WebSocket frames) are the initial mechanism for triggering UI creation before the dock exists.
 
 ## Retronow Design Reference
 
-The `roadmap/retronow/` directory contains the canonical design mockups and
-style references for the tugways design system. **All future phase plans must
-consult these resources** when designing components, layouts, and visual
-treatments.
+The `roadmap/retronow/` directory contains the canonical design mockups and style references for the tugways design system. **All future phase plans must consult these resources** when designing components, layouts, and visual treatments.
 
 ### Resource Inventory
 
@@ -35,33 +27,15 @@ treatments.
 
 ### How to Use These References
 
-**When planning new components:** Consult `RetronowComponentPackPage.tsx` and
-`RetronowControlPack.tsx` for layout patterns, interactive control grouping,
-and the wrapper-style component approach. The retronow "AppButton wraps shadcn
-Button" pattern is exactly the pattern tugways follows (TugButton wraps shadcn
-Button, etc.).
+**When planning new components:** Consult `RetronowComponentPackPage.tsx` and `RetronowControlPack.tsx` for layout patterns, interactive control grouping, and the wrapper-style component approach. The retronow "AppButton wraps shadcn Button" pattern is exactly the pattern tugways follows (TugButton wraps shadcn Button, etc.).
 
-**When designing the Component Gallery:** The retronow component pack page is
-the direct inspiration for the tugways Component Gallery. Its tabbed layout
-(controls, workspace, diagnostics, custom gauges), panel grouping, and
-interactive toggle patterns should guide gallery expansion as new components
-are added in later phases.
+**When designing the Component Gallery:** The retronow component pack page is the direct inspiration for the tugways Component Gallery. Its tabbed layout (controls, workspace, diagnostics, custom gauges), panel grouping, and interactive toggle patterns should guide gallery expansion as new components are added in later phases.
 
-**When creating CSS for components:** Consult `retronow-components.css` for
-the CSS structure — how controls are themed across light/dark/brio variants,
-how gradients, borders, and shadows are applied, and how theme-specific
-overrides are organized. The tugways equivalent uses `var(--td-*)` semantic
-tokens instead of `var(--rn-*)`, but the structural patterns are the same.
+**When creating CSS for components:** Consult `retronow-components.css` for the CSS structure — how controls are themed across light/dark/brio variants, how gradients, borders, and shadows are applied, and how theme-specific overrides are organized. The tugways equivalent uses `var(--td-*)` semantic tokens instead of `var(--rn-*)`, but the structural patterns are the same.
 
-**When defining tokens for new components:** Consult `retronow-tokens.css` for
-the token naming scheme and palette structure. The 8-accent-color system
-(orange, cyan, purple, red, green, yellow, magenta, coral) and surface
-layering (surface-1 through surface-4) directly informed the tugways token
-design.
+**When defining tokens for new components:** Consult `retronow-tokens.css` for the token naming scheme and palette structure. The 8-accent-color system (orange, cyan, purple, red, green, yellow, magenta, coral) and surface layering (surface-1 through surface-4) directly informed the tugways token design.
 
-**When building card frames and canvas layout:** Consult
-`RetronowDeckCanvas.tsx`, `retronow-deck.css`, and the class recipes for card
-shell, header, and body patterns.
+**When building card frames and canvas layout:** Consult `RetronowDeckCanvas.tsx`, `retronow-deck.css`, and the class recipes for card shell, header, and body patterns.
 
 ## What We Have Today
 
