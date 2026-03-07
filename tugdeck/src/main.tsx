@@ -13,8 +13,7 @@ import {
 } from "./contexts/theme-provider";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
-import { injectPaletteCSS } from "./components/tugways/palette-engine";
-import { DEFAULT_ANCHOR_DATA } from "./components/tugways/theme-anchors";
+import { injectHvvCSS } from "./components/tugways/palette-engine";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -38,11 +37,9 @@ if (!container) {
   const initialTheme = (serverSettings.theme as ThemeName) ?? "brio";
   applyInitialTheme(initialTheme);
 
-  // Inject palette CSS variables before React mounts so they are available
-  // to any component that reads them on first render. Must come after
-  // applyInitialTheme so any theme parameter overrides are in the DOM when
-  // getComputedStyle reads them. [D04]
-  injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme]);
+  // Inject HVV palette CSS variables before React mounts so they are available
+  // to any component that reads them on first render.
+  injectHvvCSS(initialTheme);
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.

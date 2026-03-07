@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-07T02:51:12Z
+---
+
+## step-4: Replaced injectPaletteCSS with injectHvvCSS in main.tsx and theme-provider.tsx. Removed DEFAULT_ANCHOR_DATA imports from theme-anchors.ts. No production code imports theme-anchors anymore.
+
+**Files changed:**
+- .tugtool/tugplan-hvv-runtime.md
+
+---
+
+---
 step: step-3
 date: 2025-03-07T02:47:18Z
 ---
