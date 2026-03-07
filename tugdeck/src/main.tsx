@@ -13,7 +13,6 @@ import {
 } from "./contexts/theme-provider";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
-import { injectHvvCSS } from "./components/tugways/palette-engine";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 
 // Determine WebSocket URL from current page location
@@ -37,10 +36,6 @@ if (!container) {
   // so the correct colors are visible before React renders.
   const initialTheme = (serverSettings.theme as ThemeName) ?? "brio";
   applyInitialTheme(initialTheme);
-
-  // Inject HVV palette CSS variables before React mounts so they are available
-  // to any component that reads them on first render.
-  injectHvvCSS(initialTheme);
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.

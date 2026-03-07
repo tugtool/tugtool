@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-07T23:12:24Z
+---
+
+## step-9: Deleted injectHvvCSS function and PALETTE_STYLE_ID constant from palette-engine.ts. Removed call sites in main.tsx and theme-provider.tsx. Updated module docstring for Phase 5d5e.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5e-palette-engine-integration.md
+
+---
+
+---
 step: step-8
 date: 2025-03-07T23:07:25Z
 ---
