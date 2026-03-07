@@ -145,16 +145,16 @@ describe("Chroma pegged to MAX_CHROMA_FOR_HUE", () => {
 // ---------------------------------------------------------------------------
 
 describe("Tuned stop-50 L values", () => {
-  it("brio stop-50 L for 'yellow' is approximately 0.94", () => {
+  it("brio stop-50 L for 'yellow' is approximately 0.901", () => {
     const anchor = BRIO_ANCHORS.yellow.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.94, 2);
+    expect(anchor!.L).toBeCloseTo(0.901, 2);
   });
 
-  it("brio stop-50 L for 'blue' is approximately 0.86", () => {
+  it("brio stop-50 L for 'blue' is approximately 0.771", () => {
     const anchor = BRIO_ANCHORS.blue.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.86, 2);
+    expect(anchor!.L).toBeCloseTo(0.771, 2);
   });
 
   it("all three themes share the same anchor values", () => {
@@ -164,10 +164,10 @@ describe("Tuned stop-50 L values", () => {
     }
   });
 
-  it("brio stop-50 L for 'red' is approximately 0.79", () => {
+  it("brio stop-50 L for 'red' is approximately 0.659", () => {
     const anchor = BRIO_ANCHORS.red.anchors.find((a) => a.stop === 50);
     expect(anchor).toBeDefined();
-    expect(anchor!.L).toBeCloseTo(0.79, 2);
+    expect(anchor!.L).toBeCloseTo(0.659, 2);
   });
 });
 
