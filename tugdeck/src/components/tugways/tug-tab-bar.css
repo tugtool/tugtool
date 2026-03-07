@@ -40,7 +40,7 @@
      relative to the tab bar (Spec S06). */
   position: relative;
   transform: scale(var(--tug-comp-tab-scale));
-  transform-origin: left center;
+  transform-origin: top left;
 }
 
 /* ============================================================================
