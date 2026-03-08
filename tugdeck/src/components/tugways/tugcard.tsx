@@ -42,7 +42,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import type { FeedIdValue } from "../../protocol";
 import { icons } from "lucide-react";
 import type { TabItem, TabStateBag } from "../../layout-tree";
-import type { SavedSelection } from "./selection-guard";
 import { selectionGuard } from "./selection-guard";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
@@ -259,18 +258,7 @@ export function Tugcard({
   onTabSelectRef.current = onTabSelect;
 
   // ---------------------------------------------------------------------------
-  // Phase 5b: Per-tab selection persistence (D07)
-  // ---------------------------------------------------------------------------
-
-  // savedSelectionsRef maps tabId → SavedSelection. Lives entirely in Tugcard
-  // local state -- not in SelectionGuard.savedSelections (which is unused infra).
-  // NOTE: Step 5 will remove savedSelectionsRef when the restore path is migrated
-  // to use the DeckManager cache. Kept for now (Step 4) because the restore path
-  // still reads from it; both write paths (here and setTabState) are active.
-  const savedSelectionsRef = useRef<Map<string, SavedSelection>>(new Map());
-
-  // ---------------------------------------------------------------------------
-  // Phase 5f: saveCurrentTabState helper (Step 4, [D01], #lifecycle-flow)
+  // Phase 5f: saveCurrentTabState helper (Steps 4 & 5, [D01], #lifecycle-flow)
   // ---------------------------------------------------------------------------
 
   // Stored in a ref so that handleTabSelect, handlePreviousTab, and handleNextTab
@@ -299,16 +287,9 @@ export function Tugcard({
     };
 
     store.setTabState(tabId, bag);
-
-    // Dual-write: also update savedSelectionsRef so the pre-existing restore
-    // path in useLayoutEffect([activeTabId]) continues to work until Step 5
-    // migrates the restore path to use the DeckManager cache.
-    if (selection) {
-      savedSelectionsRef.current.set(tabId, selection);
-    }
   };
 
-  // Wrap onTabSelect to save current state before switching tabs (D07, Step 4).
+  // Wrap onTabSelect to save current state before switching tabs.
   const handleTabSelect = useCallback(
     (newTabId: string) => {
       if (!onTabSelect) return;
@@ -321,15 +302,43 @@ export function Tugcard({
     [onTabSelect],
   );
 
-  // Step 3: after the new tab's content mounts and its useSelectionBoundary
-  // useLayoutEffect runs (children before parents), restore the saved selection.
-  // This useLayoutEffect has [activeTabId] as its dependency so it fires
-  // whenever the active tab changes.
+  // Phase 5f Step 5: Activation restore.
+  //
+  // After the new tab's content mounts and its useSelectionBoundary
+  // useLayoutEffect runs (children before parents), restore the full tab state
+  // bag from the DeckManager cache.
+  //
+  // useLayoutEffect fires before paint, so:
+  // - Scroll is set synchronously (DOM is laid out; no RAF needed, no flash).
+  // - Selection is restored via SelectionGuard.restoreSelection.
+  // - Card content state is forwarded to persistenceCallbacksRef.onRestore.
+  //
+  // This path also handles first-mount restoration after app reload: if the
+  // DeckManager cache was pre-populated from tugbank during initialization,
+  // the same effect restores state on the very first mount of each Tugcard.
+  //
+  // savedSelectionsRef is fully removed in this step — both the write path
+  // (Step 4 dual-write) and the read path are now migrated to the store cache.
   useLayoutEffect(() => {
     if (!activeTabId) return;
-    const saved = savedSelectionsRef.current.get(activeTabId);
-    if (saved) {
-      selectionGuard.restoreSelection(cardId, saved);
+    const bag = store.getTabState(activeTabId);
+    if (!bag) return;
+
+    // Restore scroll position directly (useLayoutEffect fires before paint).
+    const contentEl = contentRef.current;
+    if (contentEl && bag.scroll !== undefined) {
+      contentEl.scrollLeft = bag.scroll.x;
+      contentEl.scrollTop = bag.scroll.y;
+    }
+
+    // Restore text selection if a saved selection exists.
+    if (bag.selection != null) {
+      selectionGuard.restoreSelection(cardId, bag.selection);
+    }
+
+    // Restore card content state via the registered persistence callback.
+    if (bag.content !== undefined) {
+      persistenceCallbacksRef.current?.onRestore(bag.content);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, cardId]);

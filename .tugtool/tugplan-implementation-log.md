@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T21:36:08Z
+---
+
+## step-5: Replaced savedSelectionsRef with store.getTabState for tab restore, now restoring scroll, selection, and content from DeckManager cache on tab activation
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T21:28:56Z
 ---
