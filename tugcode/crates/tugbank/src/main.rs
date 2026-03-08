@@ -540,6 +540,7 @@ fn cmd_read(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_write(
     store: &DefaultsStore,
     domain: &str,

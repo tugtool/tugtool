@@ -290,9 +290,9 @@ describe("TugButton – sizes", () => {
     expect(btn.className).toContain("h-10");
   });
 
-  it("lg size: applies h-11 class", () => {
+  it("lg size: applies h-10 class (shadcn lg)", () => {
     const btn = renderButton({ size: "lg", children: "Large" });
-    expect(btn.className).toContain("h-11");
+    expect(btn.className).toContain("h-10");
   });
 });
 
@@ -311,9 +311,9 @@ describe("TugButton – loading state", () => {
     expect(btn.getAttribute("aria-busy")).toBeNull();
   });
 
-  it("renders spinner element when loading", () => {
+  it("renders spinner overlay when loading", () => {
     const { container } = render(<TugButton loading={true}>Saving</TugButton>);
-    const spinner = container.querySelector(".tug-button-spinner");
+    const spinner = container.querySelector(".tug-button-spinner-overlay");
     expect(spinner).not.toBeNull();
   });
 
@@ -322,9 +322,10 @@ describe("TugButton – loading state", () => {
     expect(btn.className).toContain("tug-button-loading");
   });
 
-  it("button is disabled when loading (pointer-events disabled via HTML disabled)", () => {
+  it("loading button has pointer-events disabled via CSS class, not HTML disabled", () => {
     const btn = renderButton({ loading: true, children: "Saving" });
-    expect(btn.disabled).toBe(true);
+    expect(btn.className).toContain("tug-button-loading");
+    expect(btn.disabled).toBe(false);
   });
 
   it("does not call onClick when loading", () => {
