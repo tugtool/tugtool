@@ -308,6 +308,37 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     tabDragCoordinator.init(store);
   }, [store]);
 
+  // Phase 5f: Focused card restoration after app reload ([D03]).
+  //
+  // On mount, read store.initialFocusedCardId (populated by the DeckManager
+  // constructor from the tugbank-fetched focusedCardId). If the card still
+  // exists in the deck:
+  //   1. store.handleCardFocused(id) — update z-order so the card is top-most.
+  //   2. setDeselected(false)        — clear the canvas deselect overlay.
+  //   3. manager.makeFirstResponder(id) — route keyboard events to the card.
+  // Then clear the field so this only fires once on mount.
+  //
+  // DeckManager cannot call makeFirstResponder directly (it is a plain class
+  // without access to the responder chain). DeckCanvas has manager via
+  // useRequiredResponderChain(), so focus restoration is delegated here ([D03]).
+  //
+  // Empty deps array: runs once on mount. store and manager are stable singletons.
+  useEffect(() => {
+    const focusedCardId = store.initialFocusedCardId;
+    if (!focusedCardId) return;
+
+    // Clear immediately so subsequent re-mounts (HMR, StrictMode) do not re-fire.
+    store.initialFocusedCardId = undefined;
+
+    const snapshot = store.getSnapshot();
+    const cardExists = snapshot.cards.some((c) => c.id === focusedCardId);
+    if (!cardExists) return;
+
+    store.handleCardFocused(focusedCardId);
+    setDeselected(false);
+    manager.makeFirstResponder(focusedCardId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Run updateSetAppearance once after initial mount so clip-path and data-in-set are
   // applied for any cards that are already in sets when the layout is first rendered. [D08, D03]
   useLayoutEffect(() => {

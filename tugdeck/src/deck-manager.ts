@@ -35,7 +35,7 @@
  *   renderable cards that have registered factories in the card registry.
  */
 
-import { type DeckState, type CardState, type TabItem } from "./layout-tree";
+import { type DeckState, type CardState, type TabItem, type TabStateBag } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration } from "./card-registry";
 import { TugConnection } from "./connection";
@@ -45,7 +45,7 @@ import type { Root } from "react-dom/client";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
-import { putLayout } from "./settings-api";
+import { putLayout, putTabState, putFocusedCardId } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
@@ -69,6 +69,27 @@ export class DeckManager implements IDeckManagerStore {
 
   /** Debounce timer for layout saves */
   private saveTimer: number | null = null;
+
+  // ---- Phase 5f: Tab state cache (Spec S03, [D01], [D06]) ----
+
+  /** In-memory cache of tab state bags. Primary read source during a session. */
+  private tabStateCache: Map<string, TabStateBag> = new Map();
+
+  /** Debounce timer for tab state saves (separate from layout save timer). */
+  private tabStateSaveTimer: number | null = null;
+
+  /** Set of tab IDs with unsaved (dirty) tab state bags. Used for flush-on-destroy. */
+  private dirtyTabIds: Set<string> = new Set();
+
+  // ---- Phase 5f: Initial focused card ID for reload restoration ([D03]) ----
+
+  /**
+   * The card ID that was focused when the deck was last saved to tugbank.
+   * Set from the constructor parameter; read by DeckCanvas on mount to call
+   * makeFirstResponder; cleared after DeckCanvas reads it.
+   * DeckManager cannot access the responder chain directly (plain class).
+   */
+  public initialFocusedCardId: string | undefined;
 
   /** Single React root for the canvas */
   private reactRoot: Root | null = null;
@@ -159,11 +180,21 @@ export class DeckManager implements IDeckManagerStore {
     connection: TugConnection,
     initialLayout?: object,
     initialTheme?: ThemeName,
+    initialTabStates?: Map<string, TabStateBag>,
+    initialFocusedCardId?: string,
   ) {
     this.container = container;
     this.connection = connection;
     this.initialLayout = initialLayout ?? null;
     this.initialTheme = initialTheme ?? "brio";
+
+    // Phase 5f: populate tab state cache from pre-fetched tugbank data.
+    if (initialTabStates) {
+      this.tabStateCache = new Map(initialTabStates);
+    }
+
+    // Phase 5f: store focused card ID for DeckCanvas to read on mount.
+    this.initialFocusedCardId = initialFocusedCardId;
 
     // Canvas container needs position:relative for absolutely-positioned children
     container.style.position = "relative";
@@ -355,11 +386,31 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Bring a card to front by moving it to the end of the cards array.
    * End-of-array = highest z-index by render order.
+   *
+   * Phase 5f: persists the focused card ID to tugbank (fire-and-forget) before
+   * the early-return guard, so that clicking an already-focused card or a
+   * single-card deck still updates the reload restoration pointer ([D03]).
+   * Also calls scheduleSave() so z-order changes are persisted to the layout
+   * blob, ensuring on reload that the last-focused card is already at the end
+   * of the array (highest z-index) without z-order correction.
    */
   focusCard(cardId: string): void {
     const idx = this.deckState.cards.findIndex((c) => c.id === cardId);
+
+    // Phase 5f: persist focused card ID for reload restoration.
+    // PUT is placed BEFORE the early-return guard so that clicking an already-
+    // focused card (or a single-card deck) still persists the ID ([D03]).
+    if (idx !== -1) {
+      putFocusedCardId(cardId);
+    }
+
     if (idx === -1 || idx === this.deckState.cards.length - 1) {
-      // Card not found or already the top-most -- no-op.
+      // Card not found or already the top-most -- no z-order change needed.
+      // scheduleSave is still called when the card is already top-most so that
+      // the focused card ID PUT above is not lost if the app closes quickly.
+      if (idx !== -1) {
+        this.scheduleSave();
+      }
       return;
     }
     const cards = [...this.deckState.cards];
@@ -367,6 +418,51 @@ export class DeckManager implements IDeckManagerStore {
     cards.push(focused);
     this.deckState = { ...this.deckState, cards };
     this.notify();
+    // Phase 5f: persist z-order change so reload reflects the correct focus order.
+    this.scheduleSave();
+  }
+
+  // ---- Phase 5f: Tab state cache API (Spec S03, [D01], [D06]) ----
+
+  /**
+   * Read a tab state bag from the in-memory cache.
+   * Returns undefined if the tab has no cached state.
+   */
+  getTabState(tabId: string): TabStateBag | undefined {
+    return this.tabStateCache.get(tabId);
+  }
+
+  /**
+   * Write a tab state bag to the in-memory cache (synchronous) and schedule
+   * a debounced tugbank write (fire-and-forget).
+   *
+   * The tab ID is tracked in dirtyTabIds so destroy() can flush pending writes.
+   */
+  setTabState(tabId: string, bag: TabStateBag): void {
+    this.tabStateCache.set(tabId, bag);
+    this.dirtyTabIds.add(tabId);
+
+    if (this.tabStateSaveTimer !== null) {
+      window.clearTimeout(this.tabStateSaveTimer);
+    }
+    this.tabStateSaveTimer = window.setTimeout(() => {
+      this.flushDirtyTabStates();
+      this.tabStateSaveTimer = null;
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * Write all dirty tab state bags to tugbank and clear the dirty set.
+   * Called by the debounce timer and by destroy() to flush pending writes.
+   */
+  private flushDirtyTabStates(): void {
+    for (const tabId of this.dirtyTabIds) {
+      const bag = this.tabStateCache.get(tabId);
+      if (bag !== undefined) {
+        putTabState(tabId, bag);
+      }
+    }
+    this.dirtyTabIds.clear();
   }
 
   // ---- Tab management (Spec S03) ----
@@ -820,10 +916,22 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   destroy(): void {
+    // Phase 5f: flush pending layout save before clearing the timer.
+    // The pre-existing destroy() cancelled the timer without writing, silently
+    // losing layout changes made within the debounce window. Fixed here.
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
+      this.saveLayout();
     }
+
+    // Phase 5f: flush pending tab state saves before clearing the timer.
+    if (this.tabStateSaveTimer !== null) {
+      window.clearTimeout(this.tabStateSaveTimer);
+      this.tabStateSaveTimer = null;
+      this.flushDirtyTabStates();
+    }
+
     if (this.reactRoot) {
       this.reactRoot.unmount();
       this.reactRoot = null;

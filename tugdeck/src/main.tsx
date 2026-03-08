@@ -5,7 +5,7 @@ import "../styles/chrome.css";
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
-import { fetchLayoutWithRetry, fetchThemeWithRetry } from "./settings-api";
+import { fetchLayoutWithRetry, fetchThemeWithRetry, fetchTabStatesWithRetry, fetchDeckStateWithRetry } from "./settings-api";
 import {
   applyInitialTheme,
   sendCanvasColor,
@@ -29,12 +29,21 @@ if (!container) {
 }
 
 // Async IIFE: fetch settings before constructing DeckManager so the pre-fetched
-// layout and theme are applied before React renders. Layout and theme are fetched
-// in parallel from their respective tugbank domains [D02].
+// layout and theme are applied before React renders.
+//
+// Phase 5f two-phase initialization:
+//   Phase 1: Fetch layout, theme, and deck state (focusedCardId) in parallel.
+//            These three are independent of each other.
+//   Phase 2: Deserialize the layout to extract all tab IDs, then fetch tab
+//            states in parallel via fetchTabStatesWithRetry(tabIds).
+//            Tab state fetch depends on tab IDs from the deserialized layout,
+//            so it cannot be parallelized with the layout fetch itself.
 (async () => {
-  const [layout, theme] = await Promise.all([
+  // Phase 1: parallel fetch of layout, theme, and focused card ID.
+  const [layout, theme, focusedCardId] = await Promise.all([
     fetchLayoutWithRetry(),
     fetchThemeWithRetry(),
+    fetchDeckStateWithRetry(),
   ]);
 
   // Apply the initial theme via stylesheet injection before DeckManager construction
@@ -65,12 +74,36 @@ if (!container) {
     initStyleInspector();
   }
 
-  // Create deck manager with the pre-fetched layout and initial theme.
+  // Phase 5f Phase 2: extract tab IDs from the loaded layout and fetch tab states.
+  // This must run after the layout fetch (depends on tab IDs) but before
+  // DeckManager construction (tab state cache must be warm for first render).
+  //
+  // Import deserialize here to extract tab IDs without constructing DeckManager.
+  // Canvas dimensions are not needed for tab ID extraction — use 0 as placeholders
+  // (the geometry is re-applied inside DeckManager via loadLayout).
+  let tabStates = new Map<string, import("./layout-tree").TabStateBag>();
+  if (layout !== null) {
+    try {
+      const { deserialize } = await import("./serialization");
+      const parsed = deserialize(JSON.stringify(layout), 0, 0);
+      const tabIds = parsed.cards.flatMap((c) => c.tabs.map((t) => t.id));
+      if (tabIds.length > 0) {
+        tabStates = await fetchTabStatesWithRetry(tabIds);
+      }
+    } catch (e) {
+      console.warn("[main] Phase 5f: failed to fetch tab states, continuing without", e);
+    }
+  }
+
+  // Create deck manager with the pre-fetched layout, initial theme, tab states,
+  // and focused card ID (Phase 5f).
   const deck = new DeckManager(
     container,
     connection,
     layout ?? undefined,
-    initialTheme
+    initialTheme,
+    tabStates,
+    focusedCardId ?? undefined
   );
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
