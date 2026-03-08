@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T02:15:32Z
+---
+
+## step-4: Added import and dev-only gated initStyleInspector() call in main.tsx, placed after initMotionObserver() and registerGalleryCards() but before DeckManager construction.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T02:10:00Z
 ---

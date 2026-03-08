@@ -14,6 +14,7 @@ import {
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
+import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -51,6 +52,14 @@ if (!container) {
   // registered in Phase 9.
   registerHelloCard();
   registerGalleryCards();
+
+  // Initialize the cascade inspector in dev mode only. The cleanup function is
+  // intentionally not called during normal app lifetime (same pattern as
+  // initMotionObserver) -- the inspector should live for the entire app session.
+  // [D02] Dev-only gating via NODE_ENV
+  if (process.env.NODE_ENV !== "production") {
+    initStyleInspector();
+  }
 
   // Create deck manager with the pre-fetched layout and initial theme.
   const deck = new DeckManager(
