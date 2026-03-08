@@ -48,7 +48,7 @@ const INSPECTOR_DEMO_ITEMS: TugDropdownItem[] = [
  * GalleryCascadeInspectorContent -- gallery tab content with inspectable demo elements.
  *
  * Renders a set of sample elements that exercise all token chain depths so that
- * the Ctrl+Option cascade inspector can be verified against real token resolution
+ * the Shift+Option cascade inspector can be verified against real token resolution
  * paths in the running app.
  *
  * Activation instructions are shown at the top of the tab.
@@ -65,7 +65,7 @@ export function GalleryCascadeInspectorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Cascade Inspector Demo</div>
         <p className="cg-description" data-testid="inspector-instructions">
-          Hold <kbd>Ctrl+Option</kbd> and hover the elements below to see the cascade
+          Hold <kbd>Shift+Option</kbd> and hover the elements below to see the cascade
           inspector in action. Each sample exercises a different token chain depth.
           Click to pin the overlay; press <kbd>Escape</kbd> to close.
         </p>

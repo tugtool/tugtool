@@ -141,7 +141,7 @@
 
 .tug-inspector-row__value {
   color: oklch(0.88 0.01 240);
-  word-break: break-all;
+  overflow-wrap: break-word;
   flex: 1;
 }
 
@@ -177,12 +177,12 @@
 
 .tug-inspector-chain__value {
   color: oklch(0.7 0.12 140);
-  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .tug-inspector-chain__terminal {
   color: oklch(0.72 0.18 55);
-  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .tug-inspector-chain__indicator {
@@ -212,7 +212,7 @@
 
 .tug-inspector-path {
   color: oklch(0.45 0.02 240);
-  word-break: break-all;
+  overflow-wrap: break-word;
   font-size: 10px;
 }
 

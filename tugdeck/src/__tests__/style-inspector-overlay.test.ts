@@ -2,7 +2,7 @@
  * StyleInspectorOverlay unit tests -- Step 1.
  *
  * Tests cover:
- * - Modifier key state transitions (keydown Ctrl+Alt -> active, keyup -> inactive)
+ * - Modifier key state transitions (keydown Shift+Alt -> active, keyup -> inactive)
  * - Pin/unpin state machine (click while active -> pinned, Escape -> closed, click while pinned -> unpinned)
  * - positionPanel clamps to viewport boundaries
  * - PALETTE_VAR_REGEX correctly matches palette variable names
@@ -32,19 +32,19 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCtrlAltKeydown(key: string = "Control"): KeyboardEvent {
+function makeShiftAltKeydown(key: string = "Shift"): KeyboardEvent {
   return new KeyboardEvent("keydown", {
     key,
-    ctrlKey: true,
+    shiftKey: true,
     altKey: true,
     bubbles: true,
   });
 }
 
-function makeKeyup(key: string, ctrlKey: boolean = false, altKey: boolean = false): KeyboardEvent {
+function makeKeyup(key: string, shiftKey: boolean = false, altKey: boolean = false): KeyboardEvent {
   return new KeyboardEvent("keyup", {
     key,
-    ctrlKey,
+    shiftKey,
     altKey,
     bubbles: true,
   });
@@ -133,34 +133,34 @@ describe("StyleInspectorOverlay -- modifier key state transitions", () => {
     expect(overlay.isPinned).toBe(false);
   });
 
-  it("activates when both Ctrl and Alt are pressed", () => {
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+  it("activates when both Shift and Alt are pressed", () => {
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
   });
 
-  it("stays inactive if only Ctrl is pressed", () => {
-    const event = new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, altKey: false });
+  it("stays inactive if only Shift is pressed", () => {
+    const event = new KeyboardEvent("keydown", { key: "Shift", shiftKey: true, altKey: false });
     overlay.onKeyDown(event);
     expect(overlay.isActive).toBe(false);
   });
 
   it("stays inactive if only Alt is pressed", () => {
-    const event = new KeyboardEvent("keydown", { key: "Alt", ctrlKey: false, altKey: true });
+    const event = new KeyboardEvent("keydown", { key: "Alt", shiftKey: false, altKey: true });
     overlay.onKeyDown(event);
     expect(overlay.isActive).toBe(false);
   });
 
-  it("deactivates when Ctrl is released", () => {
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+  it("deactivates when Shift is released", () => {
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
 
-    // Release Ctrl: ctrlKey is now false
-    overlay.onKeyUp(makeKeyup("Control", false, true));
+    // Release Shift: shiftKey is now false
+    overlay.onKeyUp(makeKeyup("Shift", false, true));
     expect(overlay.isActive).toBe(false);
   });
 
   it("deactivates when Alt is released", () => {
-    overlay.onKeyDown(makeCtrlAltKeydown("Alt"));
+    overlay.onKeyDown(makeShiftAltKeydown("Alt"));
     expect(overlay.isActive).toBe(true);
 
     // Release Alt: altKey is now false
@@ -169,10 +169,10 @@ describe("StyleInspectorOverlay -- modifier key state transitions", () => {
   });
 
   it("Escape closes and unpins the overlay", () => {
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
 
-    const escEvent = new KeyboardEvent("keydown", { key: "Escape", ctrlKey: false, altKey: false });
+    const escEvent = new KeyboardEvent("keydown", { key: "Escape", shiftKey: false, altKey: false });
     overlay.onKeyDown(escEvent);
     expect(overlay.isActive).toBe(false);
     expect(overlay.isPinned).toBe(false);
@@ -180,7 +180,7 @@ describe("StyleInspectorOverlay -- modifier key state transitions", () => {
 
   it("Escape closes even when pinned", () => {
     // Activate
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
 
     // Pin via click
@@ -197,10 +197,10 @@ describe("StyleInspectorOverlay -- modifier key state transitions", () => {
   });
 
   it("does not deactivate on irrelevant key releases", () => {
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
 
-    // Release some other key while holding both Ctrl and Alt
+    // Release some other key while holding both Shift and Alt
     overlay.onKeyUp(makeKeyup("a", true, true));
     expect(overlay.isActive).toBe(true);
   });
@@ -219,7 +219,7 @@ describe("StyleInspectorOverlay -- pin/unpin state machine", () => {
     document.body.appendChild(overlay.highlightEl);
     document.body.appendChild(overlay.panelEl);
     // Activate the overlay
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
   });
 
   afterEach(() => {
@@ -272,8 +272,8 @@ describe("StyleInspectorOverlay -- pin/unpin state machine", () => {
     overlay.onClick(clickEvent);
     expect(overlay.isPinned).toBe(true);
 
-    // Release Ctrl -- deactivate should be blocked by pinned state
-    overlay.onKeyUp(makeKeyup("Control", false, true));
+    // Release Shift -- deactivate should be blocked by pinned state
+    overlay.onKeyUp(makeKeyup("Shift", false, true));
     expect(overlay.isActive).toBe(true);
     expect(overlay.isPinned).toBe(true);
   });
@@ -292,7 +292,7 @@ describe("StyleInspectorOverlay -- pin/unpin state machine", () => {
 
   it("click while inactive (not active) does not pin", () => {
     // Deactivate first
-    overlay.onKeyUp(makeKeyup("Control", false, true));
+    overlay.onKeyUp(makeKeyup("Shift", false, true));
     expect(overlay.isActive).toBe(false);
 
     const clickEvent = new MouseEvent("click", { bubbles: true });
@@ -755,7 +755,7 @@ describe("StyleInspectorOverlay -- DOM lifecycle", () => {
   it("destroy() resets active and pinned state", () => {
     const overlay = new StyleInspectorOverlay();
     overlay.init();
-    overlay.onKeyDown(makeCtrlAltKeydown("Control"));
+    overlay.onKeyDown(makeShiftAltKeydown("Shift"));
     expect(overlay.isActive).toBe(true);
 
     overlay.destroy();

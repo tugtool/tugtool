@@ -1,7 +1,7 @@
 /**
  * style-inspector-overlay.ts -- StyleInspectorOverlay singleton.
  *
- * A dev-only Ctrl+Option+hover cascade inspector overlay that shows the full
+ * A dev-only Shift+Option+hover cascade inspector overlay that shows the full
  * token resolution chain (component tokens, base tokens, palette variables,
  * HVV provenance) and scale/timing readout for any inspected element.
  *
@@ -179,7 +179,7 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
 /**
  * StyleInspectorOverlay -- singleton managing the full inspector lifecycle.
  *
- * Activated by holding Ctrl+Option (Mac). Tracks the element under the cursor
+ * Activated by holding Shift+Option (Mac). Tracks the element under the cursor
  * via elementFromPoint. Shows token chain resolution, HVV provenance, and
  * scale/timing readout in a fixed-position panel.
  *
@@ -189,7 +189,7 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
 export class StyleInspectorOverlay {
   // ----- State -----
 
-  /** Whether Ctrl+Option is currently held. */
+  /** Whether Shift+Option is currently held. */
   private active = false;
 
   /** Whether the overlay is pinned (clicked to lock). */
@@ -211,7 +211,7 @@ export class StyleInspectorOverlay {
 
   // ----- Getters for testability -----
 
-  /** Whether the inspector is currently active (Ctrl+Option held). */
+  /** Whether the inspector is currently active (Shift+Option held). */
   get isActive(): boolean {
     return this.active;
   }
@@ -309,7 +309,7 @@ export class StyleInspectorOverlay {
   // ----- Event Handlers -----
 
   /**
-   * Handle keydown: activate when Ctrl+Alt (Option) are both pressed.
+   * Handle keydown: activate when Shift+Alt (Option) are both pressed.
    * Escape always closes and unpins the overlay.
    *
    * Spec S01 (#s01-inspector-singleton)
@@ -325,19 +325,19 @@ export class StyleInspectorOverlay {
       return;
     }
 
-    if (event.ctrlKey && event.altKey && !this.active) {
+    if (event.shiftKey && event.altKey && !this.active) {
       this.activate();
     }
   }
 
   /**
-   * Handle keyup: deactivate when either Ctrl or Alt (Option) is released.
+   * Handle keyup: deactivate when either Shift or Alt (Option) is released.
    *
    * Spec S01 (#s01-inspector-singleton)
    */
   onKeyUp(event: KeyboardEvent): void {
-    if (event.key === "Control" || event.key === "Alt") {
-      if (!event.ctrlKey || !event.altKey) {
+    if (event.key === "Shift" || event.key === "Alt") {
+      if (!event.shiftKey || !event.altKey) {
         this.deactivate();
       }
     }
@@ -466,21 +466,41 @@ export class StyleInspectorOverlay {
       return result;
     }
 
-    // Step 1-3: Try to find a matching comp token
-    const compFamily = this.detectCompFamily(el);
-    if (compFamily) {
-      const tokens = COMP_FAMILY_TOKENS[compFamily] ?? [];
-      for (const token of tokens) {
-        const tokenVal = getComputedStyle(document.body).getPropertyValue(token).trim();
-        if (tokenVal && this.valuesMatch(tokenVal, computedValue, property)) {
-          result.originToken = token;
-          result.originLayer = "comp";
-          break;
+    // Primary: find the var(--*) token directly from CSS rules
+    const cssToken = this.findTokenFromCSSRules(el, property);
+    if (cssToken) {
+      result.originToken = cssToken;
+      if (cssToken.startsWith("--tug-comp-")) {
+        result.originLayer = "comp";
+      } else if (
+        cssToken.startsWith("--tug-base-") ||
+        PALETTE_VAR_REGEX.test(cssToken)
+      ) {
+        result.originLayer = "base";
+      } else {
+        // Non-tug variable (e.g. Tailwind/shadcn --secondary-foreground).
+        // Show it as an external token — we can read its value but won't
+        // walk into the tug chain.
+        result.originLayer = "base";
+      }
+    }
+
+    // Fallback: class-based comp family detection + base token value matching
+    if (!result.originToken) {
+      const compFamily = this.detectCompFamily(el);
+      if (compFamily) {
+        const tokens = COMP_FAMILY_TOKENS[compFamily] ?? [];
+        for (const token of tokens) {
+          const tokenVal = getComputedStyle(document.body).getPropertyValue(token).trim();
+          if (tokenVal && this.valuesMatch(tokenVal, computedValue, property)) {
+            result.originToken = token;
+            result.originLayer = "comp";
+            break;
+          }
         }
       }
     }
 
-    // Step 4: Fallback to well-known base tokens
     if (!result.originToken) {
       const fallbacks = BASE_TOKEN_FALLBACKS[property] ?? [];
       for (const token of fallbacks) {
@@ -561,7 +581,7 @@ export class StyleInspectorOverlay {
       }
 
       // Termination rule 3: no var() reference -- literal terminal
-      const match = rawValue.match(/var\((--tug-[a-z0-9-]+)/);
+      const match = rawValue.match(/var\((--[a-zA-Z0-9_-]+)/);
       if (!match) {
         break;
       }
@@ -628,6 +648,104 @@ export class StyleInspectorOverlay {
    */
   private valuesMatch(tokenVal: string, computedVal: string, _property: string): boolean {
     return tokenVal.trim() === computedVal.trim();
+  }
+
+  // ----- CSS Rule Inspection -----
+
+  /**
+   * Property-to-shorthand lookup for CSS rule inspection.
+   * When looking for a longhand property like 'background-color', also
+   * check shorthands like 'background' that may contain the var() reference.
+   */
+  private static readonly SHORTHAND_MAP: Record<string, string[]> = {
+    "background-color": ["background-color", "background"],
+    color: ["color"],
+    "border-color": ["border-color", "border"],
+  };
+
+  /**
+   * Collect all CSSStyleRule instances from a CSSRuleList, recursing into
+   * @media and @supports blocks.
+   */
+  private collectStyleRules(
+    ruleList: CSSRuleList,
+    out: CSSStyleRule[]
+  ): void {
+    for (const rule of Array.from(ruleList)) {
+      if (rule instanceof CSSStyleRule) {
+        out.push(rule);
+      } else if (
+        rule instanceof CSSMediaRule ||
+        rule instanceof CSSSupportsRule
+      ) {
+        this.collectStyleRules(rule.cssRules, out);
+      }
+    }
+  }
+
+  /**
+   * Find the CSS custom property (var()) used for a CSS property on an element
+   * by inspecting the element's inline styles and matched CSS rules.
+   *
+   * This is the primary token discovery mechanism — it finds the actual
+   * var() reference in the stylesheet rather than guessing via value matching.
+   *
+   * Matches any var(--*) reference, not just --tug-* tokens, so that
+   * Tailwind/shadcn variables (e.g. --secondary-foreground) are also found.
+   *
+   * Returns the custom property name (e.g. '--tug-base-accent-cool-default'
+   * or '--secondary-foreground') or null.
+   */
+  private findTokenFromCSSRules(
+    el: HTMLElement,
+    property: string
+  ): string | null {
+    const propsToCheck =
+      StyleInspectorOverlay.SHORTHAND_MAP[property] ?? [property];
+
+    // 1. Check inline styles first (highest specificity)
+    for (const prop of propsToCheck) {
+      const inlineVal = el.style.getPropertyValue(prop);
+      if (inlineVal) {
+        const m = inlineVal.match(/var\((--[a-zA-Z0-9_-]+)/);
+        if (m) return m[1];
+      }
+    }
+
+    // 2. Walk matched CSS rules. Later rules and higher specificity win,
+    //    so we take the last match across all sheets.
+    let lastMatch: string | null = null;
+
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSStyleRule[];
+      try {
+        rules = [];
+        this.collectStyleRules(sheet.cssRules, rules);
+      } catch {
+        continue; // cross-origin stylesheet
+      }
+
+      for (const rule of rules) {
+        try {
+          if (!el.matches(rule.selectorText)) continue;
+        } catch {
+          continue; // invalid or unsupported selector
+        }
+
+        for (const prop of propsToCheck) {
+          const val = rule.style.getPropertyValue(prop);
+          if (val) {
+            const m = val.match(/var\((--[a-zA-Z0-9_-]+)/);
+            if (m) {
+              lastMatch = m[1];
+              break; // found for this rule, skip shorthands
+            }
+          }
+        }
+      }
+    }
+
+    return lastMatch;
   }
 
   /**
