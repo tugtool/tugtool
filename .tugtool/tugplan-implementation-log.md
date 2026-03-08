@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-08T14:41:40Z
+---
+
+## step-3: Implemented apply_pragmas (WAL, foreign_keys, busy_timeout, synchronous), bootstrap_schema (meta/domains/entries tables + index), and migrate_schema with transaction-wrapped versioned migration. Added 5 tests covering table creation, idempotency, migration, and WAL mode verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-2
 date: 2025-03-08T14:36:58Z
 ---
