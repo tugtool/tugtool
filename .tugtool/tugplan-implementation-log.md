@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-08T21:52:54Z
+---
+
+## step-8: Verification-only integration checkpoint confirming all 1019 tests pass and TypeScript compiles cleanly across all 8 steps
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-7
 date: 2025-03-08T21:49:35Z
 ---
