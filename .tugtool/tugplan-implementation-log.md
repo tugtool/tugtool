@@ -9,6 +9,114 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-08T15:12:24Z
+---
+
+## audit-fix: CI fix: replaced 3.14 literal in JSON roundtrip test with 1.5 to avoid clippy::approx_constant lint
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-8
+date: 2025-03-08T15:07:09Z
+---
+
+## step-8: Added module-level rustdoc to lib.rs with usage examples for basic operations, atomic updates, CAS writes, and thread safety. Introduced EncodedValue type alias to resolve clippy::type_complexity lint. Verified all 55 tests pass, clippy clean, fmt clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-7
+date: 2025-03-08T15:01:58Z
+---
+
+## step-7: Created tests/contention.rs with two integration tests: concurrent set() from two threads verifying all 100 keys present, and CAS contention via Barrier(2) verifying exactly one Written/one Conflict with successful retry.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-6
+date: 2025-03-08T14:56:49Z
+---
+
+## step-6: Added tests T31-T38 covering generation tracking (zero for unwritten, increments per write), set_if_generation CAS (Written on match, Conflict on stale), update atomicity with multiple mutations, update generation return value, and DomainTxn blob enforcement.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-5
+date: 2025-03-08T14:52:19Z
+---
+
+## step-5: Implemented get, set, remove, keys, read_all on DomainHandle with BEGIN IMMEDIATE transactions, key validation, blob size enforcement, and generation tracking. Removed dead_code annotations from value.rs and schema.rs. Added 20 domain tests covering value round-trips, cross-domain isolation, empty-key rejection, and remove semantics.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T14:45:57Z
+---
+
+## step-4: Implemented DefaultsStore::open (Connection + pragmas + migration + Mutex), domain() with empty-name validation, list_domains() querying domains table. Renamed DomainHandle fields. Added 6 tests covering file creation, re-open, empty domain list, valid/invalid domain names, and Send+Sync.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T14:41:40Z
+---
+
+## step-3: Implemented apply_pragmas (WAL, foreign_keys, busy_timeout, synchronous), bootstrap_schema (meta/domains/entries tables + index), and migrate_schema with transaction-wrapped versioned migration. Added 5 tests covering table creation, idempotency, migration, and WAL mode verification.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T14:36:58Z
+---
+
+## step-2: Implemented encode_value and decode_value functions for SQL column mapping per Table T01. Added 14 unit tests covering all Value variant round-trips, blob size enforcement, and edge cases.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T14:31:46Z
+---
+
+## step-1: Created tugbank-core crate scaffold: Cargo.toml with workspace inheritance, lib.rs with module declarations and re-exports, stub files for error, value, schema, store, and domain modules, and added crate to workspace members.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T02:19:42Z
 ---
