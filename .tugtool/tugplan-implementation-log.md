@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-08T23:04:26Z
+---
+
+## step-3: Added ::highlight(inactive-selection) CSS rule using --tug-base-selection-bg-inactive token. Updated existing ::selection inactive rule comment to note it is now a no-op retained for graceful degradation.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-2
 date: 2025-03-08T23:01:05Z
 ---
