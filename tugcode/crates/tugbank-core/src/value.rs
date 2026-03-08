@@ -53,7 +53,6 @@ pub enum Value {
 /// Returns `(value_kind, value_i64, value_f64, value_text, value_blob)`.
 /// Exactly one payload column will be `Some`; the rest will be `None`
 /// (except `Null`, for which all payload columns are `None`).
-#[allow(dead_code)]
 pub(crate) fn encode_value(
     value: &Value,
 ) -> (
@@ -82,7 +81,6 @@ pub(crate) fn encode_value(
 ///
 /// `kind` is the `value_kind` discriminator integer from the database.
 /// The payload arguments correspond to the four typed SQL columns.
-#[allow(dead_code)]
 pub(crate) fn decode_value(
     kind: i32,
     i64_val: Option<i64>,
@@ -124,7 +122,6 @@ pub(crate) fn check_blob_size(value: &Value) -> Result<(), Error> {
 }
 
 /// Internal error type for unknown value_kind discriminators.
-#[allow(dead_code)]
 #[derive(Debug)]
 struct UnknownValueKind(i32);
 

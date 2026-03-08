@@ -11,7 +11,6 @@ const CURRENT_SCHEMA_VERSION: u64 = 1;
 ///
 /// Sets `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`,
 /// and `synchronous=NORMAL`. Called unconditionally on every database open.
-#[allow(dead_code)]
 pub(crate) fn apply_pragmas(conn: &Connection) -> Result<(), Error> {
     // WAL mode must be set with execute_batch; the others can use pragma_update.
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
@@ -27,7 +26,6 @@ pub(crate) fn apply_pragmas(conn: &Connection) -> Result<(), Error> {
 /// then inserts `schema_version = '1'` into the `meta` table.
 /// Uses `CREATE TABLE IF NOT EXISTS` and `INSERT OR REPLACE`, so calling
 /// this function on a database that already has the schema is safe (idempotent).
-#[allow(dead_code)]
 pub(crate) fn bootstrap_schema(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
         "
@@ -66,7 +64,6 @@ pub(crate) fn bootstrap_schema(conn: &Connection) -> Result<(), Error> {
 /// Read the current schema version from the `meta` table.
 ///
 /// Returns `None` if the table doesn't exist or the key is absent.
-#[allow(dead_code)]
 fn read_schema_version(conn: &Connection) -> Option<u64> {
     conn.query_row(
         "SELECT value FROM meta WHERE key = 'schema_version'",
@@ -88,7 +85,6 @@ fn read_schema_version(conn: &Connection) -> Option<u64> {
 /// transaction so failures roll back cleanly.
 ///
 /// This function is called on every [`DefaultsStore::open`](crate::DefaultsStore::open).
-#[allow(dead_code)]
 pub(crate) fn migrate_schema(conn: &Connection) -> Result<(), Error> {
     let version = read_schema_version(conn);
 
@@ -125,7 +121,6 @@ pub(crate) fn migrate_schema(conn: &Connection) -> Result<(), Error> {
 /// [`CURRENT_SCHEMA_VERSION`].
 ///
 /// Called inside a transaction by [`migrate_schema`].
-#[allow(dead_code)]
 fn run_migrations(conn: &Connection, from_version: u64) -> Result<(), Error> {
     // No migrations exist in phase 5e1 (v1 is the only version).
     // Future phases add `if from_version < N { ... }` blocks here.

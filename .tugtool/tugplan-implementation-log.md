@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T14:52:19Z
+---
+
+## step-5: Implemented get, set, remove, keys, read_all on DomainHandle with BEGIN IMMEDIATE transactions, key validation, blob size enforcement, and generation tracking. Removed dead_code annotations from value.rs and schema.rs. Added 20 domain tests covering value round-trips, cross-domain isolation, empty-key rejection, and remove semantics.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T14:45:57Z
 ---
