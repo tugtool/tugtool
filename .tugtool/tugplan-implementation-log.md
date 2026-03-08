@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T15:48:21Z
+---
+
+## step-1: Added DefaultsStore::delete_domain method using IMMEDIATE transaction with CASCADE cleanup, and Error::exit_code mapping per Spec S06. Includes comprehensive unit tests for both.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-08T15:12:24Z
 ---
