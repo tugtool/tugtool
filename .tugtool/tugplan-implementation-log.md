@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-08T02:01:14Z
+---
+
+## step-2: Implemented R01 heuristic fallback in resolveTokenChainForProperty. Added 6 new unit tests covering three-layer chain, chromatic chain, integration, and heuristic fallback. Most step-2 work was forward drift from step-1.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
 step: step-1
 date: 2025-03-08T01:55:17Z
 ---

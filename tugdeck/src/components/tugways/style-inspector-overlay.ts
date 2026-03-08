@@ -504,6 +504,16 @@ export class StyleInspectorOverlay {
         if (PALETTE_VAR_REGEX.test(last.property)) {
           result.endsAtPalette = true;
           result.paletteVar = last.property;
+        } else if (!last.value.includes("var(")) {
+          // Risk R01 mitigation: if the terminal value contains no var() reference
+          // but we only have one chain hop, the browser may have resolved through
+          // the var() chain directly. Mark as heuristic for display.
+          // A single-hop chain where the value is already a terminal (no var()) is
+          // consistent with the browser having resolved the property all the way
+          // to a concrete value before we could read the intermediate step.
+          if (chain.length === 1 && !last.value.startsWith("oklch(")) {
+            result.usedHeuristic = true;
+          }
         }
       }
     } else {
