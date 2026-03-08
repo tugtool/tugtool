@@ -1,0 +1,258 @@
+/**
+ * style-inspector-overlay.css -- Cascade inspector overlay panel styles.
+ *
+ * Provides styles for two overlay DOM elements created by StyleInspectorOverlay:
+ *   .tug-inspector-highlight -- absolutely-positioned highlight ring around the
+ *     inspected element. Pointer-events disabled so it does not interfere with hover.
+ *   .tug-inspector-panel -- fixed-position inspector panel showing token chain,
+ *     HVV provenance, and scale/timing readout.
+ *
+ * Positioning strategy:
+ *   - The highlight element uses position:fixed and tracks the target element's
+ *     bounding rect. It sits on top of the page but passes all pointer events through.
+ *   - The panel uses position:fixed, placed near the cursor and clamped to viewport edges.
+ *   - Both elements are appended to document.body and removed when the inspector is hidden.
+ *
+ * These styles are only loaded in dev builds. The JS module is tree-shaken in
+ * production via process.env.NODE_ENV gating.
+ */
+
+/* ---------------------------------------------------------------------------
+   Highlight element -- visually marks the inspected element
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-highlight {
+  position: fixed;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid oklch(0.72 0.18 200);
+  background: oklch(0.72 0.18 200 / 0.08);
+  border-radius: 3px;
+  z-index: 999998;
+  transition: top 50ms ease-out, left 50ms ease-out, width 50ms ease-out, height 50ms ease-out;
+}
+
+.tug-inspector-highlight.tug-inspector-highlight--pinned {
+  border-color: oklch(0.72 0.18 55);
+  background: oklch(0.72 0.18 55 / 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+   Panel element -- shows token chain and inspector data
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-panel {
+  position: fixed;
+  z-index: 999999;
+  min-width: 280px;
+  max-width: 480px;
+  max-height: 75vh;
+  overflow-y: auto;
+  background: oklch(0.14 0.01 240);
+  color: oklch(0.88 0.01 240);
+  border: 1px solid oklch(0.28 0.02 240);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px oklch(0 0 0 / 0.6);
+  font-family: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0;
+  pointer-events: auto;
+  user-select: text;
+}
+
+/* ---------------------------------------------------------------------------
+   Panel header
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid oklch(0.28 0.02 240);
+  background: oklch(0.18 0.01 240);
+  border-radius: 6px 6px 0 0;
+  cursor: default;
+}
+
+.tug-inspector-panel__title {
+  font-weight: 600;
+  color: oklch(0.72 0.18 200);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tug-inspector-panel__pin-badge {
+  font-size: 10px;
+  color: oklch(0.72 0.18 55);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Panel body
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-panel__body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   Section
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tug-inspector-section__title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: oklch(0.55 0.02 240);
+  font-weight: 600;
+  padding-bottom: 2px;
+  border-bottom: 1px solid oklch(0.22 0.01 240);
+  margin-bottom: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Rows within sections
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.tug-inspector-row__label {
+  color: oklch(0.55 0.02 240);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.tug-inspector-row__value {
+  color: oklch(0.88 0.01 240);
+  word-break: break-all;
+  flex: 1;
+}
+
+.tug-inspector-row__value--dim {
+  color: oklch(0.45 0.02 240);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+   Token chain display
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tug-inspector-chain__hop {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.tug-inspector-chain__prop {
+  color: oklch(0.72 0.18 200);
+}
+
+.tug-inspector-chain__arrow {
+  color: oklch(0.45 0.02 240);
+  flex-shrink: 0;
+}
+
+.tug-inspector-chain__value {
+  color: oklch(0.7 0.12 140);
+  word-break: break-all;
+}
+
+.tug-inspector-chain__terminal {
+  color: oklch(0.72 0.18 55);
+  word-break: break-all;
+}
+
+.tug-inspector-chain__indicator {
+  color: oklch(0.55 0.12 55);
+  font-style: italic;
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   Color swatch
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid oklch(0.4 0.01 240);
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   DOM path display
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-path {
+  color: oklch(0.45 0.02 240);
+  word-break: break-all;
+  font-size: 10px;
+}
+
+.tug-inspector-path__segment {
+  color: oklch(0.6 0.08 200);
+}
+
+/* ---------------------------------------------------------------------------
+   Scale/timing readout section
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-readout {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tug-inspector-readout__item {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.tug-inspector-readout__key {
+  color: oklch(0.55 0.02 240);
+}
+
+.tug-inspector-readout__val {
+  color: oklch(0.72 0.18 200);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Hint text at the bottom
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-hint {
+  font-size: 9px;
+  color: oklch(0.38 0.01 240);
+  padding-top: 4px;
+  border-top: 1px solid oklch(0.22 0.01 240);
+  margin-top: 2px;
+}

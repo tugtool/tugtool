@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T02:19:42Z
+---
+
+## step-5: Integration checkpoint: verified all files, registrations, test suite (979 pass, 3 pre-existing failures), and all 6 design decisions. 5 manual browser verification items deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T02:15:32Z
+---
+
+## step-4: Added import and dev-only gated initStyleInspector() call in main.tsx, placed after initMotionObserver() and registerGalleryCards() but before DeckManager construction.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T02:10:00Z
+---
+
+## step-3: Created GalleryCascadeInspectorContent component with five inspectable sample elements. Added 11th gallery tab entry and registration. Updated all test files with correct count assertions.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T02:01:14Z
+---
+
+## step-2: Implemented R01 heuristic fallback in resolveTokenChainForProperty. Added 6 new unit tests covering three-layer chain, chromatic chain, integration, and heuristic fallback. Most step-2 work was forward drift from step-1.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T01:55:17Z
+---
+
+## step-1: Created StyleInspectorOverlay singleton class with modifier key tracking, elementFromPoint targeting, highlight/panel overlays, pin/unpin state, scale/timing readout, computed property display, and companion CSS. Includes 41 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
 step: step-12
 date: 2025-03-07T23:26:32Z
 ---
