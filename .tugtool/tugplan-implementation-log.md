@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-08T17:50:23Z
+---
+
+## audit-fix: CI fix: replaced 3.14 with 2.5 in test_value_to_tagged_f64 to avoid clippy::approx_constant warning
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
 step: step-6
 date: 2025-03-08T17:44:56Z
 ---

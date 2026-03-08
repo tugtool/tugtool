@@ -446,13 +446,13 @@ mod tests {
         assert_eq!(serialized, r#"{"kind":"i64","value":42}"#);
     }
 
-    // T07: F64(3.14) produces {"kind":"f64","value":3.14}
+    // T07: F64(2.5) produces {"kind":"f64","value":2.5}
     #[test]
     fn test_value_to_tagged_f64() {
-        let t = value_to_tagged(&Value::F64(3.14));
+        let t = value_to_tagged(&Value::F64(2.5));
         assert_eq!(t.kind, "f64");
         let serialized = serde_json::to_string(&t).unwrap();
-        assert_eq!(serialized, r#"{"kind":"f64","value":3.14}"#);
+        assert_eq!(serialized, r#"{"kind":"f64","value":2.5}"#);
     }
 
     // T08: String("dark") produces {"kind":"string","value":"dark"}
