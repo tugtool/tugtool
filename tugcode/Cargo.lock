@@ -2225,8 +2225,10 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum",
+ "base64",
  "chrono",
  "clap",
+ "dirs",
  "futures",
  "glob",
  "http-body-util",
@@ -2237,6 +2239,7 @@ dependencies = [
  "pty-process",
  "rand 0.10.0",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "sysinfo",
@@ -2250,6 +2253,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tugbank-core",
  "tugcast-core",
 ]
 

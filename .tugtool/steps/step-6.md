@@ -1,37 +1,33 @@
 # Step 6 Checkpoint Output
 
-## bun test deck-canvas
+## cargo nextest run
 
 ```
-bun test v1.3.9 (cf6cdbbb)
-
- 14 pass
- 0 fail
- 23 expect() calls
-Ran 14 tests across 1 file. [160.00ms]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.90s
+────────────
+ Nextest run ID 3ab26dba-b925-4131-84d3-4964d99e1c43 with nextest profile: default
+    Starting 874 tests across 15 binaries (9 tests skipped)
+────────────
+     Summary [   4.780s] 874 tests run: 874 passed, 9 skipped
 ```
 
-## bun run build
+## cargo fmt --all --check
 
 ```
-$ vite build
-vite v7.3.1 building client environment for production...
-transforming...
-✓ 1761 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/index.html                   0.73 kB │ gzip:  0.41 kB
-dist/assets/index-D6SmV3DC.css   42.96 kB │ gzip:  8.90 kB
-dist/assets/index-BqYoVzvY.js    65.63 kB │ gzip: 21.41 kB
-dist/assets/vendor-BvKEF7s2.js  192.88 kB │ gzip: 60.48 kB
-✓ built in 696ms
+(no output — formatting is clean)
+exit: 0
 ```
 
-## Full test suite
+## cargo build
 
 ```
-347 pass
-0 fail
-703 expect() calls
-Ran 347 tests across 27 files. [7.85s]
+   Compiling tugcode v0.7.34
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.65s
+```
+
+## cargo clippy --all-targets -- -D warnings
+
+```
+    Checking tugcast v0.1.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.56s
 ```

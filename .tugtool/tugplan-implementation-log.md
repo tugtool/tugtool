@@ -10,6 +10,90 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-03-08T17:50:23Z
+---
+
+## audit-fix: CI fix: replaced 3.14 with 2.5 in test_value_to_tagged_f64 to avoid clippy::approx_constant warning
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-6
+date: 2025-03-08T17:44:56Z
+---
+
+## step-6: Verification-only step: updated step-6.md with checkpoint output, confirmed 874 tests passing across 15 binaries, formatting clean, zero warnings
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-5
+date: 2025-03-08T17:39:38Z
+---
+
+## step-5: Added 10 integration tests T18-T27 for /api/defaults endpoints covering CRUD operations, error cases, loopback security, and all seven Value variants round-trip. Fixed axum 0.8 route patterns in server.rs.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T17:34:12Z
+---
+
+## step-4: Wired /api/defaults routes into server.rs with conditional DefaultsStore initialization, resolved bank path from CLI flag or ~/.tugbank.db default, updated all build_app call sites in integration_tests.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T17:27:09Z
+---
+
+## step-3: Added get_domain, get_key, put_key, delete_key handlers and bank_error_to_response helper to defaults.rs with loopback checks, spawn_blocking, and error mapping. Added rusqlite dev-dep for tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T17:21:00Z
+---
+
+## step-2: Created defaults.rs with TaggedValue serde struct, value_to_tagged and tagged_to_value conversion functions for all seven Value variants, added mod defaults to main.rs, 17 unit tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T17:16:07Z
+---
+
+## step-1: Added tugbank-core and base64 dependencies to tugcast Cargo.toml, added --bank-path optional CLI flag to Cli struct, added three unit tests for the new flag
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
+step: audit-fix
 date: 2025-03-08T16:14:20Z
 ---
 

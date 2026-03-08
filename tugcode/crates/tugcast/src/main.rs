@@ -2,6 +2,7 @@ mod actions;
 mod auth;
 mod cli;
 mod control;
+mod defaults;
 mod dev;
 mod feeds;
 mod router;
@@ -26,6 +27,7 @@ use crate::feeds::stats::{
 };
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -38,6 +40,13 @@ async fn main() {
 
     // Parse CLI arguments
     let cli = cli::Cli::parse();
+
+    // Resolve bank path: use --bank-path if provided, otherwise default to ~/.tugbank.db
+    let bank_path: Option<PathBuf> = Some(cli.bank_path.clone().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
+            .join(".tugbank.db")
+    }));
 
     info!(
         session = %cli.session,
@@ -295,8 +304,13 @@ async fn main() {
     }
 
     // Start server and select! on shutdown channel
-    let server_future =
-        server::run_server(listener, feed_router, shared_dev_state, Some(watch_dir));
+    let server_future = server::run_server(
+        listener,
+        feed_router,
+        shared_dev_state,
+        Some(watch_dir),
+        bank_path,
+    );
 
     let exit_code = tokio::select! {
         result = server_future => {

@@ -29,6 +29,10 @@ pub struct Cli {
     /// Unix domain socket path for parent IPC
     #[arg(long)]
     pub control_socket: Option<PathBuf>,
+
+    /// Path to the tugbank SQLite database (default: ~/.tugbank.db)
+    #[arg(long)]
+    pub bank_path: Option<PathBuf>,
 }
 
 impl Cli {
@@ -193,5 +197,31 @@ mod tests {
         // --dev flag was removed; verify it is no longer recognized
         let result = Cli::try_parse_from(["tugcast", "--dev", "/tmp"]);
         assert!(result.is_err(), "--dev should no longer be a valid flag");
+    }
+
+    // T01: --bank-path absent defaults to None
+    #[test]
+    fn test_bank_path_default_none() {
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert_eq!(cli.bank_path, None);
+    }
+
+    // T02: --bank-path present is parsed correctly
+    #[test]
+    fn test_bank_path_some() {
+        let cli = Cli::try_parse_from(["tugcast", "--bank-path", "/tmp/test.db"]).unwrap();
+        assert_eq!(cli.bank_path, Some(PathBuf::from("/tmp/test.db")));
+    }
+
+    // T03: --help output contains --bank-path
+    #[test]
+    fn test_help_contains_bank_path() {
+        let result = Cli::try_parse_from(["tugcast", "--help"]);
+        let err = result.unwrap_err();
+        let help_text = err.to_string();
+        assert!(
+            help_text.contains("--bank-path"),
+            "help should contain --bank-path"
+        );
     }
 }
