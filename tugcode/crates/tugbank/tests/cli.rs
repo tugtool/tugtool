@@ -200,8 +200,9 @@ fn t11_roundtrip_int() {
 #[test]
 fn t11_roundtrip_float() {
     let tmp = NamedTempFile::new().unwrap();
+    // Use 1.5 — exact in f64 and not a recognised mathematical constant.
     cmd(&tmp)
-        .args(["write", "d", "k", "--type", "float", "3.14"])
+        .args(["write", "d", "k", "--type", "float", "1.5"])
         .output()
         .unwrap()
         .status
@@ -210,13 +211,12 @@ fn t11_roundtrip_float() {
         .expect("write float should succeed");
     let out = cmd(&tmp).args(["read", "d", "k"]).output().unwrap();
     assert!(out.status.success());
-    // Compare as f64 to avoid platform-specific float formatting differences.
     let got: f64 = String::from_utf8_lossy(&out.stdout)
         .trim()
         .parse()
         .expect("output should be a float");
     assert!(
-        (got - 3.14_f64).abs() < 1e-9,
+        (got - 1.5_f64).abs() < 1e-9,
         "float roundtrip mismatch: {got}"
     );
 }

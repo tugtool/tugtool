@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-08T16:14:20Z
+---
+
+## audit-fix: CI fix: replaced 3.14 with 1.5 in t11_roundtrip_float to eliminate clippy::approx_constant lint triggered by --all-targets
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T16:08:41Z
 ---
