@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-08T23:01:05Z
+---
+
+## step-2: Added highlight-api.d.ts type declarations, captureInactiveHighlight/clearInactiveHighlight methods, proactive highlight capture in handlePointerDown, highlight lifecycle in attach/detach/reset, removed dead savedSelections map.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-1
 date: 2025-03-08T22:53:26Z
 ---

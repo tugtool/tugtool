@@ -193,6 +193,11 @@ const MAX_SCROLL_SPEED = 20;
  *   `saveSelection(cardId)` / `restoreSelection(cardId, saved)` for Phase 5b
  *   tab switching (saves selection before unmount, restores after remount).
  *
+ * Inactive selection highlight (Phase 5f2, [D03], [D04], [D05]):
+ *   `captureInactiveHighlight(cardId)` saves the live Range for a card being
+ *   deactivated and adds it to the CSS Custom Highlight for inactive painting.
+ *   `clearInactiveHighlight(cardId)` removes a card's range when it becomes active.
+ *
  * Testing:
  *   `reset()` clears all state between test cases.
  *
@@ -203,8 +208,15 @@ class SelectionGuard {
   // cardId → boundary element
   private boundaries: Map<string, HTMLElement> = new Map();
 
-  // cardId → saved selection (Phase 5b infrastructure)
-  private savedSelections: Map<string, SavedSelection> = new Map();
+  // ---- CSS Custom Highlight API state (Phase 5f2, Spec S02) ----
+
+  // cardId → saved Range for the CSS inactive-selection highlight.
+  // Only populated for inactive cards that had a selection when clicked away.
+  private highlightRanges: Map<string, Range> = new Map();
+
+  // The CSS Highlight object registered as "inactive-selection".
+  // Null when CSS.highlights is unavailable (feature-detected in attach()).
+  private highlight: Highlight | null = null;
 
   // Current tracking state during a pointer-driven drag
   private activeCardId: string | null = null;
@@ -245,12 +257,15 @@ class SelectionGuard {
   /**
    * Unregister a card content area.
    * Called by `useSelectionBoundary` on unmount cleanup.
+   * Also cleans up any inactive selection highlight for this card.
    */
   unregisterBoundary(cardId: string): void {
     this.boundaries.delete(cardId);
     if (this.activeCardId === cardId) {
       this.stopTracking();
     }
+    // Clean up the inactive highlight range for this card if one exists.
+    this.clearInactiveHighlight(cardId);
   }
 
   // ---- Lifecycle ----
@@ -258,6 +273,10 @@ class SelectionGuard {
   /**
    * Install document-level event listeners.
    * Called once at app startup by `ResponderChainProvider` (Step 6).
+   *
+   * Also creates and registers the CSS Custom Highlight for inactive selection
+   * painting (Phase 5f2, [D03], Spec S02). Feature-detected: if CSS.highlights
+   * is unavailable, highlight management is silently skipped.
    */
   attach(): void {
     document.addEventListener("pointerdown", this.boundPointerDown, { capture: true });
@@ -265,11 +284,20 @@ class SelectionGuard {
     document.addEventListener("pointerup", this.boundPointerUp, { capture: true });
     document.addEventListener("selectionchange", this.boundSelectionChange);
     document.addEventListener("selectstart", this.boundSelectStart, { capture: true });
+
+    // CSS Custom Highlight API feature detection (Risk R02).
+    if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
+      this.highlight = new Highlight();
+      CSS.highlights.set("inactive-selection", this.highlight);
+    }
   }
 
   /**
    * Remove document-level event listeners.
    * Called on teardown by `ResponderChainProvider`.
+   *
+   * Also removes the CSS Custom Highlight registration and clears all
+   * inactive highlight state (Phase 5f2, Spec S02).
    */
   detach(): void {
     document.removeEventListener("pointerdown", this.boundPointerDown, { capture: true });
@@ -278,6 +306,13 @@ class SelectionGuard {
     document.removeEventListener("selectionchange", this.boundSelectionChange);
     document.removeEventListener("selectstart", this.boundSelectStart, { capture: true });
     this.stopAutoscroll();
+
+    // Clean up the CSS Custom Highlight registration.
+    if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
+      CSS.highlights.delete("inactive-selection");
+    }
+    this.highlightRanges.clear();
+    this.highlight = null;
   }
 
   // ---- Selection persistence (Phase 5b infrastructure) ----
@@ -354,6 +389,76 @@ class SelectionGuard {
     }
   }
 
+  // ---- CSS Custom Highlight API: inactive selection painting (Phase 5f2) ----
+
+  /**
+   * Capture the current selection Range for a card being deactivated and
+   * register it with the CSS Custom Highlight for inactive selection painting.
+   *
+   * Called from the highlight-capture loop in `handlePointerDown` when the
+   * user clicks outside a card that has an active selection. The browser will
+   * clear the global Selection on pointerdown, so we capture the Range before
+   * that happens (pointerdown capture phase).
+   *
+   * No-op if:
+   * - The highlight API is unavailable (`this.highlight` is null).
+   * - The card has no registered boundary.
+   * - The current selection has no ranges.
+   * - The selection's anchor is not inside this card's boundary.
+   * - The range spans outside the card's boundary (cross-card selection).
+   *
+   * Spec S03, [D03], [D04]
+   */
+  captureInactiveHighlight(cardId: string): void {
+    if (!this.highlight) return;
+
+    const boundary = this.boundaries.get(cardId);
+    if (!boundary) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    if (!selection.anchorNode || !boundary.contains(selection.anchorNode)) return;
+
+    // Clone the range before the browser clears the selection on pointerdown.
+    const range = selection.getRangeAt(0).cloneRange();
+
+    // Boundary containment check: both endpoints must be within this card.
+    // Prevents painting a highlight that crosses card boundaries (Spec S03).
+    if (!boundary.contains(range.startContainer) || !boundary.contains(range.endContainer)) {
+      return;
+    }
+
+    // Remove the previous range for this card from the highlight (if any).
+    const existing = this.highlightRanges.get(cardId);
+    if (existing) {
+      this.highlight.delete(existing);
+    }
+
+    // Register the new range.
+    this.highlightRanges.set(cardId, range);
+    this.highlight.add(range);
+  }
+
+  /**
+   * Remove the inactive selection highlight for a card (card becoming active).
+   *
+   * Called from the highlight-capture loop in `handlePointerDown` when the
+   * user clicks inside a card, and from `unregisterBoundary` on card unmount.
+   *
+   * No-op if the card has no saved Range in `highlightRanges`.
+   *
+   * Spec S03, [D03]
+   */
+  clearInactiveHighlight(cardId: string): void {
+    const range = this.highlightRanges.get(cardId);
+    if (!range) return;
+    this.highlightRanges.delete(cardId);
+    if (this.highlight) {
+      this.highlight.delete(range);
+    }
+  }
+
   // ---- Reset (for testing) ----
 
   /**
@@ -362,7 +467,10 @@ class SelectionGuard {
   reset(): void {
     this.stopTracking();
     this.boundaries.clear();
-    this.savedSelections.clear();
+    this.highlightRanges.clear();
+    if (this.highlight) {
+      this.highlight.clear();
+    }
     this.activeCardId = null;
   }
 
@@ -397,6 +505,39 @@ class SelectionGuard {
     const target = event.target as Node | null;
     if (!target) return;
 
+    // ---- Phase 5f2: Highlight-capture loop (Spec S03, [D04]) ----
+    //
+    // This loop runs BEFORE the tracking loop below. It must visit ALL
+    // registered boundaries to capture/clear the inactive highlight for every
+    // card. The tracking loop below finds the single boundary containing the
+    // click target and returns early — the two loops cannot be merged.
+    //
+    // The browser clears the global Selection on pointerdown. We capture the
+    // live Range here (capture phase, before the browser's default behavior)
+    // so the saved Range is still valid for highlight painting.
+    if (this.highlight) {
+      const selection = window.getSelection();
+      for (const [cardId, element] of this.boundaries) {
+        if (element.contains(target)) {
+          // Click is inside this card — clear its inactive highlight.
+          // The card is becoming active and will own the live selection.
+          this.clearInactiveHighlight(cardId);
+        } else if (
+          selection &&
+          selection.rangeCount > 0 &&
+          selection.anchorNode !== null &&
+          element.contains(selection.anchorNode)
+        ) {
+          // Click is outside this card but the selection's anchor is inside it.
+          // Capture the range for the inactive highlight before the browser
+          // clears the selection.
+          this.captureInactiveHighlight(cardId);
+        }
+      }
+    }
+
+    // ---- Existing tracking loop ----
+    //
     // Find which registered card boundary contains the pointer target.
     // Only begin tracking if the target is inside a registered card content
     // area — this prevents resize handles, title bars, and canvas clicks from

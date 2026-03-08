@@ -442,3 +442,320 @@ describe("T11c – restoreSelection no-op when boundary not registered", () => {
     expect(() => selectionGuard.restoreSelection("card-deep", saved)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5f2: CSS Custom Highlight API tests
+//
+// happy-dom does not provide CSS.highlights or the Highlight constructor.
+// These tests install a mock implementation before running, and restore the
+// original state in afterEach to avoid leaking into other tests.
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal mock Highlight class — mirrors the CSS Custom Highlight Set-like API.
+ */
+class MockHighlight {
+  private ranges: Set<Range> = new Set();
+  add(range: Range): this { this.ranges.add(range); return this; }
+  delete(range: Range): boolean { return this.ranges.delete(range); }
+  clear(): void { this.ranges.clear(); }
+  has(range: Range): boolean { return this.ranges.has(range); }
+  get size(): number { return this.ranges.size; }
+  entries(): IterableIterator<[Range, Range]> { return this.ranges.entries() as IterableIterator<[Range, Range]>; }
+  getAll(): Range[] { return Array.from(this.ranges); }
+}
+
+/**
+ * Minimal mock HighlightRegistry — mirrors CSS.highlights Map-like API.
+ */
+class MockHighlightRegistry {
+  private map: Map<string, MockHighlight> = new Map();
+  set(name: string, highlight: MockHighlight): this { this.map.set(name, highlight); return this; }
+  get(name: string): MockHighlight | undefined { return this.map.get(name); }
+  delete(name: string): boolean { return this.map.delete(name); }
+  has(name: string): boolean { return this.map.has(name); }
+  clear(): void { this.map.clear(); }
+}
+
+/**
+ * Install the mock CSS Highlight API into the global environment.
+ * Returns a handle to the mock registry for inspection in tests.
+ */
+function installMockHighlightApi(): MockHighlightRegistry {
+  const registry = new MockHighlightRegistry();
+  // Install Highlight constructor globally so `new Highlight()` in selection-guard works.
+  (global as any).Highlight = MockHighlight;
+  // Install CSS.highlights globally.
+  const cssGlobal = (global as any).CSS ?? {};
+  cssGlobal.highlights = registry;
+  (global as any).CSS = cssGlobal;
+  return registry;
+}
+
+/**
+ * Remove the mock CSS Highlight API from the global environment.
+ */
+function removeMockHighlightApi(): void {
+  delete (global as any).Highlight;
+  if ((global as any).CSS) {
+    delete (global as any).CSS.highlights;
+  }
+}
+
+/**
+ * Create a Range that spans a text node inside a boundary element.
+ * Uses the happy-dom Range constructor (assigned to global.Range in this file).
+ */
+function makeRange(boundary: HTMLElement, text: string): Range {
+  const textNode = makeTextNode(boundary, text);
+  const range = new (global as any).Range() as Range;
+  range.setStart(textNode as unknown as Node, 0);
+  range.setEnd(textNode as unknown as Node, text.length);
+  return range;
+}
+
+// ---------------------------------------------------------------------------
+// T12: CSS Custom Highlight API — attach/detach lifecycle
+// ---------------------------------------------------------------------------
+
+describe("T12 – attach/detach registers and removes CSS.highlights entry", () => {
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("attach() registers 'inactive-selection' in CSS.highlights when API is available", () => {
+    const registry = installMockHighlightApi();
+    selectionGuard.attach();
+    expect(registry.has("inactive-selection")).toBe(true);
+  });
+
+  it("detach() removes 'inactive-selection' from CSS.highlights", () => {
+    const registry = installMockHighlightApi();
+    selectionGuard.attach();
+    expect(registry.has("inactive-selection")).toBe(true);
+    selectionGuard.detach();
+    expect(registry.has("inactive-selection")).toBe(false);
+  });
+
+  it("attach() is a no-op when CSS.highlights is undefined (no errors thrown)", () => {
+    // Do NOT install mock — CSS.highlights is absent.
+    expect(() => selectionGuard.attach()).not.toThrow();
+  });
+
+  it("detach() is a no-op when CSS.highlights is undefined (no errors thrown)", () => {
+    expect(() => selectionGuard.detach()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T13: captureInactiveHighlight stores Range and adds it to the Highlight
+// ---------------------------------------------------------------------------
+
+describe("T13 – captureInactiveHighlight", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("stores a cloned Range in the Highlight object (size increases to 1)", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-hl", boundary);
+
+    // Build a range inside the boundary and set window.getSelection() to return it.
+    const range = makeRange(boundary, "hello");
+    const mockSel = {
+      rangeCount: 1,
+      anchorNode: range.startContainer,
+      getRangeAt: (_i: number) => range,
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+
+    selectionGuard.captureInactiveHighlight("card-hl");
+
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl).toBeDefined();
+    // captureInactiveHighlight clones the range, so the Highlight contains
+    // a different Range object (the clone), not the original. Verify by size.
+    expect(hl.size).toBe(1);
+    // The stored range should cover the same content as the original.
+    const stored = hl.getAll()[0];
+    expect(stored).toBeDefined();
+    expect(stored.startContainer).toBe(range.startContainer);
+    expect(stored.startOffset).toBe(range.startOffset);
+    expect(stored.endOffset).toBe(range.endOffset);
+
+    // Restore window
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+
+  it("replaces an existing Range when called again for the same card (size stays 1)", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-hl2", boundary);
+
+    const range1 = makeRange(boundary, "first");
+    const mockSel1 = { rangeCount: 1, anchorNode: range1.startContainer, getRangeAt: () => range1 };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel1 };
+    selectionGuard.captureInactiveHighlight("card-hl2");
+
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(1);
+    const firstStored = hl.getAll()[0];
+
+    const range2 = makeRange(boundary, "second");
+    const mockSel2 = { rangeCount: 1, anchorNode: range2.startContainer, getRangeAt: () => range2 };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel2 };
+    selectionGuard.captureInactiveHighlight("card-hl2");
+
+    // The first stored range should be removed; only the second capture remains.
+    expect(hl.has(firstStored)).toBe(false);
+    expect(hl.size).toBe(1);
+    const secondStored = hl.getAll()[0];
+    expect(secondStored.startContainer).toBe(range2.startContainer);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+
+  it("discards a range whose startContainer is outside the card boundary", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-cross", boundary);
+
+    // Build a range whose startContainer is an external node (outside boundary).
+    const externalNode = happyWindow.document.createTextNode("outside") as unknown as Text;
+    (happyWindow.document.body as unknown as Element).appendChild(externalNode as unknown as Node);
+
+    const range = new (global as any).Range() as Range;
+    range.setStart(externalNode as unknown as Node, 0);
+    range.setEnd(externalNode as unknown as Node, 7);
+
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-cross");
+
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    // The range should NOT have been added.
+    expect(hl.size).toBe(0);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(externalNode as unknown as Node);
+  });
+
+  it("is a no-op when the highlight API is unavailable (this.highlight is null)", () => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+
+    const boundary = makeBoundary();
+    selectionGuard.registerBoundary("card-nohl", boundary);
+
+    // No highlight available — should not throw.
+    expect(() => selectionGuard.captureInactiveHighlight("card-nohl")).not.toThrow();
+  });
+
+  it("is a no-op for an unregistered card", () => {
+    expect(() => selectionGuard.captureInactiveHighlight("nonexistent")).not.toThrow();
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T14: clearInactiveHighlight removes Range from Highlight and highlightRanges
+// ---------------------------------------------------------------------------
+
+describe("T14 – clearInactiveHighlight", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("removes the cloned Range from the Highlight object, bringing size back to 0", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-clr", boundary);
+
+    const range = makeRange(boundary, "to clear");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-clr");
+
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(1);
+
+    selectionGuard.clearInactiveHighlight("card-clr");
+    // After clearing, the Highlight should contain no ranges.
+    expect(hl.size).toBe(0);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+
+  it("is a no-op when the card has no saved Range (does not throw)", () => {
+    expect(() => selectionGuard.clearInactiveHighlight("card-no-range")).not.toThrow();
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T15: reset() clears all highlight state
+// ---------------------------------------------------------------------------
+
+describe("T15 – reset() clears highlight state", () => {
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("clears all ranges from the Highlight object on reset", () => {
+    const registry = installMockHighlightApi();
+    selectionGuard.attach();
+
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-rst", boundary);
+
+    const range = makeRange(boundary, "reset me");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-rst");
+
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(1);
+
+    selectionGuard.reset();
+    expect(hl.size).toBe(0);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+
+  it("reset() is safe to call when no highlight API is available", () => {
+    // No mock installed — highlight is null.
+    expect(() => selectionGuard.reset()).not.toThrow();
+  });
+});
