@@ -9,6 +9,10 @@ use std::net::SocketAddr;
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 
+use std::sync::Arc;
+
+use tugbank_core::DefaultsStore;
+
 use crate::auth::{self, SESSION_COOKIE_NAME};
 use crate::dev;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
@@ -1046,7 +1050,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let bank_path = tmp.path().to_path_buf();
+    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
 
     let auth = auth::new_shared_auth_state(7892);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1070,7 +1074,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    let app = build_app(feed_router, dev_state, None, Some(store));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     (app.layer(MockConnectInfo(addr)), tmp)
 }
@@ -1340,7 +1344,7 @@ async fn test_defaults_non_loopback_returns_403() {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let bank_path = tmp.path().to_path_buf();
+    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1364,7 +1368,7 @@ async fn test_defaults_non_loopback_returns_403() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    let app = build_app(feed_router, dev_state, None, Some(store));
     // Apply a non-loopback address
     let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
     let app = app.layer(MockConnectInfo(non_loopback));

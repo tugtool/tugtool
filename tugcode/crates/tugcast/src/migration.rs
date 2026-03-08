@@ -29,8 +29,6 @@ use tugbank_core::{DefaultsStore, Value};
 ///   6. Log migration result at info level
 ///
 /// If the file does not exist, this function is a no-op.
-// Step 2 wires the call site in main.rs; suppress dead_code until then.
-#[allow(dead_code)]
 pub(crate) fn migrate_settings_to_tugbank(
     source_tree: &Path,
     store: &DefaultsStore,

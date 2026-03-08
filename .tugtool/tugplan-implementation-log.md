@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-08T19:05:40Z
+---
+
+## step-2: Lifted DefaultsStore::open from build_app into main.rs, called migrate_settings_to_tugbank at startup before TCP bind, updated server.rs and integration tests to accept Option<Arc<DefaultsStore>>, removed #[allow(dead_code)] from migration.rs.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: step-1
 date: 2025-03-08T18:58:29Z
 ---

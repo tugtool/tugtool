@@ -16,8 +16,9 @@ mod integration_tests;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tugbank_core::DefaultsStore;
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
 use crate::auth::new_shared_auth_state;
@@ -43,11 +44,11 @@ async fn main() {
     let cli = cli::Cli::parse();
 
     // Resolve bank path: use --bank-path if provided, otherwise default to ~/.tugbank.db
-    let bank_path: Option<PathBuf> = Some(cli.bank_path.clone().unwrap_or_else(|| {
+    let bank_path: PathBuf = cli.bank_path.clone().unwrap_or_else(|| {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
             .join(".tugbank.db")
-    }));
+    });
 
     info!(
         session = %cli.session,
@@ -117,6 +118,29 @@ async fn main() {
         std::env::current_dir().unwrap_or_default().join(&cli.dir)
     };
     let watch_dir = dev::resolve_symlinks(&watch_dir).unwrap_or(watch_dir);
+
+    // Open the tugbank store. On success, wrap in Arc for shared ownership between
+    // migration and the HTTP server. On failure, log a warning and continue without
+    // tugbank -- this preserves graceful degradation when the bank path is inaccessible.
+    let bank_store: Option<Arc<DefaultsStore>> = match DefaultsStore::open(&bank_path) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(e) => {
+            warn!(
+                path = %bank_path.display(),
+                error = %e,
+                "failed to open tugbank database — defaults endpoints disabled"
+            );
+            None
+        }
+    };
+
+    // Run the one-time flat-file-to-tugbank migration synchronously, before the
+    // TCP listener binds, so no frontend fetch can race the migration writes [D05].
+    if let Some(ref store) = bank_store {
+        if let Err(e) = migration::migrate_settings_to_tugbank(&watch_dir, store) {
+            warn!(error = %e, "settings migration encountered an error (non-fatal)");
+        }
+    }
 
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
@@ -310,7 +334,7 @@ async fn main() {
         feed_router,
         shared_dev_state,
         Some(watch_dir),
-        bank_path,
+        bank_store,
     );
 
     let exit_code = tokio::select! {
