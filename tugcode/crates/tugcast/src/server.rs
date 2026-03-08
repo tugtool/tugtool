@@ -24,7 +24,6 @@ use tugbank_core::DefaultsStore;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
-use crate::settings::SettingsState;
 
 /// Request payload for /api/tell endpoint
 // Allow dead_code: struct is used only for testing/documentation
@@ -140,28 +139,11 @@ pub(crate) fn build_app(
     source_tree: Option<PathBuf>,
     bank_store: Option<Arc<DefaultsStore>>,
 ) -> Router {
-    // Derive settings path before source_tree is consumed by the if-let below.
-    let settings_path = source_tree
-        .as_ref()
-        .map(|t| t.join(".tugtool/deck-settings.json"));
-    let settings_state = Arc::new(SettingsState {
-        path: settings_path,
-        lock: tokio::sync::Mutex::new(()),
-    });
-
     let mut base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .with_state(router)
-        // Settings handlers use Extension, not State<FeedRouter>, so the route
-        // is added after .with_state() as a stateless route and gets the
-        // Extension layer applied to the whole router.
-        .route(
-            "/api/settings",
-            get(crate::settings::get_settings).post(crate::settings::post_settings),
-        )
-        .layer(Extension(settings_state));
+        .with_state(router);
 
     // Wire defaults routes when an already-opened store is provided.
     if let Some(store) = bank_store {

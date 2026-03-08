@@ -1,69 +1,42 @@
-# Step 5: DeckManager Rebuild
+# Step 5: Remove legacy /api/settings endpoint and settings module
 
-## Files Created
+## Files Deleted
 
-- `tugdeck/src/__tests__/deck-manager.test.ts`
+- `tugcode/crates/tugcast/src/settings.rs`
 
 ## Files Modified
 
-- `tugdeck/src/deck-manager.ts` (rebuilt: addCard, removeCard, moveCard, focusCard, cascade, stable callbacks, removed deckCanvasRef)
-- `tugdeck/src/serialization.ts` (buildDefaultLayout now returns empty DeckState)
-- `tugdeck/src/__tests__/layout-tree.test.ts` (updated 4 tests: T28/T29 and non-overlapping test)
-- `tugdeck/src/components/chrome/deck-canvas.tsx` (DeckCanvasProps extended with optional Spec S06 props)
+- `tugcode/crates/tugcast/src/main.rs` — removed `mod settings;`
+- `tugcode/crates/tugcast/src/server.rs` — removed `use crate::settings::SettingsState;`, removed `settings_path` derivation, `settings_state` creation, `/api/settings` route, and `.layer(Extension(settings_state))` call
+- `tugcode/crates/tugcast/src/integration_tests.rs` — removed `build_settings_test_app` helper and all 7 `test_settings_*` test functions
 
 ## Implementation Notes
 
-- `buildDefaultLayout` now returns `{ cards: [] }`. The old five-card layout used componentIds not registered in Phase 5.
-- `deckCanvasRef` and the `DeckCanvasHandle` import are removed from DeckManager. DeckManager now drives DeckCanvas via props.
-- Callbacks bound once in constructor: `handleCardMoved`, `handleCardClosed`, `handleCardFocused`. `render()` never creates new function objects.
-- Each state-mutating method assigns `this.deckState = { ...this.deckState }` before calling `render()` so React sees a new object reference.
-- Cascade positioning: `cascadeIndex` increments on each `addCard`. When `x + DEFAULT_CARD_WIDTH > canvasWidth` OR `y + DEFAULT_CARD_HEIGHT > canvasHeight`, cascadeIndex resets to 0 and returns (0,0).
-- `DeckCanvasProps` updated with optional `deckState`, `onCardMoved`, `onCardClosed`, `onCardFocused` (Spec S06). All new props are optional so existing test call sites passing only `connection={null}` continue to work.
-- `localStorage` stubbed in deck-manager.test.ts because happy-dom workers don't provide it by default.
-- T35 cascade reset test detects wrap-around by checking for a card whose x < predecessor's x, rather than relying on exact canvas dimensions.
+- Deleting `settings.rs` also removed its internal `#[cfg(test)] mod tests` block (10 unit tests for `DeckSettings`, `load_settings`, and `save_settings`).
+- Total tests removed: 17 (10 unit + 7 integration). Remaining suite: 197 tests, all passing.
+- No unused-import warnings after removal — `server.rs` no longer imports from `settings`.
 
-## Checkpoint Output
+## Checkpoint 1: Full tugcast test suite
+
+**Command:** `cd tugcode && cargo nextest run -p tugcast`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test src/__tests__/deck-manager.test.ts
-
-bun test v1.3.9 (cf6cdbbb)
-
- 17 pass
- 0 fail
- 54 expect() calls
-Ran 17 tests across 1 file. [112.00ms]
-
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test src/__tests__/layout-tree.test.ts
-
-bun test v1.3.9 (cf6cdbbb)
-
- 17 pass
- 0 fail
- 61 expect() calls
-Ran 17 tests across 1 file. [53.00ms]
-
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun run build
-
-vite v7.3.1 building client environment for production...
-✓ 1760 modules transformed.
-✓ built in 719ms (zero warnings, zero errors)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.18s
+────────────
+ Nextest run ID 0e5bcb29-e67d-4b31-bdd4-696a17649f59 with nextest profile: default
+    Starting 197 tests across 1 binary (4 tests skipped)
+────────────
+     Summary [   4.578s] 197 tests run: 197 passed, 4 skipped
 ```
 
-## Full Test Suite Output
+**Result:** PASSED — 197 tests passed, 4 skipped
+
+## Checkpoint 2: Zero warnings
+
+**Command:** `cd tugcode && cargo build -p tugcast 2>&1 | grep -c warning`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test
-
- 341 pass
- 0 fail
- 691 expect() calls
-Ran 341 tests across 27 files. [7.84s]
+0
 ```
 
-## TypeScript Check
-
-```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bunx tsc --noEmit
-(no output -- type check clean)
-```
+**Result:** PASSED — 0 warnings

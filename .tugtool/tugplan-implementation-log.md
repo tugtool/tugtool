@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T19:23:44Z
+---
+
+## step-5: Deleted settings.rs, removed mod settings from main.rs, removed SettingsState/route/layer from server.rs, removed 7 settings integration tests and build_settings_test_app helper. 197 tests pass, 0 warnings.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T19:17:45Z
 ---
