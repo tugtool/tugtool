@@ -2,6 +2,7 @@ mod actions;
 mod auth;
 mod cli;
 mod control;
+mod defaults;
 mod dev;
 mod feeds;
 mod router;
