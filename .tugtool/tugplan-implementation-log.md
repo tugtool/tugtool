@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-08T21:43:10Z
+---
+
+## step-6: Added useTugcardPersistence hook to use-tugcard-persistence.tsx with Rule 5 ref pattern and Rule 3 useLayoutEffect registration, plus integration tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T21:36:08Z
 ---
