@@ -438,7 +438,7 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 ### Phase 5f: Inactive State Preservation (Concept 18, [D49]-[D52])
 
-**Goal**: Card and tab state survives both tab switching and app reload. Selections, scroll positions, collapse state, focused card identity, and card content state are all preserved.
+**Goal**: Card and tab state survives both tab switching and app reload. Selections, scroll positions, collapse state, focused card identity, and card content state are all preserved. Inactive cards display selections with a dimmed appearance following standard GUI conventions.
 
 **What to do**:
 1. Add `collapsed?: boolean` to `CardState` in `layout-tree.ts` ([D52]). Update serialization to read/write it. No UI yet — Phase 8a builds the collapse toggle.
@@ -448,7 +448,8 @@ Phase 5e is split into four sub-phases for incremental delivery.
 5. Implement Tugcard activation restore: on tab switch to, read the state bag from the in-memory cache (falling back to tugbank on cache miss). After mount, set `contentArea.scrollLeft`/`scrollTop`. Call `SelectionGuard.restoreSelection()`. Call the card content's `onRestore` callback (if registered).
 6. Implement `useTugcardPersistence` hook ([D50]) — card content components call `useTugcardPersistence({ onSave: () => T, onRestore: (state: T) => void })`. The hook registers callbacks with Tugcard via context. Tugcard calls `onSave` on deactivation and `onRestore` on activation.
 7. On app reload: DeckManager reads all tab state bags from tugbank during initialization. Passes them to Tugcard instances. Each Tugcard restores its active tab's state on first mount.
-8. Verify: switch tabs → scroll position restored, selection restored. Reload app → scroll position restored, selection restored, focused card restored, collapsed state restored. Card content state round-trips via `useTugcardPersistence`.
+8. Implement inactive selection appearance ([D77]): add `--tug-base-selection-bg-inactive` token to `tug-tokens.css` with theme-specific overrides in `bluenote.css` and `harmony.css`. Add CSS rule scoped to `.card-frame[data-focused="false"] .tugcard-content ::selection` to use the dimmed background. Pure CSS, no React state — follows Rule 4.
+9. Verify: switch tabs → scroll position restored, selection restored. Reload app → scroll position restored, selection restored, focused card restored, collapsed state restored. Card content state round-trips via `useTugcardPersistence`. Inactive cards display selections with dimmed background across all three themes.
 
 **Files created/modified**:
 1. `tugdeck/src/layout-tree.ts` — add `collapsed` to CardState, `focusedCardId` to DeckState
@@ -457,10 +458,12 @@ Phase 5e is split into four sub-phases for incremental delivery.
 4. `tugdeck/src/components/tugways/tugcard.tsx` — deactivation capture, activation restore lifecycle
 5. `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` — new hook
 6. `tugdeck/src/selection-guard.ts` — ensure save/restore works with the new lifecycle (may need no changes if the API is already correct)
+7. `tugdeck/styles/tug-tokens.css` — add `--tug-base-selection-bg-inactive` token
+8. `tugdeck/styles/bluenote.css`, `tugdeck/styles/harmony.css` — theme-specific inactive selection overrides
 
-**Result**: Tab state survives both tab switches and app reload. Card content components can opt into state persistence via a simple hook. The selection guard's existing save/restore mechanism is extended from in-memory-only to durable persistence via tugbank. The `collapsed` field is ready for Phase 8a's UI. The focused card is restored on reload.
+**Result**: Tab state survives both tab switches and app reload. Card content components can opt into state persistence via a simple hook. The selection guard's existing save/restore mechanism is extended from in-memory-only to durable persistence via tugbank. The `collapsed` field is ready for Phase 8a's UI. The focused card is restored on reload. Inactive cards display selections with a dimmed background following standard GUI conventions.
 
-**Note**: Terminal buffer persistence is explicitly deferred to Phase 9's terminal card work. The `useTugcardPersistence` hook provides the mechanism; the terminal card will implement its own `onSave`/`onRestore` for xterm.js buffer state when the time comes.
+**Note**: Terminal buffer persistence is explicitly deferred to Phase 9's terminal card work. The `useTugcardPersistence` hook provides the mechanism; the terminal card will implement its own `onSave`/`onRestore` for xterm.js buffer state when the time comes. Similarly, Monaco editor state persistence (cursor position, scroll, folding, find widget) will use the same `useTugcardPersistence` hook via `editor.saveViewState()`/`editor.restoreViewState()` when a code card is introduced in Phase 8/9 — the hook's opaque `content` blob is designed to handle arbitrarily complex state structures.
 
 ### Phase 5c: Card Snapping (Concept 13)
 

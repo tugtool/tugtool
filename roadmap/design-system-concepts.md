@@ -126,6 +126,7 @@
 | [D74] | Dev cascade inspector: `Ctrl+Option + hover` shows token resolution chain | Concept 22 | [#d74-cascade-inspector](#d74-cascade-inspector) |
 | [D75] | Neutral ramp and opacity: `--tug-neutral-*` achromatic ramp, CSS relative color syntax for alpha | Concept 22 | [#d75-neutral-ramp](#d75-neutral-ramp) |
 | [D76] | TugAnimator: single programmatic animation engine wrapping WAAPI | Concept 8 | [#d76-tuganimator](#d76-tuganimator) |
+| [D77] | Inactive selection appearance: dimmed `::selection` background in unfocused cards | Concept 18 | [#d77-inactive-selection](#d77-inactive-selection) |
 
 ### Key Architectural Patterns
 
@@ -3240,6 +3241,29 @@ The currently-focused card ID is written to tugbank under `dev.tugtool.deck.stat
 
 Add `collapsed?: boolean` to `CardState` in `layout-tree.ts`. This field is serialized with the layout and restored on reload. When `true`, the card renders in window-shade mode (title bar only, content hidden). The collapse UI itself is built in Phase 8a (title bar enhancements), but the data field and persistence are established here so that Phase 8a can simply read/write it.
 
+#### Inactive Selection Appearance {#d77-inactive-selection}
+
+**[D77] Inactive selection appearance: dimmed `::selection` background in unfocused cards.**
+
+When a card loses focus, any visible text selection in that card should render with a dimmed, desaturated background rather than the active highlight color. This follows the standard macOS/Windows convention where inactive window selections use a gray or muted treatment to visually distinguish them from the active selection.
+
+**Implementation:** Pure CSS via the existing `data-focused` attribute on `.card-frame` ([D08], Rule 4 — appearance changes through CSS and DOM, never React state):
+
+```css
+.card-frame[data-focused="false"] .tugcard-content ::selection {
+  background: var(--tug-base-selection-bg-inactive);
+  color: inherit;
+}
+```
+
+A new `--tug-base-selection-bg-inactive` token is added to `tug-tokens.css` with theme-specific overrides in `bluenote.css` and `harmony.css`. The brio theme uses the base token value directly.
+
+**Note:** The CSS `::selection` pseudo-element only styles the current browser Selection object. This treatment is visible in the brief window between defocusing a card and creating a new selection elsewhere — which is the standard platform behavior. The SelectionGuard's save/restore mechanism ([D34]) handles full selection persistence across tab switches and reloads; this decision only governs the *visual appearance* of selections in unfocused cards.
+
+#### Monaco Editor Forward Compatibility {#monaco-forward-compat}
+
+The `useTugcardPersistence` hook's `content` field in `TabStateBag` is typed as `unknown` (opaque JSON) and can hold arbitrarily deep state structures. This is intentionally designed to accommodate rich editor state models. When Phase 8/9 introduces a Monaco-based code card, the card content should use `editor.saveViewState()` in `onSave` and `editor.restoreViewState()` in `onRestore` to persist Monaco's full view state (cursor position, scroll state, folding state, find widget state, etc.) through the hook. No structural changes to the persistence infrastructure are needed — the hook and state bag are already designed to handle this. Terminal buffer persistence (xterm.js) is similarly deferred to Phase 9.
+
 ### 19. Target/Action Control Model {#c19-target-action}
 
 **Status: IMPLEMENTED** (2026-03-05)
@@ -4146,7 +4170,9 @@ Cards and tabs lose ephemeral state in two scenarios: tab switch (inactive tab u
 - **[D50] `useTugcardPersistence` hook** gives card content components a clean opt-in API. Card content provides `onSave`/`onRestore` callbacks; Tugcard calls them at the right lifecycle points. The state blob is opaque JSON — card content owns the schema.
 - **[D51] Focused card persistence** writes the focused card ID to tugbank. On reload, keyboard focus is restored to the correct card.
 - **[D52] Collapsed state** adds `collapsed?: boolean` to `CardState`. The field persists with the layout; the collapse UI is Phase 8a's responsibility.
-- **Phase 5f**: Implementation phase. Depends on Phase 5e (tugbank) for durable storage and Phase 5b (tabs) for the tab state lifecycle. Builds the state bag, persistence hook, scroll/selection capture, collapse field, and focused card restoration.
+- **[D77] Inactive selection appearance** dims `::selection` in unfocused cards via a `--tug-base-selection-bg-inactive` CSS token, following the standard macOS/Windows convention of gray/muted inactive selections. Pure CSS, scoped via the existing `data-focused` attribute on `.card-frame`.
+- **Monaco forward compatibility**: The `useTugcardPersistence` hook's opaque `content` blob is designed to accommodate rich editor state. Phase 8/9 Monaco integration should use `editor.saveViewState()`/`editor.restoreViewState()` through the hook — no structural changes needed.
+- **Phase 5f**: Implementation phase. Depends on Phase 5e (tugbank) for durable storage and Phase 5b (tabs) for the tab state lifecycle. Builds the state bag, persistence hook, scroll/selection capture, collapse field, focused card restoration, and inactive selection appearance.
 
 ### Entry 26: Card Snap Set Refinements — Phase 5c2 {#log-26} (2026-03-04)
 
