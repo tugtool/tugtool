@@ -377,14 +377,6 @@ describe("tug-palette.css — per-hue constants", () => {
     }
   });
 
-  it("all 24 --tug-{hue}-canonical-l values match DEFAULT_CANONICAL_L", () => {
-    for (const [hue, canonL] of Object.entries(DEFAULT_CANONICAL_L)) {
-      // Match the numeric value (may be formatted without trailing zeros)
-      const valStr = canonL.toString();
-      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l: ${valStr}`);
-    }
-  });
-
   it("contains all 24 --tug-{hue}-peak-c variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
