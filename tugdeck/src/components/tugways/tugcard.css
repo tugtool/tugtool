@@ -173,6 +173,25 @@
   color: var(--tug-base-selection-fg);
 }
 
+/*
+ * Inactive selection: dimmed, desaturated background for non-focused cards.
+ *
+ * Scoped to .card-frame[data-focused="false"] using the existing data-focused
+ * attribute set by card-frame.tsx. Overrides the active selection color so
+ * text selected in a non-focused card appears with a low-opacity gray,
+ * matching macOS inactive window selection conventions.
+ *
+ * Rule 4 of Rules of Tugways: appearance changes through CSS and DOM, never
+ * React state. No JavaScript needed — the browser applies the correct
+ * ::selection style based on the data-focused attribute.
+ *
+ * [D05] Inactive selection dimmed CSS (#d05-inactive-selection)
+ */
+.card-frame[data-focused="false"] .tugcard-content ::selection {
+  background-color: var(--tug-base-selection-bg-inactive);
+  color: inherit;
+}
+
 [data-td-select="none"] {
   user-select: none;
 }

@@ -38,6 +38,7 @@ import { GalleryObservablePropsContent } from "@/components/tugways/cards/galler
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { _resetForTest } from "@/card-registry";
+import { withDeckManager } from "./mock-deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Shared schema fixture
@@ -69,11 +70,13 @@ function renderObservableProps(cardId = "obs-int-card") {
   let container!: HTMLElement;
   act(() => {
     ({ container } = render(
-      <ResponderChainContext.Provider value={manager}>
-        <Tugcard cardId={cardId} meta={{ title: "Test" }} feedIds={[]}>
-          <GalleryObservablePropsContent cardId={cardId} />
-        </Tugcard>
-      </ResponderChainContext.Provider>
+      withDeckManager(
+        <ResponderChainContext.Provider value={manager}>
+          <Tugcard cardId={cardId} meta={{ title: "Test" }} feedIds={[]}>
+            <GalleryObservablePropsContent cardId={cardId} />
+          </Tugcard>
+        </ResponderChainContext.Provider>
+      )
     ));
   });
   // Flush useLayoutEffect hooks (usePropertyStore registration, useResponder).

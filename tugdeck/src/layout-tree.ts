@@ -7,6 +7,8 @@
  * Spec S01: Canvas Data Model Types
  */
 
+import type { SavedSelection } from "./components/tugways/selection-guard";
+
 // ---- Types (Spec S01) ----
 
 export interface TabItem {
@@ -14,6 +16,20 @@ export interface TabItem {
   componentId: string; // "terminal" | "git" | "files" | "stats" | "code"
   title: string;
   closable: boolean;
+}
+
+/**
+ * Per-tab state bag for scroll position, text selection, and card content state.
+ *
+ * Stored in DeckManager's in-memory cache (primary read source during a session)
+ * and in tugbank under dev.tugtool.deck.tabstate/{tabId} (durable backing store).
+ *
+ * Spec S01: TabStateBag type ([D01])
+ */
+export interface TabStateBag {
+  scroll?: { x: number; y: number };
+  selection?: SavedSelection | null;
+  content?: unknown;
 }
 
 export interface CardState {
@@ -26,8 +42,21 @@ export interface CardState {
   title: string;
   /** Families of card types this card can host in its type picker. Defaults to ["standard"]. */
   acceptsFamilies: readonly string[];
+  /**
+   * Whether the card is collapsed (title bar only, content hidden).
+   * Missing/undefined is treated as false. No UI in Phase 5f — field established for Phase 8a.
+   * ([D04])
+   */
+  collapsed?: boolean;
 }
 
 export interface DeckState {
   cards: CardState[];
+  /**
+   * The ID of the card that was focused when the deck was last saved.
+   * Used only for reload restoration (not runtime focus inference).
+   * Persisted separately to tugbank via settings-api, not in the layout blob.
+   * ([D03])
+   */
+  focusedCardId?: string;
 }

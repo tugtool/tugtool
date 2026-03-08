@@ -11,7 +11,7 @@
  * - Spec S01: IDeckManagerStore interface
  */
 
-import type { DeckState } from "./layout-tree";
+import type { DeckState, TabStateBag } from "./layout-tree";
 
 /**
  * Subscribable store interface for DeckManager.
@@ -89,4 +89,26 @@ export interface IDeckManagerStore {
    * If the source card has only one tab, the source card is removed.
    */
   mergeTab: (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number) => void;
+
+  // ---- Phase 5f: Tab state cache and focus persistence (Spec S03) ----
+
+  /**
+   * Read a tab state bag from the in-memory cache.
+   * Returns undefined if the tab has no cached state.
+   */
+  getTabState: (tabId: string) => TabStateBag | undefined;
+
+  /**
+   * Write a tab state bag to the in-memory cache and schedule a debounced
+   * tugbank write (fire-and-forget).
+   */
+  setTabState: (tabId: string, bag: TabStateBag) => void;
+
+  /**
+   * The card ID that was focused when the deck was last saved to tugbank.
+   * Used only on reload to restore focus via makeFirstResponder in DeckCanvas.
+   * Cleared to undefined after DeckCanvas reads it (fires once on mount).
+   * ([D03])
+   */
+  initialFocusedCardId?: string;
 }

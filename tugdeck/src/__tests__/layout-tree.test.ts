@@ -3,6 +3,7 @@ import {
   type DeckState,
   type CardState,
   type TabItem,
+  type TabStateBag,
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
@@ -524,5 +525,128 @@ describe("addNewTab data model (D01)", () => {
 
     expect(canAddGit).toBe(false);
     expect(canAddTerminal).toBe(true);
+  });
+});
+
+// ---- Phase 5f: collapsed field serialization tests ([D04]) ----
+
+describe("CardState collapsed field (Phase 5f, Step 1)", () => {
+  test("deserialize of v5 JSON with collapsed:true produces CardState with collapsed === true", () => {
+    const v5 = {
+      version: 5,
+      cards: [
+        {
+          id: "card-collapsed-1",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [{ id: "tab-c1", componentId: "hello", title: "Hello", closable: true }],
+          activeTabId: "tab-c1",
+          title: "",
+          acceptsFamilies: ["standard"],
+          collapsed: true,
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].collapsed).toBe(true);
+  });
+
+  test("deserialize of v5 JSON without collapsed produces CardState with collapsed === undefined", () => {
+    const v5 = {
+      version: 5,
+      cards: [
+        {
+          id: "card-no-collapsed",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          tabs: [{ id: "tab-nc", componentId: "hello", title: "Hello", closable: true }],
+          activeTabId: "tab-nc",
+          title: "",
+          acceptsFamilies: ["standard"],
+          // collapsed intentionally omitted
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(v5), 1920, 1080);
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].collapsed).toBeUndefined();
+  });
+
+  test("serialize of DeckState with collapsed:true card includes collapsed field in output", () => {
+    const card: CardState = {
+      id: "card-ser-collapsed",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: "tab-sc", componentId: "hello", title: "Hello", closable: true }],
+      activeTabId: "tab-sc",
+      title: "",
+      acceptsFamilies: ["standard"],
+      collapsed: true,
+    };
+    const state: DeckState = { cards: [card] };
+    const serialized = serialize(state) as { version: number; cards: CardState[] };
+    expect(serialized.cards.length).toBe(1);
+    expect(serialized.cards[0].collapsed).toBe(true);
+  });
+
+  test("serialize -> deserialize round-trip preserves collapsed:true", () => {
+    const card: CardState = {
+      id: "card-rt-collapsed",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: "tab-rtc", componentId: "hello", title: "Hello", closable: true }],
+      activeTabId: "tab-rtc",
+      title: "",
+      acceptsFamilies: ["standard"],
+      collapsed: true,
+    };
+    const json = JSON.stringify(serialize({ cards: [card] }));
+    const restored = deserialize(json, 1920, 1080);
+    expect(restored.cards[0].collapsed).toBe(true);
+  });
+});
+
+// ---- Phase 5f: TabStateBag type tests ([D01]) ----
+
+describe("TabStateBag type (Phase 5f, Step 1)", () => {
+  test("TabStateBag with only scroll field is valid", () => {
+    const bag: TabStateBag = { scroll: { x: 100, y: 250 } };
+    expect(bag.scroll?.x).toBe(100);
+    expect(bag.scroll?.y).toBe(250);
+    expect(bag.selection).toBeUndefined();
+    expect(bag.content).toBeUndefined();
+  });
+
+  test("TabStateBag with all fields is valid", () => {
+    const bag: TabStateBag = {
+      scroll: { x: 0, y: 50 },
+      selection: null,
+      content: { someKey: "someValue" },
+    };
+    expect(bag.scroll?.y).toBe(50);
+    expect(bag.selection).toBeNull();
+    expect((bag.content as Record<string, string>)["someKey"]).toBe("someValue");
+  });
+
+  test("empty TabStateBag is valid", () => {
+    const bag: TabStateBag = {};
+    expect(bag.scroll).toBeUndefined();
+    expect(bag.selection).toBeUndefined();
+    expect(bag.content).toBeUndefined();
+  });
+});
+
+// ---- Phase 5f: DeckState focusedCardId field tests ([D03]) ----
+
+describe("DeckState focusedCardId field (Phase 5f, Step 1)", () => {
+  test("DeckState accepts optional focusedCardId", () => {
+    const state: DeckState = { cards: [], focusedCardId: "card-abc" };
+    expect(state.focusedCardId).toBe("card-abc");
+  });
+
+  test("DeckState without focusedCardId has undefined field", () => {
+    const state: DeckState = { cards: [] };
+    expect(state.focusedCardId).toBeUndefined();
   });
 });

@@ -36,6 +36,7 @@ import { getRegistration, _resetForTest } from "@/card-registry";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { DeckManager } from "@/deck-manager";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { withDeckManager } from "./mock-deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -856,11 +857,13 @@ describe("GalleryObservablePropsContent – inspector controls dispatch setPrope
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservablePropsContent cardId="obs-card" />
-          </Tugcard>
-        </ResponderChainContext.Provider>
+        withDeckManager(
+          <ResponderChainContext.Provider value={manager}>
+            <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
+              <GalleryObservablePropsContent cardId="obs-card" />
+            </Tugcard>
+          </ResponderChainContext.Provider>
+        )
       ));
     });
     // Second act() flush to ensure useLayoutEffect in usePropertyStore fires
@@ -957,11 +960,13 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservablePropsContent cardId="obs-card" />
-          </Tugcard>
-        </ResponderChainContext.Provider>
+        withDeckManager(
+          <ResponderChainContext.Provider value={manager}>
+            <Tugcard cardId="obs-card" meta={{ title: "Test" }} feedIds={[]}>
+              <GalleryObservablePropsContent cardId="obs-card" />
+            </Tugcard>
+          </ResponderChainContext.Provider>
+        )
       ));
     });
     act(() => {});
@@ -1000,11 +1005,13 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId="obs-card2" meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservablePropsContent cardId="obs-card2" />
-          </Tugcard>
-        </ResponderChainContext.Provider>
+        withDeckManager(
+          <ResponderChainContext.Provider value={manager}>
+            <Tugcard cardId="obs-card2" meta={{ title: "Test" }} feedIds={[]}>
+              <GalleryObservablePropsContent cardId="obs-card2" />
+            </Tugcard>
+          </ResponderChainContext.Provider>
+        )
       ));
     });
     act(() => {});
@@ -1037,11 +1044,13 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainContext.Provider value={manager}>
-          <Tugcard cardId="obs-card3" meta={{ title: "Test" }} feedIds={[]}>
-            <GalleryObservablePropsContent cardId="obs-card3" />
-          </Tugcard>
-        </ResponderChainContext.Provider>
+        withDeckManager(
+          <ResponderChainContext.Provider value={manager}>
+            <Tugcard cardId="obs-card3" meta={{ title: "Test" }} feedIds={[]}>
+              <GalleryObservablePropsContent cardId="obs-card3" />
+            </Tugcard>
+          </ResponderChainContext.Provider>
+        )
       ));
     });
     act(() => {});

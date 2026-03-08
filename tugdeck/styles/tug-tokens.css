@@ -289,6 +289,7 @@ body {
      ====================================================================== */
 
   --tug-base-selection-bg: color-mix(in oklch, var(--tug-cyan) 40%, transparent);
+  --tug-base-selection-bg-inactive: rgba(128, 128, 128, 0.25);
   --tug-base-selection-fg: #e6eaee;
   --tug-base-highlight-hover: rgba(255, 255, 255, 0.05);
   --tug-base-highlight-dropTarget: color-mix(in oklch, var(--tug-cyan) 18%, transparent);

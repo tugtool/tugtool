@@ -26,6 +26,26 @@ import { registerCard, _resetForTest } from "../card-registry";
 import type { CardRegistration } from "../card-registry";
 
 // ---------------------------------------------------------------------------
+// Global fetch stub
+//
+// DeckManager's fire-and-forget settings API calls (putLayout, putTabState,
+// putFocusedCardId) use the global fetch. happy-dom does not provide fetch,
+// so install a no-op stub for the entire test file. Individual tests that
+// need to inspect fetch calls can temporarily replace globalThis.fetch within
+// their own body and restore it afterward.
+// ---------------------------------------------------------------------------
+const _noopFetch = async () =>
+  ({ status: 200, ok: true, json: async () => ({}) } as unknown as Response);
+
+beforeEach(() => {
+  globalThis.fetch = _noopFetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = _noopFetch;
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -1249,5 +1269,113 @@ describe("DeckManager.mergeTab", () => {
     expect(manager.getVersion()).toBe(versionBefore);
     const tabsAfter = manager.getDeckState().cards.find((c) => c.id === cardId)!.tabs.map((t) => t.id);
     expect(tabsAfter).toEqual(tabsBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5f: Tab state cache (Spec S03, Step 3)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager tab state cache (Phase 5f Step 3)", () => {
+  it("getTabState returns undefined for unknown tab ID", () => {
+    expect(manager.getTabState("unknown-tab-id")).toBeUndefined();
+  });
+
+  it("setTabState followed by getTabState returns the saved bag", () => {
+    const bag = { scroll: { x: 10, y: 50 }, content: { key: "value" } };
+    manager.setTabState("tab-abc", bag);
+    const retrieved = manager.getTabState("tab-abc");
+    expect(retrieved).toBeDefined();
+    expect(retrieved?.scroll?.x).toBe(10);
+    expect(retrieved?.scroll?.y).toBe(50);
+    expect((retrieved?.content as Record<string, string>).key).toBe("value");
+  });
+
+  it("setTabState overwrites an existing entry", () => {
+    manager.setTabState("tab-xyz", { scroll: { x: 0, y: 0 } });
+    manager.setTabState("tab-xyz", { scroll: { x: 99, y: 77 } });
+    const retrieved = manager.getTabState("tab-xyz");
+    expect(retrieved?.scroll?.x).toBe(99);
+    expect(retrieved?.scroll?.y).toBe(77);
+  });
+
+  it("getTabState with different tab IDs returns independent entries", () => {
+    manager.setTabState("tab-1", { scroll: { x: 1, y: 1 } });
+    manager.setTabState("tab-2", { scroll: { x: 2, y: 2 } });
+    expect(manager.getTabState("tab-1")?.scroll?.x).toBe(1);
+    expect(manager.getTabState("tab-2")?.scroll?.x).toBe(2);
+  });
+
+  it("constructor accepts initialTabStates and populates cache", () => {
+    const initialMap = new Map([
+      ["tab-init-1", { scroll: { x: 5, y: 15 } }],
+      ["tab-init-2", { content: "saved" }],
+    ]);
+
+    // Create a fresh manager with pre-loaded tab states.
+    const c2 = makeContainer();
+    const conn2 = makeMockConnection();
+    const mgr2 = new DeckManager(c2, conn2, undefined, undefined, initialMap);
+    try {
+      expect(mgr2.getTabState("tab-init-1")?.scroll?.x).toBe(5);
+      expect(mgr2.getTabState("tab-init-2")?.content).toBe("saved");
+      expect(mgr2.getTabState("tab-init-3")).toBeUndefined();
+    } finally {
+      mgr2.destroy();
+      c2.remove();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5f: focusCard calls putFocusedCardId (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () => {
+  it("focusCard on an existing card fires a PUT to the deck state endpoint", async () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    const card1Id = manager.addCard("hello") as string;
+    manager.addCard("hello");
+
+    const putCalls: string[] = [];
+    globalThis.fetch = async (url: string | URL | Request) => {
+      putCalls.push(url as string);
+      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
+    };
+
+    // Focus card1 (currently not top — card2 was added last).
+    manager.handleCardFocused(card1Id);
+    // Give fire-and-forget a tick.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const deckStatePuts = putCalls.filter((u) =>
+      u.includes("/api/defaults/dev.tugtool.deck.state/focusedCardId")
+    );
+    expect(deckStatePuts.length).toBeGreaterThan(0);
+    // Restore the global no-op for afterEach cleanup.
+    globalThis.fetch = _noopFetch;
+  });
+
+  it("focusCard on an already-focused (top) card still fires PUT", async () => {
+    registerCard(makeRegistration("hello", "Hello"));
+    manager.addCard("hello");
+    const card2Id = manager.addCard("hello") as string;
+
+    const putCalls: string[] = [];
+    globalThis.fetch = async (url: string | URL | Request) => {
+      putCalls.push(url as string);
+      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
+    };
+
+    // card2 is already top-most (last in array). This should still PUT.
+    manager.handleCardFocused(card2Id);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const deckStatePuts = putCalls.filter((u) =>
+      u.includes("/api/defaults/dev.tugtool.deck.state/focusedCardId")
+    );
+    expect(deckStatePuts.length).toBeGreaterThan(0);
+    // Restore the global no-op for afterEach cleanup.
+    globalThis.fetch = _noopFetch;
   });
 });

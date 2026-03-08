@@ -41,8 +41,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedIdValue } from "../../protocol";
 import { icons } from "lucide-react";
-import type { TabItem } from "../../layout-tree";
-import type { SavedSelection } from "./selection-guard";
+import type { TabItem, TabStateBag } from "../../layout-tree";
 import { selectionGuard } from "./selection-guard";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
@@ -53,6 +52,8 @@ import { useRequiredResponderChain } from "./responder-chain-provider";
 import { TugTabBar } from "./tug-tab-bar";
 import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
+import { useDeckManager } from "../../deck-manager-context";
+import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -175,6 +176,9 @@ export function Tugcard({
   cardTitle,
   acceptedFamilies,
 }: TugcardProps) {
+  // Phase 5f: access the DeckManager store for tab state read/write.
+  const store = useDeckManager();
+
   // ---------------------------------------------------------------------------
   // Content area ref (Phase 5a: selection boundary + selectAll action)
   // ---------------------------------------------------------------------------
@@ -183,6 +187,7 @@ export function Tugcard({
   //   - useSelectionBoundary: registers this element with SelectionGuard so
   //     selection is contained within card boundaries ([D02], [D03])
   //   - selectAll action: calls selectAllChildren on this element ([D06])
+  //   - Phase 5f: read scrollLeft/scrollTop for tab state capture
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Make this card the first responder when clicked anywhere on the card.
@@ -213,9 +218,28 @@ export function Tugcard({
   // TugcardPropertyContext does not unnecessarily re-trigger consumers.
   // The setProperty responder reads propertyStoreRef.current directly,
   // which is always current because propertyStoreRef is a ref (Rule #5).
-  const registerPropertyStore = useCallback((store: PropertyStore) => {
-    propertyStoreRef.current = store;
+  const registerPropertyStore = useCallback((ps: PropertyStore) => {
+    propertyStoreRef.current = ps;
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Phase 5f: Persistence callbacks (Step 4, Spec S04, [D02])
+  // ---------------------------------------------------------------------------
+
+  // Holds the save/restore callbacks registered by card content via
+  // useTugcardPersistence (added in Step 6). null when no card content has
+  // registered. Read synchronously in saveCurrentTabState (Rule #5 — ref).
+  const persistenceCallbacksRef = useRef<TugcardPersistenceCallbacks | null>(null);
+
+  // Stable registration callback provided to TugcardPersistenceContext.
+  // Card content calls this in useLayoutEffect via useTugcardPersistence.
+  // useCallback with [] keeps the reference stable across re-renders.
+  const registerPersistenceCallbacks = useCallback(
+    (callbacks: TugcardPersistenceCallbacks) => {
+      persistenceCallbacksRef.current = callbacks;
+    },
+    [],
+  );
 
   // ---------------------------------------------------------------------------
   // Phase 5b: Tab state refs (for stable responder actions, Rule of Tug #5)
@@ -234,41 +258,87 @@ export function Tugcard({
   onTabSelectRef.current = onTabSelect;
 
   // ---------------------------------------------------------------------------
-  // Phase 5b: Per-tab selection persistence (D07)
+  // Phase 5f: saveCurrentTabState helper (Steps 4 & 5, [D01], #lifecycle-flow)
   // ---------------------------------------------------------------------------
 
-  // savedSelectionsRef maps tabId → SavedSelection. Lives entirely in Tugcard
-  // local state -- not in SelectionGuard.savedSelections (which is unused infra).
-  const savedSelectionsRef = useRef<Map<string, SavedSelection>>(new Map());
+  // Stored in a ref so that handleTabSelect, handlePreviousTab, and handleNextTab
+  // can all call it from stable closures without going stale (Rule #5).
+  //
+  // Captures scroll position, selection, and card content state for the current
+  // active tab and writes them to the DeckManager tab state cache.
+  const saveCurrentTabStateRef = useRef<(() => void) | null>(null);
+  saveCurrentTabStateRef.current = () => {
+    const tabId = activeTabIdRef.current;
+    if (!tabId) return;
 
-  // Wrap onTabSelect to save current selection before switching tabs (D07, step 1).
+    const contentEl = contentRef.current;
+    const scroll = contentEl
+      ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
+      : undefined;
+
+    const selection = selectionGuard.saveSelection(cardId);
+
+    const content = persistenceCallbacksRef.current?.onSave();
+
+    const bag: TabStateBag = {
+      ...(scroll !== undefined ? { scroll } : {}),
+      ...(selection !== null ? { selection } : {}),
+      ...(content !== undefined ? { content } : {}),
+    };
+
+    store.setTabState(tabId, bag);
+  };
+
+  // Wrap onTabSelect to save current state before switching tabs.
   const handleTabSelect = useCallback(
     (newTabId: string) => {
       if (!onTabSelect) return;
-      // Step 1: save selection for the OLD active tab before unmounting it.
-      const oldTabId = activeTabIdRef.current;
-      if (oldTabId && oldTabId !== newTabId) {
-        const saved = selectionGuard.saveSelection(cardId);
-        if (saved) {
-          savedSelectionsRef.current.set(oldTabId, saved);
-        }
-      }
-      // Step 2: call parent callback to update activeTabId (triggers remount of new content).
+      // Save full state for the OLD active tab before unmounting it.
+      saveCurrentTabStateRef.current?.();
+      // Call parent callback to update activeTabId (triggers remount of new content).
       onTabSelect(newTabId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cardId, onTabSelect],
+    [onTabSelect],
   );
 
-  // Step 3: after the new tab's content mounts and its useSelectionBoundary
-  // useLayoutEffect runs (children before parents), restore the saved selection.
-  // This useLayoutEffect has [activeTabId] as its dependency so it fires
-  // whenever the active tab changes.
+  // Phase 5f Step 5: Activation restore.
+  //
+  // After the new tab's content mounts and its useSelectionBoundary
+  // useLayoutEffect runs (children before parents), restore the full tab state
+  // bag from the DeckManager cache.
+  //
+  // useLayoutEffect fires before paint, so:
+  // - Scroll is set synchronously (DOM is laid out; no RAF needed, no flash).
+  // - Selection is restored via SelectionGuard.restoreSelection.
+  // - Card content state is forwarded to persistenceCallbacksRef.onRestore.
+  //
+  // This path also handles first-mount restoration after app reload: if the
+  // DeckManager cache was pre-populated from tugbank during initialization,
+  // the same effect restores state on the very first mount of each Tugcard.
+  //
+  // savedSelectionsRef is fully removed in this step — both the write path
+  // (Step 4 dual-write) and the read path are now migrated to the store cache.
   useLayoutEffect(() => {
     if (!activeTabId) return;
-    const saved = savedSelectionsRef.current.get(activeTabId);
-    if (saved) {
-      selectionGuard.restoreSelection(cardId, saved);
+    const bag = store.getTabState(activeTabId);
+    if (!bag) return;
+
+    // Restore scroll position directly (useLayoutEffect fires before paint).
+    const contentEl = contentRef.current;
+    if (contentEl && bag.scroll !== undefined) {
+      contentEl.scrollLeft = bag.scroll.x;
+      contentEl.scrollTop = bag.scroll.y;
+    }
+
+    // Restore text selection if a saved selection exists.
+    if (bag.selection != null) {
+      selectionGuard.restoreSelection(cardId, bag.selection);
+    }
+
+    // Restore card content state via the registered persistence callback.
+    if (bag.content !== undefined) {
+      persistenceCallbacksRef.current?.onRestore(bag.content);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, cardId]);
@@ -289,6 +359,8 @@ export function Tugcard({
   }, []);
 
   // previousTab / nextTab: read from refs so closures never go stale (Rule #5).
+  // Phase 5f: call saveCurrentTabState before switching so keyboard-driven tab
+  // switches preserve scroll, selection, and card content state ([#lifecycle-flow]).
   const handlePreviousTab = useCallback(() => {
     const currentTabs = tabsRef.current;
     const currentActiveId = activeTabIdRef.current;
@@ -297,6 +369,7 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const prevIdx = (idx - 1 + currentTabs.length) % currentTabs.length;
+    saveCurrentTabStateRef.current?.();
     selectFn(currentTabs[prevIdx].id);
   }, []);
 
@@ -308,6 +381,7 @@ export function Tugcard({
     const idx = currentTabs.findIndex((t) => t.id === currentActiveId);
     if (idx === -1) return;
     const nextIdx = (idx + 1) % currentTabs.length;
+    saveCurrentTabStateRef.current?.();
     selectFn(currentTabs[nextIdx].id);
   }, []);
 
@@ -497,11 +571,16 @@ export function Tugcard({
                 Card content calls usePropertyStore() which reads this context and
                 calls registerPropertyStore in useLayoutEffect. [D01] */}
             <TugcardPropertyContext value={registerPropertyStore}>
-              {feedsReady ? children : (
-                <div className="tugcard-loading" data-testid="tugcard-loading">
-                  Loading...
-                </div>
-              )}
+              {/* Phase 5f Step 4: provide persistence registration callback to card content.
+                  Card content calls useTugcardPersistence() (Step 6) which reads this
+                  context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
+              <TugcardPersistenceContext value={registerPersistenceCallbacks}>
+                {feedsReady ? children : (
+                  <div className="tugcard-loading" data-testid="tugcard-loading">
+                    Loading...
+                  </div>
+                )}
+              </TugcardPersistenceContext>
             </TugcardPropertyContext>
           </ResponderScope>
         </TugcardDataProvider>

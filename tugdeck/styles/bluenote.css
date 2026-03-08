@@ -50,6 +50,7 @@ body {
   --tug-base-shadow-sm: rgba(0, 0, 0, 0.44);
 
   /* Selection */
+  --tug-base-selection-bg-inactive: rgba(100, 120, 130, 0.30);
   --tug-base-selection-fg: #dde4e8;
 
   /* Card */
