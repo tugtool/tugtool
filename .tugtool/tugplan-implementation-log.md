@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T23:07:38Z
+---
+
+## step-4: Verified D77 section in design-system-concepts.md already accurately describes CSS Custom Highlight API approach. No file modifications needed — content was complete from plan scaffolding.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T23:04:26Z
 ---
