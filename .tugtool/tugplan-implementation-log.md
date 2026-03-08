@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-08T16:02:24Z
+---
+
+## step-3: Added integration tests for write/read subcommands covering all seven value types, --bytes-file, JSON envelopes, not-found exit codes, read-all listing, and invalid value handling. 22 tests total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: step-2
 date: 2025-03-08T15:57:37Z
 ---
