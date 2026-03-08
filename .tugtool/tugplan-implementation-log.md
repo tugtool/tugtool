@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T18:58:29Z
+---
+
+## step-1: Created migration.rs with migrate_settings_to_tugbank() function that reads deck-settings.json, writes layout and theme to tugbank domains, and deletes the flat file. Added mod migration to main.rs. 6 unit tests covering all migration scenarios.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-08T17:50:23Z
 ---

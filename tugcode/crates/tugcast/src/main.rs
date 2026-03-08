@@ -5,6 +5,7 @@ mod control;
 mod defaults;
 mod dev;
 mod feeds;
+mod migration;
 mod router;
 mod server;
 mod settings;
