@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-08T19:15:10Z
+---
+
+## step-3: Replaced legacy /api/settings functions with fetchLayoutWithRetry, fetchThemeWithRetry, putLayout, putTheme targeting /api/defaults/ endpoints with tagged-value wire format. Updated all callers (main.tsx, deck-manager.ts, theme-provider.tsx). Added check script to package.json.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: step-2
 date: 2025-03-08T19:05:40Z
 ---

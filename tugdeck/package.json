@@ -5,6 +5,7 @@
   "description": "Browser frontend for tugcast terminal bridge",
   "scripts": {
     "build": "vite build",
+    "check": "bunx tsc --noEmit",
     "dev": "vite",
     "test": "bun test"
   },

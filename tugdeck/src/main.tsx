@@ -5,7 +5,7 @@ import "../styles/chrome.css";
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
-import { fetchSettingsWithRetry } from "./settings-api";
+import { fetchLayoutWithRetry, fetchThemeWithRetry } from "./settings-api";
 import {
   applyInitialTheme,
   sendCanvasColor,
@@ -29,13 +29,17 @@ if (!container) {
 }
 
 // Async IIFE: fetch settings before constructing DeckManager so the pre-fetched
-// layout and theme are applied before React renders.
+// layout and theme are applied before React renders. Layout and theme are fetched
+// in parallel from their respective tugbank domains [D02].
 (async () => {
-  const serverSettings = await fetchSettingsWithRetry("/api/settings");
+  const [layout, theme] = await Promise.all([
+    fetchLayoutWithRetry(),
+    fetchThemeWithRetry(),
+  ]);
 
   // Apply the initial theme via stylesheet injection before DeckManager construction
   // so the correct colors are visible before React renders.
-  const initialTheme = (serverSettings.theme as ThemeName) ?? "brio";
+  const initialTheme = (theme as ThemeName) ?? "brio";
   applyInitialTheme(initialTheme);
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
@@ -65,7 +69,7 @@ if (!container) {
   const deck = new DeckManager(
     container,
     connection,
-    serverSettings.layout ?? undefined,
+    layout ?? undefined,
     initialTheme
   );
 
