@@ -5,6 +5,18 @@ use crate::Error;
 /// Maximum size in bytes for `Value::Bytes` payloads (10 MB).
 pub const MAX_BLOB_SIZE: usize = 10_485_760;
 
+/// SQL column encoding of a [`Value`]: `(value_kind, value_i64, value_f64, value_text, value_blob)`.
+///
+/// Used as the return type of [`encode_value`] and the parameter signature of
+/// [`decode_value`] to keep function signatures readable.
+pub(crate) type EncodedValue = (
+    i32,
+    Option<i64>,
+    Option<f64>,
+    Option<String>,
+    Option<Vec<u8>>,
+);
+
 // value_kind discriminators (must match Table T01 in the plan)
 const KIND_NULL: i32 = 0;
 const KIND_BOOL: i32 = 1;
@@ -50,18 +62,10 @@ pub enum Value {
 
 /// Encode a [`Value`] into its SQL column representation.
 ///
-/// Returns `(value_kind, value_i64, value_f64, value_text, value_blob)`.
+/// Returns an [`EncodedValue`] tuple `(value_kind, value_i64, value_f64, value_text, value_blob)`.
 /// Exactly one payload column will be `Some`; the rest will be `None`
 /// (except `Null`, for which all payload columns are `None`).
-pub(crate) fn encode_value(
-    value: &Value,
-) -> (
-    i32,
-    Option<i64>,
-    Option<f64>,
-    Option<String>,
-    Option<Vec<u8>>,
-) {
+pub(crate) fn encode_value(value: &Value) -> EncodedValue {
     match value {
         Value::Null => (KIND_NULL, None, None, None, None),
         Value::Bool(b) => (KIND_BOOL, Some(if *b { 1 } else { 0 }), None, None, None),

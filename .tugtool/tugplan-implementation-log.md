@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-08T15:07:09Z
+---
+
+## step-8: Added module-level rustdoc to lib.rs with usage examples for basic operations, atomic updates, CAS writes, and thread safety. Introduced EncodedValue type alias to resolve clippy::type_complexity lint. Verified all 55 tests pass, clippy clean, fmt clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-7
 date: 2025-03-08T15:01:58Z
 ---
