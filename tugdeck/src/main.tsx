@@ -1,4 +1,4 @@
-// CSS imports — globals.css imports tailwindcss and tokens.css
+// CSS imports — globals.css imports tailwindcss and tug-tokens.css
 import "./globals.css";
 import "../styles/chrome.css";
 

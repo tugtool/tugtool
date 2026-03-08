@@ -4,14 +4,14 @@
  * Architecture: stylesheet injection (not body classes).
  *
  * Brio is the default theme; its palette is defined as body {} defaults in
- * tokens.css. Bluenote and Harmony are applied by injecting a
+ * tug-tokens.css. Bluenote and Harmony are applied by injecting a
  * <style id="tug-theme-override" data-theme="..."> element as the last child
- * of <head>, ensuring it cascades over tokens.css. Reverting to Brio removes
- * the element entirely so tokens.css defaults take over.
+ * of <head>, ensuring it cascades over tug-tokens.css. Reverting to Brio removes
+ * the element entirely so tug-tokens.css defaults take over.
  *
  * Cascade ordering invariant: the injected <style> is always appended as the
  * last child of <head>. Never insert it elsewhere — earlier position could
- * lose to tokens.css in the cascade.
+ * lose to tug-tokens.css in the cascade.
  *
  * Spec S02 (#s02-injection-contract), Spec S03 (#s03-theme-provider),
  * [D03] Stylesheet injection, [D08] TugThemeProvider
@@ -44,7 +44,7 @@ interface ThemeContextValue {
 // Theme CSS map
 // ---------------------------------------------------------------------------
 
-/** CSS string for each non-Brio theme. Brio uses tokens.css defaults. */
+/** CSS string for each non-Brio theme. Brio uses tug-tokens.css defaults. */
 const themeCSSMap: Record<ThemeName, string | null> = {
   brio: null,
   bluenote: bluenoteCSS,
@@ -62,7 +62,7 @@ const OVERRIDE_ELEMENT_ID = "tug-theme-override";
  *
  * Creates (or reuses) a <style id="tug-theme-override" data-theme="...">
  * element appended as the last child of <head>. This position guarantees
- * the injected styles win in CSS cascade order over tokens.css.
+ * the injected styles win in CSS cascade order over tug-tokens.css.
  */
 export function injectThemeCSS(themeName: string, cssText: string): void {
   let el = document.getElementById(OVERRIDE_ELEMENT_ID) as HTMLStyleElement | null;
@@ -78,7 +78,7 @@ export function injectThemeCSS(themeName: string, cssText: string): void {
 /**
  * Remove the theme override stylesheet.
  *
- * After removal, tokens.css body {} defaults (Brio) take over automatically
+ * After removal, tug-tokens.css body {} defaults (Brio) take over automatically
  * via CSS cascade — no additional style recalculation is needed.
  */
 export function removeThemeCSS(): void {
@@ -124,7 +124,7 @@ export function sendCanvasColor(): void {
 /**
  * Apply the initial theme via stylesheet injection before React mounts.
  *
- * For Brio, this is a no-op (tokens.css defaults are already active).
+ * For Brio, this is a no-op (tug-tokens.css defaults are already active).
  * For Bluenote or Harmony, injects the theme's CSS string as the override
  * element so the correct colors are visible before the first React render.
  */
@@ -172,7 +172,7 @@ export function TugThemeProvider({
     if (cssText) {
       injectThemeCSS(newTheme, cssText);
     } else {
-      // Brio: remove override so tokens.css defaults take over
+      // Brio: remove override so tug-tokens.css defaults take over
       removeThemeCSS();
     }
     setThemeState(newTheme);

@@ -11,7 +11,7 @@
  *   tug-dropdown — maps to --tug-base-menu-*
  *
  * Import order (enforced in globals.css):
- *   1. tokens.css
+ *   1. tug-palette.css
  *   2. tug-tokens.css  (--tug-base-* must be defined before this file)
  *   3. tug-comp-tokens.css  [this file]
  */

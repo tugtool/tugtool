@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "../styles/tokens.css";
 @import "../styles/tug-palette.css";
 @import "../styles/tug-tokens.css";
 @import "../styles/tug-comp-tokens.css";
@@ -8,7 +7,7 @@
  * Tailwind v4 @theme registration: maps --tug-base-* canonical tokens directly
  * into Tailwind's theme namespace so utility classes work (bg-background,
  * text-foreground, bg-primary, etc.). The shadcn short-name aliases
- * (--background, --foreground, etc.) have been removed from tokens.css;
+ * (--background, --foreground, etc.) have been removed from tug-tokens.css;
  * this block now references --tug-base-* as the single source of truth.
  * Table T02 defines the full mapping.
  */
