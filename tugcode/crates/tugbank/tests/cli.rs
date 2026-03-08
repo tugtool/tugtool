@@ -428,3 +428,309 @@ fn t17_write_unknown_type_exits_2() {
         "expected exit code 2 for unknown --type (clap rejects before main)"
     );
 }
+
+// ── T18: delete <domain> <key> on existing key exits 0 ───────────────────────
+
+#[test]
+fn t18_delete_key_exists_exits_0() {
+    let tmp = NamedTempFile::new().unwrap();
+    cmd(&tmp).args(["write", "d", "k", "v"]).output().unwrap();
+    let out = cmd(&tmp).args(["delete", "d", "k"]).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "delete on existing key should exit 0"
+    );
+    // Verify key is gone.
+    let read = cmd(&tmp).args(["read", "d", "k"]).output().unwrap();
+    assert_eq!(
+        read.status.code(),
+        Some(2),
+        "key should be gone after delete"
+    );
+}
+
+// ── T19: delete <domain> <key> on nonexistent key exits 2 ────────────────────
+
+#[test]
+fn t19_delete_missing_key_exits_2() {
+    let tmp = NamedTempFile::new().unwrap();
+    let out = cmd(&tmp).args(["delete", "d", "nokey"]).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "delete on nonexistent key should exit 2"
+    );
+}
+
+// ── T20: delete <domain> removes entire domain and exits 0 ───────────────────
+
+#[test]
+fn t20_delete_domain_removes_all_exits_0() {
+    let tmp = NamedTempFile::new().unwrap();
+    cmd(&tmp).args(["write", "d", "k1", "v1"]).output().unwrap();
+    cmd(&tmp).args(["write", "d", "k2", "v2"]).output().unwrap();
+
+    // Delete the entire domain (no key argument).
+    let out = cmd(&tmp).args(["delete", "d"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "delete domain should exit 0");
+
+    // Domain should no longer appear in list.
+    let dom_out = cmd(&tmp).arg("--json").arg("domains").output().unwrap();
+    let s = String::from_utf8_lossy(&dom_out.stdout);
+    let v: serde_json::Value = serde_json::from_str(s.trim()).expect("valid JSON");
+    let domains = v["data"]["domains"].as_array().unwrap();
+    assert!(
+        !domains.iter().any(|d| d.as_str() == Some("d")),
+        "deleted domain should not appear in domains list: {domains:?}"
+    );
+}
+
+// ── T21: delete <domain> on nonexistent domain exits 2 ───────────────────────
+
+#[test]
+fn t21_delete_nonexistent_domain_exits_2() {
+    let tmp = NamedTempFile::new().unwrap();
+    let out = cmd(&tmp)
+        .args(["delete", "no.such.domain"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "delete on nonexistent domain should exit 2"
+    );
+}
+
+// ── T22: cas-write with correct generation writes successfully ────────────────
+
+#[test]
+fn t22_cas_write_correct_generation_exits_0() {
+    let tmp = NamedTempFile::new().unwrap();
+    // Fresh domain: generation is 0.
+    let out = cmd(&tmp)
+        .args(["cas-write", "d", "k", "--generation", "0", "hello"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "cas-write with gen=0 should succeed"
+    );
+
+    // Verify value was written.
+    let read = cmd(&tmp).args(["read", "d", "k"]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&read.stdout).trim(), "hello");
+}
+
+// ── T23: cas-write with stale generation exits 3 (conflict) ──────────────────
+
+#[test]
+fn t23_cas_write_stale_generation_exits_3() {
+    let tmp = NamedTempFile::new().unwrap();
+    // Write once so generation becomes 1.
+    cmd(&tmp)
+        .args(["write", "d", "k", "first"])
+        .output()
+        .unwrap();
+
+    // Attempt cas-write with stale gen=0 (current is 1).
+    let out = cmd(&tmp)
+        .args(["cas-write", "d", "k", "--generation", "0", "second"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "cas-write with stale generation should exit 3"
+    );
+
+    // Original value must be unchanged.
+    let read = cmd(&tmp).args(["read", "d", "k"]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&read.stdout).trim(), "first");
+}
+
+// ── T24: cas-write --json conflict output includes current generation ──────────
+
+#[test]
+fn t24_cas_write_json_conflict_includes_generation() {
+    let tmp = NamedTempFile::new().unwrap();
+    // Write once so generation becomes 1.
+    cmd(&tmp).args(["write", "d", "k", "v"]).output().unwrap();
+
+    // cas-write with wrong generation, requesting JSON output.
+    let out = cmd(&tmp)
+        .arg("--json")
+        .args(["cas-write", "d", "k", "--generation", "0", "new"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let s = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(s.trim()).expect("valid JSON");
+    assert_eq!(v["ok"], false);
+    // The error message must mention the current generation (1).
+    let err_msg = v["error"].as_str().expect("error field should be a string");
+    assert!(
+        err_msg.contains('1'),
+        "conflict error should mention current generation 1; got: {err_msg}"
+    );
+}
+
+// ── T25: end-to-end workflow ──────────────────────────────────────────────────
+
+#[test]
+fn t25_end_to_end_workflow() {
+    let tmp = NamedTempFile::new().unwrap();
+
+    // 1. Write several values across two domains.
+    cmd(&tmp)
+        .args(["write", "app.prefs", "theme", "dark"])
+        .output()
+        .unwrap();
+    cmd(&tmp)
+        .args(["write", "app.prefs", "font-size", "--type", "int", "14"])
+        .output()
+        .unwrap();
+    cmd(&tmp)
+        .args(["write", "app.state", "last-open", "file.txt"])
+        .output()
+        .unwrap();
+
+    // 2. Verify domains.
+    let dom_out = cmd(&tmp).arg("--json").arg("domains").output().unwrap();
+    assert!(dom_out.status.success());
+    let s = String::from_utf8_lossy(&dom_out.stdout);
+    let v: serde_json::Value = serde_json::from_str(s.trim()).unwrap();
+    let domains = v["data"]["domains"].as_array().unwrap();
+    assert!(domains.iter().any(|d| d.as_str() == Some("app.prefs")));
+    assert!(domains.iter().any(|d| d.as_str() == Some("app.state")));
+
+    // 3. Read values back.
+    let theme = cmd(&tmp)
+        .args(["read", "app.prefs", "theme"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&theme.stdout).trim(), "dark");
+
+    let font = cmd(&tmp)
+        .args(["read", "app.prefs", "font-size"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&font.stdout).trim(), "14");
+
+    // 4. Delete one key.
+    let del = cmd(&tmp)
+        .args(["delete", "app.prefs", "font-size"])
+        .output()
+        .unwrap();
+    assert!(del.status.success());
+
+    // Verify deleted key is gone.
+    let gone = cmd(&tmp)
+        .args(["read", "app.prefs", "font-size"])
+        .output()
+        .unwrap();
+    assert_eq!(gone.status.code(), Some(2));
+
+    // 5. Delete entire app.state domain.
+    let del_dom = cmd(&tmp).args(["delete", "app.state"]).output().unwrap();
+    assert!(del_dom.status.success());
+
+    // Verify app.state no longer listed.
+    let dom_out2 = cmd(&tmp).arg("--json").arg("domains").output().unwrap();
+    let s2 = String::from_utf8_lossy(&dom_out2.stdout);
+    let v2: serde_json::Value = serde_json::from_str(s2.trim()).unwrap();
+    let domains2 = v2["data"]["domains"].as_array().unwrap();
+    assert!(
+        !domains2.iter().any(|d| d.as_str() == Some("app.state")),
+        "app.state should be gone after delete: {domains2:?}"
+    );
+
+    // app.prefs should still exist (only font-size was deleted, theme remains).
+    assert!(
+        domains2.iter().any(|d| d.as_str() == Some("app.prefs")),
+        "app.prefs should still exist: {domains2:?}"
+    );
+}
+
+// ── T26: TUGBANK_PATH env var overrides default path ──────────────────────────
+// (Also tested in t10_env_overrides_default; this test names it as T26.)
+
+#[test]
+fn t26_tugbank_path_env_overrides_default() {
+    let db = NamedTempFile::new().unwrap();
+    let status = cargo_bin_cmd!("tugbank")
+        .env("TUGBANK_PATH", db.path())
+        .args(["write", "t26.domain", "key", "value"])
+        .output()
+        .unwrap()
+        .status;
+    assert!(status.success(), "write via TUGBANK_PATH should succeed");
+
+    let out = cargo_bin_cmd!("tugbank")
+        .env("TUGBANK_PATH", db.path())
+        .arg("--json")
+        .arg("domains")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(s.trim()).expect("valid JSON");
+    let domains = v["data"]["domains"].as_array().unwrap();
+    assert!(
+        domains.iter().any(|d| d.as_str() == Some("t26.domain")),
+        "expected t26.domain in domains: {domains:?}"
+    );
+}
+
+// ── T27: --path flag overrides TUGBANK_PATH env var ───────────────────────────
+// (Also tested in t10_path_flag_overrides_env; this test names it as T27.)
+
+#[test]
+fn t27_path_flag_overrides_tugbank_path_env() {
+    let db_flag = NamedTempFile::new().unwrap();
+    let db_env = NamedTempFile::new().unwrap();
+
+    // Write to db_flag via --path.
+    cargo_bin_cmd!("tugbank")
+        .arg("--path")
+        .arg(db_flag.path())
+        .args(["write", "t27.domain", "key", "value"])
+        .output()
+        .unwrap();
+
+    // Queries with both --path and TUGBANK_PATH: --path must win.
+    let out = cargo_bin_cmd!("tugbank")
+        .arg("--path")
+        .arg(db_flag.path())
+        .env("TUGBANK_PATH", db_env.path())
+        .arg("--json")
+        .arg("domains")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(s.trim()).expect("valid JSON");
+    let domains = v["data"]["domains"].as_array().unwrap();
+    assert!(
+        domains.iter().any(|d| d.as_str() == Some("t27.domain")),
+        "--path should point at db_flag which has t27.domain: {domains:?}"
+    );
+
+    // Confirm db_env does NOT have the domain (proves --path won over env).
+    let out_env = cargo_bin_cmd!("tugbank")
+        .arg("--path")
+        .arg(db_env.path())
+        .arg("--json")
+        .arg("domains")
+        .output()
+        .unwrap();
+    assert!(out_env.status.success());
+    let s_env = String::from_utf8_lossy(&out_env.stdout);
+    let v_env: serde_json::Value = serde_json::from_str(s_env.trim()).expect("valid JSON");
+    let domains_env = v_env["data"]["domains"].as_array().unwrap();
+    assert!(
+        !domains_env.iter().any(|d| d.as_str() == Some("t27.domain")),
+        "db_env should not have t27.domain: {domains_env:?}"
+    );
+}

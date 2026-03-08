@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T16:06:07Z
+---
+
+## step-4: Added integration tests for delete key/domain (T18-T21), cas-write success/conflict (T22-T24), end-to-end workflow (T25), and path resolution tests (T26-T27). 32 tests total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T16:02:24Z
 ---
