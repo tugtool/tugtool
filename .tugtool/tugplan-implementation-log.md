@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-08T15:01:58Z
+---
+
+## step-7: Created tests/contention.rs with two integration tests: concurrent set() from two threads verifying all 100 keys present, and CAS contention via Barrier(2) verifying exactly one Written/one Conflict with successful retry.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-6
 date: 2025-03-08T14:56:49Z
 ---
