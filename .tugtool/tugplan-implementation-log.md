@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T02:19:42Z
+---
+
+## step-5: Integration checkpoint: verified all files, registrations, test suite (979 pass, 3 pre-existing failures), and all 6 design decisions. 5 manual browser verification items deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T02:15:32Z
 ---
