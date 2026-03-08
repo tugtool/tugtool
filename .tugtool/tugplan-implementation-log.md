@@ -10,6 +10,78 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-03-08T16:14:20Z
+---
+
+## audit-fix: CI fix: replaced 3.14 with 1.5 in t11_roundtrip_float to eliminate clippy::approx_constant lint triggered by --all-targets
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: step-5
+date: 2025-03-08T16:08:41Z
+---
+
+## step-5: Integration checkpoint: verified full workspace builds with zero warnings, 98 tests pass across tugbank-core (66) and tugbank (32), cargo fmt and clippy clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T16:06:07Z
+---
+
+## step-4: Added integration tests for delete key/domain (T18-T21), cas-write success/conflict (T22-T24), end-to-end workflow (T25), and path resolution tests (T26-T27). 32 tests total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T16:02:24Z
+---
+
+## step-3: Added integration tests for write/read subcommands covering all seven value types, --bytes-file, JSON envelopes, not-found exit codes, read-all listing, and invalid value handling. 22 tests total pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T15:57:37Z
+---
+
+## step-2: Created tugbank binary crate with clap-derived CLI, resolve_db_path, json output helpers, and three implemented subcommands (domains, keys, generation). Added base64 and assert_cmd workspace dependencies. Integration tests T06-T10 pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T15:48:21Z
+---
+
+## step-1: Added DefaultsStore::delete_domain method using IMMEDIATE transaction with CASCADE cleanup, and Error::exit_code mapping per Spec S06. Includes comprehensive unit tests for both.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
+step: audit-fix
 date: 2025-03-08T15:12:24Z
 ---
 

@@ -76,6 +76,27 @@ impl DefaultsStore {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(names)
     }
+
+    /// Delete an entire domain: remove all entries and the domain row.
+    ///
+    /// Returns `true` if the domain existed and was deleted, `false` if it did
+    /// not exist. Entries are removed automatically via `ON DELETE CASCADE` on
+    /// the `entries.domain` foreign key.
+    ///
+    /// Returns [`Error::InvalidDomain`] if `name` is empty.
+    pub fn delete_domain(&self, name: &str) -> Result<bool, Error> {
+        if name.is_empty() {
+            return Err(Error::InvalidDomain(name.to_owned()));
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let txn = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let affected = txn.execute(
+            "DELETE FROM domains WHERE name = ?1",
+            rusqlite::params![name],
+        )?;
+        txn.commit()?;
+        Ok(affected > 0)
+    }
 }
 
 #[cfg(test)]
@@ -142,5 +163,95 @@ mod tests {
         // block is removed.
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<DefaultsStore>();
+    }
+
+    // ── T01: delete_domain on domain with entries removes all data ────────────
+
+    #[test]
+    fn test_delete_domain_with_entries_returns_true_and_removes_all() {
+        use crate::Value;
+        let (store, _tmp) = temp_store();
+        let handle = store.domain("com.example.test").unwrap();
+        handle.set("key1", Value::String("hello".into())).unwrap();
+        handle.set("key2", Value::I64(42)).unwrap();
+
+        let result = store.delete_domain("com.example.test").unwrap();
+        assert!(
+            result,
+            "delete_domain should return true for existing domain"
+        );
+
+        // Verify entries are gone via a fresh handle.
+        let handle2 = store.domain("com.example.test").unwrap();
+        assert_eq!(handle2.get("key1").unwrap(), None);
+        assert_eq!(handle2.get("key2").unwrap(), None);
+    }
+
+    // ── T02: delete_domain on non-existent domain returns false ──────────────
+
+    #[test]
+    fn test_delete_domain_nonexistent_returns_false() {
+        let (store, _tmp) = temp_store();
+        let result = store.delete_domain("does.not.exist").unwrap();
+        assert!(
+            !result,
+            "delete_domain should return false for nonexistent domain"
+        );
+    }
+
+    // ── T03: delete_domain with empty string returns InvalidDomain ───────────
+
+    #[test]
+    fn test_delete_domain_empty_string_returns_invalid_domain() {
+        let (store, _tmp) = temp_store();
+        let err = store.delete_domain("").unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidDomain(_)),
+            "expected InvalidDomain, got {err:?}"
+        );
+    }
+
+    // ── T04: After delete_domain, list_domains no longer includes deleted ─────
+
+    #[test]
+    fn test_delete_domain_removed_from_list_domains() {
+        use crate::Value;
+        let (store, _tmp) = temp_store();
+        let handle = store.domain("to.delete").unwrap();
+        handle.set("k", Value::Null).unwrap();
+
+        // Domain should be listed before deletion.
+        let before = store.list_domains().unwrap();
+        assert!(
+            before.contains(&"to.delete".to_owned()),
+            "domain should exist before deletion"
+        );
+
+        store.delete_domain("to.delete").unwrap();
+
+        // Domain should not appear after deletion.
+        let after = store.list_domains().unwrap();
+        assert!(
+            !after.contains(&"to.delete".to_owned()),
+            "domain should not exist after deletion: {after:?}"
+        );
+    }
+
+    // ── T05: After delete_domain, get on former keys returns None ─────────────
+
+    #[test]
+    fn test_delete_domain_former_keys_return_none() {
+        use crate::Value;
+        let (store, _tmp) = temp_store();
+        let handle = store.domain("d").unwrap();
+        handle.set("x", Value::Bool(true)).unwrap();
+        handle.set("y", Value::I64(100)).unwrap();
+
+        store.delete_domain("d").unwrap();
+
+        // Access via a new domain handle (re-opening the domain after deletion).
+        let handle2 = store.domain("d").unwrap();
+        assert_eq!(handle2.get("x").unwrap(), None);
+        assert_eq!(handle2.get("y").unwrap(), None);
     }
 }
