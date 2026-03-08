@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T23:10:40Z
+---
+
+## step-5: Integration checkpoint. Full tugdeck test suite passes (1032/1032). All five design decisions D01-D05 verified across steps 1-4. Manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T23:07:38Z
 ---
