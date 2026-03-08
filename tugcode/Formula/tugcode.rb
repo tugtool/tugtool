@@ -29,6 +29,7 @@ class Tugcode < Formula
 
   def install
     bin.install "bin/tugcode"
+    bin.install "bin/tugbank"
 
     # Install skills to share directory
     # Skills end up at #{HOMEBREW_PREFIX}/share/tugplug/skills/
