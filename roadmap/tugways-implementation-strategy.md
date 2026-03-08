@@ -1151,19 +1151,19 @@ The suggested plan sequence:
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
 24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to HVV palette, neutral ramp, remove JS injection
 25. `tugways-phase-5d5f-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
-25a. `tugways-phase-5e1-tugbank-core` — `tugbank-core` library crate (schema, value, domain, store, CAS, blob limit)
-25b. `tugways-phase-5e2-tugbank-cli` — `tugbank` CLI binary (defaults-like CLI, `~/.tugbank.db` default path)
-25c. `tugways-phase-5e3-tugbank-bridge` — tugcast HTTP bridge integration (REST endpoints for defaults)
-25d. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
-26. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-27. `tugways-phase-6-feed` — feed hooks, data flow
-28. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-29. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-30. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-31. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-32. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-33. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-34. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+26. `tugways-phase-5e1-tugbank-core` — `tugbank-core` library crate (schema, value, domain, store, CAS, blob limit)
+27. `tugways-phase-5e2-tugbank-cli` — `tugbank` CLI binary (defaults-like CLI, `~/.tugbank.db` default path)
+28. `tugways-phase-5e3-tugbank-bridge` — tugcast HTTP bridge integration (REST endpoints for defaults)
+29. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
+30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
+31. `tugways-phase-6-feed` — feed hooks, data flow
+32. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
+33. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+34. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+35. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+36. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+37. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+38. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 
