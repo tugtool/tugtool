@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-08T19:29:15Z
+---
+
+## step-6: Added 5 new integration tests: migration writes layout+theme to tugbank, migration deletes flat file, migration no-op when absent, layout PUT-then-GET round-trip, theme PUT-then-GET round-trip. 202 tests pass, 0 warnings.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T19:23:44Z
 ---
