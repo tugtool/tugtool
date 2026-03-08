@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T19:17:45Z
+---
+
+## step-4: No-op step — all caller updates (main.tsx, deck-manager.ts, theme-provider.tsx) were already completed in step-3. TypeScript check confirms zero errors.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T19:15:10Z
 ---
