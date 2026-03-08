@@ -2225,6 +2225,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum",
+ "base64",
  "chrono",
  "clap",
  "futures",
@@ -2250,6 +2251,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tugbank-core",
  "tugcast-core",
 ]
 

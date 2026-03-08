@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T17:16:07Z
+---
+
+## step-1: Added tugbank-core and base64 dependencies to tugcast Cargo.toml, added --bank-path optional CLI flag to Cli struct, added three unit tests for the new flag
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-08T16:14:20Z
 ---
