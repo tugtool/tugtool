@@ -15,8 +15,19 @@ and once in `palette-engine.ts`. Components never see the formula — they consu
 The canonical color is the accent color in most UI contexts. `intense` sits on a clear
 perceptual impact scale alongside the other presets.
 
-All references to `-accent` preset names in tug-palette.css, tug-tokens.css, theme files,
-and palette-engine.ts get renamed to `-intense`.
+All references to `-accent` **palette preset** names in tug-palette.css, tug-tokens.css,
+theme files, and palette-engine.ts get renamed to `-intense`. Semantic tokens that use
+`accent` as a **UI role** name (e.g., `--tug-base-accent-default`, `--tug-base-accent-strong`,
+`--tug-base-fg-onAccent`) keep `accent` — the UI role and the palette preset are distinct
+concepts.
+
+### `dark` rename collision
+
+The current system has a `dark` preset (vib=50, val=25). The new system reclaims `dark` for
+a new preset (vib=70, val=5) and renames the old `dark` to `shadow`. To avoid a naming
+collision during implementation, the current `dark` is first renamed to a temporary name
+(`old-dark`) across all files, then all remaining renames proceed, and finally the new `dark`
+preset is introduced.
 
 ---
 
@@ -205,8 +216,9 @@ name (or raw angle), vibrancy, and value, and returns an `oklch()` string. Used 
 - Data visualization with dynamic color ranges
 - Any one-off color that no preset covers
 
-The function already exists in `palette-engine.ts` — it needs to be updated to match the
-new preset names and kept in sync with the CSS formula.
+The function already exists in `palette-engine.ts` — it is completely rewritten to use the
+new `clamp()`-based piecewise formula, matching the CSS exactly. The old coefficient-based
+functions are removed entirely. `HVV_PRESETS` is updated to the new 10-preset set.
 
 ---
 
@@ -240,25 +252,53 @@ piecewise formula, and the preset system.
 
 ---
 
-## 10. What changes, what stays
+## 10. Implementation scope
 
-**Changes:**
+### Rename sequencing
+
+1. Rename current `dark` → `old-dark` (temporary) across all files
+2. Rename `accent` → `intense`, `light` → `wash`, `subtle` → `hint`, `old-dark` → `shadow`
+3. Introduce new presets: `whisper`, `soft`, `dark`
+
+### Full consumer audit
+
+Every file in the codebase is searched for references to old preset names (`-accent` as
+palette preset, `-light`, `-subtle`, `-dark` as the old val=25 preset). All references are
+updated. Components that directly use palette variables (e.g., `var(--tug-red-accent)`) are
+fixed. No breakage is allowed.
+
+### Formula rewrite
+
+This is a complete rewrite. The old coefficient-based formulas (`--tug-preset-accent-l`,
+`min()`-based piecewise) are removed entirely and replaced with the `calc()`+`clamp()`
+formula using `(vib, val)` pair inputs. Visual parity with the old system is not a goal —
+the `(vib, val)` numbers in this document are the desired output.
+
+### Gallery editor enhancement
+
+The gallery palette editor is enhanced to display and interactively tune all 10 presets. The
+same curve/preview approach is used to adjust preset `(vib, val)` pairs and see the result
+across all 24 hues in real time. This is new functionality, not just a rename.
+
+### What changes
 
 - `accent` → `intense` everywhere (palette, tokens, themes, TS)
-- `light` → `wash`, `subtle` → `hint`, `dark` → `shadow`
+- `light` → `wash`, `subtle` → `hint`, `dark` (val=25) → `shadow`
 - 13 coefficient knobs → 20 (vib, val) pair knobs
-- Preset formulas rewritten to use calc()+clamp() with vib/val inputs
-- Three new presets: `soft`, `whisper`, `dark` (adds 72 new CSS vars: 24 hues × 3)
+- Preset formulas completely rewritten to use calc()+clamp() with vib/val inputs
+- Three new presets: `whisper`, `soft`, `dark` (adds 72 new CSS vars: 24 hues × 3)
 - Historical comments stripped
-- `HVV_PRESETS` in palette-engine.ts updated to match
+- `HVV_PRESETS` in palette-engine.ts rewritten to 10-preset set
+- `hvvColor()` rewritten to match CSS formula
+- Gallery editor enhanced for interactive preset tuning
+- All component CSS, theme files, and TS files audited and updated
 
-**Stays the same:**
+### What stays the same
 
 - Per-hue constants (h, canonical-l, peak-c)
 - Global anchors (l-dark, l-light)
-- Neutral ramp + black/white
+- Neutral ramp extended to 10 presets (same system, more stops)
 - P3 media query overrides
-- `hvvColor()` function (updated to match)
 - Three-layer token architecture (palette → base → component)
 - Theme override strategy
-- Gallery editor / LCurveEditor
+- Semantic tokens keep `accent` as UI role name

@@ -720,7 +720,7 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 **What to do**:
 1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-hvv-canonical.json`
-2. Define the 168 chromatic preset variables as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. For val=50 presets (canonical, accent, muted): L = `var(--tug-{hue}-canonical-l)`, C = `calc(vib/100 * var(--tug-{hue}-peak-c))`. For val≠50 presets (light, subtle, dark, deep): L via `min()` piecewise mapping
+2. Define the 168 chromatic preset variables (7 presets × 24 hues) as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. Phase 5g later expands to 10 presets with the `calc()`+`clamp()` piecewise formula
 3. Add `--tug-neutral-*` achromatic ramp (7 presets with C=0) plus `--tug-black` and `--tug-white` anchors [D75]
 4. Add `@media (color-gamut: p3)` block that overrides `--tug-{hue}-peak-c` with wider P3 chroma caps — preset formulas automatically produce richer colors since they reference `peak-c`
 5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to HVV palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`
@@ -768,6 +768,39 @@ Phase 5e is split into four sub-phases for incremental delivery.
 **Result**: The style system is navigable. Developers can point at any element and see exactly which tokens are in play, where they come from, and how scale/timing affect them. The computed palette provenance makes OKLCH color choices transparent.
 
 **Note**: Phase 5d5f depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain from `--tug-comp-*` through `--tug-base-*` to `--tug-{hue}[-preset]` palette variables). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
+
+### Phase 5g: Palette Refinements (Concept 22, [D70])
+
+**Goal**: Rewrite the HVV palette system from 7 presets to 10, replace confusing coefficient knobs with readable `(vib, val)` pairs, rewrite all preset formulas to use `calc()`+`clamp()` piecewise math, rename presets to a visual-impact naming scale, update all consumers, and enhance the gallery editor for interactive preset tuning.
+
+**Full specification**: `roadmap/palette-refinements.md` contains the complete design — preset definitions, formula walkthrough, consumer API, theme override strategy, and scope of changes.
+
+**What to do**:
+1. **Rename collision handling**: Rename the current `dark` preset to a temporary name (`old-dark`) across all files (CSS, TS, theme overrides, component references). This clears the `dark` name for its new purpose (vib=70, val=5) without ambiguity.
+2. **Preset renames**: `accent` → `intense`, `light` → `wash`, `subtle` → `hint`, `old-dark` (formerly `dark`) → `shadow`. Update all references in `tug-palette.css`, `tug-tokens.css`, `palette-engine.ts`, `bluenote.css`, `harmony.css`, and all component CSS and TypeScript files. Semantic tokens that use `accent` as a UI role name (e.g., `--tug-base-accent-default`) keep `accent` — only the palette preset name changes.
+3. **Rewrite preset definitions**: Replace the 13 coefficient knobs (`--tug-preset-accent-l: 0.55`, etc.) with 20 `(vib, val)` pair knobs (`--tug-preset-intense-vib: 80; --tug-preset-intense-val: 55`). This is a complete rewrite of the preset definition section in `tug-palette.css`.
+4. **Rewrite preset formulas**: Replace all `min()`-based and direct-value formulas with the `calc()`+`clamp()` piecewise formula for every hue × preset combination. 240 variables (24 hues × 10 presets) replace the previous 168.
+5. **Add three new presets**: `whisper` (vib=8, val=95), `soft` (vib=35, val=65), `dark` (vib=70, val=5) — adds 72 new CSS variables (24 hues × 3 new presets).
+6. **Update neutral ramp**: Extend from 7 to 10 neutral presets matching the chromatic preset names.
+7. **Update `palette-engine.ts`**: Rewrite `HVV_PRESETS` to match the new 10-preset set. Update `hvvColor()` to use the same `clamp()`-based piecewise math as the CSS formulas.
+8. **Update theme overrides**: Audit and update `bluenote.css` and `harmony.css` for all renamed preset references and any preset-knob overrides.
+9. **Full consumer audit**: Search all component CSS, TypeScript, and test files for references to old preset names (`-accent` as palette preset, `-light`, `-subtle`, `-dark` as the old val=25 preset). Fix every reference. No breakage allowed.
+10. **Gallery editor enhancement**: Update the gallery palette editor to display and interactively tune all 10 presets. Use the same curve/preview approach to adjust preset `(vib, val)` pairs and see the result across all 24 hues in real time.
+11. **Strip historical comments**: Remove all phase numbers, "replaced X", "introduced in Y" comments. The palette file header explains the HVV model as it is.
+12. **Verify**: All three themes render correctly. All tests pass. No legacy preset names remain in any file.
+
+**Files created/modified**:
+1. `tugdeck/styles/tug-palette.css` — rewritten: preset knobs, preset formulas, neutral ramp
+2. `tugdeck/styles/tug-tokens.css` — modified: chromatic token references updated for renamed presets
+3. `tugdeck/styles/bluenote.css` — modified: renamed preset references, preset-knob overrides
+4. `tugdeck/styles/harmony.css` — modified: renamed preset references, preset-knob overrides
+5. `tugdeck/src/components/tugways/palette-engine.ts` — modified: `HVV_PRESETS`, `hvvColor()` formula
+6. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — modified: 10-preset display, interactive preset tuning UI
+7. All component CSS and TS files referencing old preset names — modified: renamed references
+
+**Result**: The palette system is clean, readable, and complete. Ten presets named by visual impact. Each preset defined by a plain `(vib, val)` pair. The `calc()`+`clamp()` formula is written once and hidden from consumers. The gallery editor enables interactive preset tuning. All consumers updated, no breakage.
+
+**Note**: Phase 5g depends on Phase 5d5e (palette engine integration — the pure CSS palette and semantic token wiring must already be in place). It does not depend on Phase 5f (state preservation).
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -1229,16 +1262,17 @@ The suggested plan sequence:
 28. `tugways-phase-5e3-tugbank-bridge` — tugcast HTTP bridge integration (REST endpoints for defaults)
 29. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
 30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-31. `tugways-phase-6-feed` — feed hooks, data flow
-32. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
-33. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
-34. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
-35. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-36. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-37. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-38. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-39. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-40. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+31. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
+32. `tugways-phase-6-feed` — feed hooks, data flow
+33. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
+34. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+35. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
+36. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+37. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+38. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+39. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+40. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+41. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 

@@ -119,7 +119,7 @@
 | [D67] | Typed key-path property store per card | Concept 21 | [#d67-property-store](#d67-property-store) |
 | [D68] | PropertyStore integrates with useSyncExternalStore | Concept 21 | [#d68-property-store-sync](#d68-property-store-sync) |
 | [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
-| [D70] | HVV OKLCH palette: 24 hues with Hue/Vibrancy/Value axes, 7 presets, P3 support, pure CSS formulas | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
+| [D70] | HVV OKLCH palette: 24 hues with Hue/Vibrancy/Value axes, 10 presets, P3 support, pure CSS formulas | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
 | [D71] | Token naming: `--tug-{hue}[-preset]`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
 | [D72] | Global scale: `--tug-zoom` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
 | [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
@@ -3589,72 +3589,68 @@ Each color is defined by three axes:
 
 Token naming format: `--tug-{hue}` for canonical presets, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canonical-l/peak-c` for per-hue constants, `--tug-l-dark/l-light` for globals.
 
-Examples: `--tug-red` (canonical), `--tug-red-accent`, `--tug-blue-muted`, `--tug-green-peak-c`.
+Examples: `--tug-red` (canonical), `--tug-red-intense`, `--tug-blue-muted`, `--tug-green-peak-c`.
 
-Seven semantic presets per hue define the most common UI color needs:
+Ten presets per hue define the most common UI color needs, named by visual impact — how much the color "hits you" — ordered from lightest/weakest to darkest/strongest:
 
-| Preset | Vib | Val | Use case |
-|--------|-----|-----|----------|
-| canonical | 50 | 50 | Primary brand/accent color |
-| accent | 80 | 50 | High-emphasis interactive elements |
-| muted | 25 | 55 | Secondary text, subdued UI |
-| light | 30 | 82 | Light backgrounds, highlights |
-| subtle | 15 | 92 | Near-white washes, hover states |
-| dark | 50 | 25 | Dark-mode surfaces, contrast text |
-| deep | 70 | 15 | Deep saturated accents |
+| Preset | Vib | Val | Visual metaphor |
+|--------|-----|-----|-----------------|
+| whisper | 8 | 95 | You can barely tell it's there |
+| hint | 15 | 92 | A suggestion of color |
+| wash | 30 | 82 | A light wash of color, like watercolor |
+| soft | 35 | 65 | Gentle, present but not assertive |
+| muted | 25 | 55 | Held back, subdued |
+| canonical | 50 | 50 | The crayon color — the reference point |
+| intense | 80 | 55 | Saturated, pops |
+| shadow | 50 | 25 | Darkened, like shade under a tree |
+| deep | 70 | 15 | Rich and dark, like deep water |
+| dark | 70 | 5 | Nearly black, hue barely visible |
+
+Each preset is defined as two CSS custom properties — vibrancy and value — with plain, readable numbers (e.g., `--tug-preset-muted-vib: 25; --tug-preset-muted-val: 55`). No coefficient knobs. No mental model translation needed.
 
 Per-hue chroma caps are derived by binary-searching the maximum safe chroma at each hue's canonical lightness, with a 2% safety margin. The caps are hardcoded as static tables — not computed at runtime.
 
-**Static CSS architecture.** The palette is defined entirely in static CSS using `oklch()` + `calc()` formulas — no JavaScript injection required. The architecture has two tiers:
+**Static CSS architecture.** The palette is defined entirely in static CSS using `oklch()` + `calc()` + `clamp()` formulas — no JavaScript injection required. The architecture has two tiers:
 
 1. **Per-hue constants** (74 variables): Static values in a CSS file, derived from `tug-hvv-canonical.json`. These are the only values that require computation (gamut boundary binary search), and they change only when canonical L values are retuned. Three constants per hue (`-h`, `-canonical-l`, `-peak-c`) plus two globals (`--tug-l-dark`, `--tug-l-light`).
 
-2. **Preset formulas** (168 variables): Pure CSS using `oklch()` with `calc()` and the per-hue constants. No precomputation needed. For val=50 presets (canonical, accent, muted), the lightness is simply `var(--tug-{hue}-canonical-l)`. For val≠50 presets (light, subtle, dark, deep), the piecewise linear L mapping uses `min()`:
+2. **Preset formulas** (240 variables = 24 hues × 10 presets): Pure CSS using `oklch()` with `calc()`, `clamp()`, and the per-hue constants. No precomputation needed. The piecewise linear value-to-lightness mapping uses `clamp()` gates — each of the two segments (val 0→50 and val 50→100) contributes only when the val falls in its range:
 
 ```css
 /* Per-hue constants (static, from canonical.json): */
 --tug-red-h: 25;
---tug-red-canonical-l: 0.659;
---tug-red-peak-c: 0.346;
+--tug-red-canonical-l: 0.62;
+--tug-red-peak-c: 0.44;
 
-/* Canonical preset — val=50, vib=50: L = canonical-l, C = 0.5 * peak-c */
---tug-red: oklch(var(--tug-red-canonical-l) calc(0.5 * var(--tug-red-peak-c)) var(--tug-red-h));
+/* Preset definitions as (vib, val) pairs: */
+--tug-preset-muted-vib: 25;
+--tug-preset-muted-val: 55;
 
-/* Accent preset — val=50, vib=80: L = canonical-l, C = 0.8 * peak-c */
---tug-red-accent: oklch(var(--tug-red-canonical-l) calc(0.8 * var(--tug-red-peak-c)) var(--tug-red-h));
-
-/* Dark preset — val=25, vib=50: L via min() piecewise, C = 0.5 * peak-c */
---tug-red-dark: oklch(
-  min(
-    calc(var(--tug-l-dark) + (var(--tug-red-canonical-l) - var(--tug-l-dark)) * 25 / 50),
-    calc(var(--tug-red-canonical-l) + (var(--tug-l-light) - var(--tug-red-canonical-l)) * (25 - 50) / 50)
+/* Preset × hue formula (example for --tug-red-muted): */
+--tug-red-muted: oklch(
+  calc(
+    var(--tug-l-dark)
+    + clamp(0, var(--tug-preset-muted-val), 50)
+      * (var(--tug-red-canonical-l) - var(--tug-l-dark)) / 50
+    + (clamp(50, var(--tug-preset-muted-val), 100) - 50)
+      * (var(--tug-l-light) - var(--tug-red-canonical-l)) / 50
   )
-  calc(0.5 * var(--tug-red-peak-c))
+  calc(var(--tug-preset-muted-vib) / 100 * var(--tug-red-peak-c))
   var(--tug-red-h)
 );
 ```
 
-**Why pure CSS, not JS injection.** The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the `injectHvvCSS()` runtime injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
+The `clamp()` piecewise math works as follows: val 0→50 maps L from L_DARK to canonical-l; val 50→100 maps L from canonical-l to L_LIGHT. At val=50 (the hinge), L equals canonical-l exactly. Vibrancy scales chroma linearly: `vib/100 * peak-c`. This is fully dynamic — changing a preset's vib or val updates all 24 hues' variants of that preset at runtime.
 
-**Arbitrary colors in CSS.** Any vib/val combination — not just the 7 presets — can be expressed inline using the per-hue constants:
+**Why pure CSS, not JS injection.** The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()` + `clamp()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the `injectHvvCSS()` runtime injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
 
-```css
-/* Custom color: red at vib=60, val=70 */
-color: oklch(
-  min(
-    calc(var(--tug-l-dark) + (var(--tug-red-canonical-l) - var(--tug-l-dark)) * 70 / 50),
-    calc(var(--tug-red-canonical-l) + (var(--tug-l-light) - var(--tug-red-canonical-l)) * (70 - 50) / 50)
-  )
-  calc(0.6 * var(--tug-red-peak-c))
-  var(--tug-red-h)
-);
-```
+**Arbitrary colors in CSS.** Any vib/val combination — not just the 10 presets — can be expressed inline using the per-hue constants and the same `calc()`+`clamp()` formula with literal vib/val numbers.
 
 **P3 support.** A `@media (color-gamut: p3)` block overrides `--tug-{hue}-peak-c` with wider P3 chroma caps derived from `MAX_P3_CHROMA_FOR_HUE`. The preset formulas automatically produce richer colors because they reference `peak-c` — no separate P3 preset definitions needed.
 
-**JS API retained.** The `hvvColor(hueName, vib, val, canonicalL, peakChroma?)` function remains in `palette-engine.ts` for programmatic use (inline styles, color pickers, data visualization) where CSS custom properties aren't accessible. It is no longer the source of truth for the CSS variable layer.
+**JS API retained.** The `hvvColor(hueName, vib, val, canonicalL, peakChroma?)` function remains in `palette-engine.ts` for programmatic use (inline styles, color pickers, data visualization) where CSS custom properties aren't accessible. It uses the same piecewise math as the CSS formulas. It is no longer the source of truth for the CSS variable layer.
 
-**Theme influence.** All three themes currently share the same canonical L values and hue angles. Per-theme tuning (if needed) would override the per-hue constants in theme-specific CSS files.
+**Theme influence.** Themes can override preset knobs to shift all colors at once, override per-hue canonical-l values for contrast adjustments, or override individual semantic tokens to point to different presets. All three themes currently share the same canonical L values and hue angles.
 
 #### Neutral Ramp and Opacity {#d75-neutral-ramp}
 
@@ -3665,14 +3661,17 @@ The HVV system covers chromatic colors. For a complete, coherent color system wi
 **Neutral ramp.** In OKLCH, gray is chroma=0 at various lightness values — conceptually, any hue at vib=0 (the hue angle becomes irrelevant). The HVV system adds a `neutral` pseudo-hue using the same val-to-L mapping but with C=0:
 
 ```css
-/* Neutral ramp using the same 7 preset val stops: */
---tug-neutral:        oklch(0.555 0 0);  /* val=50 */
---tug-neutral-accent: oklch(0.555 0 0);  /* same as canonical (no chroma to boost) */
---tug-neutral-muted:  oklch(0.595 0 0);  /* val=55 */
---tug-neutral-light:  oklch(0.812 0 0);  /* val=82 */
---tug-neutral-subtle: oklch(0.907 0 0);  /* val=92 */
---tug-neutral-dark:   oklch(0.352 0 0);  /* val=25 */
---tug-neutral-deep:   oklch(0.211 0 0);  /* val=15 */
+/* Neutral ramp using the same 10 preset val stops: */
+--tug-neutral-whisper: oklch(0.949 0 0);  /* val=95 */
+--tug-neutral-hint:    oklch(0.925 0 0);  /* val=92 */
+--tug-neutral-wash:    oklch(0.812 0 0);  /* val=82 */
+--tug-neutral-soft:    oklch(0.677 0 0);  /* val=65 */
+--tug-neutral-muted:   oklch(0.595 0 0);  /* val=55 */
+--tug-neutral:         oklch(0.555 0 0);  /* val=50 (canonical) */
+--tug-neutral-intense: oklch(0.595 0 0);  /* same as muted (no chroma to boost) */
+--tug-neutral-shadow:  oklch(0.352 0 0);  /* val=25 */
+--tug-neutral-deep:    oklch(0.211 0 0);  /* val=15 */
+--tug-neutral-dark:    oklch(0.170 0 0);  /* val=5 */
 
 /* Named anchors for common grays: */
 --tug-black: oklch(0 0 0);
@@ -3697,7 +3696,7 @@ No precomputed alpha variants are needed. The palette system produces opaque col
 
 **[D71] `--tug-{hue}[-preset]` / `--tug-base-*` / `--tug-comp-*` replace `--tways-*`/`--td-*`.**
 
-- **Layer 0 (HVV palette)**: Pure CSS formulas using `oklch()` + `calc()` and per-hue constants. Short-form naming: `--tug-{hue}` (canonical), `--tug-{hue}-{preset}`, `--tug-{hue}-h/canonical-l/peak-c`, `--tug-l-dark/l-light`. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. 242+ CSS variables defined in a static CSS file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. No direct component usage of raw palette variables.
+- **Layer 0 (HVV palette)**: Pure CSS formulas using `oklch()` + `calc()` + `clamp()` and per-hue constants. Short-form naming: `--tug-{hue}` (canonical), `--tug-{hue}-{preset}`, `--tug-{hue}-h/canonical-l/peak-c`, `--tug-l-dark/l-light`. Preset definitions as `(vib, val)` pairs: `--tug-preset-{preset}-vib/val`. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. ~345 CSS variables defined in a static CSS file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. No direct component usage of raw palette variables.
 - **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer. Chromatic tokens wire to HVV presets (e.g., `--tug-base-accent-default: var(--tug-orange)`). Achromatic tokens (surfaces, foreground, borders) wire to `--tug-neutral-*` or remain literal values where no palette mapping applies.
 - **Layer 2 (`--tug-comp-*`)**: Component/pattern bindings. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
 
@@ -4242,7 +4241,7 @@ Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the 
 
 **Key design decisions:**
 
-- **[D70] HueVibVal (HVV) OKLCH palette.** 24 named hue families with three axes: Hue (color family), Vibrancy (chroma 0–100), Value (lightness 0–100). Seven semantic presets per hue (canonical, accent, muted, light, subtle, dark, deep). Short-form CSS variable naming: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others. 242+ CSS variables defined as pure CSS `oklch()` + `calc()` formulas using per-hue constants — no JS injection required. P3 wide-gamut support via `@media (color-gamut: p3)` block overriding `peak-c` constants. The JS function `hvvColor()` provides programmatic color computation for inline styles and data viz. Per-hue canonical lightness values are tuned via an interactive gallery editor.
+- **[D70] HueVibVal (HVV) OKLCH palette.** 24 named hue families with three axes: Hue (color family), Vibrancy (chroma 0–100), Value (lightness 0–100). Ten presets per hue named by visual impact (whisper, hint, wash, soft, muted, canonical, intense, shadow, deep, dark), each defined as a `(vib, val)` pair. Short-form CSS variable naming: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others. ~345 CSS variables defined as pure CSS `oklch()` + `calc()` + `clamp()` formulas using per-hue constants — no JS injection required. P3 wide-gamut support via `@media (color-gamut: p3)` block overriding `peak-c` constants. The JS function `hvvColor()` provides programmatic color computation for inline styles and data viz. Per-hue canonical lightness values are tuned via an interactive gallery editor.
 - **[D71] Three-layer token naming.** HVV palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
 - **[D72] Global scale.** `--tug-zoom` (default: `1`) drives CSS `zoom` on `<body>`, scaling the entire UI uniformly — all dimensions, text, spacing, radii, icons. Per-component `--tug-comp-<family>-zoom` (default: `1`) allows fine-tuning via zoom on the component root.
 - **[D73] Global timing.** `--tug-timing` (default: `1`) multiplies all animation durations. `--tug-motion` (default: `1`, set to `0` by `prefers-reduced-motion`) toggles motion on/off. `data-tug-motion="off"` on body provides CSS hook. Two controls because "slow motion for debugging" and "no motion for accessibility" are categorically different.
@@ -4258,7 +4257,7 @@ Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` 
 
 **Three key decisions:**
 
-- **[D70] revised — Pure CSS palette formulas.** The HVV transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. Since CSS `oklch()` natively accepts `calc()` expressions, the 168 preset variables can be defined as static CSS formulas rather than JS-injected strings. Per-hue constants (`--tug-{hue}-h`, `-canonical-l`, `-peak-c`) are the only values requiring computation (gamut boundary binary search) and change only when canonical L is retuned. P3 support simplifies: `@media (color-gamut: p3)` overrides `peak-c` constants, and the preset formulas automatically produce wider-gamut colors. This eliminates `injectHvvCSS()` entirely — `hvvColor()` is retained for programmatic JS use only.
+- **[D70] revised — Pure CSS palette formulas with 10 presets.** The HVV transfer function (piecewise linear L, linear C) is expressed entirely in CSS `calc()` + `clamp()`. Each preset is defined as a `(vib, val)` pair; the `clamp()`-based piecewise formula maps val to lightness. 240 chromatic preset variables (24 hues × 10 presets) plus 20 preset knobs, 72 per-hue constants, and ~11 neutrals — ~345 CSS vars total. P3 support: `@media (color-gamut: p3)` overrides `peak-c` constants, and preset formulas automatically produce wider-gamut colors. `injectHvvCSS()` is eliminated — `hvvColor()` is retained for programmatic JS use only.
 
 - **[D75] Neutral ramp and opacity.** The HVV system extends to achromatic colors via `--tug-neutral-*` (the val axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
 
