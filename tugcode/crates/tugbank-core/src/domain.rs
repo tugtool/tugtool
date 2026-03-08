@@ -62,8 +62,16 @@ impl DomainTxn {
 /// All read and write operations on a domain go through this handle.
 /// The handle borrows the store and is scoped to a single domain name.
 pub struct DomainHandle<'a> {
-    pub(crate) _store: &'a crate::DefaultsStore,
-    pub(crate) _domain: String,
+    pub(crate) store: &'a crate::DefaultsStore,
+    pub(crate) domain: String,
+}
+
+impl std::fmt::Debug for DomainHandle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DomainHandle")
+            .field("domain", &self.domain)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> DomainHandle<'a> {
@@ -79,6 +87,8 @@ impl<'a> DomainHandle<'a> {
         let mut txn = DomainTxn::new();
         f(&mut txn)?;
         let _ = txn.mutations;
-        unimplemented!("DomainHandle::update not yet implemented")
+        let _ = &self.store;
+        let _ = &self.domain;
+        unimplemented!("DomainHandle::update not yet implemented — step 6")
     }
 }

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T14:45:57Z
+---
+
+## step-4: Implemented DefaultsStore::open (Connection + pragmas + migration + Mutex), domain() with empty-name validation, list_domains() querying domains table. Renamed DomainHandle fields. Added 6 tests covering file creation, re-open, empty domain list, valid/invalid domain names, and Send+Sync.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T14:41:40Z
 ---
