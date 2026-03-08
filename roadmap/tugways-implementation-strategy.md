@@ -465,6 +465,30 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 **Note**: Terminal buffer persistence is explicitly deferred to Phase 9's terminal card work. The `useTugcardPersistence` hook provides the mechanism; the terminal card will implement its own `onSave`/`onRestore` for xterm.js buffer state when the time comes. Similarly, Monaco editor state persistence (cursor position, scroll, folding, find widget) will use the same `useTugcardPersistence` hook via `editor.saveViewState()`/`editor.restoreViewState()` when a code card is introduced in Phase 8/9 — the hook's opaque `content` blob is designed to handle arbitrarily complex state structures.
 
+### Phase 5f2: State Preservation Fixes (Concept 18, [D77])
+
+**Goal**: Fix four state preservation failures from Phase 5f so that scroll positions, text selections, and card content state actually survive tab switches and app reloads without visual glitches or silent failures.
+
+**What to do**:
+1. Defer scroll and selection restore from `useLayoutEffect` to `requestAnimationFrame` in tugcard.tsx. The `useLayoutEffect` fires before the browser completes layout, so `scrollTop` assignments are clamped to 0 and `setBaseAndExtent` silently fails. RAF fires after layout when content has its full scrollable dimensions.
+2. Suppress the one-frame visual flash (content visible at scroll position 0 before RAF fires) by applying `visibility: hidden` on the content area during the first frame, restoring visibility in the RAF callback. Apply only when scroll state needs restoring — selection-only restores have no visible flash.
+3. Replace the `::selection`-based inactive selection styling with the CSS Custom Highlight API (`CSS.highlights`, `::highlight(inactive-selection)`). The browser clears the global Selection on `pointerdown`, so `::selection` has nothing to style. The Highlight API paints saved ranges independently of the global Selection.
+4. Add proactive range capture in SelectionGuard's `handlePointerDown` (capture phase): a separate loop visits ALL boundaries before the existing tracking loop, capturing the live Range for cards losing focus and clearing highlights for cards gaining focus.
+5. Add `::highlight(inactive-selection)` CSS rule to tugcard.css, reusing the existing `--tug-base-selection-bg-inactive` token.
+6. Update D77 in `roadmap/design-system-concepts.md` to document the CSS Custom Highlight API approach.
+7. Remove the dead `savedSelections` field from SelectionGuard (vestigial from Phase 5b, replaced by DeckManager cache in Phase 5f).
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/tugcard.tsx` — rewrite activation restore `useLayoutEffect` with RAF deferral and flash suppression
+2. `tugdeck/src/components/tugways/selection-guard.ts` — add highlight fields, `captureInactiveHighlight`/`clearInactiveHighlight` methods, pointerdown integration, remove dead `savedSelections` field
+3. `tugdeck/src/components/tugways/tugcard.css` — add `::highlight(inactive-selection)` rule
+4. `tugdeck/src/types/highlight-api.d.ts` — ambient TypeScript declarations for CSS Custom Highlight API
+5. `roadmap/design-system-concepts.md` — update D77
+
+**Result**: All four Phase 5f failures are resolved. Scroll positions and selections survive tab switches and app reloads. Inactive cards display saved selections with a dimmed highlight via the CSS Custom Highlight API. No visual flash on restore. Rules of Tugways strictly followed — all appearance changes via CSS/DOM (Rule 4), no React state mutations.
+
+**Note**: Phase 5f2 depends on Phase 5f (the infrastructure it fixes must exist). It does not change any data model, API surface, or hook interface — it fixes timing and visual behavior only.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Status: COMPLETE** (2026-03-04)
@@ -1262,7 +1286,8 @@ The suggested plan sequence:
 28. `tugways-phase-5e3-tugbank-bridge` — tugcast HTTP bridge integration (REST endpoints for defaults)
 29. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
 30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
-31. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
+31. `tugways-phase-5f2-state-preservation-fixes` — RAF-deferred scroll/selection restore, CSS Custom Highlight API for inactive selections, flash suppression
+32. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
 32. `tugways-phase-6-feed` — feed hooks, data flow
 33. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
 34. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
