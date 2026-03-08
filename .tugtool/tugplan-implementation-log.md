@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-08T15:12:24Z
+---
+
+## audit-fix: CI fix: replaced 3.14 literal in JSON roundtrip test with 1.5 to avoid clippy::approx_constant lint
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-8
 date: 2025-03-08T15:07:09Z
 ---

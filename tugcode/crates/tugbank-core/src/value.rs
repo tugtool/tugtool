@@ -212,7 +212,7 @@ mod tests {
     fn test_json_nested_roundtrip() {
         let json = serde_json::json!({
             "key": "value",
-            "nested": {"a": 1, "b": [true, null, 3.14]},
+            "nested": {"a": 1, "b": [true, null, 1.5]},
             "arr": [1, 2, 3]
         });
         assert_eq!(roundtrip(Value::Json(json.clone())), Value::Json(json));
