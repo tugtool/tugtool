@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-08T15:57:37Z
+---
+
+## step-2: Created tugbank binary crate with clap-derived CLI, resolve_db_path, json output helpers, and three implemented subcommands (domains, keys, generation). Added base64 and assert_cmd workspace dependencies. Integration tests T06-T10 pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: step-1
 date: 2025-03-08T15:48:21Z
 ---
