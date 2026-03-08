@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T01:55:17Z
+---
+
+## step-1: Created StyleInspectorOverlay singleton class with modifier key tracking, elementFromPoint targeting, highlight/panel overlays, pin/unpin state, scale/timing readout, computed property display, and companion CSS. Includes 41 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5d5f-cascade-inspector.md
+
+---
+
+---
 step: step-12
 date: 2025-03-07T23:26:32Z
 ---
