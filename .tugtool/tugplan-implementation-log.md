@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-08T21:49:35Z
+---
+
+## step-7: Added --tug-base-selection-bg-inactive token to tug-tokens.css with theme overrides in bluenote.css and harmony.css, and inactive selection rule in tugcard.css
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-6
 date: 2025-03-08T21:43:10Z
 ---
