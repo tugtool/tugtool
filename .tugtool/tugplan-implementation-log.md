@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T14:31:46Z
+---
+
+## step-1: Created tugbank-core crate scaffold: Cargo.toml with workspace inheritance, lib.rs with module declarations and re-exports, stub files for error, value, schema, store, and domain modules, and added crate to workspace members.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T02:19:42Z
 ---

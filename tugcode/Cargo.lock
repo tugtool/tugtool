@@ -2140,6 +2140,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugbank-core"
+version = "0.7.29"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tugcast"
 version = "0.1.0"
 dependencies = [
