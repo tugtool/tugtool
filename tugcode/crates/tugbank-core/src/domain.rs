@@ -633,4 +633,131 @@ mod tests {
             "expected InvalidKey, got {err:?}"
         );
     }
+
+    // ── T31: generation returns 0 for domain with no prior writes ────────────
+
+    #[test]
+    fn test_generation_zero_for_unwritten_domain() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("fresh").unwrap();
+        assert_eq!(h.generation().unwrap(), 0);
+    }
+
+    // ── T32: after one set(), generation is 1 ─────────────────────────────────
+
+    #[test]
+    fn test_generation_one_after_first_set() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        h.set("k", Value::I64(1)).unwrap();
+        assert_eq!(h.generation().unwrap(), 1);
+    }
+
+    // ── T33: generation increments by 1 after each set/remove ────────────────
+
+    #[test]
+    fn test_generation_increments_on_each_write() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        h.set("a", Value::I64(1)).unwrap();
+        assert_eq!(h.generation().unwrap(), 1);
+        h.set("b", Value::I64(2)).unwrap();
+        assert_eq!(h.generation().unwrap(), 2);
+        h.remove("a").unwrap();
+        assert_eq!(h.generation().unwrap(), 3);
+    }
+
+    // ── T34: set_if_generation returns Written when generation matches ────────
+
+    #[test]
+    fn test_set_if_generation_written_when_matches() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        // Fresh domain: generation is 0.
+        let outcome = h.set_if_generation("k", Value::Bool(true), 0).unwrap();
+        assert_eq!(outcome, SetOutcome::Written);
+        assert_eq!(h.get("k").unwrap(), Some(Value::Bool(true)));
+        assert_eq!(h.generation().unwrap(), 1);
+    }
+
+    // ── T35: set_if_generation returns Conflict when generation is stale ──────
+
+    #[test]
+    fn test_set_if_generation_conflict_when_stale() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        h.set("k", Value::I64(1)).unwrap(); // generation is now 1
+        // Try with stale expected generation of 0.
+        let outcome = h.set_if_generation("k", Value::I64(99), 0).unwrap();
+        match outcome {
+            SetOutcome::Conflict { current_generation } => {
+                assert_eq!(current_generation, 1);
+            }
+            SetOutcome::Written => panic!("expected Conflict, got Written"),
+        }
+        // Value must not have been changed.
+        assert_eq!(h.get("k").unwrap(), Some(Value::I64(1)));
+    }
+
+    // ── T36: update with multiple set/remove operations applies atomically ────
+
+    #[test]
+    fn test_update_applies_multiple_mutations_atomically() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        // Seed two keys.
+        h.set("a", Value::I64(1)).unwrap();
+        h.set("b", Value::I64(2)).unwrap();
+
+        h.update(|txn| {
+            txn.set("a", Value::I64(10))?;
+            txn.set("c", Value::I64(30))?;
+            txn.remove("b");
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(h.get("a").unwrap(), Some(Value::I64(10)));
+        assert_eq!(h.get("b").unwrap(), None);
+        assert_eq!(h.get("c").unwrap(), Some(Value::I64(30)));
+    }
+
+    // ── T37: update returns the new generation on success ─────────────────────
+
+    #[test]
+    fn test_update_returns_new_generation() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        // After two individual sets, generation is 2.
+        h.set("x", Value::I64(0)).unwrap();
+        h.set("y", Value::I64(0)).unwrap();
+
+        let new_gen = h
+            .update(|txn| {
+                txn.set("x", Value::I64(1))?;
+                txn.set("y", Value::I64(2))?;
+                Ok(())
+            })
+            .unwrap();
+
+        // update() bumps generation by exactly 1 per call.
+        assert_eq!(new_gen, 3);
+        assert_eq!(h.generation().unwrap(), 3);
+    }
+
+    // ── T38: DomainTxn::set enforces blob size limit inside transactions ──────
+
+    #[test]
+    fn test_domain_txn_set_rejects_oversized_bytes() {
+        let (store, _tmp) = temp_store();
+        let h = store.domain("d").unwrap();
+        let big = Value::Bytes(vec![0u8; crate::value::MAX_BLOB_SIZE + 1]);
+        let result = h.update(|txn| txn.set("k", big));
+        assert!(
+            matches!(result, Err(Error::ValueTooLarge { .. })),
+            "expected ValueTooLarge from DomainTxn::set, got {result:?}"
+        );
+        // Nothing should have been written.
+        assert_eq!(h.get("k").unwrap(), None);
+    }
 }

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-08T14:56:49Z
+---
+
+## step-6: Added tests T31-T38 covering generation tracking (zero for unwritten, increments per write), set_if_generation CAS (Written on match, Conflict on stale), update atomicity with multiple mutations, update generation return value, and DomainTxn blob enforcement.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-5
 date: 2025-03-08T14:52:19Z
 ---
