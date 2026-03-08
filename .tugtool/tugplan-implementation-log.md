@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T23:10:40Z
+---
+
+## step-5: Integration checkpoint. Full tugdeck test suite passes (1032/1032). All five design decisions D01-D05 verified across steps 1-4. Manual browser verification tasks deferred.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T23:07:38Z
+---
+
+## step-4: Verified D77 section in design-system-concepts.md already accurately describes CSS Custom Highlight API approach. No file modifications needed — content was complete from plan scaffolding.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T23:04:26Z
+---
+
+## step-3: Added ::highlight(inactive-selection) CSS rule using --tug-base-selection-bg-inactive token. Updated existing ::selection inactive rule comment to note it is now a no-op retained for graceful degradation.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T23:01:05Z
+---
+
+## step-2: Added highlight-api.d.ts type declarations, captureInactiveHighlight/clearInactiveHighlight methods, proactive highlight capture in handlePointerDown, highlight lifecycle in attach/detach/reset, removed dead savedSelections map.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T22:53:26Z
+---
+
+## step-1: Rewrote useLayoutEffect restore logic in tugcard.tsx to schedule scroll/selection/content restoration via requestAnimationFrame. Added visibility:hidden flash suppression when scroll state exists. Updated tugcard tests for RAF timing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-8
 date: 2025-03-08T21:52:54Z
 ---

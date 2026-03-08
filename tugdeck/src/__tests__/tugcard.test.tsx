@@ -1047,7 +1047,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     expect(bag?.scroll).toEqual({ x: 42, y: 77 });
   });
 
-  it("after tab activation, selectionGuard.restoreSelection is called with the saved selection", () => {
+  it("after tab activation, selectionGuard.restoreSelection is called with the saved selection", async () => {
     registerCard({
       componentId: "hello",
       factory: () => { throw new Error("factory stub"); },
@@ -1095,13 +1095,17 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       rerender(<TestCard currentTab={tab2.id} />);
     });
 
+    // The RAF callback is mocked as setTimeout(0) in setup-rtl.ts.
+    // Flush the pending macrotask so the RAF callback (which calls restoreSelection) runs.
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
+
     // restoreSelection should have been called with cardId and the saved selection.
     expect(restoreSelSpy).toHaveBeenCalledWith("card-rsel", savedSel);
 
     restoreSelSpy.mockRestore();
   });
 
-  it("after tab activation, onRestore callback is called with saved content state", () => {
+  it("after tab activation, onRestore callback is called with saved content state", async () => {
     registerCard({
       componentId: "hello",
       factory: () => { throw new Error("factory stub"); },
@@ -1161,6 +1165,10 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     act(() => {
       rerender(<TestCard currentTab={tab2.id} />);
     });
+
+    // The RAF callback is mocked as setTimeout(0) in setup-rtl.ts.
+    // Flush the pending macrotask so the RAF callback (which calls onRestore) runs.
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
 
     // onRestore should have been called with the saved content state.
     expect(onRestore).toHaveBeenCalledWith(savedContent);

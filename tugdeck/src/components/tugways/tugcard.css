@@ -174,16 +174,38 @@
 }
 
 /*
- * Inactive selection: dimmed, desaturated background for non-focused cards.
+ * Inactive selection via CSS Custom Highlight API (Phase 5f2, [D03], Spec S04).
  *
- * Scoped to .card-frame[data-focused="false"] using the existing data-focused
- * attribute set by card-frame.tsx. Overrides the active selection color so
- * text selected in a non-focused card appears with a low-opacity gray,
- * matching macOS inactive window selection conventions.
+ * The "inactive-selection" highlight is managed by SelectionGuard, which
+ * captures the live selection Range on pointerdown outside the card and
+ * registers it with CSS.highlights.set("inactive-selection", ...).
+ *
+ * This approach is necessary because the browser clears the global Selection
+ * object on pointerdown in another card, making ::selection unstyleable for
+ * inactive cards. CSS Custom Highlights are independent of the browser's
+ * global Selection and persist across focus changes.
  *
  * Rule 4 of Rules of Tugways: appearance changes through CSS and DOM, never
- * React state. No JavaScript needed — the browser applies the correct
- * ::selection style based on the data-focused attribute.
+ * React state. The style definition stays in CSS; JavaScript only creates the
+ * Highlight object and registers ranges.
+ *
+ * [D03] CSS Custom Highlight API (#d03-highlight-api)
+ */
+::highlight(inactive-selection) {
+  background-color: var(--tug-base-selection-bg-inactive);
+  color: inherit;
+}
+
+/*
+ * Inactive selection fallback via ::selection (GRACEFUL DEGRADATION ONLY).
+ *
+ * This rule is now effectively a no-op: the browser clears the global
+ * Selection on pointerdown in another card, so ::selection has nothing to
+ * style when a card is inactive. Retained as a harmless fallback for browsers
+ * that do not support the CSS Custom Highlight API — in those browsers,
+ * inactive cards simply will not show dimmed selections.
+ *
+ * Do not remove this rule. It provides safe degradation without side effects.
  *
  * [D05] Inactive selection dimmed CSS (#d05-inactive-selection)
  */
