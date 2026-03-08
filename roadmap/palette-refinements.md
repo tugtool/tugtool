@@ -13,11 +13,7 @@ and once in `palette-engine.ts`. Components never see the formula — they consu
 ## 1. Rename `accent` → `intense`
 
 The canonical color is the accent color in most UI contexts. `intense` sits on a clear
-vibrancy axis:
-
-```
-faint ← subtle ← muted ← soft ← canonical → intense
-```
+perceptual impact scale alongside the other presets.
 
 All references to `-accent` preset names in tug-palette.css, tug-tokens.css, theme files,
 and palette-engine.ts get renamed to `-intense`.
@@ -33,15 +29,16 @@ are eliminated entirely.
 ```css
 body {
   /* Preset definitions */
-  --tug-preset-canonical-vib: 50;  --tug-preset-canonical-val: 50;
-  --tug-preset-intense-vib: 80;    --tug-preset-intense-val: 55;
-  --tug-preset-soft-vib: 35;       --tug-preset-soft-val: 65;
-  --tug-preset-muted-vib: 25;      --tug-preset-muted-val: 55;
-  --tug-preset-light-vib: 30;      --tug-preset-light-val: 82;
-  --tug-preset-subtle-vib: 15;     --tug-preset-subtle-val: 92;
-  --tug-preset-faint-vib: 8;       --tug-preset-faint-val: 95;
-  --tug-preset-dark-vib: 50;       --tug-preset-dark-val: 25;
-  --tug-preset-deep-vib: 70;       --tug-preset-deep-val: 15;
+  --tug-preset-whisper-vib: 8;     --tug-preset-whisper-val: 95;
+  --tug-preset-hint-vib: 15;      --tug-preset-hint-val: 92;
+  --tug-preset-wash-vib: 30;      --tug-preset-wash-val: 82;
+  --tug-preset-soft-vib: 35;      --tug-preset-soft-val: 65;
+  --tug-preset-muted-vib: 25;     --tug-preset-muted-val: 55;
+  --tug-preset-canonical-vib: 50; --tug-preset-canonical-val: 50;
+  --tug-preset-intense-vib: 80;   --tug-preset-intense-val: 55;
+  --tug-preset-shadow-vib: 50;    --tug-preset-shadow-val: 25;
+  --tug-preset-deep-vib: 70;      --tug-preset-deep-val: 15;
+  --tug-preset-dark-vib: 70;      --tug-preset-dark-val: 5;
 }
 ```
 
@@ -50,19 +47,23 @@ muted color. No mental model translation needed.
 
 ---
 
-## 3. Nine presets
+## 3. Ten presets
 
-| Preset    | Vib | Val | Use case                                                  |
-|-----------|-----|-----|-----------------------------------------------------------|
-| deep      | 70  | 15  | Very dark, rich — dark UI accents, deep backgrounds       |
-| dark      | 50  | 25  | Dark foreground — text on light backgrounds                |
-| canonical | 50  | 50  | The crayon color — the reference point                     |
-| intense   | 80  | 55  | High-energy — primary buttons, active indicators           |
-| soft      | 35  | 65  | Gentle emphasis — hover states, secondary emphasis         |
-| muted     | 25  | 55  | Low-key — readable but subdued, borders, secondary text    |
-| light     | 30  | 82  | Pale tint — light backgrounds with visible color           |
-| subtle    | 15  | 92  | Background wash — section tinting, selected rows           |
-| faint     | 8   | 95  | Barely visible — zebra stripes, whisper of color           |
+Presets are named by visual impact — how much the color "hits you" — ordered from
+lightest/weakest to darkest/strongest. Each name evokes a physical-world color metaphor.
+
+| Rank | Name      | Vib | Val | Visual metaphor                                    |
+|------|-----------|-----|-----|----------------------------------------------------|
+| 1    | whisper   | 8   | 95  | You can barely tell it's there                      |
+| 2    | hint      | 15  | 92  | A suggestion of color                               |
+| 3    | wash      | 30  | 82  | A light wash of color, like watercolor              |
+| 4    | soft      | 35  | 65  | Gentle, present but not assertive                   |
+| 5    | muted     | 25  | 55  | Held back, subdued                                  |
+| 6    | canonical | 50  | 50  | The crayon color — the reference point              |
+| 7    | intense   | 80  | 55  | Saturated, pops                                     |
+| 8    | shadow    | 50  | 25  | Darkened, like shade under a tree                   |
+| 9    | deep      | 70  | 15  | Rich and dark, like deep water                      |
+| 10   | dark      | 70  | 5   | Nearly black, hue barely visible                    |
 
 ---
 
@@ -145,12 +146,12 @@ the math at runtime.
 
 **Total CSS vars for the chromatic palette:**
 
-- 18 preset knobs (9 presets × 2)
+- 20 preset knobs (10 presets × 2)
 - 72 per-hue constants (24 × 3)
-- 216 preset colors (24 hues × 9 presets)
+- 240 preset colors (24 hues × 10 presets)
 - 2 global anchors
 - Neutrals + black/white (~11)
-- ≈ 319 CSS vars, all pure calc()/oklch(), no JS injection
+- ≈ 345 CSS vars, all pure calc()/oklch(), no JS injection
 
 ---
 
@@ -165,7 +166,7 @@ the math at runtime.
 }
 
 .sidebar {
-  background: var(--tug-cyan-faint);
+  background: var(--tug-cyan-whisper);
 }
 ```
 
@@ -219,7 +220,7 @@ For chromatic adjustments, themes can:
 - Override per-hue canonical-l values for contrast adjustments (e.g., Harmony bumps
   `--tug-red-canonical-l` higher so red is readable on light surfaces)
 - Override individual semantic tokens to point to different presets (e.g.,
-  `--tug-base-accent-muted: var(--tug-orange-dark)` in Harmony for contrast)
+  `--tug-base-accent-muted: var(--tug-orange-shadow)` in Harmony for contrast)
 
 ---
 
@@ -244,9 +245,10 @@ piecewise formula, and the preset system.
 **Changes:**
 
 - `accent` → `intense` everywhere (palette, tokens, themes, TS)
-- 13 coefficient knobs → 18 (vib, val) pair knobs
+- `light` → `wash`, `subtle` → `hint`, `dark` → `shadow`
+- 13 coefficient knobs → 20 (vib, val) pair knobs
 - Preset formulas rewritten to use calc()+clamp() with vib/val inputs
-- Two new presets: `soft`, `faint` (adds 48 new CSS vars: 24 hues × 2)
+- Three new presets: `soft`, `whisper`, `dark` (adds 72 new CSS vars: 24 hues × 3)
 - Historical comments stripped
 - `HVV_PRESETS` in palette-engine.ts updated to match
 
