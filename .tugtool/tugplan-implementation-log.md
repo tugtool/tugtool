@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T16:08:41Z
+---
+
+## step-5: Integration checkpoint: verified full workspace builds with zero warnings, 98 tests pass across tugbank-core (66) and tugbank (32), cargo fmt and clippy clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e2-tugbank-cli.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T16:06:07Z
 ---
