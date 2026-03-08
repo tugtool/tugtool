@@ -565,7 +565,16 @@ export class StyleInspectorOverlay {
       if (seen.has(currentProp)) break; // cycle guard
       seen.add(currentProp);
 
-      const rawValue = getComputedStyle(document.body).getPropertyValue(currentProp).trim();
+      // Try body first (where tug tokens live), then documentElement (:root),
+      // then search CSS rules directly (for Tailwind @theme variables that
+      // aren't readable via getComputedStyle).
+      let rawValue = getComputedStyle(document.body).getPropertyValue(currentProp).trim();
+      if (!rawValue) {
+        rawValue = getComputedStyle(document.documentElement).getPropertyValue(currentProp).trim();
+      }
+      if (!rawValue) {
+        rawValue = this.findPropertyValueInRules(currentProp);
+      }
       if (!rawValue) break;
 
       chain.push({ property: currentProp, value: rawValue });
@@ -664,26 +673,6 @@ export class StyleInspectorOverlay {
   };
 
   /**
-   * Collect all CSSStyleRule instances from a CSSRuleList, recursing into
-   * @media and @supports blocks.
-   */
-  private collectStyleRules(
-    ruleList: CSSRuleList,
-    out: CSSStyleRule[]
-  ): void {
-    for (const rule of Array.from(ruleList)) {
-      if (rule instanceof CSSStyleRule) {
-        out.push(rule);
-      } else if (
-        rule instanceof CSSMediaRule ||
-        rule instanceof CSSSupportsRule
-      ) {
-        this.collectStyleRules(rule.cssRules, out);
-      }
-    }
-  }
-
-  /**
    * Find the CSS custom property (var()) used for a CSS property on an element
    * by inspecting the element's inline styles and matched CSS rules.
    *
@@ -691,10 +680,10 @@ export class StyleInspectorOverlay {
    * var() reference in the stylesheet rather than guessing via value matching.
    *
    * Matches any var(--*) reference, not just --tug-* tokens, so that
-   * Tailwind/shadcn variables (e.g. --secondary-foreground) are also found.
+   * Tailwind/shadcn variables (e.g. --color-secondary-foreground) are also found.
    *
    * Returns the custom property name (e.g. '--tug-base-accent-cool-default'
-   * or '--secondary-foreground') or null.
+   * or '--color-secondary-foreground') or null.
    */
   private findTokenFromCSSRules(
     el: HTMLElement,
@@ -702,50 +691,160 @@ export class StyleInspectorOverlay {
   ): string | null {
     const propsToCheck =
       StyleInspectorOverlay.SHORTHAND_MAP[property] ?? [property];
+    const varPattern = /var\((--[a-zA-Z0-9_-]+)/;
 
     // 1. Check inline styles first (highest specificity)
     for (const prop of propsToCheck) {
       const inlineVal = el.style.getPropertyValue(prop);
       if (inlineVal) {
-        const m = inlineVal.match(/var\((--[a-zA-Z0-9_-]+)/);
+        const m = inlineVal.match(varPattern);
         if (m) return m[1];
       }
     }
 
-    // 2. Walk matched CSS rules. Later rules and higher specificity win,
-    //    so we take the last match across all sheets.
-    let lastMatch: string | null = null;
+    // 2. Walk matched CSS rules, checking the element and then its ancestors.
+    //    CSS inheritance means the token may be on a parent (e.g. a <button>
+    //    with .text-secondary-foreground) while elementFromPoint returns a
+    //    child <span>. Walk up to 6 ancestors to find the rule.
+    let current: HTMLElement | null = el;
+    let depth = 0;
 
-    for (const sheet of Array.from(document.styleSheets)) {
-      let rules: CSSStyleRule[];
-      try {
-        rules = [];
-        this.collectStyleRules(sheet.cssRules, rules);
-      } catch {
-        continue; // cross-origin stylesheet
+    while (current && depth <= 6) {
+      let lastMatch: string | null = null;
+
+      for (const sheet of Array.from(document.styleSheets)) {
+        let topRules: CSSRuleList;
+        try {
+          topRules = sheet.cssRules;
+        } catch {
+          continue;
+        }
+
+        this.walkRulesForToken(topRules, current, propsToCheck, varPattern, (token) => {
+          lastMatch = token;
+        });
       }
 
-      for (const rule of rules) {
+      if (lastMatch) return lastMatch;
+
+      current = current.parentElement as HTMLElement | null;
+      depth++;
+    }
+
+    return null;
+  }
+
+  /**
+   * Recursively walk a CSSRuleList, calling `onMatch` for every rule that
+   * matches `el` and sets one of `propsToCheck` to a var() value.
+   *
+   * Each rule access is individually try/caught so a single bad rule
+   * (unusual @-rule, cross-origin nested sheet, etc.) never aborts the
+   * traversal of the rest of the list.
+   */
+  private walkRulesForToken(
+    rules: CSSRuleList,
+    el: HTMLElement,
+    propsToCheck: string[],
+    varPattern: RegExp,
+    onMatch: (token: string) => void
+  ): void {
+    for (let i = 0; i < rules.length; i++) {
+      let rule: CSSRule;
+      try {
+        rule = rules[i];
+      } catch {
+        continue;
+      }
+
+      if (rule instanceof CSSStyleRule) {
         try {
           if (!el.matches(rule.selectorText)) continue;
         } catch {
-          continue; // invalid or unsupported selector
+          continue; // invalid selector
         }
-
         for (const prop of propsToCheck) {
           const val = rule.style.getPropertyValue(prop);
           if (val) {
-            const m = val.match(/var\((--[a-zA-Z0-9_-]+)/);
+            const m = val.match(varPattern);
             if (m) {
-              lastMatch = m[1];
-              break; // found for this rule, skip shorthands
+              onMatch(m[1]);
+              break;
             }
           }
         }
+      } else {
+        // Recurse into grouping rules (@media, @supports, @layer, etc.)
+        let nested: CSSRuleList | undefined;
+        try {
+          if ("cssRules" in rule) {
+            nested = (rule as CSSGroupingRule).cssRules;
+          }
+        } catch {
+          continue; // inaccessible nested rules
+        }
+        if (nested) {
+          this.walkRulesForToken(nested, el, propsToCheck, varPattern, onMatch);
+        }
       }
     }
+  }
 
-    return lastMatch;
+  /**
+   * Search all CSS rules for a custom property definition and return its value.
+   *
+   * This handles Tailwind v4 @theme variables (e.g. --color-secondary-foreground)
+   * that are compiled into CSS rules but aren't readable via getComputedStyle.
+   * Searches any rule that sets the property (e.g. :root { --color-foo: ... }).
+   */
+  private findPropertyValueInRules(property: string): string {
+    let lastValue = "";
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        this.walkRulesForPropertyDef(sheet.cssRules, property, (val) => {
+          lastValue = val;
+        });
+      } catch {
+        continue;
+      }
+    }
+    return lastValue;
+  }
+
+  /**
+   * Recursively walk CSS rules looking for any rule that defines a given
+   * custom property. Calls onFound with the declared value.
+   */
+  private walkRulesForPropertyDef(
+    rules: CSSRuleList,
+    property: string,
+    onFound: (value: string) => void
+  ): void {
+    for (let i = 0; i < rules.length; i++) {
+      let rule: CSSRule;
+      try {
+        rule = rules[i];
+      } catch {
+        continue;
+      }
+
+      if (rule instanceof CSSStyleRule) {
+        const val = rule.style.getPropertyValue(property).trim();
+        if (val) onFound(val);
+      } else {
+        let nested: CSSRuleList | undefined;
+        try {
+          if ("cssRules" in rule) {
+            nested = (rule as CSSGroupingRule).cssRules;
+          }
+        } catch {
+          continue;
+        }
+        if (nested) {
+          this.walkRulesForPropertyDef(nested, property, onFound);
+        }
+      }
+    }
   }
 
   /**
