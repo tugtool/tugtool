@@ -43,7 +43,7 @@ fn build_settings_test_app(source_tree: Option<std::path::PathBuf>) -> axum::Rou
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, source_tree);
+    let app = build_app(feed_router, dev_state, source_tree, None);
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     app.layer(MockConnectInfo(addr))
 }
@@ -80,7 +80,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
     (app, token)
 }
 
@@ -541,7 +541,7 @@ async fn test_tell_restart_triggers_shutdown() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -593,7 +593,7 @@ async fn test_tell_reload_frontend() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -646,7 +646,7 @@ async fn test_tell_hybrid_reset_timing() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -708,7 +708,7 @@ async fn test_tell_client_action_round_trip() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::warn;
+use tugbank_core::DefaultsStore;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
@@ -126,10 +127,17 @@ async fn tell_handler(
 ///
 /// Pass `None` for `source_tree` (e.g., in tests) to disable static file
 /// serving entirely.
+///
+/// When `bank_path` is `Some(path)`, opens a [`DefaultsStore`] at that path,
+/// wraps it in an `Arc`, and registers the four `/api/defaults` routes with the
+/// store as an `Extension`. When `None`, the defaults routes are not registered
+/// — this avoids a missing-Extension panic since no defaults routes are
+/// reachable in callers (e.g., tests) that do not supply a bank path.
 pub(crate) fn build_app(
     router: FeedRouter,
     _dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
+    bank_path: Option<PathBuf>,
 ) -> Router {
     // Derive settings path before source_tree is consumed by the if-let below.
     let settings_path = source_tree
@@ -140,7 +148,7 @@ pub(crate) fn build_app(
         lock: tokio::sync::Mutex::new(()),
     });
 
-    let base = Router::new()
+    let mut base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
@@ -153,6 +161,31 @@ pub(crate) fn build_app(
             get(crate::settings::get_settings).post(crate::settings::post_settings),
         )
         .layer(Extension(settings_state));
+
+    // Wire defaults routes when a bank path is provided.
+    if let Some(path) = bank_path {
+        match DefaultsStore::open(&path) {
+            Ok(store) => {
+                let store = Arc::new(store);
+                base = base
+                    .route("/api/defaults/:domain", get(crate::defaults::get_domain))
+                    .route(
+                        "/api/defaults/:domain/:key",
+                        get(crate::defaults::get_key)
+                            .put(crate::defaults::put_key)
+                            .delete(crate::defaults::delete_key),
+                    )
+                    .layer(Extension(store));
+            }
+            Err(e) => {
+                warn!(
+                    "failed to open tugbank database at {}: {} — defaults endpoints disabled",
+                    path.display(),
+                    e
+                );
+            }
+        }
+    }
 
     if let Some(tree) = source_tree {
         let dist_path = tree.join("tugdeck").join("dist");
@@ -177,13 +210,16 @@ pub(crate) fn build_app(
 /// Serves the axum application on the provided `TcpListener`.
 /// The `source_tree` path is forwarded to `build_app` to enable
 /// `ServeDir` static file serving in production mode.
+/// The `bank_path` is forwarded to `build_app` to enable the defaults
+/// endpoints backed by the tugbank SQLite database.
 pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
+    bank_path: Option<PathBuf>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state, source_tree);
+    let app = build_app(router, dev_state, source_tree, bank_path);
 
     axum::serve(
         listener,

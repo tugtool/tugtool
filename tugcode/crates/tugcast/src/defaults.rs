@@ -5,10 +5,6 @@
 //! plus four HTTP handler functions for `/api/defaults/:domain` and
 //! `/api/defaults/:domain/:key`.
 
-// Handlers and helpers are wired into server.rs in step-4; suppress
-// dead-code warnings until they are referenced from the router.
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;

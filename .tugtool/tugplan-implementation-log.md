@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T17:34:12Z
+---
+
+## step-4: Wired /api/defaults routes into server.rs with conditional DefaultsStore initialization, resolved bank path from CLI flag or ~/.tugbank.db default, updated all build_app call sites in integration_tests.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T17:27:09Z
 ---
