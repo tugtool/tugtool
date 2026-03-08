@@ -502,20 +502,20 @@ fn t21_delete_nonexistent_domain_exits_2() {
     );
 }
 
-// ── T22: cas-write with correct generation writes successfully ────────────────
+// ── T22: write --generation with correct generation writes successfully ───────
 
 #[test]
 fn t22_cas_write_correct_generation_exits_0() {
     let tmp = NamedTempFile::new().unwrap();
     // Fresh domain: generation is 0.
     let out = cmd(&tmp)
-        .args(["cas-write", "d", "k", "--generation", "0", "hello"])
+        .args(["write", "d", "k", "--generation", "0", "hello"])
         .output()
         .unwrap();
     assert_eq!(
         out.status.code(),
         Some(0),
-        "cas-write with gen=0 should succeed"
+        "write --generation with gen=0 should succeed"
     );
 
     // Verify value was written.
@@ -523,7 +523,7 @@ fn t22_cas_write_correct_generation_exits_0() {
     assert_eq!(String::from_utf8_lossy(&read.stdout).trim(), "hello");
 }
 
-// ── T23: cas-write with stale generation exits 3 (conflict) ──────────────────
+// ── T23: write --generation with stale generation exits 3 (conflict) ─────────
 
 #[test]
 fn t23_cas_write_stale_generation_exits_3() {
@@ -534,15 +534,15 @@ fn t23_cas_write_stale_generation_exits_3() {
         .output()
         .unwrap();
 
-    // Attempt cas-write with stale gen=0 (current is 1).
+    // Attempt write --generation with stale gen=0 (current is 1).
     let out = cmd(&tmp)
-        .args(["cas-write", "d", "k", "--generation", "0", "second"])
+        .args(["write", "d", "k", "--generation", "0", "second"])
         .output()
         .unwrap();
     assert_eq!(
         out.status.code(),
         Some(3),
-        "cas-write with stale generation should exit 3"
+        "write --generation with stale generation should exit 3"
     );
 
     // Original value must be unchanged.
@@ -550,7 +550,7 @@ fn t23_cas_write_stale_generation_exits_3() {
     assert_eq!(String::from_utf8_lossy(&read.stdout).trim(), "first");
 }
 
-// ── T24: cas-write --json conflict output includes current generation ──────────
+// ── T24: write --generation --json conflict output includes current generation ─
 
 #[test]
 fn t24_cas_write_json_conflict_includes_generation() {
@@ -558,10 +558,10 @@ fn t24_cas_write_json_conflict_includes_generation() {
     // Write once so generation becomes 1.
     cmd(&tmp).args(["write", "d", "k", "v"]).output().unwrap();
 
-    // cas-write with wrong generation, requesting JSON output.
+    // write --generation with wrong generation, requesting JSON output.
     let out = cmd(&tmp)
         .arg("--json")
-        .args(["cas-write", "d", "k", "--generation", "0", "new"])
+        .args(["write", "d", "k", "--generation", "0", "new"])
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(3));

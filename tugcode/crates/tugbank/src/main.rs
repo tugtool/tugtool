@@ -1,7 +1,7 @@
 //! `tugbank` — command-line tool for inspecting and manipulating tugbank databases.
 //!
-//! Wraps `tugbank-core` into a `defaults`-like CLI. Supports seven subcommands:
-//! `domains`, `read`, `write`, `delete`, `keys`, `cas-write`, `generation`.
+//! Wraps `tugbank-core` into a `defaults`-like CLI. Supports six subcommands:
+//! `domains`, `read`, `write`, `delete`, `keys`, `generation`.
 //!
 //! # Database path resolution
 //!
@@ -11,6 +11,7 @@
 //!
 //! Human-readable text by default; `--json` switches to machine-readable JSON
 //! using the S01 envelope: `{"ok":true,"data":{...}}` or `{"ok":false,"error":"..."}`.
+//! Add `--pretty` to pretty-print JSON output with indentation.
 //!
 //! # Exit codes (Table T01)
 //!
@@ -45,6 +46,12 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Pretty-print JSON output with indentation.
+    /// In --json mode: formats the entire envelope with indentation.
+    /// In text mode: pretty-prints JSON-typed values.
+    #[arg(long, global = true)]
+    pretty: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -54,15 +61,19 @@ enum Commands {
     /// List all domains in the database.
     Domains,
 
-    /// Read one key or all keys in a domain.
+    /// Read one key or all keys in a domain. With no arguments, lists all domains.
     Read {
-        /// The domain name.
-        domain: String,
+        /// The domain name. If omitted, all domains are listed (same as `domains`).
+        domain: Option<String>,
         /// The key to read. If omitted, all keys in the domain are printed.
         key: Option<String>,
     },
 
     /// Write a value to a key.
+    ///
+    /// When --generation is provided, the write is conditional: it succeeds only
+    /// if the domain generation matches the expected value (compare-and-swap).
+    /// Exit code 3 is returned on a generation conflict.
     Write {
         /// The domain name.
         domain: String,
@@ -78,6 +89,10 @@ enum Commands {
         /// Only valid with `--type bytes`.
         #[arg(long)]
         bytes_file: Option<PathBuf>,
+        /// Expected domain generation for a conditional (compare-and-swap) write.
+        /// When provided, the write is rejected if the domain generation differs.
+        #[arg(long)]
+        generation: Option<u64>,
     },
 
     /// Delete a key or an entire domain.
@@ -92,24 +107,6 @@ enum Commands {
     Keys {
         /// The domain name.
         domain: String,
-    },
-
-    /// Write a value only if the domain generation matches.
-    #[command(name = "cas-write")]
-    CasWrite {
-        /// The domain name.
-        domain: String,
-        /// The key to write.
-        key: String,
-        /// Value type. Defaults to `string`.
-        #[arg(long = "type", value_enum, default_value = "string")]
-        value_type: ValueType,
-        /// The value to write. Not required for `--type null`.
-        value: Option<String>,
-        /// The expected generation. The write is rejected if the domain
-        /// generation has changed since this was read.
-        #[arg(long)]
-        generation: u64,
     },
 
     /// Get the current generation counter for a domain.
@@ -158,12 +155,22 @@ fn resolve_db_path(cli_path: Option<&str>) -> Result<PathBuf, String> {
 
 // ── JSON output helpers (Spec S01) ────────────────────────────────────────────
 
-fn json_ok(data: &serde_json::Value) {
-    println!("{}", serde_json::json!({"ok": true, "data": data}));
+fn json_ok(data: &serde_json::Value, pretty: bool) {
+    let envelope = serde_json::json!({"ok": true, "data": data});
+    if pretty {
+        println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+    } else {
+        println!("{}", serde_json::to_string(&envelope).unwrap());
+    }
 }
 
-fn json_err(msg: &str) {
-    println!("{}", serde_json::json!({"ok": false, "error": msg}));
+fn json_err(msg: &str, pretty: bool) {
+    let envelope = serde_json::json!({"ok": false, "error": msg});
+    if pretty {
+        println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+    } else {
+        println!("{}", serde_json::to_string(&envelope).unwrap());
+    }
 }
 
 // ── Value conversion helpers ──────────────────────────────────────────────────
@@ -199,7 +206,8 @@ fn value_type_name(v: &Value) -> &'static str {
 }
 
 /// Format a single value for text output (Spec S04).
-fn value_to_text(v: &Value) -> String {
+/// When `pretty` is true, JSON-typed values are pretty-printed with indentation.
+fn value_to_text(v: &Value, pretty: bool) -> String {
     match v {
         Value::Null => "null".to_owned(),
         Value::Bool(b) => b.to_string(),
@@ -207,7 +215,13 @@ fn value_to_text(v: &Value) -> String {
         Value::F64(f) => f.to_string(),
         Value::String(s) => s.clone(),
         Value::Bytes(b) => base64::engine::general_purpose::STANDARD.encode(b),
-        Value::Json(j) => j.to_string(),
+        Value::Json(j) => {
+            if pretty {
+                serde_json::to_string_pretty(j).unwrap_or_else(|_| j.to_string())
+            } else {
+                j.to_string()
+            }
+        }
     }
 }
 
@@ -264,13 +278,14 @@ fn parse_value(value_type: &ValueType, value_str: Option<&str>) -> Result<Value,
 fn main() {
     let cli = Cli::parse();
     let use_json = cli.json;
+    let pretty = cli.pretty;
 
     // Resolve database path.
     let db_path = match resolve_db_path(cli.path.as_deref()) {
         Ok(p) => p,
         Err(msg) => {
             if use_json {
-                json_err(&msg);
+                json_err(&msg, pretty);
             } else {
                 eprintln!("error: {msg}");
             }
@@ -284,7 +299,7 @@ fn main() {
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -293,14 +308,17 @@ fn main() {
     };
 
     match cli.command {
-        Commands::Domains => cmd_domains(&store, use_json),
-        Commands::Read { domain, key } => cmd_read(&store, &domain, key.as_deref(), use_json),
+        Commands::Domains => cmd_domains(&store, use_json, pretty),
+        Commands::Read { domain, key } => {
+            cmd_read(&store, domain.as_deref(), key.as_deref(), use_json, pretty)
+        }
         Commands::Write {
             domain,
             key,
             value_type,
             value,
             bytes_file,
+            generation,
         } => cmd_write(
             &store,
             &domain,
@@ -308,36 +326,25 @@ fn main() {
             value_type,
             value.as_deref(),
             bytes_file,
-            use_json,
-        ),
-        Commands::Delete { domain, key } => cmd_delete(&store, &domain, key.as_deref(), use_json),
-        Commands::Keys { domain } => cmd_keys(&store, &domain, use_json),
-        Commands::CasWrite {
-            domain,
-            key,
-            value_type,
-            value,
-            generation,
-        } => cmd_cas_write(
-            &store,
-            &domain,
-            &key,
-            value_type,
-            value.as_deref(),
             generation,
             use_json,
+            pretty,
         ),
-        Commands::Generation { domain } => cmd_generation(&store, &domain, use_json),
+        Commands::Delete { domain, key } => {
+            cmd_delete(&store, &domain, key.as_deref(), use_json, pretty)
+        }
+        Commands::Keys { domain } => cmd_keys(&store, &domain, use_json, pretty),
+        Commands::Generation { domain } => cmd_generation(&store, &domain, use_json, pretty),
     }
 }
 
 // ── subcommand implementations ────────────────────────────────────────────────
 
-fn cmd_domains(store: &DefaultsStore, use_json: bool) {
+fn cmd_domains(store: &DefaultsStore, use_json: bool, pretty: bool) {
     match store.list_domains() {
         Ok(domains) => {
             if use_json {
-                json_ok(&serde_json::json!({"domains": domains}));
+                json_ok(&serde_json::json!({"domains": domains}), pretty);
             } else {
                 for d in &domains {
                     println!("{d}");
@@ -347,7 +354,7 @@ fn cmd_domains(store: &DefaultsStore, use_json: bool) {
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -356,13 +363,13 @@ fn cmd_domains(store: &DefaultsStore, use_json: bool) {
     }
 }
 
-fn cmd_keys(store: &DefaultsStore, domain: &str, use_json: bool) {
+fn cmd_keys(store: &DefaultsStore, domain: &str, use_json: bool, pretty: bool) {
     let handle = match store.domain(domain) {
         Ok(h) => h,
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -372,7 +379,7 @@ fn cmd_keys(store: &DefaultsStore, domain: &str, use_json: bool) {
     match handle.keys() {
         Ok(keys) => {
             if use_json {
-                json_ok(&serde_json::json!({"keys": keys}));
+                json_ok(&serde_json::json!({"keys": keys}), pretty);
             } else {
                 for k in &keys {
                     println!("{k}");
@@ -382,7 +389,7 @@ fn cmd_keys(store: &DefaultsStore, domain: &str, use_json: bool) {
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -391,13 +398,13 @@ fn cmd_keys(store: &DefaultsStore, domain: &str, use_json: bool) {
     }
 }
 
-fn cmd_generation(store: &DefaultsStore, domain: &str, use_json: bool) {
+fn cmd_generation(store: &DefaultsStore, domain: &str, use_json: bool, pretty: bool) {
     let handle = match store.domain(domain) {
         Ok(h) => h,
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -407,7 +414,7 @@ fn cmd_generation(store: &DefaultsStore, domain: &str, use_json: bool) {
     match handle.generation() {
         Ok(g) => {
             if use_json {
-                json_ok(&serde_json::json!({"generation": g}));
+                json_ok(&serde_json::json!({"generation": g}), pretty);
             } else {
                 println!("{g}");
             }
@@ -415,7 +422,7 @@ fn cmd_generation(store: &DefaultsStore, domain: &str, use_json: bool) {
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -424,13 +431,28 @@ fn cmd_generation(store: &DefaultsStore, domain: &str, use_json: bool) {
     }
 }
 
-fn cmd_read(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bool) {
+fn cmd_read(
+    store: &DefaultsStore,
+    domain: Option<&str>,
+    key: Option<&str>,
+    use_json: bool,
+    pretty: bool,
+) {
+    // No domain argument: list all domains (same as `tugbank domains`).
+    let domain = match domain {
+        Some(d) => d,
+        None => {
+            cmd_domains(store, use_json, pretty);
+            return;
+        }
+    };
+
     let handle = match store.domain(domain) {
         Ok(h) => h,
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -443,17 +465,20 @@ fn cmd_read(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bo
         match handle.get(k) {
             Ok(Some(v)) => {
                 if use_json {
-                    json_ok(&serde_json::json!({
-                        "value": value_to_json(&v),
-                        "type": value_type_name(&v),
-                    }));
+                    json_ok(
+                        &serde_json::json!({
+                            "value": value_to_json(&v),
+                            "type": value_type_name(&v),
+                        }),
+                        pretty,
+                    );
                 } else {
-                    println!("{}", value_to_text(&v));
+                    println!("{}", value_to_text(&v, pretty));
                 }
             }
             Ok(None) => {
                 if use_json {
-                    json_err(&format!("key not found: {k}"));
+                    json_err(&format!("key not found: {k}"), pretty);
                 } else {
                     eprintln!("not found: {k}");
                 }
@@ -462,7 +487,7 @@ fn cmd_read(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bo
             Err(e) => {
                 let code = e.exit_code();
                 if use_json {
-                    json_err(&e.to_string());
+                    json_err(&e.to_string(), pretty);
                 } else {
                     eprintln!("error: {e}");
                 }
@@ -473,6 +498,15 @@ fn cmd_read(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bo
         // Read all key-value pairs.
         match handle.read_all() {
             Ok(map) => {
+                if map.is_empty() {
+                    let msg = format!("domain '{domain}' not found");
+                    if use_json {
+                        json_err(&msg, pretty);
+                    } else {
+                        eprintln!("{msg}");
+                    }
+                    process::exit(2);
+                }
                 if use_json {
                     let obj: serde_json::Map<String, serde_json::Value> = map
                         .iter()
@@ -486,17 +520,17 @@ fn cmd_read(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bo
                             )
                         })
                         .collect();
-                    json_ok(&serde_json::Value::Object(obj));
+                    json_ok(&serde_json::Value::Object(obj), pretty);
                 } else {
                     for (k, v) in &map {
-                        println!("{k}\t{}\t{}", value_type_name(v), value_to_text(v));
+                        println!("{k}\t{}\t{}", value_type_name(v), value_to_text(v, pretty));
                     }
                 }
             }
             Err(e) => {
                 let code = e.exit_code();
                 if use_json {
-                    json_err(&e.to_string());
+                    json_err(&e.to_string(), pretty);
                 } else {
                     eprintln!("error: {e}");
                 }
@@ -513,7 +547,9 @@ fn cmd_write(
     value_type: ValueType,
     value_str: Option<&str>,
     bytes_file: Option<PathBuf>,
+    generation: Option<u64>,
     use_json: bool,
+    pretty: bool,
 ) {
     // Handle --bytes-file: read the file and store as Value::Bytes.
     let value = if let Some(path) = bytes_file {
@@ -522,7 +558,7 @@ fn cmd_write(
             Err(e) => {
                 let msg = format!("cannot read bytes-file '{}': {e}", path.display());
                 if use_json {
-                    json_err(&msg);
+                    json_err(&msg, pretty);
                 } else {
                     eprintln!("error: {msg}");
                 }
@@ -534,7 +570,7 @@ fn cmd_write(
             Ok(v) => v,
             Err(msg) => {
                 if use_json {
-                    json_err(&msg);
+                    json_err(&msg, pretty);
                 } else {
                     eprintln!("error: {msg}");
                 }
@@ -548,7 +584,7 @@ fn cmd_write(
         Err(e) => {
             let code = e.exit_code();
             if use_json {
-                json_err(&e.to_string());
+                json_err(&e.to_string(), pretty);
             } else {
                 eprintln!("error: {e}");
             }
@@ -556,19 +592,55 @@ fn cmd_write(
         }
     };
 
-    if let Err(e) = handle.set(key, value) {
-        let code = e.exit_code();
-        if use_json {
-            json_err(&e.to_string());
-        } else {
-            eprintln!("error: {e}");
+    if let Some(expected_generation) = generation {
+        // Conditional (compare-and-swap) write.
+        match handle.set_if_generation(key, value, expected_generation) {
+            Ok(tugbank_core::SetOutcome::Written) => {
+                // No output on success.
+            }
+            Ok(tugbank_core::SetOutcome::Conflict { current_generation }) => {
+                if use_json {
+                    json_err(
+                        &format!("conflict: generation is now {current_generation}"),
+                        pretty,
+                    );
+                } else {
+                    eprintln!("conflict: generation is now {current_generation}");
+                }
+                process::exit(3);
+            }
+            Err(e) => {
+                let code = e.exit_code();
+                if use_json {
+                    json_err(&e.to_string(), pretty);
+                } else {
+                    eprintln!("error: {e}");
+                }
+                process::exit(code as i32);
+            }
         }
-        process::exit(code as i32);
+    } else {
+        // Unconditional write.
+        if let Err(e) = handle.set(key, value) {
+            let code = e.exit_code();
+            if use_json {
+                json_err(&e.to_string(), pretty);
+            } else {
+                eprintln!("error: {e}");
+            }
+            process::exit(code as i32);
+        }
+        // No output on success (Spec S04).
     }
-    // No output on success (Spec S04).
 }
 
-fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: bool) {
+fn cmd_delete(
+    store: &DefaultsStore,
+    domain: &str,
+    key: Option<&str>,
+    use_json: bool,
+    pretty: bool,
+) {
     if let Some(k) = key {
         // Delete a single key.
         let handle = match store.domain(domain) {
@@ -576,7 +648,7 @@ fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: 
             Err(e) => {
                 let code = e.exit_code();
                 if use_json {
-                    json_err(&e.to_string());
+                    json_err(&e.to_string(), pretty);
                 } else {
                     eprintln!("error: {e}");
                 }
@@ -587,7 +659,7 @@ fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: 
             Ok(true) => {} // success, no output
             Ok(false) => {
                 if use_json {
-                    json_err(&format!("key not found: {k}"));
+                    json_err(&format!("key not found: {k}"), pretty);
                 } else {
                     eprintln!("not found: {k}");
                 }
@@ -596,7 +668,7 @@ fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: 
             Err(e) => {
                 let code = e.exit_code();
                 if use_json {
-                    json_err(&e.to_string());
+                    json_err(&e.to_string(), pretty);
                 } else {
                     eprintln!("error: {e}");
                 }
@@ -609,7 +681,7 @@ fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: 
             Ok(true) => {} // success, no output
             Ok(false) => {
                 if use_json {
-                    json_err(&format!("domain not found: {domain}"));
+                    json_err(&format!("domain not found: {domain}"), pretty);
                 } else {
                     eprintln!("not found: {domain}");
                 }
@@ -618,70 +690,12 @@ fn cmd_delete(store: &DefaultsStore, domain: &str, key: Option<&str>, use_json: 
             Err(e) => {
                 let code = e.exit_code();
                 if use_json {
-                    json_err(&e.to_string());
+                    json_err(&e.to_string(), pretty);
                 } else {
                     eprintln!("error: {e}");
                 }
                 process::exit(code as i32);
             }
-        }
-    }
-}
-
-fn cmd_cas_write(
-    store: &DefaultsStore,
-    domain: &str,
-    key: &str,
-    value_type: ValueType,
-    value_str: Option<&str>,
-    expected_generation: u64,
-    use_json: bool,
-) {
-    let value = match parse_value(&value_type, value_str) {
-        Ok(v) => v,
-        Err(msg) => {
-            if use_json {
-                json_err(&msg);
-            } else {
-                eprintln!("error: {msg}");
-            }
-            process::exit(4);
-        }
-    };
-
-    let handle = match store.domain(domain) {
-        Ok(h) => h,
-        Err(e) => {
-            let code = e.exit_code();
-            if use_json {
-                json_err(&e.to_string());
-            } else {
-                eprintln!("error: {e}");
-            }
-            process::exit(code as i32);
-        }
-    };
-
-    match handle.set_if_generation(key, value, expected_generation) {
-        Ok(tugbank_core::SetOutcome::Written) => {
-            // No output on success.
-        }
-        Ok(tugbank_core::SetOutcome::Conflict { current_generation }) => {
-            if use_json {
-                json_err(&format!("conflict: generation is now {current_generation}"));
-            } else {
-                eprintln!("conflict: generation is now {current_generation}");
-            }
-            process::exit(3);
-        }
-        Err(e) => {
-            let code = e.exit_code();
-            if use_json {
-                json_err(&e.to_string());
-            } else {
-                eprintln!("error: {e}");
-            }
-            process::exit(code as i32);
         }
     }
 }
