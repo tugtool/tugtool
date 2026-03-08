@@ -2,39 +2,44 @@
 #
 # Update Homebrew formula with new version and checksums
 #
-# Usage: ./scripts/update-homebrew-formula.sh <formula_path> <tag> <arm64_sha256> <x86_64_sha256>
+# Usage: ./scripts/update-homebrew-formula.sh <target_formula> <source_formula> <tag> <arm64_sha256> <x86_64_sha256>
 #
 # Example:
-#   ./scripts/update-homebrew-formula.sh /tmp/homebrew-tugtool/Formula/tugcode.rb v0.5.20 abc123... def456...
+#   ./scripts/update-homebrew-formula.sh /tmp/tap/Formula/tugcode.rb /tmp/main/tugcode/Formula/tugcode.rb v0.7.31 abc123... def456...
 #
 # The script:
+# - Copies the source formula to the target path so all install/caveats changes flow through
 # - Strips the 'v' prefix from the tag to get the version number
-# - Updates the version string, URLs, and SHA256 checksums in the formula
+# - Updates the version string and SHA256 checksums in the copied formula
 # - Is idempotent: exits 0 with no changes if formula already has correct values
 
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-    echo "Usage: $0 <formula_path> <tag> <arm64_sha256> <x86_64_sha256>" >&2
-    echo "Example: $0 /tmp/tap/Formula/tugcode.rb v0.5.20 abc123... def456..." >&2
+if [[ $# -ne 5 ]]; then
+    echo "Usage: $0 <target_formula> <source_formula> <tag> <arm64_sha256> <x86_64_sha256>" >&2
+    echo "Example: $0 /tmp/tap/Formula/tugcode.rb /tmp/main/tugcode/Formula/tugcode.rb v0.7.31 abc123... def456..." >&2
     exit 1
 fi
 
-FORMULA_PATH="$1"
-TAG="$2"
-ARM64_SHA="$3"
-X86_64_SHA="$4"
+TARGET_PATH="$1"
+SOURCE_PATH="$2"
+TAG="$3"
+ARM64_SHA="$4"
+X86_64_SHA="$5"
 
 # Strip 'v' prefix from tag to get version
 VERSION="${TAG#v}"
 
-if [[ ! -f "$FORMULA_PATH" ]]; then
-    echo "Error: Formula not found at $FORMULA_PATH" >&2
+if [[ ! -f "$SOURCE_PATH" ]]; then
+    echo "Error: Source formula not found at $SOURCE_PATH" >&2
     exit 1
 fi
 
-# Read current formula content
-FORMULA_CONTENT=$(cat "$FORMULA_PATH")
+# Copy source formula to target so all structural changes flow through
+cp "$SOURCE_PATH" "$TARGET_PATH"
+
+# Read the copied formula content
+FORMULA_CONTENT=$(cat "$TARGET_PATH")
 
 # Check if already up to date (idempotent)
 if echo "$FORMULA_CONTENT" | grep -q "version \"$VERSION\"" && \
@@ -48,7 +53,7 @@ fi
 TEMP_FILE=$(mktemp)
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-# Process the formula line by line
+# Process the formula line by line to update version and checksums
 while IFS= read -r line || [[ -n "$line" ]]; do
     # Update version line
     if [[ "$line" =~ ^[[:space:]]*version[[:space:]]+ ]]; then
@@ -69,10 +74,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         echo "$line"
     fi
     prev_line="$line"
-done < "$FORMULA_PATH" > "$TEMP_FILE"
+done < "$TARGET_PATH" > "$TEMP_FILE"
 
-# Replace original with updated content
-mv "$TEMP_FILE" "$FORMULA_PATH"
+# Replace target with updated content
+mv "$TEMP_FILE" "$TARGET_PATH"
 trap - EXIT  # Remove trap since we moved the file
 
 echo "Updated formula to version $VERSION"

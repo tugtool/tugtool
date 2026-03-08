@@ -137,7 +137,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: main-repo
-          sparse-checkout: tugcode/scripts/update-homebrew-formula.sh
+          sparse-checkout: |
+            tugcode/scripts/update-homebrew-formula.sh
+            tugcode/Formula/tugcode.rb
           sparse-checkout-cone-mode: false
 
       - name: Clone tap repo
@@ -167,6 +169,7 @@ jobs:
           # Update the formula in the tap repo
           ./main-repo/tugcode/scripts/update-homebrew-formula.sh \
             tap-repo/Formula/tugcode.rb \
+            main-repo/tugcode/Formula/tugcode.rb \
             "${{ github.ref_name }}" \
             "${{ steps.checksums.outputs.arm64_sha }}" \
             "${{ steps.checksums.outputs.x86_64_sha }}"
