@@ -125,6 +125,7 @@
 | [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
 | [D74] | Dev cascade inspector: `Ctrl+Option + hover` shows token resolution chain | Concept 22 | [#d74-cascade-inspector](#d74-cascade-inspector) |
 | [D75] | Neutral ramp and opacity: `--tug-neutral-*` achromatic ramp, CSS relative color syntax for alpha | Concept 22 | [#d75-neutral-ramp](#d75-neutral-ramp) |
+| [D76] | TugAnimator: single programmatic animation engine wrapping WAAPI | Concept 8 | [#d76-tuganimator](#d76-tuganimator) |
 
 ### Key Architectural Patterns
 
@@ -1821,6 +1822,43 @@ Every transition and animation duration is wrapped: `calc(var(--td-duration-scal
 
 **Where tokens live:** In `tokens.css` alongside the theme tokens, within a `/* Motion */` section. They are not theme-specific by default — all themes share the same motion timing. A theme *can* override them (e.g., `--td-duration-moderate: 300ms` for a more relaxed feel), but this is the exception, not the norm.
 
+#### TugAnimator: Programmatic Animation Engine {#tuganimator}
+
+**[D76] TugAnimator is the single programmatic animation engine for tugways.** {#d76-tuganimator}
+
+CSS `transition` declarations remain for declarative hover/focus states — they're appearance-zone, zero-JS, compositor-accelerated, and auto-reversible. But everything beyond simple property transitions — enter/exit animations, spring dynamics, coordinated multi-element animations, drag release, card snapping — goes through TugAnimator. This is not two competing systems; it's declarative CSS for declarative state, and one programmatic engine for everything programmatic.
+
+TugAnimator wraps the Web Animations API (WAAPI), which provides the completion handlers, cancellation, and additive composition that CSS animations lack:
+
+**Core capabilities:**
+
+| Capability | How |
+|-----------|-----|
+| **Completion promises** | `await tugAnimator.animate(el, props, opts)` — resolves when animation finishes, like UIView.animate's completion block |
+| **Cancellation modes** | Cancel and snap to end value, cancel and hold at current interpolated value, cancel and reverse from current position |
+| **Named animation slots** | `animate(el, props, { key: 'position' })` — a new animation with the same key cancels the previous one, like `CALayer.add(_:forKey:)` |
+| **Additive composition** | Uses WAAPI's `composite: 'add'` so interrupting a running animation layers rather than clobbers — this is what makes iOS animations feel fluid |
+| **Animation groups** | Coordinate multiple elements with a single completion, like UIView.animate: `const group = tugAnimator.group(opts); group.animate(cardA, ...); group.animate(cardB, ...); await group.finished;` |
+| **Token-aware** | Reads `--tug-timing` to scale durations, respects `--tug-motion` toggle |
+| **Reduced-motion aware** | Spatial animations (transform) replaced with opacity fades when motion is disabled, following Apple's "replace, don't remove" principle |
+
+**Physics solvers** — TugAnimator pre-computes physics curves into WAAPI keyframes:
+
+| Solver | Model | Use case |
+|--------|-------|----------|
+| **Spring** | Damped harmonic oscillator (mass, stiffness, damping, initial velocity) | Card snap to position, interruptible drag release, bounce-back |
+| **Gravity + bounce** | Constant acceleration with coefficient of restitution | Drop-to-rest, playful reveals |
+| **Friction / deceleration** | Exponential decay | Inertial scroll, flick gestures |
+
+Spring animations support velocity matching on interruption: when a running spring is interrupted by a new animation, the current velocity transfers to the new animation's initial velocity. This is the key to fluid, interruptible motion — the object never appears to "reset" mid-flight.
+
+**Relationship to CSS transitions:** CSS `transition` declarations handle hover, focus, and other declarative state changes. They stay in CSS because:
+1. The compositor thread handles them at guaranteed 60fps with zero JS
+2. They auto-reverse when the triggering state changes (e.g., hover off mid-transition)
+3. They require no event listeners or cleanup
+
+TugAnimator handles everything else: enter/exit animations, skeleton shimmer, coordinated transitions, spring physics, drag release, flash overlays, startup fade. The existing `@keyframes` animations and `requestAnimationFrame` loops in the codebase will be migrated to TugAnimator calls.
+
 #### Enter/Exit Transitions {#enter-exit-transitions}
 
 Enter/exit is the hardest animation problem in React: when a component unmounts, its DOM node vanishes instantly, leaving no time for an exit animation. Tugdeck's approach uses **Radix's data-state mechanism + CSS `@keyframes`**, which is already in our stack via shadcn.
@@ -1858,7 +1896,7 @@ The `tw-animate-css` package provides the `enter` and `exit` keyframes that read
 | Toast / notification | Slide in from edge | Slide out + fade | Non-blocking, so exit can be faster |
 | Card minimize (future) | Scale down to icon size | Scale up from icon | FLIP technique — see below |
 
-**Card state transitions (minimize/iconify):** This is a layout animation, not a simple enter/exit. The card changes size and position. The FLIP technique (First, Last, Invert, Play) handles this: measure the card's current bounds, apply the layout change instantly, compute the delta, then animate only `transform` (compositor-friendly) to bridge the visual gap. If we add card minimization, we'd implement a `useFlipAnimation` hook that wraps `getBoundingClientRect` + `requestAnimationFrame` + transform animation. No JS animation library needed — the browser's Web Animations API can handle the interpolation.
+**Card state transitions (minimize/iconify):** This is a layout animation, not a simple enter/exit. The card changes size and position. The FLIP technique (First, Last, Invert, Play) handles this: measure the card's current bounds, apply the layout change instantly, compute the delta, then animate only `transform` (compositor-friendly) to bridge the visual gap. TugAnimator ([#d76-tuganimator](#d76-tuganimator)) handles the interpolation via WAAPI, with spring physics for natural deceleration and completion-based cleanup.
 
 **Reduced motion for enter/exit:** Replace scale+fade with fade-only. The dialog still signals modality (it fades in over a dimmed backdrop), but the spatial movement is removed:
 
@@ -1972,9 +2010,10 @@ This concept establishes the pattern for all visual continuity in tugdeck:
 1. **Motion is tokenized** — durations and easings are CSS custom properties, not magic numbers scattered across components. Change `--td-duration-moderate` once, every transition in the app updates. ([#d23-motion-tokens](#d23-motion-tokens))
 2. **Motion lives in the appearance zone** — animations are CSS `@keyframes` and `transition` properties, not React state. Theme changes, reduced motion, and timing adjustments are free — zero re-renders. ([#d12-three-zones](#d12-three-zones))
 3. **Reduced motion is a scalar, not a kill switch** — spatial animations become opacity fades, not nothing. The UI still communicates state changes. ([#d24-reduced-motion](#d24-reduced-motion))
-4. **Enter/exit uses Radix's data-state + CSS keyframes** — no JS animation library for standard component transitions. The stack we already have (Radix + tw-animate-css) handles it. ([#enter-exit-transitions](#enter-exit-transitions))
-5. **Skeletons are per-card, synchronized, and theme-aware** — each card defines its skeleton shape. All skeletons shimmer in unison. Colors come from theme tokens. ([#skeleton-loading](#skeleton-loading))
-6. **Startup is a special case with its own three-layer solution** — inline styles, overlay, HMR boundary. Operates at the viewport level, above the component system. ([#startup-continuity](#startup-continuity))
+4. **Two complementary motion layers** — CSS `transition` for declarative hover/focus states (compositor-accelerated, zero JS); TugAnimator for everything programmatic (completion handlers, cancellation, springs, physics, coordinated groups). Not competing systems — one is declarative, one is imperative. ([#tuganimator](#tuganimator))
+5. **Enter/exit uses Radix's data-state + CSS keyframes** — standard component transitions use the Radix + tw-animate-css stack. Complex enter/exit (coordinated, physics-based) can use TugAnimator. ([#enter-exit-transitions](#enter-exit-transitions))
+6. **Skeletons are per-card, synchronized, and theme-aware** — each card defines its skeleton shape. All skeletons shimmer in unison. Colors come from theme tokens. ([#skeleton-loading](#skeleton-loading))
+7. **Startup is a special case with its own three-layer solution** — inline styles, overlay, HMR boundary. Operates at the viewport level, above the component system. ([#startup-continuity](#startup-continuity))
 
 ### 9. Alert and Dialog System {#c09-dialog}
 
@@ -3928,7 +3967,7 @@ Researched motion systems across Material Design 3, Carbon (IBM), Norton DS, Clo
 
 - **MD3 and Carbon publish motion tokens as structured values** (duration tiers, easing curves by behavior type). We adopted this as CSS custom properties following our `--td-*` convention.
 - **Norton DS's duration scalar pattern** — a single `--td-duration-scalar` multiplier that zeros out all durations for `prefers-reduced-motion`. Elegant: one variable swap, all motion stops. We use `0.001` instead of `0` so Radix's `animationend` events still fire.
-- **Radix's `data-state` + CSS `@keyframes`** is already in our stack via shadcn. No need for Framer Motion or React Spring for standard component transitions. Critical constraint: Radix's Presence component listens for `animationend`, not `transitionend` — exit animations must use `@keyframes`.
+- **Radix's `data-state` + CSS `@keyframes`** is already in our stack via shadcn. Standard component transitions use this pattern. Critical constraint: Radix's Presence component listens for `animationend`, not `transitionend` — exit animations must use `@keyframes`. (Note: Entry 32 later introduced TugAnimator for programmatic animations beyond simple Radix transitions.)
 - **Apple's "replace, don't remove" principle** for reduced motion — spatial animations become opacity fades, not nothing.
 
 Key decisions:
@@ -4198,3 +4237,19 @@ Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` 
 - **[D75] Neutral ramp and opacity.** The HVV system extends to achromatic colors via `--tug-neutral-*` (the val axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
 
 - **Phase restructure.** Renamed Phase 5d5e (Cascade Inspector) to Phase 5d5f. Added new Phase 5d5e (Palette Engine Integration) as the missing link between the implemented HVV palette engine (5d5a) and the consumer-facing semantic tokens (5d5c/5d5d). This phase wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` references, converts the palette to pure CSS, adds the neutral ramp, and makes theme differentiation about "which hues map to which roles" rather than "which hex values."
+
+### Entry 32: TugAnimator and Phase 7 Expansion — Concept 8 Revised {#log-32} (2026-03-07)
+
+Concept 8 (Motion and Visual Continuity) originally specified CSS `@keyframes` for enter/exit, skeleton shimmer, and startup continuity. Investigation revealed that CSS animations lack three capabilities critical for a professional motion system: completion handlers (CSS `transitionend`/`animationend` are unreliable), cancellation with hold-at-current-value semantics, and additive composition for fluid interruption.
+
+The Web Animations API (WAAPI) fills all three gaps with full browser support: `Animation.finished` returns a real promise, `.cancel()` stops cleanly, and `composite: 'add'` enables additive layering. WAAPI is a playback engine, not a physics engine — spring, gravity, bounce, and friction curves are pre-computed in JS and delivered as WAAPI keyframes.
+
+**Key decisions:**
+
+- **[D76] TugAnimator as the single programmatic animation engine.** CSS `transition` declarations stay for declarative hover/focus states (compositor-accelerated, zero-JS, auto-reversible). Everything else — enter/exit, skeleton shimmer, springs, physics, coordinated multi-element animations, drag release, flash overlays — consolidates into TugAnimator. This replaces the three competing approaches currently in the codebase: CSS `@keyframes`, `requestAnimationFrame` loops, and manual `animationend` event listeners.
+
+- **Animation groups with coordinated completion.** Inspired by UIView.animate: create a group, add animations to multiple elements, await a single `.finished` promise. Under the hood: multiple WAAPI animations with `Promise.all` on their `.finished` promises.
+
+- **Physics solvers.** Spring (damped harmonic oscillator with velocity matching on interruption), gravity + bounce (coefficient of restitution), friction/deceleration (exponential decay). All pre-computed into WAAPI keyframes.
+
+- **Phase 7 split into three sub-phases.** 7a: TugAnimator engine (foundation). 7b: Enter/exit + managed animations (migrate @keyframes and rAF loops to TugAnimator, skeleton shimmer, per-card shapes). 7c: Startup continuity (three-layer flash elimination).

@@ -779,20 +779,88 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 **Result**: Feed data flows from backend → connection → feed hooks → card content. No more `onFrame` method on cards.
 
-### Phase 7: Motion + Startup Continuity (Concept 8)
+### Phase 7: Motion + Startup Continuity (Concept 8, [D23]-[D24], [D76])
 
-**Goal**: Enter/exit transitions work. No flash on reload.
+**Goal**: Establish the complete motion foundation for tugways — a programmatic animation engine with completion handlers, cancellation, spring/physics dynamics, and coordinated multi-element animations. Migrate all existing `@keyframes` and `requestAnimationFrame` animations to TugAnimator. Implement skeleton loading states and startup continuity.
+
+Phase 7 is split into three sub-phases.
+
+**Motion architecture**: CSS `transition` declarations remain for declarative hover/focus states (compositor-accelerated, zero-JS). Everything programmatic goes through TugAnimator, which wraps the Web Animations API (WAAPI).
+
+#### Phase 7a: TugAnimator Engine
+
+**Goal**: Build the programmatic animation engine that all motion in tugways depends on.
 
 **What to do**:
-1. Implement enter/exit CSS `@keyframes` driven by `data-state` attributes (Radix pattern)
-2. Implement skeleton shimmer with `background-attachment: fixed` for sync
-3. Implement the three-layer startup continuity from `eliminate-frontend-flash.md`:
-   - Inline body styles in `index.html`
-   - Startup overlay div
-   - CSS HMR boundary module
-4. Test: CSS edit → no flash. Browser reload → no flash. Backend restart → no flash.
+1. Create `tug-animator.ts` — WAAPI wrapper with core animation API
+   - `animate(el, keyframes, options)` → returns `TugAnimation` with `.finished` promise
+   - Named animation slots per element (key-based, like `CALayer.add(_:forKey:)`) — new animation with same key cancels previous
+   - Cancellation modes: snap-to-end, hold-at-current, reverse-from-current
+   - Additive composition via WAAPI's `composite: 'add'`
+2. Animation groups with coordinated completion (UIView.animate model)
+   - `group(options)` → returns `TugAnimationGroup`
+   - `group.animate(el, keyframes)` adds element to group
+   - `await group.finished` resolves when all animations complete
+3. Physics solvers — pre-compute curves into WAAPI keyframes
+   - Spring: damped harmonic oscillator (mass, stiffness, damping, initial velocity), velocity matching on interruption
+   - Gravity + bounce: constant acceleration with coefficient of restitution
+   - Friction / deceleration: exponential decay
+4. Token awareness — read `--tug-timing` to scale durations, respect `--tug-motion` toggle
+5. Reduced-motion awareness — spatial animations replaced with opacity fades when motion disabled
+6. Unit tests: completion promises resolve, cancellation modes work, spring curves are correct, additive composition layers properly, groups coordinate, token scaling applies
 
-**Result**: Visual transitions are smooth. No jarring state changes.
+**Files created**:
+1. `tugdeck/src/components/tugways/tug-animator.ts` — animation engine
+2. `tugdeck/src/components/tugways/physics.ts` — spring, gravity, friction solvers
+
+**Result**: TugAnimator is the single programmatic animation engine for tugways. Completion handlers, cancellation, spring physics, and coordinated groups all work. No existing code is migrated yet — this phase establishes the foundation only.
+
+#### Phase 7b: Enter/Exit + Managed Animations
+
+**Goal**: Migrate all existing CSS `@keyframes` and `requestAnimationFrame` animations to TugAnimator. Implement skeleton loading states.
+
+**What to do**:
+1. Migrate enter/exit animations to TugAnimator — Radix data-state triggers TugAnimator calls instead of CSS @keyframes where programmatic control is needed (coordinated enter/exit, physics-based). Simple Radix enter/exit can keep CSS @keyframes where completion/cancellation isn't needed.
+2. Migrate existing `@keyframes` animations:
+   - Flash overlay (`set-flash-fade` in chrome.css) → TugAnimator with completion-based cleanup (replaces `animationend` listener)
+   - Dropdown blink (`tug-dropdown-blink`) → TugAnimator
+   - Button spinner (`tug-button-spin`) → TugAnimator
+   - Gallery petals/pole animations → TugAnimator
+3. Migrate `requestAnimationFrame` loops in card-frame.tsx (drag, resize) → TugAnimator
+4. Implement skeleton shimmer via TugAnimator — `background-attachment: fixed` for synchronized shimmer across all skeleton elements
+5. Implement per-card skeleton shapes — each card type defines its own skeleton structure
+6. Implement skeleton → content crossfade via TugAnimator completion promise (skeleton fades out, content fades in, skeleton removed from DOM on completion)
+7. Verify: all existing animations work identically, skeleton shimmer is synchronized, skeleton → content transition is smooth
+
+**Files created/modified**:
+1. `tugdeck/styles/chrome.css` — remove `@keyframes set-flash-fade`
+2. `tugdeck/src/components/tugways/tug-button.css` — remove `@keyframes tug-button-spin`
+3. `tugdeck/src/components/tugways/tug-dropdown.css` — remove `@keyframes tug-dropdown-blink`
+4. `tugdeck/src/components/tugways/cards/gallery-card.css` — remove `@keyframes` for petals/pole
+5. `tugdeck/src/components/chrome/card-frame.tsx` — replace rAF loops with TugAnimator
+6. `tugdeck/src/components/tugways/tugcard.tsx` — skeleton mounting and crossfade logic
+7. Per-card skeleton components as needed
+
+**Result**: One programmatic animation system. No more `@keyframes` for non-hover animations, no more manual `requestAnimationFrame` loops, no more `animationend` event listener cleanup. Skeleton loading states work for all card types.
+
+#### Phase 7c: Startup Continuity
+
+**Goal**: No visual flash on reload. Clean startup sequence.
+
+**What to do**:
+1. Layer A — Inline body styles in `index.html` (background matches Brio theme, eliminates white flash during HTML parse)
+2. Layer B — Startup overlay div (covers viewport during mount, fades out via TugAnimator after first React paint using double `requestAnimationFrame` pattern)
+3. Layer C — CSS HMR boundary module (`css-imports.ts` with `import.meta.hot.accept()`, prevents CSS changes from triggering full page reload in dev mode)
+4. Verify: CSS edit → no flash. Browser reload → no flash. Backend restart → no flash.
+
+**Files created/modified**:
+1. `tugdeck/index.html` — inline body styles, startup overlay div
+2. `tugdeck/src/css-imports.ts` — CSS HMR boundary module
+3. `tugdeck/src/main.tsx` — overlay fade-out via TugAnimator after first paint
+
+**Result**: Startup is seamless. The user never sees a blank or flashing viewport. Overlay fade-out uses TugAnimator for consistency (completion-based cleanup).
+
+**Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates existing code and adds skeletons. Phase 7c is the smallest phase — mostly HTML and module wiring.
 
 ### Phase 8a: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
 
@@ -1097,7 +1165,9 @@ The 5d5 sub-phases are an enhancement track that can run in parallel with Phases
 | 5e | ~10 files | ~1500 lines |
 | 5f | ~6 files | ~500 lines |
 | 6 | ~4 files | ~400 lines |
-| 7 | ~3 files | ~200 lines |
+| 7a | ~2 files | ~500 lines |
+| 7b | ~8 files | ~400 lines |
+| 7c | ~3 files | ~100 lines |
 | 8a | ~8 files | ~1000 lines |
 | 8b | ~9 files | ~800 lines |
 | 8c | ~11 files | ~700 lines |
@@ -1105,7 +1175,7 @@ The 5d5 sub-phases are an enhancement track that can run in parallel with Phases
 | 8e | ~5 files | ~800 lines |
 | 9 | ~20 files | ~3000 lines |
 
-**Total rebuild: ~17,900 lines** replacing the current ~9700 lines. The new
+**Total rebuild: ~18,700 lines** replacing the current ~9700 lines. The new
 codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
 lines of reusable UI primitives, the control action/transaction/property
 infrastructure (Phases 5d2–5d4) adds ~900 lines, the inspector panels (Phase 8e)
@@ -1157,13 +1227,15 @@ The suggested plan sequence:
 29. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
 30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
 31. `tugways-phase-6-feed` — feed hooks, data flow
-32. `tugways-phase-7-motion` — transitions, skeleton, startup continuity
-33. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-34. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-35. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-36. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-37. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-38. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+32. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
+33. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+34. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
+35. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+36. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+37. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+38. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+39. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+40. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 
