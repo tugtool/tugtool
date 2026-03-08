@@ -4,9 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.7.32)'
+        required: true
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -27,11 +35,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tugcode
+          key: release-${{ matrix.target }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -72,7 +88,7 @@ jobs:
 
       - name: Create tarball
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          VERSION=${RELEASE_TAG#v}
           TARBALL_NAME="tugcode-${VERSION}-macos-${{ matrix.arch }}"
 
           # Create tarball with bin/ and share/ at root (no wrapper directory)
@@ -114,6 +130,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           generate_release_notes: true
           files: |
@@ -128,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only run for real releases (not test tags like v0.0.1-test)
     # Only run on the main repository
-    if: github.repository == 'tugtool/tugtool' && !contains(github.ref, '-')
+    if: github.repository == 'tugtool/tugtool' && !contains(github.event.inputs.tag || github.ref_name, '-')
     concurrency:
       group: formula-update
       cancel-in-progress: false
@@ -136,6 +153,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
           path: main-repo
           sparse-checkout: |
             tugcode/scripts/update-homebrew-formula.sh
@@ -170,7 +188,7 @@ jobs:
           ./main-repo/tugcode/scripts/update-homebrew-formula.sh \
             tap-repo/Formula/tugcode.rb \
             main-repo/tugcode/Formula/tugcode.rb \
-            "${{ github.ref_name }}" \
+            "${{ env.RELEASE_TAG }}" \
             "${{ steps.checksums.outputs.arm64_sha }}" \
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
@@ -181,7 +199,7 @@ jobs:
 
           git add Formula/tugcode.rb
           if ! git diff --cached --quiet; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION=${RELEASE_TAG#v}
             git commit -m "Update tugcode to $VERSION"
             git push origin main
             echo "Formula updated and pushed to homebrew-tugtool"

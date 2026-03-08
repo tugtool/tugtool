@@ -7,12 +7,20 @@
 
 set -euo pipefail
 
-VERSION="${1:-}"
-VERSION="${VERSION#v}"
+CLEAN=false
+VERSION=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --clean) CLEAN=true ;;
+        *) VERSION="${arg#v}" ;;
+    esac
+done
 
 # Validate version format first, before printing anything
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Error: Invalid version format. Expected X.Y.Z" >&2
+    echo "Usage: $0 [--clean] <version>" >&2
     exit 1
 fi
 
@@ -113,6 +121,14 @@ git commit -m "Release $VERSION" --quiet
 # Push
 echo "==> Pushing to origin..."
 git push origin main --quiet
+
+# Clear CI build cache if --clean was requested
+if [[ "$CLEAN" == true ]]; then
+    echo "==> Clearing CI build caches..."
+    gh cache list --json id,key -q '.[] | select(.key | startswith("swatinem-rust")) | .id' | while read -r id; do
+        gh cache delete "$id" 2>/dev/null || true
+    done
+fi
 
 # Tag and push tag
 echo "==> Tagging v$VERSION..."
