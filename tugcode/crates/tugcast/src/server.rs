@@ -24,7 +24,6 @@ use tugbank_core::DefaultsStore;
 
 use crate::dev::SharedDevState;
 use crate::router::FeedRouter;
-use crate::settings::SettingsState;
 
 /// Request payload for /api/tell endpoint
 // Allow dead_code: struct is used only for testing/documentation
@@ -128,63 +127,35 @@ async fn tell_handler(
 /// Pass `None` for `source_tree` (e.g., in tests) to disable static file
 /// serving entirely.
 ///
-/// When `bank_path` is `Some(path)`, opens a [`DefaultsStore`] at that path,
-/// wraps it in an `Arc`, and registers the four `/api/defaults` routes with the
-/// store as an `Extension`. When `None`, the defaults routes are not registered
-/// — this avoids a missing-Extension panic since no defaults routes are
-/// reachable in callers (e.g., tests) that do not supply a bank path.
+/// When `bank_store` is `Some(store)`, registers the four `/api/defaults`
+/// routes with the store as an `Extension`. When `None`, the defaults routes
+/// are not registered — this avoids a missing-Extension panic since no
+/// defaults routes are reachable in callers (e.g., tests) that do not supply
+/// a store. The store is opened externally (in `main.rs`) so that migration
+/// can share the same connection before the server starts accepting connections.
 pub(crate) fn build_app(
     router: FeedRouter,
     _dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
-    bank_path: Option<PathBuf>,
+    bank_store: Option<Arc<DefaultsStore>>,
 ) -> Router {
-    // Derive settings path before source_tree is consumed by the if-let below.
-    let settings_path = source_tree
-        .as_ref()
-        .map(|t| t.join(".tugtool/deck-settings.json"));
-    let settings_state = Arc::new(SettingsState {
-        path: settings_path,
-        lock: tokio::sync::Mutex::new(()),
-    });
-
     let mut base = Router::new()
         .route("/auth", get(crate::auth::handle_auth))
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
-        .with_state(router)
-        // Settings handlers use Extension, not State<FeedRouter>, so the route
-        // is added after .with_state() as a stateless route and gets the
-        // Extension layer applied to the whole router.
-        .route(
-            "/api/settings",
-            get(crate::settings::get_settings).post(crate::settings::post_settings),
-        )
-        .layer(Extension(settings_state));
+        .with_state(router);
 
-    // Wire defaults routes when a bank path is provided.
-    if let Some(path) = bank_path {
-        match DefaultsStore::open(&path) {
-            Ok(store) => {
-                let store = Arc::new(store);
-                base = base
-                    .route("/api/defaults/{domain}", get(crate::defaults::get_domain))
-                    .route(
-                        "/api/defaults/{domain}/{key}",
-                        get(crate::defaults::get_key)
-                            .put(crate::defaults::put_key)
-                            .delete(crate::defaults::delete_key),
-                    )
-                    .layer(Extension(store));
-            }
-            Err(e) => {
-                warn!(
-                    "failed to open tugbank database at {}: {} — defaults endpoints disabled",
-                    path.display(),
-                    e
-                );
-            }
-        }
+    // Wire defaults routes when an already-opened store is provided.
+    if let Some(store) = bank_store {
+        base = base
+            .route("/api/defaults/{domain}", get(crate::defaults::get_domain))
+            .route(
+                "/api/defaults/{domain}/{key}",
+                get(crate::defaults::get_key)
+                    .put(crate::defaults::put_key)
+                    .delete(crate::defaults::delete_key),
+            )
+            .layer(Extension(store));
     }
 
     if let Some(tree) = source_tree {
@@ -210,16 +181,17 @@ pub(crate) fn build_app(
 /// Serves the axum application on the provided `TcpListener`.
 /// The `source_tree` path is forwarded to `build_app` to enable
 /// `ServeDir` static file serving in production mode.
-/// The `bank_path` is forwarded to `build_app` to enable the defaults
-/// endpoints backed by the tugbank SQLite database.
+/// The `bank_store` is forwarded to `build_app` to enable the defaults
+/// endpoints backed by the tugbank SQLite database. The store is opened
+/// in `main.rs` before startup so migration can share the same connection.
 pub async fn run_server(
     listener: TcpListener,
     router: FeedRouter,
     dev_state: SharedDevState,
     source_tree: Option<PathBuf>,
-    bank_path: Option<PathBuf>,
+    bank_store: Option<Arc<DefaultsStore>>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state, source_tree, bank_path);
+    let app = build_app(router, dev_state, source_tree, bank_store);
 
     axum::serve(
         listener,

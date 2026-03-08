@@ -24,7 +24,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
-import { postSettings } from "../settings-api";
+import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import bluenoteCSS from "../../styles/bluenote.css?raw";
 import harmonyCSS from "../../styles/harmony.css?raw";
@@ -181,7 +181,7 @@ export function TugThemeProvider({
     } catch {
       // localStorage may be unavailable in some contexts
     }
-    postSettings({ theme: newTheme });
+    putTheme(newTheme);
     // Sync canvas color to Swift bridge after injection (styles are resolved synchronously)
     sendCanvasColor();
   };

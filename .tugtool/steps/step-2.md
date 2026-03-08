@@ -1,49 +1,41 @@
-# Step 2: TugcardDataContext and useTugcardData Hook
-
-## Files Created
-
-- `tugdeck/src/components/tugways/hooks/use-tugcard-data.ts`
-- `tugdeck/src/__tests__/use-tugcard-data.test.tsx`
+# Step 2: Wire migration into tugcast startup
 
 ## Files Modified
 
-- `tugdeck/src/components/tugways/hooks/index.ts` (added `useTugcardData` export)
+- `tugcode/crates/tugcast/src/main.rs` — open `DefaultsStore` early, run migration before TCP bind, pass store to `run_server`
+- `tugcode/crates/tugcast/src/server.rs` — change `build_app`/`run_server` to accept `Option<Arc<DefaultsStore>>` instead of `Option<PathBuf>`
+- `tugcode/crates/tugcast/src/migration.rs` — removed `#[allow(dead_code)]` (function is now called)
+- `tugcode/crates/tugcast/src/integration_tests.rs` — updated `build_defaults_test_app` and inline test to open store before calling `build_app`
 
 ## Implementation Notes
 
-- `TugcardDataContext` uses `null` as default value so `useTugcardData()` never throws outside a provider.
-- `TugcardDataProvider` uses `React.createElement` (not JSX) since the module is a `.ts` file.
-- The hook overloads share one runtime body. The implementation extracts the first entry's value via `feedData.values().next().value` and returns it cast to `T`. For the typed `<T>` single-feed convenience overload this is the correct decoded value. For the no-generic map overload callers receive the same first value.
-- Since TypeScript overloads share one runtime body, callers needing the full map for multi-feed access should read `TugcardDataContext` directly. Phase 6 will revise this when real feed subscription is wired.
-- `_resetForTest` is not needed; each test renders into a fresh tree so context isolation is automatic.
+- `DefaultsStore::open` is called in `main.rs` after `watch_dir` resolution, before any spawned tasks and before TCP bind — ensuring migration completes before the server accepts connections ([D05]).
+- On open failure, a `warn!` is logged and `bank_store` is `None`, preserving graceful degradation.
+- Migration is skipped when `bank_store` is `None`.
+- `build_app` now accepts `Option<Arc<DefaultsStore>>` and directly registers the defaults routes when `Some` — no internal open, no internal error handling.
+- Integration tests open the store directly with `DefaultsStore::open(tmp.path())` and wrap in `Arc`.
 
-## Checkpoint Output
+## Checkpoint 1: Full tugcast test suite
 
-```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test use-tugcard-data
-
-bun test v1.3.9 (cf6cdbbb)
-
- 7 pass
- 0 fail
- 12 expect() calls
-Ran 7 tests across 1 file. [113.00ms]
-```
-
-## Full Test Suite Output
+**Command:** `cd tugcode && cargo nextest run -p tugcast`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test
-
- 301 pass
- 0 fail
- 597 expect() calls
-Ran 301 tests across 24 files. [7.83s]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.88s
+────────────
+ Nextest run ID 553da8dd-345a-4830-b78a-d62c0eb14243 with nextest profile: default
+    Starting 214 tests across 1 binary (4 tests skipped)
+────────────
+     Summary [   4.564s] 214 tests run: 214 passed, 4 skipped
 ```
 
-## TypeScript Check
+**Result:** PASSED — 214 tests passed, 4 skipped
+
+## Checkpoint 2: Zero warnings
+
+**Command:** `cd tugcode && cargo build -p tugcast 2>&1 | grep -c warning`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bunx tsc --noEmit
-(no output -- type check clean)
+0
 ```
+
+**Result:** PASSED — 0 warnings

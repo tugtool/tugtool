@@ -45,7 +45,7 @@ import type { Root } from "react-dom/client";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
-import { postSettings } from "./settings-api";
+import { putLayout } from "./settings-api";
 import { TugThemeProvider, type ThemeName } from "./contexts/theme-provider";
 import type { IDeckManagerStore } from "./deck-manager-store";
 import { DeckManagerContext } from "./deck-manager-context";
@@ -735,19 +735,7 @@ export class DeckManager implements IDeckManagerStore {
 
   private saveLayout(): void {
     const serialized = serialize(this.deckState);
-    postSettings({ layout: serialized, theme: this.readCurrentThemeFromDOM() });
-  }
-
-  /**
-   * Read the active theme from the injected stylesheet element.
-   *
-   * TugThemeProvider injects <style id="tug-theme-override" data-theme="...">
-   * for non-Brio themes. Absence of the element means Brio is active.
-   */
-  private readCurrentThemeFromDOM(): string {
-    if (typeof document === "undefined") return "brio";
-    const el = document.getElementById("tug-theme-override");
-    return el?.getAttribute("data-theme") ?? "brio";
+    putLayout(serialized);
   }
 
   private scheduleSave(): void {

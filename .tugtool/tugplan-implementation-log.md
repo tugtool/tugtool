@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-08T19:33:12Z
+---
+
+## step-7: Final verification: 868 Rust tests pass, cargo fmt clean, TypeScript compiles cleanly. Curl-based checks deferred to manual testing (covered by integration tests).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-6
+date: 2025-03-08T19:29:15Z
+---
+
+## step-6: Added 5 new integration tests: migration writes layout+theme to tugbank, migration deletes flat file, migration no-op when absent, layout PUT-then-GET round-trip, theme PUT-then-GET round-trip. 202 tests pass, 0 warnings.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-5
+date: 2025-03-08T19:23:44Z
+---
+
+## step-5: Deleted settings.rs, removed mod settings from main.rs, removed SettingsState/route/layer from server.rs, removed 7 settings integration tests and build_settings_test_app helper. 197 tests pass, 0 warnings.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-4
+date: 2025-03-08T19:17:45Z
+---
+
+## step-4: No-op step — all caller updates (main.tsx, deck-manager.ts, theme-provider.tsx) were already completed in step-3. TypeScript check confirms zero errors.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-3
+date: 2025-03-08T19:15:10Z
+---
+
+## step-3: Replaced legacy /api/settings functions with fetchLayoutWithRetry, fetchThemeWithRetry, putLayout, putTheme targeting /api/defaults/ endpoints with tagged-value wire format. Updated all callers (main.tsx, deck-manager.ts, theme-provider.tsx). Added check script to package.json.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-2
+date: 2025-03-08T19:05:40Z
+---
+
+## step-2: Lifted DefaultsStore::open from build_app into main.rs, called migrate_settings_to_tugbank at startup before TCP bind, updated server.rs and integration tests to accept Option<Arc<DefaultsStore>>, removed #[allow(dead_code)] from migration.rs.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
+step: step-1
+date: 2025-03-08T18:58:29Z
+---
+
+## step-1: Created migration.rs with migrate_settings_to_tugbank() function that reads deck-settings.json, writes layout and theme to tugbank domains, and deletes the flat file. Added mod migration to main.rs. 6 unit tests covering all migration scenarios.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e4-tugbank-migration.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-08T17:50:23Z
 ---

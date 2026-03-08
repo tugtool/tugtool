@@ -1,47 +1,43 @@
-# Step 1: Card Registry Module
+# Step 1: Add migration module to tugcast
 
 ## Files Created
 
-- `tugdeck/src/card-registry.ts`
-- `tugdeck/src/__tests__/card-registry.test.ts`
+- `tugcode/crates/tugcast/src/migration.rs`
 
 ## Files Modified
 
-(none)
+- `tugcode/crates/tugcast/src/main.rs` — added `mod migration;` declaration
 
 ## Implementation Notes
 
-- `CardFrameInjectedProps` is defined inline in `card-registry.ts` since `card-frame.tsx` does not exist until a later step. The comment notes it should be imported from there once created.
-- `getAllRegistrations()` returns `Map<string, CardRegistration>` per Spec S03.
-- `_resetForTest()` uses `registry.clear()` for test isolation; called in `beforeEach` in the test file.
+- `migrate_settings_to_tugbank(source_tree, store)` reads `.tugtool/deck-settings.json`, writes `layout` as `Value::Json` to domain `dev.tugtool.deck.layout` and `theme` as `Value::String` to domain `dev.tugtool.app`, then deletes the flat file unconditionally.
+- Corrupt/unparseable flat file logs a `warn!` and writes nothing; file is still deleted to prevent repeated warnings on every startup (R01 mitigation).
+- Empty JSON `{}` is handled gracefully — no keys written, file deleted.
+- Function is marked `#[allow(dead_code)]` because the call site is wired in Step 2.
+- All 6 unit tests (T01–T06) are included in `migration.rs`.
 
-## Checkpoint Output
+## Checkpoint 1: Migration tests
 
-```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test card-registry
-
-bun test v1.3.9 (cf6cdbbb)
-
- 6 pass
- 0 fail
- 14 expect() calls
-Ran 6 tests across 1 file. [53.00ms]
-```
-
-## Full Test Suite Output
+**Command:** `cd tugcode && cargo nextest run -p tugcast --filter-expr 'test(migrate)'`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bun test
-
- 294 pass
- 0 fail
- 585 expect() calls
-Ran 294 tests across 23 files. [7.83s]
+   Compiling tugcast v0.1.0 (crates/tugcast)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.70s
+────────────
+ Nextest run ID 0b0c082a-9da5-4b6f-90e0-eaeb929e4701 with nextest profile: default
+    Starting 6 tests across 1 binary (212 tests skipped)
+────────────
+     Summary [   0.016s] 6 tests run: 6 passed, 212 skipped
 ```
 
-## TypeScript Check
+**Result:** PASSED — 6 tests passed (T01 through T06)
+
+## Checkpoint 2: Zero warnings
+
+**Command:** `cd tugcode && cargo build -p tugcast 2>&1 | grep -c warning`
 
 ```
-$ cd /Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugplan__tugways-phase-5-tugcard-20250303-034857/tugdeck && bunx tsc --noEmit
-(no output -- type check clean)
+0
 ```
+
+**Result:** PASSED — 0 warnings

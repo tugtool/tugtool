@@ -9,44 +9,14 @@ use std::net::SocketAddr;
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 
+use std::sync::Arc;
+
+use tugbank_core::DefaultsStore;
+
 use crate::auth::{self, SESSION_COOKIE_NAME};
 use crate::dev;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 use crate::server::build_app;
-
-// ── Settings integration test helpers ─────────────────────────────────────
-
-/// Build a test app with a temp-dir source_tree for settings persistence tests.
-fn build_settings_test_app(source_tree: Option<std::path::PathBuf>) -> axum::Router {
-    use axum::extract::connect_info::MockConnectInfo;
-    use std::net::{IpAddr, Ipv4Addr};
-
-    let auth = auth::new_shared_auth_state(7891);
-    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (code_tx, _) = broadcast::channel(1024);
-    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
-    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
-    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-
-    let dev_state = dev::new_shared_dev_state();
-    let feed_router = FeedRouter::new(
-        terminal_tx,
-        input_tx,
-        code_tx,
-        code_input_tx,
-        "test-dummy".to_string(),
-        auth,
-        vec![],
-        shutdown_tx,
-        client_action_tx,
-        dev_state.clone(),
-    );
-
-    let app = build_app(feed_router, dev_state, source_tree, None);
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
-    app.layer(MockConnectInfo(addr))
-}
 
 /// Helper to build a test app with fresh auth state
 fn build_test_app(port: u16) -> (axum::Router, String) {
@@ -780,260 +750,6 @@ async fn test_tell_rejects_non_loopback() {
     assert!(body_str.contains(r#""message":"forbidden""#));
 }
 
-// ── Settings API integration tests ────────────────────────────────────────
-
-/// GET /api/settings with no settings file returns 200 with `{}`
-#[tokio::test]
-async fn test_settings_get_no_file_returns_empty() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = build_settings_test_app(Some(tmp.path().to_path_buf()));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed, serde_json::json!({}));
-}
-
-/// POST valid JSON then GET returns the posted data
-#[tokio::test]
-async fn test_settings_post_then_get_returns_data() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = build_settings_test_app(Some(tmp.path().to_path_buf()));
-
-    // POST settings
-    let post_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"theme":"bluenote"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(post_response.status(), StatusCode::OK);
-    let post_body = axum::body::to_bytes(post_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let post_json: serde_json::Value = serde_json::from_slice(&post_body).unwrap();
-    assert_eq!(post_json["status"], "ok");
-
-    // GET settings — should reflect the posted theme
-    let get_response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(get_response.status(), StatusCode::OK);
-    let get_body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let get_json: serde_json::Value = serde_json::from_slice(&get_body).unwrap();
-    assert_eq!(get_json["theme"], "bluenote");
-}
-
-/// POST with partial update preserves existing fields not in the body
-#[tokio::test]
-async fn test_settings_post_partial_update_preserves_existing() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = build_settings_test_app(Some(tmp.path().to_path_buf()));
-
-    // POST layout only
-    app.clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"layout":{"version":5,"cards":[]}}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // POST theme only — layout should be preserved
-    app.clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"theme":"harmony"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // GET — both layout and theme should be present
-    let get_response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(get_response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["theme"], "harmony");
-    assert_eq!(json["layout"]["version"], 5);
-}
-
-/// POST with invalid JSON returns 400
-#[tokio::test]
-async fn test_settings_post_invalid_json_returns_400() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = build_settings_test_app(Some(tmp.path().to_path_buf()));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from("not json at all"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["status"], "error");
-    assert_eq!(json["message"], "invalid JSON");
-}
-
-/// GET /api/settings with source_tree=None returns 200 with `{}`
-#[tokio::test]
-async fn test_settings_get_no_source_tree_returns_empty() {
-    let app = build_settings_test_app(None);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json, serde_json::json!({}));
-}
-
-/// POST /api/settings with source_tree=None returns 200 and silently discards
-#[tokio::test]
-async fn test_settings_post_no_source_tree_silently_discards() {
-    let app = build_settings_test_app(None);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"theme":"brio"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["status"], "ok");
-}
-
-/// POST `{"layout":null,"theme":null}` after storing data clears all fields;
-/// subsequent GET returns `{}`
-#[tokio::test]
-async fn test_settings_post_null_deletes_fields() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = build_settings_test_app(Some(tmp.path().to_path_buf()));
-
-    // Store some settings
-    app.clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"layout":{"version":5},"theme":"brio"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // Clear with null-as-delete
-    let clear_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/settings")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"layout":null,"theme":null}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(clear_response.status(), StatusCode::OK);
-
-    // GET should now return `{}`
-    let get_response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(get_response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json, serde_json::json!({}));
-}
-
 // ── Defaults API integration test helpers ─────────────────────────────────
 
 /// Build a test app wired to a temporary tugbank database.
@@ -1046,7 +762,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let bank_path = tmp.path().to_path_buf();
+    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
 
     let auth = auth::new_shared_auth_state(7892);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1070,7 +786,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    let app = build_app(feed_router, dev_state, None, Some(store));
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     (app.layer(MockConnectInfo(addr)), tmp)
 }
@@ -1340,7 +1056,7 @@ async fn test_defaults_non_loopback_returns_403() {
     use std::net::{IpAddr, Ipv4Addr};
 
     let tmp = tempfile::NamedTempFile::new().expect("temp db file");
-    let bank_path = tmp.path().to_path_buf();
+    let store = Arc::new(DefaultsStore::open(tmp.path()).expect("open test tugbank db"));
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1364,7 +1080,7 @@ async fn test_defaults_non_loopback_returns_403() {
         dev_state.clone(),
     );
 
-    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    let app = build_app(feed_router, dev_state, None, Some(store));
     // Apply a non-loopback address
     let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
     let app = app.layer(MockConnectInfo(non_loopback));
@@ -1384,6 +1100,256 @@ async fn test_defaults_non_loopback_returns_403() {
     let json = json_body(response).await;
     assert_eq!(json["status"], "error");
     assert_eq!(json["message"], "forbidden");
+}
+
+// ── Migration integration tests (T13–T17) ─────────────────────────────────
+
+/// Build a test app + store pair backed by a temp database, returning the
+/// store separately so migration tests can call migrate_settings_to_tugbank
+/// directly before exercising the HTTP layer.
+fn build_migration_test_app(store: Arc<DefaultsStore>) -> axum::Router {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let auth = auth::new_shared_auth_state(7894);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let dev_state = dev::new_shared_dev_state();
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        code_tx,
+        code_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        client_action_tx,
+        dev_state.clone(),
+    );
+
+    let app = build_app(feed_router, dev_state, None, Some(store));
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    app.layer(MockConnectInfo(addr))
+}
+
+/// Write a deck-settings.json flat file under `source_tree/.tugtool/`.
+fn write_flat_settings(source_tree: &std::path::Path, contents: &str) {
+    let dir = source_tree.join(".tugtool");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("deck-settings.json"), contents).unwrap();
+}
+
+/// T13: Migration with both layout and theme writes both keys to tugbank,
+/// and the flat file is deleted. Verify via `/api/defaults/` GET endpoints.
+#[tokio::test]
+async fn test_migration_writes_layout_and_theme_to_tugbank() {
+    let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
+    let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
+    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+
+    write_flat_settings(
+        tree_tmp.path(),
+        r#"{"layout":{"version":5,"cards":[]},"theme":"brio"}"#,
+    );
+
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+        .expect("migration should succeed");
+
+    let app = build_migration_test_app(Arc::clone(&store));
+
+    // Verify layout written to dev.tugtool.deck.layout/layout
+    let layout_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.deck.layout/layout")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(layout_resp.status(), StatusCode::OK);
+    let layout_json = json_body(layout_resp).await;
+    assert_eq!(layout_json["kind"], "json");
+    assert_eq!(layout_json["value"]["version"], 5);
+
+    // Verify theme written to dev.tugtool.app/theme
+    let theme_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.app/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(theme_resp.status(), StatusCode::OK);
+    let theme_json = json_body(theme_resp).await;
+    assert_eq!(theme_json["kind"], "string");
+    assert_eq!(theme_json["value"], "brio");
+}
+
+/// T14: Migration deletes the flat file unconditionally after processing.
+#[tokio::test]
+async fn test_migration_deletes_flat_file() {
+    let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
+    let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
+    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+
+    write_flat_settings(tree_tmp.path(), r#"{"theme":"bluenote"}"#);
+
+    let flat_file = tree_tmp.path().join(".tugtool").join("deck-settings.json");
+    assert!(
+        flat_file.exists(),
+        "flat file should exist before migration"
+    );
+
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+        .expect("migration should succeed");
+
+    assert!(
+        !flat_file.exists(),
+        "flat file should be deleted after migration"
+    );
+}
+
+/// T15: Migration is a no-op when no flat file exists — defaults endpoints
+/// return 404 for both layout and theme keys.
+#[tokio::test]
+async fn test_migration_noop_when_no_flat_file() {
+    let db_tmp = tempfile::NamedTempFile::new().expect("temp db file");
+    let tree_tmp = tempfile::TempDir::new().expect("temp source tree");
+    let store = Arc::new(DefaultsStore::open(db_tmp.path()).expect("open store"));
+
+    // No flat file created — migration should be a no-op.
+    crate::migration::migrate_settings_to_tugbank(tree_tmp.path(), &store)
+        .expect("migration no-op should return Ok");
+
+    let app = build_migration_test_app(Arc::clone(&store));
+
+    // Layout key should not exist → 404
+    let layout_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.deck.layout/layout")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        layout_resp.status(),
+        StatusCode::NOT_FOUND,
+        "layout key should not exist after no-op migration"
+    );
+
+    // Theme key should not exist → 404
+    let theme_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.app/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        theme_resp.status(),
+        StatusCode::NOT_FOUND,
+        "theme key should not exist after no-op migration"
+    );
+}
+
+/// T16: PUT a layout JSON then GET it back — verify tagged-value round-trip
+/// using the deck layout domain and key.
+#[tokio::test]
+async fn test_defaults_layout_put_then_get() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let layout_body = r#"{"kind":"json","value":{"version":5,"cards":[{"id":"c1"}]}}"#;
+
+    let put_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/dev.tugtool.deck.layout/layout")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(layout_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put_resp.status(), StatusCode::OK);
+    let put_json = json_body(put_resp).await;
+    assert_eq!(put_json["status"], "ok");
+
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.deck.layout/layout")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let got = json_body(get_resp).await;
+    assert_eq!(got["kind"], "json");
+    assert_eq!(got["value"]["version"], 5);
+    assert_eq!(got["value"]["cards"][0]["id"], "c1");
+}
+
+/// T17: PUT a theme string then GET it back — verify tagged-value round-trip
+/// using the app theme domain and key.
+#[tokio::test]
+async fn test_defaults_theme_put_then_get() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let theme_body = r#"{"kind":"string","value":"bluenote"}"#;
+
+    let put_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/dev.tugtool.app/theme")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(theme_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put_resp.status(), StatusCode::OK);
+    let put_json = json_body(put_resp).await;
+    assert_eq!(put_json["status"], "ok");
+
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/dev.tugtool.app/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let got = json_body(get_resp).await;
+    assert_eq!(got["kind"], "string");
+    assert_eq!(got["value"], "bluenote");
 }
 
 /// T27: All seven Value variants round-trip through PUT then GET.
