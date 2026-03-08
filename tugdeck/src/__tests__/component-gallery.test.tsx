@@ -68,7 +68,7 @@ describe("registerGalleryCards – card registry integration", () => {
     _resetForTest();
   });
 
-  it("registers all eight gallery componentIds", () => {
+  it("registers all eleven gallery componentIds", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).not.toBeNull();
@@ -79,6 +79,9 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(getRegistration("gallery-default-button")).not.toBeNull();
     expect(getRegistration("gallery-mutation-tx")).not.toBeNull();
     expect(getRegistration("gallery-observable-props")).not.toBeNull();
+    expect(getRegistration("gallery-palette")).not.toBeNull();
+    expect(getRegistration("gallery-scale-timing")).not.toBeNull();
+    expect(getRegistration("gallery-cascade-inspector")).not.toBeNull();
   });
 
   it("gallery-buttons has family 'developer'", () => {
@@ -87,11 +90,11 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.family).toBe("developer");
   });
 
-  it("gallery-buttons has defaultTabs with ten tabs", () => {
+  it("gallery-buttons has defaultTabs with eleven tabs", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg?.defaultTabs).toBeDefined();
-    expect(reg?.defaultTabs?.length).toBe(10);
+    expect(reg?.defaultTabs?.length).toBe(11);
   });
 
   it("gallery-buttons has defaultTitle 'Component Gallery'", () => {
@@ -100,17 +103,17 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.defaultTitle).toBe("Component Gallery");
   });
 
-  it("all eight gallery registrations have family 'developer'", () => {
+  it("all eleven gallery registrations have family 'developer'", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector"];
     for (const id of ids) {
       expect(getRegistration(id)?.family).toBe("developer");
     }
   });
 
-  it("all eight gallery registrations have acceptsFamilies ['developer']", () => {
+  it("all eleven gallery registrations have acceptsFamilies ['developer']", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector"];
     for (const id of ids) {
       expect(getRegistration(id)?.acceptsFamilies).toEqual(["developer"]);
     }

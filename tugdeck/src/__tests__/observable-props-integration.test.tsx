@@ -499,9 +499,9 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
 // Gallery tab position: eighth tab
 // ---------------------------------------------------------------------------
 
-describe("Gallery tab 'Observable Props' is the eighth tab (of ten total)", () => {
-  it("GALLERY_DEFAULT_TABS has exactly ten entries", () => {
-    expect(GALLERY_DEFAULT_TABS).toHaveLength(10);
+describe("Gallery tab 'Observable Props' is the eighth tab (of eleven total)", () => {
+  it("GALLERY_DEFAULT_TABS has exactly eleven entries", () => {
+    expect(GALLERY_DEFAULT_TABS).toHaveLength(11);
   });
 
   it("the eighth tab has componentId 'gallery-observable-props' and title 'Observable Props'", () => {
@@ -523,6 +523,13 @@ describe("Gallery tab 'Observable Props' is the eighth tab (of ten total)", () =
     expect(tenth.componentId).toBe("gallery-scale-timing");
     expect(tenth.title).toBe("Scale & Timing");
     expect(tenth.closable).toBe(true);
+  });
+
+  it("the eleventh tab has componentId 'gallery-cascade-inspector' and title 'Cascade Inspector'", () => {
+    const eleventh = GALLERY_DEFAULT_TABS[10];
+    expect(eleventh.componentId).toBe("gallery-cascade-inspector");
+    expect(eleventh.title).toBe("Cascade Inspector");
+    expect(eleventh.closable).toBe(true);
   });
 });
 
