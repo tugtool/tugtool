@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-08T14:36:58Z
+---
+
+## step-2: Implemented encode_value and decode_value functions for SQL column mapping per Table T01. Added 14 unit tests covering all Value variant round-trips, blob size enforcement, and edge cases.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e1-tugbank-core.md
+
+---
+
+---
 step: step-1
 date: 2025-03-08T14:31:46Z
 ---
