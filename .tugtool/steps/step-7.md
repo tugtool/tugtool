@@ -1,37 +1,51 @@
-# Step 7 Checkpoint Output
+# Step 7: Final Integration Checkpoint
 
-## bun test hello-card
+## Checkpoint 1: cargo nextest run (all packages)
 
-```
-bun test v1.3.9 (cf6cdbbb)
-
- 7 pass
- 0 fail
- 14 expect() calls
-Ran 7 tests across 1 file. [120.00ms]
-```
-
-## bun run build
+**Command:** `cd tugcode && cargo nextest run`
 
 ```
-$ vite build
-vite v7.3.1 building client environment for production...
-transforming...
-✓ 1764 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/index.html                   0.73 kB │ gzip:  0.41 kB
-dist/assets/index-_nfjjLul.css   44.57 kB │ gzip:  9.15 kB
-dist/assets/index-lCbDMkPS.js    68.26 kB │ gzip: 22.25 kB
-dist/assets/vendor-BvKEF7s2.js  192.88 kB │ gzip: 60.48 kB
-✓ built in 706ms
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+────────────
+ Nextest run ID fdc9a904-948c-4eaf-b5f3-34b102f71b04 with nextest profile: default
+    Starting 868 tests across 15 binaries (9 tests skipped)
+────────────
+     Summary [   4.816s] 868 tests run: 868 passed, 9 skipped
 ```
 
-## Full test suite
+**Result:** PASSED — 868 tests passed, 9 skipped
+
+Note: an initial run showed 1 failure in `tugrelaunch::tests::test_kqueue_wait_for_short_lived_process`. This is a pre-existing timing-sensitive kqueue test that also fails intermittently on `main`. A second run passed cleanly (confirmed identical behavior on `main`). The failure is unrelated to this phase.
+
+## Checkpoint 2: cargo fmt --all --check
+
+**Command:** `cd tugcode && cargo fmt --all --check`
 
 ```
-354 pass
-0 fail
-717 expect() calls
-Ran 354 tests across 28 files. [7.85s]
+(no output — formatting is clean)
 ```
+
+**Result:** PASSED — zero formatting issues
+
+## Checkpoint 3: bun run check (TypeScript)
+
+**Command:** `cd tugdeck && bun run check`
+
+```
+$ bunx tsc --noEmit
+(no output — zero TypeScript errors)
+```
+
+**Result:** PASSED — zero TypeScript errors
+
+## Checkpoint 4: curl /api/settings returns 404
+
+**Result:** DEFERRED — requires a running tugcast server
+
+## Checkpoint 5: curl /api/defaults/dev.tugtool.deck.layout/layout returns tagged JSON
+
+**Result:** DEFERRED — requires a running tugcast server
+
+## Checkpoint 6: curl /api/defaults/dev.tugtool.app/theme returns tagged string
+
+**Result:** DEFERRED — requires a running tugcast server
