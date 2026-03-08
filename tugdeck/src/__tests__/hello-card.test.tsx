@@ -16,6 +16,7 @@ import { render, act, cleanup } from "@testing-library/react";
 import { HelloCardContent, registerHelloCard } from "@/components/tugways/cards/hello-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
+import { withDeckManager } from "./mock-deck-manager-store";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -101,9 +102,11 @@ describe("registerHelloCard – T22: registers 'hello' in the card registry", ()
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        <ResponderChainProvider>
-          {reg!.factory("card-hello-test", injected)}
-        </ResponderChainProvider>
+        withDeckManager(
+          <ResponderChainProvider>
+            {reg!.factory("card-hello-test", injected)}
+          </ResponderChainProvider>
+        )
       ));
     });
 

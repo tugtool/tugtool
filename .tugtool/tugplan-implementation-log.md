@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-08T21:28:56Z
+---
+
+## step-4: Created use-tugcard-persistence.tsx with TugcardPersistenceCallbacks and context, added saveCurrentTabState to tugcard.tsx capturing scroll/selection/content, updated handleTabSelect/handlePreviousTab/handleNextTab, fixed all test files with DeckManagerContext wrapping
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-3
 date: 2025-03-08T21:14:21Z
 ---

@@ -21,6 +21,7 @@ import { render, act, cleanup } from "@testing-library/react";
 import { Tugcard } from "@/components/tugways/tugcard";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
+import { withDeckManager } from "./mock-deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -33,9 +34,11 @@ import { selectionGuard } from "@/components/tugways/selection-guard";
 function renderWithManager(ui: React.ReactElement) {
   const manager = new ResponderChainManager();
   const result = render(
-    <ResponderChainContext.Provider value={manager}>
-      {ui}
-    </ResponderChainContext.Provider>
+    withDeckManager(
+      <ResponderChainContext.Provider value={manager}>
+        {ui}
+      </ResponderChainContext.Provider>
+    )
   );
   return { ...result, manager };
 }

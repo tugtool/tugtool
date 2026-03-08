@@ -24,33 +24,55 @@ import { ResponderChainContext, ResponderChainManager } from "@/components/tugwa
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
+import { selectionGuard } from "@/components/tugways/selection-guard";
+import { withDeckManager, makeMockStore } from "./mock-deck-manager-store";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Render a Tugcard inside a ResponderChainProvider.
- * Tugcard calls useResponder which requires a chain context.
+ * Render a Tugcard inside a ResponderChainProvider and DeckManagerContext.
+ * Tugcard calls useResponder (chain) and useDeckManager (store).
  */
 function renderInChain(ui: React.ReactElement) {
   return render(
-    <ResponderChainProvider>{ui}</ResponderChainProvider>
+    withDeckManager(<ResponderChainProvider>{ui}</ResponderChainProvider>)
   );
 }
 
 /**
- * Render a Tugcard inside a manually-controlled ResponderChainManager.
- * Lets tests inspect the manager directly after render.
+ * Render a Tugcard inside a manually-controlled ResponderChainManager and
+ * DeckManagerContext. Lets tests inspect the manager directly after render.
  */
 function renderWithManager(ui: React.ReactElement) {
   const manager = new ResponderChainManager();
   const result = render(
-    <ResponderChainContext.Provider value={manager}>
-      {ui}
-    </ResponderChainContext.Provider>
+    withDeckManager(
+      <ResponderChainContext.Provider value={manager}>
+        {ui}
+      </ResponderChainContext.Provider>
+    )
   );
   return { ...result, manager };
+}
+
+/**
+ * Render a Tugcard with both a controlled manager and a mock store that
+ * records setTabState calls. Useful for Step 4 phase 5f tests.
+ */
+function renderWithManagerAndStore(ui: React.ReactElement) {
+  const manager = new ResponderChainManager();
+  const store = makeMockStore();
+  const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+  const result = render(
+    <DeckManagerContext.Provider value={store}>
+      <ResponderChainContext.Provider value={manager}>
+        {ui}
+      </ResponderChainContext.Provider>
+    </DeckManagerContext.Provider>
+  );
+  return { ...result, manager, store };
 }
 
 /** Minimal valid Tugcard props for a feedless card. */
@@ -830,6 +852,133 @@ describe("Tugcard – setProperty action (Phase 5d4)", () => {
 
     expect(store.get("style.fontSize")).toBe(24);
     expect(receivedSource).toBe("inspector"); // defaulted
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5f Step 4: Tugcard deactivation capture (saveCurrentTabState)
+// ---------------------------------------------------------------------------
+
+describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () => {
+  afterEach(() => { cleanup(); _resetForTest(); });
+
+  it("switching tabs calls store.setTabState with a bag for the old tab", () => {
+    registerCard({
+      componentId: "hello",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-sf4-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: TabItem = { id: "tab-sf4-2", componentId: "hello", title: "Tab 2", closable: true };
+
+    const store = makeMockStore();
+    const setTabStateSpy = spyOn(store, "setTabState");
+
+    const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <DeckManagerContext.Provider value={store}>
+          <ResponderChainProvider>
+            <Tugcard
+              {...defaultProps}
+              cardId="card-sf4"
+              tabs={[tab1, tab2]}
+              activeTabId={tab1.id}
+              onTabSelect={() => {}}
+              onTabClose={() => {}}
+              onTabAdd={() => {}}
+            >
+              <div>content</div>
+            </Tugcard>
+          </ResponderChainProvider>
+        </DeckManagerContext.Provider>
+      ));
+    });
+
+    // Click the second tab using the .tug-tab class.
+    act(() => {
+      const tabButtons = container.querySelectorAll(".tug-tab");
+      if (tabButtons.length >= 2) {
+        fireEvent.click(tabButtons[1]);
+      }
+    });
+
+    // setTabState should have been called with the old tab id.
+    expect(setTabStateSpy).toHaveBeenCalled();
+    const calls = setTabStateSpy.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    // The first argument is the old tab ID (tab1).
+    expect(calls[0][0]).toBe(tab1.id);
+    // The second argument is the bag object.
+    const bag = calls[0][1];
+    expect(typeof bag).toBe("object");
+    expect(bag).not.toBeNull();
+  });
+
+  it("switching tabs calls selectionGuard.saveSelection and includes result in bag", () => {
+    registerCard({
+      componentId: "hello",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-sg-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: TabItem = { id: "tab-sg-2", componentId: "hello", title: "Tab 2", closable: true };
+
+    const savedSel = { anchorPath: [0, 1], anchorOffset: 3, focusPath: [0, 1], focusOffset: 5 };
+    // selectionGuard is a module-level singleton; spy on it directly.
+    const saveSelSpy = spyOn(selectionGuard, "saveSelection").mockImplementation(
+      () => savedSel as import("@/components/tugways/selection-guard").SavedSelection
+    );
+
+    const store = makeMockStore();
+    const setTabStateSpy = spyOn(store, "setTabState");
+
+    const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <DeckManagerContext.Provider value={store}>
+          <ResponderChainProvider>
+            <Tugcard
+              {...defaultProps}
+              cardId="card-sg"
+              tabs={[tab1, tab2]}
+              activeTabId={tab1.id}
+              onTabSelect={() => {}}
+              onTabClose={() => {}}
+              onTabAdd={() => {}}
+            >
+              <div>content</div>
+            </Tugcard>
+          </ResponderChainProvider>
+        </DeckManagerContext.Provider>
+      ));
+    });
+
+    // Click the second tab to trigger tab switch.
+    act(() => {
+      const tabButtons = container.querySelectorAll(".tug-tab");
+      if (tabButtons.length >= 2) {
+        fireEvent.click(tabButtons[1]);
+      }
+    });
+
+    // saveSelection should have been called with the cardId.
+    expect(saveSelSpy).toHaveBeenCalledWith("card-sg");
+
+    // setTabState bag should include the selection returned by saveSelection.
+    expect(setTabStateSpy).toHaveBeenCalled();
+    if (setTabStateSpy.mock.calls.length > 0) {
+      const bag = setTabStateSpy.mock.calls[0][1];
+      expect(bag.selection).toEqual(savedSel);
+    }
+
+    saveSelSpy.mockRestore();
   });
 });
 
