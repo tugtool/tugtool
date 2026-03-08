@@ -168,9 +168,9 @@ pub(crate) fn build_app(
             Ok(store) => {
                 let store = Arc::new(store);
                 base = base
-                    .route("/api/defaults/:domain", get(crate::defaults::get_domain))
+                    .route("/api/defaults/{domain}", get(crate::defaults::get_domain))
                     .route(
-                        "/api/defaults/:domain/:key",
+                        "/api/defaults/{domain}/{key}",
                         get(crate::defaults::get_key)
                             .put(crate::defaults::put_key)
                             .delete(crate::defaults::delete_key),

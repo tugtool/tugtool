@@ -1033,3 +1033,417 @@ async fn test_settings_post_null_deletes_fields() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json, serde_json::json!({}));
 }
+
+// ── Defaults API integration test helpers ─────────────────────────────────
+
+/// Build a test app wired to a temporary tugbank database.
+///
+/// Returns the router (with loopback `MockConnectInfo` applied) and the
+/// `NamedTempFile` that backs the database. The caller must keep the
+/// `NamedTempFile` alive for the duration of the test.
+fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let tmp = tempfile::NamedTempFile::new().expect("temp db file");
+    let bank_path = tmp.path().to_path_buf();
+
+    let auth = auth::new_shared_auth_state(7892);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let dev_state = dev::new_shared_dev_state();
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        code_tx,
+        code_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        client_action_tx,
+        dev_state.clone(),
+    );
+
+    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    (app.layer(MockConnectInfo(addr)), tmp)
+}
+
+/// Helper: read the response body as a parsed JSON value.
+async fn json_body(response: axum::response::Response) -> serde_json::Value {
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).expect("response body should be valid JSON")
+}
+
+// ── Defaults API integration tests ────────────────────────────────────────
+
+/// T18: GET /api/defaults/:domain on a domain that has never been written to
+/// returns 200 with an empty JSON object `{}`.
+#[tokio::test]
+async fn test_defaults_get_empty_domain_returns_empty_object() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = json_body(response).await;
+    assert_eq!(json, serde_json::json!({}));
+}
+
+/// T19: PUT a string value then GET the single key — verify round-trip.
+#[tokio::test]
+async fn test_defaults_put_string_then_get_key() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    // PUT
+    let put_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/theme")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"kind":"string","value":"dark"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put_resp.status(), StatusCode::OK);
+    let put_json = json_body(put_resp).await;
+    assert_eq!(put_json["status"], "ok");
+
+    // GET key
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test/theme")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let get_json = json_body(get_resp).await;
+    assert_eq!(get_json["kind"], "string");
+    assert_eq!(get_json["value"], "dark");
+}
+
+/// T20: PUT multiple keys then GET domain — verify all keys returned.
+#[tokio::test]
+async fn test_defaults_put_multiple_then_get_domain() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    // PUT theme
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/theme")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"kind":"string","value":"dark"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // PUT font-size
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/font-size")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"kind":"i64","value":14}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // GET domain
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let json = json_body(get_resp).await;
+    assert_eq!(json["theme"]["kind"], "string");
+    assert_eq!(json["theme"]["value"], "dark");
+    assert_eq!(json["font-size"]["kind"], "i64");
+    assert_eq!(json["font-size"]["value"], 14);
+}
+
+/// T21: GET /api/defaults/:domain/:key for a non-existent key returns 404.
+#[tokio::test]
+async fn test_defaults_get_nonexistent_key_returns_404() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test/missing-key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let json = json_body(response).await;
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["message"], "not found");
+}
+
+/// T22: DELETE existing key returns 200; subsequent GET returns 404.
+#[tokio::test]
+async fn test_defaults_delete_existing_key_then_get_returns_404() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    // PUT a value first
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/key-to-delete")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"kind":"bool","value":true}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // DELETE
+    let del_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/defaults/com.example.test/key-to-delete")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(del_resp.status(), StatusCode::OK);
+    let del_json = json_body(del_resp).await;
+    assert_eq!(del_json["status"], "ok");
+
+    // GET after delete — should be 404
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test/key-to-delete")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// T23: DELETE a key that does not exist returns 404.
+#[tokio::test]
+async fn test_defaults_delete_nonexistent_key_returns_404() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/defaults/com.example.test/no-such-key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let json = json_body(response).await;
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["message"], "not found");
+}
+
+/// T24: PUT with a body that is not valid JSON returns 400.
+#[tokio::test]
+async fn test_defaults_put_invalid_json_returns_400() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/key")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("not valid json at all"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(response).await;
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["message"], "invalid JSON");
+}
+
+/// T25: PUT with a valid JSON body but an unknown kind string returns 400.
+#[tokio::test]
+async fn test_defaults_put_unknown_kind_returns_400() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/defaults/com.example.test/key")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"kind":"bogus","value":42}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(response).await;
+    assert_eq!(json["status"], "error");
+}
+
+/// T26: Non-loopback connection to GET /api/defaults returns 403.
+#[tokio::test]
+async fn test_defaults_non_loopback_returns_403() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let tmp = tempfile::NamedTempFile::new().expect("temp db file");
+    let bank_path = tmp.path().to_path_buf();
+
+    let auth = auth::new_shared_auth_state(7893);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let dev_state = dev::new_shared_dev_state();
+    let feed_router = FeedRouter::new(
+        terminal_tx,
+        input_tx,
+        code_tx,
+        code_input_tx,
+        "test-dummy".to_string(),
+        auth,
+        vec![],
+        shutdown_tx,
+        client_action_tx,
+        dev_state.clone(),
+    );
+
+    let app = build_app(feed_router, dev_state, None, Some(bank_path));
+    // Apply a non-loopback address
+    let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
+    let app = app.layer(MockConnectInfo(non_loopback));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/defaults/com.example.test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let json = json_body(response).await;
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["message"], "forbidden");
+}
+
+/// T27: All seven Value variants round-trip through PUT then GET.
+#[tokio::test]
+async fn test_defaults_all_seven_variants_roundtrip() {
+    let (app, _tmp) = build_defaults_test_app();
+
+    let cases: &[(&str, &str)] = &[
+        ("null-key", r#"{"kind":"null"}"#),
+        ("bool-key", r#"{"kind":"bool","value":true}"#),
+        ("i64-key", r#"{"kind":"i64","value":42}"#),
+        ("f64-key", r#"{"kind":"f64","value":3.14}"#),
+        ("string-key", r#"{"kind":"string","value":"hello"}"#),
+        ("bytes-key", r#"{"kind":"bytes","value":"AQID"}"#),
+        ("json-key", r#"{"kind":"json","value":{"a":1}}"#),
+    ];
+
+    for (key, body_str) in cases {
+        // PUT
+        let put_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/defaults/com.example.test/{key}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body_str.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            put_resp.status(),
+            StatusCode::OK,
+            "PUT {key} should return 200"
+        );
+
+        // GET key
+        let get_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/defaults/com.example.test/{key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            get_resp.status(),
+            StatusCode::OK,
+            "GET {key} should return 200"
+        );
+
+        let got_json = json_body(get_resp).await;
+        let expected: serde_json::Value = serde_json::from_str(body_str).unwrap();
+        assert_eq!(
+            got_json, expected,
+            "round-trip mismatch for key {key}: got {got_json}, expected {expected}"
+        );
+    }
+}

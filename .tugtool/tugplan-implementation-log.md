@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-08T17:39:38Z
+---
+
+## step-5: Added 10 integration tests T18-T27 for /api/defaults endpoints covering CRUD operations, error cases, loopback security, and all seven Value variants round-trip. Fixed axum 0.8 route patterns in server.rs.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
 step: step-4
 date: 2025-03-08T17:34:12Z
 ---
