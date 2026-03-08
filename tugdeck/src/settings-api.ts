@@ -5,15 +5,20 @@
  * `/api/defaults/` endpoints introduced in Phase 5e3. Layout and theme are
  * stored in separate tugbank domains per [D02]:
  *
- *   Layout  → domain `dev.tugtool.deck.layout`, key `layout`  (Value::Json)
- *   Theme   → domain `dev.tugtool.app`,          key `theme`   (Value::String)
+ *   Layout    → domain `dev.tugtool.deck.layout`,   key `layout`        (Value::Json)
+ *   Theme     → domain `dev.tugtool.app`,            key `theme`         (Value::String)
+ *   Tab state → domain `dev.tugtool.deck.tabstate`,  key `<tabId>`       (Value::Json)
+ *   Deck state→ domain `dev.tugtool.deck.state`,     key `focusedCardId` (Value::String)
  *
  * The wire format is a tagged-value object: `{"kind":"json","value":{...}}`
- * for layout and `{"kind":"string","value":"brio"}` for theme [D04].
+ * for layout/tab state and `{"kind":"string","value":"brio"}` for theme/deck
+ * state [D04].
  *
  * Both dev and production modes proxy /api to tugcast on port 55255, so
  * relative URLs work in both environments.
  */
+
+import type { TabStateBag } from "./layout-tree";
 
 const INITIAL_DELAY_MS = 100;
 const MAX_DELAY_MS = 2000;
@@ -151,5 +156,158 @@ export function putTheme(theme: string): void {
     body: JSON.stringify({ kind: "string", value: theme }),
   }).catch((err) => {
     console.warn("[settings] PUT theme failed:", err);
+  });
+}
+
+// ---- Phase 5f: Tab state and deck state API ([D01], [D03], Spec S02) ----
+
+/**
+ * Fetch all tab state bags from tugbank for the given set of tab IDs.
+ *
+ * Fetches all tab IDs in parallel via Promise.allSettled. 404 responses are
+ * silently skipped (no saved state for that tab — expected on first launch).
+ * 5xx / network errors are retried with exponential backoff per tab.
+ *
+ * Returns a Map<tabId, TabStateBag> of successfully retrieved entries. Tab IDs
+ * with no stored state are absent from the map.
+ *
+ * Spec S02: fetchTabStatesWithRetry
+ */
+export async function fetchTabStatesWithRetry(tabIds: string[]): Promise<Map<string, TabStateBag>> {
+  const results = await Promise.allSettled(
+    tabIds.map((tabId) => fetchSingleTabStateWithRetry(tabId))
+  );
+
+  const map = new Map<string, TabStateBag>();
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled" && result.value !== null) {
+      map.set(tabIds[i], result.value);
+    }
+  }
+  return map;
+}
+
+/**
+ * Fetch a single tab state bag from tugbank with exponential backoff.
+ * Returns null on 404 (no state stored yet). Retries on 5xx / network errors.
+ */
+async function fetchSingleTabStateWithRetry(tabId: string): Promise<TabStateBag | null> {
+  const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "json" && tagged.value !== undefined) {
+          return tagged.value as TabStateBag;
+        }
+        console.warn("[settings] fetchSingleTabStateWithRetry: unexpected format for tab", tabId, tagged);
+        return null;
+      }
+      console.debug(
+        `[settings] fetchTabState(${tabId}) attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      console.debug(
+        `[settings] fetchTabState(${tabId}) attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
+  }
+}
+
+/**
+ * PUT a single tab state bag to tugbank (fire-and-forget).
+ *
+ * Wraps `bag` in the tagged-value wire format `{"kind":"json","value":{...}}`
+ * and PUTs to `/api/defaults/dev.tugtool.deck.tabstate/{tabId}`.
+ *
+ * Errors are logged to console.warn and otherwise ignored — save failures
+ * are non-fatal.
+ *
+ * Spec S02: putTabState
+ */
+export function putTabState(tabId: string, bag: TabStateBag): void {
+  fetch(`/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: bag }),
+  }).catch((err) => {
+    console.warn("[settings] PUT tabState failed for tab", tabId, err);
+  });
+}
+
+/**
+ * Fetch the focused card ID from tugbank with exponential backoff.
+ *
+ * Reads from `/api/defaults/dev.tugtool.deck.state/focusedCardId`.
+ * Returns the string value on success, or null on 404 (no value stored yet).
+ * Retries indefinitely on 5xx / network errors.
+ *
+ * Spec S02: fetchDeckStateWithRetry
+ */
+export async function fetchDeckStateWithRetry(): Promise<string | null> {
+  const url = "/api/defaults/dev.tugtool.deck.state/focusedCardId";
+  let delayMs = INITIAL_DELAY_MS;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      const response = await fetch(url);
+      if (response.status === 404) {
+        return null;
+      }
+      if (response.ok) {
+        const tagged = await response.json();
+        if (tagged.kind === "string" && typeof tagged.value === "string") {
+          return tagged.value;
+        }
+        console.warn("[settings] fetchDeckStateWithRetry: unexpected tagged format", tagged);
+        return null;
+      }
+      console.debug(
+        `[settings] fetchDeckState attempt ${attempt + 1} got status ${response.status}, retrying in ${delayMs}ms`
+      );
+    } catch (err) {
+      console.debug(
+        `[settings] fetchDeckState attempt ${attempt + 1} failed (${err}), retrying in ${delayMs}ms`
+      );
+    }
+
+    await sleep(delayMs);
+    attempt++;
+    delayMs = Math.min(delayMs * 2, MAX_DELAY_MS);
+  }
+}
+
+/**
+ * PUT the focused card ID to tugbank (fire-and-forget).
+ *
+ * Wraps `focusedCardId` in the tagged-value wire format
+ * `{"kind":"string","value":"<id>"}` and PUTs to
+ * `/api/defaults/dev.tugtool.deck.state/focusedCardId`.
+ *
+ * Errors are logged to console.warn and otherwise ignored — save failures
+ * are non-fatal.
+ *
+ * Spec S02: putFocusedCardId
+ */
+export function putFocusedCardId(focusedCardId: string): void {
+  fetch("/api/defaults/dev.tugtool.deck.state/focusedCardId", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: focusedCardId }),
+  }).catch((err) => {
+    console.warn("[settings] PUT focusedCardId failed:", err);
   });
 }
