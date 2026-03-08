@@ -361,24 +361,80 @@ find any registered callbacks). This is fine — no errors, no crashes.
 
 **Goal**: Replace the flat-file settings backend with a SQLite-backed typed defaults store. Establish the persistence infrastructure that Phase 5f (state preservation) and all future state-heavy features build on.
 
+Phase 5e is split into four sub-phases for incremental delivery.
+
+**Storage path**: The default database file is `~/.tugbank.db`. The `--path` CLI flag or programmatic path parameter overrides this default. Exactly one file is active at a time — no cascade or multi-file lookup.
+
+**Blob size limit**: Values of type `Bytes` are capped at 10 MB, enforced at the API level before touching SQLite.
+
+#### Phase 5e1: `tugbank-core` Library Crate
+
+**Goal**: Build the core Rust library that all other sub-phases depend on.
+
 **What to do**:
-1. Create `tugbank-core` library crate in the tugtool workspace — SQLite schema bootstrap, `Value` enum (null, bool, i64, f64, string, bytes, json), domain CRUD, CAS concurrency via generation counters, `DomainHandle` API
-2. Create `tugbank` binary crate — `clap`-based CLI modeled after macOS `defaults` (domains, read, write, delete, keys, cas-write, generation)
-3. Add `DefaultsStore` to tugcast's Rust backend — open tugbank SQLite DB at startup (path: `~/.config/tug/defaults.db` or configurable)
-4. Implement HTTP bridge endpoints in tugcast: `GET /api/defaults/<domain>`, `GET /api/defaults/<domain>/<key>`, `PUT /api/defaults/<domain>/<key>`, `DELETE /api/defaults/<domain>/<key>`
-5. Migrate existing settings: on first startup, if legacy flat settings file exists, read its contents and write them into `dev.tugtool.deck.layout` (cards JSON) and `dev.tugtool.app` (theme) domains, then remove the flat file
-6. Update `settings-api.ts` to use the new `/api/defaults/` endpoints for layout and theme reads/writes. Preserve the debounced save pattern.
-7. Verify: app loads layout from tugbank, theme persists across reload, `tugbank` CLI can read/write values, two-process CAS tests pass
+1. Create `tugbank-core` library crate in the tugtool workspace
+2. SQLite schema bootstrap (WAL mode, `meta`, `domains`, `entries` tables)
+3. `Value` enum (null, bool, i64, f64, string, bytes, json) with SQL mapping
+4. `DefaultsStore` — open/create database, schema versioning and migration
+5. `DomainHandle` — domain CRUD, key get/set/remove, `read_all`, `keys`
+6. CAS concurrency via generation counters (`generation`, `set_if_generation`, `update` transaction)
+7. 10 MB blob size enforcement at write API boundary
+8. Unit tests: value roundtrip, SQL mapping, CAS conflict detection, blob size enforcement
+9. Integration tests: two-process writer contention
 
-**Files created/modified**:
-1. `tugcode/tugbank-core/` — new library crate (schema, value, domain, store)
-2. `tugcode/tugbank/` — new binary crate (CLI)
-3. `tugcode/tugcast/` — DefaultsStore integration, HTTP bridge endpoints
-4. `tugdeck/src/settings-api.ts` — new endpoint URLs, domain-aware reads/writes
+**Files created**:
+1. `tugcode/crates/tugbank-core/` — new library crate (Cargo.toml, src/lib.rs, src/schema.rs, src/value.rs, src/store.rs, src/domain.rs, src/error.rs)
 
-**Result**: All persistence flows through tugbank. The flat settings file is gone. The `tugbank` CLI provides debugging and scripting access. Domain separation (`dev.tugtool.deck.layout`, `dev.tugtool.deck.state`, `dev.tugtool.deck.tabstate`, `dev.tugtool.app`) is established for Phase 5f and beyond.
+**Result**: Standalone library crate that can be depended on by both the CLI and tugcast. Full test coverage for correctness and concurrency.
 
-**Note**: Phase 5e is primarily Rust/backend work. The frontend change is limited to updating `settings-api.ts` endpoint URLs and response parsing. No new UI features.
+#### Phase 5e2: `tugbank` CLI Binary
+
+**Goal**: Provide a `defaults`-like command-line tool for debugging, scripting, and manual inspection of tugbank databases.
+
+**What to do**:
+1. Create `tugbank` binary crate with `clap`-based CLI
+2. Default database path: `~/.tugbank.db`; overridable with `--path <db-path>`
+3. Global flags: `--json` (machine output), `--pretty` (pretty JSON)
+4. Commands: `domains`, `read`, `write`, `delete`, `keys`, `cas-write`, `generation`
+5. Exit codes: 0=success, 2=not found, 3=conflict, 4=invalid usage, 5=busy/timeout, 1=other
+6. Verify: CLI can create databases, write/read all value types, CAS operations work
+
+**Files created**:
+1. `tugcode/crates/tugbank/` — new binary crate (Cargo.toml, src/main.rs)
+
+**Result**: `tugbank` CLI is a standalone tool usable for development and scripting without requiring tugcast.
+
+#### Phase 5e3: Tugcast HTTP Bridge Integration
+
+**Goal**: Wire tugbank into the tugcast Rust server so the frontend can read/write defaults via HTTP.
+
+**What to do**:
+1. Add `DefaultsStore` to tugcast — open `~/.tugbank.db` at startup (path configurable)
+2. Implement HTTP bridge endpoints: `GET /api/defaults/<domain>`, `GET /api/defaults/<domain>/<key>`, `PUT /api/defaults/<domain>/<key>`, `DELETE /api/defaults/<domain>/<key>`
+3. Verify: HTTP endpoints work end-to-end with tugbank-core
+
+**Files modified**:
+1. `tugcode/crates/tugcast/` — DefaultsStore integration, HTTP bridge endpoints
+
+**Result**: Tugcast exposes tugbank via HTTP. Frontend integration is possible but not yet wired.
+
+#### Phase 5e4: Settings Migration
+
+**Goal**: Migrate from the legacy flat-file settings backend to tugbank. Update the frontend to use the new endpoints.
+
+**What to do**:
+1. On first startup, if legacy flat settings file exists, read its contents and write them into `dev.tugtool.deck.layout` (cards JSON) and `dev.tugtool.app` (theme) domains, then remove the flat file
+2. Update `settings-api.ts` to use the new `/api/defaults/` endpoints for layout and theme reads/writes. Preserve the debounced save pattern.
+3. Preserve `GET /api/settings` and `POST /api/settings` as compatibility shims during transition, then remove
+4. Verify: app loads layout from tugbank, theme persists across reload
+
+**Files modified**:
+1. `tugcode/crates/tugcast/` — migration logic
+2. `tugdeck/src/settings-api.ts` — new endpoint URLs, domain-aware reads/writes
+
+**Result**: All persistence flows through tugbank. The flat settings file is gone. Domain separation (`dev.tugtool.deck.layout`, `dev.tugtool.deck.state`, `dev.tugtool.deck.tabstate`, `dev.tugtool.app`) is established for Phase 5f and beyond.
+
+**Note**: Phases 5e1 and 5e2 are pure Rust work. Phase 5e3 adds backend integration. Phase 5e4 is the only phase that touches the frontend.
 
 ### Phase 5f: Inactive State Preservation (Concept 18, [D49]-[D52])
 
@@ -1095,7 +1151,10 @@ The suggested plan sequence:
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
 24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to HVV palette, neutral ramp, remove JS injection
 25. `tugways-phase-5d5f-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
-25. `tugways-phase-5e-tugbank` — SQLite-backed defaults store, CLI, HTTP bridge, settings migration
+25a. `tugways-phase-5e1-tugbank-core` — `tugbank-core` library crate (schema, value, domain, store, CAS, blob limit)
+25b. `tugways-phase-5e2-tugbank-cli` — `tugbank` CLI binary (defaults-like CLI, `~/.tugbank.db` default path)
+25c. `tugways-phase-5e3-tugbank-bridge` — tugcast HTTP bridge integration (REST endpoints for defaults)
+25d. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
 26. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
 27. `tugways-phase-6-feed` — feed hooks, data flow
 28. `tugways-phase-7-motion` — transitions, skeleton, startup continuity

@@ -25,12 +25,13 @@ Reference model: [Apple `UserDefaults`](https://developer.apple.com/documentatio
 
 ## 3) Data Model
 
-- **Store file**: one SQLite DB file at configurable path.
+- **Store file**: one SQLite DB file. Default path: `~/.tugbank.db`.
 - **Domain**: reverse-URL string (e.g. `dev.tugtool.app`).
 - **Key**: UTF-8 string (e.g. `window.background`).
 - **Value**: compact typed value:
   - bool, i64, f64, string, bytes, null
   - arrays/objects via JSON payload (v1 compromise)
+- **Blob size limit**: `Bytes` values capped at 10 MB, enforced at the API level before touching SQLite.
 
 ---
 
@@ -192,7 +193,7 @@ This ensures serialized writes and explicit conflict detection.
 Modeled after `defaults`, but explicit and script-friendly.
 
 ## Global flags
-- `--path <db-path>` (required or env `TUGDEFAULTS_PATH`)
+- `--path <db-path>` (default: `~/.tugbank.db`; overridable or env `TUGBANK_PATH`)
 - `--json` (machine output)
 - `--pretty` (pretty JSON)
 
@@ -201,7 +202,8 @@ Modeled after `defaults`, but explicit and script-friendly.
 ### `domains`
 List all domains.
 ```bash
-tugbank --path ~/.config/tug/defaults.db domains
+tugbank domains
+tugbank --path /some/other/path.db domains
 ```
 
 ### `read <domain> [key]`
@@ -246,6 +248,7 @@ Print domain generation.
 - `NotFound`
 - `Conflict` (generation changed)
 - `Busy` (lock timeout)
+- `ValueTooLarge` (blob exceeds 10 MB limit)
 - `Sqlite(rusqlite::Error)`
 - `Serde(serde_json::Error)`
 
@@ -261,8 +264,9 @@ CLI exit codes:
 
 ## 12) Path + portability
 
-- Default path suggestion:
-  - macOS/Linux: `~/.config/tug/defaults.db`
+- Default path: `~/.tugbank.db` (dotfile in user's home directory).
+- Override with `--path` flag or `TUGBANK_PATH` environment variable.
+- Exactly one database file is active at a time — no cascade or multi-file lookup.
 - Allow arbitrary path for shared/cross-app usage.
 - Require directory to exist or create parent dirs on first open.
 - Set file mode to user-only when creating (best effort).

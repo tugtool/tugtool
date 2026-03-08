@@ -3064,6 +3064,10 @@ No React state is involved in any selection operation. Selection is entirely an 
 
 **The solution.** Tugbank is a SQLite-backed typed defaults store, modeled after Apple's `UserDefaults`/`defaults`. It provides domain-separated key-value storage with typed values (bool, i64, f64, string, bytes, JSON), WAL-mode concurrent access, and compare-and-swap concurrency control. The full design is in `roadmap/tugbank-proposal.md`.
 
+**Storage path.** The default database file is `~/.tugbank.db` (a dotfile in the user's home directory). The `--path` CLI flag or programmatic path parameter overrides this default, targeting a specific file for both reads and writes. There is no cascade or multi-file lookup — exactly one file is active at a time.
+
+**Blob size limit.** Values of type `Bytes` are capped at 10 MB. The limit is enforced at the API level (in `DefaultsStore` / `DomainHandle` write methods) before touching SQLite. This keeps the database file reasonable while accommodating use cases like avatar icons.
+
 #### Tugbank Replaces Settings API {#d46-tugbank}
 
 **[D46] Tugbank replaces settings API with SQLite-backed typed defaults.**
@@ -3104,9 +3108,10 @@ The existing `GET /api/settings` and `POST /api/settings` endpoints are preserve
 
 #### Implementation Notes
 
-- **Rust crate**: `tugbank-core` is a library crate in the tugtool workspace. It wraps `rusqlite` with the schema, value encoding, domain CRUD, and CAS logic from the tugbank proposal.
-- **CLI**: `tugbank` is a binary crate providing a `defaults`-like CLI for debugging and scripting.
-- **Testing**: Unit tests for value roundtrip, SQL mapping, CAS conflict detection. Integration tests for two-process writer contention.
+- **Rust crate**: `tugbank-core` is a library crate in the tugtool workspace. It wraps `rusqlite` with the schema, value encoding, domain CRUD, and CAS logic from the tugbank proposal. Enforces the 10 MB blob size limit at the write API boundary.
+- **CLI**: `tugbank` is a binary crate providing a `defaults`-like CLI for debugging and scripting. Default database path is `~/.tugbank.db`; overridable with `--path`.
+- **Testing**: Unit tests for value roundtrip, SQL mapping, CAS conflict detection, blob size enforcement. Integration tests for two-process writer contention.
+- **Sub-phases**: Phase 5e is split into four sub-phases for incremental delivery: (5e1) `tugbank-core` library crate, (5e2) `tugbank` CLI binary, (5e3) tugcast HTTP bridge integration, (5e4) settings migration.
 
 ### 18. Inactive State Preservation {#c18-inactive-state}
 
@@ -4092,7 +4097,7 @@ As the design system matures, the flat JSON blob persistence model (`settings-ap
 - **[D46] Tugbank replaces the settings API** as the backend storage layer. The frontend HTTP interface is preserved (new REST endpoints), but the backend switches from flat file to SQLite with WAL-mode concurrency.
 - **[D47] Domain separation** organizes state by concern: `dev.tugtool.deck.layout` for card geometry, `dev.tugtool.deck.tabstate` for per-tab ephemeral state, `dev.tugtool.app` for user preferences. Granular writes mean changing one card's scroll position doesn't re-serialize the entire layout.
 - **[D48] HTTP bridge** keeps the frontend decoupled from the Rust crate — tugcast exposes RESTful endpoints that map to tugbank operations.
-- **Phase 5e**: Implementation phase. Builds the `tugbank-core` Rust crate, the `tugbank` CLI, the tugcast HTTP bridge, and migrates `settings-api.ts` to the new endpoints. This is infrastructure that Phase 5f (state preservation) builds on.
+- **Phase 5e**: Implementation phase, split into four sub-phases: (5e1) `tugbank-core` library crate, (5e2) `tugbank` CLI binary, (5e3) tugcast HTTP bridge integration, (5e4) settings migration. This is infrastructure that Phase 5f (state preservation) builds on.
 
 ### Entry 25: Inactive State Preservation — Concept 18 {#log-25} (2026-03-04)
 
