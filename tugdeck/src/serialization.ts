@@ -94,6 +94,10 @@ export function deserialize(
         ? (rawAcceptsFamilies as string[])
         : ["standard"];
 
+      // Extract collapsed with defensive default: only carry the field when explicitly true.
+      const rawCollapsed = card["collapsed"];
+      const collapsed = typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
+
       cards.push({
         id,
         position: { x, y },
@@ -102,6 +106,7 @@ export function deserialize(
         activeTabId,
         title,
         acceptsFamilies,
+        ...(collapsed === true ? { collapsed } : {}),
       });
     }
 

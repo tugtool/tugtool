@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T20:59:25Z
+---
+
+## step-1: Added TabStateBag interface, collapsed field on CardState, focusedCardId on DeckState, and updated serialization to handle collapsed field with defensive deserialization
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f-state-preservation.md
+
+---
+
+---
 step: step-7
 date: 2025-03-08T19:33:12Z
 ---
