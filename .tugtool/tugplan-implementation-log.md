@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-08T17:27:09Z
+---
+
+## step-3: Added get_domain, get_key, put_key, delete_key handlers and bank_error_to_response helper to defaults.rs with loopback checks, spawn_blocking, and error mapping. Added rusqlite dev-dep for tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5e3-tugbank-bridge.md
+
+---
+
+---
 step: step-2
 date: 2025-03-08T17:21:00Z
 ---

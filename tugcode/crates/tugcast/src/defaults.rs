@@ -1,12 +1,27 @@
 //! HTTP handlers for `/api/defaults` endpoints.
 //!
-//! Provides the tagged-object JSON wire format (`TaggedValue`) and conversion
-//! functions between `tugbank_core::Value` and the wire format. HTTP handlers
-//! are added in a later step.
+//! Provides the tagged-object JSON wire format ([`TaggedValue`]) and
+//! conversion functions between [`tugbank_core::Value`] and the wire format,
+//! plus four HTTP handler functions for `/api/defaults/:domain` and
+//! `/api/defaults/:domain/:key`.
 
+// Handlers and helpers are wired into server.rs in step-4; suppress
+// dead-code warnings until they are referenced from the router.
+#![allow(dead_code)]
+
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use axum::Extension;
+use axum::body::Bytes;
+use axum::extract::{ConnectInfo, Path};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
-use tugbank_core::Value;
+use tracing::warn;
+use tugbank_core::{DefaultsStore, Error as BankError, Value};
 
 // ── Tagged wire format ─────────────────────────────────────────────────────
 
@@ -19,7 +34,6 @@ use tugbank_core::Value;
 /// - `Null` serializes as `{"kind":"null"}` — no `value` field.
 /// - `Bytes` serializes the raw bytes as a standard base64 string.
 /// - `Json` embeds the JSON value directly in the `value` field.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct TaggedValue {
     pub(crate) kind: String,
@@ -33,7 +47,6 @@ pub(crate) struct TaggedValue {
 ///
 /// `Bytes` payloads are encoded using standard base64. All other variants
 /// map directly to their JSON counterparts per Table T01.
-#[allow(dead_code)]
 pub(crate) fn value_to_tagged(value: &Value) -> TaggedValue {
     match value {
         Value::Null => TaggedValue {
@@ -76,7 +89,6 @@ pub(crate) fn value_to_tagged(value: &Value) -> TaggedValue {
 /// Returns `Err(String)` if the `kind` field is unrecognised, the `value`
 /// field is missing or has the wrong JSON type, or the base64 payload for
 /// `"bytes"` is invalid.
-#[allow(dead_code)]
 pub(crate) fn tagged_to_value(tagged: &TaggedValue) -> Result<Value, String> {
     match tagged.kind.as_str() {
         "null" => Ok(Value::Null),
@@ -134,12 +146,271 @@ pub(crate) fn tagged_to_value(tagged: &TaggedValue) -> Result<Value, String> {
     }
 }
 
+// ── Error mapping ──────────────────────────────────────────────────────────
+
+/// Map a `tugbank_core::Error` to an HTTP response per [D05].
+///
+/// | Error variant          | Status | Body message         |
+/// |------------------------|--------|----------------------|
+/// | `InvalidDomain`        | 400    | "invalid domain"     |
+/// | `InvalidKey`           | 400    | "invalid key"        |
+/// | `ValueTooLarge`        | 413    | "value too large"    |
+/// | `Serde`                | 400    | "invalid JSON"       |
+/// | `Sqlite` / other       | 500    | "internal error"     |
+pub(crate) fn bank_error_to_response(err: BankError) -> Response {
+    match err {
+        BankError::InvalidDomain(_) => (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"status": "error", "message": "invalid domain"})),
+        )
+            .into_response(),
+        BankError::InvalidKey(_) => (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"status": "error", "message": "invalid key"})),
+        )
+            .into_response(),
+        BankError::ValueTooLarge { .. } => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(serde_json::json!({"status": "error", "message": "value too large"})),
+        )
+            .into_response(),
+        BankError::Serde(_) => (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"status": "error", "message": "invalid JSON"})),
+        )
+            .into_response(),
+        BankError::Sqlite(_) | BankError::Conflict => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "internal error"})),
+        )
+            .into_response(),
+    }
+}
+
+// ── Shared loopback guard ──────────────────────────────────────────────────
+
+/// Return a 403 Forbidden response for non-loopback connections.
+///
+/// Returns `Some(Response)` when the connection should be rejected,
+/// or `None` when the caller may proceed.
+fn check_loopback(handler: &str, addr: SocketAddr) -> Option<Response> {
+    if addr.ip().is_loopback() {
+        return None;
+    }
+    warn!(
+        "{}: rejected non-loopback connection from {}",
+        handler, addr
+    );
+    Some(
+        (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"status": "error", "message": "forbidden"})),
+        )
+            .into_response(),
+    )
+}
+
+// ── HTTP handlers ──────────────────────────────────────────────────────────
+
+/// Handle `GET /api/defaults/:domain`
+///
+/// Returns all key-value pairs in the specified domain as a JSON object
+/// mapping keys to tagged values. An empty domain returns `{}`.
+/// Restricted to loopback connections.
+pub(crate) async fn get_domain(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(store): Extension<Arc<DefaultsStore>>,
+    Path(domain): Path<String>,
+) -> Response {
+    if let Some(resp) = check_loopback("get_domain", addr) {
+        return resp;
+    }
+
+    let result = tokio::task::spawn_blocking(move || {
+        let handle = store.domain(&domain)?;
+        let all: BTreeMap<String, Value> = handle.read_all()?;
+        Ok::<_, BankError>(all)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(map)) => {
+            let tagged: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| {
+                    let tv = value_to_tagged(v);
+                    (k.clone(), serde_json::to_value(&tv).unwrap_or_default())
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::Value::Object(tagged)),
+            )
+                .into_response()
+        }
+        Ok(Err(bank_err)) => bank_error_to_response(bank_err),
+        Err(_join_err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "internal error"})),
+        )
+            .into_response(),
+    }
+}
+
+/// Handle `GET /api/defaults/:domain/:key`
+///
+/// Returns the tagged value for a single key. Returns 404 when the key
+/// does not exist. Restricted to loopback connections.
+pub(crate) async fn get_key(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(store): Extension<Arc<DefaultsStore>>,
+    Path((domain, key)): Path<(String, String)>,
+) -> Response {
+    if let Some(resp) = check_loopback("get_key", addr) {
+        return resp;
+    }
+
+    let result = tokio::task::spawn_blocking(move || {
+        let handle = store.domain(&domain)?;
+        let value = handle.get(&key)?;
+        Ok::<_, BankError>(value)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(Some(value))) => {
+            let tagged = value_to_tagged(&value);
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::to_value(&tagged).unwrap_or_default()),
+            )
+                .into_response()
+        }
+        Ok(Ok(None)) => (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"status": "error", "message": "not found"})),
+        )
+            .into_response(),
+        Ok(Err(bank_err)) => bank_error_to_response(bank_err),
+        Err(_join_err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "internal error"})),
+        )
+            .into_response(),
+    }
+}
+
+/// Handle `PUT /api/defaults/:domain/:key`
+///
+/// Writes a typed value to the specified domain/key. The request body must
+/// be a tagged value object (`{"kind":"...","value":...}`). Returns 200 on
+/// success. Restricted to loopback connections.
+pub(crate) async fn put_key(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(store): Extension<Arc<DefaultsStore>>,
+    Path((domain, key)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    if let Some(resp) = check_loopback("put_key", addr) {
+        return resp;
+    }
+
+    // Parse body as TaggedValue.
+    let tagged: TaggedValue = match serde_json::from_slice(&body) {
+        Ok(t) => t,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": "invalid JSON"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Convert tagged wire format to Value.
+    let value = match tagged_to_value(&tagged) {
+        Ok(v) => v,
+        Err(detail) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({"status": "error", "message": detail})),
+            )
+                .into_response();
+        }
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        let handle = store.domain(&domain)?;
+        handle.set(&key, value)?;
+        Ok::<_, BankError>(())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"status": "ok"})),
+        )
+            .into_response(),
+        Ok(Err(bank_err)) => bank_error_to_response(bank_err),
+        Err(_join_err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "internal error"})),
+        )
+            .into_response(),
+    }
+}
+
+/// Handle `DELETE /api/defaults/:domain/:key`
+///
+/// Removes a key from the specified domain. Returns 200 if the key existed
+/// and was removed, 404 if the key did not exist. Restricted to loopback
+/// connections.
+pub(crate) async fn delete_key(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(store): Extension<Arc<DefaultsStore>>,
+    Path((domain, key)): Path<(String, String)>,
+) -> Response {
+    if let Some(resp) = check_loopback("delete_key", addr) {
+        return resp;
+    }
+
+    let result = tokio::task::spawn_blocking(move || {
+        let handle = store.domain(&domain)?;
+        let existed = handle.remove(&key)?;
+        Ok::<_, BankError>(existed)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(true)) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"status": "ok"})),
+        )
+            .into_response(),
+        Ok(Ok(false)) => (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({"status": "error", "message": "not found"})),
+        )
+            .into_response(),
+        Ok(Err(bank_err)) => bank_error_to_response(bank_err),
+        Err(_join_err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({"status": "error", "message": "internal error"})),
+        )
+            .into_response(),
+    }
+}
+
 // ── Unit tests ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::StatusCode;
     use serde_json::json;
+
+    // ── TaggedValue serialization tests (T04–T12) ──────────────────────────
 
     // T04: Null produces {"kind":"null"} with no value field
     #[test]
@@ -184,7 +455,6 @@ mod tests {
     fn test_value_to_tagged_f64() {
         let t = value_to_tagged(&Value::F64(3.14));
         assert_eq!(t.kind, "f64");
-        // JSON number comparison via serialization
         let serialized = serde_json::to_string(&t).unwrap();
         assert_eq!(serialized, r#"{"kind":"f64","value":3.14}"#);
     }
@@ -315,5 +585,55 @@ mod tests {
         };
         let result = tagged_to_value(&tagged);
         assert!(result.is_err());
+    }
+
+    // ── bank_error_to_response tests (T13–T16) ─────────────────────────────
+
+    fn status_of(resp: Response) -> StatusCode {
+        resp.status()
+    }
+
+    // T13: InvalidDomain → 400
+    #[test]
+    fn test_bank_error_invalid_domain_returns_400() {
+        let resp = bank_error_to_response(BankError::InvalidDomain("".into()));
+        assert_eq!(status_of(resp), StatusCode::BAD_REQUEST);
+    }
+
+    // T14: InvalidKey → 400
+    #[test]
+    fn test_bank_error_invalid_key_returns_400() {
+        let resp = bank_error_to_response(BankError::InvalidKey("".into()));
+        assert_eq!(status_of(resp), StatusCode::BAD_REQUEST);
+    }
+
+    // T15: ValueTooLarge → 413
+    #[test]
+    fn test_bank_error_value_too_large_returns_413() {
+        let resp = bank_error_to_response(BankError::ValueTooLarge { size: 1024 });
+        assert_eq!(status_of(resp), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    // T16: Sqlite → 500
+    #[test]
+    fn test_bank_error_sqlite_returns_500() {
+        let resp = bank_error_to_response(BankError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        assert_eq!(status_of(resp), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // Additional: Serde → 400
+    #[test]
+    fn test_bank_error_serde_returns_400() {
+        let serde_err: serde_json::Error =
+            serde_json::from_str::<serde_json::Value>("bad json").unwrap_err();
+        let resp = bank_error_to_response(BankError::Serde(serde_err));
+        assert_eq!(status_of(resp), StatusCode::BAD_REQUEST);
+    }
+
+    // Additional: Conflict → 500
+    #[test]
+    fn test_bank_error_conflict_returns_500() {
+        let resp = bank_error_to_response(BankError::Conflict);
+        assert_eq!(status_of(resp), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

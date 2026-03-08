@@ -2238,6 +2238,7 @@ dependencies = [
  "pty-process",
  "rand 0.10.0",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "sysinfo",
