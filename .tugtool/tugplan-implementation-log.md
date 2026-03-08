@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-08T22:53:26Z
+---
+
+## step-1: Rewrote useLayoutEffect restore logic in tugcard.tsx to schedule scroll/selection/content restoration via requestAnimationFrame. Added visibility:hidden flash suppression when scroll state exists. Updated tugcard tests for RAF timing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f2-state-preservation-fixes.md
+
+---
+
+---
 step: step-8
 date: 2025-03-08T21:52:54Z
 ---

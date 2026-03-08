@@ -302,44 +302,72 @@ export function Tugcard({
     [onTabSelect],
   );
 
-  // Phase 5f Step 5: Activation restore.
+  // Phase 5f2: Activation restore with RAF deferral (Step 1, [D01] RAF deferral, [D02] Flash suppression, Spec S01).
   //
-  // After the new tab's content mounts and its useSelectionBoundary
-  // useLayoutEffect runs (children before parents), restore the full tab state
-  // bag from the DeckManager cache.
+  // useLayoutEffect fires after React commits DOM changes but before the browser
+  // completes layout. At that point the content area may have zero scrollable
+  // height (content not yet laid out), so scrollTop assignments are clamped to 0
+  // and setBaseAndExtent silently fails because text nodes are not yet positioned.
   //
-  // useLayoutEffect fires before paint, so:
-  // - Scroll is set synchronously (DOM is laid out; no RAF needed, no flash).
-  // - Selection is restored via SelectionGuard.restoreSelection.
-  // - Card content state is forwarded to persistenceCallbacksRef.onRestore.
+  // Fix: schedule a requestAnimationFrame callback, which fires after the browser
+  // completes layout and before paint. By that point the content area has its full
+  // scrollable dimensions and text nodes are positioned.
   //
-  // This path also handles first-mount restoration after app reload: if the
-  // DeckManager cache was pre-populated from tugbank during initialization,
-  // the same effect restores state on the very first mount of each Tugcard.
+  // Flash suppression: apply visibility:hidden to the content area when bag.scroll
+  // exists, to prevent the one-frame flash of content at scroll position 0 before
+  // the RAF callback applies the correct scroll position. Selection-only restores
+  // do not need hiding — setBaseAndExtent either succeeds or silently fails with
+  // no visible wrong-position artifact.
   //
-  // savedSelectionsRef is fully removed in this step — both the write path
-  // (Step 4 dual-write) and the read path are now migrated to the store cache.
+  // The RAF handle is stored in a local variable captured by the cleanup closure
+  // (not a ref). React runs the previous invocation's cleanup before the new
+  // effect body, so on rapid tab switches the old RAF is cancelled before the new
+  // one is scheduled — no cross-contamination between tabs.
+  //
+  // This path handles both tab switch restore and app reload restore (same code path).
   useLayoutEffect(() => {
     if (!activeTabId) return;
     const bag = store.getTabState(activeTabId);
-    if (!bag) return;
 
-    // Restore scroll position directly (useLayoutEffect fires before paint).
+    // If no bag, or bag has no restorable state, return early — no hide or RAF needed.
+    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
+
     const contentEl = contentRef.current;
+
+    // Apply visibility:hidden only when scroll state exists to suppress the
+    // one-frame flash of content at position 0 before RAF fires.
     if (contentEl && bag.scroll !== undefined) {
-      contentEl.scrollLeft = bag.scroll.x;
-      contentEl.scrollTop = bag.scroll.y;
+      contentEl.style.visibility = "hidden";
     }
 
-    // Restore text selection if a saved selection exists.
-    if (bag.selection != null) {
-      selectionGuard.restoreSelection(cardId, bag.selection);
-    }
+    // Schedule the actual restore in RAF (after browser layout completes).
+    const rafHandle = requestAnimationFrame(() => {
+      if (contentEl && bag.scroll !== undefined) {
+        contentEl.scrollLeft = bag.scroll.x;
+        contentEl.scrollTop = bag.scroll.y;
+      }
 
-    // Restore card content state via the registered persistence callback.
-    if (bag.content !== undefined) {
-      persistenceCallbacksRef.current?.onRestore(bag.content);
-    }
+      if (bag.selection != null) {
+        selectionGuard.restoreSelection(cardId, bag.selection);
+      }
+
+      if (bag.content !== undefined) {
+        persistenceCallbacksRef.current?.onRestore(bag.content);
+      }
+
+      // Restore visibility after scroll is applied (or always restore on selection/content only).
+      if (contentEl) {
+        contentEl.style.visibility = "";
+      }
+    });
+
+    // Cleanup: cancel the pending RAF and restore visibility to prevent permanent hiding.
+    return () => {
+      cancelAnimationFrame(rafHandle);
+      if (contentEl) {
+        contentEl.style.visibility = "";
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, cardId]);
 
