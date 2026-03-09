@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-09T17:18:38Z
+---
+
+## step-3: Rewrote activation useLayoutEffect in tugcard.tsx: replaced double-RAF timing with two-path restore (persist path using onContentReady + direct-apply fallback). Removed all requestAnimationFrame/cancelAnimationFrame. Added pendingScrollRef and pendingSelectionRef. Updated 3 tests to use useTugcardPersistence.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
 step: step-2
 date: 2025-03-09T17:10:04Z
 ---

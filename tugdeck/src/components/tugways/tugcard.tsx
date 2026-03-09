@@ -43,6 +43,7 @@ import type { FeedIdValue } from "../../protocol";
 import { icons } from "lucide-react";
 import type { TabItem, TabStateBag } from "../../layout-tree";
 import { selectionGuard } from "./selection-guard";
+import type { SavedSelection } from "./selection-guard";
 import { getRegistration } from "../../card-registry";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
@@ -321,90 +322,125 @@ export function Tugcard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 
-  // Phase 5f3: Activation restore with corrected order (Step 1, [D03] Restore order, Spec S03).
+  // Phase 5f4: Pending scroll/selection refs for the onContentReady callback path.
+  // Tugcard stores the values to restore here before calling onRestore, then reads
+  // them in the onContentReady callback (after child DOM commits). ([D04], Spec S03)
+  const pendingScrollRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingSelectionRef = useRef<SavedSelection | null>(null);
+
+  // Phase 5f4: Activation restore — deterministic child-driven ready callback.
   //
-  // Content is restored synchronously in the useLayoutEffect body BEFORE scheduling
-  // requestAnimationFrame. This ensures the DOM has its full structure and scrollable
-  // height before scroll and selection are applied in RAF. Restoring scroll before
-  // content risks clamping scrollTop to 0 because the DOM does not yet have its full
-  // rendered height.
+  // Replaces the double-RAF timing bet from Phase 5f3. ([D78], [D79], Rule 11, Rule 12)
   //
-  // Flash suppression: apply visibility:hidden to the content area when bag.scroll
-  // exists, to prevent the one-frame flash of content at scroll position 0 before
-  // the RAF callback applies the correct scroll position. Selection-only restores
-  // do not need hiding — setBaseAndExtent either succeeds or silently fails with
-  // no visible wrong-position artifact.
+  // Two paths:
   //
-  // The RAF handle is stored in a local variable captured by the cleanup closure
-  // (not a ref). React runs the previous invocation's cleanup before the new
-  // effect body, so on rapid tab switches the old RAF is cancelled before the new
-  // one is scheduled — no cross-contamination between tabs.
+  //   PERSIST PATH (card content registered useTugcardPersistence AND bag.content exists):
+  //     The child's onRestore calls setState, which triggers a re-render. The child's
+  //     own no-deps useLayoutEffect (in useTugcardPersistence) fires after that commit
+  //     and calls the onContentReady callback we write here. At that point, the DOM
+  //     reflects the restored content and scroll/selection can be applied safely.
+  //     visibility:hidden is applied only when bag.scroll exists to suppress the
+  //     one-frame wrong-scroll-position flash. Content-only restores skip hiding.
+  //     ([D04], Spec S03 persist path)
   //
-  // This path handles both tab switch restore and app reload restore (same code path).
+  //   DIRECT-APPLY FALLBACK (no persistence registered, OR bag.content undefined):
+  //     No child re-render is triggered, so the DOM is already stable. Scroll and
+  //     selection are applied directly in the effect body without hiding.
+  //     ([D04], Spec S03 direct-apply fallback)
+  //
+  // Cleanup resets pending refs, clears the restorePendingRef flag (cancels a stale
+  // pending callback on rapid tab switch), and restores visibility if hidden. ([D05])
   useLayoutEffect(() => {
     if (!activeTabId) return;
     const bag = store.getTabState(activeTabId);
 
-    // If no bag, or bag has no restorable state, return early — no hide or RAF needed.
+    // Early return if no bag or nothing to restore.
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
-
-    // 1. Content restore: synchronous, before RAF.
-    // Restoring content first ensures the DOM has its full structure and scrollable
-    // height before scroll and selection are applied in RAF ([D03]).
-    if (bag.content !== undefined) {
-      persistenceCallbacksRef.current?.onRestore(bag.content);
-    }
-
-    // 2. Determine if RAF is needed (scroll or selection to restore).
-    // Content-only restores do not need RAF or visibility hiding.
-    const needsRaf = bag.scroll !== undefined || bag.selection != null;
-    if (!needsRaf) return;
 
     const contentEl = contentRef.current;
 
-    // 3. Flash suppression: apply visibility:hidden only when scroll state exists.
-    if (contentEl && bag.scroll !== undefined) {
-      contentEl.style.visibility = "hidden";
-    }
+    // Determine whether the persist path applies:
+    // - callbacks object must be registered (card content called useTugcardPersistence), AND
+    // - restorePendingRef must be present (guards against the no-op cleanup re-registration
+    //   which writes a callbacks pair without restorePendingRef), AND
+    // - bag.content must exist (no content to restore means no child setState to wait for).
+    const hasPersistence =
+      persistenceCallbacksRef.current !== null &&
+      persistenceCallbacksRef.current.restorePendingRef !== undefined &&
+      bag.content !== undefined;
 
-    // 4. Double-RAF: scroll + selection + unhide.
-    // A single RAF fires before the next paint but the browser may not have
-    // fully laid out newly-mounted child content yet. The second RAF fires
-    // after the first paint, by which point layout is stable and scrollHeight
-    // reflects the real content — scrollTop assignment won't be clamped.
-    // visibility:hidden stays on through both frames so the user never sees
-    // content at scroll position 0.
-    let outerRaf: number | null = null;
-    let innerRaf: number | null = null;
+    if (hasPersistence) {
+      // --- PERSIST PATH ---
+      // Store pending scroll and selection for the onContentReady callback.
+      pendingScrollRef.current = bag.scroll ?? null;
+      pendingSelectionRef.current = bag.selection ?? null;
 
-    outerRaf = requestAnimationFrame(() => {
-      innerRaf = requestAnimationFrame(() => {
-        if (contentEl && bag.scroll !== undefined) {
-          contentEl.scrollLeft = bag.scroll.x;
-          contentEl.scrollTop = bag.scroll.y;
+      // Flash suppression: hide content only when scroll state exists.
+      // Content-only restores (no scroll) have no wrong-scroll-position flash.
+      let didHide = false;
+      if (contentEl && bag.scroll !== undefined) {
+        contentEl.style.visibility = "hidden";
+        didHide = true;
+      }
+
+      // Write the onContentReady callback into the callbacks object.
+      // The child's no-deps useLayoutEffect (in useTugcardPersistence) will call
+      // this after the child's DOM commits. ([D01], [D02], Spec S02)
+      persistenceCallbacksRef.current!.onContentReady = () => {
+        // Apply scroll from pending ref (DOM height is now stable after child commit).
+        if (contentEl && pendingScrollRef.current !== null) {
+          contentEl.scrollLeft = pendingScrollRef.current.x;
+          contentEl.scrollTop = pendingScrollRef.current.y;
         }
 
-        // Restore visibility after scroll is applied but BEFORE selection restore.
-        // Selection must be set on visible content — browsers may not render the
-        // selection highlight if it was set while the element had visibility:hidden.
-        if (contentEl) {
+        // Restore visibility before applying selection — browsers may not render
+        // the selection highlight if set while visibility:hidden.
+        if (didHide && contentEl) {
           contentEl.style.visibility = "";
         }
 
-        if (bag.selection != null) {
-          selectionGuard.restoreSelection(cardId, bag.selection);
+        // Apply selection after scroll and unhide.
+        if (pendingSelectionRef.current != null) {
+          selectionGuard.restoreSelection(cardId, pendingSelectionRef.current);
         }
-      });
-    });
 
-    // Cleanup: cancel pending RAFs and restore visibility to prevent permanent hiding.
-    return () => {
-      if (outerRaf !== null) cancelAnimationFrame(outerRaf);
-      if (innerRaf !== null) cancelAnimationFrame(innerRaf);
-      if (contentEl) {
-        contentEl.style.visibility = "";
+        // Clear pending refs after applying.
+        pendingScrollRef.current = null;
+        pendingSelectionRef.current = null;
+      };
+
+      // Set the flag so the child's no-deps useLayoutEffect fires the callback.
+      // Must be set AFTER writing onContentReady (both are read in one effect).
+      persistenceCallbacksRef.current!.restorePendingRef!.current = true;
+
+      // Trigger the child's setState (causes re-render → child useLayoutEffect fires).
+      persistenceCallbacksRef.current!.onRestore(bag.content!);
+
+      // Cleanup: cancel pending callback on rapid tab switch. ([D05])
+      return () => {
+        if (persistenceCallbacksRef.current?.restorePendingRef) {
+          persistenceCallbacksRef.current.restorePendingRef.current = false;
+        }
+        pendingScrollRef.current = null;
+        pendingSelectionRef.current = null;
+        if (didHide && contentEl) {
+          contentEl.style.visibility = "";
+        }
+      };
+    } else {
+      // --- DIRECT-APPLY FALLBACK ---
+      // No persistence registered, or bag.content is undefined (no child setState).
+      // The DOM is already stable — apply scroll and selection directly.
+      // No visibility hiding needed. ([D04], Spec S03 direct-apply fallback)
+      if (contentEl && bag.scroll !== undefined) {
+        contentEl.scrollLeft = bag.scroll.x;
+        contentEl.scrollTop = bag.scroll.y;
       }
-    };
+      if (bag.selection != null) {
+        selectionGuard.restoreSelection(cardId, bag.selection);
+      }
+      // No cleanup needed: nothing was hidden, no pending state set.
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, cardId]);
 

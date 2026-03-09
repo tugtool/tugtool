@@ -26,6 +26,7 @@ import { registerCard, _resetForTest } from "@/card-registry";
 import type { TabItem } from "@/layout-tree";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager, makeMockStore } from "./mock-deck-manager-store";
+import { useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1123,14 +1124,12 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     const onRestore = mock((_state: unknown) => {});
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
-    const { TugcardPersistenceContext } = require("@/components/tugways/use-tugcard-persistence") as typeof import("@/components/tugways/use-tugcard-persistence");
 
-    // A child component that registers persistence callbacks via context.
+    // A child component that registers persistence callbacks via useTugcardPersistence.
+    // Using the hook (rather than raw context) ensures restorePendingRef is included in
+    // the registered callbacks object, which is required for the persist path. ([D03])
     function PersistentChild() {
-      const register = React.useContext(TugcardPersistenceContext);
-      React.useLayoutEffect(() => {
-        register?.({ onSave: () => ({}), onRestore });
-      }, [register]);
+      useTugcardPersistence({ onSave: () => ({}), onRestore });
       return <div>persistent child</div>;
     }
 
@@ -1160,16 +1159,13 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       ({ rerender } = render(<TestCard currentTab={tab1.id} />));
     });
 
-    // Flush useLayoutEffect (PersistentChild registers its callbacks).
-    act(() => {});
-
     act(() => {
       rerender(<TestCard currentTab={tab2.id} />);
     });
 
-    // Phase 5f3: onRestore now fires synchronously in the useLayoutEffect body,
-    // BEFORE the RAF callback. No need to flush a macrotask — it runs within act().
-    // onRestore should have been called with the saved content state.
+    // Phase 5f4: onRestore fires synchronously in the useLayoutEffect persist path.
+    // useTugcardPersistence provides restorePendingRef, enabling the persist path.
+    // onRestore is called with the saved content state within act().
     expect(onRestore).toHaveBeenCalledWith(savedContent);
   });
 });
@@ -1191,7 +1187,12 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
    * when RAF callbacks are blocked. If it were inside the RAF callback (old behavior),
    * it would never be called with RAF blocked.
    */
-  it("T01: onRestore is called synchronously before RAF when tab with saved content is activated", () => {
+  it("T01: onRestore is called synchronously in useLayoutEffect when tab with saved content is activated", () => {
+    // Phase 5f4: The persist path calls onRestore synchronously in the useLayoutEffect
+    // body (not deferred). There is no RAF involved in the new flow. The child's
+    // no-deps useLayoutEffect fires onContentReady after the child's DOM commits.
+    // This test verifies that onRestore fires synchronously within act() without
+    // needing RAF — the double-RAF timing bet has been eliminated. ([D78], [D79])
     registerCard({
       componentId: "hello",
       factory: () => { throw new Error("factory stub"); },
@@ -1203,19 +1204,16 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
 
     const savedContent = { text: "T01 content" };
     const store = makeMockStore();
-    // Tab 2 has both content and scroll saved, so RAF will be scheduled.
     store.setTabState(tab2.id, { content: savedContent, scroll: { x: 0, y: 50 } });
 
     const onRestore = mock((_state: unknown) => {});
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
-    const { TugcardPersistenceContext } = require("@/components/tugways/use-tugcard-persistence") as typeof import("@/components/tugways/use-tugcard-persistence");
 
+    // Use useTugcardPersistence so restorePendingRef is included in the registered
+    // callbacks — required for the persist path. ([D03])
     function PersistentChild() {
-      const register = React.useContext(TugcardPersistenceContext);
-      React.useLayoutEffect(() => {
-        register?.({ onSave: () => ({}), onRestore });
-      }, [register]);
+      useTugcardPersistence({ onSave: () => ({}), onRestore });
       return <div>T01 child</div>;
     }
 
@@ -1245,34 +1243,17 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
       ({ rerender } = render(<TestCard currentTab={tab1.id} />));
     });
 
-    // Flush useLayoutEffect (PersistentChild registers its callbacks).
-    act(() => {});
-
     // Verify onRestore has NOT been called yet (no saved content for tab1).
     expect(onRestore).toHaveBeenCalledTimes(0);
 
-    // Block RAF execution by replacing requestAnimationFrame with a no-op.
-    // Any code that runs inside a RAF callback will NOT execute.
-    // onRestore must fire in the useLayoutEffect body (synchronous) to be
-    // observed here.
-    const origRaf = (global as any).requestAnimationFrame;
-    (global as any).requestAnimationFrame = (_cb: FrameRequestCallback): number => 0;
-    (global as any).cancelAnimationFrame = (_id: number): void => {};
+    act(() => {
+      rerender(<TestCard currentTab={tab2.id} />);
+    });
 
-    try {
-      act(() => {
-        rerender(<TestCard currentTab={tab2.id} />);
-      });
-
-      // onRestore MUST have been called despite RAF being blocked.
-      // This proves onRestore fires synchronously in the useLayoutEffect body,
-      // not deferred inside the RAF callback.
-      expect(onRestore).toHaveBeenCalledTimes(1);
-      expect(onRestore).toHaveBeenCalledWith(savedContent);
-    } finally {
-      // Restore original RAF so other tests are not affected.
-      (global as any).requestAnimationFrame = origRaf;
-    }
+    // onRestore MUST have been called synchronously within act(), with no RAF needed.
+    // Phase 5f4: the persist path calls onRestore directly in the useLayoutEffect body.
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    expect(onRestore).toHaveBeenCalledWith(savedContent);
   });
 
   /**
@@ -1283,28 +1264,26 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
    * from other RAF callers in child components.
    */
   it("T02: content-only restore does not apply visibility:hidden and onRestore fires synchronously", () => {
-    // Use a single-tab Tugcard (no TugTabBar) to isolate the activation effect.
-    // activeTabId is set directly as a prop (no tab bar, no TugTabBar RAF).
+    // Phase 5f4: Content-only restore (no scroll, no selection) uses the persist path
+    // but skips visibility:hidden (no wrong-scroll-position flash to suppress).
+    // onRestore fires synchronously in the useLayoutEffect body. No RAF involved.
+    // ([D04], Spec S03 persist path, [D79])
     const savedContent = { text: "content only" };
     const store = makeMockStore();
     const activeTabId = "tab-t02-only";
-    // Pre-load the tab state with content only (no scroll, no selection).
     store.setTabState(activeTabId, { content: savedContent });
 
     const onRestore = mock((_state: unknown) => {});
 
     const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
-    const { TugcardPersistenceContext } = require("@/components/tugways/use-tugcard-persistence") as typeof import("@/components/tugways/use-tugcard-persistence");
 
+    // Use useTugcardPersistence so restorePendingRef is included in the registered
+    // callbacks — required for the persist path. ([D03])
     function PersistentChild() {
-      const register = React.useContext(TugcardPersistenceContext);
-      React.useLayoutEffect(() => {
-        register?.({ onSave: () => ({}), onRestore });
-      }, [register]);
+      useTugcardPersistence({ onSave: () => ({}), onRestore });
       return <div>T02 child</div>;
     }
 
-    // Render with a different activeTabId first (no stored state), then switch.
     const prevTabId = "tab-t02-prev";
     let container!: HTMLElement;
     let rerender!: ReturnType<typeof render>["rerender"];
@@ -1329,38 +1308,19 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
       ({ container, rerender } = render(<TestCard currentTab={prevTabId} />));
     });
 
-    // Flush useLayoutEffect (PersistentChild registers its callbacks).
-    act(() => {});
-
-    // Capture the content element before activation.
     const contentEl = container.querySelector("[data-testid='tugcard-content']") as HTMLElement;
     expect(contentEl).not.toBeNull();
 
-    // Block RAF so we can verify it's not called during the content-only activation.
-    const origRaf = (global as any).requestAnimationFrame;
-    let rafScheduledByActivation = 0;
-    (global as any).requestAnimationFrame = (cb: FrameRequestCallback): number => {
-      rafScheduledByActivation++;
-      return origRaf(cb);
-    };
+    act(() => {
+      rerender(<TestCard currentTab={activeTabId} />);
+    });
 
-    try {
-      act(() => {
-        rerender(<TestCard currentTab={activeTabId} />);
-      });
+    // onRestore must have been called synchronously in the useLayoutEffect body.
+    expect(onRestore).toHaveBeenCalledWith(savedContent);
 
-      // onRestore must have been called synchronously (content-only).
-      expect(onRestore).toHaveBeenCalledWith(savedContent);
-
-      // No RAF should have been scheduled for a content-only restore (no TugTabBar,
-      // no scroll, no selection — only the activation effect runs).
-      expect(rafScheduledByActivation).toBe(0);
-
-      // No visibility:hidden should have been applied.
-      expect(contentEl.style.visibility).not.toBe("hidden");
-    } finally {
-      (global as any).requestAnimationFrame = origRaf;
-    }
+    // No visibility:hidden should have been applied for content-only restore.
+    // bag.scroll is undefined → the persist path skips hiding. ([D04])
+    expect(contentEl.style.visibility).not.toBe("hidden");
   });
 });
 
