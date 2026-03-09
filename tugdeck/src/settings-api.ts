@@ -247,7 +247,7 @@ export function putTabState(tabId: string, bag: TabStateBag, options?: { keepali
 
   if (options?.sync) {
     // Synchronous XHR: blocks until tugbank confirms the write. Used by
-    // saveAndFlush (app quit path) so the native side can safely kill tugcast
+    // saveAndFlushSync (app quit path) so the native side can safely kill tugcast
     // after evaluateJavaScript completes. fetch is always async and would
     // race with process shutdown.
     try {

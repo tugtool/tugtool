@@ -23,6 +23,7 @@ import type { CardRegistration } from "../card-registry";
 function makeRegistration(componentId: string): CardRegistration {
   return {
     componentId,
+    contentFactory: () => null,
     defaultMeta: { title: `${componentId} card`, closable: true },
   };
 }

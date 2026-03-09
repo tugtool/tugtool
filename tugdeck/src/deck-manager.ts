@@ -277,7 +277,7 @@ export class DeckManager implements IDeckManagerStore {
     );
 
     // Listen for window resize (kept for future phases)
-    window.addEventListener("resize", () => this.handleResize());
+    window.addEventListener("resize", this.handleResize);
 
     // Phase 5f3: listen for page-hide events to flush all registered card states
     // before the browser discards the page. visibilitychange covers the common
@@ -527,14 +527,15 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
-   * Save all card states and flush to tugbank immediately.
+   * Save all card states and flush to tugbank synchronously.
    *
    * Called by the native app (Swift) via `window.__tugdeckSaveState()` before
    * terminating the WebView. WKWebView does not fire visibilitychange or
    * beforeunload on app quit, so this is the only way to persist state on exit.
-   * Uses keepalive:true so the fetch completes during page teardown.
+   * Uses synchronous XHR so the native side can safely tear down after
+   * evaluateJavaScript completes.
    */
-  saveAndFlush(): void {
+  saveAndFlushSync(): void {
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates({ sync: true });
   }
@@ -546,7 +547,7 @@ export class DeckManager implements IDeckManagerStore {
    * still running. Uses normal async fetch — no need for sync XHR since
    * nothing is being torn down.
    */
-  saveCallbacksAndFlush(): void {
+  saveAndFlush(): void {
     this.saveCallbacks.forEach((cb) => cb());
     this.flushDirtyTabStates();
   }
@@ -884,10 +885,11 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * Called on reconnect (connection.onOpen) and window resize.
+   * Arrow property for stable identity so add/removeEventListener match.
    */
-  handleResize(): void {
+  handleResize = (): void => {
     // Kept for connection.onOpen() compatibility.
-  }
+  };
 
   // ---- Layout Persistence ----
 
@@ -1022,7 +1024,7 @@ export class DeckManager implements IDeckManagerStore {
       this.reactRoot.unmount();
       this.reactRoot = null;
     }
-    window.removeEventListener("resize", () => this.handleResize());
+    window.removeEventListener("resize", this.handleResize);
 
     // Phase 5f3: remove close-time event listeners.
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);

@@ -300,10 +300,7 @@ export function Tugcard({
   const saveCurrentTabStateRef = useRef<(() => void) | null>(null);
   saveCurrentTabStateRef.current = () => {
     const tabId = activeTabIdRef.current;
-    if (!tabId) {
-      console.log(`[SAVE-DEBUG] cardId=${cardId} — NO tabId, skipping save`);
-      return;
-    }
+    if (!tabId) return;
 
     const contentEl = contentRef.current;
     const scroll = contentEl
@@ -320,7 +317,6 @@ export function Tugcard({
       ...(content !== undefined ? { content } : {}),
     };
 
-    console.log(`[SAVE-DEBUG] cardId=${cardId} tabId=${tabId} selection=${selection != null} scroll=${scroll != null} content=${content != null}`, bag);
     store.setTabState(tabId, bag);
   };
 
@@ -436,18 +432,11 @@ export function Tugcard({
   // Cleanup resets pending refs, clears the restorePendingRef flag (cancels a stale
   // pending callback on rapid tab switch), and restores visibility if hidden. ([D05])
   useLayoutEffect(() => {
-    if (!activeTabId) {
-      console.log(`[RESTORE-DEBUG] cardId=${cardId} — NO activeTabId, skipping`);
-      return;
-    }
+    if (!activeTabId) return;
     const bag = store.getTabState(activeTabId);
-    console.log(`[RESTORE-DEBUG] cardId=${cardId} activeTabId=${activeTabId} bag=`, bag);
 
     // Early return if no bag or nothing to restore.
-    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) {
-      console.log(`[RESTORE-DEBUG] cardId=${cardId} — bag empty or missing, skipping`);
-      return;
-    }
+    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
     const contentEl = contentRef.current;
 
@@ -529,7 +518,6 @@ export function Tugcard({
         contentEl.scrollTop = bag.scroll.y;
       }
       if (bag.selection != null) {
-        console.log(`[RESTORE-DEBUG] cardId=${cardId} — calling restoreSelection`, bag.selection);
         selectionGuard.restoreSelection(cardId, bag.selection);
       }
       // No cleanup needed: nothing was hidden, no pending state set.

@@ -595,6 +595,16 @@ class SelectionGuard {
     if (range) {
       this.inactiveHighlight.delete(range);
       this.activeHighlight.add(range);
+
+      // Restore the browser Selection to match the reactivated range so
+      // copy/paste works immediately after the app regains focus.
+      if (!range.collapsed) {
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range.cloneRange());
+        }
+      }
     }
     this.activeHighlightCardId = this.deactivatedCardId;
     this.deactivatedCardId = null;
@@ -680,22 +690,14 @@ class SelectionGuard {
    */
   restoreSelection(cardId: string, saved: SavedSelection): void {
     const boundary = this.boundaries.get(cardId);
-    if (!boundary) {
-      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — no boundary registered`);
-      return;
-    }
+    if (!boundary) return;
 
     const anchorNode = pathToNode(boundary, saved.anchorPath);
     const focusNode = pathToNode(boundary, saved.focusPath);
-    if (!anchorNode || !focusNode) {
-      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — pathToNode failed: anchor=${!!anchorNode} focus=${!!focusNode} anchorPath=${JSON.stringify(saved.anchorPath)} focusPath=${JSON.stringify(saved.focusPath)}`);
-      return;
-    }
+    if (!anchorNode || !focusNode) return;
 
     const selection = window.getSelection();
     if (!selection) return;
-
-    console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — calling setBaseAndExtent, highlights exist: active=${!!this.activeHighlight} inactive=${!!this.inactiveHighlight}`);
 
     try {
       selection.setBaseAndExtent(
@@ -709,9 +711,7 @@ class SelectionGuard {
       // without this call the highlight wouldn't update until the next event
       // loop tick — causing the selection to be invisible during the gap.
       this.syncActiveHighlight();
-      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — syncActiveHighlight done, activeHighlightCardId=${this.activeHighlightCardId}, cardRanges has ${this.cardRanges.size} entries`);
-    } catch (e) {
-      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — threw:`, e);
+    } catch {
       // setBaseAndExtent can throw if offsets are out of range (e.g. content
       // changed). Fail silently — best-effort restoration.
     }

@@ -558,6 +558,22 @@ Scenarios proven: basic ref-flag (S1), DOM committed at callback time (S2), one-
 
 **Note**: Phase 5f4 depends on Phase 5f3 (the content-first restore ordering and save-on-close infrastructure must exist). It replaces the RAF timing mechanism but preserves all other Phase 5f3 behavior (visibility flash suppression, cleanup on rapid tab switch, save callbacks). The `onContentReady` pattern is forward-compatible with Monaco editor and terminal buffer persistence (Phase 9) — any card content that calls `setState` in its `onRestore` callback automatically gets the deterministic ready signal.
 
+**Post-5f4 solidification** (state preservation across app lifecycle):
+
+After Phase 5f4 shipped, state preservation was extended to cover the full macOS app lifecycle and several architectural improvements were made:
+
+1. **Unified card rendering**: DeckCanvas now always constructs Tugcard directly with all props. The old two-path system (factory + `cloneElement` for single-tab, direct Tugcard construction for multi-tab) was replaced with a single `contentFactory` field on `CardRegistration`. The `factory` field, `CardFrameInjectedProps` export, and all `cloneElement` injection were removed.
+
+2. **Native app lifecycle integration**: Swift's `AppDelegate` uses `applicationShouldTerminate` (not `applicationWillTerminate`) with `terminateLater` to call `window.__tugdeckSaveState()` before quit. This invokes `DeckManager.saveAndFlushSync()`, which uses synchronous XHR to guarantee writes complete before teardown. App deactivation (`applicationDidResignActive`) saves state asynchronously via `saveAndFlush()` and dims all selections via `SelectionGuard.deactivateApp()`. App activation (`applicationDidBecomeActive`) restores the active card's highlight and browser Selection via `SelectionGuard.activateApp()`.
+
+3. **Eager CSS Highlight creation**: SelectionGuard creates CSS Custom Highlight objects in its constructor (module scope, before React mounts) rather than in `attach()`. This ensures highlights exist before any Tugcard restore effects fire. `attach()` only installs event listeners; `detach()` unregisters from `CSS.highlights` but does not null the objects.
+
+4. **Auto-save**: Each Tugcard installs debounced scroll and selectionchange listeners that funnel into a `markDirty` callback (1-second debounce). Card content can also trigger saves via `useTugcardDirty()` hook (`TugcardDirtyContext`). This ensures state is persisted continuously during normal use, not just on tab switch or app close.
+
+5. **Close button highlight bypass**: Elements marked with `data-no-activate` are skipped by SelectionGuard's native pointerdown handler. The close button uses this plus `stopPropagation` (prevents bring-to-front) and `preventDefault` (prevents focus shift) on pointerdown, with pointer capture for Mac-like pointer-up-inside tracking.
+
+6. **Method naming**: `saveAndFlushSync()` for the synchronous app-quit path, `saveAndFlush()` for the asynchronous deactivation path.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Status: COMPLETE** (2026-03-04)

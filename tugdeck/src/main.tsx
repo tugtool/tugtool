@@ -114,19 +114,17 @@ if (!container) {
   // a synchronous save of all card states before terminating the WebView.
   // WKWebView does not fire visibilitychange or beforeunload on app quit,
   // so the native side calls this via evaluateJavaScript in
-  // applicationShouldTerminate. The function calls all registered save
-  // callbacks (capturing scroll, selection, card content for every card)
-  // and flushes dirty tab states to tugbank with keepalive:true so the
-  // fetch completes even during page teardown.
+  // applicationShouldTerminate. Uses synchronous XHR so the native side can
+  // safely tear down after evaluateJavaScript completes.
   (window as unknown as Record<string, unknown>).__tugdeckSaveState = () => {
-    deck.saveAndFlush();
+    deck.saveAndFlushSync();
   };
 
   // App deactivation: save all card states to tugbank and dim all selections.
   // Called by Swift via applicationDidResignActive. Uses normal async fetch
   // (not sync) because the app and tugcast are still running.
   (window as unknown as Record<string, unknown>).__tugdeckAppDeactivated = () => {
-    deck.saveCallbacksAndFlush();
+    deck.saveAndFlush();
     selectionGuard.deactivateApp();
   };
 
