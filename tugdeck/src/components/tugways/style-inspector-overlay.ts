@@ -34,7 +34,7 @@ import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
 
 /**
  * Regex that matches palette variable names for the 24 known hue families,
- * with optional preset suffix (accent, muted, light, subtle, dark, deep).
+ * with optional preset suffix (intense, muted, light, dark).
  *
  * Deliberately anchored to the full token name (^...$) to avoid false-matching
  * global constants like `--tug-l-dark` or per-hue internals like
@@ -43,7 +43,7 @@ import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
  * Spec S02 (#s02-token-chain-algorithm)
  */
 export const PALETTE_VAR_REGEX =
-  /^--tug-(cherry|red|tomato|flame|orange|amber|gold|yellow|lime|green|mint|teal|cyan|sky|blue|cobalt|violet|purple|plum|pink|rose|magenta|berry|coral)(-(accent|muted|light|subtle|dark|deep))?$/;
+  /^--tug-(cherry|red|tomato|flame|orange|amber|gold|yellow|lime|green|mint|teal|cyan|sky|blue|cobalt|violet|purple|plum|pink|rose|magenta|berry|coral)(-(intense|muted|light|dark))?$/;
 
 // ---------------------------------------------------------------------------
 // Token chain types

@@ -64,13 +64,17 @@ describe("PALETTE_VAR_REGEX", () => {
   });
 
   it("matches hue names with valid preset suffixes", () => {
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-accent")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tug-orange-intense")).toBe(true);
     expect(PALETTE_VAR_REGEX.test("--tug-orange-muted")).toBe(true);
     expect(PALETTE_VAR_REGEX.test("--tug-orange-light")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-subtle")).toBe(true);
     expect(PALETTE_VAR_REGEX.test("--tug-orange-dark")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-orange-deep")).toBe(true);
-    expect(PALETTE_VAR_REGEX.test("--tug-cobalt-accent")).toBe(true);
+    expect(PALETTE_VAR_REGEX.test("--tug-cobalt-intense")).toBe(true);
+  });
+
+  it("does NOT match removed preset suffixes (accent, subtle, deep)", () => {
+    expect(PALETTE_VAR_REGEX.test("--tug-orange-accent")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tug-orange-subtle")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tug-orange-deep")).toBe(false);
   });
 
   it("does NOT match global constants", () => {
@@ -385,7 +389,7 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
     document.body.style.removeProperty("--tug-base-tab-bar-bg");
     document.body.style.removeProperty("--tug-orange");
     document.body.style.removeProperty("--tug-base-accent-cool-default");
-    document.body.style.removeProperty("--tug-cobalt-accent");
+    document.body.style.removeProperty("--tug-cobalt-intense");
     document.body.style.removeProperty("--tug-test-token");
 
     if (overlay.highlightEl.parentNode) {
@@ -403,29 +407,29 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
   });
 
   it("walks a two-hop chain from base to palette variable", () => {
-    // Set up: --tug-base-accent-cool-default -> var(--tug-cobalt-accent)
-    //         --tug-cobalt-accent (palette var -- chain terminates here)
-    document.body.style.setProperty("--tug-base-accent-cool-default", " var(--tug-cobalt-accent)");
-    document.body.style.setProperty("--tug-cobalt-accent", " oklch(0.5 0.2 240)");
+    // Set up: --tug-base-accent-cool-default -> var(--tug-cobalt-intense)
+    //         --tug-cobalt-intense (palette var -- chain terminates here)
+    document.body.style.setProperty("--tug-base-accent-cool-default", " var(--tug-cobalt-intense)");
+    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
 
     const chain = overlay.resolveTokenChain("--tug-base-accent-cool-default");
     expect(chain.length).toBeGreaterThanOrEqual(1);
     // First hop: base token
     expect(chain[0].property).toBe("--tug-base-accent-cool-default");
 
-    // Second hop should be cobalt-accent (palette var, stops there)
+    // Second hop should be cobalt-intense (palette var, stops there)
     if (chain.length >= 2) {
-      expect(chain[1].property).toBe("--tug-cobalt-accent");
+      expect(chain[1].property).toBe("--tug-cobalt-intense");
     }
   });
 
   it("terminates at PALETTE_VAR_REGEX match and does not walk into oklch expression", () => {
-    document.body.style.setProperty("--tug-orange-accent", " oklch(0.7 0.2 55)");
+    document.body.style.setProperty("--tug-orange-intense", " oklch(0.7 0.2 55)");
 
-    const chain = overlay.resolveTokenChain("--tug-orange-accent");
-    // Should stop at --tug-orange-accent itself (palette var)
+    const chain = overlay.resolveTokenChain("--tug-orange-intense");
+    // Should stop at --tug-orange-intense itself (palette var)
     expect(chain.length).toBe(1);
-    expect(chain[0].property).toBe("--tug-orange-accent");
+    expect(chain[0].property).toBe("--tug-orange-intense");
   });
 
   it("terminates when value starts with oklch(", () => {
@@ -538,15 +542,15 @@ describe("StyleInspectorOverlay -- extractHvvProvenance", () => {
     expect(result!.preset).toBe("canonical");
   });
 
-  it("extractHvvProvenance('--tug-cobalt-accent') returns { hue: 'cobalt', preset: 'accent' }", () => {
+  it("extractHvvProvenance('--tug-cobalt-intense') returns { hue: 'cobalt', preset: 'intense' }", () => {
     document.body.style.setProperty("--tug-cobalt-canonical-l", " 0.680");
     document.body.style.setProperty("--tug-cobalt-peak-c", " 0.220");
     document.body.style.setProperty("--tug-cobalt-h", " 240");
 
-    const result = overlay.extractHvvProvenance("--tug-cobalt-accent");
+    const result = overlay.extractHvvProvenance("--tug-cobalt-intense");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("cobalt");
-    expect(result!.preset).toBe("accent");
+    expect(result!.preset).toBe("intense");
     expect(result!.canonicalL.trim()).toBe("0.680");
     expect(result!.peakC.trim()).toBe("0.220");
     expect(result!.hueAngle.trim()).toBe("240");
@@ -581,7 +585,7 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   afterEach(() => {
     document.body.style.removeProperty("--tug-comp-tab-bar-bg");
     document.body.style.removeProperty("--tug-base-tab-bar-bg");
-    document.body.style.removeProperty("--tug-cobalt-accent");
+    document.body.style.removeProperty("--tug-cobalt-intense");
 
     overlay.highlightEl.parentNode?.removeChild(overlay.highlightEl);
     overlay.panelEl.parentNode?.removeChild(overlay.panelEl);
@@ -607,10 +611,10 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   });
 
   it("walks two-layer chromatic chain: base -> palette var (stops at palette)", () => {
-    // Simulate: --tug-base-accent-cool-default -> var(--tug-cobalt-accent)
-    // --tug-cobalt-accent is a palette var, so chain stops there
-    document.body.style.setProperty("--tug-base-accent-cool-default", " var(--tug-cobalt-accent)");
-    document.body.style.setProperty("--tug-cobalt-accent", " oklch(0.5 0.2 240)");
+    // Simulate: --tug-base-accent-cool-default -> var(--tug-cobalt-intense)
+    // --tug-cobalt-intense is a palette var, so chain stops there
+    document.body.style.setProperty("--tug-base-accent-cool-default", " var(--tug-cobalt-intense)");
+    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
 
     const chain = overlay.resolveTokenChain("--tug-base-accent-cool-default");
 
@@ -619,9 +623,9 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
 
     // If two hops: second hop is the palette var
     if (chain.length >= 2) {
-      expect(chain[1].property).toBe("--tug-cobalt-accent");
+      expect(chain[1].property).toBe("--tug-cobalt-intense");
       // Chain stops at palette var — PALETTE_VAR_REGEX must match
-      expect(PALETTE_VAR_REGEX.test("--tug-cobalt-accent")).toBe(true);
+      expect(PALETTE_VAR_REGEX.test("--tug-cobalt-intense")).toBe(true);
     }
   });
 });
@@ -704,21 +708,21 @@ describe("StyleInspectorOverlay -- resolveTokenChainForProperty integration", ()
 
   it("endsAtPalette is true when chain terminates at a palette variable", () => {
     // Set up a base token that points to a palette variable
-    document.body.style.setProperty("--tug-base-surface-default", " var(--tug-cobalt-accent)");
-    document.body.style.setProperty("--tug-cobalt-accent", " oklch(0.5 0.2 240)");
+    document.body.style.setProperty("--tug-base-surface-default", " var(--tug-cobalt-intense)");
+    document.body.style.setProperty("--tug-cobalt-intense", " oklch(0.5 0.2 240)");
 
     // Create an element that in theory uses this token (we check resolution directly)
     const chain = overlay.resolveTokenChain("--tug-base-surface-default");
 
-    // If two hops, last one should be cobalt-accent (palette var)
+    // If two hops, last one should be cobalt-intense (palette var)
     if (chain.length >= 2) {
       const last = chain[chain.length - 1];
       expect(PALETTE_VAR_REGEX.test(last.property)).toBe(true);
-      expect(last.property).toBe("--tug-cobalt-accent");
+      expect(last.property).toBe("--tug-cobalt-intense");
     }
 
     document.body.style.removeProperty("--tug-base-surface-default");
-    document.body.style.removeProperty("--tug-cobalt-accent");
+    document.body.style.removeProperty("--tug-cobalt-intense");
   });
 });
 

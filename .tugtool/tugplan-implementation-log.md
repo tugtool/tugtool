@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-09T21:52:17Z
+---
+
+## step-4: Updated PALETTE_VAR_REGEX in style-inspector-overlay.ts and all affected test assertions in style-inspector-overlay.test.ts. Theme files confirmed clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-3
 date: 2025-03-09T21:44:20Z
 ---
