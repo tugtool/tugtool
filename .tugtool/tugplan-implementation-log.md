@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-09T21:44:20Z
+---
+
+## step-3: Updated tug-tokens.css: replaced all 9 var(--tug-{hue}-accent) palette preset references with var(--tug-{hue}-intense), semantic token names unchanged
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-2
 date: 2025-03-09T21:40:27Z
 ---

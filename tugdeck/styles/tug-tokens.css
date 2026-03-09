@@ -266,20 +266,20 @@ body {
 
   /* Core accent tokens — Brio defaults */
   --tug-base-accent-default: var(--tug-orange);
-  --tug-base-accent-strong: var(--tug-orange-accent);
+  --tug-base-accent-strong: var(--tug-orange-intense);
   --tug-base-accent-muted: var(--tug-orange-muted);
   --tug-base-accent-subtle: color-mix(in oklch, var(--tug-orange) 15%, transparent);
-  --tug-base-accent-cool-default: var(--tug-cobalt-accent);
-  --tug-base-accent-positive: var(--tug-green-accent);
-  --tug-base-accent-warning: var(--tug-yellow-accent);
-  --tug-base-accent-danger: var(--tug-red-accent);
-  --tug-base-accent-info: var(--tug-cyan-accent);
+  --tug-base-accent-cool-default: var(--tug-cobalt-intense);
+  --tug-base-accent-positive: var(--tug-green-intense);
+  --tug-base-accent-warning: var(--tug-yellow-intense);
+  --tug-base-accent-danger: var(--tug-red-intense);
+  --tug-base-accent-info: var(--tug-cyan-intense);
 
   /* Accent-derived interaction tokens */
   --tug-base-accent-bg-subtle: color-mix(in oklch, var(--tug-orange) 12%, transparent);
   --tug-base-accent-bg-emphasis: color-mix(in oklch, var(--tug-orange) 24%, transparent);
   --tug-base-accent-border: var(--tug-orange);
-  --tug-base-accent-border-hover: var(--tug-orange-accent);
+  --tug-base-accent-border-hover: var(--tug-orange-intense);
   --tug-base-accent-underline-active: var(--tug-orange);
   --tug-base-accent-guide: color-mix(in oklch, var(--tug-orange) 50%, transparent);
   --tug-base-accent-flash: color-mix(in oklch, var(--tug-orange) 40%, transparent);
@@ -399,7 +399,7 @@ body {
 
   /* --- Generic Action Tokens --- */
   --tug-base-action-primary-bg-rest: var(--tug-orange);
-  --tug-base-action-primary-bg-hover: var(--tug-orange-accent);
+  --tug-base-action-primary-bg-hover: var(--tug-orange-intense);
   --tug-base-action-primary-bg-active: var(--tug-orange-dark);
   --tug-base-action-primary-fg: #f2f7fb;
   --tug-base-action-primary-border: transparent;
@@ -411,7 +411,7 @@ body {
   --tug-base-action-ghost-bg-hover: rgba(255, 255, 255, 0.07);
   --tug-base-action-ghost-fg: #bcc3cb;
   --tug-base-action-destructive-bg-rest: var(--tug-red);
-  --tug-base-action-destructive-bg-hover: var(--tug-red-accent);
+  --tug-base-action-destructive-bg-hover: var(--tug-red-intense);
   --tug-base-action-destructive-bg-active: var(--tug-red-dark);
   --tug-base-action-destructive-fg: #f2f7fb;
   --tug-base-action-destructive-border: transparent;
