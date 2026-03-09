@@ -2,18 +2,52 @@
 
 ## Core Principle
 
-The palette system has two layers: **presets** (named vib/val pairs defined in CSS,
-covering common UI needs) and **`hvvColor()`** (JS function for arbitrary combinations).
-The calc()+clamp() piecewise formula is the shared math, written once in `tug-palette.css`
-and once in `palette-engine.ts`. Components never see the formula — they consume
-`var(--tug-red-muted)` or call `hvvColor('red', 30, 70)`.
+The palette engine is a **continuous color space** — 24 hues × 100 vibrancy levels × 100
+value levels = 240,000 addressable colors. The system provides three ways to access it:
+
+1. **Per-hue constants** (72 CSS custom properties): the foundation. Each hue's angle,
+   canonical lightness, and peak chroma. Plus 2 global lightness anchors.
+2. **Five convenience presets per hue** (120 CSS variables): canonical, light, dark,
+   intense, muted. Fixed vib/val values, same across all themes.
+3. **Inline HVV formula**: any element can specify arbitrary vib/val using the
+   `calc()`+`clamp()` piecewise formula with per-hue constants.
+4. **`hvvColor()` JS function**: programmatic access for inline styles, color pickers,
+   data visualization.
+
+Components never see the formula — they consume semantic tokens (`--tug-base-accent-default`)
+which resolve to palette colors. The semantic token layer is where theme-specific chromatic
+choices live.
 
 ---
 
-## 1. Rename `accent` → `intense`
+## 1. Five convenience presets (not ten)
+
+The old system had 7 presets with confusing coefficient knobs. The proposed 10-preset system
+was rejected — ten arbitrary names on a perceptual scale are hard to remember and still only
+cover 240 of the 240,000 addressable colors.
+
+Instead, five instantly obvious presets per hue:
+
+| Name      | Vib | Val | Character                         |
+|-----------|-----|-----|-----------------------------------|
+| canonical | 50  | 50  | The crayon color — reference point |
+| light     | 20  | 85  | Background-safe, airy             |
+| dark      | 50  | 20  | Contrast text, dark surfaces      |
+| intense   | 90  | 50  | Pops, draws attention             |
+| muted     | 20  | 50  | Subdued, secondary                |
+
+These are **fixed across all themes** — `--tug-red-intense` always means the same color.
+They're convenience shortcuts, not the system's backbone.
+
+Total: 120 convenience vars (24 hues × 5) + 72 per-hue constants + 2 globals + neutrals
++ black/white ≈ ~200 palette CSS vars.
+
+---
+
+## 2. Rename `accent` → `intense`
 
 The canonical color is the accent color in most UI contexts. `intense` sits on a clear
-perceptual impact scale alongside the other presets.
+scale alongside the other four presets.
 
 All references to `-accent` **palette preset** names in tug-palette.css, tug-tokens.css,
 theme files, and palette-engine.ts get renamed to `-intense`. Semantic tokens that use
@@ -21,67 +55,29 @@ theme files, and palette-engine.ts get renamed to `-intense`. Semantic tokens th
 `--tug-base-fg-onAccent`) keep `accent` — the UI role and the palette preset are distinct
 concepts.
 
-### `dark` rename collision
+### Preset renames
 
-The current system has a `dark` preset (vib=50, val=25). The new system reclaims `dark` for
-a new preset (vib=70, val=5) and renames the old `dark` to `shadow`. To avoid a naming
-collision during implementation, the current `dark` is first renamed to a temporary name
-(`old-dark`) across all files, then all remaining renames proceed, and finally the new `dark`
-preset is introduced.
+| Old name | New name  | Notes |
+|----------|-----------|-------|
+| accent   | intense   | palette preset only; semantic `accent` role unchanged |
+| subtle   | *(removed)* | no longer a preset |
+| light    | light     | kept, new vib/val |
+| dark     | dark      | kept, new vib/val (was vib=50/val=25, now vib=50/val=20) |
+| deep     | *(removed)* | no longer a preset |
 
----
-
-## 2. Preset definitions as (vib, val) pairs
-
-Each preset is defined as two CSS custom properties — vibrancy and value — with plain,
-readable numbers. The confusing coefficient knobs (`--tug-preset-accent-l: 0.55`, etc.)
-are eliminated entirely.
-
-```css
-body {
-  /* Preset definitions */
-  --tug-preset-whisper-vib: 8;     --tug-preset-whisper-val: 95;
-  --tug-preset-hint-vib: 15;      --tug-preset-hint-val: 92;
-  --tug-preset-wash-vib: 30;      --tug-preset-wash-val: 82;
-  --tug-preset-soft-vib: 35;      --tug-preset-soft-val: 65;
-  --tug-preset-muted-vib: 25;     --tug-preset-muted-val: 55;
-  --tug-preset-canonical-vib: 50; --tug-preset-canonical-val: 50;
-  --tug-preset-intense-vib: 80;   --tug-preset-intense-val: 55;
-  --tug-preset-shadow-vib: 50;    --tug-preset-shadow-val: 25;
-  --tug-preset-deep-vib: 70;      --tug-preset-deep-val: 15;
-  --tug-preset-dark-vib: 70;      --tug-preset-dark-val: 5;
-}
-```
-
-When you look at this, you know what you're getting. Vibrancy 25, value 55 — that's a
-muted color. No mental model translation needed.
+The old `subtle` and `deep` presets are removed. Components that referenced them are
+updated to use semantic tokens or the inline formula with specific vib/val numbers.
 
 ---
 
-## 3. Ten presets
+## 3. The formula (written once, used everywhere)
 
-Presets are named by visual impact — how much the color "hits you" — ordered from
-lightest/weakest to darkest/strongest. Each name evokes a physical-world color metaphor.
+The `calc()`+`clamp()` piecewise formula is the shared math. It appears in three places:
 
-| Rank | Name      | Vib | Val | Visual metaphor                                    |
-|------|-----------|-----|-----|----------------------------------------------------|
-| 1    | whisper   | 8   | 95  | You can barely tell it's there                      |
-| 2    | hint      | 15  | 92  | A suggestion of color                               |
-| 3    | wash      | 30  | 82  | A light wash of color, like watercolor              |
-| 4    | soft      | 35  | 65  | Gentle, present but not assertive                   |
-| 5    | muted     | 25  | 55  | Held back, subdued                                  |
-| 6    | canonical | 50  | 50  | The crayon color — the reference point              |
-| 7    | intense   | 80  | 55  | Saturated, pops                                     |
-| 8    | shadow    | 50  | 25  | Darkened, like shade under a tree                   |
-| 9    | deep      | 70  | 15  | Rich and dark, like deep water                      |
-| 10   | dark      | 70  | 5   | Nearly black, hue barely visible                    |
-
----
-
-## 4. The formula (written once, hidden from consumers)
-
-Each hue × preset combination in `tug-palette.css` uses the same calc()+clamp() piecewise
-formula. The formula lives in one place and is an implementation detail.
+1. **`tug-palette.css`**: defines the five convenience presets per hue
+2. **Semantic tokens in theme files**: theme-specific chromatic choices use the same formula
+   with their own vib/val numbers
+3. **`palette-engine.ts`**: `hvvColor()` implements the same math in TypeScript
 
 **Per-hue constants** (3 vars per hue, 24 hues = 72 vars):
 
@@ -98,21 +94,26 @@ formula. The formula lives in one place and is an implementation detail.
 --tug-l-light: 0.96;
 ```
 
-**Preset × hue formula** (example for `--tug-red-muted`):
+**The formula** (example for `--tug-red-muted`):
 
 ```css
 --tug-red-muted: oklch(
   calc(
     var(--tug-l-dark)
-    + clamp(0, var(--tug-preset-muted-val), 50)
+    + clamp(0, 50, 50)
       * (var(--tug-red-canonical-l) - var(--tug-l-dark)) / 50
-    + (clamp(50, var(--tug-preset-muted-val), 100) - 50)
+    + (clamp(50, 50, 100) - 50)
       * (var(--tug-l-light) - var(--tug-red-canonical-l)) / 50
   )
-  calc(var(--tug-preset-muted-vib) / 100 * var(--tug-red-peak-c))
+  calc(20 / 100 * var(--tug-red-peak-c))
   var(--tug-red-h)
 );
 ```
+
+Note: the convenience presets use **literal numbers** for vib/val (e.g., `20` and `50`),
+not CSS custom property references. This is because the five presets have fixed values —
+they don't need to be overridable per-theme. Theme-specific colors use the same formula
+with different literal numbers in the semantic token definitions.
 
 **How the piecewise clamp() math works:**
 
@@ -126,21 +127,21 @@ val 50→100: L goes from canonical-l to L_LIGHT
 `clamp(low, x, high)` acts as a gate. If x is outside the range, it pins to the boundary
 and that segment contributes zero slope.
 
-Walk through with val=30 (lower segment active):
+Walk through with val=20 (lower segment active, used by `dark` preset):
 
 ```
-Segment 1: clamp(0, 30, 50) = 30   → 30 * (can-l - L_DARK) / 50   ← contributes
-Segment 2: clamp(50, 30, 100) - 50 = 0  → 0 * ...                  ← contributes nothing
-Result: L = L_DARK + 30/50 * (can-l - L_DARK)
+Segment 1: clamp(0, 20, 50) = 20   → 20 * (can-l - L_DARK) / 50   ← contributes
+Segment 2: clamp(50, 20, 100) - 50 = 0  → 0 * ...                  ← contributes nothing
+Result: L = L_DARK + 20/50 * (can-l - L_DARK)
 ```
 
-Walk through with val=70 (upper segment active):
+Walk through with val=85 (upper segment active, used by `light` preset):
 
 ```
-Segment 1: clamp(0, 70, 50) = 50   → maxed out, contributes (can-l - L_DARK)
-Segment 2: clamp(50, 70, 100) - 50 = 20  → 20 * (L_LIGHT - can-l) / 50  ← contributes
-Result: L = L_DARK + (can-l - L_DARK) + 20/50 * (L_LIGHT - can-l)
-       = can-l + 0.4 * (L_LIGHT - can-l)
+Segment 1: clamp(0, 85, 50) = 50   → maxed out, contributes (can-l - L_DARK)
+Segment 2: clamp(50, 85, 100) - 50 = 35  → 35 * (L_LIGHT - can-l) / 50  ← contributes
+Result: L = L_DARK + (can-l - L_DARK) + 35/50 * (L_LIGHT - can-l)
+       = can-l + 0.7 * (L_LIGHT - can-l)
 ```
 
 Walk through with val=50 (the hinge — produces canonical lightness):
@@ -151,54 +152,86 @@ Segment 2: clamp(50, 50, 100) - 50 = 0 → contributes nothing
 Result: L = L_DARK + (can-l - L_DARK) = can-l
 ```
 
-This is fully dynamic. Change `--tug-preset-muted-vib` and all 24 hues' muted variants
-update. Change `--tug-red-canonical-l` and all of red's presets update. The browser does
-the math at runtime.
+---
 
-**Total CSS vars for the chromatic palette:**
+## 4. Theme-specific chromatic tokens
 
-- 20 preset knobs (10 presets × 2)
-- 72 per-hue constants (24 × 3)
-- 240 preset colors (24 hues × 10 presets)
-- 2 global anchors
-- Neutrals + black/white (~11)
-- ≈ 345 CSS vars, all pure calc()/oklch(), no JS injection
+This is the key design shift. **Semantic tokens are where theme-specific color choices live.**
+
+Each theme file defines its chromatic `--tug-base-*` tokens using the inline HVV formula
+with whatever vib/val values suit that theme's visual identity. The five convenience presets
+may be referenced where they happen to match, but themes are not limited to them.
+
+Example — Brio's accent tokens:
+
+```css
+/* Brio theme (default) — accent is orange at canonical */
+--tug-base-accent-default: var(--tug-orange);
+--tug-base-accent-strong: var(--tug-orange-intense);
+--tug-base-accent-muted: var(--tug-orange-muted);
+```
+
+Example — Harmony's accent tokens (custom vib/val choices):
+
+```css
+/* Harmony theme — accent is orange, tuned for light backgrounds */
+--tug-base-accent-default: oklch(
+  calc(
+    var(--tug-l-dark)
+    + clamp(0, 55, 50)
+      * (var(--tug-orange-canonical-l) - var(--tug-l-dark)) / 50
+    + (clamp(50, 55, 100) - 50)
+      * (var(--tug-l-light) - var(--tug-orange-canonical-l)) / 50
+  )
+  calc(60 / 100 * var(--tug-orange-peak-c))
+  var(--tug-orange-h)
+);
+```
+
+This is more verbose than `var(--tug-orange-intense)`, but the design intent is explicit:
+"Harmony's accent default is orange at vib=60, val=55." The numbers are right there in the
+theme file.
+
+**Theme design workflow:**
+
+1. Use the gallery editor to explore vib/val combinations interactively
+2. Pick specific vib/val numbers for each chromatic semantic token
+3. Write them into the theme file using the inline formula
+4. The five convenience presets serve as reference points during this process
 
 ---
 
 ## 5. Consumer API
 
-**Components use preset vars. That's it.**
+**Components use semantic tokens. That's it.**
 
 ```css
 .my-button {
-  background: var(--tug-orange-intense);
+  background: var(--tug-base-accent-default);
   color: var(--tug-base-fg-onAccent);
 }
 
 .sidebar {
-  background: var(--tug-cyan-whisper);
+  background: var(--tug-base-surface-subtle);
 }
 ```
 
-**Semantic tokens reference preset vars:**
+**Convenience presets for one-off direct palette access:**
 
 ```css
---tug-base-accent-default: var(--tug-orange);
---tug-base-accent-strong: var(--tug-orange-intense);
---tug-base-accent-muted: var(--tug-orange-muted);
---tug-base-status-danger: var(--tug-red);
---tug-base-syntax-keyword: var(--tug-cyan);
+.status-badge {
+  background: var(--tug-red-light);
+  color: var(--tug-red-dark);
+}
 ```
 
-**For transparency**, `color-mix()` with preset vars (this is the one acceptable use of
-color-mix — opacity adjustment, not color computation):
+**For transparency**, `color-mix()` with any palette var (opacity adjustment only):
 
 ```css
 --tug-base-accent-subtle: color-mix(in oklch, var(--tug-orange) 15%, transparent);
 ```
 
-**For arbitrary vib/val beyond presets**, JS only:
+**For arbitrary vib/val in JS:**
 
 ```typescript
 import { hvvColor } from './palette-engine';
@@ -217,34 +250,67 @@ name (or raw angle), vibrancy, and value, and returns an `oklch()` string. Used 
 - Any one-off color that no preset covers
 
 The function already exists in `palette-engine.ts` — it is completely rewritten to use the
-new `clamp()`-based piecewise formula, matching the CSS exactly. The old coefficient-based
-functions are removed entirely. `HVV_PRESETS` is updated to the new 10-preset set.
+`clamp()`-based piecewise formula, matching the CSS exactly. The old coefficient-based
+functions are removed entirely. `HVV_PRESETS` is updated to the five-preset set.
 
 ---
 
 ## 7. Theme overrides
 
-Themes override non-chromatic tokens (surfaces, grays, shadows) with literal hex values.
-For chromatic adjustments, themes can:
+Themes define chromatic `--tug-base-*` tokens using the inline HVV formula with theme-
+specific vib/val choices. This replaces the old model of overriding preset knobs.
 
-- Override preset knobs to shift all colors at once (e.g., Harmony could set
-  `--tug-preset-muted-vib: 30` for slightly more vivid muted colors on light backgrounds)
+For achromatic adjustments, themes override non-chromatic tokens (surfaces, grays, shadows)
+with literal values as before.
+
+For per-hue adjustments, themes can:
+
 - Override per-hue canonical-l values for contrast adjustments (e.g., Harmony bumps
   `--tug-red-canonical-l` higher so red is readable on light surfaces)
-- Override individual semantic tokens to point to different presets (e.g.,
-  `--tug-base-accent-muted: var(--tug-orange-shadow)` in Harmony for contrast)
+- The five convenience presets are **not overridden per-theme** — they have fixed vib/val
+  values and serve as stable reference colors
 
 ---
 
 ## 8. P3 gamut handling
 
 The `@media (color-gamut: p3)` block overrides `--tug-{hue}-peak-c` with wider values.
-Since all preset formulas reference `peak-c`, they automatically produce richer colors on
-P3 displays. No per-preset overrides needed.
+Since all formulas (convenience presets and theme inline formulas) reference `peak-c`, they
+automatically produce richer colors on P3 displays. No per-preset overrides needed.
 
 ---
 
-## 9. Comment policy
+## 9. Neutral ramp
+
+Five neutral presets matching the chromatic convenience presets, plus black/white anchors:
+
+```css
+--tug-neutral:         oklch(0.555 0 0);  /* val=50 (canonical) */
+--tug-neutral-light:   oklch(0.835 0 0);  /* val=85 */
+--tug-neutral-dark:    oklch(0.311 0 0);  /* val=20 */
+--tug-neutral-intense: oklch(0.555 0 0);  /* same as canonical (no chroma to boost) */
+--tug-neutral-muted:   oklch(0.555 0 0);  /* same as canonical (no chroma to reduce) */
+
+--tug-black: oklch(0 0 0);
+--tug-white: oklch(1 0 0);
+```
+
+---
+
+## 10. Gallery editor enhancement
+
+The gallery palette editor is enhanced to serve the theme design workflow:
+
+- Interactive vib/val explorer: pick any hue, drag across the full 100×100 vib/val space,
+  see the resulting color rendered in real time across the L-curve
+- Preset reference overlay: the five convenience presets shown as labeled points in the
+  vib/val space for reference while designing
+- Theme token export: once a vib/val choice is made, the editor can generate the CSS
+  inline formula snippet for pasting into a theme file
+
+---
+
+## 11. Comment policy
 
 All comments describe the code as it is. No phase numbers, no "replaced X", no
 "introduced in Y". The palette file header explains the HVV model, the three axes, the
@@ -252,53 +318,58 @@ piecewise formula, and the preset system.
 
 ---
 
-## 10. Implementation scope
+## 12. Implementation scope
 
-### Rename sequencing
+### Preset renames and removals
 
-1. Rename current `dark` → `old-dark` (temporary) across all files
-2. Rename `accent` → `intense`, `light` → `wash`, `subtle` → `hint`, `old-dark` → `shadow`
-3. Introduce new presets: `whisper`, `soft`, `dark`
+1. Rename `accent` → `intense` across all palette files
+2. Remove `subtle` and `deep` presets — update all references to use semantic tokens or
+   inline formulas
+3. Adjust `light` and `dark` vib/val to new values
+4. Add `HVV_PRESETS` with the five-preset set in palette-engine.ts
+
+### Formula rewrite
+
+Complete rewrite. The old coefficient-based formulas (`--tug-preset-accent-l`, `min()`-based
+piecewise) are removed entirely and replaced with the `calc()`+`clamp()` formula using
+literal vib/val numbers. Visual parity with the old system is not a goal.
+
+### Theme file rewrite
+
+Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline HVV formula
+with theme-specific vib/val choices. This is the substantive design work — choosing the
+right vib/val for each chromatic role in each theme.
 
 ### Full consumer audit
 
 Every file in the codebase is searched for references to old preset names (`-accent` as
-palette preset, `-light`, `-subtle`, `-dark` as the old val=25 preset). All references are
-updated. Components that directly use palette variables (e.g., `var(--tug-red-accent)`) are
-fixed. No breakage is allowed.
-
-### Formula rewrite
-
-This is a complete rewrite. The old coefficient-based formulas (`--tug-preset-accent-l`,
-`min()`-based piecewise) are removed entirely and replaced with the `calc()`+`clamp()`
-formula using `(vib, val)` pair inputs. Visual parity with the old system is not a goal —
-the `(vib, val)` numbers in this document are the desired output.
+palette preset, `-subtle`, `-deep`). All references are updated. No breakage is allowed.
 
 ### Gallery editor enhancement
 
-The gallery palette editor is enhanced to display and interactively tune all 10 presets. The
-same curve/preview approach is used to adjust preset `(vib, val)` pairs and see the result
-across all 24 hues in real time. This is new functionality, not just a rename.
+The gallery palette editor gains the interactive vib/val explorer and theme token export
+functionality described in section 10.
 
 ### What changes
 
-- `accent` → `intense` everywhere (palette, tokens, themes, TS)
-- `light` → `wash`, `subtle` → `hint`, `dark` (val=25) → `shadow`
-- 13 coefficient knobs → 20 (vib, val) pair knobs
-- Preset formulas completely rewritten to use calc()+clamp() with vib/val inputs
-- Three new presets: `whisper`, `soft`, `dark` (adds 72 new CSS vars: 24 hues × 3)
-- Historical comments stripped
-- `HVV_PRESETS` in palette-engine.ts rewritten to 10-preset set
+- `accent` → `intense` (palette preset only; semantic `accent` role unchanged)
+- `subtle` and `deep` presets removed
+- `light` and `dark` vib/val adjusted
+- 7 presets → 5 presets (fewer convenience vars, but full space accessible)
+- Coefficient knobs eliminated — convenience presets use literal vib/val in formulas
+- Theme files rewritten with inline HVV formulas for chromatic semantic tokens
+- `HVV_PRESETS` in palette-engine.ts rewritten to five-preset set
 - `hvvColor()` rewritten to match CSS formula
-- Gallery editor enhanced for interactive preset tuning
+- Gallery editor enhanced for interactive vib/val exploration
 - All component CSS, theme files, and TS files audited and updated
+- Historical comments stripped
 
 ### What stays the same
 
 - Per-hue constants (h, canonical-l, peak-c)
 - Global anchors (l-dark, l-light)
-- Neutral ramp extended to 10 presets (same system, more stops)
 - P3 media query overrides
 - Three-layer token architecture (palette → base → component)
-- Theme override strategy
 - Semantic tokens keep `accent` as UI role name
+- `hvvColor()` function (rewritten to match)
+- Neutral ramp + black/white (adjusted to match five presets)

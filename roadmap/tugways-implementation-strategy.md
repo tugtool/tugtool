@@ -829,7 +829,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **What to do**:
 1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-hvv-canonical.json`
-2. Define the 168 chromatic preset variables (7 presets × 24 hues) as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. Phase 5g later expands to 10 presets with the `calc()`+`clamp()` piecewise formula
+2. Define the 168 chromatic preset variables (7 presets × 24 hues) as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. Phase 5g later reshapes this to 5 convenience presets with `calc()`+`clamp()` formulas and inline HVV formulas in theme files
 3. Add `--tug-neutral-*` achromatic ramp (7 presets with C=0) plus `--tug-black` and `--tug-white` anchors [D75]
 4. Add `@media (color-gamut: p3)` block that overrides `--tug-{hue}-peak-c` with wider P3 chroma caps — preset formulas automatically produce richer colors since they reference `peak-c`
 5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to HVV palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`
@@ -880,34 +880,36 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 ### Phase 5g: Palette Refinements (Concept 22, [D70])
 
-**Goal**: Rewrite the HVV palette system from 7 presets to 10, replace confusing coefficient knobs with readable `(vib, val)` pairs, rewrite all preset formulas to use `calc()`+`clamp()` piecewise math, rename presets to a visual-impact naming scale, update all consumers, and enhance the gallery editor for interactive preset tuning.
+**Goal**: Reshape the HVV palette from a fixed-preset system to a continuous color space with five convenience presets per hue. Replace confusing coefficient knobs with `calc()`+`clamp()` formulas using literal vib/val numbers. Rename `accent` → `intense`. Rewrite theme files to define chromatic semantic tokens using the inline HVV formula with theme-specific vib/val choices. Enhance the gallery editor for interactive vib/val exploration.
 
-**Full specification**: `roadmap/palette-refinements.md` contains the complete design — preset definitions, formula walkthrough, consumer API, theme override strategy, and scope of changes.
+**Full specification**: `roadmap/palette-refinements.md` contains the complete design — five convenience presets, inline formula for arbitrary colors, theme design workflow, consumer API, and implementation scope.
+
+**Key design shift**: Semantic tokens (`--tug-base-*`) become where theme-specific chromatic choices live. Each theme writes its chromatic tokens using the inline HVV formula with whatever vib/val numbers suit that theme. The five convenience presets (canonical, light, dark, intense, muted) are fixed reference colors — stable across all themes, not the system's backbone.
 
 **What to do**:
-1. **Rename collision handling**: Rename the current `dark` preset to a temporary name (`old-dark`) across all files (CSS, TS, theme overrides, component references). This clears the `dark` name for its new purpose (vib=70, val=5) without ambiguity.
-2. **Preset renames**: `accent` → `intense`, `light` → `wash`, `subtle` → `hint`, `old-dark` (formerly `dark`) → `shadow`. Update all references in `tug-palette.css`, `tug-tokens.css`, `palette-engine.ts`, `bluenote.css`, `harmony.css`, and all component CSS and TypeScript files. Semantic tokens that use `accent` as a UI role name (e.g., `--tug-base-accent-default`) keep `accent` — only the palette preset name changes.
-3. **Rewrite preset definitions**: Replace the 13 coefficient knobs (`--tug-preset-accent-l: 0.55`, etc.) with 20 `(vib, val)` pair knobs (`--tug-preset-intense-vib: 80; --tug-preset-intense-val: 55`). This is a complete rewrite of the preset definition section in `tug-palette.css`.
-4. **Rewrite preset formulas**: Replace all `min()`-based and direct-value formulas with the `calc()`+`clamp()` piecewise formula for every hue × preset combination. 240 variables (24 hues × 10 presets) replace the previous 168.
-5. **Add three new presets**: `whisper` (vib=8, val=95), `soft` (vib=35, val=65), `dark` (vib=70, val=5) — adds 72 new CSS variables (24 hues × 3 new presets).
-6. **Update neutral ramp**: Extend from 7 to 10 neutral presets matching the chromatic preset names.
-7. **Update `palette-engine.ts`**: Rewrite `HVV_PRESETS` to match the new 10-preset set. Update `hvvColor()` to use the same `clamp()`-based piecewise math as the CSS formulas.
-8. **Update theme overrides**: Audit and update `bluenote.css` and `harmony.css` for all renamed preset references and any preset-knob overrides.
-9. **Full consumer audit**: Search all component CSS, TypeScript, and test files for references to old preset names (`-accent` as palette preset, `-light`, `-subtle`, `-dark` as the old val=25 preset). Fix every reference. No breakage allowed.
-10. **Gallery editor enhancement**: Update the gallery palette editor to display and interactively tune all 10 presets. Use the same curve/preview approach to adjust preset `(vib, val)` pairs and see the result across all 24 hues in real time.
-11. **Strip historical comments**: Remove all phase numbers, "replaced X", "introduced in Y" comments. The palette file header explains the HVV model as it is.
-12. **Verify**: All three themes render correctly. All tests pass. No legacy preset names remain in any file.
+1. **Rename `accent` → `intense`**: Update all palette preset references in `tug-palette.css`, `tug-tokens.css`, `palette-engine.ts`, theme files, and all component CSS/TS files. Semantic tokens using `accent` as a UI role name (e.g., `--tug-base-accent-default`) keep `accent`.
+2. **Remove `subtle` and `deep` presets**: These are no longer convenience presets. Update all references to use semantic tokens or the inline formula.
+3. **Adjust `light` and `dark` vib/val**: `light` → vib=20, val=85. `dark` → vib=50, val=20. Rewrite their formulas.
+4. **Rewrite preset formulas**: Replace all coefficient-based and `min()`-based formulas with `calc()`+`clamp()` using literal vib/val numbers. 120 convenience preset variables (24 hues × 5 presets) replace the previous 168.
+5. **Remove coefficient knobs**: Eliminate `--tug-preset-*-l` and `--tug-preset-*-c` custom properties entirely. Convenience presets use literal numbers in their formulas, not CSS custom property references.
+6. **Update neutral ramp**: Reduce from 7 to 5 neutral presets matching the chromatic convenience preset names.
+7. **Rewrite theme files**: This is the substantive design work. Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline HVV formula with theme-specific vib/val choices. Brio may reference convenience presets where they match; Bluenote and Harmony will use custom vib/val numbers for their distinct visual identities.
+8. **Update `palette-engine.ts`**: Rewrite `HVV_PRESETS` to the five-preset set. Rewrite `hvvColor()` to use the `clamp()`-based piecewise formula.
+9. **Full consumer audit**: Search all component CSS, TypeScript, and test files for references to old preset names (`-accent` as palette preset, `-subtle`, `-deep`). Fix every reference. No breakage allowed.
+10. **Gallery editor enhancement**: Add interactive vib/val explorer — pick any hue, drag across the full 100×100 space, see the resulting color in real time. Show the five convenience presets as labeled reference points. Add theme token export (generate CSS formula snippet for a chosen vib/val).
+11. **Strip historical comments**: Remove all phase numbers, "replaced X", "introduced in Y" comments.
+12. **Verify**: All three themes render correctly. All tests pass. No old preset names remain.
 
 **Files created/modified**:
-1. `tugdeck/styles/tug-palette.css` — rewritten: preset knobs, preset formulas, neutral ramp
-2. `tugdeck/styles/tug-tokens.css` — modified: chromatic token references updated for renamed presets
-3. `tugdeck/styles/bluenote.css` — modified: renamed preset references, preset-knob overrides
-4. `tugdeck/styles/harmony.css` — modified: renamed preset references, preset-knob overrides
+1. `tugdeck/styles/tug-palette.css` — rewritten: five convenience presets with literal vib/val, neutral ramp
+2. `tugdeck/styles/tug-tokens.css` — modified: chromatic token references updated
+3. `tugdeck/styles/bluenote.css` — rewritten: chromatic semantic tokens use inline HVV formulas
+4. `tugdeck/styles/harmony.css` — rewritten: chromatic semantic tokens use inline HVV formulas
 5. `tugdeck/src/components/tugways/palette-engine.ts` — modified: `HVV_PRESETS`, `hvvColor()` formula
-6. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — modified: 10-preset display, interactive preset tuning UI
-7. All component CSS and TS files referencing old preset names — modified: renamed references
+6. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — modified: vib/val explorer, preset reference overlay, theme token export
+7. All component CSS and TS files referencing old preset names — modified
 
-**Result**: The palette system is clean, readable, and complete. Ten presets named by visual impact. Each preset defined by a plain `(vib, val)` pair. The `calc()`+`clamp()` formula is written once and hidden from consumers. The gallery editor enables interactive preset tuning. All consumers updated, no breakage.
+**Result**: The palette is a continuous color space, not a fixed set of presets. Five convenience presets per hue serve as stable reference colors. Themes express their chromatic identity through inline HVV formulas in semantic token definitions — the design intent (hue, vib, val) is explicit in every theme file. The gallery editor supports interactive color exploration for the theme design workflow. All consumers updated, no breakage.
 
 **Note**: Phase 5g depends on Phase 5d5e (palette engine integration — the pure CSS palette and semantic token wiring must already be in place). It does not depend on Phase 5f (state preservation).
 
@@ -1375,7 +1377,7 @@ The suggested plan sequence:
 31. `tugways-phase-5f2-state-preservation-fixes` — RAF-deferred scroll/selection restore, CSS Custom Highlight API for inactive selections, flash suppression
 32. `tugways-phase-5f3-state-preservation-more-fixes` — restore ordering (content first), save-on-close (visibilitychange/beforeunload), click-back selection restore
 33. `tugways-phase-5f4-state-preservation-solidified` — child-driven ready callback (onContentReady), eliminate double-RAF, Rules of Tugways 11 & 12
-34. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
+34. `tugways-phase-5g-palette-refinements` — continuous color space with 5 convenience presets, inline HVV formulas in theme files, gallery vib/val explorer
 35. `tugways-phase-6-feed` — feed hooks, data flow
 36. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
 37. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
