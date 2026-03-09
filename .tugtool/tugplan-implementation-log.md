@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-09T17:30:08Z
+---
+
+## step-5: Integration checkpoint: verified full test suite passes (1077 tests, 0 failures), confirmed zero requestAnimationFrame/cancelAnimationFrame references in tugcard.tsx restore flow. All exit criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
 step: step-4
 date: 2025-03-09T17:27:55Z
 ---
