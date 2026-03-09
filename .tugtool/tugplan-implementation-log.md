@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-09T17:27:55Z
+---
+
+## step-4: Rewrote T01/T02 to verify full onContentReady pattern with real useState PersistentChild. Added T03 (no-persist fallback) and T04 (selection-only with persistence). Removed double-RAF flushing from selection-restore test. Updated section header to Phase 5f4.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
 step: step-3
 date: 2025-03-09T17:18:38Z
 ---
