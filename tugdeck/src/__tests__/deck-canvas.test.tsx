@@ -22,7 +22,7 @@
  * - T25: DeckCanvas renders cards from store-provided deckState
  * - T26: DeckCanvas with empty store renders no cards
  * - T27: DeckCanvas skips cards with unregistered componentIds (warning logged)
- * - onClose wiring: DeckCanvas injects onClose from store.handleCardClosed
+ * - onClose wiring: DeckCanvas wires onClose from store.handleCardClosed via Tugcard
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -40,7 +40,7 @@ import { registerHelloCard } from "@/components/tugways/cards/hello-card";
 import { registerGalleryCards } from "@/components/tugways/cards/gallery-card";
 import type { CardState, DeckState, TabItem } from "@/layout-tree";
 import type { IDeckManagerStore } from "@/deck-manager-store";
-import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
+
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -490,7 +490,7 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
   it("renders a CardFrame for each registered card in deckState", () => {
     registerCard({
       componentId: "mock-card",
-      factory: (cardId, _injected) =>
+      contentFactory: (cardId: string) =>
         React.createElement("div", { "data-testid": `mock-card-content-${cardId}` }, "Mock"),
       defaultMeta: { title: "Mock Card", closable: true },
     });
@@ -514,7 +514,7 @@ describe("DeckCanvas – T25: renders cards from store-provided deckState", () =
   it("assigns ascending z-index by store array position", () => {
     registerCard({
       componentId: "zindex-card",
-      factory: (cardId, _injected) =>
+      contentFactory: (cardId: string) =>
         React.createElement("div", { "data-testid": `zcard-${cardId}` }, "Z"),
       defaultMeta: { title: "Z Card", closable: true },
     });
@@ -604,8 +604,8 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
 
     registerCard({
       componentId: "known-card",
-      factory: (cardId, _injected) =>
-        React.createElement("div", { "data-testid": `known-${cardId}` }, "Known"),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", { "data-testid": "known-good" }, "Known"),
       defaultMeta: { title: "Known", closable: true },
     });
 
@@ -629,9 +629,6 @@ describe("DeckCanvas – T27: skips unregistered componentIds", () => {
 });
 
 // ============================================================================
-// onClose wiring: store.handleCardClosed is called via cloneElement injection
-// ============================================================================
-
 // ============================================================================
 // ReactiveStore -- a minimal IDeckManagerStore whose state can be mutated
 // between renders for integration tests that need store.subscribe notifications.
@@ -698,8 +695,6 @@ describe("DeckCanvas – Step 5: tab bar appears when a tab is added", () => {
   it("adding a second tab makes TugTabBar appear on the card", () => {
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", { "data-testid": "hello-content" }, "Hello"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", { "data-testid": "hello-content-tab" }, "Hello tab"),
       defaultMeta: { title: "Hello", closable: true },
@@ -756,16 +751,12 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
   it("setActiveTab changes which contentFactory content is rendered", () => {
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", { "data-testid": "hello-factory" }, "Factory"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", { "data-testid": "hello-tab-content" }, "Tab content"),
       defaultMeta: { title: "Hello", closable: true },
     });
     registerCard({
       componentId: "terminal",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", { "data-testid": "terminal-factory" }, "Terminal"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", { "data-testid": "terminal-tab-content" }, "Terminal tab"),
       defaultMeta: { title: "Terminal", closable: true },
@@ -816,55 +807,6 @@ describe("DeckCanvas – Step 5: switching tabs changes visible content", () => 
   });
 });
 
-describe("DeckCanvas – Step 5: single-tab card uses existing factory path", () => {
-  beforeEach(() => { _resetForTest(); });
-  afterEach(() => { _resetForTest(); cleanup(); });
-
-  it("single-tab card renders via factory (not contentFactory), backward compatible", () => {
-    let factoryCalled = false;
-    let contentFactoryCalled = false;
-
-    registerCard({
-      componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) => {
-        factoryCalled = true;
-        return React.createElement("div", { "data-testid": "factory-output" }, "From factory");
-      },
-      contentFactory: (_cardId: string) => {
-        contentFactoryCalled = true;
-        return React.createElement("div", { "data-testid": "content-factory-output" }, "From contentFactory");
-      },
-      defaultMeta: { title: "Hello", closable: true },
-    });
-
-    const singleTabCard: CardState = {
-      id: "card-single",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      tabs: [{ id: "tab-1", componentId: "hello", title: "Hello", closable: true }],
-      activeTabId: "tab-1",
-      title: "",
-      acceptsFamilies: ["standard"],
-    };
-
-    const store = new ReactiveStore({ cards: [singleTabCard] });
-
-    act(() => {
-      render(
-        <ResponderChainProvider>
-          <DeckManagerContext.Provider value={store}>
-            <DeckCanvas connection={null} />
-          </DeckManagerContext.Provider>
-        </ResponderChainProvider>
-      );
-    });
-
-    // Single-tab card: factory must have been called, contentFactory must NOT
-    expect(factoryCalled).toBe(true);
-    expect(contentFactoryCalled).toBe(false);
-  });
-});
-
 describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClosed", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
@@ -872,8 +814,6 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
   it("onClose on directly-constructed multi-tab Tugcard calls store.handleCardClosed", () => {
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", {}, "Factory"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Tab content"),
       defaultMeta: { title: "Hello", closable: true },
@@ -921,36 +861,24 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
 });
 
 // ============================================================================
-// onClose wiring: store.handleCardClosed is called via cloneElement injection
+// onClose wiring: single-tab card close button calls store.handleCardClosed
 // ============================================================================
 
-describe("DeckCanvas – onClose wired from store.handleCardClosed via cloneElement", () => {
+describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("calling onClose on the produced element invokes store.handleCardClosed with the card id", () => {
-    // Factory produces a component that exposes onClose via a test button.
-    // DeckCanvas injects the real onClose via React.cloneElement from
-    // store.handleCardClosed.
-    function Closeable({ onClose }: { onClose?: () => void }) {
-      return React.createElement(
-        "button",
-        { "data-testid": "close-trigger", onClick: onClose },
-        "close"
-      );
-    }
-
+  it("clicking the Tugcard close button invokes store.handleCardClosed with the card id", () => {
     registerCard({
       componentId: "closeable-card",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement(Closeable, {}),
+      contentFactory: (_cardId: string) =>
+        React.createElement("div", {}, "Content"),
       defaultMeta: { title: "Closeable", closable: true },
     });
 
     const closedIds: string[] = [];
     const card = makeCardState("target-card", "closeable-card");
     const store = makeMockStore(makeDeckState([card]));
-    // Override handleCardClosed with a spy
     store.handleCardClosed = (id: string) => closedIds.push(id);
 
     let container!: HTMLElement;
@@ -958,11 +886,11 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via cloneElem
       ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    const btn = container.querySelector("[data-testid='close-trigger']");
-    expect(btn).not.toBeNull();
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']");
+    expect(closeBtn).not.toBeNull();
 
     act(() => {
-      (btn as HTMLButtonElement).click();
+      (closeBtn as HTMLButtonElement).click();
     });
 
     expect(closedIds.length).toBe(1);
@@ -989,7 +917,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
 
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+      contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Hello"),
       defaultMeta: { title: "Hello", closable: true },
     });
@@ -1020,7 +948,7 @@ describe("DeckCanvas – Step 7: addTab responder action", () => {
 
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+      contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Hello"),
       defaultMeta: { title: "Hello", closable: true },
     });
@@ -1135,7 +1063,7 @@ describe("DeckCanvas – T20: coordinator calls detachTab on drop in detach mode
 
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+      contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Hello"),
       defaultMeta: { title: "Hello", closable: true },
     });
@@ -1172,7 +1100,7 @@ describe("DeckCanvas – T21: coordinator calls mergeTab on drop in merge mode",
 
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
+      contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Hello"),
       defaultMeta: { title: "Hello", closable: true },
     });
@@ -1223,7 +1151,7 @@ describe("DeckCanvas – T22: single-tab card accessory has data-card-id for dro
       ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    // Single-tab card rendered via Tugcard factory: accessory div must carry
+    // Single-tab card rendered via Tugcard: accessory div must carry
     // data-card-id so buildHitTestCache() can locate it as a tier-2 merge target.
     const accessory = container.querySelector(".tugcard-accessory[data-card-id='single-card']");
     expect(accessory).not.toBeNull();
@@ -1244,8 +1172,6 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
   it("multi-tab card with title: 'Foo' renders header with 'Foo: <tab-title>'", () => {
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", {}, "Hello"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Tab content"),
       defaultMeta: { title: "Hello", closable: true },
@@ -1278,8 +1204,6 @@ describe("DeckCanvas – Phase 5b3: cardTitle from CardState renders composed he
   it("multi-tab card with title: '' renders header with just the tab title", () => {
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", {}, "Hello"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Tab content"),
       defaultMeta: { title: "Hello", closable: true },
@@ -1321,8 +1245,6 @@ describe("DeckCanvas – T23: last-tab guard: tab bar data-card-id present for s
     // can locate it. [D01, Spec S08]
     registerCard({
       componentId: "hello",
-      factory: (_cardId, _injected: CardFrameInjectedProps) =>
-        React.createElement("div", {}, "Hello"),
       contentFactory: (_cardId: string) =>
         React.createElement("div", {}, "Tab content"),
       defaultMeta: { title: "Hello", closable: true },

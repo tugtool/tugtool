@@ -375,9 +375,6 @@ function makeTab(id: string, componentId: string, title: string, closable = true
 function registerTabCard(componentId: string, title: string, icon?: string): void {
   registerCard({
     componentId,
-    factory: () => {
-      throw new Error("factory not used");
-    },
     defaultMeta: { title, icon, closable: true },
   });
 }
@@ -873,7 +870,6 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
   it("switching tabs calls store.setTabState with a bag for the old tab", () => {
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 
@@ -929,7 +925,6 @@ describe("Tugcard – tab switch calls store.setTabState (Phase 5f Step 4)", () 
   it("switching tabs calls selectionGuard.saveSelection and includes result in bag", () => {
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 
@@ -1000,7 +995,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
   it("after tab activation, scroll position is set on the content area", () => {
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 
@@ -1061,7 +1055,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     // body — no RAF flushing needed. ([D04], Spec S03 direct-apply fallback)
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 
@@ -1117,7 +1110,6 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
   it("after tab activation, onRestore callback is called with saved content state", () => {
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 
@@ -1198,7 +1190,6 @@ describe("Tugcard – Phase 5f4 onContentReady restore pattern", () => {
   it("T01: onContentReady fires after child DOM commits; visibility:hidden applied before and removed after", () => {
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Hello", closable: true },
     });
 

@@ -46,9 +46,6 @@ function makeTab(
 function registerMinimalCard(componentId: string, title: string): void {
   registerCard({
     componentId,
-    factory: () => {
-      throw new Error("factory not used in TugTabBar tests");
-    },
     defaultMeta: { title, closable: true },
   });
 }
@@ -524,14 +521,12 @@ describe("TugTabBar – acceptedFamilies filters type picker", () => {
     // Register a standard-family card (no family field = defaults to "standard")
     registerCard({
       componentId: "hello",
-      factory: () => { throw new Error("not used"); },
       defaultMeta: { title: "Hello", closable: true },
       // family omitted: defaults to "standard"
     });
     // Register a developer-family card
     registerCard({
       componentId: "gallery-buttons",
-      factory: () => { throw new Error("not used"); },
       defaultMeta: { title: "Buttons", closable: false },
       family: "developer",
     });

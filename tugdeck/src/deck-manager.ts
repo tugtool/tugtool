@@ -495,7 +495,7 @@ export class DeckManager implements IDeckManagerStore {
    * The optional `options.keepalive` flag is forwarded to putTabState so the
    * browser dispatches the fetch even during page teardown (beforeunload path).
    */
-  private flushDirtyTabStates(options?: { keepalive?: boolean }): void {
+  private flushDirtyTabStates(options?: { keepalive?: boolean; sync?: boolean }): void {
     for (const tabId of this.dirtyTabIds) {
       const bag = this.tabStateCache.get(tabId);
       if (bag !== undefined) {
@@ -524,6 +524,31 @@ export class DeckManager implements IDeckManagerStore {
    */
   unregisterSaveCallback(id: string): void {
     this.saveCallbacks.delete(id);
+  }
+
+  /**
+   * Save all card states and flush to tugbank immediately.
+   *
+   * Called by the native app (Swift) via `window.__tugdeckSaveState()` before
+   * terminating the WebView. WKWebView does not fire visibilitychange or
+   * beforeunload on app quit, so this is the only way to persist state on exit.
+   * Uses keepalive:true so the fetch completes during page teardown.
+   */
+  saveAndFlush(): void {
+    this.saveCallbacks.forEach((cb) => cb());
+    this.flushDirtyTabStates({ sync: true });
+  }
+
+  /**
+   * Save all card states and flush to tugbank asynchronously.
+   *
+   * Called on app deactivation (backgrounding) when the app and tugcast are
+   * still running. Uses normal async fetch — no need for sync XHR since
+   * nothing is being torn down.
+   */
+  saveCallbacksAndFlush(): void {
+    this.saveCallbacks.forEach((cb) => cb());
+    this.flushDirtyTabStates();
   }
 
   // ---- Tab management (Spec S03) ----

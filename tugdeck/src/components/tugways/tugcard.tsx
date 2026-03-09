@@ -38,7 +38,7 @@
  * @module components/tugways/tugcard
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedIdValue } from "../../protocol";
 import { icons } from "lucide-react";
 import type { TabItem, TabStateBag } from "../../layout-tree";
@@ -56,6 +56,35 @@ import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
 import "./tugcard.css";
+
+// ---------------------------------------------------------------------------
+// TugcardDirtyContext — contentchange mechanism
+// ---------------------------------------------------------------------------
+
+/**
+ * Context provided by Tugcard to card content components.
+ *
+ * Card content calls `markDirty()` when its internal state changes in a way
+ * worth persisting (e.g. form values, tree expand state, sort order). Tugcard
+ * debounces the signal and saves the current tab state to tugbank.
+ *
+ * null when rendered outside a Tugcard.
+ */
+const TugcardDirtyContext = createContext<(() => void) | null>(null);
+
+/**
+ * Hook for card content to signal a state change worth persisting.
+ *
+ * Returns a stable `markDirty` function. Calling it triggers a debounced
+ * save of scroll, selection, and card content state to tugbank. No-op
+ * outside a Tugcard.
+ */
+export function useTugcardDirty(): () => void {
+  const markDirty = useContext(TugcardDirtyContext);
+  return markDirty ?? noop;
+}
+
+function noop(): void {}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -144,6 +173,7 @@ export interface TugcardProps {
 
 const HEADER_HEIGHT_PX = 28;
 const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, height: 60 };
+const AUTO_SAVE_DEBOUNCE_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // Tugcard
@@ -270,7 +300,10 @@ export function Tugcard({
   const saveCurrentTabStateRef = useRef<(() => void) | null>(null);
   saveCurrentTabStateRef.current = () => {
     const tabId = activeTabIdRef.current;
-    if (!tabId) return;
+    if (!tabId) {
+      console.log(`[SAVE-DEBUG] cardId=${cardId} — NO tabId, skipping save`);
+      return;
+    }
 
     const contentEl = contentRef.current;
     const scroll = contentEl
@@ -287,6 +320,7 @@ export function Tugcard({
       ...(content !== undefined ? { content } : {}),
     };
 
+    console.log(`[SAVE-DEBUG] cardId=${cardId} tabId=${tabId} selection=${selection != null} scroll=${scroll != null} content=${content != null}`, bag);
     store.setTabState(tabId, bag);
   };
 
@@ -322,6 +356,57 @@ export function Tugcard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, store]);
 
+  // ---------------------------------------------------------------------------
+  // Auto-save: debounced tab state persistence on scroll, selection, and
+  // content changes. Saves scroll position, selection, and card content state
+  // to tugbank via the existing saveCurrentTabState mechanism.
+  // ---------------------------------------------------------------------------
+
+  const autoSaveTimerRef = useRef<number | null>(null);
+
+  // Stable markDirty callback: schedule a debounced save. Used by:
+  //   - scroll listener (below)
+  //   - selectionchange listener (below)
+  //   - card content via useTugcardDirty() (contentchange)
+  const markDirty = useCallback(() => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      saveCurrentTabStateRef.current?.();
+    }, AUTO_SAVE_DEBOUNCE_MS);
+  }, []);
+
+  // Install scroll and selectionchange listeners. Both funnel into markDirty.
+  useEffect(() => {
+    const contentEl = contentRef.current;
+
+    // Scroll: listen on the content area element.
+    const handleScroll = () => markDirty();
+    contentEl?.addEventListener("scroll", handleScroll, { passive: true });
+
+    // Selection: listen on document, filter to this card's boundary.
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const anchor = sel.anchorNode;
+      if (anchor && contentEl?.contains(anchor)) {
+        markDirty();
+      }
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+
+    return () => {
+      contentEl?.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [markDirty, cardId]);
+
   // Phase 5f4: Pending scroll/selection refs for the onContentReady callback path.
   // Tugcard stores the values to restore here before calling onRestore, then reads
   // them in the onContentReady callback (after child DOM commits). ([D04], Spec S03)
@@ -351,11 +436,18 @@ export function Tugcard({
   // Cleanup resets pending refs, clears the restorePendingRef flag (cancels a stale
   // pending callback on rapid tab switch), and restores visibility if hidden. ([D05])
   useLayoutEffect(() => {
-    if (!activeTabId) return;
+    if (!activeTabId) {
+      console.log(`[RESTORE-DEBUG] cardId=${cardId} — NO activeTabId, skipping`);
+      return;
+    }
     const bag = store.getTabState(activeTabId);
+    console.log(`[RESTORE-DEBUG] cardId=${cardId} activeTabId=${activeTabId} bag=`, bag);
 
     // Early return if no bag or nothing to restore.
-    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
+    if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) {
+      console.log(`[RESTORE-DEBUG] cardId=${cardId} — bag empty or missing, skipping`);
+      return;
+    }
 
     const contentEl = contentRef.current;
 
@@ -437,6 +529,7 @@ export function Tugcard({
         contentEl.scrollTop = bag.scroll.y;
       }
       if (bag.selection != null) {
+        console.log(`[RESTORE-DEBUG] cardId=${cardId} — calling restoreSelection`, bag.selection);
         selectionGuard.restoreSelection(cardId, bag.selection);
       }
       // No cleanup needed: nothing was hidden, no pending state set.
@@ -676,11 +769,13 @@ export function Tugcard({
                   Card content calls useTugcardPersistence() (Step 6) which reads this
                   context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
               <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-                {feedsReady ? children : (
-                  <div className="tugcard-loading" data-testid="tugcard-loading">
-                    Loading...
-                  </div>
-                )}
+                <TugcardDirtyContext value={markDirty}>
+                  {feedsReady ? children : (
+                    <div className="tugcard-loading" data-testid="tugcard-loading">
+                      Loading...
+                    </div>
+                  )}
+                </TugcardDirtyContext>
               </TugcardPersistenceContext>
             </TugcardPropertyContext>
           </ResponderScope>

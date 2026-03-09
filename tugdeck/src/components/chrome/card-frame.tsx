@@ -78,9 +78,6 @@ const CANVAS_PADDING = 2;
  *
  * **Authoritative reference:** Spec S04 CardFrameInjectedProps.
  *
- * Note: `card-registry.ts` re-declares a compatible interface locally to avoid
- * a forward-dependency on this file. The two declarations are structurally
- * identical; this file is the authoritative source.
  */
 export interface CardFrameInjectedProps {
   /** Tugcard header calls this on pointer-down to initiate drag. */

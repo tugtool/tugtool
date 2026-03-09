@@ -13,7 +13,8 @@
  *   useResponderChain()         -- returns manager | null (safe outside provider)
  *   useRequiredResponderChain() -- returns manager, throws outside provider
  *
- * [D02] SelectionGuard attached here so its lifecycle matches the key pipeline
+ * [D02] SelectionGuard event listeners attached here; CSS Highlights created
+ *       eagerly in SelectionGuard constructor (before React mounts)
  * [D03] Four-stage key pipeline with global keydown listener
  * [D07] ResponderChainProvider wraps DeckCanvas only
  * Spec S03, Spec S08
@@ -49,10 +50,11 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     registerResponderChainManager(manager);
 
     // ---- SelectionGuard lifecycle ----
-    // Attach the SelectionGuard document-level listeners alongside the key
-    // pipeline. Both are document-level event systems that live for the
-    // duration of the provider. Co-locating them here ensures they are always
-    // installed and removed together. ([D02])
+    // Install SelectionGuard event listeners alongside the key pipeline.
+    // Both are document-level event systems that live for the duration of
+    // the provider. CSS Highlight objects are created eagerly in the
+    // SelectionGuard constructor (not here) so they exist before any React
+    // effects fire. attach() only installs event listeners. ([D02])
     selectionGuard.attach();
 
     // ---- Stage 1: capture-phase listener (global shortcuts) ----

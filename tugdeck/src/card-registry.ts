@@ -13,11 +13,7 @@
  *
  * registerCard({
  *   componentId: "hello",
- *   factory: (cardId, injected) => (
- *     <Tugcard cardId={cardId} meta={{ title: "Hello" }} feedIds={[]} {...injected}>
- *       <HelloCard />
- *     </Tugcard>
- *   ),
+ *   contentFactory: () => <HelloCardContent />,
  *   defaultMeta: { title: "Hello", closable: true },
  * });
  * ```
@@ -28,21 +24,6 @@
 import type React from "react";
 import type { FeedIdValue } from "./protocol";
 import type { TabItem } from "./layout-tree";
-
-/**
- * Props injected by CardFrame into the content rendered by renderContent.
- *
- * Defined here to avoid a circular dependency before CardFrame is implemented.
- * Once card-frame.tsx is created, this type should be imported from there.
- *
- * **Authoritative reference:** Spec S04 CardFrameInjectedProps.
- */
-export interface CardFrameInjectedProps {
-  /** Header calls this on pointer-down to initiate drag. */
-  onDragStart: (event: React.PointerEvent) => void;
-  /** Tugcard calls this to report its minimum display size to CardFrame. */
-  onMinSizeChange: (size: { width: number; height: number }) => void;
-}
 
 /**
  * Metadata describing a card's default appearance and behavior.
@@ -60,73 +41,34 @@ export interface TugcardMeta {
  *
  * **Authoritative reference:** Spec S02 CardRegistration interface.
  *
- * The factory receives `CardFrameInjectedProps` so it can forward `onDragStart`
- * and `onMinSizeChange` to the Tugcard it creates. DeckCanvas calls
- * `registration.factory(card.id, injectedProps)` inside the `renderContent`
- * function it passes to CardFrame.
- *
- * The factory return type includes `onClose` so DeckCanvas can inject it via
- * `React.cloneElement` without a TypeScript type error.
+ * DeckCanvas constructs Tugcard directly for every card (single-tab and
+ * multi-tab alike) and uses `contentFactory` to get card-specific content.
  */
 export interface CardRegistration {
   /** Unique identifier for this card type. e.g. "hello", "terminal", "git". */
   componentId: string;
   /**
-   * Creates a Tugcard React element with the given card instance ID and injected
-   * callbacks. The return type is typed to include `onClose` so DeckCanvas can
-   * inject it via `React.cloneElement(element, { onClose: ... })`.
+   * Returns the content component (e.g. `<HelloCardContent />`) without
+   * the Tugcard chrome. DeckCanvas constructs Tugcard directly and uses this
+   * to get card-specific content.
    */
-  factory: (
-    cardId: string,
-    injected: CardFrameInjectedProps,
-  ) => React.ReactElement<{ onClose?: () => void }>;
+  contentFactory: (cardId: string) => React.ReactNode;
   /** Default title, icon, and closable for this card type. */
   defaultMeta: TugcardMeta;
-  /**
-   * Returns just the content component (e.g. `<HelloCardContent />`) without
-   * the Tugcard chrome. Used by the multi-tab rendering path in DeckCanvas so
-   * a single Tugcard element can swap content on tab switch without nesting.
-   *
-   * **Authoritative reference:** Spec S05, [D08] contentFactory.
-   */
-  contentFactory?: (cardId: string) => React.ReactNode;
-  /**
-   * Feed IDs for the multi-tab rendering path. Defaults to `[]` when omitted.
-   * DeckCanvas reads `registration.defaultFeedIds ?? []` when constructing a
-   * multi-tab Tugcard directly. Forward-compatible hook for Phase 6 feed-aware
-   * card types.
-   */
+  /** Default feed IDs. Defaults to `[]` when omitted. */
   defaultFeedIds?: readonly FeedIdValue[];
-  /**
-   * The family this card type belongs to (e.g. "standard", "developer").
-   * Used by the type picker to group card types. Defaults to "standard" when omitted.
-   *
-   * **Authoritative reference:** [D02] Family field on CardRegistration.
-   */
+  /** Card type family (e.g. "standard", "developer"). Defaults to "standard". */
   family?: string;
-  /**
-   * The families of card types this card can host in its type picker.
-   * When set, the type picker filters to only show cards belonging to these families.
-   * Defaults to `["standard"]` when omitted.
-   *
-   * **Authoritative reference:** [D03] acceptsFamilies field.
-   */
+  /** Families this card can host in its type picker. Defaults to `["standard"]`. */
   acceptsFamilies?: readonly string[];
   /**
    * Default tabs to create when addCard is called with this registration.
    * Each entry is a template: `componentId`, `title`, and `closable` are copied,
    * but a fresh UUID is assigned as the tab `id`. When omitted, a single tab
    * is created from `defaultMeta`.
-   *
-   * **Authoritative reference:** Spec S01 registration fields.
    */
   defaultTabs?: readonly TabItem[];
-  /**
-   * Default card-level title (e.g. "Component Gallery").
-   * Stored as `card.title` in CardState. Defaults to `""` when omitted.
-   *
-   * **Authoritative reference:** [D04] Card title field.
-   */
+  /** Default card-level title (e.g. "Component Gallery"). Defaults to `""`. */
   defaultTitle?: string;
 }
 

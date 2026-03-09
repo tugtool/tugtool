@@ -23,9 +23,6 @@ import type { CardRegistration } from "../card-registry";
 function makeRegistration(componentId: string): CardRegistration {
   return {
     componentId,
-    factory: () => {
-      throw new Error("factory not implemented in test stub");
-    },
     defaultMeta: { title: `${componentId} card`, closable: true },
   };
 }

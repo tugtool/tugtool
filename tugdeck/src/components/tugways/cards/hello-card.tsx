@@ -1,9 +1,6 @@
 /**
  * Hello test card -- the first registered card type in Phase 5.
  *
- * Demonstrates the full Tugcard registration pipeline:
- *   registerHelloCard() -> registerCard() -> factory() -> <Tugcard> -> <HelloCardContent>
- *
  * **Authoritative references:**
  * - [D09] Hello test card, Spec S01 TugcardProps, Spec S02 CardRegistration
  * - [D04] Single-call registration
@@ -13,7 +10,6 @@
 
 import React from "react";
 import { registerCard } from "@/card-registry";
-import { Tugcard } from "@/components/tugways/tugcard";
 
 // ---------------------------------------------------------------------------
 // HelloCardContent
@@ -78,17 +74,6 @@ export function HelloCardContent() {
 export function registerHelloCard(): void {
   registerCard({
     componentId: "hello",
-    factory: (cardId, injected) => (
-      <Tugcard
-        cardId={cardId}
-        meta={{ title: "Hello", icon: "Star", closable: true }}
-        feedIds={[]}
-        onDragStart={injected.onDragStart}
-        onMinSizeChange={injected.onMinSizeChange}
-      >
-        <HelloCardContent />
-      </Tugcard>
-    ),
     contentFactory: () => <HelloCardContent />,
     defaultMeta: { title: "Hello", icon: "Star", closable: true },
   });

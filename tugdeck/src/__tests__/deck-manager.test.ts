@@ -82,9 +82,6 @@ function makeContainer(): HTMLDivElement {
 function makeRegistration(componentId: string, title = "Test Card"): CardRegistration {
   return {
     componentId,
-    factory: () => {
-      throw new Error("factory not used in DeckManager tests");
-    },
     defaultMeta: { title, closable: true },
   };
 }
@@ -154,7 +151,6 @@ describe("DeckManager.addCard – registered component", () => {
   it("tab closable reflects registration.defaultMeta.closable", () => {
     registerCard({
       componentId: "sticky",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Sticky", closable: false },
     });
     manager.addCard("sticky");
@@ -1078,7 +1074,6 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     const templateTabId2 = "tmpl-id-2";
     registerCard({
       componentId: "gallery-host",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Gallery Host", closable: true },
       defaultTabs: [
         { id: templateTabId1, componentId: "gallery-buttons", title: "Buttons", closable: false },
@@ -1090,12 +1085,10 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
     // Register the tab component types too (needed for filterRegisteredCards)
     registerCard({
       componentId: "gallery-buttons",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Buttons", closable: false },
     });
     registerCard({
       componentId: "gallery-chain-actions",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Chain Actions", closable: false },
     });
 
@@ -1143,7 +1136,6 @@ describe("DeckManager.addCard – defaultTabs registration", () => {
   it("detachTab on a card with acceptsFamilies: [developer] creates a new card that inherits acceptsFamilies", () => {
     registerCard({
       componentId: "gallery-host",
-      factory: () => { throw new Error("factory stub"); },
       defaultMeta: { title: "Gallery Host", closable: true },
       acceptsFamilies: ["developer"],
     });

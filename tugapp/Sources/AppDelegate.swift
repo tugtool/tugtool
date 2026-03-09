@@ -98,9 +98,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         processManager.start(sourceTree: sourceTreePath)
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        window.cleanupBridge()
-        processManager.stop()
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Tell the WebView to save all card states (scroll, selection, content)
+        // to tugbank before we tear down. WKWebView does not fire visibilitychange
+        // or beforeunload on app quit, so this is the only save trigger on exit.
+        NSLog("AppDelegate: applicationShouldTerminate — calling __tugdeckSaveState")
+        window.evaluateJavaScript("window.__tugdeckSaveState?.()") { result, error in
+            if let error = error {
+                NSLog("AppDelegate: __tugdeckSaveState error: %@", error.localizedDescription)
+            } else {
+                NSLog("AppDelegate: __tugdeckSaveState completed successfully")
+            }
+            // JS used synchronous XHR, so all writes to tugbank are confirmed
+            // by the time this completion handler runs. Safe to tear down.
+            self.window.cleanupBridge()
+            self.processManager.stop()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        // Save all card states and dim selections when the app loses focus.
+        window.evaluateJavaScript("window.__tugdeckAppDeactivated?.()")
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Restore the active card's selection highlight when the app regains focus.
+        window.evaluateJavaScript("window.__tugdeckAppActivated?.()")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -241,11 +241,30 @@ async function fetchSingleTabStateWithRetry(tabId: string): Promise<TabStateBag 
  *
  * Spec S02: putTabState
  */
-export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean }): void {
-  fetch(`/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`, {
+export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean; sync?: boolean }): void {
+  const url = `/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`;
+  const body = JSON.stringify({ kind: "json", value: bag });
+
+  if (options?.sync) {
+    // Synchronous XHR: blocks until tugbank confirms the write. Used by
+    // saveAndFlush (app quit path) so the native side can safely kill tugcast
+    // after evaluateJavaScript completes. fetch is always async and would
+    // race with process shutdown.
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url, false); // false = synchronous
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.send(body);
+    } catch (err) {
+      console.warn("[settings] PUT tabState (sync) failed for tab", tabId, err);
+    }
+    return;
+  }
+
+  fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "json", value: bag }),
+    body,
     keepalive: options?.keepalive,
   }).catch((err) => {
     console.warn("[settings] PUT tabState failed for tab", tabId, err);

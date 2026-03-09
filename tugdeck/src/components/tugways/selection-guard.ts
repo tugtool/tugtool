@@ -284,6 +284,31 @@ class SelectionGuard {
     this.boundPointerUp = this.handlePointerUp.bind(this);
     this.boundSelectionChange = this.handleSelectionChange.bind(this);
     this.boundSelectStart = this.handleSelectStart.bind(this);
+
+    // Create CSS Custom Highlights eagerly so they exist before any React
+    // effects fire. Tugcard's activation useLayoutEffect calls restoreSelection
+    // → syncActiveHighlight, which needs these objects. Since the singleton is
+    // created at module scope, this runs before React mounts. (Risk R02)
+    this.initHighlights();
+  }
+
+  /**
+   * Create CSS Custom Highlight objects if the API is available and they
+   * haven't been created yet. Idempotent — safe to call multiple times.
+   *
+   * Called eagerly in the constructor (so highlights exist before React mounts)
+   * and again in attach() (so tests that install mock CSS.highlights after
+   * import can still initialize highlights).
+   */
+  private initHighlights(): void {
+    if (this.highlightsAvailable) return; // already initialized
+    if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
+      this.highlightsAvailable = true;
+      this.activeHighlight = new Highlight();
+      this.inactiveHighlight = new Highlight();
+      CSS.highlights.set("card-selection", this.activeHighlight);
+      CSS.highlights.set("inactive-selection", this.inactiveHighlight);
+    }
   }
 
   // ---- Boundary registration ----
@@ -312,8 +337,11 @@ class SelectionGuard {
   // ---- Lifecycle ----
 
   /**
-   * Install document-level event listeners and create CSS Custom Highlights.
+   * Install document-level event listeners.
    * Called once at app startup by `ResponderChainProvider` (Step 6).
+   *
+   * CSS Custom Highlights are created eagerly in the constructor (not here)
+   * so they exist before any React effects fire.
    */
   attach(): void {
     document.addEventListener("pointerdown", this.boundPointerDown, { capture: true });
@@ -322,19 +350,24 @@ class SelectionGuard {
     document.addEventListener("selectionchange", this.boundSelectionChange);
     document.addEventListener("selectstart", this.boundSelectStart, { capture: true });
 
-    // CSS Custom Highlight API feature detection (Risk R02).
-    if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
-      this.highlightsAvailable = true;
-      this.activeHighlight = new Highlight();
-      this.inactiveHighlight = new Highlight();
+    // Initialize highlights if not yet created (covers tests that install
+    // mock CSS.highlights after module import), and re-register with
+    // CSS.highlights if detach() previously unregistered them.
+    this.initHighlights();
+    if (this.highlightsAvailable && this.activeHighlight && this.inactiveHighlight &&
+        typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       CSS.highlights.set("card-selection", this.activeHighlight);
       CSS.highlights.set("inactive-selection", this.inactiveHighlight);
     }
   }
 
   /**
-   * Remove document-level event listeners and CSS Custom Highlights.
+   * Remove document-level event listeners and unregister CSS Custom Highlights.
    * Called on teardown by `ResponderChainProvider`.
+   *
+   * Unregisters highlights from CSS.highlights (stops painting) but does NOT
+   * null the Highlight objects — they are owned by the singleton for its
+   * lifetime. attach() re-registers them.
    */
   detach(): void {
     document.removeEventListener("pointerdown", this.boundPointerDown, { capture: true });
@@ -346,15 +379,12 @@ class SelectionGuard {
     this.removePreventMousedown();
     this.justActivatedCardId = null;
 
-    if (this.highlightsAvailable) {
+    if (this.highlightsAvailable && typeof CSS !== "undefined" && CSS.highlights !== undefined) {
       CSS.highlights.delete("card-selection");
       CSS.highlights.delete("inactive-selection");
     }
     this.cardRanges.clear();
     this.activeHighlightCardId = null;
-    this.activeHighlight = null;
-    this.inactiveHighlight = null;
-    this.highlightsAvailable = false;
   }
 
   // ---- Highlight management ----
@@ -519,6 +549,57 @@ class SelectionGuard {
     }
   }
 
+  // ---- App activation state ----
+
+  // The card whose Range was in activeHighlight before app deactivation.
+  // Used by activateApp() to restore the correct card to active state.
+  private deactivatedCardId: string | null = null;
+
+  /**
+   * Dim all selections when the app loses focus (deactivation).
+   *
+   * Moves the active card's Range from activeHighlight to inactiveHighlight
+   * so all selections render with the dimmed style. Remembers which card was
+   * active so activateApp() can restore it.
+   *
+   * Called from the native app via window.__tugdeckAppDeactivated().
+   */
+  deactivateApp(): void {
+    if (!this.activeHighlight || !this.inactiveHighlight) return;
+
+    this.deactivatedCardId = this.activeHighlightCardId;
+
+    if (this.activeHighlightCardId) {
+      const range = this.cardRanges.get(this.activeHighlightCardId);
+      if (range) {
+        this.activeHighlight.delete(range);
+        this.inactiveHighlight.add(range);
+      }
+      this.activeHighlightCardId = null;
+    }
+  }
+
+  /**
+   * Restore the active card's selection when the app regains focus (activation).
+   *
+   * Moves the previously-active card's Range from inactiveHighlight back to
+   * activeHighlight. Clears the deactivated state.
+   *
+   * Called from the native app via window.__tugdeckAppActivated().
+   */
+  activateApp(): void {
+    if (!this.activeHighlight || !this.inactiveHighlight) return;
+    if (!this.deactivatedCardId) return;
+
+    const range = this.cardRanges.get(this.deactivatedCardId);
+    if (range) {
+      this.inactiveHighlight.delete(range);
+      this.activeHighlight.add(range);
+    }
+    this.activeHighlightCardId = this.deactivatedCardId;
+    this.deactivatedCardId = null;
+  }
+
   // ---- Selection persistence (Phase 5b infrastructure) ----
 
   /**
@@ -599,14 +680,22 @@ class SelectionGuard {
    */
   restoreSelection(cardId: string, saved: SavedSelection): void {
     const boundary = this.boundaries.get(cardId);
-    if (!boundary) return;
+    if (!boundary) {
+      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — no boundary registered`);
+      return;
+    }
 
     const anchorNode = pathToNode(boundary, saved.anchorPath);
     const focusNode = pathToNode(boundary, saved.focusPath);
-    if (!anchorNode || !focusNode) return;
+    if (!anchorNode || !focusNode) {
+      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — pathToNode failed: anchor=${!!anchorNode} focus=${!!focusNode} anchorPath=${JSON.stringify(saved.anchorPath)} focusPath=${JSON.stringify(saved.focusPath)}`);
+      return;
+    }
 
     const selection = window.getSelection();
     if (!selection) return;
+
+    console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — calling setBaseAndExtent, highlights exist: active=${!!this.activeHighlight} inactive=${!!this.inactiveHighlight}`);
 
     try {
       selection.setBaseAndExtent(
@@ -620,7 +709,9 @@ class SelectionGuard {
       // without this call the highlight wouldn't update until the next event
       // loop tick — causing the selection to be invisible during the gap.
       this.syncActiveHighlight();
-    } catch {
+      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — syncActiveHighlight done, activeHighlightCardId=${this.activeHighlightCardId}, cardRanges has ${this.cardRanges.size} entries`);
+    } catch (e) {
+      console.log(`[RESTORE-DEBUG] restoreSelection(${cardId}) — threw:`, e);
       // setBaseAndExtent can throw if offsets are out of range (e.g. content
       // changed). Fail silently — best-effort restoration.
     }

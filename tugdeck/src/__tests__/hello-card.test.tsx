@@ -15,8 +15,6 @@ import { render, act, cleanup } from "@testing-library/react";
 
 import { HelloCardContent, registerHelloCard } from "@/components/tugways/cards/hello-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
-import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
-import { withDeckManager } from "./mock-deck-manager-store";
 
 // Clean up mounted React trees after each test.
 afterEach(() => {
@@ -88,48 +86,15 @@ describe("registerHelloCard – T22: registers 'hello' in the card registry", ()
     expect(reg!.defaultMeta.closable).toBe(true);
   });
 
-  it("factory produces a React element (Tugcard) that renders HelloCardContent", () => {
+  it("contentFactory returns HelloCardContent", () => {
     registerHelloCard();
     const reg = getRegistration("hello");
     expect(reg).not.toBeUndefined();
 
-    // Call factory with stub injected props
-    const injected = {
-      onDragStart: () => {},
-      onMinSizeChange: () => {},
-    };
-
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(
-        withDeckManager(
-          <ResponderChainProvider>
-            {reg!.factory("card-hello-test", injected)}
-          </ResponderChainProvider>
-        )
-      ));
-    });
-
-    // Tugcard should render the card header with "Hello" title
-    const header = container.querySelector("[data-testid='tugcard-title']");
-    expect(header).not.toBeNull();
-    expect(header!.textContent).toContain("Hello");
-
-    // HelloCardContent should be rendered inside the Tugcard
-    const content = container.querySelector("[data-testid='hello-card-content']");
-    expect(content).not.toBeNull();
-  });
-
-  it("registration includes contentFactory that returns HelloCardContent", () => {
-    registerHelloCard();
-    const reg = getRegistration("hello");
-    expect(reg).not.toBeUndefined();
-    expect(reg!.contentFactory).not.toBeUndefined();
-
-    let container!: HTMLElement;
-    act(() => {
-      ({ container } = render(
-        <>{reg!.contentFactory!("card-hello-test")}</>
+        <>{reg!.contentFactory("card-hello-test")}</>
       ));
     });
 

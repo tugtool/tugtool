@@ -464,44 +464,31 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             }}
             activeTabId={cardState.activeTabId}
             renderContent={(injected) => {
-              // Fork rendering based on tab count (Spec S05, D08).
-              //
-              // Single-tab path (tabs.length <= 1):
-              //   Use the existing factory(cardId, injected) + cloneElement(element, { onClose })
-              //   pattern unchanged. All existing single-tab cards continue to work.
-              //
-              // Multi-tab path (tabs.length > 1):
-              //   Construct Tugcard directly, passing all tab props explicitly.
-              //   This avoids nested Tugcards (D08) and avoids fragile cloneElement
-              //   prop injection for tab props. contentFactory provides the active
-              //   tab's content without the outer Tugcard chrome.
-              if (cardState.tabs.length > 1) {
-                return (
-                  <Tugcard
-                    cardId={cardState.id}
-                    meta={registration.defaultMeta}
-                    feedIds={registration.defaultFeedIds ?? []}
-                    tabs={cardState.tabs}
-                    activeTabId={cardState.activeTabId}
-                    onTabSelect={(tabId) => store.setActiveTab(cardState.id, tabId)}
-                    onTabClose={(tabId) => store.removeTab(cardState.id, tabId)}
-                    onTabAdd={(cId) => store.addTab(cardState.id, cId)}
-                    onClose={handleClose}
-                    onDragStart={injected.onDragStart}
-                    onMinSizeChange={injected.onMinSizeChange}
-                    cardTitle={cardState.title}
-                    acceptedFamilies={cardState.acceptsFamilies}
-                  >
-                    {registration.contentFactory?.(cardState.id) ?? null}
-                  </Tugcard>
-                );
-              }
-
-              // Single-tab path: unchanged factory + cloneElement injection.
-              const element = registration.factory(cardState.id, injected);
-              return React.cloneElement(element, {
-                onClose: handleClose,
-              });
+              // Unified rendering path: DeckCanvas always constructs Tugcard
+              // directly with all props. contentFactory provides the card-specific
+              // content. This ensures every card — single-tab or multi-tab — gets
+              // the same props (activeTabId, onClose, etc.) without cloneElement
+              // injection or factory indirection.
+              const hasMultipleTabs = cardState.tabs.length > 1;
+              return (
+                <Tugcard
+                  cardId={cardState.id}
+                  meta={registration.defaultMeta}
+                  feedIds={registration.defaultFeedIds ?? []}
+                  tabs={hasMultipleTabs ? cardState.tabs : undefined}
+                  activeTabId={cardState.activeTabId}
+                  onTabSelect={hasMultipleTabs ? (tabId) => store.setActiveTab(cardState.id, tabId) : undefined}
+                  onTabClose={hasMultipleTabs ? (tabId) => store.removeTab(cardState.id, tabId) : undefined}
+                  onTabAdd={hasMultipleTabs ? (cId) => store.addTab(cardState.id, cId) : undefined}
+                  onClose={handleClose}
+                  onDragStart={injected.onDragStart}
+                  onMinSizeChange={injected.onMinSizeChange}
+                  cardTitle={hasMultipleTabs ? cardState.title : undefined}
+                  acceptedFamilies={hasMultipleTabs ? cardState.acceptsFamilies : undefined}
+                >
+                  {registration.contentFactory(cardState.id)}
+                </Tugcard>
+              );
             }}
           />
         );

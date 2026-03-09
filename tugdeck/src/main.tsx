@@ -15,6 +15,7 @@ import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
+import { selectionGuard } from "./components/tugways/selection-guard";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -108,6 +109,32 @@ if (!container) {
 
   // Initialize action dispatch (no DevNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
+
+  // Expose a global save-state function so the native app (Swift) can trigger
+  // a synchronous save of all card states before terminating the WebView.
+  // WKWebView does not fire visibilitychange or beforeunload on app quit,
+  // so the native side calls this via evaluateJavaScript in
+  // applicationShouldTerminate. The function calls all registered save
+  // callbacks (capturing scroll, selection, card content for every card)
+  // and flushes dirty tab states to tugbank with keepalive:true so the
+  // fetch completes even during page teardown.
+  (window as unknown as Record<string, unknown>).__tugdeckSaveState = () => {
+    deck.saveAndFlush();
+  };
+
+  // App deactivation: save all card states to tugbank and dim all selections.
+  // Called by Swift via applicationDidResignActive. Uses normal async fetch
+  // (not sync) because the app and tugcast are still running.
+  (window as unknown as Record<string, unknown>).__tugdeckAppDeactivated = () => {
+    deck.saveCallbacksAndFlush();
+    selectionGuard.deactivateApp();
+  };
+
+  // App activation: restore the active card's selection highlight.
+  // Called by Swift via applicationDidBecomeActive.
+  (window as unknown as Record<string, unknown>).__tugdeckAppActivated = () => {
+    selectionGuard.activateApp();
+  };
 
   // Signal frontend readiness to native app (enables menu items).
   connection.onOpen(() => {
