@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-09T01:16:02Z
+---
+
+## step-5: Integration checkpoint verifying all three bug fixes from steps 1-4 are present, non-conflicting, and passing. Full test suite (1044 tests) and TypeScript compilation both pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f3-state-preservation-more-fixes.md
+
+---
+
+---
 step: step-4
 date: 2025-03-09T01:11:52Z
 ---
