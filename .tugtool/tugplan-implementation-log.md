@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-09T23:57:03Z
+---
+
+## step-4: Created convert-hex-to-hvv.ts script that parses CSS via PostCSS AST, converts standalone hex values to --hvv() calls using sRGB-to-OKLCH pipeline and oklchToHVV(). Special-cases #ffffff to var(--tug-white). Includes round-trip validation mode.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-3
 date: 2025-03-09T23:49:32Z
 ---
