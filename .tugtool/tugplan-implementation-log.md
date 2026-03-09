@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-09T01:11:52Z
+---
+
+## step-4: Added pendingHighlightRestore Map to SelectionGuard. On pointerdown into a card with inactive highlight, stashes the Range and clears the highlight. On pointerup, restores the stashed Range if selection is collapsed, else discards. Clears stash in stopTracking() and reset() as safety nets. Added tests T08-T12.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f3-state-preservation-more-fixes.md
+
+---
+
+---
 step: step-3
 date: 2025-03-09T01:04:19Z
 ---
