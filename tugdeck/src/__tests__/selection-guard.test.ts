@@ -525,17 +525,20 @@ describe("T12 – attach/detach registers and removes CSS.highlights entry", () 
     selectionGuard.reset();
   });
 
-  it("attach() registers 'inactive-selection' in CSS.highlights when API is available", () => {
+  it("attach() registers both 'card-selection' and 'inactive-selection' in CSS.highlights", () => {
     const registry = installMockHighlightApi();
     selectionGuard.attach();
+    expect(registry.has("card-selection")).toBe(true);
     expect(registry.has("inactive-selection")).toBe(true);
   });
 
-  it("detach() removes 'inactive-selection' from CSS.highlights", () => {
+  it("detach() removes both highlights from CSS.highlights", () => {
     const registry = installMockHighlightApi();
     selectionGuard.attach();
+    expect(registry.has("card-selection")).toBe(true);
     expect(registry.has("inactive-selection")).toBe(true);
     selectionGuard.detach();
+    expect(registry.has("card-selection")).toBe(false);
     expect(registry.has("inactive-selection")).toBe(false);
   });
 
@@ -550,10 +553,10 @@ describe("T12 – attach/detach registers and removes CSS.highlights entry", () 
 });
 
 // ---------------------------------------------------------------------------
-// T13: captureInactiveHighlight stores Range and adds it to the Highlight
+// T13: syncActiveHighlight via selectionchange mirrors Range to active Highlight
 // ---------------------------------------------------------------------------
 
-describe("T13 – captureInactiveHighlight", () => {
+describe("T13 – syncActiveHighlight (via selectionchange)", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -567,7 +570,7 @@ describe("T13 – captureInactiveHighlight", () => {
     selectionGuard.reset();
   });
 
-  it("stores a cloned Range in the Highlight object (size increases to 1)", () => {
+  it("mirrors a selection into the card-selection Highlight on selectionchange", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     selectionGuard.registerBoundary("card-hl", boundary);
@@ -577,59 +580,70 @@ describe("T13 – captureInactiveHighlight", () => {
     const mockSel = {
       rangeCount: 1,
       anchorNode: range.startContainer,
+      focusNode: range.endContainer,
+      anchorOffset: 0,
       getRangeAt: (_i: number) => range,
+      removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
     };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
 
-    selectionGuard.captureInactiveHighlight("card-hl");
+    // Fire selectionchange — triggers syncActiveHighlight.
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl).toBeDefined();
-    // captureInactiveHighlight clones the range, so the Highlight contains
-    // a different Range object (the clone), not the original. Verify by size.
-    expect(hl.size).toBe(1);
-    // The stored range should cover the same content as the original.
-    const stored = hl.getAll()[0];
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl).toBeDefined();
+    // syncActiveHighlight clones the range, so the Highlight contains
+    // a cloned Range. Verify by size.
+    expect(activeHl.size).toBe(1);
+    const stored = activeHl.getAll()[0];
     expect(stored).toBeDefined();
     expect(stored.startContainer).toBe(range.startContainer);
     expect(stored.startOffset).toBe(range.startOffset);
     expect(stored.endOffset).toBe(range.endOffset);
 
-    // Restore window
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 
-  it("replaces an existing Range when called again for the same card (size stays 1)", () => {
+  it("replaces an existing Range when selectionchange fires again (size stays 1)", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     selectionGuard.registerBoundary("card-hl2", boundary);
 
     const range1 = makeRange(boundary, "first");
-    const mockSel1 = { rangeCount: 1, anchorNode: range1.startContainer, getRangeAt: () => range1 };
+    const mockSel1 = {
+      rangeCount: 1, anchorNode: range1.startContainer, focusNode: range1.endContainer,
+      anchorOffset: 0, getRangeAt: () => range1, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel1 };
-    selectionGuard.captureInactiveHighlight("card-hl2");
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(1);
-    const firstStored = hl.getAll()[0];
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+    const firstStored = activeHl.getAll()[0];
 
     const range2 = makeRange(boundary, "second");
-    const mockSel2 = { rangeCount: 1, anchorNode: range2.startContainer, getRangeAt: () => range2 };
+    const mockSel2 = {
+      rangeCount: 1, anchorNode: range2.startContainer, focusNode: range2.endContainer,
+      anchorOffset: 0, getRangeAt: () => range2, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel2 };
-    selectionGuard.captureInactiveHighlight("card-hl2");
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
     // The first stored range should be removed; only the second capture remains.
-    expect(hl.has(firstStored)).toBe(false);
-    expect(hl.size).toBe(1);
-    const secondStored = hl.getAll()[0];
+    expect(activeHl.has(firstStored)).toBe(false);
+    expect(activeHl.size).toBe(1);
+    const secondStored = activeHl.getAll()[0];
     expect(secondStored.startContainer).toBe(range2.startContainer);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 
-  it("discards a range whose startContainer is outside the card boundary", () => {
+  it("ignores a selection whose anchor is outside all card boundaries", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     selectionGuard.registerBoundary("card-cross", boundary);
@@ -642,20 +656,24 @@ describe("T13 – captureInactiveHighlight", () => {
     range.setStart(externalNode as unknown as Node, 0);
     range.setEnd(externalNode as unknown as Node, 7);
 
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    const mockSel = {
+      rangeCount: 1, anchorNode: range.startContainer, focusNode: range.endContainer,
+      anchorOffset: 0, getRangeAt: () => range, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-cross");
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    // The range should NOT have been added.
-    expect(hl.size).toBe(0);
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    // The range should NOT have been added — anchor is outside all boundaries.
+    expect(activeHl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
     (happyWindow.document.body as unknown as Element).removeChild(externalNode as unknown as Node);
   });
 
-  it("is a no-op when the highlight API is unavailable (this.highlight is null)", () => {
+  it("is a no-op when the highlight API is unavailable", () => {
     selectionGuard.detach();
     removeMockHighlightApi();
     selectionGuard.reset();
@@ -663,22 +681,52 @@ describe("T13 – captureInactiveHighlight", () => {
     const boundary = makeBoundary();
     selectionGuard.registerBoundary("card-nohl", boundary);
 
-    // No highlight available — should not throw.
-    expect(() => selectionGuard.captureInactiveHighlight("card-nohl")).not.toThrow();
+    // No highlight available — selectionchange should not throw.
+    expect(() => {
+      (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
+    }).not.toThrow();
   });
 
-  it("is a no-op for an unregistered card", () => {
-    expect(() => selectionGuard.captureInactiveHighlight("nonexistent")).not.toThrow();
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(0);
+  it("clears active highlight when selectionchange fires with no selection", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-clr", boundary);
+
+    // First create a selection.
+    const range = makeRange(boundary, "hello");
+    const mockSel = {
+      rangeCount: 1, anchorNode: range.startContainer, focusNode: range.endContainer,
+      anchorOffset: 0, getRangeAt: () => range, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
+
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+
+    // Now fire selectionchange with no selection.
+    const emptySel = {
+      rangeCount: 0, anchorNode: null, focusNode: null,
+      getRangeAt: () => { throw new Error("no range"); },
+      removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => emptySel };
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
+
+    expect(activeHl.size).toBe(0);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
 
 // ---------------------------------------------------------------------------
-// T14: clearInactiveHighlight removes Range from Highlight and highlightRanges
+// T14: unregisterBoundary removes highlight state (removeCardHighlight)
 // ---------------------------------------------------------------------------
 
-describe("T14 – clearInactiveHighlight", () => {
+describe("T14 – unregisterBoundary cleans up highlight state", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -692,31 +740,36 @@ describe("T14 – clearInactiveHighlight", () => {
     selectionGuard.reset();
   });
 
-  it("removes the cloned Range from the Highlight object, bringing size back to 0", () => {
+  it("removes the card's Range from the active Highlight on unregister", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     selectionGuard.registerBoundary("card-clr", boundary);
 
+    // Create a selection in this card via selectionchange.
     const range = makeRange(boundary, "to clear");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    const mockSel = {
+      rangeCount: 1, anchorNode: range.startContainer, focusNode: range.endContainer,
+      anchorOffset: 0, getRangeAt: () => range, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-clr");
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(1);
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
 
-    selectionGuard.clearInactiveHighlight("card-clr");
-    // After clearing, the Highlight should contain no ranges.
-    expect(hl.size).toBe(0);
+    // Unregister — should clean up highlight state.
+    selectionGuard.unregisterBoundary("card-clr");
+    expect(activeHl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 
-  it("is a no-op when the card has no saved Range (does not throw)", () => {
-    expect(() => selectionGuard.clearInactiveHighlight("card-no-range")).not.toThrow();
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(0);
+  it("is a no-op when the card has no highlight state (does not throw)", () => {
+    expect(() => selectionGuard.unregisterBoundary("card-no-range")).not.toThrow();
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(0);
   });
 });
 
@@ -731,7 +784,7 @@ describe("T15 – reset() clears highlight state", () => {
     selectionGuard.reset();
   });
 
-  it("clears all ranges from the Highlight object on reset", () => {
+  it("clears all ranges from both Highlight objects on reset", () => {
     const registry = installMockHighlightApi();
     selectionGuard.attach();
 
@@ -739,16 +792,21 @@ describe("T15 – reset() clears highlight state", () => {
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     selectionGuard.registerBoundary("card-rst", boundary);
 
+    // Create a selection via selectionchange to populate activeHighlight.
     const range = makeRange(boundary, "reset me");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    const mockSel = {
+      rangeCount: 1, anchorNode: range.startContainer, focusNode: range.endContainer,
+      anchorOffset: 0, getRangeAt: () => range, removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-rst");
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
 
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(1);
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
 
     selectionGuard.reset();
-    expect(hl.size).toBe(0);
+    expect(activeHl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
@@ -761,9 +819,11 @@ describe("T15 – reset() clears highlight state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 5f3: pendingHighlightRestore tests (T08–T12 per phase plan)
+// Phase 5f3: activateCard tests (T08–T12 per phase plan)
 //
-// These tests cover the click-back restore behavior added in Step 4.
+// These tests cover the card-switch highlight behavior via pointerdown.
+// In the new single-system architecture, pointerdown calls activateCard()
+// which moves Ranges between activeHighlight and inactiveHighlight.
 // ---------------------------------------------------------------------------
 
 /**
@@ -782,7 +842,20 @@ function firePointerEvent(type: "pointerdown" | "pointerup", targetNode: Node): 
   (happyWindow.document as unknown as Document).dispatchEvent(event);
 }
 
-describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range and clears highlight", () => {
+/**
+ * Helper: simulate a selectionchange to populate a card's active highlight.
+ */
+function simulateSelectionChange(boundary: HTMLElement, range: Range): void {
+  const mockSel = {
+    rangeCount: 1, anchorNode: range.startContainer, focusNode: range.endContainer,
+    anchorOffset: 0, getRangeAt: () => range, removeAllRanges(): void {},
+    setBaseAndExtent(): void {},
+  };
+  (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+  (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
+}
+
+describe("Phase 5f3 T08 – pointerdown moves active card's range to inactive highlight", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -796,46 +869,140 @@ describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range an
     selectionGuard.reset();
   });
 
-  it("clears the highlight and restores the selection immediately on pointerdown", () => {
+  it("moves active card's range to inactive-selection when clicking a different card", () => {
+    // Set up two cards.
+    const boundaryA = makeBoundary();
+    const boundaryB = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
+    const textNodeA = makeTextNode(boundaryA, "card A text");
+    const textNodeB = makeTextNode(boundaryB, "card B text");
+    selectionGuard.registerBoundary("card-a", boundaryA);
+    selectionGuard.registerBoundary("card-b", boundaryB);
+
+    // Create a selection in card A via selectionchange.
+    const rangeA = makeRange(boundaryA, "card A text");
+    simulateSelectionChange(boundaryA, rangeA);
+
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(0);
+
+    // Click on card B — card A's range should move to inactive.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNodeB as unknown as Node);
+
+    // Card A's range moved to inactive highlight.
+    expect(inactiveHl.size).toBe(1);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T09 – pointerdown into inactive card moves its range to active highlight", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("moves clicked card's range from inactive to active highlight on pointerdown", () => {
+    // Set up two cards.
+    const boundaryA = makeBoundary();
+    const boundaryB = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
+    const textNodeA = makeTextNode(boundaryA, "card A");
+    const textNodeB = makeTextNode(boundaryB, "card B");
+    selectionGuard.registerBoundary("card-a", boundaryA);
+    selectionGuard.registerBoundary("card-b", boundaryB);
+
+    // Create selections in both cards: A first, then B.
+    const rangeA = makeRange(boundaryA, "card A");
+    simulateSelectionChange(boundaryA, rangeA);
+
+    // Click card B to make A inactive.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNodeB as unknown as Node);
+
+    // Create selection in card B.
+    const rangeB = makeRange(boundaryB, "card B");
+    simulateSelectionChange(boundaryB, rangeB);
+
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+
+    // Now card B is active, card A is inactive.
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(1);
+
+    // Click back on card A — A's range moves from inactive to active.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNodeA as unknown as Node);
+
+    // Card A's range is now in active highlight.
+    // Card B's range is now in inactive highlight.
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(1);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T10 – activateCard is a no-op when clicking the already-active card", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("keeps the range in active highlight when clicking the same card again", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    const textNode = makeTextNode(boundary, "hello");
-    selectionGuard.registerBoundary("card-stash", boundary);
+    const textNode = makeTextNode(boundary, "same card");
+    selectionGuard.registerBoundary("card-same", boundary);
 
-    // Manually inject a range into highlightRanges via captureInactiveHighlight.
-    const range = makeRange(boundary, "hello");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
-    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-stash");
+    const range = makeRange(boundary, "same card");
+    simulateSelectionChange(boundary, range);
 
-    // Verify the highlight has one range now.
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(1);
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(0);
 
-    // Set up a selection mock that tracks addRange calls for the pointerdown restore.
-    let capturedRange: Range | null = null;
-    const restoreSel = {
-      rangeCount: 0, anchorNode: null, focusNode: null, isCollapsed: true,
-      removeAllRanges(): void { this.rangeCount = 0; },
-      addRange(r: Range): void { capturedRange = r; this.rangeCount = 1; },
-      getRangeAt: () => capturedRange!,
-    };
-    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
-
-    // Fire pointerdown inside the boundary — highlight is cleared and
-    // selection is restored in the same synchronous handler (no flash).
+    // Click the same card again.
+    (global as any).window = happyWindow;
     firePointerEvent("pointerdown", textNode as unknown as Node);
 
-    expect(hl.size).toBe(0);
-    expect(capturedRange).not.toBeNull();
-    expect(capturedRange!.startContainer).toBe(range.startContainer);
+    // Range stays in active highlight.
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
 
-describe("Phase 5f3 T09 – pointerdown into highlighted card restores Selection immediately", () => {
+describe("Phase 5f3 T11 – highlight swap is instant (no flash)", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -849,44 +1016,46 @@ describe("Phase 5f3 T09 – pointerdown into highlighted card restores Selection
     selectionGuard.reset();
   });
 
-  it("restores the stashed Range as the real Selection on pointerdown (not deferred to pointerup)", () => {
-    const boundary = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    const textNode = makeTextNode(boundary, "restore me");
-    selectionGuard.registerBoundary("card-restore", boundary);
+  it("both highlights are updated synchronously in the same pointerdown handler", () => {
+    const boundaryA = makeBoundary();
+    const boundaryB = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
+    const textNodeB = makeTextNode(boundaryB, "card B");
+    selectionGuard.registerBoundary("card-a", boundaryA);
+    selectionGuard.registerBoundary("card-b", boundaryB);
 
-    // Capture an inactive highlight for this card.
-    const range = makeRange(boundary, "restore me");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
-    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-restore");
+    // Card A gets a selection.
+    const rangeA = makeRange(boundaryA, "card A text");
+    simulateSelectionChange(boundaryA, rangeA);
 
-    // Set up a selection mock that tracks addRange calls.
-    let capturedRange: Range | null = null;
-    const restoreSel = {
-      rangeCount: 0,
-      anchorNode: null,
-      focusNode: null,
-      isCollapsed: true,
-      removeAllRanges(): void { this.rangeCount = 0; },
-      addRange(r: Range): void { capturedRange = r; this.rangeCount = 1; },
-      getRangeAt: (_i: number) => capturedRange!,
-    };
-    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
 
-    // Simulate pointerdown into the highlighted card — selection is restored
-    // immediately (same tick) along with highlight clear. No pointerup needed.
-    firePointerEvent("pointerdown", textNode as unknown as Node);
+    // Before click: A is active (1 range), no inactive ranges.
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(0);
 
-    expect(capturedRange).not.toBeNull();
-    expect(capturedRange!.startContainer).toBe(range.startContainer);
+    // Click card B — swap happens in one synchronous call.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNodeB as unknown as Node);
+
+    // After click: A's range moved to inactive. B has no range yet (no selection made).
+    // The key point: no intermediate state where both highlights are empty (flash).
+    expect(inactiveHl.size).toBe(1);
+
+    // Reset should clean up all state.
+    selectionGuard.reset();
+    expect(activeHl.size).toBe(0);
+    expect(inactiveHl.size).toBe(0);
 
     (global as any).window = happyWindow;
-    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
   });
 });
 
-describe("Phase 5f3 T10 – pointerdown restores selection regardless of subsequent drag", () => {
+describe("Phase 5f3 T12 – reset() clears all highlight and tracking state", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -900,155 +1069,214 @@ describe("Phase 5f3 T10 – pointerdown restores selection regardless of subsequ
     selectionGuard.reset();
   });
 
-  it("restores the selection on pointerdown even when selection is non-collapsed", () => {
-    const boundary = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    const textNode = makeTextNode(boundary, "drag me");
-    selectionGuard.registerBoundary("card-drag", boundary);
+  it("reset() clears active and inactive highlights after card switch", () => {
+    const boundaryA = makeBoundary();
+    const boundaryB = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
+    const textNodeB = makeTextNode(boundaryB, "card B");
+    selectionGuard.registerBoundary("card-a", boundaryA);
+    selectionGuard.registerBoundary("card-b", boundaryB);
 
-    // Capture an inactive highlight for this card.
-    const range = makeRange(boundary, "drag me");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
-    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-drag");
-
-    // Set up a non-collapsed selection mock. The restore happens on pointerdown
-    // regardless — the user can then create a new selection via drag if desired.
-    let addRangeCalled = false;
-    const nonCollapsedSel = {
-      rangeCount: 1,
-      anchorNode: textNode,
-      focusNode: textNode,
-      isCollapsed: false,
-      removeAllRanges(): void {},
-      addRange(_r: Range): void { addRangeCalled = true; },
-      getRangeAt: (_i: number) => range,
-    };
-    (global as any).window = { ...happyWindow, getSelection: () => nonCollapsedSel };
-
-    firePointerEvent("pointerdown", textNode as unknown as Node);
-
-    // addRange IS called on pointerdown — the restore is immediate.
-    expect(addRangeCalled).toBe(true);
-
-    // The highlight should be cleared.
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(0);
-
+    // Create selection in A, then switch to B.
+    const rangeA = makeRange(boundaryA, "reset test");
+    simulateSelectionChange(boundaryA, rangeA);
     (global as any).window = happyWindow;
-    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
-  });
-});
+    firePointerEvent("pointerdown", textNodeB as unknown as Node);
 
-describe("Phase 5f3 T11 – highlight restore on pointerdown is immediate (no deferred state)", () => {
-  let registry: MockHighlightRegistry;
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+    expect(inactiveHl.size).toBe(1);
 
-  beforeEach(() => {
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-  });
-
-  afterEach(() => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
+    // reset() clears everything.
     selectionGuard.reset();
-  });
+    expect(activeHl.size).toBe(0);
+    expect(inactiveHl.size).toBe(0);
 
-  it("pointerdown fully clears highlight — reset after pointerdown has nothing to clean up", () => {
-    const boundary = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    const textNode = makeTextNode(boundary, "cancel me");
-    selectionGuard.registerBoundary("card-cancel", boundary);
-
-    // Capture an inactive highlight for this card.
-    const range = makeRange(boundary, "cancel me");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
-    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-cancel");
-
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(1);
-
-    // Set up a selection mock so pointerdown can call addRange during restore.
-    const restoreSel = {
-      rangeCount: 0, isCollapsed: true,
-      removeAllRanges(): void { this.rangeCount = 0; },
-      addRange(_r: Range): void { this.rangeCount = 1; },
-    };
-    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
-
-    // Fire pointerdown — highlight is cleared immediately.
-    firePointerEvent("pointerdown", textNode as unknown as Node);
-    expect(hl.size).toBe(0);
-
-    // reset() after pointerdown should be safe (no deferred state to leak).
-    selectionGuard.reset();
-    expect(hl.size).toBe(0);
-
-    (global as any).window = happyWindow;
-    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
-  });
-});
-
-describe("Phase 5f3 T12 – reset() clears mousedown prevention handler", () => {
-  let registry: MockHighlightRegistry;
-
-  beforeEach(() => {
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-  });
-
-  afterEach(() => {
-    selectionGuard.detach();
-    removeMockHighlightApi();
-    selectionGuard.reset();
-  });
-
-  it("reset() cleans up one-shot mousedown handler installed during highlight restore", () => {
-    const boundary = makeBoundary();
-    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
-    const textNode = makeTextNode(boundary, "reset stash");
-    selectionGuard.registerBoundary("card-rst2", boundary);
-
-    // Capture an inactive highlight.
-    const range = makeRange(boundary, "reset stash");
-    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
-    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
-    selectionGuard.captureInactiveHighlight("card-rst2");
-
-    // Set up a selection mock so pointerdown can call addRange during restore.
-    const restoreSel = {
-      rangeCount: 0, isCollapsed: true,
-      removeAllRanges(): void { this.rangeCount = 0; },
-      addRange(_r: Range): void { this.rangeCount = 1; },
-    };
-    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
-
-    // Trigger pointerdown — restores selection and installs mousedown prevention.
-    firePointerEvent("pointerdown", textNode as unknown as Node);
-
-    const hl = registry.get("inactive-selection") as MockHighlight;
-    expect(hl.size).toBe(0);
-
-    // reset() must clean up the one-shot mousedown handler.
-    selectionGuard.reset();
-
-    // After reset + re-attach, pointerup should not do anything unexpected.
-    registry = installMockHighlightApi();
-    selectionGuard.attach();
-    selectionGuard.registerBoundary("card-rst2", boundary);
-
+    // After reset, pointerup should not do anything unexpected.
     let addRangeCalled = false;
     const collapsedSel = {
-      rangeCount: 0,
-      isCollapsed: true,
+      rangeCount: 0, isCollapsed: true,
       removeAllRanges(): void {},
       addRange(_r: Range): void { addRangeCalled = true; },
     };
     (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
-    firePointerEvent("pointerup", textNode as unknown as Node);
-
+    firePointerEvent("pointerup", textNodeB as unknown as Node);
     expect(addRangeCalled).toBe(false);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T16: saveSelection falls back to cardRanges when browser Selection is cleared
+// ---------------------------------------------------------------------------
+
+describe("T16 – saveSelection cardRanges fallback", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("saveSelection returns saved state from cardRanges after browser Selection is cleared", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-fb", boundary);
+
+    // Create a selection via selectionchange (populates cardRanges).
+    const range = makeRange(boundary, "fallback text");
+    simulateSelectionChange(boundary, range);
+
+    // Verify the active highlight has the range.
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+
+    // Simulate browser clearing the selection (e.g. clicking user-select:none chrome).
+    // This fires selectionchange with rangeCount=0, which removes from activeHighlight
+    // but keeps the Range in cardRanges.
+    const emptySel = {
+      rangeCount: 0, anchorNode: null, focusNode: null,
+      getRangeAt: () => { throw new Error("no range"); },
+      removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => emptySel };
+    (happyWindow.document as unknown as Document).dispatchEvent(new (happyWindow.Event as any)("selectionchange"));
+
+    // Active highlight is now empty (visual cleared).
+    expect(activeHl.size).toBe(0);
+
+    // saveSelection should still return a result via the cardRanges fallback.
+    const saved = selectionGuard.saveSelection("card-fb");
+    expect(saved).not.toBeNull();
+    expect(saved!.anchorPath.length).toBeGreaterThan(0);
+    expect(saved!.focusPath.length).toBeGreaterThan(0);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+
+  it("saveSelection returns null after unregisterBoundary (cardRanges cleaned up)", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-fb2", boundary);
+
+    // Create a selection.
+    const range = makeRange(boundary, "will be cleaned");
+    simulateSelectionChange(boundary, range);
+
+    // Unregister removes cardRanges entry via removeCardHighlight.
+    selectionGuard.unregisterBoundary("card-fb2");
+
+    // saveSelection should return null — boundary no longer registered.
+    const emptySel = {
+      rangeCount: 0, anchorNode: null, focusNode: null,
+      getRangeAt: () => { throw new Error("no range"); },
+      removeAllRanges(): void {},
+      setBaseAndExtent(): void {},
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => emptySel };
+    const saved = selectionGuard.saveSelection("card-fb2");
+    expect(saved).toBeNull();
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T17: activateCard swaps highlights for external focus changes
+// ---------------------------------------------------------------------------
+
+describe("T17 – activateCard (public API)", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("moves active card's range to inactive and new card's range to active", () => {
+    const boundaryA = makeBoundary();
+    const boundaryB = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).appendChild(boundaryB as unknown as Node);
+    selectionGuard.registerBoundary("card-a", boundaryA);
+    selectionGuard.registerBoundary("card-b", boundaryB);
+
+    // Create selection in card A.
+    const rangeA = makeRange(boundaryA, "card A notify");
+    simulateSelectionChange(boundaryA, rangeA);
+
+    // Switch to card B to make A inactive.
+    const textNodeB = makeTextNode(boundaryB, "card B notify");
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNodeB as unknown as Node);
+
+    // Create selection in card B.
+    const rangeB = makeRange(boundaryB, "card B notify");
+    simulateSelectionChange(boundaryB, rangeB);
+
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(1);
+
+    // Simulate external focus change (e.g. useLayoutEffect) via activateCard.
+    (global as any).window = happyWindow;
+    selectionGuard.activateCard("card-a");
+
+    // A's range moved from inactive to active; B's range moved to inactive.
+    expect(activeHl.size).toBe(1);
+    expect(inactiveHl.size).toBe(1);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryA as unknown as Node);
+    (happyWindow.document.body as unknown as Element).removeChild(boundaryB as unknown as Node);
+  });
+
+  it("is a no-op when highlight API is unavailable", () => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+
+    // No highlight API — should not throw.
+    expect(() => selectionGuard.activateCard("any-card")).not.toThrow();
+  });
+
+  it("is safe for an unregistered card (no range to swap)", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    selectionGuard.registerBoundary("card-real", boundary);
+
+    const range = makeRange(boundary, "real card");
+    simulateSelectionChange(boundary, range);
+
+    const activeHl = registry.get("card-selection") as MockHighlight;
+    expect(activeHl.size).toBe(1);
+
+    // Activate an unregistered card — moves real card's range to inactive.
+    selectionGuard.activateCard("card-unknown");
+
+    const inactiveHl = registry.get("inactive-selection") as MockHighlight;
+    expect(inactiveHl.size).toBe(1);
+    expect(activeHl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);

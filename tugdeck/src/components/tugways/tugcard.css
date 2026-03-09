@@ -168,48 +168,43 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * Suppress native ::selection rendering. All selection painting is done via
+ * CSS Custom Highlight API — "card-selection" for the active card and
+ * "inactive-selection" for dimmed cards. This eliminates the flash that
+ * occurred when swapping between ::selection and ::highlight() rendering
+ * systems, because there is now only one system.
+ *
+ * The browser Selection object still works for copy/paste and accessibility;
+ * only the visual painting is suppressed.
+ *
+ * Rule 4 of Rules of Tugways: appearance changes through CSS and DOM.
+ */
 .tugcard-content ::selection {
+  background-color: transparent;
+  color: inherit;
+}
+
+/*
+ * Active card selection via CSS Custom Highlight API.
+ *
+ * SelectionGuard mirrors the live browser Selection into this highlight on
+ * every selectionchange event. This is the ONLY visible selection rendering.
+ */
+::highlight(card-selection) {
   background-color: var(--tug-base-selection-bg);
   color: var(--tug-base-selection-fg);
 }
 
 /*
- * Inactive selection via CSS Custom Highlight API (Phase 5f2, [D03], Spec S04).
+ * Inactive (dimmed) card selection via CSS Custom Highlight API.
  *
- * The "inactive-selection" highlight is managed by SelectionGuard, which
- * captures the live selection Range on pointerdown outside the card and
- * registers it with CSS.highlights.set("inactive-selection", ...).
- *
- * This approach is necessary because the browser clears the global Selection
- * object on pointerdown in another card, making ::selection unstyleable for
- * inactive cards. CSS Custom Highlights are independent of the browser's
- * global Selection and persist across focus changes.
- *
- * Rule 4 of Rules of Tugways: appearance changes through CSS and DOM, never
- * React state. The style definition stays in CSS; JavaScript only creates the
- * Highlight object and registers ranges.
- *
- * [D03] CSS Custom Highlight API (#d03-highlight-api)
+ * When a card loses focus, SelectionGuard moves its Range from
+ * "card-selection" to "inactive-selection". When the card regains focus,
+ * the Range moves back. The Highlight swap itself is a simple
+ * delete/add — no intermediate empty state, no flash.
  */
 ::highlight(inactive-selection) {
-  background-color: var(--tug-base-selection-bg-inactive);
-  color: inherit;
-}
-
-/*
- * Inactive selection fallback via ::selection (GRACEFUL DEGRADATION ONLY).
- *
- * This rule is now effectively a no-op: the browser clears the global
- * Selection on pointerdown in another card, so ::selection has nothing to
- * style when a card is inactive. Retained as a harmless fallback for browsers
- * that do not support the CSS Custom Highlight API — in those browsers,
- * inactive cards simply will not show dimmed selections.
- *
- * Do not remove this rule. It provides safe degradation without side effects.
- *
- * [D05] Inactive selection dimmed CSS (#d05-inactive-selection)
- */
-.card-frame[data-focused="false"] .tugcard-content ::selection {
   background-color: var(--tug-base-selection-bg-inactive);
   color: inherit;
 }

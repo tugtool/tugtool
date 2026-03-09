@@ -44,7 +44,8 @@
  * Hook order (rules-of-hooks compliant):
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
  *   useRequiredResponderChain -> useCallback -> useResponder ->
- *   useEffect (tabDragCoordinator init) -> useLayoutEffect (initial clip-path) ->
+ *   useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
+ *   useLayoutEffect (selection highlight sync) -> useLayoutEffect (initial clip-path) ->
  *   useEffect (store subscriber for clip-path updates)
  *
  * The canvas div with grid background is provided by #deck-container in
@@ -74,6 +75,7 @@ import { getRegistration } from "@/card-registry";
 import type { CardState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { tabDragCoordinator } from "@/tab-drag-coordinator";
+import { selectionGuard } from "@/components/tugways/selection-guard";
 
 // ---- DeckCanvasProps (Spec S04) ----
 
@@ -338,6 +340,23 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     setDeselected(false);
     manager.makeFirstResponder(focusedCardId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync SelectionGuard highlight state whenever the focused card changes.
+  //
+  // useLayoutEffect ensures the highlight swap happens before paint, so there is
+  // no frame where the old card's selection shows active blue while the card is
+  // visually unfocused. This single effect covers ALL focus-change paths:
+  // pointer clicks (redundant with handlePointerDown's internal activateCard —
+  // the second call is a no-op), keyboard shortcuts (Ctrl+`), card creation
+  // (addCard), card close (focus shifts to next card), and initial restore.
+  //
+  // Rule 4: The appearance change is through the CSS Custom Highlight API (DOM),
+  // not React state. This effect is only the trigger.
+  useLayoutEffect(() => {
+    if (focusedCardId) {
+      selectionGuard.activateCard(focusedCardId);
+    }
+  }, [focusedCardId]);
 
   // Run updateSetAppearance once after initial mount so clip-path and data-in-set are
   // applied for any cards that are already in sets when the layout is first rendered. [D08, D03]
