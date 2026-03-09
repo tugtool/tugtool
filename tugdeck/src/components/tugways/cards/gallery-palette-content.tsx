@@ -9,7 +9,8 @@
  * UI sections:
  *   - Canonical color strip: 24 swatches at vib=50, val=50
  *   - L curve editor: SVG with draggable points for per-hue canonical lightness
- *   - VibVal grid: 11x11 grid showing vibrancy x value for the selected hue
+ *   - VibValPicker: interactive 2D vib/val drag picker for the selected hue,
+ *     with preset overlay and CSS formula export
  *   - Export/import: JSON serialization of canonical L values
  *
  * Rules of Tugways compliance:
@@ -20,11 +21,12 @@
  * @module components/tugways/cards/gallery-palette-content
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   HUE_FAMILIES,
   hvvColor,
   DEFAULT_CANONICAL_L,
+  HVV_PRESETS,
   L_DARK,
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
@@ -289,6 +291,204 @@ function VibValGrid({
 }
 
 // ---------------------------------------------------------------------------
+// VibVal picker grid constants
+// ---------------------------------------------------------------------------
+
+// 21 steps: 0, 5, 10, ..., 100  (vib x-axis, val y-axis)
+const PICKER_STEPS = 21;
+const PICKER_VALS = Array.from({ length: PICKER_STEPS }, (_, i) => 100 - i * 5); // 100..0 top-to-bottom
+const PICKER_VIBS = Array.from({ length: PICKER_STEPS }, (_, i) => i * 5);       // 0..100 left-to-right
+
+// ---------------------------------------------------------------------------
+// PresetOverlay — 5 labeled preset dots on the picker surface
+// ---------------------------------------------------------------------------
+
+function PresetOverlay() {
+  return (
+    <>
+      {Object.entries(HVV_PRESETS).map(([name, { vib, val }]) => {
+        // left = vib/100*100%, bottom = val/100*100%
+        const leftPct = vib;
+        const bottomPct = val;
+        return (
+          <div
+            key={name}
+            className="gp-picker-preset-dot"
+            style={{ left: `${leftPct}%`, bottom: `${bottomPct}%` }}
+            data-testid="gp-preset-dot"
+            data-preset={name}
+            title={`${name} (vib=${vib}, val=${val})`}
+          >
+            <span className="gp-picker-preset-label">{name}</span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CssFormulaExport — generates and copies CSS formula snippet
+// ---------------------------------------------------------------------------
+
+function CssFormulaExport({
+  hueName,
+  vib,
+  val,
+}: {
+  hueName: string;
+  vib: number;
+  val: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const formula = [
+    `oklch(`,
+    `  calc(`,
+    `    var(--tug-l-dark)`,
+    `    + clamp(0, ${val}, 50)`,
+    `      * (var(--tug-${hueName}-canonical-l) - var(--tug-l-dark)) / 50`,
+    `    + (clamp(50, ${val}, 100) - 50)`,
+    `      * (var(--tug-l-light) - var(--tug-${hueName}-canonical-l)) / 50`,
+    `  )`,
+    `  calc(${vib} / 100 * var(--tug-${hueName}-peak-c))`,
+    `  var(--tug-${hueName}-h)`,
+    `)`,
+  ].join("\n");
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(formula).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {
+      // clipboard unavailable in test env — silently ignore
+    });
+  }, [formula]);
+
+  return (
+    <div className="gp-formula-export" data-testid="gp-formula-export">
+      <pre className="gp-formula-snippet" data-testid="gp-formula-snippet">{formula}</pre>
+      <button
+        className="gp-action-btn gp-formula-copy-btn"
+        onClick={handleCopy}
+        data-testid="gp-formula-copy-btn"
+      >
+        {copied ? "Copied" : "Copy CSS"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VibValPicker — interactive 2D vib/val drag picker
+// ---------------------------------------------------------------------------
+
+function VibValPicker({
+  hueName,
+  canonicalL,
+}: {
+  hueName: string;
+  canonicalL: number;
+}) {
+  const [vib, setVib] = useState(50);
+  const [val, setVal] = useState(50);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const capturedRef = useRef(false);
+
+  const computeVibVal = useCallback((clientX: number, clientY: number) => {
+    if (!gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const rawVib = ((clientX - rect.left) / rect.width) * 100;
+    const rawVal = (1 - (clientY - rect.top) / rect.height) * 100;
+    setVib(Math.round(Math.max(0, Math.min(100, rawVib))));
+    setVal(Math.round(Math.max(0, Math.min(100, rawVal))));
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    capturedRef.current = true;
+    computeVibVal(e.clientX, e.clientY);
+  }, [computeVibVal]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!capturedRef.current) return;
+    computeVibVal(e.clientX, e.clientY);
+  }, [computeVibVal]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    capturedRef.current = false;
+  }, []);
+
+  const selectedColor = hvvColor(hueName, vib, val, canonicalL);
+
+  // Crosshair position: left = vib%, bottom = val%
+  const crosshairLeft = `${vib}%`;
+  const crosshairBottom = `${val}%`;
+
+  return (
+    <div className="gp-picker-outer" data-testid="gp-picker-outer">
+      {/* 2D color grid surface */}
+      <div
+        ref={gridRef}
+        className="gp-picker-grid"
+        data-testid="gp-picker-grid"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        style={{ touchAction: "none" }}
+      >
+        {/* Rows: val from 100 (top) to 0 (bottom) */}
+        {PICKER_VALS.map((rowVal) => (
+          <div key={rowVal} className="gp-picker-row">
+            {PICKER_VIBS.map((colVib) => {
+              const color = hvvColor(hueName, colVib, rowVal, canonicalL);
+              return (
+                <div
+                  key={colVib}
+                  className="gp-picker-cell"
+                  style={{ backgroundColor: color }}
+                  data-testid="gp-picker-cell"
+                  data-color={color}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* Preset overlay dots */}
+        <PresetOverlay />
+
+        {/* Crosshair indicator */}
+        <div
+          className="gp-picker-crosshair"
+          style={{ left: crosshairLeft, bottom: crosshairBottom }}
+          data-testid="gp-picker-crosshair"
+        />
+      </div>
+
+      {/* Result swatch */}
+      <div
+        className="gp-picker-swatch"
+        style={{ backgroundColor: selectedColor }}
+        data-testid="gp-picker-swatch"
+        data-color={selectedColor}
+        title={`vib=${vib}, val=${val}: ${selectedColor}`}
+      />
+
+      {/* Vib/val readout */}
+      <div className="gp-picker-readout" data-testid="gp-picker-readout">
+        <span>vib={vib}</span>
+        <span>val={val}</span>
+      </div>
+
+      {/* CSS formula export */}
+      <CssFormulaExport hueName={hueName} vib={vib} val={val} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // JSON export/import helpers (exported for unit testing)
 // ---------------------------------------------------------------------------
 
@@ -476,11 +676,11 @@ export function GalleryPaletteContent() {
         />
       </div>
 
-      {/* VibVal grid for selected hue */}
+      {/* VibVal picker for selected hue */}
       {selectedHue && (
         <div className="cg-section">
           <div className="cg-section-title">{selectedHue} — Vibrancy x Value</div>
-          <VibValGrid
+          <VibValPicker
             hueName={selectedHue}
             canonicalL={canonicalL[selectedHue]}
           />

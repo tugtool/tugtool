@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-09T22:12:18Z
+---
+
+## step-8: Final verification: full test suite 1088 pass 0 fail, all grep audits clean, 120 chromatic presets, 5 neutral presets, gallery editor with VibValPicker confirmed
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-7
+date: 2025-03-09T22:09:16Z
+---
+
+## step-7: Added VibValPicker (21x21 grid, pointer drag, crosshair), PresetOverlay (5 labeled dots at Table T01 coordinates), CssFormulaExport (Spec S01 formula with clipboard copy). Replaced VibValGrid in GalleryPaletteContent. 1088 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-6
+date: 2025-03-09T22:00:43Z
+---
+
+## step-6: Integration checkpoint: full test suite 1083 pass 0 fail, grep audits confirm zero stale references to coefficient knobs or removed preset names
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-5
+date: 2025-03-09T21:57:41Z
+---
+
+## step-5: Updated palette-engine.test.ts: HVV_PRESETS tests assert 5 entries with Table T01 values, chromatic preset counts changed from 168 to 120, neutral ramp tests updated, gamut safety counts updated, P3 block regex updated. Full suite: 1083 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-4
+date: 2025-03-09T21:52:17Z
+---
+
+## step-4: Updated PALETTE_VAR_REGEX in style-inspector-overlay.ts and all affected test assertions in style-inspector-overlay.test.ts. Theme files confirmed clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-3
+date: 2025-03-09T21:44:20Z
+---
+
+## step-3: Updated tug-tokens.css: replaced all 9 var(--tug-{hue}-accent) palette preset references with var(--tug-{hue}-intense), semantic token names unchanged
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-2
+date: 2025-03-09T21:40:27Z
+---
+
+## step-2: Rewrote palette-engine.ts: updated HVV_PRESETS from 7 to 5 entries with Table T01 values, rewrote hvvColor() to clamp-based piecewise formula per Spec S02, updated JSDoc comments
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
+step: step-1
+date: 2025-03-09T21:35:29Z
+---
+
+## step-1: Rewrote tug-palette.css: removed 13 coefficient variables, replaced 7-preset formula blocks with 5-preset calc()+clamp() using literal vib/val numbers, renamed accent to intense, removed subtle/deep, updated neutral ramp to 5 presets per Table T02
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-5
 date: 2025-03-09T17:30:08Z
 ---
