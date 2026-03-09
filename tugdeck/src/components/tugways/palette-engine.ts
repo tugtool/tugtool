@@ -7,11 +7,17 @@
  *   - Vibrancy (0-100): chroma axis; at vib=50, C equals the sRGB-safe max
  *   - Value (0-100): lightness axis; val=50 gives the per-hue canonical L
  *
- * The HVV palette is expressed as pure CSS in `tug-palette.css` (Phase 5d5e).
- * This module provides `hvvColor()` for programmatic JS use and exports the
- * authoritative source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L,
- * MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css
- * was derived from.
+ * The HVV palette is expressed as pure CSS in `tug-palette.css`. This module
+ * provides `hvvColor()` for programmatic JS use and exports the authoritative
+ * source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE,
+ * MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css was derived from.
+ *
+ * Five convenience presets per hue (HVV_PRESETS):
+ *   canonical  vib=50, val=50   The crayon color — reference point
+ *   light      vib=20, val=85   Background-safe, airy
+ *   dark       vib=50, val=20   Contrast text, dark surfaces
+ *   intense    vib=90, val=50   Pops, draws attention
+ *   muted      vib=20, val=50   Subdued, secondary
  *
  * @module components/tugways/palette-engine
  */
@@ -306,17 +312,16 @@ export const DEFAULT_CANONICAL_L: Record<string, number> = {
 };
 
 /**
- * Seven semantic presets per hue. Each preset maps a name to {vib, val}.
- * Per List L04 in the plan specification.
+ * Five convenience presets per hue. Each preset maps a name to {vib, val}.
+ * These are labeled reference points in the continuous 100×100 vib/val space.
+ * Per Table T01 in the plan specification.
  */
 export const HVV_PRESETS: Record<string, { vib: number; val: number }> = {
   canonical: { vib: 50, val: 50 },
-  accent:    { vib: 80, val: 50 },
-  muted:     { vib: 25, val: 55 },
-  light:     { vib: 30, val: 82 },
-  subtle:    { vib: 15, val: 92 },
-  dark:      { vib: 50, val: 25 },
-  deep:      { vib: 70, val: 15 },
+  light:     { vib: 20, val: 85 },
+  dark:      { vib: 50, val: 20 },
+  intense:   { vib: 90, val: 50 },
+  muted:     { vib: 20, val: 50 },
 };
 
 // ---------------------------------------------------------------------------
@@ -434,7 +439,9 @@ export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
  * Compute an oklch() CSS string from hue name, vibrancy (0-100), value (0-100),
  * and canonical lightness.
  *
- * val → L: piecewise linear through canonicalL at val=50.
+ * val → L: piecewise via clamp, matching the CSS calc()+clamp() formula in
+ * tug-palette.css exactly. Math.min(val, 50) ≡ CSS clamp(0, val, 50), and
+ * Math.max(val - 50, 0) ≡ CSS (clamp(50, val, 100) - 50).
  *   val=0   → L_DARK (0.15)
  *   val=50  → canonicalL
  *   val=100 → L_LIGHT (0.96)
@@ -464,13 +471,10 @@ export function hvvColor(
   const maxC = MAX_CHROMA_FOR_HUE[hueName] ?? 0.022;
   const peakC = peakChroma !== undefined ? peakChroma : maxC * PEAK_C_SCALE;
 
-  // val → L: piecewise through canonicalL at val=50
-  let L: number;
-  if (val <= 50) {
-    L = L_DARK + (val / 50) * (canonicalL - L_DARK);
-  } else {
-    L = canonicalL + ((val - 50) / 50) * (L_LIGHT - canonicalL);
-  }
+  // val → L: piecewise via clamp (matches CSS calc()+clamp() formula in tug-palette.css)
+  const L = L_DARK
+    + Math.min(val, 50) * (canonicalL - L_DARK) / 50
+    + Math.max(val - 50, 0) * (L_LIGHT - canonicalL) / 50;
 
   // vib → C: linear 0 → peakC
   const C = (vib / 100) * peakC;

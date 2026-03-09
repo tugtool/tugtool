@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-09T21:40:27Z
+---
+
+## step-2: Rewrote palette-engine.ts: updated HVV_PRESETS from 7 to 5 entries with Table T01 values, rewrote hvvColor() to clamp-based piecewise formula per Spec S02, updated JSDoc comments
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-1
 date: 2025-03-09T21:35:29Z
 ---
