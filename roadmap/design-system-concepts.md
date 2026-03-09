@@ -14,6 +14,8 @@
 8. **One responsibility per layer.** DeckManager owns the layout tree. DeckCanvas maps state to components. CardFrame owns geometry. Tugcard owns chrome. Card content owns domain logic. Don't reach across layers. [D01, D03, D05]
 9. **Live preview is appearance-zone only; commit crosses zone boundaries.** During mutation transactions (D64), all preview mutations are CSS/DOM. The commit handler may write to stores or React state. Never mix preview with state changes. [D64, D65]
 10. **Controls emit actions; responders handle actions.** Controls (buttons, sliders, pickers) are not responder nodes (D63). They dispatch ActionEvents into the chain. Responders receive and handle them. [D61, D63]
+11. **After triggering child `setState` from a parent effect, never measure child DOM inline — it's stale.** Use a child-driven ready callback: the child's own `useLayoutEffect` fires after its DOM commits. This is a React contract, not a timing bet. [D78]
+12. **Never use `requestAnimationFrame` for operations that depend on React state commits.** RAF timing relative to React's commit cycle is an implementation detail of the browser scheduler, not a contract. Use the ready-callback pattern (Rule 11) instead. [D79]
 
 ---
 
@@ -127,6 +129,8 @@
 | [D75] | Neutral ramp and opacity: `--tug-neutral-*` achromatic ramp, CSS relative color syntax for alpha | Concept 22 | [#d75-neutral-ramp](#d75-neutral-ramp) |
 | [D76] | TugAnimator: single programmatic animation engine wrapping WAAPI | Concept 8 | [#d76-tuganimator](#d76-tuganimator) |
 | [D77] | Inactive selection appearance: dimmed highlight in unfocused cards via CSS Custom Highlight API | Concept 18 | [#d77-inactive-selection](#d77-inactive-selection) |
+| [D78] | Child-driven ready callback: parent triggers child setState, child signals DOM commit via `useLayoutEffect` | Concept 18 | [#d78-content-ready](#d78-content-ready) |
+| [D79] | No RAF for React state-dependent DOM operations — RAF is a timing bet, not a contract | Concept 18 | [#d79-no-raf-for-state](#d79-no-raf-for-state) |
 
 ### Key Architectural Patterns
 
@@ -3270,6 +3274,50 @@ The `--tug-base-selection-bg-inactive` token is defined in `tug-tokens.css` with
 **Fallback:** The original `::selection` rule on `.card-frame[data-focused="false"]` is retained as a harmless no-op — it has nothing to style since the browser clears the Selection, but it provides graceful degradation on browsers that do not support the CSS Custom Highlight API.
 
 **Note:** Feature detection (`CSS.highlights !== undefined`) gates all highlight operations. On unsupported browsers, inactive cards simply do not show dimmed selections — no errors occur.
+
+#### Child-Driven Ready Callback {#d78-content-ready}
+
+**[D78] Child-driven ready callback: parent triggers child setState, child signals DOM commit via `useLayoutEffect`.**
+
+When a parent component triggers a child's `setState` (e.g., calling `onRestore` to restore saved content), the parent cannot measure or manipulate the child's DOM inline — the child's re-render has not committed yet. This is a proven React 19 fact, not a theory:
+
+- `setState` inside `useLayoutEffect` does NOT commit child DOM inline. The parent sees stale DOM.
+- `flushSync` inside `useLayoutEffect` is a noop — it does not force inline commit.
+- Bottom-up effect ordering does not help. Child `setState` is not committed between child and parent layout effects.
+- A parent's no-deps `useLayoutEffect` does NOT fire on the child's re-render (the parent doesn't re-render).
+
+**The solution: a ref-flag mechanism in the child.** When `onRestore` is called, it sets a ref flag (`restorePending = true`) and calls `setState`. The child's own no-deps `useLayoutEffect` fires on every render of that component — including the re-render caused by `setState`. When it sees the flag, it fires the `onContentReady` callback and clears the flag.
+
+This works because a component's own `useLayoutEffect` firing after its own DOM commit is a React contract, not a timing bet. The mechanism:
+
+1. Parent calls `onRestore(savedState)` — this calls child's `setState` and sets `restorePending = true`
+2. Child re-renders with new state
+3. Child's no-deps `useLayoutEffect` fires — DOM is committed
+4. Flag is true → fire `onContentReady`, clear flag
+
+**Properties proven by spike (tugdeck/src/__tests__/content-ready-spike.test.tsx):**
+- DOM is fully committed when the callback fires (S2)
+- One-shot per restore — no false fires on subsequent re-renders (S3)
+- Sequential restores each get their own callback (S4)
+- Non-restore `setState` (user interaction) does not trigger the callback (S5)
+- Works through context indirection, nested components, and sibling components (S6, S7, S8)
+- Supports cancellation via external ref guard (S11)
+
+**Integration with `useTugcardPersistence`:** The ref-flag mechanism is built into the persistence hook. Card content components get `onContentReady` for free when they use `useTugcardPersistence`. Tugcard's restore flow uses it: Phase 1 effect hides content and calls `onRestore`; the `onContentReady` callback applies scroll, restores selection, and unhides.
+
+#### No RAF for React State-Dependent DOM Operations {#d79-no-raf-for-state}
+
+**[D79] Never use `requestAnimationFrame` for operations that depend on React state commits. RAF is a timing bet, not a contract.**
+
+The prior pattern in tugcard's restore flow used a double-RAF (nested `requestAnimationFrame`) to wait for child content to be laid out before applying scroll position. This pattern is fundamentally flawed:
+
+- **RAF timing relative to React's commit cycle is an implementation detail.** In current browsers, SyncLane updates process before the next paint, so a single RAF happens to see committed DOM. But this is not a contract — browser schedulers, React internals, and concurrent features can all change this relationship.
+- **Double-RAF is a timing guess with no verification.** It fires once and forgets. If the child's re-render hasn't committed by the second frame (e.g., during heavy app-launch rendering), `scrollTop` is silently clamped to 0 with no retry.
+- **RAF is not testable in happy-dom.** The test environment implements RAF via `setTimeout(0)`, which does not match browser scheduling. Timing-based patterns cannot be reliably verified in tests.
+
+**The replacement:** Use the child-driven ready callback (D78). The child's `useLayoutEffect` fires at exactly the right moment — after its DOM commits. This is deterministic, testable, and based on a React contract.
+
+**Scope:** This rule applies specifically to DOM operations that depend on React state commits (scroll restore after content restore, selection restore after content mount, focus management after state-driven visibility changes). RAF remains appropriate for non-React DOM operations: drag frame batching, pointer move throttling, ResizeObserver write deferral (to avoid observer loops), and continuous animations. The distinction: if the operation waits for React to commit a state change, use Rule 11. If it batches raw DOM reads/writes independent of React, RAF is fine.
 
 #### Monaco Editor Forward Compatibility {#monaco-forward-compat}
 

@@ -510,6 +510,54 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 **Note**: Phase 5f3 depends on Phase 5f2 (the CSS Custom Highlight infrastructure and RAF deferral must exist). It corrects ordering, adds missing lifecycle hooks, and closes the click-back restore loop.
 
+### Phase 5f4: State Preservation Solidified (Concept 18, [D78], [D79])
+
+**Goal**: Replace the double-RAF timing bet in tugcard's scroll/selection restore with a deterministic child-driven ready callback. Establish the `onContentReady` facility as a general-purpose primitive in `useTugcardPersistence`. Add Rules of Tugways 11 and 12 to codify the proven React 19 commit timing guarantees.
+
+**Background — React 19 commit timing (spike findings)**:
+
+A spike (`tugdeck/src/__tests__/react19-commit-timing.test.tsx`) proved six facts about React 19's commit timing that invalidate the double-RAF approach:
+
+1. **F1**: `setState` inside `useLayoutEffect` does NOT commit child DOM inline. The parent's effect body sees stale DOM (0 items, not 3).
+2. **F2**: `flushSync` inside `useLayoutEffect` is a noop — does not force inline commit.
+3. **F3**: Bottom-up effect ordering does not help. Child's `useLayoutEffect` fires first, calls `setState`, but parent's effect fires after and still sees stale DOM.
+4. **F4**: A parent's no-deps `useLayoutEffect` does NOT fire on the child's re-render (the parent doesn't re-render — only the child does).
+5. **F5**: After `act()` boundary (all React work flushed), DOM is committed. This confirms the re-render happens but in a separate commit cycle.
+6. **F6**: Direct DOM mutation (no `setState`) IS immediately visible inline.
+
+A second spike (`tugdeck/src/__tests__/content-ready-spike.test.tsx`) proved the general principle for the replacement mechanism across 11 scenarios:
+
+**The ref-flag principle**: A component's own no-deps `useLayoutEffect` fires on every render of THAT component — including re-renders caused by its own `setState`. By setting a ref flag when `onRestore` is called and checking it in a no-deps `useLayoutEffect`, the hook fires `onContentReady` at exactly the right moment: after the child's restored state is committed to the DOM. The mechanism is content-agnostic — it doesn't need to know what state changed, only that `onRestore` was called.
+
+Scenarios proven: basic ref-flag (S1), DOM committed at callback time (S2), one-shot per restore (S3), rapid sequential restores (S4), no false fires from user interaction setState (S5), independent sibling components (S6), full persistence context indirection (S7), nested content with grandchild rendering (S8), static content no false signals (S9), DOM measurements valid in callback (S10), rapid tab switch cancellation (S11).
+
+**What to do**:
+
+1. **Extend `TugcardPersistenceCallbacks`**: Add `onContentReady?: () => void` to the interface in `use-tugcard-persistence.tsx`. This is optional — existing card content that doesn't need the ready signal continues to work unchanged.
+
+2. **Extend `useTugcardPersistence` with the ref-flag mechanism**: Add a `restorePendingRef` and a no-deps `useLayoutEffect` inside the hook. When `onRestore` is called (by Tugcard), the wrapper sets `restorePendingRef = true` before delegating to the card content's restore callback. The no-deps `useLayoutEffect` checks the flag on every render; when set, it fires `onContentReady` (through the registered callbacks) and clears the flag. This is the 12-line mechanism proven in the spike.
+
+3. **Rewrite tugcard's restore flow**: Replace the double-RAF pattern (lines 344-409 of `tugcard.tsx`) with a two-phase approach:
+   - **Phase 1 effect** (`useLayoutEffect [activeTabId]`): Call `onRestore(bag.content)` to trigger child `setState`. If `bag.scroll` exists, apply `visibility: hidden` to the content area and store pending scroll/selection in refs.
+   - **`onContentReady` callback**: Registered by Tugcard with the persistence callbacks. When fired by the child's hook, applies `scrollTop`/`scrollLeft` from pending refs, restores selection via `selectionGuard.restoreSelection`, and removes `visibility: hidden`. No RAF anywhere.
+   - **Cleanup**: If the effect re-fires (rapid tab switch) before `onContentReady`, clear pending refs and restore visibility.
+   - **No-persistence fallback**: When no card content has registered `useTugcardPersistence` (so `onContentReady` never fires), apply scroll/selection immediately in the Phase 1 effect — no hiding needed since there's no child `setState` to wait for.
+
+4. **Update existing tests**: Rewrite tests in `tugcard.test.tsx` that verify or work around the double-RAF pattern. Tests that use double `setTimeout(0)` to flush nested RAFs should be replaced with tests that verify the `onContentReady` callback sequence. Add new tests for the no-persistence fallback path.
+
+5. **Keep spike tests**: The two spike test files (`react19-commit-timing.test.tsx` and `content-ready-spike.test.tsx`) are reference documentation. They stay as-is — they prove the foundational facts that Rules 11 and 12 are built on.
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/use-tugcard-persistence.tsx` — add `onContentReady` to `TugcardPersistenceCallbacks`, add ref-flag mechanism to `useTugcardPersistence`
+2. `tugdeck/src/components/tugways/tugcard.tsx` — replace double-RAF restore with Phase 1 effect + `onContentReady` callback + cleanup + no-persistence fallback
+3. `tugdeck/src/__tests__/use-tugcard-persistence.test.tsx` — add tests for `onContentReady` registration, ref-flag one-shot behavior, no false fires
+4. `tugdeck/src/__tests__/tugcard.test.tsx` — rewrite RAF-dependent restore tests for `onContentReady` pattern
+5. `roadmap/design-system-concepts.md` — Rules 11 and 12 added, design decisions D78 and D79 added (done prior to this phase as spike conclusions)
+
+**Result**: Scroll and selection restore is deterministic. The double-RAF timing bet is eliminated. The `onContentReady` facility is generally available via `useTugcardPersistence` for any future DOM operation that depends on restored content being committed. Rules of Tugways 11 ([D78]) and 12 ([D79]) codify the React 19 commit timing facts and the correct pattern. The spike test files serve as permanent reference documentation for the underlying React guarantees.
+
+**Note**: Phase 5f4 depends on Phase 5f3 (the content-first restore ordering and save-on-close infrastructure must exist). It replaces the RAF timing mechanism but preserves all other Phase 5f3 behavior (visibility flash suppression, cleanup on rapid tab switch, save callbacks). The `onContentReady` pattern is forward-compatible with Monaco editor and terminal buffer persistence (Phase 9) — any card content that calls `setState` in its `onRestore` callback automatically gets the deterministic ready signal.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Status: COMPLETE** (2026-03-04)
@@ -1205,6 +1253,7 @@ Phase 5d3 (Mutation Transactions) depends on Phase 5d2 (action phases drive tran
 Phase 5d4 (Observable Properties) depends on Phase 5d2 (explicit-target dispatch) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases.
 Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
+Phase 5f4 (State Preservation Solidified) depends on Phase 5f3 (content-first restore ordering and save-on-close must exist). It replaces the double-RAF timing bet with a deterministic child-driven ready callback (`onContentReady`). The `onContentReady` pattern is forward-compatible with Monaco editor and terminal buffer persistence in Phase 9. Rules of Tugways 11 [D78] and 12 [D79] are established here.
 Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
 Phase 5d5a (Palette Engine → HVV Runtime) is complete. It shipped a standalone HVV palette engine with no coupling to the responder chain, mutation model, or property store.
 Phase 5d5b (Global Scale & Timing) is complete. CSS `zoom` on `<body>` scales the entire UI with one number.
@@ -1309,17 +1358,18 @@ The suggested plan sequence:
 30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
 31. `tugways-phase-5f2-state-preservation-fixes` — RAF-deferred scroll/selection restore, CSS Custom Highlight API for inactive selections, flash suppression
 32. `tugways-phase-5f3-state-preservation-more-fixes` — restore ordering (content first), save-on-close (visibilitychange/beforeunload), click-back selection restore
-33. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
-34. `tugways-phase-6-feed` — feed hooks, data flow
-35. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
-36. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
-37. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
-36. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-37. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-38. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-39. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-40. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-41. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+33. `tugways-phase-5f4-state-preservation-solidified` — child-driven ready callback (onContentReady), eliminate double-RAF, Rules of Tugways 11 & 12
+34. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
+35. `tugways-phase-6-feed` — feed hooks, data flow
+36. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
+37. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+38. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
+39. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+40. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+41. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+42. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+43. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+44. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 
