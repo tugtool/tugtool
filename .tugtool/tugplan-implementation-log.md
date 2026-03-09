@@ -10,6 +10,66 @@ Entries are sorted newest-first.
 
 ---
 step: step-5
+date: 2025-03-09T17:30:08Z
+---
+
+## step-5: Integration checkpoint: verified full test suite passes (1077 tests, 0 failures), confirmed zero requestAnimationFrame/cancelAnimationFrame references in tugcard.tsx restore flow. All exit criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
+step: step-4
+date: 2025-03-09T17:27:55Z
+---
+
+## step-4: Rewrote T01/T02 to verify full onContentReady pattern with real useState PersistentChild. Added T03 (no-persist fallback) and T04 (selection-only with persistence). Removed double-RAF flushing from selection-restore test. Updated section header to Phase 5f4.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
+step: step-3
+date: 2025-03-09T17:18:38Z
+---
+
+## step-3: Rewrote activation useLayoutEffect in tugcard.tsx: replaced double-RAF timing with two-path restore (persist path using onContentReady + direct-apply fallback). Removed all requestAnimationFrame/cancelAnimationFrame. Added pendingScrollRef and pendingSelectionRef. Updated 3 tests to use useTugcardPersistence.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
+step: step-2
+date: 2025-03-09T17:10:04Z
+---
+
+## step-2: Extended TugcardPersistenceCallbacks with onContentReady and restorePendingRef. Added no-deps useLayoutEffect to useTugcardPersistence that fires onContentReady when restorePendingRef is set. Added tests T-P04, T-P05, T-P06.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
+step: step-1
+date: 2025-03-09T17:02:33Z
+---
+
+## step-1: Ran both spike test files (react19-commit-timing.test.tsx and content-ready-spike.test.tsx) and confirmed all 23 tests pass, validating the React 19 commit timing guarantees that steps 2-4 depend on.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
+step: step-5
 date: 2025-03-09T01:16:02Z
 ---
 
