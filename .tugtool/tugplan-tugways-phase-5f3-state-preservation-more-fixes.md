@@ -137,7 +137,10 @@ DeckManager implementation:
 - `private saveCallbacks: Map<string, () => void> = new Map()`
 - `registerSaveCallback(id, cb)`: stores callback in map.
 - `unregisterSaveCallback(id)`: deletes callback from map.
-- On `visibilitychange` (when `document.hidden === true`) and `beforeunload`: iterate all callbacks, then call `this.flushDirtyTabStates()`.
+- `flushDirtyTabStates` gains an optional `options?: { keepalive?: boolean }` parameter, passed through to `putTabState`.
+- On `visibilitychange` (when `document.hidden === true`): iterate all callbacks, then call `this.flushDirtyTabStates()` (normal fetch — page remains alive).
+- On `beforeunload`: iterate all callbacks, then call `this.flushDirtyTabStates({ keepalive: true })`. The `keepalive: true` flag guarantees the browser dispatches the fetch even during page teardown (per corrected D49).
+- `putTabState` in `settings-api.ts` gains an optional `options?: { keepalive?: boolean }` parameter, adding `keepalive: options?.keepalive` to the fetch init.
 - Event listeners added in constructor, removed in `destroy()`.
 
 #### Spec S02: SelectionGuard pendingHighlightRestore Flow {#s02-pending-highlight-flow}
@@ -276,13 +279,16 @@ useLayoutEffect (deps: [activeTabId, cardId]):
 **Artifacts:**
 - Modified `tugdeck/src/deck-manager-store.ts` — `IDeckManagerStore` interface gains `registerSaveCallback` and `unregisterSaveCallback`
 - Modified `tugdeck/src/deck-manager.ts` — implementation of save callbacks, `visibilitychange` and `beforeunload` listeners
+- Modified `tugdeck/src/settings-api.ts` — `putTabState` gains optional `{ keepalive?: boolean }` parameter
 - Modified `tugdeck/src/__tests__/mock-deck-manager-store.ts` — stub implementations
 
 **Tasks:**
 - [ ] Add `registerSaveCallback(id: string, callback: () => void): void` and `unregisterSaveCallback(id: string): void` to `IDeckManagerStore`.
 - [ ] In `DeckManager`, add `private saveCallbacks: Map<string, () => void> = new Map()`.
 - [ ] Implement `registerSaveCallback` and `unregisterSaveCallback` as public methods on `DeckManager`.
-- [ ] Add private bound handler methods for `visibilitychange` and `beforeunload`. The `visibilitychange` handler checks `document.hidden === true` before acting. Both handlers iterate all registered save callbacks, then call `this.flushDirtyTabStates()`.
+- [ ] In `settings-api.ts`, add `options?: { keepalive?: boolean }` parameter to `putTabState`. Pass `keepalive: options?.keepalive` in the fetch init object.
+- [ ] In `DeckManager`, add `options?: { keepalive?: boolean }` parameter to `flushDirtyTabStates`. Pass it through to each `putTabState` call.
+- [ ] Add private bound handler methods for `visibilitychange` and `beforeunload`. The `visibilitychange` handler checks `document.hidden === true` before acting; it iterates all registered save callbacks, then calls `this.flushDirtyTabStates()` (no keepalive — page remains alive). The `beforeunload` handler iterates all registered save callbacks, then calls `this.flushDirtyTabStates({ keepalive: true })` to guarantee the fetch is dispatched during page teardown (per corrected D49).
 - [ ] In the constructor, add `document.addEventListener("visibilitychange", ...)` and `window.addEventListener("beforeunload", ...)`.
 - [ ] In `destroy()`, remove both event listeners.
 - [ ] In `MockDeckManagerStore`, add no-op stubs for `registerSaveCallback` and `unregisterSaveCallback`.
@@ -290,7 +296,7 @@ useLayoutEffect (deps: [activeTabId, cardId]):
 **Tests:**
 - [ ] T03: In `deck-manager.test.ts`, verify that `registerSaveCallback` stores and `unregisterSaveCallback` removes a callback.
 - [ ] T04: Verify that simulating `visibilitychange` with `document.hidden === true` calls all registered callbacks and flushes dirty tab states.
-- [ ] T05: Verify that simulating `beforeunload` calls all registered callbacks and flushes dirty tab states.
+- [ ] T05: Verify that simulating `beforeunload` calls all registered callbacks and flushes dirty tab states with `keepalive: true` (assert the fetch call includes `keepalive: true` in its init).
 - [ ] T06: Verify that `destroy()` removes the event listeners (subsequent visibility change does not call callbacks).
 
 **Checkpoint:**
