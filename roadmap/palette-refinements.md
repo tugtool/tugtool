@@ -373,3 +373,40 @@ functionality described in section 10.
 - Semantic tokens keep `accent` as UI role name
 - `hvvColor()` function (rewritten to match)
 - Neutral ramp + black/white (adjusted to match five presets)
+
+---
+
+## 13. Build-time `--hvv()` expansion (Phase 5g2)
+
+The inline `calc()`+`clamp()` formula (section 3) gives full parametric control, but it is verbose — too verbose for the hundreds of achromatic tokens (surfaces, grays, borders, text) that fill theme files. Phase 5g2 introduces a compact `--hvv()` CSS notation that expands to `oklch()` at build time.
+
+### The `--hvv()` notation
+
+```css
+/* Named hue */
+--tug-base-surface-app: --hvv(cobalt, 3, 8);
+
+/* Raw OKLCH angle */
+--tug-base-surface-alt: --hvv(237, 5, 13);
+```
+
+The PostCSS plugin expands these at build time to concrete `oklch(L C h)` values using the same piecewise math as `hvvColor()`. Zero runtime cost — the built CSS contains only standard `oklch()`.
+
+### When to use `--hvv()` vs. the inline formula
+
+| Use case | Approach |
+|----------|----------|
+| Achromatic tokens (surfaces, borders, text, grays) | `--hvv()` — compact, build-time expansion |
+| Chromatic tokens needing P3 override via `peak-c` | Inline `calc()`+`clamp()` formula with `var(--tug-{hue}-peak-c)` |
+| Programmatic colors in JS | `hvvColor()` function |
+| Convenience presets in tug-palette.css | Inline formula (already uses `var()` references for P3) |
+
+The key distinction: `--hvv()` produces a static `oklch()` value at build time. The inline formula produces a live `calc()` expression that responds to CSS variable changes at runtime (e.g., P3 gamut overrides via `peak-c`). Theme achromatic tokens don't need P3 responsiveness, so `--hvv()` is the right choice.
+
+### Reverse mapper: `oklchToHVV()`
+
+To convert the hundreds of existing hex values programmatically, `oklchToHVV()` inverts the HVV math. Given an `oklch()` string, it finds the closest named hue family and recovers vibrancy/value parameters. The companion `hvvPretty()` formats results as `"blue vib=5 val=13"` for developer tooling.
+
+### Theme conversion outcome
+
+After conversion, all three theme files (tug-tokens.css, bluenote.css, harmony.css) contain zero standalone hex color values in their body{} blocks. Every color is expressed as `--hvv(hue, vib, val)`, making the design intent — hue family, vibrancy, value — explicit and machine-readable. `tug-palette.css` is not modified (its `var()` formulas for P3 overrides remain as-is).

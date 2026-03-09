@@ -131,6 +131,7 @@
 | [D77] | Inactive selection appearance: dimmed highlight in unfocused cards via CSS Custom Highlight API | Concept 18 | [#d77-inactive-selection](#d77-inactive-selection) |
 | [D78] | Child-driven ready callback: parent triggers child setState, child signals DOM commit via `useLayoutEffect` | Concept 18 | [#d78-content-ready](#d78-content-ready) |
 | [D79] | No RAF for React state-dependent DOM operations — RAF is a timing bet, not a contract | Concept 18 | [#d79-no-raf-for-state](#d79-no-raf-for-state) |
+| [D80] | Build-time `--hvv()` expansion: PostCSS plugin replaces `--hvv(hue, vib, val)` with `oklch()` at build time; theme files use `--hvv()` notation instead of hardcoded hex | Concept 22 | [#d80-hvv-postcss](#d80-hvv-postcss) |
 
 ### Key Architectural Patterns
 
@@ -154,7 +155,7 @@
 | Target/action control model | Controls emit ActionEvents with payload, sender, and phase; two dispatch modes (nil-target and explicit-target) | [#d61-action-event](#d61-action-event) |
 | Mutation transactions | Snapshot/preview/commit/cancel cycle for live-preview editing; appearance-zone only during preview | [#d64-mutation-transactions](#d64-mutation-transactions) |
 | Observable property store | Typed key-path store per card with observation; integrates with useSyncExternalStore for inspector UI | [#d67-property-store](#d67-property-store) |
-| HueVibVal (HVV) color palette | 24 OKLCH hue families with Hue/Vibrancy/Value axes, 7 semantic presets per hue, neutral ramp, P3 support, pure CSS formulas | [#d70-computed-palette](#d70-computed-palette) |
+| HueVibVal (HVV) color palette | 24 OKLCH hue families with Hue/Vibrancy/Value axes, 5 convenience presets per hue, neutral ramp, P3 support, pure CSS formulas, build-time `--hvv()` expansion [D80] | [#d70-computed-palette](#d70-computed-palette) |
 | Global scale and timing | `--tug-zoom` multiplies all dimensions; `--tug-timing` multiplies all durations; `--tug-motion` toggles motion on/off | [#d72-global-scale](#d72-global-scale) |
 
 ### External References
@@ -3723,6 +3724,22 @@ The `clamp()` piecewise math: val 0→50 maps L from L_DARK to canonical-l; val 
 **JS API retained.** The `hvvColor(hueName, vib, val, canonicalL, peakChroma?)` function remains in `palette-engine.ts` for programmatic use (inline styles, color pickers, data visualization) where CSS custom properties aren't accessible. It uses the same piecewise math as the CSS formulas.
 
 **Theme influence.** Themes define their chromatic semantic tokens using the inline HVV formula with theme-specific vib/val choices. Themes can also override per-hue canonical-l values for contrast adjustments. The five convenience presets are not overridden per-theme — they serve as stable reference colors.
+
+#### Build-Time `--hvv()` Expansion {#d80-hvv-postcss}
+
+**[D80] PostCSS plugin expands `--hvv(hue, vib, val)` to `oklch()` at build time; theme files use `--hvv()` instead of hardcoded hex.**
+
+The inline `calc()`+`clamp()` formula [D70] gives themes full parametric control, but the verbose CSS syntax is unwieldy for the hundreds of achromatic tokens (surfaces, grays, borders, text) in theme files. The `--hvv()` notation provides a compact, human-readable alternative that expands to concrete `oklch()` values at build time — zero runtime cost.
+
+**Syntax.** `--hvv(hue, vibrancy, value)` where `hue` is a named hue family (e.g., `blue`, `cobalt`) or a raw numeric OKLCH angle, `vibrancy` is 0–100, and `value` is 0–100. Examples: `--hvv(blue, 5, 13)`, `--hvv(237, 5, 13)`, `--hvv(cobalt, 3, 18)`.
+
+**PostCSS plugin.** A bespoke PostCSS plugin (`postcss-hvv.ts`) walks the CSS AST and replaces `--hvv()` calls with computed `oklch(L C h)` strings using the same piecewise math as `hvvColor()`. The plugin is wired into Vite via `css.postcss.plugins` (inline config), coexisting with `@tailwindcss/vite` which operates as a separate Vite plugin. No new third-party PostCSS dependencies — `postcss` itself is promoted from transitive to explicit devDependency.
+
+**Reverse mapper.** `oklchToHVV()` in `palette-engine.ts` inverts the HVV math: given an `oklch()` string, it finds the closest named hue family and recovers vibrancy/value parameters. This enables programmatic hex-to-HVV derivation for the one-time theme conversion and is independently useful for developer tooling. `hvvPretty()` formats the result as a human-readable string (e.g., `"blue vib=5 val=13"`).
+
+**Theme conversion.** All hardcoded hex values in theme files (tug-tokens.css, bluenote.css, harmony.css) are replaced with `--hvv()` calls. A one-time conversion script uses `oklchToHVV()` to programmatically derive HVV parameters for every hex token. Special case: `#ffffff` maps to `var(--tug-white)`. Values inside `rgba()`, `color-mix()`, and `var()` expressions are preserved unchanged. `tug-palette.css` is not modified — its `var()` formulas for P3 gamut overrides remain as-is.
+
+**Relationship to D70.** The `--hvv()` notation is syntactic sugar over the same continuous color space defined in [D70]. The PostCSS plugin uses the same constants (`HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `PEAK_C_SCALE`) and the same piecewise L/C formulas. The inline `calc()`+`clamp()` formula remains available for cases where runtime CSS custom property resolution is needed (e.g., P3 overrides via `peak-c`).
 
 #### Neutral Ramp and Opacity {#d75-neutral-ramp}
 

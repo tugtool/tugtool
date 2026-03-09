@@ -913,6 +913,39 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Note**: Phase 5g depends on Phase 5d5e (palette engine integration — the pure CSS palette and semantic token wiring must already be in place). It does not depend on Phase 5f (state preservation).
 
+### Phase 5g2: HVV PostCSS Plugin and Theme Conversion (Concept 22, [D80])
+
+**Goal**: Ship a PostCSS plugin that expands `--hvv(hue, vib, val)` notation to concrete `oklch()` values at build time, add an `oklchToHVV()` reverse mapper to palette-engine.ts, and convert all hardcoded hex tokens in theme files to `--hvv()` calls. This makes the color system fully parametric: every color in every theme is described by hue family, vibrancy, and value.
+
+**Full specification**: `.tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md` contains the complete plan with 8 execution steps, design decisions, specs, and test plan.
+
+**Key design shift**: Theme files move from hardcoded hex values to `--hvv()` notation. The verbose `calc()`+`clamp()` formula [D70] remains for cases needing runtime CSS variable resolution (P3 overrides), but the compact `--hvv()` syntax handles the hundreds of achromatic tokens (surfaces, grays, borders, text) that were previously hardcoded hex. Build-time expansion means zero runtime cost.
+
+**What to do**:
+1. **Add `oklchToHVV()` and `hvvPretty()`** to palette-engine.ts — reverse maps oklch strings to HVV parameters; enables programmatic hex-to-HVV derivation and developer tooling.
+2. **Create PostCSS plugin** (`postcss-hvv.ts`) — bespoke AST walker that expands `--hvv()` in CSS declaration values. Supports named hues and raw numeric angles. Uses same math as `hvvColor()`.
+3. **Wire plugin into Vite** — inline `css.postcss.plugins` config in vite.config.ts, coexisting with `@tailwindcss/vite`.
+4. **Build conversion script** (`scripts/convert-hex-to-hvv.ts`) — one-time tool that uses `postcss.parse()` to walk CSS ASTs, convert standalone hex values to `--hvv()` calls via `oklchToHVV()`, and validate round-trip accuracy.
+5. **Convert tug-tokens.css** — replace all standalone hex values in body{} block with `--hvv()` calls. Cobalt/violet tint, vib 3-6 range.
+6. **Convert bluenote.css** — replace all standalone hex values in body{} block. Blue tint, vib 5-14 range.
+7. **Convert harmony.css** — replace all standalone hex values in body{} block, including contrast-critical overrides. Yellow/gold tint for surfaces, blue tint for text. `#ffffff` → `var(--tug-white)`.
+8. **Integration checkpoint** — verify all themes work together, no hex regression, full test suite passes.
+
+**Files created/modified**:
+- `tugdeck/postcss-hvv.ts` — new: PostCSS plugin
+- `tugdeck/scripts/convert-hex-to-hvv.ts` — new: one-time conversion script
+- `tugdeck/src/__tests__/postcss-hvv.test.ts` — new: plugin tests
+- `tugdeck/src/__tests__/convert-hex-to-hvv.test.ts` — new: conversion tests
+- `tugdeck/src/components/tugways/palette-engine.ts` — modified: `oklchToHVV()`, `hvvPretty()`
+- `tugdeck/vite.config.ts` — modified: PostCSS plugin wiring
+- `tugdeck/styles/tug-tokens.css` — modified: hex → `--hvv()`
+- `tugdeck/styles/bluenote.css` — modified: hex → `--hvv()`
+- `tugdeck/styles/harmony.css` — modified: hex → `--hvv()`
+
+**Result**: Zero standalone hex color values remain in theme file body{} blocks. Every color is expressed as `--hvv(hue, vib, val)` — the design intent is explicit and machine-readable. The PostCSS plugin expands these to `oklch()` at build time with zero runtime cost. `tug-palette.css` and `brio.css` are completely unmodified.
+
+**Note**: Phase 5g2 depends on Phase 5g (palette refinements — the five-preset system, renamed presets, and `hvvColor()` with piecewise formula must already be in place). The PostCSS plugin reuses the same constants and math from palette-engine.ts.
+
 ### Phase 6: Feed Abstraction (Concept 7)
 
 **Goal**: Cards receive typed, accumulated data from backend feeds.
