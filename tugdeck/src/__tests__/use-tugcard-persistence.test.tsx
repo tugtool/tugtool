@@ -1,20 +1,29 @@
 /**
- * useTugcardPersistence hook unit tests -- Phase 5f Step 6.
+ * useTugcardPersistence hook unit tests -- Phase 5f4.
  *
  * Tests cover:
  * - T-P01: useTugcardPersistence registers callbacks called by Tugcard on
  *   deactivation (onSave) and activation (onRestore).
  * - T-P02: Updating onSave/onRestore options does not cause re-registration
- *   (stable useLayoutEffect with empty deps, refs used inside wrappers).
+ *   (stable useLayoutEffect with [register] deps, refs used inside wrappers).
+ * - T-P03: Integration with Tugcard context (round-trip through Tugcard).
+ * - T-P04: restorePendingRef is included in registered callbacks and defaults
+ *   to false. ([D03])
+ * - T-P05: When restorePendingRef.current is set to true and onContentReady is
+ *   written into the callbacks object, triggering a re-render causes the no-deps
+ *   useLayoutEffect to fire onContentReady and reset the flag. ([D01], [D02])
+ * - T-P06: Parent-sets-ref, child-reads-ref indirection (mirrors the real Tugcard
+ *   code path): provider sets callbacks.restorePendingRef.current = true, writes
+ *   callbacks.onContentReady = mock(), then calls callbacks.onRestore(state) to
+ *   trigger child setState. Verifies onContentReady fires and flag resets. ([D01])
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
 import "./setup-rtl";
 
-import React from "react";
+import React, { useState } from "react";
 import { describe, it, expect, mock } from "bun:test";
 import { render, act } from "@testing-library/react";
-import { useLayoutEffect } from "react";
 
 import { TugcardPersistenceContext, useTugcardPersistence } from "@/components/tugways/use-tugcard-persistence";
 import type { TugcardPersistenceCallbacks } from "@/components/tugways/use-tugcard-persistence";
@@ -240,5 +249,148 @@ describe("useTugcardPersistence – Tugcard context round-trip", () => {
   });
 });
 
-// Suppress unused-import warning for useLayoutEffect (used implicitly via hook).
-void useLayoutEffect;
+// ---------------------------------------------------------------------------
+// T-P04: restorePendingRef is included in registered callbacks
+// ---------------------------------------------------------------------------
+
+describe("useTugcardPersistence – restorePendingRef in registered callbacks", () => {
+  it("T-P04: restorePendingRef is present on registered callbacks and defaults to false", () => {
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    const onSave = mock(() => ({}));
+    const onRestore = mock((_s: unknown) => {});
+
+    function CardContent() {
+      useTugcardPersistence({ onSave, onRestore });
+      return <div>content</div>;
+    }
+
+    act(() => {
+      render(
+        <Provider>
+          <CardContent />
+        </Provider>
+      );
+    });
+
+    const callbacks = getLatestCallbacks();
+    expect(callbacks).not.toBeNull();
+    // restorePendingRef must be present and start as false.
+    expect(callbacks!.restorePendingRef).toBeDefined();
+    expect(callbacks!.restorePendingRef!.current).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-P05: No-deps useLayoutEffect fires onContentReady when flag is set
+// ---------------------------------------------------------------------------
+
+describe("useTugcardPersistence – no-deps useLayoutEffect fires onContentReady", () => {
+  it("T-P05: setting restorePendingRef to true and writing onContentReady fires callback on re-render", () => {
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    const onSave = mock(() => ({}));
+    let currentState = "initial";
+    const onRestoreMock = mock((s: unknown) => { currentState = s as string; });
+
+    function CardContent() {
+      useTugcardPersistence({ onSave, onRestore: onRestoreMock });
+      return <div data-testid="content">{currentState}</div>;
+    }
+
+    let rerender!: ReturnType<typeof render>["rerender"];
+    act(() => {
+      ({ rerender } = render(
+        <Provider>
+          <CardContent />
+        </Provider>
+      ));
+    });
+
+    const callbacks = getLatestCallbacks()!;
+    expect(callbacks).not.toBeNull();
+    expect(callbacks.restorePendingRef!.current).toBe(false);
+
+    const onContentReady = mock(() => {});
+    callbacks.onContentReady = onContentReady;
+    callbacks.restorePendingRef!.current = true;
+
+    // Trigger child re-render by calling onRestore (which calls setState in
+    // the card component via the registered wrapper). We simulate this by
+    // directly re-rendering -- the no-deps useLayoutEffect must fire on any
+    // re-render of the card component, not just setState.
+    act(() => {
+      rerender(
+        <Provider>
+          <CardContent />
+        </Provider>
+      );
+    });
+
+    // The no-deps useLayoutEffect should have fired onContentReady and reset the flag.
+    expect(onContentReady).toHaveBeenCalledTimes(1);
+    expect(callbacks.restorePendingRef!.current).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-P06: Parent-sets-ref, child-reads-ref: mirrors real Tugcard code path
+// ---------------------------------------------------------------------------
+
+describe("useTugcardPersistence – parent-sets-ref, child-reads-ref indirection", () => {
+  it("T-P06: Tugcard sets flag + writes onContentReady before onRestore; callback fires after child re-render commits", () => {
+    // This test exercises the exact indirection the real Tugcard code path uses:
+    // 1. Provider (parent) gets the registered callbacks object.
+    // 2. Parent sets callbacks.restorePendingRef.current = true.
+    // 3. Parent writes callbacks.onContentReady = handler.
+    // 4. Parent calls callbacks.onRestore(state) -- this triggers child setState.
+    // 5. The child's no-deps useLayoutEffect fires, reads the flag, calls onContentReady.
+    // 6. onContentReady fires with the child DOM already reflecting the restored state.
+
+    let readyFiredWithState: string | null = null;
+    let domTextAtReady: string | null = null;
+
+    const { Provider, getLatestCallbacks } = makeTestProvider();
+
+    function CardContent() {
+      const [text, setText] = useState("initial");
+
+      useTugcardPersistence<string>({
+        onSave: () => text,
+        onRestore: (s: string) => { setText(s); },
+      });
+
+      return <div data-testid="card-text">{text}</div>;
+    }
+
+    act(() => {
+      render(
+        <Provider>
+          <CardContent />
+        </Provider>
+      );
+    });
+
+    const callbacks = getLatestCallbacks()!;
+    expect(callbacks).not.toBeNull();
+    expect(callbacks.restorePendingRef).toBeDefined();
+
+    // Simulate Tugcard's Phase 1 effect: set flag, write onContentReady, call onRestore.
+    act(() => {
+      callbacks.restorePendingRef!.current = true;
+      callbacks.onContentReady = () => {
+        const el = document.querySelector("[data-testid='card-text']");
+        domTextAtReady = el?.textContent ?? null;
+        readyFiredWithState = domTextAtReady;
+      };
+      callbacks.onRestore("restored-value");
+    });
+
+    // onContentReady should have fired with the restored DOM state.
+    expect(readyFiredWithState).toBe("restored-value");
+    expect(domTextAtReady).toBe("restored-value");
+    // Flag must be reset to false after firing.
+    expect(callbacks.restorePendingRef!.current).toBe(false);
+  });
+});
+

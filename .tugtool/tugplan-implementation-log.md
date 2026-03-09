@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-09T17:10:04Z
+---
+
+## step-2: Extended TugcardPersistenceCallbacks with onContentReady and restorePendingRef. Added no-deps useLayoutEffect to useTugcardPersistence that fires onContentReady when restorePendingRef is set. Added tests T-P04, T-P05, T-P06.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
 step: step-1
 date: 2025-03-09T17:02:33Z
 ---
