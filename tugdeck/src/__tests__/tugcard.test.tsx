@@ -1105,7 +1105,7 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     restoreSelSpy.mockRestore();
   });
 
-  it("after tab activation, onRestore callback is called with saved content state", async () => {
+  it("after tab activation, onRestore callback is called with saved content state", () => {
     registerCard({
       componentId: "hello",
       factory: () => { throw new Error("factory stub"); },
@@ -1166,12 +1166,200 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
       rerender(<TestCard currentTab={tab2.id} />);
     });
 
-    // The RAF callback is mocked as setTimeout(0) in setup-rtl.ts.
-    // Flush the pending macrotask so the RAF callback (which calls onRestore) runs.
-    await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
-
+    // Phase 5f3: onRestore now fires synchronously in the useLayoutEffect body,
+    // BEFORE the RAF callback. No need to flush a macrotask — it runs within act().
     // onRestore should have been called with the saved content state.
     expect(onRestore).toHaveBeenCalledWith(savedContent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5f3 Step 1: Restore order — onRestore fires before RAF (T01, T02)
+// ---------------------------------------------------------------------------
+
+describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
+  afterEach(() => { cleanup(); _resetForTest(); });
+
+  /**
+   * T01: onRestore is called synchronously (before RAF fires) when a tab with
+   * saved content is activated. Verifies Bug 3 fix: content before scroll.
+   *
+   * Strategy: block all RAF execution (by replacing requestAnimationFrame with a
+   * no-op that never calls the callback), then verify onRestore was still called.
+   * If onRestore fired in the useLayoutEffect body (synchronous), it executes even
+   * when RAF callbacks are blocked. If it were inside the RAF callback (old behavior),
+   * it would never be called with RAF blocked.
+   */
+  it("T01: onRestore is called synchronously before RAF when tab with saved content is activated", () => {
+    registerCard({
+      componentId: "hello",
+      factory: () => { throw new Error("factory stub"); },
+      defaultMeta: { title: "Hello", closable: true },
+    });
+
+    const tab1: TabItem = { id: "tab-t01-1", componentId: "hello", title: "Tab 1", closable: true };
+    const tab2: TabItem = { id: "tab-t01-2", componentId: "hello", title: "Tab 2", closable: true };
+
+    const savedContent = { text: "T01 content" };
+    const store = makeMockStore();
+    // Tab 2 has both content and scroll saved, so RAF will be scheduled.
+    store.setTabState(tab2.id, { content: savedContent, scroll: { x: 0, y: 50 } });
+
+    const onRestore = mock((_state: unknown) => {});
+
+    const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+    const { TugcardPersistenceContext } = require("@/components/tugways/use-tugcard-persistence") as typeof import("@/components/tugways/use-tugcard-persistence");
+
+    function PersistentChild() {
+      const register = React.useContext(TugcardPersistenceContext);
+      React.useLayoutEffect(() => {
+        register?.({ onSave: () => ({}), onRestore });
+      }, [register]);
+      return <div>T01 child</div>;
+    }
+
+    let rerender!: ReturnType<typeof render>["rerender"];
+
+    function TestCard({ currentTab }: { currentTab: string }) {
+      return (
+        <DeckManagerContext.Provider value={store}>
+          <ResponderChainProvider>
+            <Tugcard
+              {...defaultProps}
+              cardId="card-t01"
+              tabs={[tab1, tab2]}
+              activeTabId={currentTab}
+              onTabSelect={() => {}}
+              onTabClose={() => {}}
+              onTabAdd={() => {}}
+            >
+              <PersistentChild />
+            </Tugcard>
+          </ResponderChainProvider>
+        </DeckManagerContext.Provider>
+      );
+    }
+
+    act(() => {
+      ({ rerender } = render(<TestCard currentTab={tab1.id} />));
+    });
+
+    // Flush useLayoutEffect (PersistentChild registers its callbacks).
+    act(() => {});
+
+    // Verify onRestore has NOT been called yet (no saved content for tab1).
+    expect(onRestore).toHaveBeenCalledTimes(0);
+
+    // Block RAF execution by replacing requestAnimationFrame with a no-op.
+    // Any code that runs inside a RAF callback will NOT execute.
+    // onRestore must fire in the useLayoutEffect body (synchronous) to be
+    // observed here.
+    const origRaf = (global as any).requestAnimationFrame;
+    (global as any).requestAnimationFrame = (_cb: FrameRequestCallback): number => 0;
+    (global as any).cancelAnimationFrame = (_id: number): void => {};
+
+    try {
+      act(() => {
+        rerender(<TestCard currentTab={tab2.id} />);
+      });
+
+      // onRestore MUST have been called despite RAF being blocked.
+      // This proves onRestore fires synchronously in the useLayoutEffect body,
+      // not deferred inside the RAF callback.
+      expect(onRestore).toHaveBeenCalledTimes(1);
+      expect(onRestore).toHaveBeenCalledWith(savedContent);
+    } finally {
+      // Restore original RAF so other tests are not affected.
+      (global as any).requestAnimationFrame = origRaf;
+    }
+  });
+
+  /**
+   * T02: When only content is saved (no scroll, no selection), no RAF is
+   * scheduled BY THE ACTIVATION EFFECT and no visibility:hidden is applied.
+   *
+   * Uses a single-tab (no TugTabBar) setup to isolate the activation effect
+   * from other RAF callers in child components.
+   */
+  it("T02: content-only restore does not apply visibility:hidden and onRestore fires synchronously", () => {
+    // Use a single-tab Tugcard (no TugTabBar) to isolate the activation effect.
+    // activeTabId is set directly as a prop (no tab bar, no TugTabBar RAF).
+    const savedContent = { text: "content only" };
+    const store = makeMockStore();
+    const activeTabId = "tab-t02-only";
+    // Pre-load the tab state with content only (no scroll, no selection).
+    store.setTabState(activeTabId, { content: savedContent });
+
+    const onRestore = mock((_state: unknown) => {});
+
+    const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+    const { TugcardPersistenceContext } = require("@/components/tugways/use-tugcard-persistence") as typeof import("@/components/tugways/use-tugcard-persistence");
+
+    function PersistentChild() {
+      const register = React.useContext(TugcardPersistenceContext);
+      React.useLayoutEffect(() => {
+        register?.({ onSave: () => ({}), onRestore });
+      }, [register]);
+      return <div>T02 child</div>;
+    }
+
+    // Render with a different activeTabId first (no stored state), then switch.
+    const prevTabId = "tab-t02-prev";
+    let container!: HTMLElement;
+    let rerender!: ReturnType<typeof render>["rerender"];
+
+    function TestCard({ currentTab }: { currentTab: string }) {
+      return (
+        <DeckManagerContext.Provider value={store}>
+          <ResponderChainProvider>
+            <Tugcard
+              {...defaultProps}
+              cardId="card-t02"
+              activeTabId={currentTab}
+            >
+              <PersistentChild />
+            </Tugcard>
+          </ResponderChainProvider>
+        </DeckManagerContext.Provider>
+      );
+    }
+
+    act(() => {
+      ({ container, rerender } = render(<TestCard currentTab={prevTabId} />));
+    });
+
+    // Flush useLayoutEffect (PersistentChild registers its callbacks).
+    act(() => {});
+
+    // Capture the content element before activation.
+    const contentEl = container.querySelector("[data-testid='tugcard-content']") as HTMLElement;
+    expect(contentEl).not.toBeNull();
+
+    // Block RAF so we can verify it's not called during the content-only activation.
+    const origRaf = (global as any).requestAnimationFrame;
+    let rafScheduledByActivation = 0;
+    (global as any).requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      rafScheduledByActivation++;
+      return origRaf(cb);
+    };
+
+    try {
+      act(() => {
+        rerender(<TestCard currentTab={activeTabId} />);
+      });
+
+      // onRestore must have been called synchronously (content-only).
+      expect(onRestore).toHaveBeenCalledWith(savedContent);
+
+      // No RAF should have been scheduled for a content-only restore (no TugTabBar,
+      // no scroll, no selection — only the activation effect runs).
+      expect(rafScheduledByActivation).toBe(0);
+
+      // No visibility:hidden should have been applied.
+      expect(contentEl.style.visibility).not.toBe("hidden");
+    } finally {
+      (global as any).requestAnimationFrame = origRaf;
+    }
   });
 });
 

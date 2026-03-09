@@ -302,16 +302,13 @@ export function Tugcard({
     [onTabSelect],
   );
 
-  // Phase 5f2: Activation restore with RAF deferral (Step 1, [D01] RAF deferral, [D02] Flash suppression, Spec S01).
+  // Phase 5f3: Activation restore with corrected order (Step 1, [D03] Restore order, Spec S03).
   //
-  // useLayoutEffect fires after React commits DOM changes but before the browser
-  // completes layout. At that point the content area may have zero scrollable
-  // height (content not yet laid out), so scrollTop assignments are clamped to 0
-  // and setBaseAndExtent silently fails because text nodes are not yet positioned.
-  //
-  // Fix: schedule a requestAnimationFrame callback, which fires after the browser
-  // completes layout and before paint. By that point the content area has its full
-  // scrollable dimensions and text nodes are positioned.
+  // Content is restored synchronously in the useLayoutEffect body BEFORE scheduling
+  // requestAnimationFrame. This ensures the DOM has its full structure and scrollable
+  // height before scroll and selection are applied in RAF. Restoring scroll before
+  // content risks clamping scrollTop to 0 because the DOM does not yet have its full
+  // rendered height.
   //
   // Flash suppression: apply visibility:hidden to the content area when bag.scroll
   // exists, to prevent the one-frame flash of content at scroll position 0 before
@@ -332,15 +329,26 @@ export function Tugcard({
     // If no bag, or bag has no restorable state, return early — no hide or RAF needed.
     if (!bag || (bag.scroll === undefined && bag.selection == null && bag.content === undefined)) return;
 
+    // 1. Content restore: synchronous, before RAF.
+    // Restoring content first ensures the DOM has its full structure and scrollable
+    // height before scroll and selection are applied in RAF ([D03]).
+    if (bag.content !== undefined) {
+      persistenceCallbacksRef.current?.onRestore(bag.content);
+    }
+
+    // 2. Determine if RAF is needed (scroll or selection to restore).
+    // Content-only restores do not need RAF or visibility hiding.
+    const needsRaf = bag.scroll !== undefined || bag.selection != null;
+    if (!needsRaf) return;
+
     const contentEl = contentRef.current;
 
-    // Apply visibility:hidden only when scroll state exists to suppress the
-    // one-frame flash of content at position 0 before RAF fires.
+    // 3. Flash suppression: apply visibility:hidden only when scroll state exists.
     if (contentEl && bag.scroll !== undefined) {
       contentEl.style.visibility = "hidden";
     }
 
-    // Schedule the actual restore in RAF (after browser layout completes).
+    // 4. RAF: scroll + selection + unhide (after browser layout completes).
     const rafHandle = requestAnimationFrame(() => {
       if (contentEl && bag.scroll !== undefined) {
         contentEl.scrollLeft = bag.scroll.x;
@@ -351,11 +359,7 @@ export function Tugcard({
         selectionGuard.restoreSelection(cardId, bag.selection);
       }
 
-      if (bag.content !== undefined) {
-        persistenceCallbacksRef.current?.onRestore(bag.content);
-      }
-
-      // Restore visibility after scroll is applied (or always restore on selection/content only).
+      // Restore visibility after scroll is applied (or always restore on selection only).
       if (contentEl) {
         contentEl.style.visibility = "";
       }
