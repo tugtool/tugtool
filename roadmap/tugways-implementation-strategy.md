@@ -489,6 +489,27 @@ Phase 5e is split into four sub-phases for incremental delivery.
 
 **Note**: Phase 5f2 depends on Phase 5f (the infrastructure it fixes must exist). It does not change any data model, API surface, or hook interface — it fixes timing and visual behavior only.
 
+### Phase 5f3: State Preservation More Fixes (Concept 18, [D49], [D77])
+
+**Goal**: Fix three remaining state preservation failures that survived Phase 5f2. The corrected design decisions D49 (lifecycle ordering, save-on-close) and D77 (click-back selection restore) in design-system-concepts.md define the correct behavior. This phase implements those corrections.
+
+**What to do**:
+1. Fix restore ordering in tugcard.tsx: move `onRestore` (content restore) out of the RAF callback and into the `useLayoutEffect` body so it runs synchronously before the RAF. Content must be in the DOM before scroll and selection restore — `scrollTop` is clamped when content hasn't populated the scrollable area, and `setBaseAndExtent` fails when text nodes don't exist yet. The RAF callback then restores scroll and selection against a fully-populated DOM.
+2. Add save-on-close: each Tugcard registers a save callback with DeckManager on mount via `useLayoutEffect` (Rule #3). DeckManager listens for `visibilitychange` (`document.visibilityState === 'hidden'`) and `beforeunload`. On either event, DeckManager calls all registered save callbacks to capture the currently-active tab's state in every card, then flushes all dirty tab states to tugbank immediately (bypassing the normal 500ms debounce). Unregistration in `useLayoutEffect` cleanup.
+3. Add click-back selection restore in SelectionGuard: on `pointerdown` in a card that has a stored highlight range, stash the range as `pendingHighlightRestore` and clear the highlight. On `pointerup`, if the current selection is collapsed (simple click, no drag), restore the real Selection from the stashed range via `removeAllRanges()` + `addRange()`. If non-collapsed (user dragged to select new text), discard the stash — the user's new selection takes precedence.
+
+**Files created/modified**:
+1. `tugdeck/src/components/tugways/tugcard.tsx` — reorder restore: content in useLayoutEffect body, scroll+selection in RAF
+2. `tugdeck/src/deck-manager.ts` — add save callback registration (`registerSaveCallback`/`unregisterSaveCallback`), `visibilitychange` and `beforeunload` listeners in `attach()`/`detach()`, immediate flush on close
+3. `tugdeck/src/components/tugways/selection-guard.ts` — add `pendingHighlightRestore` field, modify pointerdown highlight loop to stash range on click-back, add pointerup logic to conditionally restore selection
+4. `tugdeck/src/__tests__/tugcard.test.tsx` — update restore tests for new ordering (content before RAF)
+5. `tugdeck/src/__tests__/selection-guard.test.ts` — add click-back restore tests
+6. `tugdeck/src/__tests__/deck-manager.test.ts` — add save-on-close tests (visibilitychange, beforeunload)
+
+**Result**: All three bugs are fixed. Scroll positions are restored accurately (content populates DOM before scroll is set). Selections survive app close/reload (save callback fires on visibilitychange/beforeunload). Clicking back into a card with a dimmed selection restores the real selection instead of clearing it. Rules of Tugways strictly followed — save callback registration via useLayoutEffect (Rule #3), current state via refs (Rule #5), appearance changes via CSS/DOM (Rule #4), one responsibility per layer (Rule #8).
+
+**Note**: Phase 5f3 depends on Phase 5f2 (the CSS Custom Highlight infrastructure and RAF deferral must exist). It corrects ordering, adds missing lifecycle hooks, and closes the click-back restore loop.
+
 ### Phase 5c: Card Snapping (Concept 13)
 
 **Status: COMPLETE** (2026-03-04)
@@ -1287,11 +1308,12 @@ The suggested plan sequence:
 29. `tugways-phase-5e4-tugbank-migration` — settings migration (flat file → tugbank, frontend endpoint update)
 30. `tugways-phase-5f-state-preservation` — per-tab state bags, scroll/selection persistence, collapse field, focused card, useTugcardPersistence hook
 31. `tugways-phase-5f2-state-preservation-fixes` — RAF-deferred scroll/selection restore, CSS Custom Highlight API for inactive selections, flash suppression
-32. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
-32. `tugways-phase-6-feed` — feed hooks, data flow
-33. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
-34. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
-35. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
+32. `tugways-phase-5f3-state-preservation-more-fixes` — restore ordering (content first), save-on-close (visibilitychange/beforeunload), click-back selection restore
+33. `tugways-phase-5g-palette-refinements` — 10 presets with (vib, val) pairs, calc()+clamp() formulas, preset renames, gallery editor preset tuning
+34. `tugways-phase-6-feed` — feed hooks, data flow
+35. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
+36. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+37. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
 36. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
 37. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
 38. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
