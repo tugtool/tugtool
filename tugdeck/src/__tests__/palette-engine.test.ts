@@ -6,10 +6,10 @@
  * - oklchToLinearSRGB, isInSRGBGamut, findMaxChroma, _deriveChromaCaps utilities
  * - hvvColor(): val→L piecewise, vib→C linear, optional peakChroma override
  * - DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE constants
- * - HVV_PRESETS: 7 entries with correct vib/val
+ * - HVV_PRESETS: 5 entries with correct vib/val
  * - MAX_P3_CHROMA_FOR_HUE: all > corresponding sRGB caps
  * - oklchToLinearP3 and isInP3Gamut: P3 gamut conversion and checking
- * - Gamut safety: all 24 hues × 7 presets produce valid oklch strings
+ * - Gamut safety: all 24 hues × 5 presets produce valid oklch strings
  * - tug-palette.css: verifies static palette file structure and contents
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
@@ -185,30 +185,28 @@ describe("L_DARK, L_LIGHT, PEAK_C_SCALE", () => {
 // ---------------------------------------------------------------------------
 
 describe("HVV_PRESETS", () => {
-  it("has exactly 7 entries", () => {
-    expect(Object.keys(HVV_PRESETS).length).toBe(7);
+  it("has exactly 5 entries", () => {
+    expect(Object.keys(HVV_PRESETS).length).toBe(5);
+  });
+
+  it("contains exactly the keys: canonical, light, dark, intense, muted", () => {
+    expect(Object.keys(HVV_PRESETS).sort()).toEqual(["canonical", "dark", "intense", "light", "muted"]);
   });
 
   it("canonical: vib=50, val=50", () => {
     expect(HVV_PRESETS["canonical"]).toEqual({ vib: 50, val: 50 });
   });
-  it("accent: vib=80, val=50", () => {
-    expect(HVV_PRESETS["accent"]).toEqual({ vib: 80, val: 50 });
+  it("light: vib=20, val=85", () => {
+    expect(HVV_PRESETS["light"]).toEqual({ vib: 20, val: 85 });
   });
-  it("muted: vib=25, val=55", () => {
-    expect(HVV_PRESETS["muted"]).toEqual({ vib: 25, val: 55 });
+  it("dark: vib=50, val=20", () => {
+    expect(HVV_PRESETS["dark"]).toEqual({ vib: 50, val: 20 });
   });
-  it("light: vib=30, val=82", () => {
-    expect(HVV_PRESETS["light"]).toEqual({ vib: 30, val: 82 });
+  it("intense: vib=90, val=50", () => {
+    expect(HVV_PRESETS["intense"]).toEqual({ vib: 90, val: 50 });
   });
-  it("subtle: vib=15, val=92", () => {
-    expect(HVV_PRESETS["subtle"]).toEqual({ vib: 15, val: 92 });
-  });
-  it("dark: vib=50, val=25", () => {
-    expect(HVV_PRESETS["dark"]).toEqual({ vib: 50, val: 25 });
-  });
-  it("deep: vib=70, val=15", () => {
-    expect(HVV_PRESETS["deep"]).toEqual({ vib: 70, val: 15 });
+  it("muted: vib=20, val=50", () => {
+    expect(HVV_PRESETS["muted"]).toEqual({ vib: 20, val: 50 });
   });
 });
 
@@ -409,19 +407,23 @@ describe("tug-palette.css — global lightness anchors", () => {
   });
 });
 
-describe("tug-palette.css — chromatic preset formulas (168 = 24 × 7)", () => {
-  it("contains all 7 preset variables for red", () => {
+describe("tug-palette.css — chromatic preset formulas (120 = 24 × 5)", () => {
+  it("contains all 5 preset variables for red", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-red:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-accent:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-muted:");
     expect(TUG_PALETTE_CSS).toContain("--tug-red-light:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-subtle:");
     expect(TUG_PALETTE_CSS).toContain("--tug-red-dark:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-deep:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-intense:");
+    expect(TUG_PALETTE_CSS).toContain("--tug-red-muted:");
   });
 
-  it("contains all 7 preset variables for all 24 hues", () => {
-    const presetSuffixes = ["", "-accent", "-muted", "-light", "-subtle", "-dark", "-deep"];
+  it("does NOT contain removed preset variables for red", () => {
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-accent:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-subtle:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-deep:");
+  });
+
+  it("contains all 5 preset variables for all 24 hues", () => {
+    const presetSuffixes = ["", "-light", "-dark", "-intense", "-muted"];
     for (const hue of Object.keys(HUE_FAMILIES)) {
       for (const suffix of presetSuffixes) {
         expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}${suffix}:`);
@@ -429,13 +431,13 @@ describe("tug-palette.css — chromatic preset formulas (168 = 24 × 7)", () => 
     }
   });
 
-  it("total chromatic preset variable count is 168 in the sRGB block (7 × 24)", () => {
+  it("total chromatic preset variable count is 120 in the sRGB block (5 × 24)", () => {
     const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
     const hueNames = Object.keys(HUE_FAMILIES).join("|");
     // Only count chromatic hue presets, not neutral/black/white
-    const chromaticPattern = new RegExp(`--tug-(?:${hueNames})(?:-(?:accent|muted|light|subtle|dark|deep))?:\\s*oklch\\(`, "g");
+    const chromaticPattern = new RegExp(`--tug-(?:${hueNames})(?:-(?:intense|muted|light|dark))?:\\s*oklch\\(`, "g");
     const presets = srgbBlock.match(chromaticPattern) ?? [];
-    expect(presets.length).toBe(168);
+    expect(presets.length).toBe(120);
   });
 
   it("preset formulas use oklch( and calc( patterns", () => {
@@ -447,15 +449,46 @@ describe("tug-palette.css — chromatic preset formulas (168 = 24 × 7)", () => 
     expect(TUG_PALETTE_CSS).toContain("var(--tug-red-canonical-l)");
     expect(TUG_PALETTE_CSS).toContain("var(--tug-red-peak-c)");
   });
+
+  it("preset formulas use clamp() for val-to-L piecewise mapping", () => {
+    expect(TUG_PALETTE_CSS).toContain("clamp(");
+  });
+
+  it("does NOT contain coefficient knob variables (--tug-preset-*)", () => {
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-preset-/);
+  });
 });
 
 describe("tug-palette.css — neutral ramp and anchors", () => {
-  it("contains --tug-neutral", () => {
+  it("contains --tug-neutral (canonical)", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-neutral:");
   });
 
-  it("contains --tug-neutral-deep", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-deep:");
+  it("contains --tug-neutral-light", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-light:");
+  });
+
+  it("contains --tug-neutral-dark", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-dark:");
+  });
+
+  it("contains --tug-neutral-intense", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-intense:");
+  });
+
+  it("contains --tug-neutral-muted", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-muted:");
+  });
+
+  it("does NOT contain removed neutral presets (accent, subtle, deep)", () => {
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-accent:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-subtle:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-deep:");
+  });
+
+  it("neutral ramp has exactly 5 preset definitions", () => {
+    const neutralPresets = TUG_PALETTE_CSS.match(/--tug-neutral(?:-\w+)?:\s*oklch\([^;]+\);/g) ?? [];
+    expect(neutralPresets.length).toBe(5);
   });
 
   it("contains --tug-black", () => {
@@ -510,8 +543,8 @@ describe("tug-palette.css — P3 @media block", () => {
   it("P3 block does NOT contain preset formula overrides (only peak-c is overridden)", () => {
     const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
     const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
-    // No preset variables (canonical, accent, muted, etc.) should appear in the P3 block
-    const presetVars = p3Block.match(/--tug-[a-z]+(?:-(?:accent|muted|light|subtle|dark|deep))?:\s*oklch\(/g) ?? [];
+    // No preset variables (canonical, intense, muted, light, dark, etc.) should appear in the P3 block
+    const presetVars = p3Block.match(/--tug-[a-z]+(?:-(?:intense|muted|light|dark))?:\s*oklch\(/g) ?? [];
     expect(presetVars.length).toBe(0);
   });
 
@@ -527,8 +560,8 @@ describe("tug-palette.css — P3 @media block", () => {
 // Gamut safety: all 24 hues x 7 presets
 // ---------------------------------------------------------------------------
 
-describe("Gamut safety: all 24 hues x 7 presets", () => {
-  it("all 168 sRGB presets produce parseable oklch strings", () => {
+describe("Gamut safety: all 24 hues x 5 presets", () => {
+  it("all 120 sRGB presets produce parseable oklch strings", () => {
     let count = 0;
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
@@ -539,10 +572,10 @@ describe("Gamut safety: all 24 hues x 7 presets", () => {
         count++;
       }
     }
-    expect(count).toBe(168);
+    expect(count).toBe(120);
   });
 
-  it("all 168 P3 presets produce parseable oklch strings", () => {
+  it("all 120 P3 presets produce parseable oklch strings", () => {
     let count = 0;
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL  = DEFAULT_CANONICAL_L[hueName];
@@ -554,6 +587,6 @@ describe("Gamut safety: all 24 hues x 7 presets", () => {
         count++;
       }
     }
-    expect(count).toBe(168);
+    expect(count).toBe(120);
   });
 });

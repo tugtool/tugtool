@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-09T21:57:41Z
+---
+
+## step-5: Updated palette-engine.test.ts: HVV_PRESETS tests assert 5 entries with Table T01 values, chromatic preset counts changed from 168 to 120, neutral ramp tests updated, gamut safety counts updated, P3 block regex updated. Full suite: 1083 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-4
 date: 2025-03-09T21:52:17Z
 ---
