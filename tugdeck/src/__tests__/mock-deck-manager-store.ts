@@ -48,6 +48,9 @@ export function makeMockStore(
       tabStateCache.set(tabId, bag);
     },
     initialFocusedCardId: undefined,
+    // Phase 5f3: no-op stubs; tests that need to inspect these can spyOn them.
+    registerSaveCallback: () => {},
+    unregisterSaveCallback: () => {},
   };
 
   return { ...base, ...overrides };

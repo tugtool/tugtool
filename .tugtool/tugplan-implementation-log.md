@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-09T00:58:49Z
+---
+
+## step-2: Added registerSaveCallback/unregisterSaveCallback to DeckManager, visibilitychange and beforeunload event listeners that call registered callbacks then flush dirty tab states with keepalive option. Updated IDeckManagerStore interface, settings-api putTabState, and mock. Added tests T03-T06.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f3-state-preservation-more-fixes.md
+
+---
+
+---
 step: step-1
 date: 2025-03-09T00:51:34Z
 ---

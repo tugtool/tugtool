@@ -111,4 +111,22 @@ export interface IDeckManagerStore {
    * ([D03])
    */
   initialFocusedCardId?: string;
+
+  // ---- Phase 5f3: Save callbacks for close-time state flush (Spec S01, [D01]) ----
+
+  /**
+   * Register a save callback associated with the given ID (typically a cardId).
+   * The callback is called by DeckManager on visibilitychange (hidden) and
+   * beforeunload to capture all card states before the page is discarded.
+   *
+   * Registration should happen in useLayoutEffect (Rule of Tugways #3) so the
+   * callback is registered before any events that may depend on it fire.
+   */
+  registerSaveCallback: (id: string, callback: () => void) => void;
+
+  /**
+   * Unregister the save callback for the given ID.
+   * Called in the cleanup of the useLayoutEffect that registered it.
+   */
+  unregisterSaveCallback: (id: string) => void;
 }
