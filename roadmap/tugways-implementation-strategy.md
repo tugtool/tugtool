@@ -1411,15 +1411,16 @@ The suggested plan sequence:
 32. `tugways-phase-5f3-state-preservation-more-fixes` — restore ordering (content first), save-on-close (visibilitychange/beforeunload), click-back selection restore
 33. `tugways-phase-5f4-state-preservation-solidified` — child-driven ready callback (onContentReady), eliminate double-RAF, Rules of Tugways 11 & 12
 34. `tugways-phase-5g-palette-refinements` — continuous color space with 5 convenience presets, inline HVV formulas in theme files, gallery vib/val explorer
-35. `tugways-phase-6-feed` — feed hooks, data flow
-36. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
-37. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
-38. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
-39. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-40. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-41. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-42. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-43. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
+35. `tugways-phase-5g2-hvv-postcss` — PostCSS `--hvv()` plugin, `oklchToHVV()` reverse mapper, convert all theme hex tokens to `--hvv()` notation
+36. `tugways-phase-6-feed` — feed hooks, data flow
+37. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
+38. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+39. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
+40. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
+41. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
+42. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
+43. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
+44. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
 44. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
