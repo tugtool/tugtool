@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-09T22:12:18Z
+---
+
+## step-8: Final verification: full test suite 1088 pass 0 fail, all grep audits clean, 120 chromatic presets, 5 neutral presets, gallery editor with VibValPicker confirmed
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-7
 date: 2025-03-09T22:09:16Z
 ---
