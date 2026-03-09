@@ -768,6 +768,12 @@ class SelectionGuard {
     const target = event.target as Node | null;
     if (!target) return;
 
+    // Skip highlight activation for elements marked data-no-activate —
+    // e.g. close buttons, where clicking a background card's chrome must
+    // not dim the frontmost card's selection.
+    const targetEl = target instanceof Element ? target : (target as Node).parentElement;
+    if (targetEl?.closest("[data-no-activate]")) return;
+
     // ---- Determine which card the click belongs to ----
     //
     // First check content boundaries (most common), then walk up the DOM to

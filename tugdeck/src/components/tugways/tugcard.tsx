@@ -701,6 +701,36 @@ export function Tugcard({
   // Close button
   // ---------------------------------------------------------------------------
 
+  // Mac-like close button: pointerdown captures the pointer and suppresses
+  // browser focus/selection side effects; pointerup-inside fires the action.
+  // The selection guard's handlePointerDown also early-returns for elements
+  // with data-no-activate, preventing highlight swap to the background card.
+  const handleClosePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation(); // prevent bring-to-front
+      event.preventDefault(); // prevent focus/selection shift
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [],
+  );
+
+  const handleClosePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      const inside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      if (inside) {
+        onClose?.();
+      }
+    },
+    [onClose],
+  );
+
+  // Keyboard fallback: Enter/Space fires click without pointerdown.
   const handleCloseClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -735,6 +765,9 @@ export function Tugcard({
           <button
             type="button"
             className="tugcard-close-btn"
+            data-no-activate
+            onPointerDown={handleClosePointerDown}
+            onPointerUp={handleClosePointerUp}
             onClick={handleCloseClick}
             aria-label="Close card"
             data-testid="tugcard-close-btn"
