@@ -16,6 +16,7 @@ import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";
+import { deserialize } from "./serialization";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -79,13 +80,12 @@ if (!container) {
   // This must run after the layout fetch (depends on tab IDs) but before
   // DeckManager construction (tab state cache must be warm for first render).
   //
-  // Import deserialize here to extract tab IDs without constructing DeckManager.
+  // Extract tab IDs without constructing DeckManager.
   // Canvas dimensions are not needed for tab ID extraction — use 0 as placeholders
   // (the geometry is re-applied inside DeckManager via loadLayout).
   let tabStates = new Map<string, import("./layout-tree").TabStateBag>();
   if (layout !== null) {
     try {
-      const { deserialize } = await import("./serialization");
       const parsed = deserialize(JSON.stringify(layout), 0, 0);
       const tabIds = parsed.cards.flatMap((c) => c.tabs.map((t) => t.id));
       if (tabIds.length > 0) {
