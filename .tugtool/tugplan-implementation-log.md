@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-09T23:49:32Z
+---
+
+## step-3: Wired postcss-hvv plugin into vite.config.ts via css.postcss.plugins. Coexists with Tailwind v4 Vite plugin. Build verified clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-2
 date: 2025-03-09T23:45:28Z
 ---

@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+// postcss-hvv expands --hvv(hue, vib, val) to oklch() at build time.
+// Tailwind v4 operates as a Vite plugin (not PostCSS), so there is no conflict.
+import postcssHvv from "./postcss-hvv";
 
 export default defineConfig(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
@@ -12,6 +15,11 @@ export default defineConfig(() => {
   };
   return {
     plugins: [react(), tailwindcss()],
+    css: {
+      postcss: {
+        plugins: [postcssHvv()],
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
