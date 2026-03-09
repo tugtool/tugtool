@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-09T22:09:16Z
+---
+
+## step-7: Added VibValPicker (21x21 grid, pointer drag, crosshair), PresetOverlay (5 labeled dots at Table T01 coordinates), CssFormulaExport (Spec S01 formula with clipboard copy). Replaced VibValGrid in GalleryPaletteContent. 1088 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-6
 date: 2025-03-09T22:00:43Z
 ---
