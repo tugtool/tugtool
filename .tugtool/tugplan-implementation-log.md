@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-09T22:00:43Z
+---
+
+## step-6: Integration checkpoint: full test suite 1083 pass 0 fail, grep audits confirm zero stale references to coefficient knobs or removed preset names
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-5
 date: 2025-03-09T21:57:41Z
 ---
