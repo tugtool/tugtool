@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-09T17:02:33Z
+---
+
+## step-1: Ran both spike test files (react19-commit-timing.test.tsx and content-ready-spike.test.tsx) and confirmed all 23 tests pass, validating the React 19 commit timing guarantees that steps 2-4 depend on.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f4-state-preservation-solidified.md
+
+---
+
+---
 step: step-5
 date: 2025-03-09T01:16:02Z
 ---
