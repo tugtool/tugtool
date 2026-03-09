@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-09T23:40:18Z
+---
+
+## step-1: Added oklchToHVV() to reverse-map oklch strings back to HVV triplets (hue name/angle, vibrancy, value) and hvvPretty() for human-readable formatting. Includes comprehensive round-trip tests for all 24 named hues.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-8
 date: 2025-03-09T22:12:18Z
 ---
