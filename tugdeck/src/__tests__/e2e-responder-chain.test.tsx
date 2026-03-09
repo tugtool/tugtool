@@ -84,6 +84,13 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     reorderTab: (_cardId: string, _fromIndex: number, _toIndex: number) => {},
     detachTab: (_cardId: string, _tabId: string, _position: { x: number; y: number }) => null,
     mergeTab: (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number) => {},
+    // Phase 5f additions
+    getTabState: (_tabId: string) => undefined,
+    setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
+    initialFocusedCardId: undefined,
+    // Phase 5f3 additions
+    registerSaveCallback: (_id: string, _callback: () => void) => {},
+    unregisterSaveCallback: (_id: string) => {},
   };
 }
 
@@ -131,6 +138,13 @@ class ReactiveStore implements IDeckManagerStore {
   reorderTab = (_cardId: string, _fromIndex: number, _toIndex: number): void => {};
   detachTab = (_cardId: string, _tabId: string, _position: { x: number; y: number }): string | null => null;
   mergeTab = (_sourceCardId: string, _tabId: string, _targetCardId: string, _insertAtIndex: number): void => {};
+  // Phase 5f additions
+  getTabState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
+  setTabState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
+  initialFocusedCardId: string | undefined = undefined;
+  // Phase 5f3 additions
+  registerSaveCallback = (_id: string, _callback: () => void): void => {};
+  unregisterSaveCallback = (_id: string): void => {};
 
   setState(next: DeckState): void {
     this._state = next;

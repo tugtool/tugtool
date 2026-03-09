@@ -90,6 +90,9 @@ function makeMockStore(deckState: DeckState = { cards: [] }): IDeckManagerStore 
     getTabState: (_tabId: string) => undefined,
     setTabState: (_tabId: string, _bag: import("@/layout-tree").TabStateBag) => {},
     initialFocusedCardId: undefined,
+    // Phase 5f3 additions
+    registerSaveCallback: (_id: string, _callback: () => void) => {},
+    unregisterSaveCallback: (_id: string) => {},
   };
 }
 
@@ -672,6 +675,9 @@ class ReactiveStore implements IDeckManagerStore {
   getTabState = (_tabId: string): import("@/layout-tree").TabStateBag | undefined => undefined;
   setTabState = (_tabId: string, _bag: import("@/layout-tree").TabStateBag): void => {};
   initialFocusedCardId: string | undefined = undefined;
+  // Phase 5f3 additions
+  registerSaveCallback = (_id: string, _callback: () => void): void => {};
+  unregisterSaveCallback = (_id: string): void => {};
 
   /** Update state and notify subscribers (triggers useSyncExternalStore re-render). */
   setState(next: DeckState): void {

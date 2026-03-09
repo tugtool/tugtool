@@ -1363,6 +1363,67 @@ describe("Tugcard – Phase 5f3 restore order (Step 1)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 5f3 Step 3: Save callback registration with DeckManager (T07)
+// ---------------------------------------------------------------------------
+
+describe("Tugcard – save callback registration (Phase 5f3 Step 3)", () => {
+  afterEach(() => { cleanup(); _resetForTest(); });
+
+  /**
+   * T07: mounting a Tugcard calls store.registerSaveCallback with the card ID
+   * and a function; unmounting calls store.unregisterSaveCallback.
+   */
+  it("T07: mounting registers save callback; unmounting unregisters it", () => {
+    const store = makeMockStore();
+    const registerSpy = spyOn(store, "registerSaveCallback");
+    const unregisterSpy = spyOn(store, "unregisterSaveCallback");
+
+    const { DeckManagerContext } = require("@/deck-manager-context") as typeof import("@/deck-manager-context");
+
+    let unmountFn!: () => void;
+
+    act(() => {
+      const result = render(
+        <DeckManagerContext.Provider value={store}>
+          <ResponderChainProvider>
+            <Tugcard
+              {...defaultProps}
+              cardId="card-t07"
+            >
+              <div>content</div>
+            </Tugcard>
+          </ResponderChainProvider>
+        </DeckManagerContext.Provider>
+      );
+      unmountFn = result.unmount;
+    });
+
+    // registerSaveCallback must have been called with the cardId and a function.
+    expect(registerSpy).toHaveBeenCalled();
+    const calls = registerSpy.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    // First arg is cardId, second is a function wrapper.
+    const [registeredId, registeredCb] = calls[calls.length - 1] as [string, () => void];
+    expect(registeredId).toBe("card-t07");
+    expect(typeof registeredCb).toBe("function");
+
+    // unregisterSaveCallback must NOT have been called yet.
+    expect(unregisterSpy).not.toHaveBeenCalled();
+
+    // Unmount the component.
+    act(() => {
+      unmountFn();
+    });
+
+    // unregisterSaveCallback must have been called with the cardId.
+    expect(unregisterSpy).toHaveBeenCalled();
+    const unregCalls = unregisterSpy.mock.calls;
+    expect(unregCalls.length).toBeGreaterThan(0);
+    expect(unregCalls[unregCalls.length - 1][0]).toBe("card-t07");
+  });
+});
+
 // Suppress unused-import warnings
 void spyOn;
 void fireEvent;

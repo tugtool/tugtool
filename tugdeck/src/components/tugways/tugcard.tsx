@@ -302,6 +302,25 @@ export function Tugcard({
     [onTabSelect],
   );
 
+  // Phase 5f3: Save callback registration with DeckManager (Step 3, [D01], Spec S01).
+  //
+  // Register a stable wrapper around saveCurrentTabStateRef.current so DeckManager
+  // can call it on visibilitychange and beforeunload. The wrapper dereferences
+  // saveCurrentTabStateRef.current at call time — NOT at registration time — because
+  // saveCurrentTabStateRef.current is reassigned every render (it captures inline
+  // closures). Passing saveCurrentTabStateRef.current directly would snapshot the
+  // initial render's closure and go stale.
+  //
+  // useLayoutEffect follows Rule of Tugways #3 (registrations that events depend on).
+  // Cleanup calls unregisterSaveCallback so the callback is removed when Tugcard unmounts.
+  useLayoutEffect(() => {
+    store.registerSaveCallback(cardId, () => saveCurrentTabStateRef.current?.());
+    return () => {
+      store.unregisterSaveCallback(cardId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, store]);
+
   // Phase 5f3: Activation restore with corrected order (Step 1, [D03] Restore order, Spec S03).
   //
   // Content is restored synchronously in the useLayoutEffect body BEFORE scheduling

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-09T01:04:19Z
+---
+
+## step-3: Added useLayoutEffect in Tugcard to register saveCurrentTabState with DeckManager store via registerSaveCallback on mount and unregisterSaveCallback on cleanup. Used stable wrapper around saveCurrentTabStateRef.current. Added test T07 and updated companion mock stores.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5f3-state-preservation-more-fixes.md
+
+---
+
+---
 step: step-2
 date: 2025-03-09T00:58:49Z
 ---
