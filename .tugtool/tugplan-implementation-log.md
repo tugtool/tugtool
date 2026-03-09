@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-09T23:45:28Z
+---
+
+## step-2: Created PostCSS plugin at postcss-hvv.ts that expands --hvv(hue, vib, val) calls to oklch() values using palette-engine math. Supports named hues and raw angles. Added postcss as explicit devDependency.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-1
 date: 2025-03-09T23:40:18Z
 ---
