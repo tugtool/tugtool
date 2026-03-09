@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-09T21:35:29Z
+---
+
+## step-1: Rewrote tug-palette.css: removed 13 coefficient variables, replaced 7-preset formula blocks with 5-preset calc()+clamp() using literal vib/val numbers, renamed accent to intense, removed subtle/deep, updated neutral ramp to 5 presets per Table T02
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
+
+---
+
+---
 step: step-5
 date: 2025-03-09T17:30:08Z
 ---
