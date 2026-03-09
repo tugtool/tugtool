@@ -238,6 +238,14 @@ class SelectionGuard {
   // RAF handle for autoscroll loop
   private rafHandle: number | null = null;
 
+  // One-shot mousedown handler installed during pointerdown when restoring a
+  // highlight. Calls preventDefault() on the mousedown to prevent the browser
+  // from placing a caret and starting selection tracking. Without this, the
+  // browser's mouseup default processing finalizes the pending selection as a
+  // collapsed caret, overwriting the selection we restore in handlePointerUp.
+  // The handler removes itself after firing (one-shot).
+  private boundPreventMousedown: ((e: MouseEvent) => void) | null = null;
+
   // Bound listener references (so they can be removed)
   private boundPointerDown: (e: PointerEvent) => void;
   private boundPointerMove: (e: PointerEvent) => void;
@@ -315,6 +323,7 @@ class SelectionGuard {
     document.removeEventListener("selectionchange", this.boundSelectionChange);
     document.removeEventListener("selectstart", this.boundSelectStart, { capture: true });
     this.stopAutoscroll();
+    this.removePreventMousedown();
 
     // Clean up the CSS Custom Highlight registration.
     if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
@@ -340,28 +349,56 @@ class SelectionGuard {
     const boundary = this.boundaries.get(cardId);
     if (!boundary) return null;
 
+    // Try the live browser Selection first.
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return null;
-
-    const anchorNode = selection.anchorNode;
-    const focusNode = selection.focusNode;
-    if (!anchorNode || !focusNode) return null;
-
-    // Both anchor and focus must be within the card boundary
-    if (!boundary.contains(anchorNode) || !boundary.contains(focusNode)) {
-      return null;
+    if (selection && selection.rangeCount > 0) {
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      if (
+        anchorNode && focusNode &&
+        anchorNode !== boundary && focusNode !== boundary &&
+        boundary.contains(anchorNode) && boundary.contains(focusNode)
+      ) {
+        const anchorPath = nodeToPath(boundary, anchorNode);
+        const focusPath = nodeToPath(boundary, focusNode);
+        if (anchorPath && focusPath && anchorPath.length > 0 && focusPath.length > 0) {
+          return {
+            anchorPath,
+            anchorOffset: selection.anchorOffset,
+            focusPath,
+            focusOffset: selection.focusOffset,
+          };
+        }
+      }
     }
 
-    const anchorPath = nodeToPath(boundary, anchorNode);
-    const focusPath = nodeToPath(boundary, focusNode);
-    if (!anchorPath || !focusPath) return null;
+    // Fallback: use the highlighted range captured during pointerdown capture
+    // phase. The browser clears the live Selection on mousedown, so by the time
+    // a click handler calls saveSelection the Selection is empty. The highlight
+    // range was captured before the browser cleared it and is the source of
+    // truth for the selection that was visible in this card.
+    const highlightRange = this.highlightRanges.get(cardId);
+    if (highlightRange) {
+      const startNode = highlightRange.startContainer;
+      const endNode = highlightRange.endContainer;
+      if (
+        startNode !== boundary && endNode !== boundary &&
+        boundary.contains(startNode) && boundary.contains(endNode)
+      ) {
+        const anchorPath = nodeToPath(boundary, startNode);
+        const focusPath = nodeToPath(boundary, endNode);
+        if (anchorPath && focusPath && anchorPath.length > 0 && focusPath.length > 0) {
+          return {
+            anchorPath,
+            anchorOffset: highlightRange.startOffset,
+            focusPath,
+            focusOffset: highlightRange.endOffset,
+          };
+        }
+      }
+    }
 
-    return {
-      anchorPath,
-      anchorOffset: selection.anchorOffset,
-      focusPath,
-      focusOffset: selection.focusOffset,
-    };
+    return null;
   }
 
   /**
@@ -444,7 +481,6 @@ class SelectionGuard {
       this.highlight.delete(existing);
     }
 
-    // Register the new range.
     this.highlightRanges.set(cardId, range);
     this.highlight.add(range);
   }
@@ -478,6 +514,7 @@ class SelectionGuard {
     this.boundaries.clear();
     this.highlightRanges.clear();
     this.pendingHighlightRestore.clear();
+    this.removePreventMousedown();
     if (this.highlight) {
       this.highlight.clear();
     }
@@ -515,6 +552,36 @@ class SelectionGuard {
     const target = event.target as Node | null;
     if (!target) return;
 
+    // Clean up any leftover one-shot mousedown handler from a previous click
+    // that didn't complete normally (e.g. pointer cancel).
+    this.removePreventMousedown();
+
+    // ---- Determine which card the click belongs to ----
+    //
+    // First check content boundaries (most common), then walk up the DOM to
+    // find card chrome (title bar, tab bar, etc.) via data-card-id. This lets
+    // the highlight-capture loop treat title-bar clicks the same as content
+    // clicks for highlight restore — clicking anywhere on a card should
+    // restore its dimmed selection to active.
+    let clickedCardId: string | null = null;
+    for (const [cardId, element] of this.boundaries) {
+      if (element.contains(target)) {
+        clickedCardId = cardId;
+        break;
+      }
+    }
+    if (clickedCardId === null) {
+      let el: Element | null = target instanceof Element ? target : (target as Node).parentElement;
+      while (el) {
+        const cid = el.getAttribute("data-card-id");
+        if (cid !== null && this.boundaries.has(cid)) {
+          clickedCardId = cid;
+          break;
+        }
+        el = el.parentElement;
+      }
+    }
+
     // ---- Phase 5f2: Highlight-capture loop (Spec S03, [D04]) ----
     //
     // This loop runs BEFORE the tracking loop below. It must visit ALL
@@ -529,20 +596,25 @@ class SelectionGuard {
       const selection = window.getSelection();
       for (const [cardId, element] of this.boundaries) {
         if (element.contains(target)) {
-          // Click is inside this card.
+          // Click is inside this card's content area.
           if (this.highlightRanges.has(cardId)) {
             // The card has a stored inactive highlight. Stash the range for
-            // potential restore on pointerup (Spec S02, [D02]).
+            // potential restore on pointerup. Keep the highlight VISIBLE until
+            // pointerup so the user sees a single dimmed→active transition
+            // with no flash of nothing in between.
             const range = this.highlightRanges.get(cardId)!;
             this.pendingHighlightRestore.set(cardId, range);
-            // Inline clear (do not call clearInactiveHighlight) so the range
-            // is stashed before removing it from the Highlight object.
-            this.highlightRanges.delete(cardId);
-            this.highlight.delete(range);
           } else {
             // No highlight stored — use normal clear path (no-op when empty).
             this.clearInactiveHighlight(cardId);
           }
+        } else if (cardId === clickedCardId && this.highlightRanges.has(cardId)) {
+          // Click is on this card's chrome (title bar, tab bar) and the card
+          // has a dimmed inactive highlight. Stash for restore on pointerup so
+          // clicking the title bar restores the selection just like clicking
+          // the content area does.
+          const range = this.highlightRanges.get(cardId)!;
+          this.pendingHighlightRestore.set(cardId, range);
         } else if (
           selection &&
           selection.rangeCount > 0 &&
@@ -554,6 +626,15 @@ class SelectionGuard {
           // clears the selection.
           this.captureInactiveHighlight(cardId);
         }
+      }
+
+      // If a highlight was stashed for restore, prevent the browser's default
+      // mousedown behavior (caret placement / selection tracking start). Without
+      // this, the browser finalizes the pending selection as a collapsed caret on
+      // mouseup, overwriting the selection we restore in handlePointerUp.
+      // pointerdown fires before mousedown, so this listener is ready in time.
+      if (this.pendingHighlightRestore.size > 0) {
+        this.installPreventMousedown();
       }
     }
 
@@ -611,12 +692,23 @@ class SelectionGuard {
     // ---- Phase 5f3: Pending highlight restore (Spec S02, [D02]) ----
     //
     // If the user clicked back into a card that had an inactive highlight,
-    // the range was stashed in pendingHighlightRestore on pointerdown. Now
-    // check whether the resulting selection is collapsed (simple click) or
-    // non-collapsed (drag to select). Restore on collapsed; discard on drag.
+    // the range was stashed in pendingHighlightRestore on pointerdown. The
+    // highlight was kept visible during the pointerdown→pointerup interval
+    // to avoid a flash of nothing. Now clear the highlight AND restore the
+    // selection atomically (same tick) for a single dimmed→active transition.
+    //
+    // The browser's default mousedown behavior (caret placement) was prevented
+    // by installPreventMousedown() in handlePointerDown, so the browser has no
+    // pending selection to finalize on mouseup — our restore survives.
     if (this.pendingHighlightRestore.size > 0) {
       const sel = window.getSelection();
-      for (const [, range] of this.pendingHighlightRestore) {
+      for (const [cardId, range] of this.pendingHighlightRestore) {
+        // Clear the highlight now (deferred from pointerdown).
+        this.highlightRanges.delete(cardId);
+        if (this.highlight) {
+          this.highlight.delete(range);
+        }
+
         if (sel && sel.isCollapsed) {
           // Simple click — restore the stashed Selection.
           sel.removeAllRanges();
@@ -624,8 +716,6 @@ class SelectionGuard {
         }
         // Else: user dragged to create a new selection — discard stash.
       }
-      // Clear before stopTracking() so stopTracking()'s clear is a true
-      // safety net only (no double-clear confusion in tests).
       this.pendingHighlightRestore.clear();
     }
     this.stopTracking();
@@ -807,12 +897,38 @@ class SelectionGuard {
     }
   }
 
+  /**
+   * Install a one-shot mousedown capture listener that prevents the browser's
+   * default selection behavior (caret placement, selection tracking start).
+   * Called from handlePointerDown when a highlight restore is pending.
+   * pointerdown fires before mousedown, so this is installed in time.
+   */
+  private installPreventMousedown(): void {
+    this.removePreventMousedown(); // clean up any stale handler
+    this.boundPreventMousedown = (e: MouseEvent) => {
+      e.preventDefault();
+      this.removePreventMousedown();
+    };
+    document.addEventListener("mousedown", this.boundPreventMousedown, { capture: true });
+  }
+
+  /**
+   * Remove the one-shot mousedown capture listener if one is installed.
+   */
+  private removePreventMousedown(): void {
+    if (this.boundPreventMousedown) {
+      document.removeEventListener("mousedown", this.boundPreventMousedown, { capture: true });
+      this.boundPreventMousedown = null;
+    }
+  }
+
   private stopTracking(): void {
     this.isTracking = false;
     this.activeCardId = null;
     this.stopAutoscroll();
     // Safety net for pointer-cancel paths that bypass handlePointerUp.
     this.pendingHighlightRestore.clear();
+    this.removePreventMousedown();
   }
 }
 

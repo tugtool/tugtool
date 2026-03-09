@@ -367,26 +367,40 @@ export function Tugcard({
       contentEl.style.visibility = "hidden";
     }
 
-    // 4. RAF: scroll + selection + unhide (after browser layout completes).
-    const rafHandle = requestAnimationFrame(() => {
-      if (contentEl && bag.scroll !== undefined) {
-        contentEl.scrollLeft = bag.scroll.x;
-        contentEl.scrollTop = bag.scroll.y;
-      }
+    // 4. Double-RAF: scroll + selection + unhide.
+    // A single RAF fires before the next paint but the browser may not have
+    // fully laid out newly-mounted child content yet. The second RAF fires
+    // after the first paint, by which point layout is stable and scrollHeight
+    // reflects the real content — scrollTop assignment won't be clamped.
+    // visibility:hidden stays on through both frames so the user never sees
+    // content at scroll position 0.
+    let outerRaf: number | null = null;
+    let innerRaf: number | null = null;
 
-      if (bag.selection != null) {
-        selectionGuard.restoreSelection(cardId, bag.selection);
-      }
+    outerRaf = requestAnimationFrame(() => {
+      innerRaf = requestAnimationFrame(() => {
+        if (contentEl && bag.scroll !== undefined) {
+          contentEl.scrollLeft = bag.scroll.x;
+          contentEl.scrollTop = bag.scroll.y;
+        }
 
-      // Restore visibility after scroll is applied (or always restore on selection only).
-      if (contentEl) {
-        contentEl.style.visibility = "";
-      }
+        // Restore visibility after scroll is applied but BEFORE selection restore.
+        // Selection must be set on visible content — browsers may not render the
+        // selection highlight if it was set while the element had visibility:hidden.
+        if (contentEl) {
+          contentEl.style.visibility = "";
+        }
+
+        if (bag.selection != null) {
+          selectionGuard.restoreSelection(cardId, bag.selection);
+        }
+      });
     });
 
-    // Cleanup: cancel the pending RAF and restore visibility to prevent permanent hiding.
+    // Cleanup: cancel pending RAFs and restore visibility to prevent permanent hiding.
     return () => {
-      cancelAnimationFrame(rafHandle);
+      if (outerRaf !== null) cancelAnimationFrame(outerRaf);
+      if (innerRaf !== null) cancelAnimationFrame(innerRaf);
       if (contentEl) {
         contentEl.style.visibility = "";
       }

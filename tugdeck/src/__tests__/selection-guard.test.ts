@@ -796,7 +796,7 @@ describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range an
     selectionGuard.reset();
   });
 
-  it("stashes the range in pendingHighlightRestore and removes it from the Highlight", () => {
+  it("stashes the range in pendingHighlightRestore and keeps highlight visible until pointerup", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "hello");
@@ -816,10 +816,25 @@ describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range an
     // Fire pointerdown inside the boundary (the text node is inside boundary).
     firePointerEvent("pointerdown", textNode as unknown as Node);
 
-    // The range should have been removed from the Highlight object.
+    // The highlight stays visible on pointerdown (no flash). It will be
+    // cleared atomically with the selection restore on pointerup.
+    expect(hl.size).toBe(1);
+
+    // Set up collapsed selection mock and fire pointerup — now the highlight
+    // is cleared and the selection is restored in the same tick.
+    const collapsedSel = {
+      rangeCount: 0, anchorNode: null, focusNode: null, isCollapsed: true,
+      removeAllRanges(): void { this.rangeCount = 0; },
+      addRange(_r: Range): void { this.rangeCount = 1; },
+      getRangeAt: () => range,
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+    firePointerEvent("pointerup", textNode as unknown as Node);
+
+    // Now the highlight is cleared.
     expect(hl.size).toBe(0);
 
-    // Cleanup
+    (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
@@ -868,7 +883,8 @@ describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selectio
     // Simulate pointerup (selection is still collapsed at this point).
     firePointerEvent("pointerup", textNode as unknown as Node);
 
-    // The stashed range should now be the real Selection.
+    // The stashed range should now be the real Selection (synchronous restore —
+    // the browser's default mousedown was prevented by installPreventMousedown).
     expect(capturedRange).not.toBeNull();
     expect(capturedRange!.startContainer).toBe(range.startContainer);
 

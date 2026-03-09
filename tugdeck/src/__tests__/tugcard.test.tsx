@@ -1096,7 +1096,8 @@ describe("Tugcard – tab activation restores state from store cache (Phase 5f S
     });
 
     // The RAF callback is mocked as setTimeout(0) in setup-rtl.ts.
-    // Flush the pending macrotask so the RAF callback (which calls restoreSelection) runs.
+    // Double-RAF: flush two macrotasks so both the outer and inner RAF callbacks run.
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
     await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
 
     // restoreSelection should have been called with cardId and the saved selection.
