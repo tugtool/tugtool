@@ -796,7 +796,7 @@ describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range an
     selectionGuard.reset();
   });
 
-  it("stashes the range in pendingHighlightRestore and keeps highlight visible until pointerup", () => {
+  it("clears the highlight and restores the selection immediately on pointerdown", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "hello");
@@ -807,39 +807,35 @@ describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range an
     const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
     selectionGuard.captureInactiveHighlight("card-stash");
-    (global as any).window = happyWindow;
 
     // Verify the highlight has one range now.
     const hl = registry.get("inactive-selection") as MockHighlight;
     expect(hl.size).toBe(1);
 
-    // Fire pointerdown inside the boundary (the text node is inside boundary).
-    firePointerEvent("pointerdown", textNode as unknown as Node);
-
-    // The highlight stays visible on pointerdown (no flash). It will be
-    // cleared atomically with the selection restore on pointerup.
-    expect(hl.size).toBe(1);
-
-    // Set up collapsed selection mock and fire pointerup — now the highlight
-    // is cleared and the selection is restored in the same tick.
-    const collapsedSel = {
+    // Set up a selection mock that tracks addRange calls for the pointerdown restore.
+    let capturedRange: Range | null = null;
+    const restoreSel = {
       rangeCount: 0, anchorNode: null, focusNode: null, isCollapsed: true,
       removeAllRanges(): void { this.rangeCount = 0; },
-      addRange(_r: Range): void { this.rangeCount = 1; },
-      getRangeAt: () => range,
+      addRange(r: Range): void { capturedRange = r; this.rangeCount = 1; },
+      getRangeAt: () => capturedRange!,
     };
-    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
-    firePointerEvent("pointerup", textNode as unknown as Node);
+    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
 
-    // Now the highlight is cleared.
+    // Fire pointerdown inside the boundary — highlight is cleared and
+    // selection is restored in the same synchronous handler (no flash).
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+
     expect(hl.size).toBe(0);
+    expect(capturedRange).not.toBeNull();
+    expect(capturedRange!.startContainer).toBe(range.startContainer);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
 
-describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selection from stash", () => {
+describe("Phase 5f3 T09 – pointerdown into highlighted card restores Selection immediately", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -853,7 +849,7 @@ describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selectio
     selectionGuard.reset();
   });
 
-  it("restores the stashed Range as the real Selection when pointerup is collapsed", () => {
+  it("restores the stashed Range as the real Selection on pointerdown (not deferred to pointerup)", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "restore me");
@@ -865,9 +861,9 @@ describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selectio
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
     selectionGuard.captureInactiveHighlight("card-restore");
 
-    // Set up a collapsed selection mock for the pointerup path.
+    // Set up a selection mock that tracks addRange calls.
     let capturedRange: Range | null = null;
-    const collapsedSel = {
+    const restoreSel = {
       rangeCount: 0,
       anchorNode: null,
       focusNode: null,
@@ -876,15 +872,12 @@ describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selectio
       addRange(r: Range): void { capturedRange = r; this.rangeCount = 1; },
       getRangeAt: (_i: number) => capturedRange!,
     };
-    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
 
-    // Simulate pointerdown into the highlighted card.
+    // Simulate pointerdown into the highlighted card — selection is restored
+    // immediately (same tick) along with highlight clear. No pointerup needed.
     firePointerEvent("pointerdown", textNode as unknown as Node);
-    // Simulate pointerup (selection is still collapsed at this point).
-    firePointerEvent("pointerup", textNode as unknown as Node);
 
-    // The stashed range should now be the real Selection (synchronous restore —
-    // the browser's default mousedown was prevented by installPreventMousedown).
     expect(capturedRange).not.toBeNull();
     expect(capturedRange!.startContainer).toBe(range.startContainer);
 
@@ -893,7 +886,7 @@ describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selectio
   });
 });
 
-describe("Phase 5f3 T10 – pointerup with non-collapsed selection discards stash", () => {
+describe("Phase 5f3 T10 – pointerdown restores selection regardless of subsequent drag", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -907,7 +900,7 @@ describe("Phase 5f3 T10 – pointerup with non-collapsed selection discards stas
     selectionGuard.reset();
   });
 
-  it("does not restore the stashed Range when pointerup selection is non-collapsed", () => {
+  it("restores the selection on pointerdown even when selection is non-collapsed", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "drag me");
@@ -919,7 +912,8 @@ describe("Phase 5f3 T10 – pointerup with non-collapsed selection discards stas
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
     selectionGuard.captureInactiveHighlight("card-drag");
 
-    // Set up a non-collapsed selection mock (user dragged to create selection).
+    // Set up a non-collapsed selection mock. The restore happens on pointerdown
+    // regardless — the user can then create a new selection via drag if desired.
     let addRangeCalled = false;
     const nonCollapsedSel = {
       rangeCount: 1,
@@ -933,17 +927,20 @@ describe("Phase 5f3 T10 – pointerup with non-collapsed selection discards stas
     (global as any).window = { ...happyWindow, getSelection: () => nonCollapsedSel };
 
     firePointerEvent("pointerdown", textNode as unknown as Node);
-    firePointerEvent("pointerup", textNode as unknown as Node);
 
-    // addRange should NOT have been called — stash was discarded.
-    expect(addRangeCalled).toBe(false);
+    // addRange IS called on pointerdown — the restore is immediate.
+    expect(addRangeCalled).toBe(true);
+
+    // The highlight should be cleared.
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
 
-describe("Phase 5f3 T11 – stopTracking clears pendingHighlightRestore", () => {
+describe("Phase 5f3 T11 – highlight restore on pointerdown is immediate (no deferred state)", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -957,7 +954,7 @@ describe("Phase 5f3 T11 – stopTracking clears pendingHighlightRestore", () => 
     selectionGuard.reset();
   });
 
-  it("clears the stash when stopTracking is called (pointer cancel path)", () => {
+  it("pointerdown fully clears highlight — reset after pointerdown has nothing to clean up", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "cancel me");
@@ -969,32 +966,31 @@ describe("Phase 5f3 T11 – stopTracking clears pendingHighlightRestore", () => 
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
     selectionGuard.captureInactiveHighlight("card-cancel");
 
-    // Stash range via pointerdown.
-    (global as any).window = happyWindow;
-    firePointerEvent("pointerdown", textNode as unknown as Node);
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(1);
 
-    // Now call reset() (which calls stopTracking()) to simulate a cancel path.
-    // After reset, the stash must be gone — subsequent pointerup should not restore.
-    let addRangeCalled = false;
-    const collapsedSel = {
-      rangeCount: 0,
-      isCollapsed: true,
-      removeAllRanges(): void {},
-      addRange(_r: Range): void { addRangeCalled = true; },
+    // Set up a selection mock so pointerdown can call addRange during restore.
+    const restoreSel = {
+      rangeCount: 0, isCollapsed: true,
+      removeAllRanges(): void { this.rangeCount = 0; },
+      addRange(_r: Range): void { this.rangeCount = 1; },
     };
-    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
 
+    // Fire pointerdown — highlight is cleared immediately.
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+    expect(hl.size).toBe(0);
+
+    // reset() after pointerdown should be safe (no deferred state to leak).
     selectionGuard.reset();
-
-    // Confirm no restore happened even though selection would be collapsed.
-    expect(addRangeCalled).toBe(false);
+    expect(hl.size).toBe(0);
 
     (global as any).window = happyWindow;
     (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
   });
 });
 
-describe("Phase 5f3 T12 – reset() clears pendingHighlightRestore", () => {
+describe("Phase 5f3 T12 – reset() clears mousedown prevention handler", () => {
   let registry: MockHighlightRegistry;
 
   beforeEach(() => {
@@ -1008,7 +1004,7 @@ describe("Phase 5f3 T12 – reset() clears pendingHighlightRestore", () => {
     selectionGuard.reset();
   });
 
-  it("reset() clears any pending highlight restore stash", () => {
+  it("reset() cleans up one-shot mousedown handler installed during highlight restore", () => {
     const boundary = makeBoundary();
     (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
     const textNode = makeTextNode(boundary, "reset stash");
@@ -1020,14 +1016,24 @@ describe("Phase 5f3 T12 – reset() clears pendingHighlightRestore", () => {
     (global as any).window = { ...happyWindow, getSelection: () => mockSel };
     selectionGuard.captureInactiveHighlight("card-rst2");
 
-    // Trigger pointerdown to stash the range.
-    (global as any).window = happyWindow;
+    // Set up a selection mock so pointerdown can call addRange during restore.
+    const restoreSel = {
+      rangeCount: 0, isCollapsed: true,
+      removeAllRanges(): void { this.rangeCount = 0; },
+      addRange(_r: Range): void { this.rangeCount = 1; },
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => restoreSel };
+
+    // Trigger pointerdown — restores selection and installs mousedown prevention.
     firePointerEvent("pointerdown", textNode as unknown as Node);
 
-    // reset() must clear the stash.
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(0);
+
+    // reset() must clean up the one-shot mousedown handler.
     selectionGuard.reset();
 
-    // If we then fire pointerup (after re-attaching), nothing should be restored.
+    // After reset + re-attach, pointerup should not do anything unexpected.
     registry = installMockHighlightApi();
     selectionGuard.attach();
     selectionGuard.registerBoundary("card-rst2", boundary);
