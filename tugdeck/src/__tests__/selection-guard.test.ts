@@ -759,3 +759,276 @@ describe("T15 – reset() clears highlight state", () => {
     expect(() => selectionGuard.reset()).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5f3: pendingHighlightRestore tests (T08–T12 per phase plan)
+//
+// These tests cover the click-back restore behavior added in Step 4.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fire a synthetic PointerEvent on the global document.
+ * Uses Object.defineProperty to work around the read-only `target` property.
+ */
+function firePointerEvent(type: "pointerdown" | "pointerup", targetNode: Node): void {
+  const event = new (happyWindow.PointerEvent as any)(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: 0,
+    clientY: 0,
+  }) as PointerEvent;
+  // Override the read-only `target` property with the desired node.
+  Object.defineProperty(event, "target", { value: targetNode, configurable: true });
+  (happyWindow.document as unknown as Document).dispatchEvent(event);
+}
+
+describe("Phase 5f3 T08 – pointerdown inside highlighted card stashes range and clears highlight", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("stashes the range in pendingHighlightRestore and removes it from the Highlight", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    const textNode = makeTextNode(boundary, "hello");
+    selectionGuard.registerBoundary("card-stash", boundary);
+
+    // Manually inject a range into highlightRanges via captureInactiveHighlight.
+    const range = makeRange(boundary, "hello");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-stash");
+    (global as any).window = happyWindow;
+
+    // Verify the highlight has one range now.
+    const hl = registry.get("inactive-selection") as MockHighlight;
+    expect(hl.size).toBe(1);
+
+    // Fire pointerdown inside the boundary (the text node is inside boundary).
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+
+    // The range should have been removed from the Highlight object.
+    expect(hl.size).toBe(0);
+
+    // Cleanup
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T09 – pointerup with collapsed selection restores Selection from stash", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("restores the stashed Range as the real Selection when pointerup is collapsed", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    const textNode = makeTextNode(boundary, "restore me");
+    selectionGuard.registerBoundary("card-restore", boundary);
+
+    // Capture an inactive highlight for this card.
+    const range = makeRange(boundary, "restore me");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-restore");
+
+    // Set up a collapsed selection mock for the pointerup path.
+    let capturedRange: Range | null = null;
+    const collapsedSel = {
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      isCollapsed: true,
+      removeAllRanges(): void { this.rangeCount = 0; },
+      addRange(r: Range): void { capturedRange = r; this.rangeCount = 1; },
+      getRangeAt: (_i: number) => capturedRange!,
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+
+    // Simulate pointerdown into the highlighted card.
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+    // Simulate pointerup (selection is still collapsed at this point).
+    firePointerEvent("pointerup", textNode as unknown as Node);
+
+    // The stashed range should now be the real Selection.
+    expect(capturedRange).not.toBeNull();
+    expect(capturedRange!.startContainer).toBe(range.startContainer);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T10 – pointerup with non-collapsed selection discards stash", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("does not restore the stashed Range when pointerup selection is non-collapsed", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    const textNode = makeTextNode(boundary, "drag me");
+    selectionGuard.registerBoundary("card-drag", boundary);
+
+    // Capture an inactive highlight for this card.
+    const range = makeRange(boundary, "drag me");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-drag");
+
+    // Set up a non-collapsed selection mock (user dragged to create selection).
+    let addRangeCalled = false;
+    const nonCollapsedSel = {
+      rangeCount: 1,
+      anchorNode: textNode,
+      focusNode: textNode,
+      isCollapsed: false,
+      removeAllRanges(): void {},
+      addRange(_r: Range): void { addRangeCalled = true; },
+      getRangeAt: (_i: number) => range,
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => nonCollapsedSel };
+
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+    firePointerEvent("pointerup", textNode as unknown as Node);
+
+    // addRange should NOT have been called — stash was discarded.
+    expect(addRangeCalled).toBe(false);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T11 – stopTracking clears pendingHighlightRestore", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("clears the stash when stopTracking is called (pointer cancel path)", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    const textNode = makeTextNode(boundary, "cancel me");
+    selectionGuard.registerBoundary("card-cancel", boundary);
+
+    // Capture an inactive highlight for this card.
+    const range = makeRange(boundary, "cancel me");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-cancel");
+
+    // Stash range via pointerdown.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+
+    // Now call reset() (which calls stopTracking()) to simulate a cancel path.
+    // After reset, the stash must be gone — subsequent pointerup should not restore.
+    let addRangeCalled = false;
+    const collapsedSel = {
+      rangeCount: 0,
+      isCollapsed: true,
+      removeAllRanges(): void {},
+      addRange(_r: Range): void { addRangeCalled = true; },
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+
+    selectionGuard.reset();
+
+    // Confirm no restore happened even though selection would be collapsed.
+    expect(addRangeCalled).toBe(false);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});
+
+describe("Phase 5f3 T12 – reset() clears pendingHighlightRestore", () => {
+  let registry: MockHighlightRegistry;
+
+  beforeEach(() => {
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+  });
+
+  afterEach(() => {
+    selectionGuard.detach();
+    removeMockHighlightApi();
+    selectionGuard.reset();
+  });
+
+  it("reset() clears any pending highlight restore stash", () => {
+    const boundary = makeBoundary();
+    (happyWindow.document.body as unknown as Element).appendChild(boundary as unknown as Node);
+    const textNode = makeTextNode(boundary, "reset stash");
+    selectionGuard.registerBoundary("card-rst2", boundary);
+
+    // Capture an inactive highlight.
+    const range = makeRange(boundary, "reset stash");
+    const mockSel = { rangeCount: 1, anchorNode: range.startContainer, getRangeAt: () => range };
+    (global as any).window = { ...happyWindow, getSelection: () => mockSel };
+    selectionGuard.captureInactiveHighlight("card-rst2");
+
+    // Trigger pointerdown to stash the range.
+    (global as any).window = happyWindow;
+    firePointerEvent("pointerdown", textNode as unknown as Node);
+
+    // reset() must clear the stash.
+    selectionGuard.reset();
+
+    // If we then fire pointerup (after re-attaching), nothing should be restored.
+    registry = installMockHighlightApi();
+    selectionGuard.attach();
+    selectionGuard.registerBoundary("card-rst2", boundary);
+
+    let addRangeCalled = false;
+    const collapsedSel = {
+      rangeCount: 0,
+      isCollapsed: true,
+      removeAllRanges(): void {},
+      addRange(_r: Range): void { addRangeCalled = true; },
+    };
+    (global as any).window = { ...happyWindow, getSelection: () => collapsedSel };
+    firePointerEvent("pointerup", textNode as unknown as Node);
+
+    expect(addRangeCalled).toBe(false);
+
+    (global as any).window = happyWindow;
+    (happyWindow.document.body as unknown as Element).removeChild(boundary as unknown as Node);
+  });
+});

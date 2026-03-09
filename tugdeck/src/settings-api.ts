@@ -232,16 +232,21 @@ async function fetchSingleTabStateWithRetry(tabId: string): Promise<TabStateBag 
  * Wraps `bag` in the tagged-value wire format `{"kind":"json","value":{...}}`
  * and PUTs to `/api/defaults/dev.tugtool.deck.tabstate/{tabId}`.
  *
+ * The optional `options.keepalive` flag passes `keepalive: true` to the fetch
+ * init, guaranteeing the browser dispatches the request even during page
+ * teardown (used by the beforeunload handler per corrected D49).
+ *
  * Errors are logged to console.warn and otherwise ignored — save failures
  * are non-fatal.
  *
  * Spec S02: putTabState
  */
-export function putTabState(tabId: string, bag: TabStateBag): void {
+export function putTabState(tabId: string, bag: TabStateBag, options?: { keepalive?: boolean }): void {
   fetch(`/api/defaults/dev.tugtool.deck.tabstate/${encodeURIComponent(tabId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: bag }),
+    keepalive: options?.keepalive,
   }).catch((err) => {
     console.warn("[settings] PUT tabState failed for tab", tabId, err);
   });

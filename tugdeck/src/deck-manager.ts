@@ -81,6 +81,37 @@ export class DeckManager implements IDeckManagerStore {
   /** Set of tab IDs with unsaved (dirty) tab state bags. Used for flush-on-destroy. */
   private dirtyTabIds: Set<string> = new Set();
 
+  // ---- Phase 5f3: Save callbacks for close-time state flush (Spec S01, [D01]) ----
+
+  /**
+   * Map of registered save callbacks keyed by card ID. Called on
+   * visibilitychange (hidden) and beforeunload so each active card can
+   * capture its current state before the page is discarded.
+   */
+  private saveCallbacks: Map<string, () => void> = new Map();
+
+  /**
+   * Bound handler for the document visibilitychange event.
+   * Stored as an arrow property for stable identity so removeEventListener
+   * in destroy() can unregister the exact same function reference.
+   */
+  private readonly handleVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.saveCallbacks.forEach((cb) => cb());
+      this.flushDirtyTabStates();
+    }
+  };
+
+  /**
+   * Bound handler for the window beforeunload event.
+   * Uses keepalive: true so the browser dispatches the fetch even during
+   * page teardown (per corrected D49).
+   */
+  private readonly handleBeforeUnload = (): void => {
+    this.saveCallbacks.forEach((cb) => cb());
+    this.flushDirtyTabStates({ keepalive: true });
+  };
+
   // ---- Phase 5f: Initial focused card ID for reload restoration ([D03]) ----
 
   /**
@@ -247,6 +278,12 @@ export class DeckManager implements IDeckManagerStore {
 
     // Listen for window resize (kept for future phases)
     window.addEventListener("resize", () => this.handleResize());
+
+    // Phase 5f3: listen for page-hide events to flush all registered card states
+    // before the browser discards the page. visibilitychange covers the common
+    // case (tab switch, window minimize); beforeunload is the backup.
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+    window.addEventListener("beforeunload", this.handleBeforeUnload);
   }
 
   // ---- Store notification ----
@@ -454,15 +491,39 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Write all dirty tab state bags to tugbank and clear the dirty set.
    * Called by the debounce timer and by destroy() to flush pending writes.
+   *
+   * The optional `options.keepalive` flag is forwarded to putTabState so the
+   * browser dispatches the fetch even during page teardown (beforeunload path).
    */
-  private flushDirtyTabStates(): void {
+  private flushDirtyTabStates(options?: { keepalive?: boolean }): void {
     for (const tabId of this.dirtyTabIds) {
       const bag = this.tabStateCache.get(tabId);
       if (bag !== undefined) {
-        putTabState(tabId, bag);
+        putTabState(tabId, bag, options);
       }
     }
     this.dirtyTabIds.clear();
+  }
+
+  // ---- Phase 5f3: Save callback registration (Spec S01, [D01]) ----
+
+  /**
+   * Register a save callback associated with `id` (typically a cardId).
+   *
+   * The callback is invoked by DeckManager on visibilitychange (document.hidden)
+   * and beforeunload so each Tugcard can capture its current state before the
+   * page is discarded. Tugcard registers via useLayoutEffect (Rule #3).
+   */
+  registerSaveCallback(id: string, callback: () => void): void {
+    this.saveCallbacks.set(id, callback);
+  }
+
+  /**
+   * Unregister the save callback for `id`.
+   * Called in the cleanup of the useLayoutEffect that registered it.
+   */
+  unregisterSaveCallback(id: string): void {
+    this.saveCallbacks.delete(id);
   }
 
   // ---- Tab management (Spec S03) ----
@@ -937,5 +998,9 @@ export class DeckManager implements IDeckManagerStore {
       this.reactRoot = null;
     }
     window.removeEventListener("resize", () => this.handleResize());
+
+    // Phase 5f3: remove close-time event listeners.
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
+    window.removeEventListener("beforeunload", this.handleBeforeUnload);
   }
 }

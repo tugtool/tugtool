@@ -218,6 +218,15 @@ class SelectionGuard {
   // Null when CSS.highlights is unavailable (feature-detected in attach()).
   private highlight: Highlight | null = null;
 
+  // ---- Phase 5f3: Pending highlight restore (Spec S02, [D02]) ----
+
+  // cardId → Range stashed on pointerdown inside a card with a stored highlight.
+  // On pointerup, if the resulting selection is collapsed (simple click), the
+  // stashed Range is restored as the real Selection. If non-collapsed (drag),
+  // the stash is discarded — the user created a new selection.
+  // stopTracking() clears this as a safety net for pointer-cancel paths.
+  private pendingHighlightRestore: Map<string, Range> = new Map();
+
   // Current tracking state during a pointer-driven drag
   private activeCardId: string | null = null;
   private isTracking = false;
@@ -468,6 +477,7 @@ class SelectionGuard {
     this.stopTracking();
     this.boundaries.clear();
     this.highlightRanges.clear();
+    this.pendingHighlightRestore.clear();
     if (this.highlight) {
       this.highlight.clear();
     }
@@ -519,9 +529,20 @@ class SelectionGuard {
       const selection = window.getSelection();
       for (const [cardId, element] of this.boundaries) {
         if (element.contains(target)) {
-          // Click is inside this card — clear its inactive highlight.
-          // The card is becoming active and will own the live selection.
-          this.clearInactiveHighlight(cardId);
+          // Click is inside this card.
+          if (this.highlightRanges.has(cardId)) {
+            // The card has a stored inactive highlight. Stash the range for
+            // potential restore on pointerup (Spec S02, [D02]).
+            const range = this.highlightRanges.get(cardId)!;
+            this.pendingHighlightRestore.set(cardId, range);
+            // Inline clear (do not call clearInactiveHighlight) so the range
+            // is stashed before removing it from the Highlight object.
+            this.highlightRanges.delete(cardId);
+            this.highlight.delete(range);
+          } else {
+            // No highlight stored — use normal clear path (no-op when empty).
+            this.clearInactiveHighlight(cardId);
+          }
         } else if (
           selection &&
           selection.rangeCount > 0 &&
@@ -587,6 +608,26 @@ class SelectionGuard {
   }
 
   private handlePointerUp(_event: PointerEvent): void {
+    // ---- Phase 5f3: Pending highlight restore (Spec S02, [D02]) ----
+    //
+    // If the user clicked back into a card that had an inactive highlight,
+    // the range was stashed in pendingHighlightRestore on pointerdown. Now
+    // check whether the resulting selection is collapsed (simple click) or
+    // non-collapsed (drag to select). Restore on collapsed; discard on drag.
+    if (this.pendingHighlightRestore.size > 0) {
+      const sel = window.getSelection();
+      for (const [, range] of this.pendingHighlightRestore) {
+        if (sel && sel.isCollapsed) {
+          // Simple click — restore the stashed Selection.
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        // Else: user dragged to create a new selection — discard stash.
+      }
+      // Clear before stopTracking() so stopTracking()'s clear is a true
+      // safety net only (no double-clear confusion in tests).
+      this.pendingHighlightRestore.clear();
+    }
     this.stopTracking();
   }
 
@@ -770,6 +811,8 @@ class SelectionGuard {
     this.isTracking = false;
     this.activeCardId = null;
     this.stopAutoscroll();
+    // Safety net for pointer-cancel paths that bypass handlePointerUp.
+    this.pendingHighlightRestore.clear();
   }
 }
 

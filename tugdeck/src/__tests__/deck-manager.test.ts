@@ -1379,3 +1379,138 @@ describe("DeckManager.focusCard calls putFocusedCardId (Phase 5f Step 3)", () =>
     globalThis.fetch = _noopFetch;
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5f3 Step 2: Save callbacks — registerSaveCallback / unregisterSaveCallback
+// and visibilitychange / beforeunload handlers (T03-T06)
+// ---------------------------------------------------------------------------
+
+describe("DeckManager – save callbacks (Phase 5f3 Step 2)", () => {
+  /**
+   * T03: registerSaveCallback stores the callback; unregisterSaveCallback removes it.
+   *
+   * Verified indirectly: after register + visibilitychange, callback fires;
+   * after unregister + visibilitychange, callback does NOT fire again.
+   */
+  it("T03: registerSaveCallback stores and unregisterSaveCallback removes a callback", () => {
+    let callCount = 0;
+    const cb = () => { callCount += 1; };
+
+    manager.registerSaveCallback("card-1", cb);
+
+    // Simulate visibilitychange with document.hidden = true.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(callCount).toBe(1);
+
+    // Unregister and fire again — callback must NOT fire.
+    manager.unregisterSaveCallback("card-1");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(callCount).toBe(1);
+
+    // Restore document.hidden to false.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+  });
+
+  /**
+   * T04: visibilitychange with document.hidden === true calls all registered
+   * callbacks and flushes dirty tab states.
+   */
+  it("T04: visibilitychange (hidden) calls all registered callbacks and flushes dirty tab states", async () => {
+    const calls: string[] = [];
+    manager.registerSaveCallback("card-a", () => calls.push("card-a"));
+    manager.registerSaveCallback("card-b", () => calls.push("card-b"));
+
+    // Mark a tab as dirty so flush sends a PUT.
+    manager.setTabState("tab-x", { scroll: { x: 1, y: 2 } });
+
+    const fetchedUrls: string[] = [];
+    const fetchInits: RequestInit[] = [];
+    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      fetchedUrls.push(url as string);
+      if (init) fetchInits.push(init);
+      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
+    };
+
+    // Simulate visibilitychange with document.hidden = true.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    // Callbacks fire synchronously (visibilitychange handler is sync).
+    expect(calls).toContain("card-a");
+    expect(calls).toContain("card-b");
+
+    // Wait a tick for fire-and-forget fetch to execute.
+    await new Promise((r) => setTimeout(r, 0));
+
+    // flushDirtyTabStates must have issued a PUT for tab-x.
+    const tabStatePuts = fetchedUrls.filter((u) => u.includes("/api/defaults/dev.tugtool.deck.tabstate/"));
+    expect(tabStatePuts.length).toBeGreaterThan(0);
+
+    // Restore.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    globalThis.fetch = _noopFetch;
+  });
+
+  /**
+   * T05: beforeunload calls all registered callbacks and flushes dirty tab
+   * states with keepalive: true.
+   */
+  it("T05: beforeunload calls all registered callbacks and flushes dirty tab states with keepalive: true", async () => {
+    const calls: string[] = [];
+    manager.registerSaveCallback("card-c", () => calls.push("card-c"));
+
+    // Mark a tab as dirty.
+    manager.setTabState("tab-y", { scroll: { x: 10, y: 20 } });
+
+    const fetchedInits: RequestInit[] = [];
+    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      if (init) fetchedInits.push(init);
+      return { status: 200, ok: true, json: async () => ({}) } as unknown as Response;
+    };
+
+    // Simulate beforeunload.
+    window.dispatchEvent(new Event("beforeunload"));
+
+    // Callback fires synchronously.
+    expect(calls).toContain("card-c");
+
+    // Wait a tick for fire-and-forget fetch.
+    await new Promise((r) => setTimeout(r, 0));
+
+    // At least one fetch init must have keepalive: true.
+    const keepaliveInits = fetchedInits.filter((init) => init.keepalive === true);
+    expect(keepaliveInits.length).toBeGreaterThan(0);
+
+    globalThis.fetch = _noopFetch;
+  });
+
+  /**
+   * T06: destroy() removes the event listeners — a subsequent visibilitychange
+   * must NOT call the registered callbacks.
+   */
+  it("T06: destroy() removes event listeners; subsequent visibilitychange does not call callbacks", () => {
+    let callCount = 0;
+    manager.registerSaveCallback("card-d", () => { callCount += 1; });
+
+    // destroy() removes the listeners.
+    manager.destroy();
+
+    // Simulate visibilitychange AFTER destroy.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(callCount).toBe(0);
+
+    // Restore.
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+
+    // Prevent afterEach from calling destroy() again on an already-destroyed manager.
+    // Reassign manager to a fresh one so afterEach cleanup works cleanly.
+    container.remove();
+    container = makeContainer();
+    manager = new DeckManager(container, connection);
+  });
+});
