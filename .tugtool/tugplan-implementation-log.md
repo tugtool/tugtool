@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-10T20:42:23Z
+---
+
+## step-3: Rewrote flashSetPerimeter to use animate().finished for SVG cleanup; removed animation: from .set-flash-svg CSS; updated JSDoc; zero animationend refs remain in card-frame.tsx
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-2
 date: 2025-03-10T20:38:43Z
 ---
