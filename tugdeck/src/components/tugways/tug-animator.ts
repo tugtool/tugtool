@@ -168,6 +168,75 @@ function hasSpatialProperties(
 }
 
 /**
+ * Strip spatial properties from keyframes, preserving all non-spatial properties.
+ * If opacity values are already present in the result, they are preserved.
+ * If no opacity remains after stripping (i.e. the keyframes were purely spatial),
+ * the result is replaced with a default fade-in: [{ opacity: 0 }, { opacity: 1 }].
+ *
+ * Always returns Keyframe[] (WAAPI accepts both formats for playback).
+ */
+function stripSpatialAndFade(
+  keyframes: Keyframe[] | PropertyIndexedKeyframes
+): Keyframe[] {
+  let stripped: Keyframe[];
+
+  if (Array.isArray(keyframes)) {
+    // Keyframe[] format: remove spatial keys from each keyframe object.
+    stripped = keyframes.map((kf) => {
+      const out: Keyframe = {};
+      for (const [k, v] of Object.entries(kf)) {
+        if (!SPATIAL_PROPERTIES.has(k)) {
+          (out as Record<string, unknown>)[k] = v;
+        }
+      }
+      return out;
+    });
+  } else {
+    // PropertyIndexedKeyframes format: remove spatial top-level keys, then
+    // convert to Keyframe[] by distributing array values across frames.
+    const nonSpatial: PropertyIndexedKeyframes = {};
+    for (const [k, v] of Object.entries(keyframes)) {
+      if (!SPATIAL_PROPERTIES.has(k)) {
+        (nonSpatial as Record<string, unknown>)[k] = v;
+      }
+    }
+    // Determine frame count from the longest value array.
+    const frameCount = Math.max(
+      ...Object.values(nonSpatial).map((v) =>
+        Array.isArray(v) ? v.length : 1
+      ),
+      0
+    );
+    if (frameCount === 0) {
+      // No non-spatial properties at all -- fall through to fade-in default.
+      stripped = [];
+    } else {
+      stripped = Array.from({ length: frameCount }, (_, i) => {
+        const kf: Keyframe = {};
+        for (const [k, v] of Object.entries(nonSpatial)) {
+          const arr = Array.isArray(v) ? v : [v];
+          (kf as Record<string, unknown>)[k] = arr[Math.min(i, arr.length - 1)];
+        }
+        return kf;
+      });
+    }
+  }
+
+  // Check whether any keyframe in the result has an opacity value.
+  const hasOpacity = stripped.some(
+    (kf) => (kf as Record<string, unknown>).opacity !== undefined
+  );
+
+  // If opacity is present, the fade direction is already defined -- use as-is.
+  // If not, default to a standard fade-in to communicate the state change visually.
+  if (!hasOpacity) {
+    return [{ opacity: 0 }, { opacity: 1 }];
+  }
+
+  return stripped;
+}
+
+/**
  * Extract the "start values" snapshot from keyframes for reverse-from-current support.
  * Returns a Record<string, string> with the first value of each animated property.
  */
@@ -218,12 +287,14 @@ export function animate(
     fill = "forwards",
   } = options ?? {};
 
-  // Reduced-motion: replace spatial keyframes with opacity fade.
-  let resolvedKeyframes = keyframes;
+  // Reduced-motion: strip spatial properties and fade instead. [D06]
+  // Only activates when isTugMotionEnabled() returns false AND the keyframes
+  // contain at least one spatial property. Non-spatial animations play unchanged.
+  let resolvedKeyframes: Keyframe[] | PropertyIndexedKeyframes = keyframes;
   let resolvedDuration: number;
 
   if (!isTugMotionEnabled() && hasSpatialProperties(keyframes)) {
-    resolvedKeyframes = [{ opacity: 0 }, { opacity: 1 }];
+    resolvedKeyframes = stripSpatialAndFade(keyframes);
     resolvedDuration = resolveDuration("--tug-base-motion-duration-fast");
   } else {
     resolvedDuration = resolveDuration(duration);

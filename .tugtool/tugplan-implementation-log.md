@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-10T18:40:58Z
+---
+
+## step-5: Refined reduced-motion logic to strip spatial properties while preserving non-spatial (e.g. opacity). Handles both Keyframe[] and PropertyIndexedKeyframes formats. Added 6 tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7a-tug-animator.md
+
+---
+
+---
 step: step-4
 date: 2025-03-10T18:35:41Z
 ---

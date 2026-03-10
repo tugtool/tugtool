@@ -5,6 +5,7 @@
  * Step 2: Physics solver unit tests (SpringSolver, GravitySolver, FrictionSolver).
  * Step 3: TugAnimator animate() coordination, named slots, cancellation modes.
  * Step 4: Animation groups (group(), TugAnimationGroup).
+ * Step 5: Reduced-motion awareness (spatial stripping, opacity fade).
  *
  * Import setup-rtl FIRST -- it installs the WAAPI mock on Element.prototype
  * before any test code runs.
@@ -711,5 +712,130 @@ describe("group()", () => {
     // fast=100ms * timing=2 = 200ms.
     expect(mock.calls[0].options?.duration).toBe(200);
     expect(mock.calls[0].options?.easing).toBe("ease-out");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reduced-motion awareness (Step 5)
+// ---------------------------------------------------------------------------
+
+describe("animate() reduced-motion awareness", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+    document.documentElement.style.removeProperty("--tug-motion");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+    document.documentElement.style.removeProperty("--tug-motion");
+  });
+
+  it("motion enabled: spatial keyframes are passed through unchanged", () => {
+    document.documentElement.style.setProperty("--tug-motion", "1");
+    const el = document.createElement("div");
+    const kf = [{ transform: "translateX(0px)" }, { transform: "translateX(100px)" }];
+    animate(el, kf, { duration: 200 });
+
+    const mock = getMock();
+    const passedKf = mock.calls[0].keyframes as Keyframe[];
+    expect(passedKf).toHaveLength(2);
+    expect((passedKf[0] as Record<string, unknown>).transform).toBe("translateX(0px)");
+    expect((passedKf[1] as Record<string, unknown>).transform).toBe("translateX(100px)");
+  });
+
+  it("motion disabled + spatial keyframes: replaced with opacity fade [{ opacity: 0 }, { opacity: 1 }]", () => {
+    document.documentElement.style.setProperty("--tug-motion", "0");
+    const el = document.createElement("div");
+    animate(el, [{ transform: "translateX(0px)" }, { transform: "translateX(100px)" }], {
+      duration: 300,
+    });
+
+    const mock = getMock();
+    const passedKf = mock.calls[0].keyframes as Keyframe[];
+    // Spatial properties replaced with opacity fade.
+    expect(passedKf).toHaveLength(2);
+    expect((passedKf[0] as Record<string, unknown>).opacity).toBe(0);
+    expect((passedKf[1] as Record<string, unknown>).opacity).toBe(1);
+    expect((passedKf[0] as Record<string, unknown>).transform).toBeUndefined();
+    // Duration overridden to fast (100ms * timing=1 = 100ms).
+    expect(mock.calls[0].options?.duration).toBe(100);
+  });
+
+  it("motion disabled + non-spatial keyframes: played unchanged", () => {
+    document.documentElement.style.setProperty("--tug-motion", "0");
+    const el = document.createElement("div");
+    const kf = [{ opacity: "0" }, { opacity: "1" }];
+    animate(el, kf, { duration: 150 });
+
+    const mock = getMock();
+    const passedKf = mock.calls[0].keyframes as Keyframe[];
+    // Opacity-only keyframes should pass through unchanged.
+    expect(passedKf).toHaveLength(2);
+    expect((passedKf[0] as Record<string, unknown>).opacity).toBe("0");
+    expect((passedKf[1] as Record<string, unknown>).opacity).toBe("1");
+    // Duration uses the caller's value (non-spatial, no replacement).
+    expect(mock.calls[0].options?.duration).toBe(150);
+  });
+
+  it("motion disabled + mixed spatial and opacity: spatial removed, opacity preserved", () => {
+    document.documentElement.style.setProperty("--tug-motion", "0");
+    const el = document.createElement("div");
+    // Keyframes with both transform (spatial) and opacity (non-spatial).
+    animate(
+      el,
+      [
+        { transform: "scale(0.8)", opacity: 0 },
+        { transform: "scale(1)", opacity: 1 },
+      ],
+      { duration: 250 }
+    );
+
+    const mock = getMock();
+    const passedKf = mock.calls[0].keyframes as Keyframe[];
+    // transform should be stripped; opacity should be preserved.
+    expect(passedKf).toHaveLength(2);
+    expect((passedKf[0] as Record<string, unknown>).transform).toBeUndefined();
+    expect((passedKf[1] as Record<string, unknown>).transform).toBeUndefined();
+    expect((passedKf[0] as Record<string, unknown>).opacity).toBe(0);
+    expect((passedKf[1] as Record<string, unknown>).opacity).toBe(1);
+  });
+
+  it("motion disabled + PropertyIndexedKeyframes format: spatial properties stripped correctly", () => {
+    document.documentElement.style.setProperty("--tug-motion", "0");
+    const el = document.createElement("div");
+    // PropertyIndexedKeyframes format (object with array values per property).
+    animate(
+      el,
+      { transform: ["translateY(0px)", "translateY(50px)"], opacity: [0, 1] },
+      { duration: 200 }
+    );
+
+    const mock = getMock();
+    const passedKf = mock.calls[0].keyframes as Keyframe[];
+    // transform should be stripped; opacity values should be preserved.
+    expect(passedKf).toHaveLength(2);
+    expect((passedKf[0] as Record<string, unknown>).transform).toBeUndefined();
+    expect((passedKf[1] as Record<string, unknown>).transform).toBeUndefined();
+    expect((passedKf[0] as Record<string, unknown>).opacity).toBe(0);
+    expect((passedKf[1] as Record<string, unknown>).opacity).toBe(1);
+  });
+
+  it("replacement animation's .finished promise still resolves", async () => {
+    document.documentElement.style.setProperty("--tug-motion", "0");
+    const el = document.createElement("div");
+    const tugAnim = animate(
+      el,
+      [{ transform: "translateX(0px)" }, { transform: "translateX(100px)" }],
+      { duration: 200 }
+    );
+
+    let resolved = false;
+    const p = tugAnim.finished.then(() => { resolved = true; });
+    getMock().calls[0].resolve();
+    await p;
+    expect(resolved).toBe(true);
   });
 });
