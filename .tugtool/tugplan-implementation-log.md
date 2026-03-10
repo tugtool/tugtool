@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-10T00:05:48Z
+---
+
+## step-5: Converted all 211 standalone hex values in tug-tokens.css to --hvv() calls. Fixed postcss-hvv plugin to handle hue-NNN format. Zero standalone hex remaining. Build verified clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-4
 date: 2025-03-09T23:57:03Z
 ---

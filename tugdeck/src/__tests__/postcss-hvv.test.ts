@@ -151,6 +151,21 @@ describe("postcss-hvv: raw numeric angle expansion", () => {
     const result = processDecl("color", "--hvv(360, 50, 50)");
     expect(result).toMatch(/^oklch\(/);
   });
+
+  it("hue-NNN form expands identically to raw angle NNN", () => {
+    // --hvv(hue-264, 4, 7) is the oklchToHVV() output form for raw angle 264
+    const withHuePrefix = processDecl("color", "--hvv(hue-264, 4, 7)");
+    const withRawAngle = processDecl("color", "--hvv(264, 4, 7)");
+    expect(withHuePrefix).toBe(withRawAngle);
+    expect(withHuePrefix).toMatch(/^oklch\(/);
+  });
+
+  it("hue-NNN form uses angle NNN in output", () => {
+    const result = processDecl("color", "--hvv(hue-237, 5, 13)");
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.h).toBe(237);
+  });
 });
 
 // ---------------------------------------------------------------------------

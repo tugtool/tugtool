@@ -8,7 +8,7 @@
  * Syntax:
  *   --hvv( <hue> , <vibrancy> , <value> )
  *
- *   <hue>      := <hue-name> | <number>
+ *   <hue>      := <hue-name> | <number> | hue-<number>
  *   <hue-name> := cherry | red | tomato | flame | orange | amber | gold | yellow
  *                | lime | green | mint | teal | cyan | sky | blue | cobalt
  *                | violet | purple | plum | pink | rose | magenta | berry | coral
@@ -19,8 +19,9 @@
  *   --hvv(blue, 5, 13)    → oklch(0.3115 0.0143 230)
  *   --hvv(cobalt, 3, 18)  → oklch(0.3727 0.0081 250)
  *
- * Raw angle example:
+ * Raw angle examples:
  *   --hvv(237, 5, 13)     → uses findMaxChroma() at canonicalL=0.77
+ *   --hvv(hue-264, 4, 7)  → same as --hvv(264, 4, 7); produced by oklchToHVV()
  *
  * Multiple calls in a single declaration are all expanded.
  * Values without --hvv() are passed through unchanged.
@@ -59,14 +60,17 @@ const RAW_ANGLE_CANONICAL_L = 0.77;
 
 /**
  * Matches a single --hvv() call.
- * Group 1: hue (named word or raw decimal number)
+ * Group 1: hue — one of:
+ *   - Named hue word: `[a-z]+` (e.g. "blue", "cobalt")
+ *   - Raw angle: `\d+(?:\.\d+)?` (e.g. "237")
+ *   - oklchToHVV() raw-angle form: `hue-\d+` (e.g. "hue-264" → angle 264)
  * Group 2: vibrancy (decimal number)
  * Group 3: value (decimal number)
  *
  * The `g` flag allows replaceAll-style iteration over multiple calls in one
  * declaration value.
  */
-const HVV_PATTERN = /--hvv\(\s*([a-z]+|\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)/g;
+const HVV_PATTERN = /--hvv\(\s*(hue-\d+|[a-z]+|\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)/g;
 
 // ---------------------------------------------------------------------------
 // Formatting helper (matches hvvColor() precision convention)
@@ -104,13 +108,18 @@ function expandHvv(hueArg: string, vibArg: string, valArg: string): string {
 
   const namedAngle = HUE_FAMILIES[hueArg];
   if (namedAngle !== undefined) {
-    // Named hue path
+    // Named hue path (e.g. "blue", "cobalt")
     h = namedAngle;
     canonicalL = DEFAULT_CANONICAL_L[hueArg] ?? RAW_ANGLE_CANONICAL_L;
     const maxC = MAX_CHROMA_FOR_HUE[hueArg] ?? 0.022;
     peakC = maxC * PEAK_C_SCALE;
+  } else if (hueArg.startsWith("hue-")) {
+    // oklchToHVV() raw-angle form: "hue-264" → angle 264
+    h = parseFloat(hueArg.slice(4));
+    canonicalL = RAW_ANGLE_CANONICAL_L;
+    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
   } else {
-    // Raw numeric angle path
+    // Raw numeric angle path (e.g. "237")
     h = parseFloat(hueArg);
     canonicalL = RAW_ANGLE_CANONICAL_L;
     peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
