@@ -5,8 +5,8 @@
 //! - Build date (TUG_BUILD_DATE)
 //! - Rust compiler version (TUG_RUSTC_VERSION)
 //!
-//! Also parses palette-engine.ts to extract HVV color system constants
-//! and generates a Rust source file with the canonical data.
+//! Also parses palette-engine.ts and tug-hvv-canonical.json to extract HVV
+//! color system constants and generates a Rust source file with the canonical data.
 //!
 //! Per [D03], all values gracefully fall back to "unknown" if unavailable.
 
@@ -162,15 +162,56 @@ fn parse_ts_const(content: &str, var_name: &str) -> Option<f64> {
     after[..end].trim().parse::<f64>().ok()
 }
 
-/// Generate src/hvv_palette_data.rs from palette-engine.ts constants.
+/// Parse tug-hvv-canonical.json to extract DEFAULT_CANONICAL_L entries.
+///
+/// Returns Vec<(hue_name, canonical_l)> in the order they appear in the JSON
+/// "hues" object (preserved by serde_json's BTreeMap when keys are sorted,
+/// but we use the insertion-order-preserving serde_json::Map via Value).
+fn parse_canonical_json(path: &Path) -> Vec<(String, f64)> {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("cargo::warning=tug-hvv-canonical.json not found, canonical_l will be empty");
+            return vec![];
+        }
+    };
+
+    let root: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("cargo::warning=failed to parse tug-hvv-canonical.json: {e}");
+            return vec![];
+        }
+    };
+
+    let hues = match root.get("hues").and_then(|v| v.as_object()) {
+        Some(obj) => obj,
+        None => return vec![],
+    };
+
+    let mut entries = Vec::new();
+    for (name, data) in hues {
+        if let Some(val) = data.get("canonical_l").and_then(|v| v.as_f64()) {
+            entries.push((name.clone(), val));
+        }
+    }
+    entries
+}
+
+/// Generate src/hvv_palette_data.rs from palette-engine.ts and tug-hvv-canonical.json.
 fn generate_hvv_palette_data() {
     // Find palette-engine.ts relative to the workspace root.
     // build.rs runs from the crate directory (tugcode/crates/tugcode/).
     // palette-engine.ts is at tugdeck/src/components/tugways/palette-engine.ts
     // relative to the workspace root (tugcode/../tugdeck/...).
     let palette_path = Path::new("../../../tugdeck/src/components/tugways/palette-engine.ts");
+    let canonical_json_path = Path::new("../../../roadmap/tug-hvv-canonical.json");
 
     println!("cargo::rerun-if-changed={}", palette_path.to_string_lossy());
+    println!(
+        "cargo::rerun-if-changed={}",
+        canonical_json_path.to_string_lossy()
+    );
 
     let content = match fs::read_to_string(palette_path) {
         Ok(c) => c,
@@ -183,8 +224,13 @@ fn generate_hvv_palette_data() {
     };
 
     let hue_families = parse_ts_record(&content, "HUE_FAMILIES");
-    let canonical_l = parse_ts_record(&content, "DEFAULT_CANONICAL_L");
     let max_chroma = parse_ts_record(&content, "MAX_CHROMA_FOR_HUE");
+
+    // DEFAULT_CANONICAL_L is derived from tug-hvv-canonical.json (the single
+    // source of truth). palette-engine.ts imports it at runtime; we read it
+    // directly here with serde_json.
+    let canonical_l = parse_canonical_json(canonical_json_path);
+
     let l_dark = parse_ts_const(&content, "L_DARK").unwrap_or(0.15);
     let l_light = parse_ts_const(&content, "L_LIGHT").unwrap_or(0.96);
     let peak_c_scale = parse_ts_const(&content, "PEAK_C_SCALE").unwrap_or(2.0);
@@ -193,7 +239,11 @@ fn generate_hvv_palette_data() {
     let dest_path = Path::new(&out_dir).join("hvv_palette_data.rs");
     let mut f = fs::File::create(dest_path).unwrap();
 
-    writeln!(f, "// Auto-generated from palette-engine.ts by build.rs").unwrap();
+    writeln!(
+        f,
+        "// Auto-generated from palette-engine.ts and tug-hvv-canonical.json by build.rs"
+    )
+    .unwrap();
     writeln!(f, "// Do not edit manually.").unwrap();
     writeln!(f).unwrap();
 

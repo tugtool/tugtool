@@ -22,6 +22,10 @@ dirs.workspace = true
 tugtool-core.workspace = true
 ureq = { version = "3", features = ["json"] }
 
+[build-dependencies]
+serde_json.workspace = true
+serde = { workspace = true }
+
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"
