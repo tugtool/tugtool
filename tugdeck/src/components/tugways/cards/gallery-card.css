@@ -571,3 +571,187 @@
   from { background-position-x: 0; }
   to   { background-position-x: 28.28px; }
 }
+
+/* ============================================================================
+   TugAnimator Demo (Phase 7a)
+   ========================================================================= */
+
+/* --- Physics Solvers --- */
+
+.cg-anim-physics-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  min-width: 120px;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  overflow: hidden;
+  resize: horizontal;
+}
+
+.cg-anim-physics-lane {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cg-anim-physics-label {
+  font-size: 10px;
+  color: var(--tug-base-fg-muted);
+  width: 50px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.cg-anim-physics-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border-radius: var(--tug-base-radius-xs);
+  background-color: var(--tug-base-surface-control);
+  overflow: hidden;
+}
+
+.cg-anim-physics-track-tall {
+  height: 96px;
+}
+
+.cg-anim-dot {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  top: 4px;
+  left: 0;
+}
+
+.cg-anim-dot-spring {
+  background-color: var(--tug-base-accent-default);
+}
+
+.cg-anim-dot-gravity {
+  background-color: var(--tug-base-accent-cool-default);
+  top: 0;
+}
+
+.cg-anim-dot-friction {
+  background-color: var(--tug-base-accent-warm-default, var(--tug-base-accent-default));
+}
+
+/* --- Duration Tokens --- */
+
+.cg-anim-token-stage {
+  position: relative;
+  height: 40px;
+  min-width: 120px;
+  padding: 8px 0;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  overflow: hidden;
+  resize: horizontal;
+}
+
+.cg-anim-token-box {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--tug-base-radius-xs);
+  background-color: var(--tug-base-accent-default);
+  margin-left: 8px;
+}
+
+.cg-anim-token-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
+}
+
+.cg-anim-token-entry {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cg-anim-token-entry code {
+  color: var(--tug-base-fg-default);
+}
+
+.cg-anim-token-entry span {
+  color: var(--tug-base-accent-cool-default);
+  font-weight: 600;
+}
+
+/* --- Cancellation Modes --- */
+
+.cg-anim-cancel-stage {
+  position: relative;
+  height: 48px;
+  min-width: 120px;
+  padding: 8px 0;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  overflow: hidden;
+  resize: horizontal;
+}
+
+.cg-anim-cancel-box {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--tug-base-radius-sm);
+  background-color: var(--tug-base-accent-default);
+  margin-left: 8px;
+}
+
+/* --- Named Slots --- */
+
+.cg-anim-slot-stage {
+  position: relative;
+  height: 48px;
+  min-width: 120px;
+  padding: 8px 0;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  overflow: hidden;
+  resize: horizontal;
+}
+
+.cg-anim-slot-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--tug-base-accent-cool-default);
+  margin-left: 8px;
+}
+
+/* --- Shared: percentage slider control row --- */
+
+.cg-anim-pct-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+}
+
+.cg-anim-pct-range {
+  width: 100px;
+  cursor: pointer;
+  accent-color: var(--tug-base-accent-default);
+}
+
+.cg-anim-pct-value {
+  font-family: var(--tug-base-font-family-mono);
+  font-size: 10px;
+  color: var(--tug-base-fg-default);
+  width: 32px;
+  text-align: right;
+}

@@ -30,6 +30,7 @@ import { GalleryObservablePropsContent } from "./gallery-observable-props-conten
 import { GalleryPaletteContent } from "./gallery-palette-content";
 import { GalleryScaleTimingContent } from "./gallery-scale-timing-content";
 import { GalleryCascadeInspectorContent } from "./gallery-cascade-inspector-content";
+import { GalleryAnimatorContent } from "./gallery-animator-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -51,7 +52,7 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates an eleven-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates an twelve-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
@@ -68,6 +69,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-palette",           title: "Palette Engine",       closable: true },
   { id: "template", componentId: "gallery-scale-timing",      title: "Scale & Timing",       closable: true },
   { id: "template", componentId: "gallery-cascade-inspector", title: "Cascade Inspector",    closable: true },
+  { id: "template", componentId: "gallery-animator",          title: "TugAnimator",          closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -790,7 +792,7 @@ export function GalleryDefaultButtonContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all eleven gallery card types in the global card registry.
+ * Register all twelve gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -801,7 +803,7 @@ export function GalleryDefaultButtonContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates eleven-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twelve-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
@@ -908,6 +910,15 @@ export function registerGalleryCards(): void {
     componentId: "gallery-cascade-inspector",
     contentFactory: (_cardId) => <GalleryCascadeInspectorContent />,
     defaultMeta: { title: "Cascade Inspector", icon: "Search", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-animator ----
+  registerCard({
+    componentId: "gallery-animator",
+    contentFactory: (_cardId) => <GalleryAnimatorContent />,
+    defaultMeta: { title: "TugAnimator", icon: "Play", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

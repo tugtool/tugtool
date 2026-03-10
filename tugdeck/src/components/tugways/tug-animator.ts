@@ -340,8 +340,14 @@ export function animate(
   });
 
   // Wire the WAAPI animation's .finished to our promise.
+  // On natural completion: commit the final values into el.style so the element
+  // *owns* them, then remove the animation. No lingering fill: forwards ghost.
   wapiAnim.finished.then(
-    () => resolveFinished(),
+    () => {
+      wapiAnim.commitStyles();
+      wapiAnim.cancel();
+      resolveFinished();
+    },
     (err) => rejectFinished(err)
   );
 
