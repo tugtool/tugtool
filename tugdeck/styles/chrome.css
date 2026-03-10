@@ -1,7 +1,7 @@
 /**
  * Chrome — minimal CSS for the tugdeck chrome layer.
  * Retains rules that are clearer as CSS than Tailwind utilities:
- * resize handle hit areas, snap guide borders, virtual sash hover, flash keyframes.
+ * resize handle hit areas, snap guide borders, virtual sash hover, flash overlays.
  * All other chrome styles are Tailwind utilities on React components.
  * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-base-* tokens from tug-tokens.css.
  */
@@ -68,12 +68,6 @@
 }
 .card-frame[data-in-set="true"] .tugcard {
   border-radius: 0;
-}
-
-/* ---- Card flash feedback (single-card break-out flash) ---- */
-@keyframes set-flash-fade {
-  0%   { opacity: 1; }
-  100% { opacity: 0; }
 }
 
 /*

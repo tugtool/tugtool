@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-10T20:46:09Z
+---
+
+## step-4: Removed @keyframes set-flash-fade and cleaned up stale comment references; zero matches for set-flash-fade across tugdeck/
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-3
 date: 2025-03-10T20:42:23Z
 ---

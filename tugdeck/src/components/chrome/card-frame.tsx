@@ -1663,7 +1663,7 @@ export function flashSetPerimeter(
   containerEl.appendChild(svg);
 
   // Drive opacity fade via TugAnimator; self-remove on animate().finished.
-  // glacial = 500ms, matching the old CSS animation: set-flash-fade 0.5s.
+  // glacial = 500ms, preserving the original 0.5s flash duration.
   // WAAPI animate() works on SVG elements for the opacity property. [Spec S03]
   animate(svg, [{ opacity: 1 }, { opacity: 0 }], {
     duration: "--tug-base-motion-duration-glacial",
@@ -1695,7 +1695,7 @@ export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
   cardFrameEl.appendChild(overlay);
 
   // Drive opacity fade via TugAnimator; self-remove on animate().finished.
-  // glacial = 500ms, matching the old CSS animation: set-flash-fade 0.5s.
+  // glacial = 500ms, preserving the original 0.5s flash duration.
   animate(overlay, [{ opacity: 1 }, { opacity: 0 }], {
     duration: "--tug-base-motion-duration-glacial",
     easing: "ease-out",
