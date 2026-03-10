@@ -225,8 +225,8 @@ body {
 
   /* Progress / Skeleton */
   --tug-base-progress-track: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-skeleton-base: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-skeleton-highlight: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-skeleton-base: --tug-color(yellow, i: 6, t: 52);
+  --tug-base-skeleton-highlight: --tug-color(yellow, i: 4, t: 85);
   --tug-base-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
   --tug-base-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
 

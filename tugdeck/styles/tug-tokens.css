@@ -532,8 +532,8 @@ body {
   --tug-base-progress-track: --tug-color(violet-6, i: 6, t: 17);
   --tug-base-progress-fill: --tug-color(orange);
   --tug-base-spinner: --tug-color(orange);
-  --tug-base-skeleton-base: --tug-color(violet, i: 5, t: 12);
-  --tug-base-skeleton-highlight: --tug-color(cobalt+10, i: 7, t: 16);
+  --tug-base-skeleton-base: --tug-color(violet, i: 5, t: 20);
+  --tug-base-skeleton-highlight: --tug-color(cobalt+10, i: 7, t: 28);
   --tug-base-emptyState-fg: --tug-color(cobalt+7, i: 7, t: 37);
   --tug-base-emptyState-icon: --tug-color(cobalt, i: 6, t: 30);
   --tug-base-banner-info-bg: --tug-color(cyan, i: 50, t: 50, a: 12);

@@ -109,6 +109,6 @@ body {
   --tug-base-feed-bg: --tug-color(blue+9, i: 5, t: 13);
 
   /* Progress / Skeleton */
-  --tug-base-skeleton-base: --tug-color(blue+8, i: 7, t: 17);
-  --tug-base-skeleton-highlight: --tug-color(blue+5, i: 5, t: 24);
+  --tug-base-skeleton-base: --tug-color(blue+8, i: 7, t: 24);
+  --tug-base-skeleton-highlight: --tug-color(blue+5, i: 5, t: 32);
 }
