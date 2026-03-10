@@ -30,6 +30,7 @@ import React, { useCallback, useRef, useState } from "react";
 import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
+import { animate } from "@/components/tugways/tug-animator";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]
@@ -1671,6 +1672,9 @@ export function flashSetPerimeter(
  * Used on break-out to flash the detached card's entire perimeter. All four
  * borders are intact (no suppression). Cards are always fully rounded. [D55]
  *
+ * Opacity fade is driven by TugAnimator.animate().finished (programmatic lane,
+ * Rule 13 — needs completion-based DOM cleanup). [D01]
+ *
  * @param cardFrameEl - The .card-frame element of the detached card.
  */
 export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
@@ -1680,10 +1684,15 @@ export function flashCardPerimeter(cardFrameEl: HTMLElement): void {
   // Full perimeter: no edge suppression, no clip-path restriction.
   // Cards are always fully rounded — use CSS default border-radius.
 
-  // Self-remove after animation completes.
-  overlay.addEventListener("animationend", () => {
+  cardFrameEl.appendChild(overlay);
+
+  // Drive opacity fade via TugAnimator; self-remove on animate().finished.
+  // glacial = 500ms, matching the old CSS animation: set-flash-fade 0.5s.
+  animate(overlay, [{ opacity: 1 }, { opacity: 0 }], {
+    duration: "--tug-base-motion-duration-glacial",
+    easing: "ease-out",
+    fill: "forwards",
+  }).finished.then(() => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
   });
-
-  cardFrameEl.appendChild(overlay);
 }

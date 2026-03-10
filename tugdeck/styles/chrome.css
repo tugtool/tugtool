@@ -79,6 +79,7 @@
 /*
  * .card-flash-overlay: full-perimeter flash on a single card frame (break-out flash).
  * Renamed from .set-flash-overlay; used exclusively by flashCardPerimeter(). [D55]
+ * Opacity is driven by TugAnimator.animate().finished (programmatic lane, Rule 13).
  */
 .card-flash-overlay {
   position: absolute;
@@ -89,7 +90,6 @@
   box-shadow:
     0 0 5px --tug-color(orange, i: 50, t: 50, a: 60),
     inset 0 0 16px --tug-color(orange, i: 50, t: 50, a: 20);
-  animation: set-flash-fade 0.5s ease-out forwards;
   z-index: 2;
   box-sizing: border-box;
 }

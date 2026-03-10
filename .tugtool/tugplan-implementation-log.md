@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-10T20:38:43Z
+---
+
+## step-2: Rewrote flashCardPerimeter to use animate().finished for DOM cleanup; removed animation: from .card-flash-overlay CSS; kept @keyframes set-flash-fade for step-3/4
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-1
 date: 2025-03-10T20:33:33Z
 ---
