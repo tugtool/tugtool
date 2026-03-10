@@ -1,6 +1,6 @@
 //! CLI command implementations
 
-pub mod cita;
+pub mod color;
 pub mod commit;
 pub mod dash;
 pub mod doctor;
@@ -16,7 +16,7 @@ pub mod validate;
 pub mod version;
 pub mod worktree;
 
-pub use cita::run_cita;
+pub use color::run_color;
 pub use commit::run_commit;
 pub use dash::{
     DashCommands, run_dash_commit, run_dash_create, run_dash_join, run_dash_list, run_dash_release,

@@ -2,7 +2,7 @@
 
 ## Token Architecture (Phase 5d5c) {#phase-5d5c}
 
-**Purpose:** Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy, using literal hex values (not CITA palette references) for strict zero-visual-regression, and bridge old tokens to new tokens via backward-compatibility aliases.
+**Purpose:** Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy, using literal hex values (not TugColor palette references) for strict zero-visual-regression, and bridge old tokens to new tokens via backward-compatibility aliases.
 
 ---
 
@@ -21,14 +21,14 @@
 
 #### Context {#context}
 
-The tugways design system currently uses a two-tier token scheme: `--tways-*` palette tokens (Tier 1) and `--td-*` semantic tokens (Tier 2), both defined in `tokens.css`. Phase 5d5a delivered the CITA palette engine (242 CSS variables with `--tug-{hue}[-preset]` naming), and Phase 5d5b delivered zoom-based global scale (`--tug-zoom` on body) and timing multipliers. The existing `--td-*` and `--tways-*` naming is legacy -- the long-term target is `--tug-base-*` for canonical semantics and `--tug-comp-*` for component bindings.
+The tugways design system currently uses a two-tier token scheme: `--tways-*` palette tokens (Tier 1) and `--td-*` semantic tokens (Tier 2), both defined in `tokens.css`. Phase 5d5a delivered the TugColor palette engine (242 CSS variables with `--tug-{hue}[-preset]` naming), and Phase 5d5b delivered zoom-based global scale (`--tug-zoom` on body) and timing multipliers. The existing `--td-*` and `--tways-*` naming is legacy -- the long-term target is `--tug-base-*` for canonical semantics and `--tug-comp-*` for component bindings.
 
 This phase introduces the new token layers without migrating any consumers. The `--tug-base-*` tokens become the source of truth immediately, with `--td-*` and `--tways-*` tokens repointed as backward-compatibility aliases. Theme override files (bluenote.css, harmony.css) gain `--tug-base-*` overrides where they currently override `--tways-*` palette values. The result is a fully specified semantic contract that future phases can migrate consumers to, with zero visual regression today.
 
 #### Strategy {#strategy}
 
 - Define the complete `--tug-base-*` taxonomy (~300 tokens) in a new `tug-tokens.css` file with Brio default values, covering all domains from the Revised Semantic Taxonomy in theme-overhaul-proposal.md.
-- Use literal hex values for all color tokens -- including accent, chart, syntax, and status tokens -- sourced from the existing `--tways-*` palette per theme. Do NOT wire to CITA palette `var()` references in this phase; the CITA palette computes OKLCH-based colors that are perceptually similar but not identical hex values, which would violate zero-visual-regression. CITA wiring is deferred to Phase 5d5d where visual tuning is expected.
+- Use literal hex values for all color tokens -- including accent, chart, syntax, and status tokens -- sourced from the existing `--tways-*` palette per theme. Do NOT wire to TugColor palette `var()` references in this phase; the TugColor palette computes OKLCH-based colors that are perceptually similar but not identical hex values, which would violate zero-visual-regression. TugColor wiring is deferred to Phase 5d5d where visual tuning is expected.
 - Use plain values for spacing, radius, typography, and icon-size tokens -- CSS `zoom` on body handles all dimension scaling, so no `calc()` wiring is needed.
 - Reference (not redefine) the motion duration tokens already in `tokens.css` from Phase 5d5b.
 - Define `--tug-comp-*` tokens for existing component families only (tug-button, tug-tab-bar, tugcard, tug-dropdown) in a separate `tug-comp-tokens.css` file.
@@ -62,19 +62,19 @@ This phase introduces the new token layers without migrating any consumers. The 
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- Phase 5d5a (CITA Palette Engine): COMPLETE -- 242 CSS variables with `--tug-{hue}[-preset]` naming available at runtime via `injectCITACSS()`
+- Phase 5d5a (TugColor Palette Engine): COMPLETE -- 242 CSS variables with `--tug-{hue}[-preset]` naming available at runtime via `injectCITACSS()`
 - Phase 5d5b (Scale & Timing): COMPLETE -- `--tug-zoom` drives CSS zoom on body; `--tug-base-motion-duration-{fast,moderate,slow,glacial}` defined in `tokens.css`
 
 #### Constraints {#constraints}
 
 - Zero visual regression: every pixel must look identical before and after this change across all three themes
-- `tug-tokens.css` must be imported after `tokens.css` in `globals.css` so that CITA palette variables from `injectCITACSS()` are available
+- `tug-tokens.css` must be imported after `tokens.css` in `globals.css` so that TugColor palette variables from `injectCITACSS()` are available
 - `tug-comp-tokens.css` must be imported after `tug-tokens.css` so `--tug-base-*` values are available
 - The `--tug-base-motion-duration-*` tokens already exist in `tokens.css` -- reference them via `var()` in `tug-tokens.css`, do not redefine with new `calc()` expressions
 
 #### Assumptions {#assumptions}
 
-- The CITA palette CSS variables (`--tug-{hue}[-preset]`) are injected into `:root` at startup by `injectCITACSS()` and are available to any CSS file loaded after `tokens.css`
+- The TugColor palette CSS variables (`--tug-{hue}[-preset]`) are injected into `:root` at startup by `injectCITACSS()` and are available to any CSS file loaded after `tokens.css`
 - The shadcn bridge tokens (`--background`, `--foreground`, `--primary`, etc.) will continue to chain through `--td-*` -> `--tug-base-*`, so the Tailwind `@theme` block in `globals.css` requires no changes
 - Verification of zero visual change is manual (visual inspection of component gallery across all three themes)
 - Best-guess derivations from existing `--tways-*` values will be used for domains with no current `--td-*` equivalent (terminal ANSI, chat, inspector, table, badge, stat, gauge)
@@ -97,7 +97,7 @@ This plan uses the standard conventions from the skeleton: explicit anchors on a
 
 **Options (if known):**
 - Derive from the closest existing `--tways-*`/`--td-*` literal hex values
-- Use CITA palette presets where appropriate (rejected per [D08] -- CITA produces different hex values)
+- Use TugColor palette presets where appropriate (rejected per [D08] -- TugColor produces different hex values)
 
 **Plan to resolve:** Use best-guess derivations from existing literal hex values per user answer. These are reasonable defaults that will be tuned when each domain's components are actually built.
 
@@ -111,7 +111,7 @@ This plan uses the standard conventions from the skeleton: explicit anchors on a
 |------|--------|------------|------------|--------------------|
 | Alias chain introduces visual regression | high | low | Manual visual inspection across all three themes at each step | Any visual diff detected |
 | Token count explosion harms dev experience | low | medium | Follow the established taxonomy exactly; no ad-hoc additions | Token grep returns > 350 base tokens |
-| CITA palette variables not available at CSS parse time | high | low | Import order ensures `tug-tokens.css` loads after `tokens.css`; CITA injected at startup | Accent tokens show fallback colors |
+| TugColor palette variables not available at CSS parse time | high | low | Import order ensures `tug-tokens.css` loads after `tokens.css`; TugColor injected at startup | Accent tokens show fallback colors |
 
 **Risk R01: Alias chain visual regression** {#r01-alias-regression}
 
@@ -181,7 +181,7 @@ This plan uses the standard conventions from the skeleton: explicit anchors on a
 
 **Rationale:**
 - `tokens.css` defines `--tways-*` palette, global multipliers, and motion duration tokens that `tug-tokens.css` references
-- CITA palette injection happens at startup before any CSS is evaluated, so `--tug-{hue}[-preset]` variables are available
+- TugColor palette injection happens at startup before any CSS is evaluated, so `--tug-{hue}[-preset]` variables are available
 - `tug-comp-tokens.css` resolves from `--tug-base-*`, so it must load after `tug-tokens.css`
 
 **Implications:**
@@ -228,14 +228,14 @@ This plan uses the standard conventions from the skeleton: explicit anchors on a
 - Theme files grow by ~30-50 lines each (color token overrides only; spacing/radius/typography are theme-invariant)
 - The `--tways-*` overrides in theme files will be removed in Phase 5d5d when legacy tokens are deleted
 
-#### [D08] All color tokens use literal hex values, not CITA palette var() references (DECIDED) {#d08-literal-hex}
+#### [D08] All color tokens use literal hex values, not TugColor palette var() references (DECIDED) {#d08-literal-hex}
 
-**Decision:** All `--tug-base-*` color tokens (including accent, status, chart series, syntax, and terminal ANSI) use literal hex values copied from the existing `--tways-*` palette per theme. CITA palette `var(--tug-{hue}[-preset])` references are NOT used in this phase. However, `var()` references to OTHER `--tug-base-*` tokens are permitted where they preserve a semantic link and produce identical computed values (see [D09], [D10]).
+**Decision:** All `--tug-base-*` color tokens (including accent, status, chart series, syntax, and terminal ANSI) use literal hex values copied from the existing `--tways-*` palette per theme. TugColor palette `var(--tug-{hue}[-preset])` references are NOT used in this phase. However, `var()` references to OTHER `--tug-base-*` tokens are permitted where they preserve a semantic link and produce identical computed values (see [D09], [D10]).
 
 **Rationale:**
-- The CITA palette engine computes OKLCH-based colors that are perceptually similar but produce different hex values than the existing hardcoded palette. Using `var(--tug-orange)` instead of `#ff8a38` would change the resolved color, violating the zero-visual-regression constraint.
-- Each theme (Brio, Bluenote, Harmony) has different accent hex values. The CITA palette is theme-invariant, so wiring accent tokens to CITA would lose theme-specific accent tuning.
-- Deferring CITA wiring to Phase 5d5d (consumer migration) keeps this phase strictly additive with zero visual risk.
+- The TugColor palette engine computes OKLCH-based colors that are perceptually similar but produce different hex values than the existing hardcoded palette. Using `var(--tug-orange)` instead of `#ff8a38` would change the resolved color, violating the zero-visual-regression constraint.
+- Each theme (Brio, Bluenote, Harmony) has different accent hex values. The TugColor palette is theme-invariant, so wiring accent tokens to TugColor would lose theme-specific accent tuning.
+- Deferring TugColor wiring to Phase 5d5d (consumer migration) keeps this phase strictly additive with zero visual risk.
 - Intra-base `var()` references (one `--tug-base-*` token referencing another) are safe because theme override files already override the referenced tokens, so the chain resolves correctly.
 
 **Implications:**
@@ -243,7 +243,7 @@ This plan uses the standard conventions from the skeleton: explicit anchors on a
 - Theme override files must include accent overrides with their theme-specific hex values
 - Chart series tokens use Brio accent hex values (e.g., `--tug-base-chart-series-warm: #ff8a38`)
 - Syntax tokens use existing `--tways-accent-*` hex values (except operator/punctuation/comment per [D09])
-- The CITA palette remains available for future use; this decision only affects the initial wiring
+- The TugColor palette remains available for future use; this decision only affects the initial wiring
 
 #### [D09] Text-derived syntax tokens use var(--tug-base-fg-*) references (DECIDED) {#d09-syntax-fg-refs}
 
@@ -327,7 +327,7 @@ body {
   --tug-base-motion-easing-*: ...;
   --tug-base-motion-pattern-*: ...;
 
-  /* === B. Accent System (literal hex values; CITA wiring deferred to 5d5d) === */
+  /* === B. Accent System (literal hex values; TugColor wiring deferred to 5d5d) === */
   --tug-base-accent-*: ...;
 
   /* === C. Selection / Highlight / Preview === */
@@ -623,7 +623,7 @@ Note: Brio hex values are shown for color tokens to make the mapping unambiguous
 - Extended `tugdeck/styles/tug-tokens.css` with sections B (accent), C (selection/highlight), D (workspace chrome)
 
 **Tasks:**
-- [ ] Define accent tokens with literal Brio hex values: `--tug-base-accent-default: #ff8a38` (from `--tways-accent`), `--tug-base-accent-strong: #f17627` (from `--tways-accent-strong`), `--tug-base-accent-cool-default: #35bcff` (from `--tways-accent-cool`). Do NOT use `var(--tug-orange)` or any CITA palette reference per [D08].
+- [ ] Define accent tokens with literal Brio hex values: `--tug-base-accent-default: #ff8a38` (from `--tways-accent`), `--tug-base-accent-strong: #f17627` (from `--tways-accent-strong`), `--tug-base-accent-cool-default: #35bcff` (from `--tways-accent-cool`). Do NOT use `var(--tug-orange)` or any TugColor palette reference per [D08].
 - [ ] Define status accent tokens with literal Brio hex values: `--tug-base-accent-positive: #72ce8f` (from `--tways-accent-5`), `--tug-base-accent-warning: #ffe86b` (from `--tways-accent-6`), `--tug-base-accent-danger: #ff5a72` (from `--tways-accent-4`), `--tug-base-accent-info: #35bcff` (from `--tways-accent-2`). Note: `--tways-success`/`--tways-warning`/`--tways-danger` are standalone palette tokens with DIFFERENT hex values -- use the `--tways-accent-N` values that `--td-success`/etc. actually resolve to.
 - [ ] Define accent-derived interaction tokens (`--tug-base-accent-bg-subtle`, `-bg-emphasis`, `-border`, `-border-hover`, `-underline-active`, `-guide`, `-flash`) with values derived from the accent hex values
 - [ ] Define selection/highlight/preview tokens
@@ -678,7 +678,7 @@ Note: Brio hex values are shown for color tokens to make the mapping unambiguous
 **Tests:**
 - [ ] `bun run build` produces no errors
 - [ ] `grep -c "tug-base-" styles/tug-tokens.css` confirms full taxonomy (>= 280 tokens)
-- [ ] No CITA palette var() references in tug-tokens.css: `grep "var(--tug-orange\|var(--tug-cyan\|var(--tug-green" styles/tug-tokens.css` returns zero matches (per [D08])
+- [ ] No TugColor palette var() references in tug-tokens.css: `grep "var(--tug-orange\|var(--tug-cyan\|var(--tug-green" styles/tug-tokens.css` returns zero matches (per [D08])
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun run build` succeeds
@@ -836,7 +836,7 @@ Note: Brio hex values are shown for color tokens to make the mapping unambiguous
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Phase 5d5d: Migrate all CSS/TS consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`
-- [ ] Phase 5d5d: Wire accent/chart/syntax tokens to CITA palette `var()` references (with visual tuning)
+- [ ] Phase 5d5d: Wire accent/chart/syntax tokens to TugColor palette `var()` references (with visual tuning)
 - [ ] Phase 5d5d: Remove legacy `--td-*`, `--tways-*` tokens and aliases
 - [ ] Phase 5d5d: Cut over shadcn bridge tokens to point directly at `--tug-base-*`
 - [ ] Phase 5d5e: Cascade Inspector showing token resolution chains

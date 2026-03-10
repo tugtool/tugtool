@@ -61,7 +61,7 @@ The legacy aliases add ~145 `--td-*` declarations and ~67 `--tways-*` declaratio
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Per-component zoom overrides (`--tug-comp-*-zoom`) -- future option only
-- CITA palette `var()` wiring (tokens remain literal hex; CITA wiring is a separate future phase)
+- TugColor palette `var()` wiring (tokens remain literal hex; TugColor wiring is a separate future phase)
 - Adding new tokens or expanding the semantic taxonomy
 - Migrating shadcn `components/ui/*.tsx` internals (they consume Tailwind utilities, not `--td-*` directly)
 
@@ -69,7 +69,7 @@ The legacy aliases add ~145 `--td-*` declarations and ~67 `--tways-*` declaratio
 
 - Phase 5d5c (Token Architecture): COMPLETE -- `--tug-base-*` and `--tug-comp-*` tokens fully defined in `tug-tokens.css` and `tug-comp-tokens.css`
 - Phase 5d5b (Scale & Timing): COMPLETE -- motion duration tokens in `tokens.css`
-- Phase 5d5a (CITA Palette Engine): COMPLETE -- CITA palette available but not consumed in this phase
+- Phase 5d5a (TugColor Palette Engine): COMPLETE -- TugColor palette available but not consumed in this phase
 
 #### Constraints {#constraints}
 
@@ -830,7 +830,7 @@ No new TypeScript/CSS symbols are added. All changes are token reference replace
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Wire `--tug-base-*` color tokens to CITA palette `var()` references (Phase 5d5e or later)
+- [ ] Wire `--tug-base-*` color tokens to TugColor palette `var()` references (Phase 5d5e or later)
 - [ ] Per-component zoom overrides (`--tug-comp-*-zoom`) for independent component scaling
 - [ ] Remove `--chart-N` and `--syntax-*` legacy aliases when stats-card.ts is rebuilt on new infrastructure
 - [ ] Add `check-legacy-tokens.sh` to CI pipeline configuration

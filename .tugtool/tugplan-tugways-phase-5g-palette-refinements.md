@@ -1,8 +1,8 @@
 <!-- tugplan-skeleton v2 -->
 
-## Tugways Phase 5g: CITA Palette Refinements {#phase-5g-palette-refinements}
+## Tugways Phase 5g: TugColor Palette Refinements {#phase-5g-palette-refinements}
 
-**Purpose:** Reshape the CITA palette from a fixed-preset coefficient system to a continuous color space with five convenience presets per hue, replacing coefficient knobs with calc()+clamp() formulas, renaming accent to intense, and enhancing the gallery editor with interactive i/t exploration.
+**Purpose:** Reshape the TugColor palette from a fixed-preset coefficient system to a continuous color space with five convenience presets per hue, replacing coefficient knobs with calc()+clamp() formulas, renaming accent to intense, and enhancing the gallery editor with interactive i/t exploration.
 
 ---
 
@@ -21,15 +21,15 @@
 
 #### Context {#context}
 
-The current CITA palette system defines 7 presets per hue (canonical, accent, muted, light, subtle, dark, deep) using coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`). These knobs are indirection without benefit -- the presets are fixed values pretending to be tunable. The system also exposes 168 CSS variables (24 hues x 7 presets) when only 120 (24 x 5) are needed, since "subtle" and "deep" presets are unused by any component or theme.
+The current TugColor palette system defines 7 presets per hue (canonical, accent, muted, light, subtle, dark, deep) using coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`). These knobs are indirection without benefit -- the presets are fixed values pretending to be tunable. The system also exposes 168 CSS variables (24 hues x 7 presets) when only 120 (24 x 5) are needed, since "subtle" and "deep" presets are unused by any component or theme.
 
-The palette-refinements design (documented in `roadmap/palette-refinements.md`) proposes reshaping the system into a continuous color space where five convenience presets serve as labeled reference points. The new calc()+clamp() piecewise formula makes the i/t mapping explicit in the CSS itself, and theme files gain the ability to define chromatic semantic tokens using inline CITA formulas with arbitrary i/t values.
+The palette-refinements design (documented in `roadmap/palette-refinements.md`) proposes reshaping the system into a continuous color space where five convenience presets serve as labeled reference points. The new calc()+clamp() piecewise formula makes the i/t mapping explicit in the CSS itself, and theme files gain the ability to define chromatic semantic tokens using inline TugColor formulas with arbitrary i/t values.
 
 #### Strategy {#strategy}
 
 - Rewrite tug-palette.css first: replace coefficient knobs and old formula structure with the new five-preset calc()+clamp() system. This is the foundation everything else depends on.
 - Rename accent to intense across palette files, then do simple substitution in tug-tokens.css per user direction.
-- Update palette-engine.ts to match the new CSS formula exactly, with the new five-preset CITA_PRESETS.
+- Update palette-engine.ts to match the new CSS formula exactly, with the new five-preset TUG_COLOR_PRESETS.
 - Update tests to assert five presets (120 = 24 x 5) instead of seven (168 = 24 x 7).
 - Update theme files minimally -- only fix tokens broken by the preset rename; leave passing tokens as-is per user direction.
 - Enhance gallery editor last -- it depends on the rewritten palette-engine.ts.
@@ -41,7 +41,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 - All references to `--tug-preset-*-l` and `--tug-preset-*-c` coefficient knobs are removed from tug-palette.css (verify by grep)
 - No file in the codebase references `--tug-{hue}-accent` as a palette preset variable (verify by grep; semantic `--tug-base-accent-*` tokens are unaffected)
 - No file references `--tug-{hue}-subtle` or `--tug-{hue}-deep` as palette preset variables (verify by grep)
-- CITA_PRESETS in palette-engine.ts has exactly 5 entries with correct i/t values (verify by test)
+- TUG_COLOR_PRESETS in palette-engine.ts has exactly 5 entries with correct i/t values (verify by test)
 - All existing tests pass with updated assertions (`bun test` in tugdeck)
 - Gallery editor renders interactive i/t picker with drag, preset overlay, and CSS formula export (verify by visual inspection and test)
 
@@ -50,7 +50,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 1. Rewrite tug-palette.css: remove coefficient knobs, replace 7-preset formula block with 5-preset calc()+clamp() formulas, update neutral ramp, update file header comments
 2. Rename accent to intense in palette variable names across all files
 3. Remove subtle and deep presets from palette
-4. Rewrite palette-engine.ts: update CITA_PRESETS to 5 entries, rewrite citaColor() to use clamp()-based piecewise formula
+4. Rewrite palette-engine.ts: update TUG_COLOR_PRESETS to 5 entries, rewrite tugColor() to use clamp()-based piecewise formula
 5. Update tug-tokens.css: simple substitution of `var(--tug-{hue}-accent)` to `var(--tug-{hue}-intense)`
 6. Minimal theme file updates: fix only tokens broken by preset rename
 7. Update palette-engine.test.ts: adjust all assertions from 7 presets/168 vars to 5 presets/120 vars
@@ -59,7 +59,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Full theme chromatic rewrite using inline CITA formulas (only minimal rename-driven fixes)
+- Full theme chromatic rewrite using inline TugColor formulas (only minimal rename-driven fixes)
 - Per-theme canonical-l tuning
 - Changing per-hue constants (h, canonical-l, peak-c) or global anchors (l-dark, l-light)
 - Modifying P3 @media block structure
@@ -125,12 +125,12 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 **Rationale:**
 - Subtle and deep presets are not referenced by any component or semantic token
 - Five presets are easier to remember and cover the essential perceptual range
-- Full 100x100 i/t space remains accessible via inline formula or citaColor()
+- Full 100x100 i/t space remains accessible via inline formula or tugColor()
 
 **Implications:**
 - All `--tug-{hue}-subtle` and `--tug-{hue}-deep` CSS variables removed
 - `--tug-neutral-subtle` and `--tug-neutral-deep` removed from neutral ramp
-- CITA_PRESETS in palette-engine.ts reduced from 7 to 5 entries
+- TUG_COLOR_PRESETS in palette-engine.ts reduced from 7 to 5 entries
 - Tests updated from 168 to 120 expected preset count
 
 #### [D02] Rename accent to intense (DECIDED) {#d02-rename-intense}
@@ -166,12 +166,12 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 **Rationale:**
 - Coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`) are indirection without benefit since presets are fixed
 - Literal numbers make the i/t intent explicit: reading `clamp(0, 20, 50)` tells you t=20
-- Same formula works in tug-palette.css presets, theme inline formulas, and citaColor() in TypeScript
+- Same formula works in tug-palette.css presets, theme inline formulas, and tugColor() in TypeScript
 
 **Implications:**
 - All 13 `--tug-preset-*` coefficient variables removed from tug-palette.css
 - Each preset formula is self-contained (no var() references to coefficients)
-- citaColor() rewritten to use same clamp-based piecewise logic
+- tugColor() rewritten to use same clamp-based piecewise logic
 
 #### [D05] Minimal theme updates (DECIDED) {#d05-minimal-themes}
 
@@ -179,7 +179,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 **Rationale:**
 - User direction: minimal theme scope
-- Full theme rewrite with inline CITA formulas is a separate future effort
+- Full theme rewrite with inline TugColor formulas is a separate future effort
 - Bluenote and Harmony themes do not currently reference palette preset names directly (they override only `--tug-base-*` semantic tokens)
 
 **Implications:**
@@ -207,7 +207,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### Preset Definitions {#preset-definitions}
 
-**Table T01: Five CITA Presets** {#t01-presets}
+**Table T01: Five TugColor Presets** {#t01-presets}
 
 | Name      | i | t | Character                         |
 |-----------|-----|-----|-----------------------------------|
@@ -278,12 +278,12 @@ Neutral lightness values are derived from the same tone-to-L piecewise formula (
 
 These appear in the Accent System section (B) and Actions section (E) of tug-tokens.css.
 
-#### citaColor() TypeScript Signature {#citacolor-signature}
+#### tugColor() TypeScript Signature {#citacolor-signature}
 
-**Spec S02: Rewritten citaColor() function** {#s02-hvvcolor}
+**Spec S02: Rewritten tugColor() function** {#s02-hvvcolor}
 
 ```typescript
-export function citaColor(
+export function tugColor(
   hueName: string,
   i: number,
   t: number,
@@ -320,8 +320,8 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `CITA_PRESETS` | const | `palette-engine.ts` | 7 entries -> 5 entries (remove accent/subtle/deep, add intense) |
-| `citaColor()` | fn | `palette-engine.ts` | Rewrite body to use clamp-based piecewise (signature unchanged) |
+| `TUG_COLOR_PRESETS` | const | `palette-engine.ts` | 7 entries -> 5 entries (remove accent/subtle/deep, add intense) |
+| `tugColor()` | fn | `palette-engine.ts` | Rewrite body to use clamp-based piecewise (signature unchanged) |
 | `VibValPicker` | component | `gallery-palette-content.tsx` | New: interactive 2D i/t drag picker |
 | `PresetOverlay` | component | `gallery-palette-content.tsx` | New: renders 5 preset dots on the picker surface |
 | `CssFormulaExport` | component | `gallery-palette-content.tsx` | New: generates and copies CSS formula snippet |
@@ -334,7 +334,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test CITA_PRESETS entries, citaColor() math, formula equivalence | palette-engine.test.ts |
+| **Unit** | Test TUG_COLOR_PRESETS entries, tugColor() math, formula equivalence | palette-engine.test.ts |
 | **Integration** | Test CSS file structure: 120 presets, no coefficient knobs, neutral ramp | palette-engine.test.ts (CSS verification) |
 | **Golden / Contract** | Test preset count (120), neutral count (5+2), P3 block structure | palette-engine.test.ts |
 | **Drift Prevention** | Grep-based tests for zero hits on removed/renamed preset names | palette-engine.test.ts or dedicated audit test |
@@ -365,7 +365,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 - [ ] Rename `--tug-{hue}-accent` to `--tug-{hue}-intense` for all 24 hues
 - [ ] Remove `--tug-{hue}-subtle` and `--tug-{hue}-deep` for all 24 hues
 - [ ] Update the neutral ramp: remove `--tug-neutral-accent`, `--tug-neutral-subtle`, `--tug-neutral-deep`; add `--tug-neutral-intense` and `--tug-neutral-muted` per Table T02
-- [ ] Update file header comment: remove references to coefficient knobs and "Phase" tags; describe the CITA model, three axes, piecewise formula, and preset system
+- [ ] Update file header comment: remove references to coefficient knobs and "Phase" tags; describe the TugColor model, three axes, piecewise formula, and preset system
 - [ ] Update the chromatic preset section comment: change "168 = 24 hues x 7 presets" to "120 = 24 hues x 5 presets"
 - [ ] Verify per-hue constants (72 vars), global anchors, and P3 @media block are unchanged
 
@@ -388,7 +388,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 
 **Depends on:** #step-1
 
-**Commit:** `refactor(palette): rewrite CITA_PRESETS to 5 entries and align citaColor() with clamp formula`
+**Commit:** `refactor(palette): rewrite TUG_COLOR_PRESETS to 5 entries and align tugColor() with clamp formula`
 
 **References:** [D01] Five convenience presets, [D02] Rename accent to intense, [D04] Calc()+clamp() piecewise formula, Spec S02, Table T01, (#citacolor-signature, #preset-definitions)
 
@@ -396,22 +396,22 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 - `tugdeck/src/components/tugways/palette-engine.ts` modified
 
 **Tasks:**
-- [ ] Update CITA_PRESETS: remove `accent`, `subtle`, `deep` entries; add `intense` entry with `{ i: 90, t: 50 }`; update `muted` to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`; keep `canonical` at `{ i: 50, t: 50 }`
-- [ ] Rewrite citaColor() body to use clamp-based piecewise formula per Spec S02 (mathematically equivalent to current if/else but aligned with CSS formula structure)
+- [ ] Update TUG_COLOR_PRESETS: remove `accent`, `subtle`, `deep` entries; add `intense` entry with `{ i: 90, t: 50 }`; update `muted` to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`; keep `canonical` at `{ i: 50, t: 50 }`
+- [ ] Rewrite tugColor() body to use clamp-based piecewise formula per Spec S02 (mathematically equivalent to current if/else but aligned with CSS formula structure)
 - [ ] Keep LCParams interface and DEFAULT_LC_PARAMS -- they are used by palette-engine.test.ts and _deriveChromaCaps; update JSDoc only
-- [ ] Update module-level JSDoc comment: remove references to "Phase" tags; describe CITA model and the five presets
+- [ ] Update module-level JSDoc comment: remove references to "Phase" tags; describe TugColor model and the five presets
 
 **Checkpoint:**
-- [ ] `Object.keys(CITA_PRESETS).length === 5`
-- [ ] `CITA_PRESETS` contains keys: canonical, light, dark, intense, muted
-- [ ] `citaColor('red', 50, 50, 0.659)` produces same output as before (canonical unchanged)
-- [ ] `citaColor('red', 0, 50, 0.659)` produces C=0 (achromatic)
-- [ ] `citaColor('red', 50, 0, 0.659)` produces L close to L_DARK (0.15)
+- [ ] `Object.keys(TUG_COLOR_PRESETS).length === 5`
+- [ ] `TUG_COLOR_PRESETS` contains keys: canonical, light, dark, intense, muted
+- [ ] `tugColor('red', 50, 50, 0.659)` produces same output as before (canonical unchanged)
+- [ ] `tugColor('red', 0, 50, 0.659)` produces C=0 (achromatic)
+- [ ] `tugColor('red', 50, 0, 0.659)` produces L close to L_DARK (0.15)
 
 **Tests:**
-- [ ] Verify CITA_PRESETS has exactly 5 entries with correct i/t per Table T01
-- [ ] Verify citaColor() produces same result for canonical (i=50, t=50) as before
-- [ ] Verify citaColor() boundary conditions: t=0 gives L_DARK, t=100 gives L_LIGHT, i=0 gives C=0
+- [ ] Verify TUG_COLOR_PRESETS has exactly 5 entries with correct i/t per Table T01
+- [ ] Verify tugColor() produces same result for canonical (i=50, t=50) as before
+- [ ] Verify tugColor() boundary conditions: t=0 gives L_DARK, t=100 gives L_LIGHT, i=0 gives C=0
 
 ---
 
@@ -497,7 +497,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 - `tugdeck/src/__tests__/palette-engine.test.ts` modified
 
 **Tasks:**
-- [ ] Update `CITA_PRESETS` test block: change "has exactly 7 entries" to "has exactly 5 entries"; remove `accent`, `subtle`, `deep` assertions; add `intense` assertion with `{ i: 90, t: 50 }`; update `muted` assertion to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`
+- [ ] Update `TUG_COLOR_PRESETS` test block: change "has exactly 7 entries" to "has exactly 5 entries"; remove `accent`, `subtle`, `deep` assertions; add `intense` assertion with `{ i: 90, t: 50 }`; update `muted` assertion to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`
 - [ ] Update tug-palette.css verification tests: change preset count from 168 to 120 (24 x 5); change preset suffix list from 7 to 5; remove `-subtle` and `-deep` from suffix lists; add `-intense` to suffix list; remove `--tug-red-subtle` and `--tug-red-deep` assertions
 - [ ] Update gamut safety tests: change "24 hues x 7 presets" description to "24 hues x 5 presets"; change expected count from 168 to 120
 - [ ] Update neutral ramp tests: remove `--tug-neutral-deep` assertion; add `--tug-neutral-intense` assertion if missing; verify neutral count matches 5 presets
@@ -546,9 +546,9 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 - `tugdeck/src/components/tugways/cards/gallery-palette-content.css` modified (new picker styles)
 
 **Tasks:**
-- [ ] Add VibValPicker component: renders a color gradient surface using a CSS grid of divs at 21x21 resolution (i 0-100 by 5, t 0-100 by 5 = 441 cells), each cell colored via inline `backgroundColor` set to `citaColor()` output. This matches the existing VibValGrid pattern and keeps the DOM testable via data-testid/data-color attributes. X axis is intensity (0-100 left to right), Y axis is tone (100 top to 0 bottom). Pointer interaction: on pointerDown, capture the pointer (`setPointerCapture`), compute i/t from pointer position relative to the grid container using `(clientX - rect.left) / rect.width * 100` and `(1 - (clientY - rect.top) / rect.height) * 100`, clamped to [0, 100]. On pointerMove while captured, update i/t state. On pointerUp, release capture. A crosshair indicator (absolutely-positioned div) marks the current i/t position. A large result swatch (data-testid="gp-picker-swatch") below the grid displays the selected color with its oklch() string
+- [ ] Add VibValPicker component: renders a color gradient surface using a CSS grid of divs at 21x21 resolution (i 0-100 by 5, t 0-100 by 5 = 441 cells), each cell colored via inline `backgroundColor` set to `tugColor()` output. This matches the existing VibValGrid pattern and keeps the DOM testable via data-testid/data-color attributes. X axis is intensity (0-100 left to right), Y axis is tone (100 top to 0 bottom). Pointer interaction: on pointerDown, capture the pointer (`setPointerCapture`), compute i/t from pointer position relative to the grid container using `(clientX - rect.left) / rect.width * 100` and `(1 - (clientY - rect.top) / rect.height) * 100`, clamped to [0, 100]. On pointerMove while captured, update i/t state. On pointerUp, release capture. A crosshair indicator (absolutely-positioned div) marks the current i/t position. A large result swatch (data-testid="gp-picker-swatch") below the grid displays the selected color with its oklch() string
 - [ ] Add PresetOverlay: renders the 5 preset dots (canonical, light, dark, intense, muted) as absolutely-positioned labeled elements at their fixed i/t coordinates on the picker surface, positioned via percentage left/bottom calculated from their Table T01 i/t values
-- [ ] Add CssFormulaExport: when a i/t is selected, generates the CSS inline CITA formula snippet matching Spec S01 format -- output is a complete `oklch(calc(...) calc(V / 100 * var(--tug-H-peak-c)) var(--tug-H-h))` string with the selected hue's CSS variable names and literal i/t numbers substituted. Provides a copy-to-clipboard button (using `navigator.clipboard.writeText()`) with a "Copied" feedback state
+- [ ] Add CssFormulaExport: when a i/t is selected, generates the CSS inline TugColor formula snippet matching Spec S01 format -- output is a complete `oklch(calc(...) calc(V / 100 * var(--tug-H-peak-c)) var(--tug-H-h))` string with the selected hue's CSS variable names and literal i/t numbers substituted. Provides a copy-to-clipboard button (using `navigator.clipboard.writeText()`) with a "Copied" feedback state
 - [ ] Wire VibValPicker into GalleryPaletteContent as a new section that replaces the existing VibValGrid when a hue is selected (the picker is a superset of the grid's functionality -- it shows the same color space interactively)
 - [ ] Use inline styles for color display (Rules of Tugways D08, D09)
 - [ ] Use local useState for picker state (i, t, copied flag) per D40
@@ -557,7 +557,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 **Tests:**
 - [ ] VibValPicker renders 441 colored cells (21x21 grid) when a hue is selected (query by data-testid="gp-picker-cell", verify count)
 - [ ] VibValPicker responds to pointer drag (use fireEvent.pointerDown + fireEvent.pointerMove to simulate drag; verify updated i/t via data-testid attributes on the swatch element)
-- [ ] VibValPicker result swatch (data-testid="gp-picker-swatch") color verified via data-color attribute matching expected citaColor() output for the selected i/t
+- [ ] VibValPicker result swatch (data-testid="gp-picker-swatch") color verified via data-color attribute matching expected tugColor() output for the selected i/t
 - [ ] PresetOverlay renders 5 labeled dots at correct positions (query by data-testid="gp-preset-dot")
 - [ ] CssFormulaExport generates correct CSS formula for a given hue/i/t (verify output string contains `calc(` and `clamp(` patterns with the correct literal i/t numbers and `var(--tug-{hue}-` references)
 
@@ -590,14 +590,14 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** CITA palette reshaped to continuous color space with five convenience presets per hue, calc()+clamp() formulas, accent-to-intense rename complete, and gallery editor enhanced with interactive i/t exploration.
+**Deliverable:** TugColor palette reshaped to continuous color space with five convenience presets per hue, calc()+clamp() formulas, accent-to-intense rename complete, and gallery editor enhanced with interactive i/t exploration.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] tug-palette.css has exactly 120 chromatic preset variables (verify by regex count)
 - [ ] No coefficient knob variables remain (`--tug-preset-*`) (verify by grep)
 - [ ] No old preset names remain in any file (`--tug-{hue}-accent`, `--tug-{hue}-subtle`, `--tug-{hue}-deep`) (verify by grep)
-- [ ] CITA_PRESETS has exactly 5 entries (verify by test)
+- [ ] TUG_COLOR_PRESETS has exactly 5 entries (verify by test)
 - [ ] All tests pass (`bun test` in tugdeck)
 - [ ] Gallery editor has interactive i/t picker with preset overlay and CSS formula export (verify visually)
 
@@ -608,7 +608,7 @@ Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Full theme chromatic rewrite: define all chromatic semantic tokens using inline CITA formulas with theme-specific i/t choices
+- [ ] Full theme chromatic rewrite: define all chromatic semantic tokens using inline TugColor formulas with theme-specific i/t choices
 - [ ] Per-theme canonical-l tuning for contrast adjustments
 - [ ] Accessibility audit of muted preset color changes across all themes
 - [ ] Gallery editor: save/load theme i/t configurations

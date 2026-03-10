@@ -52,7 +52,7 @@
 
 /* ---- Virtual sash ---- */
 .virtual-sash          { position: absolute; z-index: 9950; background: transparent; }
-.virtual-sash:hover    { background: --cita(cobalt, i: 3, t: 94, a: 8); }
+.virtual-sash:hover    { background: --tug-color(cobalt, i: 3, t: 94, a: 8); }
 .virtual-sash-vertical   { width: 8px; cursor: col-resize; }
 .virtual-sash-horizontal { height: 8px; cursor: row-resize; }
 
@@ -87,8 +87,8 @@
   border: 3px solid var(--tug-base-accent-default);
   border-radius: inherit;
   box-shadow:
-    0 0 5px --cita(orange, i: 50, t: 50, a: 60),
-    inset 0 0 16px --cita(orange, i: 50, t: 50, a: 20);
+    0 0 5px --tug-color(orange, i: 50, t: 50, a: 60),
+    inset 0 0 16px --tug-color(orange, i: 50, t: 50, a: 20);
   animation: set-flash-fade 0.5s ease-out forwards;
   z-index: 2;
   box-sizing: border-box;

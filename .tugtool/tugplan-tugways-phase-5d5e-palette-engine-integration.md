@@ -1,6 +1,6 @@
 ## Palette Engine Integration — Pure CSS, Neutrals, Phase 5d5e {#phase-5d5e}
 
-**Purpose:** Wire the CITA palette engine to the semantic token layer by replacing JS-injected oklch() strings with pure CSS formulas in a static `tug-palette.css`, adding the neutral ramp, and rewiring all chromatic `--tug-base-*` tokens to resolve from `var(--tug-{hue}[-preset])` palette references.
+**Purpose:** Wire the TugColor palette engine to the semantic token layer by replacing JS-injected oklch() strings with pure CSS formulas in a static `tug-palette.css`, adding the neutral ramp, and rewiring all chromatic `--tug-base-*` tokens to resolve from `var(--tug-{hue}[-preset])` palette references.
 
 ---
 
@@ -19,7 +19,7 @@
 
 #### Context {#context}
 
-Phases 5d5a through 5d5d established the CITA palette engine (24 hues, 7 presets, P3 support), the semantic token architecture (`--tug-base-*`, `--tug-comp-*`), and migrated all CSS consumers to the new token names. However, a critical gap remains: the `--tug-base-*` chromatic tokens in `tug-tokens.css` contain ~120 hardcoded hex color values instead of resolving from the palette engine's `--tug-{hue}[-preset]` variables. The palette engine currently injects its 242 CSS variables at runtime via `injectCITACSS()` in JavaScript -- but nothing in the semantic layer consumes them.
+Phases 5d5a through 5d5d established the TugColor palette engine (24 hues, 7 presets, P3 support), the semantic token architecture (`--tug-base-*`, `--tug-comp-*`), and migrated all CSS consumers to the new token names. However, a critical gap remains: the `--tug-base-*` chromatic tokens in `tug-tokens.css` contain ~120 hardcoded hex color values instead of resolving from the palette engine's `--tug-{hue}[-preset]` variables. The palette engine currently injects its 242 CSS variables at runtime via `injectCITACSS()` in JavaScript -- but nothing in the semantic layer consumes them.
 
 Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() strings to pure CSS `calc()` + `oklch()` formulas in a static stylesheet, adds the `--tug-neutral-*` achromatic ramp per [D75], and rewires every chromatic `--tug-base-*` token to a `var(--tug-{hue}[-preset])` reference. After this phase, the entire color system is inspectable, debuggable, and composable in standard CSS with no JavaScript injection.
 
@@ -31,7 +31,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 - Override only `--tug-{hue}-peak-c` in the P3 media query block; preset formulas auto-produce richer colors
 - Rewire all chromatic `--tug-base-*` tokens to palette `var()` references in a single pass
 - Replace `rgba()` accent-derived tokens with `color-mix()` per [D75]
-- Remove `injectCITACSS()` and its call sites; retain `citaColor()` for programmatic JS use
+- Remove `injectCITACSS()` and its call sites; retain `tugColor()` for programmatic JS use
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -55,12 +55,12 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 - Cross-hue reassignment in theme files (e.g., Bluenote accent = blue instead of orange) -- future phase
 - Per-theme canonical L tuning -- all themes share the same palette constants in 5d5e
 - Cascade inspector (Phase 5d5f)
-- Removing `citaColor()` or other palette-engine.ts exports -- they are retained for programmatic use
+- Removing `tugColor()` or other palette-engine.ts exports -- they are retained for programmatic use
 
 #### Dependencies / Prerequisites {#dependencies}
 
 - Phase 5d5d (Consumer Migration) must be complete -- all consumers reference `--tug-base-*` tokens
-- Phase 5d5a (Palette Engine) must be complete -- `palette-engine.ts` exports HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE (the authoritative source for all per-hue constants; `tug-cita-canonical.json` is a reference artifact but not directly consumed)
+- Phase 5d5a (Palette Engine) must be complete -- `palette-engine.ts` exports HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE (the authoritative source for all per-hue constants; `tug-color-canonical.json` is a reference artifact but not directly consumed)
 
 #### Constraints {#constraints}
 
@@ -74,7 +74,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 - The 72 per-hue constants (plus 2 globals) are derived directly from existing values in `palette-engine.ts` (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, PEAK_C_SCALE) -- no new computation
 - Neutral ramp uses static oklch() literals with C=0 as specified in [D75]
-- `citaColor()` and all other palette-engine.ts exports are retained unchanged
+- `tugColor()` and all other palette-engine.ts exports are retained unchanged
 - P3 block overrides only `--tug-{hue}-peak-c` (24 overrides); preset formulas auto-produce richer colors
 - Accent tokens currently using `rgba()` will use `color-mix()` once rewired to palette references per [D75]
 - Theme files keep non-chromatic overrides (surfaces, grays, borders, shadows, etc.) unchanged
@@ -98,7 +98,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Visual regression from hex-to-oklch conversion | med | med | Compare screenshots before/after; oklch values were computed from same CITA parameters | Colors look noticeably different in any theme |
+| Visual regression from hex-to-oklch conversion | med | med | Compare screenshots before/after; oklch values were computed from same TugColor parameters | Colors look noticeably different in any theme |
 | CSS calc() precision differences across browsers | low | low | Use sufficient decimal precision (4 digits); oklch is well-supported in modern browsers | Visible banding or color shifts in specific browsers |
 | Theme override cascade issues with new import order | med | low | Verify theme injection appends after tug-palette.css + tug-tokens.css in cascade | Theme colors don't override palette defaults |
 
@@ -106,10 +106,10 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 - **Risk:** Converting from hardcoded hex (sRGB) to oklch() formulas may produce slightly different rendered colors
 - **Mitigation:**
-  - The hex values in tug-tokens.css were originally hand-picked, not derived from the CITA engine, so some visual shift is expected and intentional
-  - The CITA palette produces perceptually uniform colors by design
+  - The hex values in tug-tokens.css were originally hand-picked, not derived from the TugColor engine, so some visual shift is expected and intentional
+  - The TugColor palette produces perceptually uniform colors by design
   - Visual verification across all three themes in the checkpoint steps
-- **Residual risk:** Some tokens may need manual tuning if the CITA-derived color is noticeably different from the hand-picked hex
+- **Residual risk:** Some tokens may need manual tuning if the TugColor-derived color is noticeably different from the hand-picked hex
 
 ---
 
@@ -117,10 +117,10 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 #### [D01] Pure CSS formulas replace JS injection (DECIDED) {#d01-pure-css}
 
-**Decision:** The CITA palette is expressed entirely in CSS `calc()` + `oklch()` formulas in a static stylesheet, replacing the runtime `injectCITACSS()` JavaScript injection.
+**Decision:** The TugColor palette is expressed entirely in CSS `calc()` + `oklch()` formulas in a static stylesheet, replacing the runtime `injectCITACSS()` JavaScript injection.
 
 **Rationale:**
-- CSS `oklch()` natively accepts `calc()` expressions, making the entire CITA transfer function expressible in CSS
+- CSS `oklch()` natively accepts `calc()` expressions, making the entire TugColor transfer function expressible in CSS
 - Static CSS is inspectable, debuggable, and composable without JavaScript
 - Eliminates a runtime dependency and potential flash-of-unstyled-content from late injection
 
@@ -158,7 +158,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 #### [D04] Piecewise L formula as CSS min() (DECIDED) {#d04-piecewise-l}
 
-**Decision:** The CITA tone-to-L piecewise linear mapping is expressed in CSS using `calc()` with the two linear segments. For t=50 presets, L equals the per-hue canonical L directly. For t!=50 presets, L is computed from the appropriate segment of the piecewise function.
+**Decision:** The TugColor tone-to-L piecewise linear mapping is expressed in CSS using `calc()` with the two linear segments. For t=50 presets, L equals the per-hue canonical L directly. For t!=50 presets, L is computed from the appropriate segment of the piecewise function.
 
 **Rationale:**
 - The 7 presets have fixed tone values, so each preset's L can be a single `calc()` expression using the appropriate segment (t<=50 or t>50)
@@ -187,7 +187,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 **Decision:** Harmony (light theme) keeps chromatic foreground hex overrides where the Brio palette preset would have insufficient contrast on light backgrounds. Decorative and background chromatic tokens (bg-subtle, bg-emphasis, series colors used as fills) are removed and resolve from palette. Foreground-role tokens that need darker/more saturated variants for readability on light surfaces are preserved as hex overrides until per-theme canonical L tuning is implemented.
 
 **Rationale:**
-- The CITA palette presets (canonical, accent, muted, etc.) are tuned for dark backgrounds (Brio). On Harmony's light surfaces (e.g., surface-default #f4f1ea), high-L palette presets like `--tug-yellow` (L=0.901) produce text that is nearly invisible
+- The TugColor palette presets (canonical, accent, muted, etc.) are tuned for dark backgrounds (Brio). On Harmony's light surfaces (e.g., surface-default #f4f1ea), high-L palette presets like `--tug-yellow` (L=0.901) produce text that is nearly invisible
 - Harmony uses intentionally darker variants: e.g., `--tug-base-toast-warning-fg: #b89000` (dark gold), `--tug-base-banner-warning-fg: #8a7200`, `--tug-base-syntax-function: #8a7200`, `--tug-base-badge-warning-fg: #8a7200`
 - Removing these overrides would cause contrast/accessibility failures, not merely a visual preference change
 - Per-theme canonical L tuning (listed in Non-goals) will eventually allow Harmony to resolve all chromatic tokens from palette with appropriate lightness
@@ -224,7 +224,7 @@ Global constants (2):
 
 **Table T02: Chromatic preset formulas (168 = 24 hues x 7 presets)** {#t02-preset-formulas}
 
-Each preset has fixed `i` and `t` values from `CITA_PRESETS`. The CSS formula computes L and C:
+Each preset has fixed `i` and `t` values from `TUG_COLOR_PRESETS`. The CSS formula computes L and C:
 
 | Preset | i | t | L formula | C formula |
 |--------|-----|-----|-----------|-----------|
@@ -260,7 +260,7 @@ Static oklch() literals with C=0, using the same tone-to-L mapping as chromatic 
 | `--tug-black` | -- | 0 | `oklch(0 0 0)` |
 | `--tug-white` | -- | 1 | `oklch(1 0 0)` |
 
-Neutral ramp L values match the [D75] specification examples exactly. `--tug-black` and `--tug-white` are true black/white per [D75] (not CITA endpoints), serving as absolute anchors independent of the tone-to-L mapping.
+Neutral ramp L values match the [D75] specification examples exactly. `--tug-black` and `--tug-white` are true black/white per [D75] (not TugColor endpoints), serving as absolute anchors independent of the tone-to-L mapping.
 
 #### P3 Overrides {#p3-overrides}
 
@@ -462,7 +462,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/styles/tug-palette.css` | Static CITA palette: per-hue constants, preset formulas, neutral ramp, P3 overrides |
+| `tugdeck/styles/tug-palette.css` | Static TugColor palette: per-hue constants, preset formulas, neutral ramp, P3 overrides |
 
 #### Symbols to add / modify {#symbols}
 
@@ -757,7 +757,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 - [ ] Delete the `PALETTE_STYLE_ID` constant declaration
 - [ ] Delete the section comment block (`// injectCITACSS — CSS variable injection`)
 - [ ] Update the module docstring to remove references to CSS variable injection and `injectCITACSS`
-- [ ] Retain all other exports: `citaColor`, `HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `PEAK_C_SCALE`, `L_DARK`, `L_LIGHT`, `CITA_PRESETS`, `DEFAULT_LC_PARAMS`, `oklchToLinearSRGB`, `isInSRGBGamut`, `findMaxChroma`, `oklchToLinearP3`, `isInP3Gamut`, `_deriveChromaCaps`, `_deriveP3ChromaCaps`
+- [ ] Retain all other exports: `citaColor`, `HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `PEAK_C_SCALE`, `L_DARK`, `L_LIGHT`, `TUG_COLOR_PRESETS`, `DEFAULT_LC_PARAMS`, `oklchToLinearSRGB`, `isInSRGBGamut`, `findMaxChroma`, `oklchToLinearP3`, `isInP3Gamut`, `_deriveChromaCaps`, `_deriveP3ChromaCaps`
 
 **Tests:**
 - [ ] Verify `injectCITACSS` is no longer exported from palette-engine.ts
@@ -856,7 +856,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The CITA palette engine is fully connected to the semantic token layer via pure CSS formulas, with neutral ramp, P3 support, and no JavaScript injection.
+**Deliverable:** The TugColor palette engine is fully connected to the semantic token layer via pure CSS formulas, with neutral ramp, P3 support, and no JavaScript injection.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
@@ -878,7 +878,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 - [ ] Phase 5d5f: Cascade Inspector -- dev-mode `Ctrl+Option + hover` shows token resolution chain
 - [ ] Cross-hue reassignment in theme files (Bluenote accent = blue, etc.)
 - [ ] Per-theme canonical L tuning
-- [ ] Remove `citaColor()` if no programmatic consumers remain after cascade inspector is built
+- [ ] Remove `tugColor()` if no programmatic consumers remain after cascade inspector is built
 
 | Checkpoint | Verification |
 |------------|--------------|

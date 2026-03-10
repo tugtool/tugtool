@@ -1,7 +1,7 @@
 /**
- * gallery-palette-content.tsx -- CITA palette tuning editor.
+ * gallery-palette-content.tsx -- TugColor palette tuning editor.
  *
- * Interactive tool for defining 24 canonical colors in the CITA color
+ * Interactive tool for defining 24 canonical colors in the TugColor color
  * system (Color · Intensity · Tone · Alpha). Each canonical color is defined
  * by its OKLCH hue angle (fixed in HUE_FAMILIES) and a tunable canonical
  * lightness. Intensity and tone axes let the developer derive any shade from
@@ -25,9 +25,9 @@
 import React, { useState, useRef, useCallback } from "react";
 import {
   HUE_FAMILIES,
-  citaColor,
+  tugColor,
   DEFAULT_CANONICAL_L,
-  CITA_PRESETS,
+  TUG_COLOR_PRESETS,
   L_DARK,
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
@@ -165,7 +165,7 @@ function LCurveEditor({
       {HUE_NAMES.map((name, i) => {
         const cx = hueX(i);
         const cy = lToY(canonicalL[name]);
-        const dotColor = citaColor(name, 70, 50, canonicalL[name]);
+        const dotColor = tugColor(name, 70, 50, canonicalL[name]);
         const isSelected = name === selectedHue;
         return (
           <g key={name}>
@@ -224,7 +224,7 @@ function CanonicalStrip({
   return (
     <div className="gp-canonical-strip" data-testid="gp-canonical-strip">
       {HUE_NAMES.map((name) => {
-        const color = citaColor(name, 50, 50, canonicalL[name]);
+        const color = tugColor(name, 50, 50, canonicalL[name]);
         const isSelected = name === selectedHue;
         return (
           <div
@@ -272,7 +272,7 @@ function IntensityToneGrid({
         <div key={tone} className="gp-vvgrid-row" data-testid="gp-vvgrid-val-row">
           <div className="gp-vvgrid-row-label">{tone}</div>
           {INTENSITY_STEPS.map((intensity) => {
-            const color = citaColor(hueName, intensity, tone, canonicalL);
+            const color = tugColor(hueName, intensity, tone, canonicalL);
             const isCanonical = intensity === 50 && tone === 50;
             return (
               <div
@@ -307,7 +307,7 @@ const PICKER_INTENSITIES = Array.from({ length: PICKER_STEPS }, (_, i) => i * 5)
 function PresetOverlay() {
   return (
     <>
-      {Object.entries(CITA_PRESETS).map(([name, { intensity, tone }]) => {
+      {Object.entries(TUG_COLOR_PRESETS).map(([name, { intensity, tone }]) => {
         // left = intensity/100*100%, bottom = tone/100*100%
         const leftPct = intensity;
         const bottomPct = tone;
@@ -421,7 +421,7 @@ function IntensityTonePicker({
     capturedRef.current = false;
   }, []);
 
-  const selectedColor = citaColor(hueName, intensity, tone, canonicalL);
+  const selectedColor = tugColor(hueName, intensity, tone, canonicalL);
 
   // Crosshair position: left = intensity%, bottom = tone%
   const crosshairLeft = `${intensity}%`;
@@ -443,7 +443,7 @@ function IntensityTonePicker({
         {PICKER_TONES.map((rowTone) => (
           <div key={rowTone} className="gp-picker-row">
             {PICKER_INTENSITIES.map((colIntensity) => {
-              const color = citaColor(hueName, colIntensity, rowTone, canonicalL);
+              const color = tugColor(hueName, colIntensity, rowTone, canonicalL);
               return (
                 <div
                   key={colIntensity}
@@ -495,7 +495,7 @@ function IntensityTonePicker({
 
 const EXPORT_VERSION = 2;
 
-interface CitaExportPayload {
+interface TugColorExportPayload {
   version: number;
   global: { l_dark: number; l_light: number };
   hues: Record<string, { canonical_l: number }>;
@@ -507,7 +507,7 @@ interface CitaExportPayload {
 export function buildExportPayload(
   canonicalL: Record<string, number>,
 ): string {
-  const payload: CitaExportPayload = {
+  const payload: TugColorExportPayload = {
     version: EXPORT_VERSION,
     global: { l_dark: L_DARK, l_light: L_LIGHT },
     hues: {},
@@ -582,7 +582,7 @@ export function GalleryPaletteContent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tug-cita-canonical.json";
+    a.download = "tug-color-canonical.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

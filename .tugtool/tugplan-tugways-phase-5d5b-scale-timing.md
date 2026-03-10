@@ -65,7 +65,7 @@ The tugways design system has a three-tier token architecture (`--tways-*` palet
 #### Dependencies / Prerequisites {#dependencies}
 
 - Phase 5a2 (DeckManager Store) -- complete; provides the card/gallery infrastructure
-- Phase 5d5a (Palette Engine / CITA Runtime) -- complete but independent; no dependency
+- Phase 5d5a (Palette Engine / TugColor Runtime) -- complete but independent; no dependency
 - Existing `tokens.css` with `--td-space-*`, `--td-radius-*`, `--td-duration-*` tokens
 - Existing gallery card with nine tabs and `registerGalleryCards()` pattern
 

@@ -121,7 +121,7 @@
 | [D67] | Typed key-path property store per card | Concept 21 | [#d67-property-store](#d67-property-store) |
 | [D68] | PropertyStore integrates with useSyncExternalStore | Concept 21 | [#d68-property-store-sync](#d68-property-store-sync) |
 | [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
-| [D70] | CITA OKLCH palette: 24 hues × continuous intensity/tone space, 5 convenience presets, inline formula for arbitrary colors, P3 support | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
+| [D70] | TugColor OKLCH palette: 24 hues × continuous intensity/tone space, 5 convenience presets, inline formula for arbitrary colors, P3 support | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
 | [D71] | Token naming: `--tug-{hue}[-preset]`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
 | [D72] | Global scale: `--tug-zoom` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
 | [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
@@ -131,7 +131,7 @@
 | [D77] | Inactive selection appearance: dimmed highlight in unfocused cards via CSS Custom Highlight API | Concept 18 | [#d77-inactive-selection](#d77-inactive-selection) |
 | [D78] | Child-driven ready callback: parent triggers child setState, child signals DOM commit via `useLayoutEffect` | Concept 18 | [#d78-content-ready](#d78-content-ready) |
 | [D79] | No RAF for React state-dependent DOM operations — RAF is a timing bet, not a contract | Concept 18 | [#d79-no-raf-for-state](#d79-no-raf-for-state) |
-| [D80] | Build-time `--cita()` expansion: PostCSS plugin replaces `--cita(hue, i, t)` with `oklch()` at build time; theme files use `--cita()` notation instead of hardcoded hex | Concept 22 | [#d80-cita-postcss](#d80-cita-postcss) |
+| [D80] | Build-time `--tug-color()` expansion: PostCSS plugin replaces `--tug-color(hue, i, t)` with `oklch()` at build time; theme files use `--tug-color()` notation instead of hardcoded hex | Concept 22 | [#d80-tug-color-postcss](#d80-tug-color-postcss) |
 
 ### Key Architectural Patterns
 
@@ -155,7 +155,7 @@
 | Target/action control model | Controls emit ActionEvents with payload, sender, and phase; two dispatch modes (nil-target and explicit-target) | [#d61-action-event](#d61-action-event) |
 | Mutation transactions | Snapshot/preview/commit/cancel cycle for live-preview editing; appearance-zone only during preview | [#d64-mutation-transactions](#d64-mutation-transactions) |
 | Observable property store | Typed key-path store per card with observation; integrates with useSyncExternalStore for inspector UI | [#d67-property-store](#d67-property-store) |
-| CITA (Color · Intensity · Tone · Alpha) color palette | 24 OKLCH hue families with Hue/Intensity/Tone axes, 5 convenience presets per hue, neutral ramp, P3 support, pure CSS formulas, build-time `--cita()` expansion [D80] | [#d70-computed-palette](#d70-computed-palette) |
+| TugColor (Hue · Intensity · Tone · Alpha) color palette | 24 OKLCH hue families with Hue/Intensity/Tone axes, 5 convenience presets per hue, neutral ramp, P3 support, pure CSS formulas, build-time `--tug-color()` expansion [D80] | [#d70-computed-palette](#d70-computed-palette) |
 | Global scale and timing | `--tug-zoom` multiplies all dimensions; `--tug-timing` multiplies all durations; `--tug-motion` toggles motion on/off | [#d72-global-scale](#d72-global-scale) |
 
 ### External References
@@ -3645,9 +3645,9 @@ The inspector doesn't import the card's internal code. It discovers available pr
 
 **Full proposal.** The complete research-backed proposal is in `roadmap/theme-overhaul-proposal.md`, including external research references (Primer, Spectrum, Open Props, Carbon, Chakra, OKLCH guidance), current code audit, roadmap requirements analysis, and the complete semantic taxonomy (~300 tokens across 10 domains).
 
-#### Computed OKLCH Color Palette — CITA (Color · Intensity · Tone · Alpha) {#d70-computed-palette}
+#### Computed OKLCH Color Palette — TugColor (Hue · Intensity · Tone · Alpha) {#d70-computed-palette}
 
-**[D70] 24 hue families with CITA (Hue/Intensity/Tone) axes, defined as pure CSS formulas.** Instead of hardcoded hex values per theme, the palette is computed from OKLCH parameters using the CITA system. 24 named hue families (cherry, red, tomato, flame, orange, amber, gold, yellow, lime, green, mint, teal, cyan, sky, blue, cobalt, violet, purple, plum, pink, rose, magenta, berry, coral) each mapped to specific OKLCH hue angles.
+**[D70] 24 hue families with TugColor (Hue/Intensity/Tone) axes, defined as pure CSS formulas.** Instead of hardcoded hex values per theme, the palette is computed from OKLCH parameters using the TugColor system. 24 named hue families (cherry, red, tomato, flame, orange, amber, gold, yellow, lime, green, mint, teal, cyan, sky, blue, cobalt, violet, purple, plum, pink, rose, magenta, berry, coral) each mapped to specific OKLCH hue angles.
 
 Each color is defined by three axes:
 - **Hue**: one of 24 named color families mapped to OKLCH hue angles (cherry=10° through coral=20°)
@@ -3668,13 +3668,13 @@ The palette engine exposes a **continuous color space** — 24 hues × 100 inten
 | intense   | 90  | 50  | Pops, draws attention              |
 | muted     | 20  | 50  | Subdued, secondary                 |
 
-These five presets have **fixed i/t values across all themes** — they are stable reference colors, not the system's backbone. Any other i/t combination is accessible via the inline `calc()`+`clamp()` formula or `citaColor()` in JS.
+These five presets have **fixed i/t values across all themes** — they are stable reference colors, not the system's backbone. Any other i/t combination is accessible via the inline `calc()`+`clamp()` formula or `tugColor()` in JS.
 
 Per-hue chroma caps are derived by binary-searching the maximum safe chroma at each hue's canonical lightness, with a 2% safety margin. The caps are hardcoded as static tables — not computed at runtime.
 
 **Static CSS architecture.** The palette is defined entirely in static CSS using `oklch()` + `calc()` + `clamp()` formulas — no JavaScript injection required. The architecture has two tiers:
 
-1. **Per-hue constants** (74 variables): Static values in a CSS file, derived from `tug-cita-canonical.json`. These are the only values that require computation (gamut boundary binary search), and they change only when canonical L values are retuned. Three constants per hue (`-h`, `-canonical-l`, `-peak-c`) plus two globals (`--tug-l-dark`, `--tug-l-light`).
+1. **Per-hue constants** (74 variables): Static values in a CSS file, derived from `tug-color-canonical.json`. These are the only values that require computation (gamut boundary binary search), and they change only when canonical L values are retuned. Three constants per hue (`-h`, `-canonical-l`, `-peak-c`) plus two globals (`--tug-l-dark`, `--tug-l-light`).
 
 2. **Convenience presets** (120 variables = 24 hues × 5 presets): Pure CSS using `oklch()` with `calc()`, `clamp()`, and the per-hue constants. Literal i/t numbers (not CSS custom property references) because the five presets have fixed values:
 
@@ -3717,37 +3717,37 @@ The `clamp()` piecewise math: t 0→50 maps L from L_DARK to canonical-l; t 50�
 );
 ```
 
-**Why pure CSS, not JS injection.** The CITA transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()` + `clamp()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the `injectCITACSS()` runtime injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
+**Why pure CSS, not JS injection.** The TugColor transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()` + `clamp()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the `injectCITACSS()` runtime injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
 
 **P3 support.** A `@media (color-gamut: p3)` block overrides `--tug-{hue}-peak-c` with wider P3 chroma caps derived from `MAX_P3_CHROMA_FOR_HUE`. All formulas (convenience presets and theme inline formulas) automatically produce richer colors because they reference `peak-c` — no separate P3 definitions needed.
 
-**JS API retained.** The `citaColor(hueName, i, t, canonicalL, peakChroma?)` function remains in `palette-engine.ts` for programmatic use (inline styles, color pickers, data visualization) where CSS custom properties aren't accessible. It uses the same piecewise math as the CSS formulas.
+**JS API retained.** The `tugColor(hueName, i, t, canonicalL, peakChroma?)` function remains in `palette-engine.ts` for programmatic use (inline styles, color pickers, data visualization) where CSS custom properties aren't accessible. It uses the same piecewise math as the CSS formulas.
 
-**Theme influence.** Themes define their chromatic semantic tokens using the inline CITA formula with theme-specific i/t choices. Themes can also override per-hue canonical-l values for contrast adjustments. The five convenience presets are not overridden per-theme — they serve as stable reference colors.
+**Theme influence.** Themes define their chromatic semantic tokens using the inline TugColor formula with theme-specific i/t choices. Themes can also override per-hue canonical-l values for contrast adjustments. The five convenience presets are not overridden per-theme — they serve as stable reference colors.
 
-#### Build-Time `--cita()` Expansion {#d80-cita-postcss}
+#### Build-Time `--tug-color()` Expansion {#d80-tug-color-postcss}
 
-**[D80] PostCSS plugin expands `--cita(hue, i, t)` to `oklch()` at build time; theme files use `--cita()` instead of hardcoded hex.**
+**[D80] PostCSS plugin expands `--tug-color(hue, i, t)` to `oklch()` at build time; theme files use `--tug-color()` instead of hardcoded hex.**
 
-The inline `calc()`+`clamp()` formula [D70] gives themes full parametric control, but the verbose CSS syntax is unwieldy for the hundreds of achromatic tokens (surfaces, grays, borders, text) in theme files. The `--cita()` notation provides a compact, human-readable alternative that expands to concrete `oklch()` values at build time — zero runtime cost.
+The inline `calc()`+`clamp()` formula [D70] gives themes full parametric control, but the verbose CSS syntax is unwieldy for the hundreds of achromatic tokens (surfaces, grays, borders, text) in theme files. The `--tug-color()` notation provides a compact, human-readable alternative that expands to concrete `oklch()` values at build time — zero runtime cost.
 
-**Syntax.** `--cita(hue, intensity, tone)` where `hue` is a named hue family (e.g., `blue`, `cobalt`) or a raw numeric OKLCH angle, `intensity` is 0–100, and `tone` is 0–100. Examples: `--cita(blue, 5, 13)`, `--cita(237, 5, 13)`, `--cita(cobalt, 3, 18)`.
+**Syntax.** `--tug-color(hue, intensity, tone)` where `hue` is a named hue family (e.g., `blue`, `cobalt`) or a raw numeric OKLCH angle, `intensity` is 0–100, and `tone` is 0–100. Examples: `--tug-color(blue, 5, 13)`, `--tug-color(237, 5, 13)`, `--tug-color(cobalt, 3, 18)`.
 
-**PostCSS plugin.** A bespoke PostCSS plugin (`postcss-cita.ts`) walks the CSS AST and replaces `--cita()` calls with computed `oklch(L C h)` strings using the same piecewise math as `citaColor()`. The plugin is wired into Vite via `css.postcss.plugins` (inline config), coexisting with `@tailwindcss/vite` which operates as a separate Vite plugin. No new third-party PostCSS dependencies — `postcss` itself is promoted from transitive to explicit devDependency.
+**PostCSS plugin.** A bespoke PostCSS plugin (`postcss-tug-color.ts`) walks the CSS AST and replaces `--tug-color()` calls with computed `oklch(L C h)` strings using the same piecewise math as `tugColor()`. The plugin is wired into Vite via `css.postcss.plugins` (inline config), coexisting with `@tailwindcss/vite` which operates as a separate Vite plugin. No new third-party PostCSS dependencies — `postcss` itself is promoted from transitive to explicit devDependency.
 
-**Reverse mapper.** `oklchToCITA()` in `palette-engine.ts` inverts the CITA math: given an `oklch()` string, it finds the closest named hue family and recovers intensity/tone parameters. This enables programmatic hex-to-CITA derivation for the one-time theme conversion and is independently useful for developer tooling. `citaPretty()` formats the result as a human-readable string (e.g., `"blue i=5 t=13"`).
+**Reverse mapper.** `oklchToTugColor()` in `palette-engine.ts` inverts the TugColor math: given an `oklch()` string, it finds the closest named hue family and recovers intensity/tone parameters. This enables programmatic hex-to-TugColor derivation for the one-time theme conversion and is independently useful for developer tooling. `tugColorPretty()` formats the result as a human-readable string (e.g., `"blue i=5 t=13"`).
 
-**Theme conversion.** All hardcoded hex values in theme files (tug-tokens.css, bluenote.css, harmony.css) are replaced with `--cita()` calls. A one-time conversion script uses `oklchToCITA()` to programmatically derive CITA parameters for every hex token. Special case: `#ffffff` maps to `var(--tug-white)`. Values inside `rgba()`, `color-mix()`, and `var()` expressions are preserved unchanged. `tug-palette.css` is not modified — its `var()` formulas for P3 gamut overrides remain as-is.
+**Theme conversion.** All hardcoded hex values in theme files (tug-tokens.css, bluenote.css, harmony.css) are replaced with `--tug-color()` calls. A one-time conversion script uses `oklchToTugColor()` to programmatically derive TugColor parameters for every hex token. Special case: `#ffffff` maps to `var(--tug-white)`. Values inside `rgba()`, `color-mix()`, and `var()` expressions are preserved unchanged. `tug-palette.css` is not modified — its `var()` formulas for P3 gamut overrides remain as-is.
 
-**Relationship to D70.** The `--cita()` notation is syntactic sugar over the same continuous color space defined in [D70]. The PostCSS plugin uses the same constants (`HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `PEAK_C_SCALE`) and the same piecewise L/C formulas. The inline `calc()`+`clamp()` formula remains available for cases where runtime CSS custom property resolution is needed (e.g., P3 overrides via `peak-c`).
+**Relationship to D70.** The `--tug-color()` notation is syntactic sugar over the same continuous color space defined in [D70]. The PostCSS plugin uses the same constants (`HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `PEAK_C_SCALE`) and the same piecewise L/C formulas. The inline `calc()`+`clamp()` formula remains available for cases where runtime CSS custom property resolution is needed (e.g., P3 overrides via `peak-c`).
 
 #### Neutral Ramp and Opacity {#d75-neutral-ramp}
 
-**[D75] CITA extends to neutrals and alpha via `--tug-neutral-*` and CSS relative color syntax.**
+**[D75] TugColor extends to neutrals and alpha via `--tug-neutral-*` and CSS relative color syntax.**
 
-The CITA system covers chromatic colors. For a complete, coherent color system with no behavioral dropoffs, it extends to neutrals and transparency:
+The TugColor system covers chromatic colors. For a complete, coherent color system with no behavioral dropoffs, it extends to neutrals and transparency:
 
-**Neutral ramp.** In OKLCH, gray is chroma=0 at various lightness values — conceptually, any hue at i=0 (the hue angle becomes irrelevant). The CITA system adds a `neutral` pseudo-hue using the same tone-to-L mapping but with C=0:
+**Neutral ramp.** In OKLCH, gray is chroma=0 at various lightness values — conceptually, any hue at i=0 (the hue angle becomes irrelevant). The TugColor system adds a `neutral` pseudo-hue using the same tone-to-L mapping but with C=0:
 
 ```css
 /* Neutral ramp using the same 5 convenience preset tone stops: */
@@ -3780,8 +3780,8 @@ No precomputed alpha variants are needed. The palette system produces opaque col
 
 **[D71] `--tug-{hue}[-preset]` / `--tug-base-*` / `--tug-comp-*` replace `--tways-*`/`--td-*`.**
 
-- **Layer 0 (CITA palette)**: A continuous color space (24 hues × 100 i × 100 t) expressed in pure CSS using `oklch()` + `calc()` + `clamp()`. Per-hue constants: `--tug-{hue}-h/canonical-l/peak-c`. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t. Arbitrary colors via the inline formula with literal i/t numbers. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. ~200 CSS variables in a static file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. Themes write chromatic semantic tokens using the inline formula with theme-specific i/t choices.
-- **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer. Chromatic tokens wire to CITA presets (e.g., `--tug-base-accent-default: var(--tug-orange)`). Achromatic tokens (surfaces, foreground, borders) wire to `--tug-neutral-*` or remain literal values where no palette mapping applies.
+- **Layer 0 (TugColor palette)**: A continuous color space (24 hues × 100 i × 100 t) expressed in pure CSS using `oklch()` + `calc()` + `clamp()`. Per-hue constants: `--tug-{hue}-h/canonical-l/peak-c`. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t. Arbitrary colors via the inline formula with literal i/t numbers. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. ~200 CSS variables in a static file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. Themes write chromatic semantic tokens using the inline formula with theme-specific i/t choices.
+- **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer. Chromatic tokens wire to TugColor presets (e.g., `--tug-base-accent-default: var(--tug-orange)`). Achromatic tokens (surfaces, foreground, borders) wire to `--tug-neutral-*` or remain literal values where no palette mapping applies.
 - **Layer 2 (`--tug-comp-*`)**: Component/pattern bindings. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
 
 The grammar is: `--tug-base-<domain>-<role>[-<emphasis>][-<state>]` for semantics, `--tug-comp-<pattern>-<role>[-<state>]` for components.
@@ -3834,7 +3834,7 @@ Easing curves are not affected by timing — they describe motion shape, not dur
 - Component identity and DOM path.
 - Selected computed properties (background, foreground, border, shadow, radius, typography).
 - Full resolution chain: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`.
-- For CITA palette colors: hue family name, preset name, and CITA coordinates (i/t/L).
+- For TugColor palette colors: hue family name, preset name, and TugColor coordinates (i/t/L).
 - Current `--tug-zoom` and `--tug-timing` multiplier effects.
 - Pin/unpin support. Escape closes.
 
@@ -4328,27 +4328,27 @@ Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the 
 
 **Key design decisions:**
 
-- **[D70] CITA (Color · Intensity · Tone · Alpha) OKLCH palette.** 24 named hue families with a continuous color space: Hue (color family), Intensity (chroma 0–100), Tone (lightness 0–100). Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values. Arbitrary colors via the inline `calc()`+`clamp()` formula with literal i/t numbers — themes write chromatic semantic tokens this way. ~200 CSS variables defined as pure CSS `oklch()` + `calc()` + `clamp()` formulas — no JS injection required. P3 wide-gamut support via `@media (color-gamut: p3)` block overriding `peak-c` constants. The JS function `citaColor()` provides programmatic color computation for inline styles and data viz. Per-hue canonical lightness values are tuned via an interactive gallery editor.
-- **[D71] Three-layer token naming.** CITA palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
+- **[D70] TugColor (Hue · Intensity · Tone · Alpha) OKLCH palette.** 24 named hue families with a continuous color space: Hue (color family), Intensity (chroma 0–100), Tone (lightness 0–100). Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values. Arbitrary colors via the inline `calc()`+`clamp()` formula with literal i/t numbers — themes write chromatic semantic tokens this way. ~200 CSS variables defined as pure CSS `oklch()` + `calc()` + `clamp()` formulas — no JS injection required. P3 wide-gamut support via `@media (color-gamut: p3)` block overriding `peak-c` constants. The JS function `tugColor()` provides programmatic color computation for inline styles and data viz. Per-hue canonical lightness values are tuned via an interactive gallery editor.
+- **[D71] Three-layer token naming.** TugColor palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
 - **[D72] Global scale.** `--tug-zoom` (default: `1`) drives CSS `zoom` on `<body>`, scaling the entire UI uniformly — all dimensions, text, spacing, radii, icons. Per-component `--tug-comp-<family>-zoom` (default: `1`) allows fine-tuning via zoom on the component root.
 - **[D73] Global timing.** `--tug-timing` (default: `1`) multiplies all animation durations. `--tug-motion` (default: `1`, set to `0` by `prefers-reduced-motion`) toggles motion on/off. `data-tug-motion="off"` on body provides CSS hook. Two controls because "slow motion for debugging" and "no motion for accessibility" are categorically different.
 - **[D74] Dev cascade inspector.** `Ctrl+Option + hover` shows token resolution chain for any component: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`, including hue/intensity/tone provenance for computed colors and scale/timing effects.
 
 Implementation planned across six sub-phases (5d5a–5d5f) in the implementation strategy. External research surveyed Primer, Spectrum, Open Props, Carbon, and Chakra for naming patterns; OKLCH guidance for perceptual uniformity; Adobe color naming guidance for hue family names.
 
-**Implementation history:** Phase 5d5a (Palette Engine) shipped first with the smoothstep/anchor-based system. After extensive curve tuning via the interactive gallery editor, the CITA (Color · Intensity · Tone · Alpha) system was designed as a replacement. The CITA Runtime plan promoted `citaColor` and canonical constants to `palette-engine.ts`, added P3 support, wired `injectCITACSS` into the runtime, and removed all legacy anchor/smoothstep code. A post-merge fix corrected chroma cap derivation — caps are now derived at canonical L only (not the extreme L_DARK/L_LIGHT values which bottlenecked chroma to near-zero). The old `--tug-palette-hue-*` variable names and `tugPaletteColor()` function are gone; replaced by `--tug-{hue}[-preset]` naming and `citaColor()`.
+**Implementation history:** Phase 5d5a (Palette Engine) shipped first with the smoothstep/anchor-based system. After extensive curve tuning via the interactive gallery editor, the TugColor (Hue · Intensity · Tone · Alpha) system was designed as a replacement. The TugColor Runtime plan promoted `citaColor` and canonical constants to `palette-engine.ts`, added P3 support, wired `injectCITACSS` into the runtime, and removed all legacy anchor/smoothstep code. A post-merge fix corrected chroma cap derivation — caps are now derived at canonical L only (not the extreme L_DARK/L_LIGHT values which bottlenecked chroma to near-zero). The old `--tug-palette-hue-*` variable names and `tugPaletteColor()` function are gone; replaced by `--tug-{hue}[-preset]` naming and `tugColor()`.
 
 ### Entry 31: Palette Engine Integration — Pure CSS, Neutrals, Phase 5d5e {#log-31} (2026-03-07)
 
-Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` semantic tokens in `tug-tokens.css` contained ~328 hardcoded hex color values instead of resolving from the CITA palette engine's `--tug-{hue}[-preset]` variables. The consumer migration (5d5d) mechanically renamed all CSS consumers to point at these still-hardcoded tokens. The palette engine was live and generating 242 CSS variables — but nothing consumed them.
+Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` semantic tokens in `tug-tokens.css` contained ~328 hardcoded hex color values instead of resolving from the TugColor palette engine's `--tug-{hue}[-preset]` variables. The consumer migration (5d5d) mechanically renamed all CSS consumers to point at these still-hardcoded tokens. The palette engine was live and generating 242 CSS variables — but nothing consumed them.
 
 **Three key decisions:**
 
-- **[D70] revised — Continuous CITA color space with convenience presets.** The palette engine exposes 24 hues × 100 i × 100 t as a continuous space. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values provide stable reference colors. Themes define chromatic semantic tokens using the inline `calc()`+`clamp()` formula with theme-specific i/t choices — this is where design intent lives. ~200 palette CSS vars (120 convenience presets + 74 per-hue constants + neutrals). P3 support: `@media (color-gamut: p3)` overrides `peak-c` constants. `injectCITACSS()` is eliminated — `citaColor()` is retained for programmatic JS use only.
+- **[D70] revised — Continuous TugColor color space with convenience presets.** The palette engine exposes 24 hues × 100 i × 100 t as a continuous space. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values provide stable reference colors. Themes define chromatic semantic tokens using the inline `calc()`+`clamp()` formula with theme-specific i/t choices — this is where design intent lives. ~200 palette CSS vars (120 convenience presets + 74 per-hue constants + neutrals). P3 support: `@media (color-gamut: p3)` overrides `peak-c` constants. `injectCITACSS()` is eliminated — `tugColor()` is retained for programmatic JS use only.
 
-- **[D75] Neutral ramp and opacity.** The CITA system extends to achromatic colors via `--tug-neutral-*` (the tone axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
+- **[D75] Neutral ramp and opacity.** The TugColor system extends to achromatic colors via `--tug-neutral-*` (the tone axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
 
-- **Phase restructure.** Renamed Phase 5d5e (Cascade Inspector) to Phase 5d5f. Added new Phase 5d5e (Palette Engine Integration) as the missing link between the implemented CITA palette engine (5d5a) and the consumer-facing semantic tokens (5d5c/5d5d). This phase wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` references, converts the palette to pure CSS, adds the neutral ramp, and makes theme differentiation about "which hues map to which roles" rather than "which hex values."
+- **Phase restructure.** Renamed Phase 5d5e (Cascade Inspector) to Phase 5d5f. Added new Phase 5d5e (Palette Engine Integration) as the missing link between the implemented TugColor palette engine (5d5a) and the consumer-facing semantic tokens (5d5c/5d5d). This phase wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` references, converts the palette to pure CSS, adds the neutral ramp, and makes theme differentiation about "which hues map to which roles" rather than "which hex values."
 
 ### Entry 32: TugAnimator and Phase 7 Expansion — Concept 8 Revised {#log-32} (2026-03-07)
 

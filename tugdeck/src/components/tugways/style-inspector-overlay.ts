@@ -3,7 +3,7 @@
  *
  * A dev-only Shift+Option+hover cascade inspector overlay that shows the full
  * token resolution chain (component tokens, base tokens, palette variables,
- * CITA provenance) and scale/timing readout for any inspected element.
+ * TugColor provenance) and scale/timing readout for any inspected element.
  *
  * Design decisions:
  *   [D01] Pure TypeScript singleton -- no React involvement. DOM manipulation only,
@@ -19,7 +19,7 @@
  *   Spec S01 (#s01-inspector-singleton)
  *   Spec S02 (#s02-token-chain-algorithm)
  *   Spec S03 (#s03-inspected-properties)
- *   Spec S04 (#s04-cita-provenance)
+ *   Spec S04 (#s04-tug-color-provenance)
  *   Spec S05 (#s05-scale-timing-readout)
  *
  * @module components/tugways/style-inspector-overlay
@@ -27,7 +27,7 @@
 
 import "./style-inspector-overlay.css";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
-import { oklchToCITA } from "./palette-engine";
+import { oklchToTugColor } from "./palette-engine";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -74,8 +74,8 @@ export interface TokenChainResult {
   usedHeuristic: boolean;
 }
 
-/** CITA provenance data for a palette variable. */
-export interface CitaProvenance {
+/** TugColor provenance data for a palette variable. */
+export interface TugColorProvenance {
   hue: string;
   preset: string;
   canonicalL: string;
@@ -181,7 +181,7 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
  * StyleInspectorOverlay -- singleton managing the full inspector lifecycle.
  *
  * Activated by holding Shift+Option (Mac). Tracks the element under the cursor
- * via elementFromPoint. Shows token chain resolution, CITA provenance, and
+ * via elementFromPoint. Shows token chain resolution, TugColor provenance, and
  * scale/timing readout in a fixed-position panel.
  *
  * [D01] Pure TS singleton
@@ -550,7 +550,7 @@ export class StyleInspectorOverlay {
    * Reads from document.body (where all tug token CSS is scoped).
    *
    * Chain termination rules:
-   *   1. Property matches PALETTE_VAR_REGEX -- stop (CITA provenance handles inner constants)
+   *   1. Property matches PALETTE_VAR_REGEX -- stop (TugColor provenance handles inner constants)
    *   2. Value starts with "oklch(" -- formula terminal
    *   3. Value does not contain a var() reference -- literal terminal
    *   4. Cycle detected (seen this property before) -- stop
@@ -603,12 +603,12 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Extract CITA provenance from a palette variable name.
+   * Extract TugColor provenance from a palette variable name.
    * Reads canonical-l, peak-c, and h constants from document.body.
    *
-   * Spec S04 (#s04-cita-provenance)
+   * Spec S04 (#s04-tug-color-provenance)
    */
-  extractCitaProvenance(tokenName: string): CitaProvenance | null {
+  extractTugColorProvenance(tokenName: string): TugColorProvenance | null {
     const m = PALETTE_VAR_REGEX.exec(tokenName);
     if (!m) return null;
 
@@ -938,32 +938,32 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Try to convert an oklch() color string to --cita() notation.
+   * Try to convert an oklch() color string to --tug-color() notation.
    * Returns null if the string isn't a simple oklch(L C h) value
    * (e.g., contains calc() expressions).
    */
-  private tryFormatCita(colorStr: string): string | null {
+  private tryFormatTugColor(colorStr: string): string | null {
     if (!colorStr || !colorStr.startsWith("oklch(")) return null;
     // Skip values with calc() or var() — can't reverse-map those
     if (colorStr.includes("calc(") || colorStr.includes("var(")) return null;
     try {
-      const { hue, intensity, tone } = oklchToCITA(colorStr);
-      return `--cita(${hue}, i: ${intensity}, t: ${tone})`;
+      const { hue, intensity, tone } = oklchToTugColor(colorStr);
+      return `--tug-color(${hue}, i: ${intensity}, t: ${tone})`;
     } catch {
       return null;
     }
   }
 
   /**
-   * Create a styled span showing CITA notation for a color value.
-   * Returns null if the color can't be converted to CITA.
+   * Create a styled span showing TugColor notation for a color value.
+   * Returns null if the color can't be converted to TugColor.
    */
-  private makeCitaEl(colorStr: string): HTMLSpanElement | null {
-    const cita = this.tryFormatCita(colorStr);
-    if (!cita) return null;
+  private makeTugColorEl(colorStr: string): HTMLSpanElement | null {
+    const tugColorStr = this.tryFormatTugColor(colorStr);
+    if (!tugColorStr) return null;
     const el = document.createElement("span");
-    el.className = "tug-inspector-cita";
-    el.textContent = cita;
+    el.className = "tug-inspector-tug-color";
+    el.textContent = tugColorStr;
     return el;
   }
 
@@ -1018,8 +1018,8 @@ export class StyleInspectorOverlay {
     computedRow.appendChild(computedVal);
 
     if (isColorProp) {
-      const citaEl = this.makeCitaEl(computedValue);
-      if (citaEl)computedRow.appendChild(citaEl);
+      const tugColorEl = this.makeTugColorEl(computedValue);
+      if (tugColorEl)computedRow.appendChild(tugColorEl);
     }
 
     section.appendChild(computedRow);
@@ -1079,8 +1079,8 @@ export class StyleInspectorOverlay {
           hopEl.appendChild(valEl);
 
           if (isColorProp) {
-            const citaEl = this.makeCitaEl(hop.value);
-            if (citaEl)hopEl.appendChild(citaEl);
+            const tugColorEl = this.makeTugColorEl(hop.value);
+            if (tugColorEl)hopEl.appendChild(tugColorEl);
           }
         }
 
@@ -1089,12 +1089,12 @@ export class StyleInspectorOverlay {
 
       section.appendChild(chainEl);
 
-      // CITA provenance if chain ends at a palette variable
+      // TugColor provenance if chain ends at a palette variable
       if (result.endsAtPalette && result.paletteVar) {
-        const cita = this.extractCitaProvenance(result.paletteVar);
-        if (cita) {
-          const citaSection = this.renderCitaSection(cita);
-          section.appendChild(citaSection);
+        const tugColor = this.extractTugColorProvenance(result.paletteVar);
+        if (tugColor) {
+          const tugColorSection = this.renderTugColorSection(tugColor);
+          section.appendChild(tugColorSection);
         }
       }
     } else if (result.originLayer === "none") {
@@ -1115,25 +1115,25 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Render the CITA provenance sub-section.
+   * Render the TugColor provenance sub-section.
    *
-   * Spec S04 (#s04-cita-provenance)
+   * Spec S04 (#s04-tug-color-provenance)
    */
-  private renderCitaSection(cita: CitaProvenance): HTMLElement {
+  private renderTugColorSection(tugColor: TugColorProvenance): HTMLElement {
     const container = document.createElement("div");
     container.className = "tug-inspector-section";
 
     const title = document.createElement("div");
     title.className = "tug-inspector-section__title";
-    title.textContent = "CITA Provenance";
+    title.textContent = "TugColor Provenance";
     container.appendChild(title);
 
     const rows: Array<[string, string]> = [
-      ["hue", cita.hue],
-      ["preset", cita.preset],
-      ["canonical-l", cita.canonicalL || "(n/a)"],
-      ["peak-c", cita.peakC || "(n/a)"],
-      ["hue-angle", cita.hueAngle || "(n/a)"],
+      ["hue", tugColor.hue],
+      ["preset", tugColor.preset],
+      ["canonical-l", tugColor.canonicalL || "(n/a)"],
+      ["peak-c", tugColor.peakC || "(n/a)"],
+      ["hue-angle", tugColor.hueAngle || "(n/a)"],
     ];
 
     for (const [label, value] of rows) {

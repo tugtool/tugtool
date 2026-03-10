@@ -6,7 +6,7 @@
  * Harmony is a light theme; virtually all color tokens differ from the dark Brio defaults.
  * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.
  *
- * Phase 5d5e: Chromatic tokens that are safely derivable from the CITA palette have been
+ * Phase 5d5e: Chromatic tokens that are safely derivable from the TugColor palette have been
  * removed. They now resolve from the shared palette via tug-tokens.css.
  * Contrast-critical fg overrides are PRESERVED per [D06] — these are tokens where the
  * palette preset has insufficient contrast on Harmony's light backgrounds. They will be
@@ -16,332 +16,332 @@ body {
   /* --tug-base-* overrides (Phase 5d5e) — non-chromatic tokens + contrast-critical overrides. */
 
   /* Surfaces */
-  --tug-base-bg-app: --cita(blue+5, i: 5, t: 20);
-  --tug-base-bg-canvas: --cita(yellow, i: 7, t: 39);
-  --tug-base-surface-sunken: --cita(yellow, i: 6, t: 44);
-  --tug-base-surface-default: --cita(yellow, i: 4, t: 99);
-  --tug-base-surface-raised: --cita(blue, i: 5, t: 24);
-  --tug-base-surface-overlay: --cita(yellow, i: 6, t: 48);
-  --tug-base-surface-inset: --cita(yellow, i: 4, t: 100);
-  --tug-base-surface-control: --cita(yellow, i: 7, t: 51);
-  --tug-base-surface-control-hover: --cita(yellow, i: 4, t: 99);
-  --tug-base-surface-control-active: --cita(yellow, i: 6, t: 48);
-  --tug-base-surface-content: --cita(yellow, i: 4, t: 100);
-  --tug-base-surface-screen: --cita(blue, i: 4, t: 80);
+  --tug-base-bg-app: --tug-color(blue+5, i: 5, t: 20);
+  --tug-base-bg-canvas: --tug-color(yellow, i: 7, t: 39);
+  --tug-base-surface-sunken: --tug-color(yellow, i: 6, t: 44);
+  --tug-base-surface-default: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-surface-raised: --tug-color(blue, i: 5, t: 24);
+  --tug-base-surface-overlay: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-surface-inset: --tug-color(yellow, i: 4, t: 100);
+  --tug-base-surface-control: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-surface-control-hover: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-surface-control-active: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-surface-content: --tug-color(yellow, i: 4, t: 100);
+  --tug-base-surface-screen: --tug-color(blue, i: 4, t: 80);
 
   /* Foreground / Text */
-  --tug-base-fg-default: --cita(blue+5, i: 8, t: 13);
-  --tug-base-fg-muted: --cita(blue, i: 9, t: 22);
-  --tug-base-fg-subtle: --cita(blue, i: 9, t: 30);
-  --tug-base-fg-disabled: --cita(blue, i: 8, t: 44);
-  --tug-base-fg-inverse: --cita(sky, i: 1, t: 100);
-  --tug-base-fg-placeholder: --cita(yellow, i: 9, t: 28);
+  --tug-base-fg-default: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-fg-muted: --tug-color(blue, i: 9, t: 22);
+  --tug-base-fg-subtle: --tug-color(blue, i: 9, t: 30);
+  --tug-base-fg-disabled: --tug-color(blue, i: 8, t: 44);
+  --tug-base-fg-inverse: --tug-color(sky, i: 1, t: 100);
+  --tug-base-fg-placeholder: --tug-color(yellow, i: 9, t: 28);
   --tug-base-fg-onAccent: var(--tug-white);
   --tug-base-fg-onDanger: var(--tug-white);
-  --tug-base-fg-onWarning: --cita(violet-6, i: 4, t: 7);
-  --tug-base-fg-onSuccess: --cita(violet-6, i: 4, t: 7);
+  --tug-base-fg-onWarning: --tug-color(violet-6, i: 4, t: 7);
+  --tug-base-fg-onSuccess: --tug-color(violet-6, i: 4, t: 7);
 
   /* Icon */
-  --tug-base-icon-default: --cita(blue, i: 9, t: 22);
-  --tug-base-icon-muted: --cita(yellow, i: 9, t: 28);
-  --tug-base-icon-disabled: --cita(blue, i: 8, t: 44);
+  --tug-base-icon-default: --tug-color(blue, i: 9, t: 22);
+  --tug-base-icon-muted: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-icon-disabled: --tug-color(blue, i: 8, t: 44);
 
   /* Borders */
-  --tug-base-border-default: --cita(yellow, i: 9, t: 28);
-  --tug-base-border-muted: --cita(yellow, i: 10, t: 36);
-  --tug-base-border-strong: --cita(yellow-5, i: 7, t: 24);
-  --tug-base-border-inverse: --cita(blue+5, i: 8, t: 13);
-  --tug-base-divider-default: --cita(yellow, i: 5, t: 46);
-  --tug-base-divider-muted: --cita(yellow, i: 5, t: 48);
-  --tug-base-focus-ring-offset: --cita(yellow, i: 4, t: 99);
+  --tug-base-border-default: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-border-muted: --tug-color(yellow, i: 10, t: 36);
+  --tug-base-border-strong: --tug-color(yellow-5, i: 7, t: 24);
+  --tug-base-border-inverse: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-divider-default: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-divider-muted: --tug-color(yellow, i: 5, t: 48);
+  --tug-base-focus-ring-offset: --tug-color(yellow, i: 4, t: 99);
 
   /* Elevation */
-  --tug-base-shadow-xs: --cita(black, i: 0, t: 0, a: 8);
-  --tug-base-shadow-sm: --cita(black, i: 0, t: 0, a: 24);
-  --tug-base-shadow-md: --cita(black, i: 0, t: 0, a: 30);
-  --tug-base-shadow-lg: --cita(black, i: 0, t: 0, a: 36);
-  --tug-base-shadow-xl: --cita(black, i: 0, t: 0, a: 44);
+  --tug-base-shadow-xs: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-base-shadow-sm: --tug-color(black, i: 0, t: 0, a: 24);
+  --tug-base-shadow-md: --tug-color(black, i: 0, t: 0, a: 30);
+  --tug-base-shadow-lg: --tug-color(black, i: 0, t: 0, a: 36);
+  --tug-base-shadow-xl: --tug-color(black, i: 0, t: 0, a: 44);
   /* shadow-card-active and shadow-card-inactive are NOT overridden per D10 —
      they use var(--tug-base-shadow-sm) which is overridden above, so the
      compound token resolves correctly for Harmony without a per-theme override. */
-  --tug-base-shadow-overlay: 0 4px 16px --cita(black, i: 0, t: 0, a: 24);
-  --tug-base-overlay-dim: --cita(black, i: 0, t: 0, a: 20);
-  --tug-base-overlay-scrim: --cita(black, i: 0, t: 0, a: 32);
-  --tug-base-overlay-highlight: --cita(white, i: 0, t: 100, a: 50);
+  --tug-base-shadow-overlay: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 24);
+  --tug-base-overlay-dim: --tug-color(black, i: 0, t: 0, a: 20);
+  --tug-base-overlay-scrim: --tug-color(black, i: 0, t: 0, a: 32);
+  --tug-base-overlay-highlight: --tug-color(white, i: 0, t: 100, a: 50);
 
   /* Accent — contrast-critical overrides per [D06]
-     accent-muted: --cita(flame, i: 45, t: 38) is darker orange needed for muted text on light backgrounds.
+     accent-muted: --tug-color(flame, i: 45, t: 38) is darker orange needed for muted text on light backgrounds.
      accent-subtle: Harmony-specific rgba with adjusted opacity for light bg.
      All other accent tokens resolve from palette. */
-  --tug-base-accent-muted: --cita(flame, i: 45, t: 38);
-  --tug-base-accent-subtle: --cita(flame, i: 55, t: 49, a: 15);
+  --tug-base-accent-muted: --tug-color(flame, i: 45, t: 38);
+  --tug-base-accent-subtle: --tug-color(flame, i: 55, t: 49, a: 15);
 
   /* Selection */
-  --tug-base-selection-bg-inactive: --cita(amber, i: 8, t: 24, a: 20);
-  --tug-base-selection-fg: --cita(blue+5, i: 8, t: 13);
+  --tug-base-selection-bg-inactive: --tug-color(amber, i: 8, t: 24, a: 20);
+  --tug-base-selection-fg: --tug-color(blue+5, i: 8, t: 13);
 
   /* Highlight hover (achromatic for light theme) */
-  --tug-base-highlight-hover: --cita(black, i: 0, t: 0, a: 4);
+  --tug-base-highlight-hover: --tug-color(black, i: 0, t: 0, a: 4);
 
   /* Card */
-  --tug-base-card-bg: --cita(yellow, i: 6, t: 48);
-  --tug-base-card-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-card-shadow-active: 0 2px 8px --cita(black, i: 0, t: 0, a: 18);
-  --tug-base-card-shadow-inactive: 0 1px 4px --cita(black, i: 0, t: 0, a: 9);
-  --tug-base-card-dim-overlay: --cita(black, i: 0, t: 0, a: 8);
+  --tug-base-card-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-card-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 18);
+  --tug-base-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 9);
+  --tug-base-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 8);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: --cita(gold+6, i: 23, t: 57);
-  --tug-base-card-header-bg-inactive: --cita(yellow-5, i: 8, t: 60);
-  --tug-base-card-header-bg-collapsed: --cita(yellow, i: 9, t: 45);
-  --tug-base-card-header-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-card-header-icon-inactive: --cita(yellow, i: 10, t: 36);
-  --tug-base-card-header-divider: --cita(yellow, i: 7, t: 42);
-  --tug-base-card-header-button-bg-hover: --cita(black, i: 0, t: 0, a: 6);
-  --tug-base-card-header-button-bg-active: --cita(black, i: 0, t: 0, a: 10);
-  --tug-base-card-header-button-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-card-accessory-bg: --cita(yellow, i: 6, t: 44);
-  --tug-base-card-accessory-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-card-findbar-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-card-findbar-border: --cita(yellow, i: 9, t: 28);
+  --tug-base-card-header-bg-active: --tug-color(gold+6, i: 23, t: 57);
+  --tug-base-card-header-bg-inactive: --tug-color(yellow-5, i: 8, t: 60);
+  --tug-base-card-header-bg-collapsed: --tug-color(yellow, i: 9, t: 45);
+  --tug-base-card-header-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-card-header-icon-inactive: --tug-color(yellow, i: 10, t: 36);
+  --tug-base-card-header-divider: --tug-color(yellow, i: 7, t: 42);
+  --tug-base-card-header-button-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-card-header-button-bg-active: --tug-color(black, i: 0, t: 0, a: 10);
+  --tug-base-card-header-button-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-card-accessory-bg: --tug-color(yellow, i: 6, t: 44);
+  --tug-base-card-accessory-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-card-findbar-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-card-findbar-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-tab-bg-hover: --cita(black, i: 0, t: 0, a: 5);
-  --tug-base-tab-bg-active: --cita(yellow, i: 4, t: 99);
-  --tug-base-tab-bg-compact: --cita(black, i: 0, t: 0, a: 4);
-  --tug-base-tab-fg-rest: --cita(yellow, i: 9, t: 28);
-  --tug-base-tab-fg-active: --cita(blue+5, i: 8, t: 13);
-  --tug-base-tab-fg-compact: --cita(blue, i: 9, t: 22);
-  --tug-base-tab-close-bg-hover: --cita(black, i: 0, t: 0, a: 8);
-  --tug-base-tab-close-fg-hover: --cita(blue+5, i: 8, t: 13);
-  --tug-base-tab-ghost-bg: --cita(black, i: 0, t: 0, a: 4);
-  --tug-base-tab-ghost-border: --cita(black, i: 0, t: 0, a: 8);
-  --tug-base-tab-overflow-trigger-bg: --cita(black, i: 0, t: 0, a: 5);
-  --tug-base-tab-overflow-trigger-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-tab-add-bg-hover: --cita(black, i: 0, t: 0, a: 6);
-  --tug-base-tab-add-fg: --cita(yellow, i: 9, t: 28);
-  --tug-base-tab-typePicker-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-tab-typePicker-fg: --cita(blue, i: 9, t: 22);
+  --tug-base-tab-bar-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-tab-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-base-tab-bg-active: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-tab-bg-compact: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-base-tab-fg-rest: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-tab-fg-active: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-tab-fg-compact: --tug-color(blue, i: 9, t: 22);
+  --tug-base-tab-close-bg-hover: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-base-tab-close-fg-hover: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-tab-ghost-bg: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-base-tab-ghost-border: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-base-tab-overflow-trigger-bg: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-base-tab-overflow-trigger-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-tab-add-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-tab-add-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-tab-typePicker-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-tab-typePicker-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Dock */
-  --tug-base-dock-bg: --cita(blue+5, i: 5, t: 20);
-  --tug-base-dock-border: --cita(blue, i: 9, t: 30);
-  --tug-base-dock-button-bg-hover: --cita(white, i: 0, t: 100, a: 10);
-  --tug-base-dock-button-bg-active: --cita(white, i: 0, t: 100, a: 16);
-  --tug-base-dock-button-fg: --cita(yellow, i: 10, t: 36);
+  --tug-base-dock-bg: --tug-color(blue+5, i: 5, t: 20);
+  --tug-base-dock-border: --tug-color(blue, i: 9, t: 30);
+  --tug-base-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
+  --tug-base-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 16);
+  --tug-base-dock-button-fg: --tug-color(yellow, i: 10, t: 36);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: --cita(black, i: 0, t: 0, a: 6);
-  --tug-base-canvas-grid-emphasis: --cita(black, i: 0, t: 0, a: 12);
+  --tug-base-canvas-grid-line: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
 
   /* Actions */
-  --tug-base-action-secondary-bg-rest: --cita(yellow, i: 4, t: 99);
-  --tug-base-action-secondary-bg-hover: --cita(yellow, i: 6, t: 74);
-  --tug-base-action-secondary-bg-active: --cita(yellow, i: 6, t: 48);
-  --tug-base-action-secondary-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-action-secondary-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-action-ghost-bg-hover: --cita(black, i: 0, t: 0, a: 6);
-  --tug-base-action-ghost-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-action-disabled-bg: --cita(yellow, i: 7, t: 51);
-  --tug-base-action-disabled-fg: --cita(blue, i: 8, t: 44);
-  --tug-base-action-disabled-border: --cita(yellow, i: 5, t: 46);
+  --tug-base-action-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-action-secondary-bg-hover: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-action-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-action-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-action-secondary-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-action-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-action-ghost-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-action-disabled-bg: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-action-disabled-fg: --tug-color(blue, i: 8, t: 44);
+  --tug-base-action-disabled-border: --tug-color(yellow, i: 5, t: 46);
 
   /* Disabled controls */
-  --tug-base-control-disabled-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-control-disabled-fg: --cita(blue, i: 8, t: 44);
-  --tug-base-control-disabled-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-control-disabled-icon: --cita(blue, i: 8, t: 44);
+  --tug-base-control-disabled-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-control-disabled-fg: --tug-color(blue, i: 8, t: 44);
+  --tug-base-control-disabled-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-control-disabled-icon: --tug-color(blue, i: 8, t: 44);
 
   /* Fields */
-  --tug-base-field-bg-rest: --cita(yellow, i: 7, t: 51);
-  --tug-base-field-bg-hover: --cita(yellow, i: 6, t: 74);
-  --tug-base-field-bg-focus: --cita(yellow, i: 4, t: 99);
-  --tug-base-field-bg-disabled: --cita(yellow, i: 6, t: 48);
-  --tug-base-field-bg-readOnly: --cita(yellow, i: 6, t: 74);
-  --tug-base-field-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-field-fg-disabled: --cita(blue, i: 8, t: 44);
-  --tug-base-field-fg-readOnly: --cita(blue, i: 9, t: 22);
-  --tug-base-field-placeholder: --cita(yellow, i: 9, t: 28);
-  --tug-base-field-border-rest: --cita(yellow, i: 9, t: 28);
-  --tug-base-field-border-hover: --cita(yellow-5, i: 7, t: 24);
-  --tug-base-field-border-disabled: --cita(yellow, i: 5, t: 46);
-  --tug-base-field-border-readOnly: --cita(yellow, i: 5, t: 46);
-  --tug-base-field-helper: --cita(yellow, i: 9, t: 28);
-  --tug-base-field-label: --cita(blue, i: 9, t: 22);
-  --tug-base-field-meta: --cita(yellow, i: 9, t: 28);
-  --tug-base-field-readOnly: --cita(cobalt, i: 5, t: 66);
-  --tug-base-field-counter: --cita(cobalt+7, i: 7, t: 37);
-  /* field-warning: --cita(yellow, i: 62, t: 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
+  --tug-base-field-bg-rest: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-field-bg-hover: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-field-bg-focus: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-field-bg-disabled: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-field-bg-readOnly: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-field-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-field-fg-disabled: --tug-color(blue, i: 8, t: 44);
+  --tug-base-field-fg-readOnly: --tug-color(blue, i: 9, t: 22);
+  --tug-base-field-placeholder: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-field-border-rest: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-field-border-hover: --tug-color(yellow-5, i: 7, t: 24);
+  --tug-base-field-border-disabled: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-field-border-readOnly: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-field-helper: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-field-label: --tug-color(blue, i: 9, t: 22);
+  --tug-base-field-meta: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-field-readOnly: --tug-color(cobalt, i: 5, t: 66);
+  --tug-base-field-counter: --tug-color(cobalt+7, i: 7, t: 37);
+  /* field-warning: --tug-color(yellow, i: 62, t: 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
      which may be too bright on white field backgrounds. Keep as override. */
-  --tug-base-field-warning: --cita(yellow, i: 62, t: 58);
+  --tug-base-field-warning: --tug-color(yellow, i: 62, t: 58);
 
   /* Toggles / Range */
-  --tug-base-toggle-track-off: --cita(yellow, i: 5, t: 46);
-  --tug-base-toggle-track-disabled: --cita(yellow, i: 6, t: 48);
+  --tug-base-toggle-track-off: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-toggle-track-disabled: --tug-color(yellow, i: 6, t: 48);
   --tug-base-toggle-thumb: var(--tug-white);
-  --tug-base-toggle-thumb-disabled: --cita(blue, i: 8, t: 44);
-  --tug-base-range-track: --cita(yellow, i: 5, t: 46);
-  --tug-base-range-tick: --cita(yellow, i: 9, t: 28);
+  --tug-base-toggle-thumb-disabled: --tug-color(blue, i: 8, t: 44);
+  --tug-base-range-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-range-tick: --tug-color(yellow, i: 9, t: 28);
 
   /* Menus / Overlays */
-  --tug-base-menu-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-menu-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-menu-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-menu-shadow: 0 4px 16px --cita(black, i: 0, t: 0, a: 24);
-  --tug-base-menu-item-bg-hover: --cita(black, i: 0, t: 0, a: 5);
-  --tug-base-menu-item-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-menu-item-fg-disabled: --cita(blue, i: 8, t: 44);
-  --tug-base-menu-item-meta: --cita(yellow, i: 9, t: 28);
-  --tug-base-menu-item-shortcut: --cita(yellow, i: 9, t: 28);
-  --tug-base-menu-item-icon: --cita(blue, i: 9, t: 22);
-  --tug-base-menu-item-chevron: --cita(yellow, i: 9, t: 28);
-  --tug-base-popover-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-popover-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-popover-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-tooltip-bg: --cita(blue+5, i: 5, t: 20);
-  --tug-base-tooltip-fg: --cita(sky, i: 1, t: 100);
-  --tug-base-tooltip-border: --cita(blue, i: 9, t: 30);
+  --tug-base-menu-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-menu-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-menu-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-menu-shadow: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 24);
+  --tug-base-menu-item-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-base-menu-item-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-menu-item-fg-disabled: --tug-color(blue, i: 8, t: 44);
+  --tug-base-menu-item-meta: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-menu-item-shortcut: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-menu-item-icon: --tug-color(blue, i: 9, t: 22);
+  --tug-base-menu-item-chevron: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-popover-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-popover-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-popover-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-tooltip-bg: --tug-color(blue+5, i: 5, t: 20);
+  --tug-base-tooltip-fg: --tug-color(sky, i: 1, t: 100);
+  --tug-base-tooltip-border: --tug-color(blue, i: 9, t: 30);
 
   /* Dialogs */
-  --tug-base-dialog-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-dialog-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-dialog-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-sheet-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-sheet-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-sheet-border: --cita(yellow, i: 9, t: 28);
+  --tug-base-dialog-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-dialog-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-dialog-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-sheet-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-sheet-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-sheet-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Toasts */
-  --tug-base-toast-info-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-toast-info-fg: --cita(blue+5, i: 8, t: 13);
-  /* toast-warning-fg: preserved per [D06] — --cita(yellow, i: 55, t: 35) needed for contrast on light bg */
-  --tug-base-toast-warning-fg: --cita(yellow, i: 55, t: 35);
+  --tug-base-toast-info-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-toast-info-fg: --tug-color(blue+5, i: 8, t: 13);
+  /* toast-warning-fg: preserved per [D06] — --tug-color(yellow, i: 55, t: 35) needed for contrast on light bg */
+  --tug-base-toast-warning-fg: --tug-color(yellow, i: 55, t: 35);
 
   /* Badges / Status */
-  --tug-base-badge-neutral-bg: --cita(yellow, i: 5, t: 46);
-  --tug-base-badge-neutral-fg: --cita(blue, i: 9, t: 22);
-  /* badge-warning-fg: preserved per [D06] — --cita(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-badge-warning-fg: --cita(yellow, i: 46, t: 27);
+  --tug-base-badge-neutral-bg: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
+  /* badge-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
+  --tug-base-badge-warning-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Progress / Skeleton */
-  --tug-base-progress-track: --cita(yellow, i: 5, t: 46);
-  --tug-base-skeleton-base: --cita(yellow, i: 6, t: 74);
-  --tug-base-skeleton-highlight: --cita(yellow, i: 4, t: 99);
-  --tug-base-emptyState-fg: --cita(yellow, i: 9, t: 28);
-  --tug-base-emptyState-icon: --cita(yellow, i: 10, t: 36);
+  --tug-base-progress-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-skeleton-base: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-skeleton-highlight: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
 
   /* Banners */
-  /* banner-info-fg: preserved per [D06] — --cita(blue, i: 42, t: 40) darker cyan needed for contrast on light bg */
-  --tug-base-banner-info-fg: --cita(blue, i: 42, t: 40);
-  /* banner-warning-fg: preserved per [D06] — --cita(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-banner-warning-fg: --cita(yellow, i: 46, t: 27);
+  /* banner-info-fg: preserved per [D06] — --tug-color(blue, i: 42, t: 40) darker cyan needed for contrast on light bg */
+  --tug-base-banner-info-fg: --tug-color(blue, i: 42, t: 40);
+  /* banner-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
+  --tug-base-banner-warning-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Kbd */
-  --tug-base-kbd-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-kbd-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-kbd-border: --cita(yellow, i: 9, t: 28);
+  --tug-base-kbd-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-kbd-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-kbd-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Scrollbar */
-  --tug-base-scrollbar-thumb: --cita(yellow, i: 9, t: 28);
-  --tug-base-scrollbar-thumb-hover: --cita(yellow-5, i: 7, t: 24);
+  --tug-base-scrollbar-thumb: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-scrollbar-thumb-hover: --tug-color(yellow-5, i: 7, t: 24);
 
   /* Separator / Avatar */
-  --tug-base-separator: --cita(yellow, i: 5, t: 46);
-  --tug-base-avatar-bg: --cita(yellow, i: 6, t: 48);
-  --tug-base-avatar-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-avatar-ring: --cita(yellow, i: 9, t: 28);
+  --tug-base-separator: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-avatar-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-avatar-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-avatar-ring: --tug-color(yellow, i: 9, t: 28);
 
   /* Tables / Lists */
-  --tug-base-table-header-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-table-header-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-table-row-bg-striped: --cita(black, i: 0, t: 0, a: 2);
-  --tug-base-table-row-bg-hover: --cita(black, i: 0, t: 0, a: 4);
-  --tug-base-table-row-border: --cita(yellow, i: 5, t: 48);
-  --tug-base-table-cell-divider: --cita(yellow, i: 5, t: 46);
-  --tug-base-table-sortIndicator: --cita(yellow, i: 9, t: 28);
-  --tug-base-list-row-hover: --cita(black, i: 0, t: 0, a: 4);
+  --tug-base-table-header-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-table-header-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-table-row-bg-striped: --tug-color(black, i: 0, t: 0, a: 2);
+  --tug-base-table-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-base-table-row-border: --tug-color(yellow, i: 5, t: 48);
+  --tug-base-table-cell-divider: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-table-sortIndicator: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-list-row-hover: --tug-color(black, i: 0, t: 0, a: 4);
 
   /* Stats */
-  --tug-base-stat-label: --cita(yellow, i: 9, t: 28);
-  --tug-base-stat-value: --cita(blue+5, i: 8, t: 13);
-  --tug-base-stat-trend-neutral: --cita(yellow, i: 9, t: 28);
+  --tug-base-stat-label: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-stat-value: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-stat-trend-neutral: --tug-color(yellow, i: 9, t: 28);
 
   /* Chart infrastructure (non-chromatic) */
-  --tug-base-chart-grid: --cita(black, i: 0, t: 0, a: 6);
-  --tug-base-chart-axis: --cita(yellow, i: 9, t: 28);
-  --tug-base-chart-tick: --cita(yellow, i: 9, t: 28);
+  --tug-base-chart-grid: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-chart-axis: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-chart-tick: --tug-color(yellow, i: 9, t: 28);
 
   /* Gauge (non-chromatic structural) */
-  --tug-base-gauge-track: --cita(yellow, i: 5, t: 46);
-  --tug-base-gauge-needle: --cita(blue+5, i: 8, t: 13);
-  --tug-base-gauge-tick-major: --cita(yellow, i: 9, t: 28);
-  --tug-base-gauge-tick-minor: --cita(yellow, i: 10, t: 36);
-  --tug-base-gauge-readout: --cita(blue+5, i: 8, t: 13);
-  --tug-base-gauge-unit: --cita(yellow, i: 9, t: 28);
-  --tug-base-gauge-annotation: --cita(yellow, i: 9, t: 28);
+  --tug-base-gauge-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-gauge-needle: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-gauge-tick-major: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-gauge-tick-minor: --tug-color(yellow, i: 10, t: 36);
+  --tug-base-gauge-readout: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-gauge-unit: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-gauge-annotation: --tug-color(yellow, i: 9, t: 28);
 
   /* Syntax — contrast-critical override per [D06]
-     syntax-function: --cita(yellow, i: 46, t: 27) dark gold needed — palette --tug-yellow (L=0.901) has
+     syntax-function: --tug-color(yellow, i: 46, t: 27) dark gold needed — palette --tug-yellow (L=0.901) has
      insufficient contrast on Harmony's light surfaces. */
-  --tug-base-syntax-function: --cita(yellow, i: 46, t: 27);
+  --tug-base-syntax-function: --tug-color(yellow, i: 46, t: 27);
 
   /* Terminal */
-  --tug-base-terminal-bg: --cita(yellow, i: 4, t: 100);
-  --tug-base-terminal-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-terminal-fg-muted: --cita(blue, i: 9, t: 22);
-  --tug-base-terminal-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-terminal-ansi-black: --cita(blue+5, i: 8, t: 13);
-  /* terminal-ansi-yellow: preserved per [D06] — --cita(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-terminal-ansi-yellow: --cita(yellow, i: 46, t: 27);
+  --tug-base-terminal-bg: --tug-color(yellow, i: 4, t: 100);
+  --tug-base-terminal-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-terminal-fg-muted: --tug-color(blue, i: 9, t: 22);
+  --tug-base-terminal-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-terminal-ansi-black: --tug-color(blue+5, i: 8, t: 13);
+  /* terminal-ansi-yellow: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
+  --tug-base-terminal-ansi-yellow: --tug-color(yellow, i: 46, t: 27);
   /* terminal-ansi-white: Harmony-specific near-white for terminal display */
-  --tug-base-terminal-ansi-white: --cita(sky, i: 1, t: 100);
+  --tug-base-terminal-ansi-white: --tug-color(sky, i: 1, t: 100);
 
   /* Chat / Code Block */
-  --tug-base-chat-transcript-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-chat-message-user-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-chat-message-assistant-bg: --cita(yellow, i: 6, t: 48);
-  --tug-base-chat-message-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-chat-composer-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-chat-composer-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-chat-attachment-bg: --cita(yellow, i: 6, t: 48);
-  --tug-base-chat-attachment-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-chat-attachment-fg: --cita(blue, i: 9, t: 22);
-  --tug-base-codeBlock-bg: --cita(yellow, i: 7, t: 51);
-  --tug-base-codeBlock-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-codeBlock-header-bg: --cita(yellow, i: 6, t: 48);
-  --tug-base-codeBlock-header-fg: --cita(yellow, i: 9, t: 28);
+  --tug-base-chat-transcript-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-chat-message-user-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-chat-message-assistant-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-chat-message-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-chat-composer-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-chat-composer-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-chat-attachment-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-chat-attachment-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-chat-attachment-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-base-codeBlock-bg: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-codeBlock-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-codeBlock-header-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-codeBlock-header-fg: --tug-color(yellow, i: 9, t: 28);
 
   /* Tree / File status — file-status-modified preserved per [D06] */
-  --tug-base-tree-row-bg-hover: --cita(black, i: 0, t: 0, a: 4);
-  --tug-base-tree-row-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-tree-chevron: --cita(yellow, i: 9, t: 28);
-  /* file-status-modified: preserved per [D06] — --cita(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-file-status-modified: --cita(yellow, i: 46, t: 27);
+  --tug-base-tree-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-base-tree-row-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-tree-chevron: --tug-color(yellow, i: 9, t: 28);
+  /* file-status-modified: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
+  --tug-base-file-status-modified: --tug-color(yellow, i: 46, t: 27);
 
   /* Feed */
-  --tug-base-feed-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-feed-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-feed-step-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-feed-step-fg: --cita(blue, i: 9, t: 22);
+  --tug-base-feed-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-feed-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-feed-step-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-feed-step-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Inspector / Dev Overlay */
-  --tug-base-inspector-panel-bg: --cita(yellow, i: 6, t: 74);
-  --tug-base-inspector-panel-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-inspector-panel-bg-pinned: --cita(yellow, i: 4, t: 99);
-  --tug-base-inspector-section-bg: --cita(yellow, i: 7, t: 51);
-  --tug-base-inspector-field-bg: --cita(yellow, i: 4, t: 99);
-  --tug-base-inspector-field-border: --cita(yellow, i: 5, t: 46);
-  --tug-base-inspector-field-readOnly: --cita(yellow, i: 6, t: 74);
-  --tug-base-inspector-field-default: --cita(yellow, i: 6, t: 74);
-  --tug-base-inspector-emptyState-fg: --cita(yellow, i: 9, t: 28);
-  --tug-base-inspector-emptyState-icon: --cita(yellow, i: 10, t: 36);
-  --tug-base-inspector-swatch-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-inspector-scrub-track: --cita(yellow, i: 5, t: 46);
-  --tug-base-inspector-scrub-thumb: --cita(yellow, i: 9, t: 28);
-  /* inspector-source-inline: preserved per [D06] — --cita(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-inspector-source-inline: --cita(yellow, i: 46, t: 27);
-  --tug-base-dev-overlay-bg: --cita(yellow, i: 4, t: 99, a: 95);
-  --tug-base-dev-overlay-fg: --cita(blue+5, i: 8, t: 13);
-  --tug-base-dev-overlay-border: --cita(yellow, i: 9, t: 28);
-  --tug-base-dev-overlay-targetDim: --cita(black, i: 0, t: 0, a: 20);
+  --tug-base-inspector-panel-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-inspector-panel-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-inspector-panel-bg-pinned: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-inspector-section-bg: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-inspector-field-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-inspector-field-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-inspector-field-readOnly: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-inspector-field-default: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-inspector-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-inspector-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
+  --tug-base-inspector-swatch-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-inspector-scrub-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-base-inspector-scrub-thumb: --tug-color(yellow, i: 9, t: 28);
+  /* inspector-source-inline: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
+  --tug-base-inspector-source-inline: --tug-color(yellow, i: 46, t: 27);
+  --tug-base-dev-overlay-bg: --tug-color(yellow, i: 4, t: 99, a: 95);
+  --tug-base-dev-overlay-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-dev-overlay-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 20);
 }

@@ -722,11 +722,11 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Note**: Phase 5d4 depends on Phase 5d2 (explicit-target dispatch for inspector→card actions) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases, establishing the full inspector pipeline.
 
-### Phase 5d5a: Palette Engine → CITA Runtime (Concept 22, [D70])
+### Phase 5d5a: Palette Engine → TugColor Runtime (Concept 22, [D70])
 
 **Status: COMPLETE**
 
-**Goal**: A computed OKLCH color palette with 24 hue families using the CITA (Color · Intensity · Tone · Alpha) system, runtime-generated and injectable as CSS custom properties. P3 wide-gamut support. An interactive gallery demo for canonical lightness tuning.
+**Goal**: A computed OKLCH color palette with 24 hue families using the TugColor (Hue · Intensity · Tone · Alpha) system, runtime-generated and injectable as CSS custom properties. P3 wide-gamut support. An interactive gallery demo for canonical lightness tuning.
 
 **What was done** (across three implementation rounds):
 
@@ -734,17 +734,17 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 *Round 2 — Anchor Palette Engine (PR #94, commit 8898a8a):* Added anchor-point interpolation (`tugAnchoredColor`), per-theme anchor data (`theme-anchors.ts` with BRIO/BLUENOTE/HARMONY_ANCHORS), and `injectPaletteCSS(theme, anchorData)` wiring. Gallery editor gained piecewise transfer function with third breakpoint. Canonical lightness values were tuned interactively.
 
-*Round 3 — CITA Runtime (PR #95, commit 4fbdeda + fixup d3b7e33):* Complete replacement of the smoothstep/anchor system with CITA. Promoted `citaColor()` and canonical constants from the gallery editor to `palette-engine.ts`. Implemented `injectCITACSS(themeName)` emitting three layers: 168 semantic preset CSS variables (7 presets × 24 hues), 74 per-hue constants, and `@media (color-gamut: p3)` overrides. Added `oklchToLinearP3`, `isInP3Gamut`, `MAX_P3_CHROMA_FOR_HUE`. Wired into `main.tsx` and `theme-provider.tsx`. Removed all legacy code: smoothstep, anchor types, `tugPaletteColor`, `tugAnchoredColor`, `TONE_ALIASES`, `theme-anchors.ts`, old `--tug-palette-hue-*` variable names. Post-merge fix: corrected chroma cap derivation to sample at canonical L only (not L_DARK/L_LIGHT extremes which crushed all chroma to near-zero).
+*Round 3 — TugColor Runtime (PR #95, commit 4fbdeda + fixup d3b7e33):* Complete replacement of the smoothstep/anchor system with TugColor. Promoted `tugColor()` and canonical constants from the gallery editor to `palette-engine.ts`. Implemented `injectTugColorCSS(themeName)` emitting three layers: 168 semantic preset CSS variables (7 presets × 24 hues), 74 per-hue constants, and `@media (color-gamut: p3)` overrides. Added `oklchToLinearP3`, `isInP3Gamut`, `MAX_P3_CHROMA_FOR_HUE`. Wired into `main.tsx` and `theme-provider.tsx`. Removed all legacy code: smoothstep, anchor types, `tugPaletteColor`, `tugAnchoredColor`, `TONE_ALIASES`, `theme-anchors.ts`, old `--tug-palette-hue-*` variable names. Post-merge fix: corrected chroma cap derivation to sample at canonical L only (not L_DARK/L_LIGHT extremes which crushed all chroma to near-zero).
 
 **Final state of files**:
-1. `tugdeck/src/components/tugways/palette-engine.ts` — CITA runtime: `citaColor()`, `injectCITACSS()`, `HUE_FAMILIES`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `DEFAULT_CANONICAL_L`, `CITA_PRESETS`, P3 gamut functions
-2. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — interactive palette gallery with canonical L editor, CITA grid, import/export
+1. `tugdeck/src/components/tugways/palette-engine.ts` — TugColor runtime: `tugColor()`, `injectTugColorCSS()`, `HUE_FAMILIES`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `DEFAULT_CANONICAL_L`, `TUG_COLOR_PRESETS`, P3 gamut functions
+2. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — interactive palette gallery with canonical L editor, TugColor grid, import/export
 3. `tugdeck/src/components/tugways/cards/gallery-palette-content.css` — gallery styles
 4. `tugdeck/src/components/tugways/theme-anchors.ts` — **deleted** (legacy anchor data removed)
-5. `tugdeck/src/main.tsx` — calls `injectCITACSS(initialTheme)` at boot
-6. `tugdeck/src/contexts/theme-provider.tsx` — calls `injectCITACSS(newTheme)` on theme switch
+5. `tugdeck/src/main.tsx` — calls `injectTugColorCSS(initialTheme)` at boot
+6. `tugdeck/src/contexts/theme-provider.tsx` — calls `injectTugColorCSS(newTheme)` on theme switch
 
-**Result**: The CITA palette is live. 242 CSS variables (168 presets + 74 constants) plus P3 overrides are injected at boot and theme switch. `citaColor()` provides programmatic color computation. The gallery editor enables interactive canonical L tuning. All legacy smoothstep/anchor code is removed.
+**Result**: The TugColor palette is live. 242 CSS variables (168 presets + 74 constants) plus P3 overrides are injected at boot and theme switch. `tugColor()` provides programmatic color computation. The gallery editor enables interactive canonical L tuning. All legacy smoothstep/anchor code is removed.
 
 **Key lesson**: Chroma cap derivation must sample at the canonical lightness only — not at extreme L values (L_DARK=0.15, L_LIGHT=0.96) where the sRGB gamut is narrow. Sampling at extremes bottlenecks all caps to near-zero, producing grey colors. At extreme tone values, CSS `oklch()` handles out-of-gamut colors via browser gamut mapping.
 
@@ -786,16 +786,16 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 4. Created theme override files: `bluenote.css` (~139 overrides) and `harmony.css` (~304 overrides) with theme-specific `--tug-base-*` values
 5. Verified: all existing components render identically with the backward-compatibility aliases in place across all three themes
 
-**What was deferred**: All chromatic `--tug-base-*` tokens were defined with hardcoded hex values instead of `var(--tug-{hue}[-preset])` palette references. The intent was to wire accent, chart, syntax, and status tokens to the CITA palette, but this was deferred in favor of getting the naming architecture in place first. The palette integration is now Phase 5d5e.
+**What was deferred**: All chromatic `--tug-base-*` tokens were defined with hardcoded hex values instead of `var(--tug-{hue}[-preset])` palette references. The intent was to wire accent, chart, syntax, and status tokens to the TugColor palette, but this was deferred in favor of getting the naming architecture in place first. The palette integration is now Phase 5d5e.
 
 **Files created/modified**:
-1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy (hardcoded hex values, not CITA-wired)
+1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy (hardcoded hex values, not TugColor-wired)
 2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-comp-*` families
 3. `tugdeck/styles/tokens.css` — backward-compatibility aliases added
 4. `tugdeck/styles/bluenote.css` — new: Bluenote theme overrides
 5. `tugdeck/styles/harmony.css` — new: Harmony theme overrides
 
-**Result**: The new token architecture exists in parallel with the old one. All new tokens are defined. Backward-compatibility aliases ensure zero visual regression. However, chromatic tokens use hardcoded hex values rather than resolving from the CITA palette — the palette integration that connects Layer 0 to Layer 1 is deferred to Phase 5d5e.
+**Result**: The new token architecture exists in parallel with the old one. All new tokens are defined. Backward-compatibility aliases ensure zero visual regression. However, chromatic tokens use hardcoded hex values rather than resolving from the TugColor palette — the palette integration that connects Layer 0 to Layer 1 is deferred to Phase 5d5e.
 
 ### Phase 5d5d: Consumer Migration (Concept 22, [D71])
 
@@ -821,21 +821,21 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 5. 12 TypeScript files — inline style references
 6. `tugdeck/scripts/check-legacy-tokens.sh` — new: CI enforcement
 
-**Result**: The migration is complete. All consumers point at `--tug-base-*` and `--tug-comp-*` tokens. No `--td-*`, `--tways-*`, or legacy aliases remain. CI enforcement prevents regression. However, the `--tug-base-*` tokens themselves still resolve to hardcoded hex values — the palette integration connecting Layer 0 (CITA palette) to Layer 1 (semantic tokens) is Phase 5d5e.
+**Result**: The migration is complete. All consumers point at `--tug-base-*` and `--tug-comp-*` tokens. No `--td-*`, `--tways-*`, or legacy aliases remain. CI enforcement prevents regression. However, the `--tug-base-*` tokens themselves still resolve to hardcoded hex values — the palette integration connecting Layer 0 (TugColor palette) to Layer 1 (semantic tokens) is Phase 5d5e.
 
 ### Phase 5d5e: Palette Engine Integration (Concept 22, [D70], [D71], [D75])
 
-**Goal**: Wire the CITA palette engine to the semantic token layer. Convert the palette from JS-injected `oklch()` strings to pure CSS formulas. Add neutral ramp. Replace all hardcoded hex color values in `--tug-base-*` chromatic tokens with `var(--tug-{hue}[-preset])` references.
+**Goal**: Wire the TugColor palette engine to the semantic token layer. Convert the palette from JS-injected `oklch()` strings to pure CSS formulas. Add neutral ramp. Replace all hardcoded hex color values in `--tug-base-*` chromatic tokens with `var(--tug-{hue}[-preset])` references.
 
 **What to do**:
-1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-cita-canonical.json`
-2. Define the 168 chromatic preset variables (7 presets × 24 hues) as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. Phase 5g later reshapes this to 5 convenience presets with `calc()`+`clamp()` formulas and inline CITA formulas in theme files
+1. Create a static `tug-palette.css` file containing the 74 per-hue constants (`--tug-{hue}-h`, `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`) plus globals (`--tug-l-dark`, `--tug-l-light`), derived from `tug-color-canonical.json`
+2. Define the 168 chromatic preset variables (7 presets × 24 hues) as pure CSS formulas using `oklch()` + `calc()` + per-hue constants. Phase 5g later reshapes this to 5 convenience presets with `calc()`+`clamp()` formulas and inline TugColor formulas in theme files
 3. Add `--tug-neutral-*` achromatic ramp (7 presets with C=0) plus `--tug-black` and `--tug-white` anchors [D75]
 4. Add `@media (color-gamut: p3)` block that overrides `--tug-{hue}-peak-c` with wider P3 chroma caps — preset formulas automatically produce richer colors since they reference `peak-c`
-5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to CITA palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`
+5. Wire `--tug-base-*` chromatic tokens in `tug-tokens.css` to TugColor palette variables: accent tokens → `var(--tug-orange[-preset])`, chart series → `var(--tug-{hue})`, syntax tokens → `var(--tug-{hue}[-preset])`, status tokens → `var(--tug-{hue}-accent)`, etc., per the mappings in `theme-overhaul-proposal.md`
 6. Update theme override files (`bluenote.css`, `harmony.css`) — replace hardcoded hex overrides with hue reassignments (e.g., Bluenote's accent becomes `var(--tug-blue)` instead of a hardcoded blue hex). Theme differentiation becomes "which hues map to which roles" rather than "which hex values"
-7. Remove `injectCITACSS()` runtime injection — the palette is now static CSS. Retain `citaColor()` in `palette-engine.ts` for programmatic JS use (color pickers, data viz, inline styles)
-8. Remove `injectCITACSS` calls from `main.tsx` and `theme-provider.tsx`
+7. Remove `injectTugColorCSS()` runtime injection — the palette is now static CSS. Retain `tugColor()` in `palette-engine.ts` for programmatic JS use (color pickers, data viz, inline styles)
+8. Remove `injectTugColorCSS` calls from `main.tsx` and `theme-provider.tsx`
 9. Verify: all three themes render correctly with palette-derived colors. Chromatic tokens resolve through the palette. Inspector shows full chain. `bun test` passes
 
 **Files created/modified**:
@@ -844,15 +844,15 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 3. `tugdeck/styles/bluenote.css` — modified: hex overrides → hue reassignments
 4. `tugdeck/styles/harmony.css` — modified: hex overrides → hue reassignments
 5. `tugdeck/src/globals.css` — modified: import `tug-palette.css` in the correct order
-6. `tugdeck/src/components/tugways/palette-engine.ts` — modified: remove `injectCITACSS`, keep `citaColor()` and constants
-7. `tugdeck/src/main.tsx` — modified: remove `injectCITACSS` call
-8. `tugdeck/src/contexts/theme-provider.tsx` — modified: remove `injectCITACSS` call
+6. `tugdeck/src/components/tugways/palette-engine.ts` — modified: remove `injectTugColorCSS`, keep `tugColor()` and constants
+7. `tugdeck/src/main.tsx` — modified: remove `injectTugColorCSS` call
+8. `tugdeck/src/contexts/theme-provider.tsx` — modified: remove `injectTugColorCSS` call
 
 **Result**: The color system is fully connected. `--tug-base-*` semantic tokens resolve through `var(--tug-{hue}[-preset])` palette variables, which are pure CSS `oklch()` formulas built from per-hue constants. Themes differentiate by overriding hue assignments. The palette is inspectable in static CSS — no JS injection needed. Neutrals and chromatic colors use the same system. Opacity is available via CSS relative color syntax at the point of use.
 
-**Key design insight**: The CITA transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. CSS `oklch()` natively accepts `calc()` expressions. This eliminates JS runtime injection and makes the entire palette inspectable, debuggable, and composable in standard CSS.
+**Key design insight**: The TugColor transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()`. CSS `oklch()` natively accepts `calc()` expressions. This eliminates JS runtime injection and makes the entire palette inspectable, debuggable, and composable in standard CSS.
 
-**Note**: Phase 5d5e depends on Phase 5d5d (consumers must already reference `--tug-base-*` tokens). It does not depend on any other phase. This is the critical integration step that connects the CITA palette engine (Phase 5d5a) to the semantic token layer (Phase 5d5c) through the consumer migration (Phase 5d5d).
+**Note**: Phase 5d5e depends on Phase 5d5d (consumers must already reference `--tug-base-*` tokens). It does not depend on any other phase. This is the critical integration step that connects the TugColor palette engine (Phase 5d5a) to the semantic token layer (Phase 5d5c) through the consumer migration (Phase 5d5d).
 
 ### Phase 5d5f: Cascade Inspector (Concept 22, [D74])
 
@@ -862,7 +862,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 1. Implement `StyleInspectorOverlay` singleton — tracks global modifier state for `Ctrl+Option`, manages overlay lifecycle
 2. On pointer move with modifiers active: locate target with `elementFromPoint`, walk to nearest inspect root, read computed style, resolve token chain via `StyleCascadeReader`
 3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`)
-4. For CITA palette colors: display hue family name, preset name, and CITA coordinates (e.g., "orange canonical — i:50, t:50, L:0.780")
+4. For TugColor palette colors: display hue family name, preset name, and TugColor coordinates (e.g., "orange canonical — i:50, t:50, L:0.780")
 5. Display current `--tug-zoom` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
 6. Implement pin/unpin — clicking while inspecting pins the overlay so the user can stop hovering and examine details. `Escape` closes
 7. Highlight the target element with a dev-only overlay outline
@@ -880,11 +880,11 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 ### Phase 5g: Palette Refinements (Concept 22, [D70])
 
-**Goal**: Reshape the CITA palette from a fixed-preset system to a continuous color space with five convenience presets per hue. Replace confusing coefficient knobs with `calc()`+`clamp()` formulas using literal i/t numbers. Rename `accent` → `intense`. Rewrite theme files to define chromatic semantic tokens using the inline CITA formula with theme-specific i/t choices. Enhance the gallery editor for interactive i/t exploration.
+**Goal**: Reshape the TugColor palette from a fixed-preset system to a continuous color space with five convenience presets per hue. Replace confusing coefficient knobs with `calc()`+`clamp()` formulas using literal i/t numbers. Rename `accent` → `intense`. Rewrite theme files to define chromatic semantic tokens using the inline TugColor formula with theme-specific i/t choices. Enhance the gallery editor for interactive i/t exploration.
 
 **Full specification**: `roadmap/palette-refinements.md` contains the complete design — five convenience presets, inline formula for arbitrary colors, theme design workflow, consumer API, and implementation scope.
 
-**Key design shift**: Semantic tokens (`--tug-base-*`) become where theme-specific chromatic choices live. Each theme writes its chromatic tokens using the inline CITA formula with whatever i/t numbers suit that theme. The five convenience presets (canonical, light, dark, intense, muted) are fixed reference colors — stable across all themes, not the system's backbone.
+**Key design shift**: Semantic tokens (`--tug-base-*`) become where theme-specific chromatic choices live. Each theme writes its chromatic tokens using the inline TugColor formula with whatever i/t numbers suit that theme. The five convenience presets (canonical, light, dark, intense, muted) are fixed reference colors — stable across all themes, not the system's backbone.
 
 **What to do**:
 1. **Rename `accent` → `intense`**: Update all palette preset references in `tug-palette.css`, `tug-tokens.css`, `palette-engine.ts`, theme files, and all component CSS/TS files. Semantic tokens using `accent` as a UI role name (e.g., `--tug-base-accent-default`) keep `accent`.
@@ -893,8 +893,8 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 4. **Rewrite preset formulas**: Replace all coefficient-based and `min()`-based formulas with `calc()`+`clamp()` using literal i/t numbers. 120 convenience preset variables (24 hues × 5 presets) replace the previous 168.
 5. **Remove coefficient knobs**: Eliminate `--tug-preset-*-l` and `--tug-preset-*-c` custom properties entirely. Convenience presets use literal numbers in their formulas, not CSS custom property references.
 6. **Update neutral ramp**: Reduce from 7 to 5 neutral presets matching the chromatic convenience preset names.
-7. **Rewrite theme files**: This is the substantive design work. Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline CITA formula with theme-specific i/t choices. Brio may reference convenience presets where they match; Bluenote and Harmony will use custom i/t numbers for their distinct visual identities.
-8. **Update `palette-engine.ts`**: Rewrite `CITA_PRESETS` to the five-preset set. Rewrite `citaColor()` to use the `clamp()`-based piecewise formula.
+7. **Rewrite theme files**: This is the substantive design work. Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline TugColor formula with theme-specific i/t choices. Brio may reference convenience presets where they match; Bluenote and Harmony will use custom i/t numbers for their distinct visual identities.
+8. **Update `palette-engine.ts`**: Rewrite `TUG_COLOR_PRESETS` to the five-preset set. Rewrite `tugColor()` to use the `clamp()`-based piecewise formula.
 9. **Full consumer audit**: Search all component CSS, TypeScript, and test files for references to old preset names (`-accent` as palette preset, `-subtle`, `-deep`). Fix every reference. No breakage allowed.
 10. **Gallery editor enhancement**: Add interactive i/t explorer — pick any hue, drag across the full 100×100 space, see the resulting color in real time. Show the five convenience presets as labeled reference points. Add theme token export (generate CSS formula snippet for a chosen i/t).
 11. **Strip historical comments**: Remove all phase numbers, "replaced X", "introduced in Y" comments.
@@ -903,48 +903,48 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 **Files created/modified**:
 1. `tugdeck/styles/tug-palette.css` — rewritten: five convenience presets with literal i/t, neutral ramp
 2. `tugdeck/styles/tug-tokens.css` — modified: chromatic token references updated
-3. `tugdeck/styles/bluenote.css` — rewritten: chromatic semantic tokens use inline CITA formulas
-4. `tugdeck/styles/harmony.css` — rewritten: chromatic semantic tokens use inline CITA formulas
-5. `tugdeck/src/components/tugways/palette-engine.ts` — modified: `CITA_PRESETS`, `citaColor()` formula
+3. `tugdeck/styles/bluenote.css` — rewritten: chromatic semantic tokens use inline TugColor formulas
+4. `tugdeck/styles/harmony.css` — rewritten: chromatic semantic tokens use inline TugColor formulas
+5. `tugdeck/src/components/tugways/palette-engine.ts` — modified: `TUG_COLOR_PRESETS`, `tugColor()` formula
 6. `tugdeck/src/components/tugways/cards/gallery-palette-content.tsx` — modified: i/t explorer, preset reference overlay, theme token export
 7. All component CSS and TS files referencing old preset names — modified
 
-**Result**: The palette is a continuous color space, not a fixed set of presets. Five convenience presets per hue serve as stable reference colors. Themes express their chromatic identity through inline CITA formulas in semantic token definitions — the design intent (hue, i, t) is explicit in every theme file. The gallery editor supports interactive color exploration for the theme design workflow. All consumers updated, no breakage.
+**Result**: The palette is a continuous color space, not a fixed set of presets. Five convenience presets per hue serve as stable reference colors. Themes express their chromatic identity through inline TugColor formulas in semantic token definitions — the design intent (hue, i, t) is explicit in every theme file. The gallery editor supports interactive color exploration for the theme design workflow. All consumers updated, no breakage.
 
 **Note**: Phase 5g depends on Phase 5d5e (palette engine integration — the pure CSS palette and semantic token wiring must already be in place). It does not depend on Phase 5f (state preservation).
 
-### Phase 5g2: CITA PostCSS Plugin and Theme Conversion (Concept 22, [D80])
+### Phase 5g2: TugColor PostCSS Plugin and Theme Conversion (Concept 22, [D80])
 
-**Goal**: Ship a PostCSS plugin that expands `--cita(hue, i, t)` notation to concrete `oklch()` values at build time, add an `oklchToCITA()` reverse mapper to palette-engine.ts, and convert all hardcoded hex tokens in theme files to `--cita()` calls. This makes the color system fully parametric: every color in every theme is described by hue family, intensity, and tone.
+**Goal**: Ship a PostCSS plugin that expands `--tug-color(hue, i, t)` notation to concrete `oklch()` values at build time, add an `oklchToTugColor()` reverse mapper to palette-engine.ts, and convert all hardcoded hex tokens in theme files to `--tug-color()` calls. This makes the color system fully parametric: every color in every theme is described by hue family, intensity, and tone.
 
-**Full specification**: `.tugtool/tugplan-tugways-phase-5g2-cita-postcss.md` contains the complete plan with 8 execution steps, design decisions, specs, and test plan.
+**Full specification**: `.tugtool/tugplan-tugways-phase-5g2-tug-color-postcss.md` contains the complete plan with 8 execution steps, design decisions, specs, and test plan.
 
-**Key design shift**: Theme files move from hardcoded hex values to `--cita()` notation. The verbose `calc()`+`clamp()` formula [D70] remains for cases needing runtime CSS variable resolution (P3 overrides), but the compact `--cita()` syntax handles the hundreds of achromatic tokens (surfaces, grays, borders, text) that were previously hardcoded hex. Build-time expansion means zero runtime cost.
+**Key design shift**: Theme files move from hardcoded hex values to `--tug-color()` notation. The verbose `calc()`+`clamp()` formula [D70] remains for cases needing runtime CSS variable resolution (P3 overrides), but the compact `--tug-color()` syntax handles the hundreds of achromatic tokens (surfaces, grays, borders, text) that were previously hardcoded hex. Build-time expansion means zero runtime cost.
 
 **What to do**:
-1. **Add `oklchToCITA()` and `citaPretty()`** to palette-engine.ts — reverse maps oklch strings to CITA parameters; enables programmatic hex-to-CITA derivation and developer tooling.
-2. **Create PostCSS plugin** (`postcss-cita.ts`) — bespoke AST walker that expands `--cita()` in CSS declaration values. Supports named hues and raw numeric angles. Uses same math as `citaColor()`.
+1. **Add `oklchToTugColor()` and `tugColorPretty()`** to palette-engine.ts — reverse maps oklch strings to TugColor parameters; enables programmatic hex-to-TugColor derivation and developer tooling.
+2. **Create PostCSS plugin** (`postcss-tug-color.ts`) — bespoke AST walker that expands `--tug-color()` in CSS declaration values. Supports named hues and raw numeric angles. Uses same math as `tugColor()`.
 3. **Wire plugin into Vite** — inline `css.postcss.plugins` config in vite.config.ts, coexisting with `@tailwindcss/vite`.
-4. **Build conversion script** (`scripts/convert-hex-to-cita.ts`) — one-time tool that uses `postcss.parse()` to walk CSS ASTs, convert standalone hex values to `--cita()` calls via `oklchToCITA()`, and validate round-trip accuracy.
-5. **Convert tug-tokens.css** — replace all standalone hex values in body{} block with `--cita()` calls. Cobalt/violet tint, i 3-6 range.
+4. **Build conversion script** (`scripts/convert-hex-to-tug-color.ts`) — one-time tool that uses `postcss.parse()` to walk CSS ASTs, convert standalone hex values to `--tug-color()` calls via `oklchToTugColor()`, and validate round-trip accuracy.
+5. **Convert tug-tokens.css** — replace all standalone hex values in body{} block with `--tug-color()` calls. Cobalt/violet tint, i 3-6 range.
 6. **Convert bluenote.css** — replace all standalone hex values in body{} block. Blue tint, i 5-14 range.
 7. **Convert harmony.css** — replace all standalone hex values in body{} block, including contrast-critical overrides. Yellow/gold tint for surfaces, blue tint for text. `#ffffff` → `var(--tug-white)`.
 8. **Integration checkpoint** — verify all themes work together, no hex regression, full test suite passes.
 
 **Files created/modified**:
-- `tugdeck/postcss-cita.ts` — new: PostCSS plugin
-- `tugdeck/scripts/convert-hex-to-cita.ts` — new: one-time conversion script
-- `tugdeck/src/__tests__/postcss-cita.test.ts` — new: plugin tests
-- `tugdeck/src/__tests__/convert-hex-to-cita.test.ts` — new: conversion tests
-- `tugdeck/src/components/tugways/palette-engine.ts` — modified: `oklchToCITA()`, `citaPretty()`
+- `tugdeck/postcss-tug-color.ts` — new: PostCSS plugin
+- `tugdeck/scripts/convert-hex-to-tug-color.ts` — new: one-time conversion script
+- `tugdeck/src/__tests__/postcss-tug-color.test.ts` — new: plugin tests
+- `tugdeck/src/__tests__/convert-hex-to-tug-color.test.ts` — new: conversion tests
+- `tugdeck/src/components/tugways/palette-engine.ts` — modified: `oklchToTugColor()`, `tugColorPretty()`
 - `tugdeck/vite.config.ts` — modified: PostCSS plugin wiring
-- `tugdeck/styles/tug-tokens.css` — modified: hex → `--cita()`
-- `tugdeck/styles/bluenote.css` — modified: hex → `--cita()`
-- `tugdeck/styles/harmony.css` — modified: hex → `--cita()`
+- `tugdeck/styles/tug-tokens.css` — modified: hex → `--tug-color()`
+- `tugdeck/styles/bluenote.css` — modified: hex → `--tug-color()`
+- `tugdeck/styles/harmony.css` — modified: hex → `--tug-color()`
 
-**Result**: Zero standalone hex color values remain in theme file body{} blocks. Every color is expressed as `--cita(hue, i, t)` — the design intent is explicit and machine-readable. The PostCSS plugin expands these to `oklch()` at build time with zero runtime cost. `tug-palette.css` and `brio.css` are completely unmodified.
+**Result**: Zero standalone hex color values remain in theme file body{} blocks. Every color is expressed as `--tug-color(hue, i, t)` — the design intent is explicit and machine-readable. The PostCSS plugin expands these to `oklch()` at build time with zero runtime cost. `tug-palette.css` and `brio.css` are completely unmodified.
 
-**Note**: Phase 5g2 depends on Phase 5g (palette refinements — the five-preset system, renamed presets, and `citaColor()` with piecewise formula must already be in place). The PostCSS plugin reuses the same constants and math from palette-engine.ts.
+**Note**: Phase 5g2 depends on Phase 5g (palette refinements — the five-preset system, renamed presets, and `tugColor()` with piecewise formula must already be in place). The PostCSS plugin reuses the same constants and math from palette-engine.ts.
 
 ### Phase 6: Feed Abstraction (Concept 7)
 
@@ -1306,11 +1306,11 @@ Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/ba
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 Phase 5f4 (State Preservation Solidified) depends on Phase 5f3 (content-first restore ordering and save-on-close must exist). It replaces the double-RAF timing bet with a deterministic child-driven ready callback (`onContentReady`). The `onContentReady` pattern is forward-compatible with Monaco editor and terminal buffer persistence in Phase 9. Rules of Tugways 11 [D78] and 12 [D79] are established here.
 Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
-Phase 5d5a (Palette Engine → CITA Runtime) is complete. It shipped a standalone CITA palette engine with no coupling to the responder chain, mutation model, or property store.
+Phase 5d5a (Palette Engine → TugColor Runtime) is complete. It shipped a standalone TugColor palette engine with no coupling to the responder chain, mutation model, or property store.
 Phase 5d5b (Global Scale & Timing) is complete. CSS `zoom` on `<body>` scales the entire UI with one number.
 Phase 5d5c (Token Architecture) is complete. Introduced the full `--tug-base-*` and `--tug-comp-*` taxonomy with backward-compatibility aliases. Chromatic tokens used hardcoded hex values — palette integration was deferred.
 Phase 5d5d (Consumer Migration) is complete (PR #98). All consumers migrated from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Legacy aliases removed. CI enforcement added.
-Phase 5d5e (Palette Engine Integration) depends on Phase 5d5d (consumers must already reference `--tug-base-*`). This is the critical missing step — it wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` palette variables, converts the palette to pure CSS formulas (no JS injection), and adds the neutral ramp. This connects the CITA palette engine to the consumer-facing tokens.
+Phase 5d5e (Palette Engine Integration) depends on Phase 5d5d (consumers must already reference `--tug-base-*`). This is the critical missing step — it wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` palette variables, converts the palette to pure CSS formulas (no JS injection), and adds the neutral ramp. This connects the TugColor palette engine to the consumer-facing tokens.
 Phase 5d5f (Cascade Inspector) depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
 The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5e (Palette Engine Integration) should ideally complete before Phase 9 begins, so rebuilt cards use palette-derived colors from the start.
 
@@ -1396,11 +1396,11 @@ The suggested plan sequence:
 17. `tugways-phase-5d2-control-action` — ActionEvent with payloads/phases, explicit-target dispatch, control/responder separation
 18. `tugways-phase-5d3-mutation-transactions` — snapshot/preview/commit/cancel, StyleCascadeReader, vertical-slice gallery demo
 19. `tugways-phase-5d4-observable-properties` — PropertyStore, usePropertyStore hook, inspector demo
-20. `tugways-phase-5d5a-palette-engine` — CITA OKLCH palette engine, 24 hues with Hue/Intensity/Tone axes, 7 presets, P3 support, interactive gallery editor
+20. `tugways-phase-5d5a-palette-engine` — TugColor OKLCH palette engine, 24 hues with Hue/Intensity/Tone axes, 7 presets, P3 support, interactive gallery editor
 21. `tugways-phase-5d5b-scale-timing` — global scale, global timing, motion toggle, per-component scale, JS helpers
 22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-comp-*` layers, full semantic taxonomy, backward-compatibility aliases
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
-24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to CITA palette, neutral ramp, remove JS injection
+24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to TugColor palette, neutral ramp, remove JS injection
 25. `tugways-phase-5d5f-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
 26. `tugways-phase-5e1-tugbank-core` — `tugbank-core` library crate (schema, value, domain, store, CAS, blob limit)
 27. `tugways-phase-5e2-tugbank-cli` — `tugbank` CLI binary (defaults-like CLI, `~/.tugbank.db` default path)
@@ -1410,8 +1410,8 @@ The suggested plan sequence:
 31. `tugways-phase-5f2-state-preservation-fixes` — RAF-deferred scroll/selection restore, CSS Custom Highlight API for inactive selections, flash suppression
 32. `tugways-phase-5f3-state-preservation-more-fixes` — restore ordering (content first), save-on-close (visibilitychange/beforeunload), click-back selection restore
 33. `tugways-phase-5f4-state-preservation-solidified` — child-driven ready callback (onContentReady), eliminate double-RAF, Rules of Tugways 11 & 12
-34. `tugways-phase-5g-palette-refinements` — continuous color space with 5 convenience presets, inline CITA formulas in theme files, gallery i/t explorer
-35. `tugways-phase-5g2-cita-postcss` — PostCSS `--cita()` plugin, `oklchToCITA()` reverse mapper, convert all theme hex tokens to `--cita()` notation
+34. `tugways-phase-5g-palette-refinements` — continuous color space with 5 convenience presets, inline TugColor formulas in theme files, gallery i/t explorer
+35. `tugways-phase-5g2-tug-color-postcss` — PostCSS `--tug-color()` plugin, `oklchToTugColor()` reverse mapper, convert all theme hex tokens to `--tug-color()` notation
 36. `tugways-phase-6-feed` — feed hooks, data flow
 37. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
 38. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states

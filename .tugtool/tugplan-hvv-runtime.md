@@ -1,6 +1,6 @@
-## CITA Runtime System {#cita-runtime}
+## TugColor Runtime System {#tug-color-runtime}
 
-**Purpose:** Replace the anchor-based palette injection with the CITA CSS variable system, wire citaColor into the runtime, add P3 display support, and remove all legacy anchor/smoothstep palette code — shipping a complete three-layer color API (semantic presets, per-hue constants, JS function) for the tugdeck palette.
+**Purpose:** Replace the anchor-based palette injection with the TugColor CSS variable system, wire citaColor into the runtime, add P3 display support, and remove all legacy anchor/smoothstep palette code — shipping a complete three-layer color API (semantic presets, per-hue constants, JS function) for the tugdeck palette.
 
 ---
 
@@ -19,9 +19,9 @@
 
 #### Context {#context}
 
-The tugdeck palette engine currently uses two transfer functions (smoothstep and anchor-based interpolation) to map intensity values to OKLCH colors. The CITA system, prototyped in gallery-palette-content.tsx, replaces this with a simpler model based on three axes: Hue (24 named colors), Intensity (chroma scaling 0-100), and Tone (lightness scaling 0-100). Each named color has a canonical form at i=50, t=50.
+The tugdeck palette engine currently uses two transfer functions (smoothstep and anchor-based interpolation) to map intensity values to OKLCH colors. The TugColor system, prototyped in gallery-palette-content.tsx, replaces this with a simpler model based on three axes: Hue (24 named colors), Intensity (chroma scaling 0-100), and Tone (lightness scaling 0-100). Each named color has a canonical form at i=50, t=50.
 
-The gallery editor already has a working `citaColor()` function and `DEFAULT_CANONICAL_L` table. This phase promotes those into palette-engine.ts as the authoritative runtime, builds the CSS variable injection system around them, adds P3 wide-gamut support, and removes all legacy anchor/smoothstep code.
+The gallery editor already has a working `tugColor()` function and `DEFAULT_CANONICAL_L` table. This phase promotes those into palette-engine.ts as the authoritative runtime, builds the CSS variable injection system around them, adds P3 wide-gamut support, and removes all legacy anchor/smoothstep code.
 
 #### Strategy {#strategy}
 
@@ -29,8 +29,8 @@ The gallery editor already has a working `citaColor()` function and `DEFAULT_CAN
 - Build the CSS variable injection function (injectCITACSS) that emits three layers: semantic presets, per-hue constants, and the JS API function.
 - Add P3 display support via oklchToLinearP3, a MAX_P3_CHROMA_FOR_HUE static table, and a @media (color-gamut: p3) block with wider-gamut presets.
 - Wire injectCITACSS into main.tsx and theme-provider.tsx, replacing injectPaletteCSS calls.
-- Add new CITA tests incrementally: Steps 1-3 each add new test blocks to palette-engine.test.ts alongside the existing legacy tests (which still compile and pass at those steps since the legacy code is not yet removed).
-- Remove all legacy code in a clean break: anchor types, smoothstep, TONE_ALIASES, theme-anchors.ts, and all related exports — removing legacy test blocks from palette-engine.test.ts and deleting theme-anchors.test.ts atomically in the same step to avoid build-breaking intermediate states. The new CITA test blocks added in Steps 1-3 are kept.
+- Add new TugColor tests incrementally: Steps 1-3 each add new test blocks to palette-engine.test.ts alongside the existing legacy tests (which still compile and pass at those steps since the legacy code is not yet removed).
+- Remove all legacy code in a clean break: anchor types, smoothstep, TONE_ALIASES, theme-anchors.ts, and all related exports — removing legacy test blocks from palette-engine.test.ts and deleting theme-anchors.test.ts atomically in the same step to avoid build-breaking intermediate states. The new TugColor test blocks added in Steps 1-3 are kept.
 - Update gallery-palette-content.tsx to import citaColor from palette-engine.ts instead of defining it locally (done in the same step as promotion to ensure test continuity).
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -67,7 +67,7 @@ The gallery editor already has a working `citaColor()` function and `DEFAULT_CAN
 
 - Rules of Tugways: injectCITACSS must use pure DOM manipulation (createElement/textContent), never React state [D08, D09, D40, D42]
 - Existing `<style id="tug-palette">` idempotency pattern must be preserved
-- CSS variable names use short form: `--tug-{hue}`, not `--tug-cita-{hue}` or `--tug-palette-hue-*`
+- CSS variable names use short form: `--tug-{hue}`, not `--tug-tug-color-{hue}` or `--tug-palette-hue-*`
 - All canonical L values must stay above 0.555 (piecewise min() constraint)
 
 #### Assumptions {#assumptions}
@@ -130,7 +130,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### [D01] Three-layer CSS variable architecture (DECIDED) {#d01-three-layers}
 
-**Decision:** The CITA system emits CSS variables in three layers: Layer 1 semantic presets (168 vars), Layer 2 per-hue constants (74 vars), and Layer 3 is the JS citaColor() function for programmatic use.
+**Decision:** The TugColor system emits CSS variables in three layers: Layer 1 semantic presets (168 vars), Layer 2 per-hue constants (74 vars), and Layer 3 is the JS tugColor() function for programmatic use.
 
 **Rationale:**
 - Presets cover the common use cases without requiring JS
@@ -147,7 +147,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 **Rationale:**
 - Short names are easier to type and read in CSS
-- The `--tug-` prefix is sufficient namespace; no need for `--tug-cita-` or `--tug-palette-hue-`
+- The `--tug-` prefix is sufficient namespace; no need for `--tug-tug-color-` or `--tug-palette-hue-`
 - Matches the approved proposal naming scheme
 
 **Implications:**
@@ -165,8 +165,8 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 **Implications:**
 - Preset variable format: `--tug-{hue}` (canonical) and `--tug-{hue}-{preset}` for the other six
-- Each sRGB preset computes via `citaColor(hue, i, t, canonicalL)` (default peak chroma)
-- Each P3 preset computes via `citaColor(hue, i, t, canonicalL, p3PeakChroma)` using the optional `peakChroma` parameter
+- Each sRGB preset computes via `tugColor(hue, i, t, canonicalL)` (default peak chroma)
+- Each P3 preset computes via `tugColor(hue, i, t, canonicalL, p3PeakChroma)` using the optional `peakChroma` parameter
 
 #### [D04] Pure CSS piecewise mapping via min() trick (DECIDED) {#d04-piecewise-min}
 
@@ -202,20 +202,20 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 **Rationale:**
 - No production CSS references the old variable names
 - Leaving dead code creates confusion and maintenance burden
-- The CITA system is a complete replacement, not an incremental addition
+- The TugColor system is a complete replacement, not an incremental addition
 
 **Implications:**
 - palette-engine.test.ts and theme-anchors.test.ts must be rewritten atomically alongside code removal (single step) to avoid a build-breaking intermediate state
 - main.tsx and theme-provider.tsx import statements change
 - Keep: HUE_FAMILIES, MAX_CHROMA_FOR_HUE, findMaxChroma, oklchToLinearSRGB, isInSRGBGamut, _deriveChromaCaps, LCParams, DEFAULT_LC_PARAMS
 
-#### [D08] Re-derive chroma tables for CITA L range (DECIDED) {#d08-rederive-chroma}
+#### [D08] Re-derive chroma tables for TugColor L range (DECIDED) {#d08-rederive-chroma}
 
-**Decision:** Both MAX_CHROMA_FOR_HUE (sRGB) and MAX_P3_CHROMA_FOR_HUE (P3) are re-derived using L sample points from the CITA system's actual L range (L_DARK=0.15, per-hue canonical L from Table T02, L_LIGHT=0.96) instead of the legacy smoothstep range (L_MIN=0.42, L_MID=0.69). The existing _deriveChromaCaps helper is refactored to accept L sample points, an optional chroma cap, and a gamut checker as parameters. For sRGB, the chroma cap (DEFAULT_LC_PARAMS.cMax=0.22) is retained. For P3, no chroma cap is applied — the binary search result is used directly (with the standard 2% safety margin).
+**Decision:** Both MAX_CHROMA_FOR_HUE (sRGB) and MAX_P3_CHROMA_FOR_HUE (P3) are re-derived using L sample points from the TugColor system's actual L range (L_DARK=0.15, per-hue canonical L from Table T02, L_LIGHT=0.96) instead of the legacy smoothstep range (L_MIN=0.42, L_MID=0.69). The existing _deriveChromaCaps helper is refactored to accept L sample points, an optional chroma cap, and a gamut checker as parameters. For sRGB, the chroma cap (DEFAULT_LC_PARAMS.cMax=0.22) is retained. For P3, no chroma cap is applied — the binary search result is used directly (with the standard 2% safety margin).
 
 **Rationale:**
-- The legacy _deriveChromaCaps samples at L=0.42 (smoothstep lMin) and L=0.69 (midpoint) — neither of which is the darkest L in CITA (L_DARK=0.15) or the per-hue canonical L
-- CITA presets span L_DARK=0.15 (deep preset, t=15) through L_LIGHT=0.96, so the chroma cap must be safe across this wider L range
+- The legacy _deriveChromaCaps samples at L=0.42 (smoothstep lMin) and L=0.69 (midpoint) — neither of which is the darkest L in TugColor (L_DARK=0.15) or the per-hue canonical L
+- TugColor presets span L_DARK=0.15 (deep preset, t=15) through L_LIGHT=0.96, so the chroma cap must be safe across this wider L range
 - The P3 gamut is strictly larger than sRGB; capping P3 chroma at 0.22 (sRGB cMax) would negate the purpose of P3 support
 - The L sample points for derivation should be: L_DARK (0.15), the per-hue canonical L (from Table T02), and L_LIGHT (0.96); the minimum safe chroma across all three points becomes the cap for that hue
 
@@ -225,7 +225,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 - _deriveP3ChromaCaps calls the same helper with isInP3Gamut and no maxCap
 - Tests that assert specific MAX_CHROMA_FOR_HUE values must be updated with the new values
 
-#### [D07] injectCITACSS replaces injectPaletteCSS (DECIDED) {#d07-inject-cita}
+#### [D07] injectCITACSS replaces injectPaletteCSS (DECIDED) {#d07-inject-tug-color}
 
 **Decision:** New function `injectCITACSS(themeName: string)` replaces `injectPaletteCSS`. Called from main.tsx at boot and theme-provider.tsx on theme switch. Reuses the same `<style id="tug-palette">` element and idempotency pattern.
 
@@ -245,7 +245,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### Terminology and Naming {#terminology}
 
-**Table T01: CITA Terminology** {#t01-terminology}
+**Table T01: TugColor Terminology** {#t01-terminology}
 
 | Term | Definition |
 |------|-----------|
@@ -296,10 +296,10 @@ The sRGB per-hue constants (`-h` and `-canonical-l`) are not overridden since th
 
 The `oklchToLinearP3` conversion uses the same OKLab pipeline as `oklchToLinearSRGB` (steps 1-3 are identical) but substitutes the LMS-to-linear-Display-P3 matrix in step 4. Matrix coefficients are derived from the Display P3 primaries and D65 white point per the CSS Color 4 specification: https://www.w3.org/TR/css-color-4/#color-conversion-code
 
-**Spec S04: citaColor function signature** {#s04-cita-color}
+**Spec S04: citaColor function signature** {#s04-tug-color-color}
 
 ```typescript
-export function citaColor(
+export function tugColor(
   hueName: string,
   i: number,
   t: number,
@@ -312,7 +312,7 @@ Returns an `oklch(L C h)` CSS string. tone-to-L is piecewise linear through cano
 
 The optional `peakChroma` parameter overrides the default peak chroma (`MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE`). When omitted, the sRGB-derived default is used. When provided, the caller supplies the peak chroma directly (e.g., `MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` for P3 presets). This enables `injectCITACSS` to compute both sRGB and P3 preset values through the same function without duplicating color logic.
 
-**Spec S05: injectCITACSS function signature** {#s05-inject-cita}
+**Spec S05: injectCITACSS function signature** {#s05-inject-tug-color}
 
 ```typescript
 export function injectCITACSS(themeName: string): void
@@ -437,14 +437,14 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 | `L_DARK` | const | `palette-engine.ts` | 0.15, promoted from gallery-palette-content.tsx |
 | `L_LIGHT` | const | `palette-engine.ts` | 0.96, promoted from gallery-palette-content.tsx |
 | `PEAK_C_SCALE` | const | `palette-engine.ts` | 2, promoted from gallery-palette-content.tsx |
-| `CITA_PRESETS` | const | `palette-engine.ts` | Map of preset name to {i, t}, List L04 |
+| `TUG_COLOR_PRESETS` | const | `palette-engine.ts` | Map of preset name to {i, t}, List L04 |
 | `citaColor` | fn | `palette-engine.ts` | Promoted from gallery-palette-content.tsx, Spec S04 |
 | `injectCITACSS` | fn | `palette-engine.ts` | New, replaces injectPaletteCSS, Spec S05 |
 | `findMaxChroma` | fn (modified) | `palette-engine.ts` | Add optional `gamutCheck` parameter, defaults to isInSRGBGamut |
 | `oklchToLinearP3` | fn | `palette-engine.ts` | New, OKLCH to linear P3 conversion |
 | `isInP3Gamut` | fn | `palette-engine.ts` | New, P3 gamut check |
 | `_deriveChromaCaps` | fn (modified) | `palette-engine.ts` | Refactored to accept lSamples, gamutCheck, maxCap? per Spec S06 |
-| `MAX_CHROMA_FOR_HUE` | const (re-derived) | `palette-engine.ts` | Re-derived with CITA L sample points per [D08] |
+| `MAX_CHROMA_FOR_HUE` | const (re-derived) | `palette-engine.ts` | Re-derived with TugColor L sample points per [D08] |
 | `MAX_P3_CHROMA_FOR_HUE` | const | `palette-engine.ts` | New, derived via _deriveChromaCaps with isInP3Gamut, no maxCap |
 | `_deriveP3ChromaCaps` | fn | `palette-engine.ts` | New, calls _deriveChromaCaps with P3 gamut checker and no cap |
 
@@ -452,7 +452,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update palette-engine.ts module JSDoc header to describe CITA system
+- [ ] Update palette-engine.ts module JSDoc header to describe TugColor system
 - [ ] Add JSDoc to all new exported symbols
 - [ ] Update gallery-palette-content.tsx module header to note citaColor is imported from palette-engine
 
@@ -481,38 +481,38 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Commit:** `feat(palette): promote citaColor and canonical constants from gallery to palette-engine`
 
-**References:** [D01] Three-layer CSS variable architecture, [D06] Clean break from legacy code, [D08] Re-derive chroma tables for CITA L range, Table T02, List L01, Spec S04, Spec S06, (#canonical-l-table, #terminology)
+**References:** [D01] Three-layer CSS variable architecture, [D06] Clean break from legacy code, [D08] Re-derive chroma tables for TugColor L range, Table T02, List L01, Spec S04, Spec S06, (#canonical-l-table, #terminology)
 
 **Artifacts:**
-- palette-engine.ts: add DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, CITA_PRESETS, citaColor; refactor _deriveChromaCaps to accept parameters; re-derive and update MAX_CHROMA_FOR_HUE
+- palette-engine.ts: add DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, TUG_COLOR_PRESETS, citaColor; refactor _deriveChromaCaps to accept parameters; re-derive and update MAX_CHROMA_FOR_HUE
 - gallery-palette-content.tsx: remove local definitions of DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, citaColor; import citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (PEAK_C_SCALE is not imported — only used internally by citaColor)
 
 **Tasks:**
 - [ ] Add `DEFAULT_CANONICAL_L` constant to palette-engine.ts with values from Table T02
 - [ ] Add `L_DARK = 0.15`, `L_LIGHT = 0.96`, `PEAK_C_SCALE = 2` as exported constants
-- [ ] Add `CITA_PRESETS` constant mapping preset names to {i, t} per List L04
+- [ ] Add `TUG_COLOR_PRESETS` constant mapping preset names to {i, t} per List L04
 - [ ] Move `citaColor` function to palette-engine.ts with an added optional `peakChroma?: number` fifth parameter per Spec S04. When omitted, defaults to `MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` (preserving existing behavior). When provided, uses the caller-supplied value directly. This enables P3 preset computation in Step 3.
-- [ ] Export citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, CITA_PRESETS from palette-engine.ts
+- [ ] Export citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, TUG_COLOR_PRESETS from palette-engine.ts
 - [ ] Refactor `_deriveChromaCaps` to accept parameters per Spec S06: `_deriveChromaCaps(lSamples, gamutCheck, maxCap?)`. The existing behavior (legacy L sample points, sRGB gamut check, cMax cap) becomes the specific sRGB invocation.
-- [ ] Re-derive `MAX_CHROMA_FOR_HUE` using CITA L sample points: for each hue, sample at `[L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]`, binary-search max chroma at each L via `findMaxChroma`, take the minimum, apply 2% safety margin, cap at DEFAULT_LC_PARAMS.cMax (0.22). Run `_deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` and paste the new values into the hardcoded table. Values will likely decrease for some hues due to the wider L range (especially L_DARK=0.15).
+- [ ] Re-derive `MAX_CHROMA_FOR_HUE` using TugColor L sample points: for each hue, sample at `[L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]`, binary-search max chroma at each L via `findMaxChroma`, take the minimum, apply 2% safety margin, cap at DEFAULT_LC_PARAMS.cMax (0.22). Run `_deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` and paste the new values into the hardcoded table. Values will likely decrease for some hues due to the wider L range (especially L_DARK=0.15).
 - [ ] Update any tests that assert specific MAX_CHROMA_FOR_HUE values to match the new re-derived table
 - [ ] In gallery-palette-content.tsx: remove local DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, citaColor definitions (PEAK_C_SCALE local const is removed but not re-imported since citaColor now handles it internally)
 - [ ] In gallery-palette-content.tsx: import citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (do NOT import PEAK_C_SCALE — it is only used internally by citaColor in palette-engine.ts and is not referenced anywhere else in gallery-palette-content.tsx; importing it would trigger an unused-import lint warning, which is a build failure under warnings-are-errors policy)
-- [ ] Verify gallery-palette-content.tsx still uses CITA_PRESETS-compatible i/t values in its UI (VIB_STEPS, VAL_STEPS remain local as they are UI-only)
+- [ ] Verify gallery-palette-content.tsx still uses TUG_COLOR_PRESETS-compatible i/t values in its UI (VIB_STEPS, VAL_STEPS remain local as they are UI-only)
 - [ ] Verify buildExportPayload in gallery-palette-content.tsx still works correctly — it references L_DARK and L_LIGHT which are now imported from palette-engine.ts rather than defined locally. Confirm the import covers both constants and the export payload round-trip test passes.
 - [ ] Update gallery-palette-content.test.tsx: change `citaColor` import from `gallery-palette-content` to `palette-engine` (citaColor is no longer exported from gallery-palette-content.tsx after this step)
 
 **Tests:** (new tests added to palette-engine.test.ts alongside existing legacy tests, which still compile at this step)
-- [ ] Unit test: citaColor('red', 50, 50, 0.659) returns valid oklch string with L=0.659
-- [ ] Unit test: citaColor('red', 0, 50, 0.659) returns oklch with C=0 (zero intensity)
-- [ ] Unit test: citaColor('red', 50, 0, 0.659) returns oklch with L=0.15 (t=0 gives L_DARK)
-- [ ] Unit test: citaColor('red', 50, 100, 0.659) returns oklch with L=0.96 (t=100 gives L_LIGHT)
-- [ ] Unit test: citaColor('red', 100, 50, 0.659) returns oklch with C = MAX_CHROMA_FOR_HUE['red'] * 2 (default peak chroma)
-- [ ] Unit test: citaColor('red', 100, 50, 0.659, 0.5) returns oklch with C = 0.5 (explicit peakChroma overrides default)
-- [ ] Unit test: citaColor('red', 50, 50, 0.659) with no peakChroma matches citaColor('red', 50, 50, 0.659, MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE) — explicit default equivalence
+- [ ] Unit test: tugColor('red', 50, 50, 0.659) returns valid oklch string with L=0.659
+- [ ] Unit test: tugColor('red', 0, 50, 0.659) returns oklch with C=0 (zero intensity)
+- [ ] Unit test: tugColor('red', 50, 0, 0.659) returns oklch with L=0.15 (t=0 gives L_DARK)
+- [ ] Unit test: tugColor('red', 50, 100, 0.659) returns oklch with L=0.96 (t=100 gives L_LIGHT)
+- [ ] Unit test: tugColor('red', 100, 50, 0.659) returns oklch with C = MAX_CHROMA_FOR_HUE['red'] * 2 (default peak chroma)
+- [ ] Unit test: tugColor('red', 100, 50, 0.659, 0.5) returns oklch with C = 0.5 (explicit peakChroma overrides default)
+- [ ] Unit test: tugColor('red', 50, 50, 0.659) with no peakChroma matches tugColor('red', 50, 50, 0.659, MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE) — explicit default equivalence
 - [ ] Unit test: all 24 hue names produce valid oklch strings at canonical (50/50)
-- [ ] Unit test: CITA_PRESETS has exactly 7 entries with correct i/t per List L04
-- [ ] Unit test: MAX_CHROMA_FOR_HUE values match re-derived table (spot-check a few hues against _deriveChromaCaps output with CITA L sample points)
+- [ ] Unit test: TUG_COLOR_PRESETS has exactly 7 entries with correct i/t per List L04
+- [ ] Unit test: MAX_CHROMA_FOR_HUE values match re-derived table (spot-check a few hues against _deriveChromaCaps output with TugColor L sample points)
 - [ ] Existing gallery-palette-content tests continue to pass (with updated citaColor import path)
 - [ ] Existing `buildExportPayload -> parseImportPayload` round-trip test in gallery-palette-content.test.tsx passes (this existing test already verifies L_DARK/L_LIGHT are correct; no new test needed)
 
@@ -569,7 +569,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Commit:** `feat(palette): add P3 display support with oklchToLinearP3, MAX_P3_CHROMA_FOR_HUE, and @media block`
 
-**References:** [D05] P3 support via @media block, [D08] Re-derive chroma tables for CITA L range, Spec S03, Spec S06, Risk R02, (#css-vars)
+**References:** [D05] P3 support via @media block, [D08] Re-derive chroma tables for TugColor L range, Spec S03, Spec S06, Risk R02, (#css-vars)
 
 **Artifacts:**
 - palette-engine.ts: add oklchToLinearP3, isInP3Gamut, _deriveP3ChromaCaps, MAX_P3_CHROMA_FOR_HUE
@@ -579,10 +579,10 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Implement `oklchToLinearP3(L, C, h)` — same pipeline as oklchToLinearSRGB but with the LMS-to-linear-Display-P3 matrix in step 4 (instead of the LMS-to-linear-sRGB matrix). Steps 1-3 are identical (OKLCH polar to OKLab Cartesian, OKLab to LMS via inverse OKLab M1 matrix, cube-root undo). The LMS-to-linear-P3 matrix coefficients are derived from the Display P3 primaries and D65 white point; source: https://www.w3.org/TR/css-color-4/#color-conversion-code (see "LMS to Display P3" in the CSS Color 4 reference code). An alternative derivation is available at https://bottosson.github.io/posts/oklab/ by composing the OKLab LMS matrix with the XYZ-to-Display-P3 matrix from the CSS Color 4 spec.
 - [ ] Implement `isInP3Gamut(L, C, h, epsilon)` — same pattern as isInSRGBGamut but using oklchToLinearP3
 - [ ] Add optional `gamutCheck` parameter to `findMaxChroma`: `findMaxChroma(L, h, maxSearch?, steps?, gamutCheck?)` where `gamutCheck` defaults to `isInSRGBGamut`. This allows reuse for P3: `findMaxChroma(L, h, 0.4, 32, isInP3Gamut)`.
-- [ ] Implement `_deriveP3ChromaCaps()` by calling the parameterized `_deriveChromaCaps(citaLSamples, isInP3Gamut)` with NO `maxCap` parameter. This is critical: the legacy `_deriveChromaCaps` included `Math.min(..., DEFAULT_LC_PARAMS.cMax)` which would silently clamp all P3 chroma to 0.22 (the sRGB ceiling). P3 chroma values must be allowed to exceed 0.22 — that is the entire point of P3 support. The CITA L sample points (L_DARK, per-hue canonical L, L_LIGHT) are used, same as the sRGB re-derivation in Step 1.
+- [ ] Implement `_deriveP3ChromaCaps()` by calling the parameterized `_deriveChromaCaps(citaLSamples, isInP3Gamut)` with NO `maxCap` parameter. This is critical: the legacy `_deriveChromaCaps` included `Math.min(..., DEFAULT_LC_PARAMS.cMax)` which would silently clamp all P3 chroma to 0.22 (the sRGB ceiling). P3 chroma values must be allowed to exceed 0.22 — that is the entire point of P3 support. The TugColor L sample points (L_DARK, per-hue canonical L, L_LIGHT) are used, same as the sRGB re-derivation in Step 1.
 - [ ] Add `MAX_P3_CHROMA_FOR_HUE` static table (computed once via _deriveP3ChromaCaps, hardcoded like the sRGB table). Values will be larger than MAX_CHROMA_FOR_HUE for all 24 hues.
 - [ ] Update `injectCITACSS` to append `@media (color-gamut: p3) { :root { ... } }` block with:
-  - P3-recomputed presets by calling `citaColor(hue, i, t, canonicalL, MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE)` — the optional `peakChroma` parameter (Spec S04) overrides the default sRGB peak chroma with the wider P3 value
+  - P3-recomputed presets by calling `tugColor(hue, i, t, canonicalL, MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE)` — the optional `peakChroma` parameter (Spec S04) overrides the default sRGB peak chroma with the wider P3 value
   - P3 `--tug-{hue}-peak-c` overrides with `MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE` values
 - [ ] Verify that P3 chroma values are larger than sRGB chroma values for all hues (the P3 gamut is strictly wider)
 
@@ -638,14 +638,14 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Depends on:** #step-4
 
-**Commit:** `refactor(palette): remove legacy anchor/smoothstep code, delete theme-anchors.ts, rewrite tests for CITA`
+**Commit:** `refactor(palette): remove legacy anchor/smoothstep code, delete theme-anchors.ts, rewrite tests for TugColor`
 
 **References:** [D01] Three-layer CSS variable architecture, [D02] Short-form CSS variable naming, [D05] P3 support via @media block, [D06] Clean break from legacy code, List L02, List L03, Risk R01, Spec S01, Spec S02, Spec S03, Spec S04, (#strategy, #test-plan-concepts, #css-vars)
 
 **Artifacts:**
 - palette-engine.ts: remove symbols per List L02, update module JSDoc header
 - theme-anchors.ts: delete entire file per List L03
-- palette-engine.test.ts: rewritten to test CITA API (citaColor, injectCITACSS, P3 support)
+- palette-engine.test.ts: rewritten to test TugColor API (citaColor, injectCITACSS, P3 support)
 - theme-anchors.test.ts: deleted
 
 **Tasks:**
@@ -653,13 +653,13 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Remove from palette-engine.ts all symbols in List L02: injectPaletteCSS, tugPaletteColor, tugAnchoredColor, smoothstep, intensityToLC, TONE_ALIASES, readThemeParams, clampedOklchString, tugPaletteVarName, STANDARD_STOPS, AnchorPoint, HueAnchors, ThemeHueAnchors, ThemeAnchorData, interpolateAnchors
 - [ ] Keep oklchToLinearSRGB and isInSRGBGamut as exported functions. They are consumed by: (a) the parameterized `_deriveChromaCaps` helper which passes `isInSRGBGamut` as the default gamut checker, (b) `findMaxChroma` which calls the gamut checker internally, and (c) tests that verify gamut safety of generated colors. They were previously private but are now part of the public API surface to support these use cases.
 - [ ] Delete theme-anchors.ts entirely
-- [ ] Update palette-engine.ts module JSDoc to describe CITA system (remove references to smoothstep, anchor-based interpolation, old CSS variable format)
+- [ ] Update palette-engine.ts module JSDoc to describe TugColor system (remove references to smoothstep, anchor-based interpolation, old CSS variable format)
 - [ ] Verify List L01 symbols are all still present: HUE_FAMILIES, MAX_CHROMA_FOR_HUE, findMaxChroma, oklchToLinearSRGB, isInSRGBGamut, _deriveChromaCaps, LCParams, DEFAULT_LC_PARAMS
 - [ ] Delete theme-anchors.test.ts entirely
 - [ ] Clean up palette-engine.test.ts atomically with the code remot:
   - Remove all legacy test blocks and imports for deleted symbols (tugPaletteColor, clampedOklchString, tugPaletteVarName, TONE_ALIASES, tugAnchoredColor, injectPaletteCSS, all theme-anchor imports)
   - Keep HUE_FAMILIES and MAX_CHROMA_FOR_HUE tests (unchanged)
-  - Keep all new CITA test blocks added incrementally in Steps 1-3 (citaColor, CITA_PRESETS, injectCITACSS, P3 gamut tests)
+  - Keep all new TugColor test blocks added incrementally in Steps 1-3 (citaColor, TUG_COLOR_PRESETS, injectCITACSS, P3 gamut tests)
   - Add gamut safety tests: all 24 hues x 7 presets produce valid oklch strings
 - [ ] Verify total test count is reasonable (old suite had ~50 tests; new suite should have similar coverage)
 
@@ -703,7 +703,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A complete CITA CSS variable system in palette-engine.ts with P3 support, wired into the tugdeck runtime, replacing all legacy anchor/smoothstep palette code.
+**Deliverable:** A complete TugColor CSS variable system in palette-engine.ts with P3 support, wired into the tugdeck runtime, replacing all legacy anchor/smoothstep palette code.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
@@ -726,7 +726,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 | Checkpoint | Verification |
 |------------|--------------|
-| CITA core computation | `bun test` — citaColor unit tests pass |
+| TugColor core computation | `bun test` — citaColor unit tests pass |
 | CSS injection | `bun test` — injectCITACSS integration tests pass, variable counts verified |
 | P3 support | `bun test` — P3 gamut tests pass, @media block present |
 | Runtime wiring | `bun test` — main.tsx and theme-provider.tsx use injectCITACSS |

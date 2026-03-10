@@ -16,7 +16,7 @@ The intent here is not a cosmetic rename. The intent is to:
 - Preserve and improve the accent concept instead of deleting it.
 - Define a large, explicit `--tug-base-*` semantic contract.
 - Make future component styling additive and controlled rather than ad hoc.
-- Add a CITA (Color · Intensity · Tone · Alpha) computed color palette with 24 hue families, two
+- Add a TugColor (Hue · Intensity · Tone · Alpha) computed color palette with 24 hue families, two
   independent axes (intensity 0–100, tone 0–100), 7 named presets per hue,
   and P3 wide-gamut support, using OKLCH for perceptual uniformity.
 - Add a global scale system: one root number controls all dimensions in the UI.
@@ -348,12 +348,12 @@ The current accent system is doing several jobs at once:
 
 These jobs should be separated, but the accent concept absolutely remains.
 
-### 4. CITA (Color · Intensity · Tone · Alpha) Computed Color Palette
+### 4. TugColor (Hue · Intensity · Tone · Alpha) Computed Color Palette
 
 The earlier draft proposed 12 hue families with 4 fixed tones for 48 total
 palette entries. That was too rigid. The intensity-based system that replaced it
 (smoothstep transfer function, `--tug-palette-hue-<angle>-<name>-tone-<intensity>`
-naming) was then itself replaced by the **CITA (Color · Intensity · Tone · Alpha) system** — a simpler,
+naming) was then itself replaced by the **TugColor (Hue · Intensity · Tone · Alpha) system** — a simpler,
 more expressive model built on three axes:
 
 - **Hue**: 24 named color families (cherry through coral), mapped to OKLCH hue
@@ -367,7 +367,7 @@ CSS variables use short-form naming: `--tug-{hue}` for canonical colors,
 `--tug-{hue}-{preset}` for the 7 named presets, and `--tug-{hue}-h`,
 `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c` for per-hue constants.
 
-See [CITA Color Palette System](#cita-color-palette-system) for the full design.
+See [TugColor Color Palette System](#tug-color-color-palette-system) for the full design.
 
 ### 5. One Global Scale Controls All Dimensions
 
@@ -396,14 +396,14 @@ size, stroke width, and elevation tiers where appropriate.
 
 ---
 
-## CITA Color Palette System
+## TugColor Color Palette System
 
 ### The Problem with Earlier Approaches
 
 A fixed 4-tone system (soft/default/strong/intense) forces designers into
 exactly four choices per hue. The intensity-based system that followed (11
 standard stops per hue, smoothstep transfer function) was more flexible but
-still tied to a single axis. The CITA (Color · Intensity · Tone · Alpha) system replaces both with a
+still tied to a single axis. The TugColor (Hue · Intensity · Tone · Alpha) system replaces both with a
 two-axis model that separates chroma control (intensity) from lightness control
 (value), giving independent control over saturation and brightness.
 
@@ -460,7 +460,7 @@ Examples:
 - `--tug-violet-subtle` — violet at i=15, t=92
 - `--tug-orange-dark` — orange at i=50, t=25
 
-**CITA axes:**
+**TugColor axes:**
 
 - **Intensity (i, 0–100):** Controls chroma. At i=0, chroma is zero
   (achromatic). At i=50, chroma equals the per-hue sRGB-safe maximum. At
@@ -472,7 +472,7 @@ Examples:
 
 ### The Transfer Function (Implemented)
 
-The CITA system uses two independent linear mappings, not a smoothstep curve:
+The TugColor system uses two independent linear mappings, not a smoothstep curve:
 
 **Value-to-Lightness:** Piecewise linear through the per-hue canonical L at
 t=50. Two segments:
@@ -487,7 +487,7 @@ PEAK_C_SCALE = 2). For P3 displays, peak chroma uses the wider
 `MAX_P3_CHROMA_FOR_HUE[hue] × PEAK_C_SCALE`.
 
 ```typescript
-export function citaColor(
+export function tugColor(
   hueName: string,
   i: number,
   t: number,
@@ -504,7 +504,7 @@ with a 2% safety margin. This ensures no out-of-gamut colors at any tone setting
 
 ### Seven Semantic Presets Per Hue (Implemented)
 
-Instead of arbitrary intensity stops, the CITA system provides 7 named presets
+Instead of arbitrary intensity stops, the TugColor system provides 7 named presets
 per hue with fixed i/t mappings:
 
 | Preset | CSS Variable | i | t | Use Case |
@@ -531,7 +531,7 @@ in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 
 ```css
 :root {
-  /* Per-hue constants (static, from tug-cita-canonical.json): */
+  /* Per-hue constants (static, from tug-color-canonical.json): */
   --tug-red-h: 25;
   --tug-red-canonical-l: 0.659;
   --tug-red-peak-c: 0.346;
@@ -561,7 +561,7 @@ in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 ```
 
 **Programmatic use.** For arbitrary i/t combinations beyond the 7 presets,
-the TypeScript function `citaColor(hueName, i, t, canonicalL)` returns a raw
+the TypeScript function `tugColor(hueName, i, t, canonicalL)` returns a raw
 `oklch(...)` string. Used in inline styles, color pickers, and data
 visualization. Retained in `palette-engine.ts` after JS injection is removed.
 
@@ -652,7 +652,7 @@ tugbank (`dev.tugtool.app` domain, key `scale`), and restored on reload.
 
 ### The Problem (Resolved)
 
-The legacy `--td-duration-scalar` system has been replaced. The CITA Runtime
+The legacy `--td-duration-scalar` system has been replaced. The TugColor Runtime
 phase removed `--td-duration-scalar` entirely. Phase 5d5b introduced the
 `--tug-timing` / `--tug-motion` system described below, which is now
 implemented and working.
@@ -825,7 +825,7 @@ The important distinction:
 
 ## Proposed Token Architecture
 
-### Layer 0: CITA Palette (`--tug-{hue}[-preset]`, `--tug-{hue}-{constant}`)
+### Layer 0: TugColor Palette (`--tug-{hue}[-preset]`, `--tug-{hue}-{constant}`)
 
 Purpose:
 
@@ -855,7 +855,7 @@ Rules:
 
 - Chromatic presets are pure CSS formulas: `oklch(L-calc C-calc h-const)`.
 - Per-hue constants (the only values requiring computation) are static —
-  derived from `tug-cita-canonical.json` and hardcoded in the CSS file.
+  derived from `tug-color-canonical.json` and hardcoded in the CSS file.
 - 242+ CSS variables: 168 chromatic presets + 74 constants + neutral ramp.
 - P3 support: `@media (color-gamut: p3)` overrides `--tug-{hue}-peak-c`
   with wider chroma caps; preset formulas auto-produce richer colors.
@@ -1087,8 +1087,8 @@ This is a first-class domain, not a side note.
 
 #### Palette Foundation
 
-The accent system derives from the CITA palette. Semantic accent tokens
-reference CITA preset variables:
+The accent system derives from the TugColor palette. Semantic accent tokens
+reference TugColor preset variables:
 
 ```css
 --tug-base-accent-default: var(--tug-orange);
@@ -1102,9 +1102,9 @@ reference CITA preset variables:
 --tug-base-accent-danger: var(--tug-red-accent);
 ```
 
-The seven CITA presets per hue (canonical, accent, muted, light, subtle, dark,
+The seven TugColor presets per hue (canonical, accent, muted, light, subtle, dark,
 deep) map naturally to semantic accent roles. Because these resolve from the
-CITA palette, all themes share consistent accent behavior.
+TugColor palette, all themes share consistent accent behavior.
 
 #### Accent-Derived Interaction Tokens
 
@@ -1431,7 +1431,7 @@ rules.
 
 #### Chart / Gauge
 
-Chart series colors reference CITA palette presets:
+Chart series colors reference TugColor palette presets:
 
 - `--tug-base-chart-series-warm` = `var(--tug-orange)`
 - `--tug-base-chart-series-cool` = `var(--tug-cyan)`
@@ -1655,12 +1655,12 @@ The current accent contract needs a direct mapping so the migration is explicit.
 ### Why This Is Better
 
 - Chart, syntax, and multi-series visualization still get a stable expressive
-  palette — now with 7 named presets per hue plus programmatic `citaColor()` for
+  palette — now with 7 named presets per hue plus programmatic `tugColor()` for
   arbitrary i/t combinations.
 - Component authors no longer consume meaningless ordinals.
 - Semantic roles such as info/warning/danger stop depending on "knowing" what
   accent number means what.
-- Any hue at any intensity/tone is available on demand via `citaColor()`.
+- Any hue at any intensity/tone is available on demand via `tugColor()`.
 
 ---
 
@@ -1708,7 +1708,7 @@ The overlay should show:
   - `--tug-comp-*` token if present.
   - `--tug-base-*` token it resolves from.
   - `--tug-{hue}[-preset]` palette value beneath that (including the hue family
-    name, preset name, and CITA coordinates: intensity/tone/canonical L).
+    name, preset name, and TugColor coordinates: intensity/tone/canonical L).
 - Current `--tug-zoom` and `--tug-timing` values and their effect on the
   inspected element's dimensions and transitions.
 
@@ -1742,7 +1742,7 @@ tugways style contract:
 - Which `--tug-comp-*` token applied.
 - Which `--tug-base-*` semantic is responsible.
 - Which theme primitive supplied the value.
-- For CITA palette colors: which hue family, preset name, and CITA coordinates
+- For TugColor palette colors: which hue family, preset name, and TugColor coordinates
   (intensity/tone) produced the value.
 - What multiplier effects `--tug-zoom` and `--tug-timing` have on the
   element.
@@ -1765,10 +1765,10 @@ This makes the style system navigable instead of mystical.
 
 ### Phase B: Introduce New Layers
 
-1. Implement the CITA palette engine (TypeScript utility + startup injection). **DONE** — `injectCITACSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
+1. Implement the TugColor palette engine (TypeScript utility + startup injection). **DONE** — `injectCITACSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
 2. Add `--tug-{hue}[-preset]` computed variables and per-hue constants. **DONE.**
 3. Add `--tug-zoom`, `--tug-timing`, `--tug-motion` global multipliers. **DONE** — `--tug-zoom` drives `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI. Timing and motion work correctly.
-4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not CITA palette references. Phase 5d5e will wire them.
+4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not TugColor palette references. Phase 5d5e will wire them.
 5. Add `--tug-comp-*` where needed, including component-level zoom overrides. **DONE** (Phase 5d5c).
 6. Add `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors. Planned for Phase 5d5e.
 6. Keep temporary aliases from old tokens to new tokens.
@@ -1818,12 +1818,12 @@ that every new `--tug-comp-*` resolves from existing `--tug-base-*`.
 
 Mitigation: pre-compute 242 CSS variables (168 presets + 74 constants) at
 startup. This is a one-time cost of < 1ms. Arbitrary i/t combinations are
-computed on demand via `citaColor()`, which is pure math with no DOM access.
+computed on demand via `tugColor()`, which is pure math with no DOM access.
 **RESOLVED** — implemented and verified.
 
 ### 5. OKLCH Gamut Clipping
 
-Mitigation: the CITA palette engine includes per-hue chroma capping derived via
+Mitigation: the TugColor palette engine includes per-hue chroma capping derived via
 binary search at three L sample points (L_DARK, canonical L, L_LIGHT) for both
 sRGB and P3 gamuts. A 2% safety margin prevents clipping.
 **RESOLVED** — implemented with `MAX_CHROMA_FOR_HUE` and `MAX_P3_CHROMA_FOR_HUE`
@@ -1855,7 +1855,7 @@ results per element while hovered.
 6. Tugways component CSS consumes `--tug-base-*` and `--tug-comp-*` only.
 7. Theme files own only `--tug-palette-*` primitives (plus engine parameters).
 8. The Tailwind/shadcn bridge points at the new canonical layer.
-9. The CITA palette engine computes 242 CSS variables (168 presets + 74
+9. The TugColor palette engine computes 242 CSS variables (168 presets + 74
    constants) at startup, with P3 overrides in a `@media (color-gamut: p3)` block.
 10. `--tug-zoom` resizes the entire UI when changed. Verified at 0.85, 1.0,
     1.25, and 1.5.
@@ -1864,7 +1864,7 @@ results per element while hovered.
 12. `--tug-motion: 0` disables all motion. Verified with `prefers-reduced-motion`
     and manual toggle.
 13. Dev-mode `Ctrl+Option + hover` inspector can show full cascade resolution
-    for hovered components, including CITA palette provenance (hue/preset/i/t).
+    for hovered components, including TugColor palette provenance (hue/preset/i/t).
 
 ---
 
@@ -1872,9 +1872,9 @@ results per element while hovered.
 
 Implementation status and remaining work across six sub-phases:
 
-1. **Phase 5d5a: CITA Palette Engine** — **COMPLETE.** CITA palette engine
+1. **Phase 5d5a: TugColor Palette Engine** — **COMPLETE.** TugColor palette engine
    with 24 hue families, 7 presets per hue, short-form `--tug-{hue}[-preset]`
-   CSS variables, P3 wide-gamut support, `citaColor()` JS API. Shipped as
+   CSS variables, P3 wide-gamut support, `tugColor()` JS API. Shipped as
    `injectCITACSS()`. All legacy anchor/smoothstep/tone code removed.
 
 2. **Phase 5d5b: Global Scale & Timing** — **COMPLETE.** `--tug-zoom` drives
@@ -1891,17 +1891,17 @@ Implementation status and remaining work across six sub-phases:
    compatibility aliases in `tokens.css`. Theme override files (`bluenote.css`,
    `harmony.css`) created. However, all chromatic `--tug-base-*` tokens used
    hardcoded hex values instead of `var(--tug-{hue})` palette references —
-   the CITA palette integration was deferred and is now Phase 5d5e.
+   the TugColor palette integration was deferred and is now Phase 5d5e.
 
 4. **Phase 5d5d: Consumer Migration** — **COMPLETE.** Migrated all CSS and TS
    consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`.
    Rewrote the Tailwind/shadcn `@theme` bridge. Removed legacy aliases. Added
    `check-legacy-tokens.sh` CI enforcement script. Merged as PR #98. All
    consumers now point at `--tug-base-*` tokens — but those tokens still
-   resolve to hardcoded hex values, not the CITA palette.
+   resolve to hardcoded hex values, not the TugColor palette.
 
 5. **Phase 5d5e: Palette Engine Integration** — Wire `--tug-base-*` chromatic
-   tokens to the CITA palette. Convert the palette layer from JS-injected
+   tokens to the TugColor palette. Convert the palette layer from JS-injected
    `oklch()` strings to pure CSS formulas using `oklch()` + `calc()` + per-hue
    constants. Add `--tug-neutral-*` achromatic ramp [D75]. Wire accent, chart,
    syntax, status, and all other chromatic semantic tokens to `var(--tug-{hue}
@@ -1911,7 +1911,7 @@ Implementation status and remaining work across six sub-phases:
    palette engine and the consumer-facing tokens.
 
 6. **Phase 5d5f: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
-   CITA palette provenance display (hue/preset/i/t), scale/timing readout.
+   TugColor palette provenance display (hue/preset/i/t), scale/timing readout.
 
 Each sub-phase has its own tugplan. See `tugways-implementation-strategy.md` for
 the full phase descriptions and dependency map.

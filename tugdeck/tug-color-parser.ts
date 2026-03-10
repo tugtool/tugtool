@@ -1,58 +1,58 @@
 /**
- * cita-parser — Tokenizer and parser for the --cita() color notation.
+ * tug-color-parser — Tokenizer and parser for the --tug-color() color notation.
  *
- * --cita() specifies colors using four parameters:
+ * --tug-color() specifies colors using four parameters:
  *   Color (C):     A named hue, optionally adjusted by a degree offset
  *   Intensity (I): Chroma axis, 0–100 (default 50)
  *   Tone (T):      Lightness axis, 0–100 (default 50)
  *   Alpha (A):     Opacity, 0–100 (default 100)
  *
  * Supported syntax forms:
- *   --cita(red)                              defaults for i/t/a
- *   --cita(red, 70)                          positional i, defaults for t/a
- *   --cita(red, 50, 40, 100)                 all positional
- *   --cita(c: red, i: 50, t: 40, a: 100)    all labeled
- *   --cita(color: red, intensity: 50, tone: 40, alpha: 100) full label names
- *   --cita(coral, t: 20)                     mixed: positional then labeled
- *   --cita(red+5.2, i: 30, t: 70)           color with hue offset
- *   --cita(t: 40, a: 100, c: purple, i: 12) labeled, any order
+ *   --tug-color(red)                              defaults for i/t/a
+ *   --tug-color(red, 70)                          positional i, defaults for t/a
+ *   --tug-color(red, 50, 40, 100)                 all positional
+ *   --tug-color(c: red, i: 50, t: 40, a: 100)    all labeled
+ *   --tug-color(color: red, intensity: 50, tone: 40, alpha: 100) full label names
+ *   --tug-color(coral, t: 20)                     mixed: positional then labeled
+ *   --tug-color(red+5.2, i: 30, t: 70)           color with hue offset
+ *   --tug-color(t: 40, a: 100, c: purple, i: 12) labeled, any order
  *
  * Labels: c/color, i/intensity, t/tone, a/alpha
  * Positional order: color, intensity, tone, alpha
  * Positional args must precede labeled args.
  *
- * @module cita-parser
+ * @module tug-color-parser
  */
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface CITAColor {
+export interface TugColorValue {
   name: string;
   offset: number; // degrees, 0 if no offset specified
   preset?: string; // preset name if specified (e.g. "intense", "light")
 }
 
-export interface CITAParsed {
-  color: CITAColor;
+export interface TugColorParsed {
+  color: TugColorValue;
   intensity: number;
   tone: number;
   alpha: number;
 }
 
-export interface CITAError {
+export interface TugColorError {
   message: string;
   pos: number;
 }
 
 export type ParseResult =
-  | { ok: true; value: CITAParsed }
-  | { ok: false; errors: CITAError[] };
+  | { ok: true; value: TugColorParsed }
+  | { ok: false; errors: TugColorError[] };
 
-/** A --cita() call found within a larger CSS value string. */
-export interface CITACallSpan {
-  /** Index of the first '-' in '--cita(' */
+/** A --tug-color() call found within a larger CSS value string. */
+export interface TugColorCallSpan {
+  /** Index of the first '-' in '--tug-color(' */
   start: number;
   /** Index one past the closing ')' */
   end: number;
@@ -76,7 +76,7 @@ interface Token {
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-function tokenize(input: string): Token[] | CITAError {
+function tokenize(input: string): Token[] | TugColorError {
   const tokens: Token[] = [];
   let i = 0;
 
@@ -186,9 +186,9 @@ function splitArgs(tokens: Token[]): Token[][] {
 function parseColorTokens(
   tokens: Token[],
   knownHues: ReadonlySet<string>,
-  errors: CITAError[],
+  errors: TugColorError[],
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
-): CITAColor | null {
+): TugColorValue | null {
   if (tokens.length === 0) {
     errors.push({ message: "Expected a color name", pos: 0 });
     return null;
@@ -269,7 +269,7 @@ function parseColorTokens(
 function parseNumericTokens(
   tokens: Token[],
   slotName: string,
-  errors: CITAError[],
+  errors: TugColorError[],
 ): number | null {
   if (tokens.length === 0) {
     errors.push({ message: `Expected a number for ${slotName}`, pos: 0 });
@@ -312,15 +312,15 @@ function parseNumericTokens(
 // ---------------------------------------------------------------------------
 
 /**
- * Parse the inner content of a --cita() call.
+ * Parse the inner content of a --tug-color() call.
  *
  * @param input  The text between the parentheses (not including them).
  * @param knownHues  Set of valid color names (e.g. "red", "blue", "cherry").
  * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
- *   When provided, enables preset syntax: --cita(green-intense), --cita(orange-muted, a: 50).
+ *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(orange-muted, a: 50).
  *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
  */
-export function parseCITA(
+export function parseTugColor(
   input: string,
   knownHues: ReadonlySet<string>,
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
@@ -331,14 +331,14 @@ export function parseCITA(
   }
 
   if (tokenResult.length === 0) {
-    return { ok: false, errors: [{ message: "Empty --cita() call", pos: 0 }] };
+    return { ok: false, errors: [{ message: "Empty --tug-color() call", pos: 0 }] };
   }
 
   const argGroups = splitArgs(tokenResult);
-  const errors: CITAError[] = [];
+  const errors: TugColorError[] = [];
 
   // Parsed values — undefined means not yet assigned
-  let color: CITAColor | undefined;
+  let color: TugColorValue | undefined;
   let intensity: number | undefined;
   let tone: number | undefined;
   let alpha: number | undefined;
@@ -471,24 +471,24 @@ export function parseCITA(
 }
 
 // ---------------------------------------------------------------------------
-// CSS value scanner — finds --cita() calls within a CSS declaration value
+// CSS value scanner — finds --tug-color() calls within a CSS declaration value
 // ---------------------------------------------------------------------------
 
-const CITA_MARKER = "--cita(";
+const TUG_COLOR_MARKER = "--tug-color(";
 
 /**
- * Find all --cita() calls in a CSS value string.
+ * Find all --tug-color() calls in a CSS value string.
  * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
  */
-export function findCITACalls(cssValue: string): CITACallSpan[] {
-  const calls: CITACallSpan[] = [];
+export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
+  const calls: TugColorCallSpan[] = [];
   let searchFrom = 0;
 
   while (searchFrom < cssValue.length) {
-    const start = cssValue.indexOf(CITA_MARKER, searchFrom);
+    const start = cssValue.indexOf(TUG_COLOR_MARKER, searchFrom);
     if (start === -1) break;
 
-    const innerStart = start + CITA_MARKER.length;
+    const innerStart = start + TUG_COLOR_MARKER.length;
     let depth = 1;
     let i = innerStart;
 

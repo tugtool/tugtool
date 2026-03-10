@@ -3,7 +3,7 @@
  * generate-tug-palette.ts
  *
  * Generates styles/tug-palette.css from the constants defined in palette-engine.ts.
- * The single source of truth for canonical L values is roadmap/tug-cita-canonical.json,
+ * The single source of truth for canonical L values is roadmap/tug-color-canonical.json,
  * which palette-engine.ts imports. Running this script keeps tug-palette.css in sync.
  *
  * Usage:
@@ -18,7 +18,7 @@ import {
   HUE_FAMILIES,
   DEFAULT_CANONICAL_L,
   MAX_CHROMA_FOR_HUE,
-  CITA_PRESETS,
+  TUG_COLOR_PRESETS,
   L_DARK,
   L_LIGHT,
   PEAK_C_SCALE,
@@ -75,9 +75,9 @@ const lines: string[] = [];
 // File header
 lines.push(`/* GENERATED FILE — do not edit. Source: palette-engine.ts */`);
 lines.push(`/**`);
-lines.push(` * tug-palette.css — CITA Palette Engine (Pure CSS)`);
+lines.push(` * tug-palette.css — TugColor Palette Engine (Pure CSS)`);
 lines.push(` *`);
-lines.push(` * CITA color model: Color, Intensity, Tone — a perceptual coordinate system`);
+lines.push(` * TugColor color model: Color, Intensity, Tone — a perceptual coordinate system`);
 lines.push(` * mapped to OKLCH. Each hue has three constants (h, canonical-l, peak-c).`);
 lines.push(` * Intensity (0-100) controls chroma as a fraction of peak-c. Tone (0-100)`);
 lines.push(` * controls lightness via a piecewise linear formula between three anchors:`);
@@ -171,7 +171,7 @@ lines.push(`   *   (simplified to just var(--tug-H-canonical-l) directly)`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
 lines.push(``);
 
-const { canonical, light, dark, intense, muted } = CITA_PRESETS;
+const { canonical, light, dark, intense, muted } = TUG_COLOR_PRESETS;
 
 for (const hue of HUE_ORDER) {
   lines.push(`  /* ${hue} */`);

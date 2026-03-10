@@ -5,7 +5,7 @@
  *   .tug-inspector-highlight -- absolutely-positioned highlight ring around the
  *     inspected element. Pointer-events disabled so it does not interfere with hover.
  *   .tug-inspector-panel -- fixed-position inspector panel showing token chain,
- *     CITA provenance, and scale/timing readout.
+ *     TugColor provenance, and scale/timing readout.
  *
  * Positioning strategy:
  *   - The highlight element uses position:fixed and tracks the target element's
@@ -209,10 +209,10 @@
 }
 
 /* ---------------------------------------------------------------------------
-   CITA annotation
+   TugColor annotation
    --------------------------------------------------------------------------- */
 
-.tug-inspector-cita {
+.tug-inspector-tug-color {
   color: oklch(0.72 0.18 140);
   margin-left: auto;
   padding-left: 12px;

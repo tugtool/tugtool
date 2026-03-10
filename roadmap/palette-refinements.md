@@ -1,4 +1,4 @@
-# CITA Palette System Refinements
+# TugColor Palette System Refinements
 
 ## Core Principle
 
@@ -9,9 +9,9 @@ tone levels = 240,000 addressable colors. The system provides three ways to acce
    canonical lightness, and peak chroma. Plus 2 global lightness anchors.
 2. **Five convenience presets per hue** (120 CSS variables): canonical, light, dark,
    intense, muted. Fixed i/t values, same across all themes.
-3. **Inline CITA formula**: any element can specify arbitrary i/t using the
+3. **Inline TugColor formula**: any element can specify arbitrary i/t using the
    `calc()`+`clamp()` piecewise formula with per-hue constants.
-4. **`citaColor()` JS function**: programmatic access for inline styles, color pickers,
+4. **`tugColor()` JS function**: programmatic access for inline styles, color pickers,
    data visualization.
 
 Components never see the formula — they consume semantic tokens (`--tug-base-accent-default`)
@@ -77,7 +77,7 @@ The `calc()`+`clamp()` piecewise formula is the shared math. It appears in three
 1. **`tug-palette.css`**: defines the five convenience presets per hue
 2. **Semantic tokens in theme files**: theme-specific chromatic choices use the same formula
    with their own i/t numbers
-3. **`palette-engine.ts`**: `citaColor()` implements the same math in TypeScript
+3. **`palette-engine.ts`**: `tugColor()` implements the same math in TypeScript
 
 **Per-hue constants** (3 vars per hue, 24 hues = 72 vars):
 
@@ -117,7 +117,7 @@ with different literal numbers in the semantic token definitions.
 
 **How the piecewise clamp() math works:**
 
-The CITA tone-to-lightness mapping has two segments:
+The TugColor tone-to-lightness mapping has two segments:
 
 ```
 t 0→50:   L goes from L_DARK to canonical-l
@@ -158,7 +158,7 @@ Result: L = L_DARK + (can-l - L_DARK) = can-l
 
 This is the key design shift. **Semantic tokens are where theme-specific color choices live.**
 
-Each theme file defines its chromatic `--tug-base-*` tokens using the inline CITA formula
+Each theme file defines its chromatic `--tug-base-*` tokens using the inline TugColor formula
 with whatever i/t values suit that theme's visual identity. The five convenience presets
 may be referenced where they happen to match, but themes are not limited to them.
 
@@ -235,12 +235,12 @@ theme file.
 
 ```typescript
 import { citaColor } from './palette-engine';
-element.style.backgroundColor = citaColor('red', 30, 70);
+element.style.backgroundColor = tugColor('red', 30, 70);
 ```
 
 ---
 
-## 6. `citaColor()` JS function
+## 6. `tugColor()` JS function
 
 The TypeScript function uses the same piecewise math as the CSS formulas. It takes a hue
 name (or raw angle), intensity, and tone, and returns an `oklch()` string. Used for:
@@ -251,13 +251,13 @@ name (or raw angle), intensity, and tone, and returns an `oklch()` string. Used 
 
 The function already exists in `palette-engine.ts` — it is completely rewritten to use the
 `clamp()`-based piecewise formula, matching the CSS exactly. The old coefficient-based
-functions are removed entirely. `CITA_PRESETS` is updated to the five-preset set.
+functions are removed entirely. `TUG_COLOR_PRESETS` is updated to the five-preset set.
 
 ---
 
 ## 7. Theme overrides
 
-Themes define chromatic `--tug-base-*` tokens using the inline CITA formula with theme-
+Themes define chromatic `--tug-base-*` tokens using the inline TugColor formula with theme-
 specific i/t choices. This replaces the old model of overriding preset knobs.
 
 For achromatic adjustments, themes override non-chromatic tokens (surfaces, grays, shadows)
@@ -313,7 +313,7 @@ The gallery palette editor is enhanced to serve the theme design workflow:
 ## 11. Comment policy
 
 All comments describe the code as it is. No phase numbers, no "replaced X", no
-"introduced in Y". The palette file header explains the CITA model, the three axes, the
+"introduced in Y". The palette file header explains the TugColor model, the three axes, the
 piecewise formula, and the preset system.
 
 ---
@@ -326,7 +326,7 @@ piecewise formula, and the preset system.
 2. Remove `subtle` and `deep` presets — update all references to use semantic tokens or
    inline formulas
 3. Adjust `light` and `dark` i/t to new values
-4. Add `CITA_PRESETS` with the five-preset set in palette-engine.ts
+4. Add `TUG_COLOR_PRESETS` with the five-preset set in palette-engine.ts
 
 ### Formula rewrite
 
@@ -336,7 +336,7 @@ literal i/t numbers. Visual parity with the old system is not a goal.
 
 ### Theme file rewrite
 
-Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline CITA formula
+Each theme's chromatic `--tug-base-*` tokens are rewritten to use the inline TugColor formula
 with theme-specific i/t choices. This is the substantive design work — choosing the
 right i/t for each chromatic role in each theme.
 
@@ -357,9 +357,9 @@ functionality described in section 10.
 - `light` and `dark` i/t adjusted
 - 7 presets → 5 presets (fewer convenience vars, but full space accessible)
 - Coefficient knobs eliminated — convenience presets use literal i/t in formulas
-- Theme files rewritten with inline CITA formulas for chromatic semantic tokens
-- `CITA_PRESETS` in palette-engine.ts rewritten to five-preset set
-- `citaColor()` rewritten to match CSS formula
+- Theme files rewritten with inline TugColor formulas for chromatic semantic tokens
+- `TUG_COLOR_PRESETS` in palette-engine.ts rewritten to five-preset set
+- `tugColor()` rewritten to match CSS formula
 - Gallery editor enhanced for interactive i/t exploration
 - All component CSS, theme files, and TS files audited and updated
 - Historical comments stripped
@@ -371,42 +371,42 @@ functionality described in section 10.
 - P3 media query overrides
 - Three-layer token architecture (palette → base → component)
 - Semantic tokens keep `accent` as UI role name
-- `citaColor()` function (rewritten to match)
+- `tugColor()` function (rewritten to match)
 - Neutral ramp + black/white (adjusted to match five presets)
 
 ---
 
-## 13. Build-time `--cita()` expansion (Phase 5g2)
+## 13. Build-time `--tug-color()` expansion (Phase 5g2)
 
-The inline `calc()`+`clamp()` formula (section 3) gives full parametric control, but it is verbose — too verbose for the hundreds of achromatic tokens (surfaces, grays, borders, text) that fill theme files. Phase 5g2 introduces a compact `--cita()` CSS notation that expands to `oklch()` at build time.
+The inline `calc()`+`clamp()` formula (section 3) gives full parametric control, but it is verbose — too verbose for the hundreds of achromatic tokens (surfaces, grays, borders, text) that fill theme files. Phase 5g2 introduces a compact `--tug-color()` CSS notation that expands to `oklch()` at build time.
 
-### The `--cita()` notation
+### The `--tug-color()` notation
 
 ```css
 /* Named hue */
---tug-base-surface-app: --cita(cobalt, 3, 8);
+--tug-base-surface-app: --tug-color(cobalt, 3, 8);
 
 /* Raw OKLCH angle */
---tug-base-surface-alt: --cita(237, 5, 13);
+--tug-base-surface-alt: --tug-color(237, 5, 13);
 ```
 
-The PostCSS plugin expands these at build time to concrete `oklch(L C h)` values using the same piecewise math as `citaColor()`. Zero runtime cost — the built CSS contains only standard `oklch()`.
+The PostCSS plugin expands these at build time to concrete `oklch(L C h)` values using the same piecewise math as `tugColor()`. Zero runtime cost — the built CSS contains only standard `oklch()`.
 
-### When to use `--cita()` vs. the inline formula
+### When to use `--tug-color()` vs. the inline formula
 
 | Use case | Approach |
 |----------|----------|
-| Achromatic tokens (surfaces, borders, text, grays) | `--cita()` — compact, build-time expansion |
+| Achromatic tokens (surfaces, borders, text, grays) | `--tug-color()` — compact, build-time expansion |
 | Chromatic tokens needing P3 override via `peak-c` | Inline `calc()`+`clamp()` formula with `var(--tug-{hue}-peak-c)` |
-| Programmatic colors in JS | `citaColor()` function |
+| Programmatic colors in JS | `tugColor()` function |
 | Convenience presets in tug-palette.css | Inline formula (already uses `var()` references for P3) |
 
-The key distinction: `--cita()` produces a static `oklch()` value at build time. The inline formula produces a live `calc()` expression that responds to CSS variable changes at runtime (e.g., P3 gamut overrides via `peak-c`). Theme achromatic tokens don't need P3 responsiveness, so `--cita()` is the right choice.
+The key distinction: `--tug-color()` produces a static `oklch()` value at build time. The inline formula produces a live `calc()` expression that responds to CSS variable changes at runtime (e.g., P3 gamut overrides via `peak-c`). Theme achromatic tokens don't need P3 responsiveness, so `--tug-color()` is the right choice.
 
-### Reverse mapper: `oklchToCITA()`
+### Reverse mapper: `oklchToTugColor()`
 
-To convert the hundreds of existing hex values programmatically, `oklchToCITA()` inverts the CITA math. Given an `oklch()` string, it finds the closest named hue family and recovers intensity/tone parameters. The companion `citaPretty()` formats results as `"blue i=5 t=13"` for developer tooling.
+To convert the hundreds of existing hex values programmatically, `oklchToTugColor()` inverts the TugColor math. Given an `oklch()` string, it finds the closest named hue family and recovers intensity/tone parameters. The companion `tugColorPretty()` formats results as `"blue i=5 t=13"` for developer tooling.
 
 ### Theme conversion outcome
 
-After conversion, all three theme files (tug-tokens.css, bluenote.css, harmony.css) contain zero standalone hex color values in their body{} blocks. Every color is expressed as `--cita(hue, i, t)`, making the design intent — hue family, intensity, tone — explicit and machine-readable. `tug-palette.css` is not modified (its `var()` formulas for P3 overrides remain as-is).
+After conversion, all three theme files (tug-tokens.css, bluenote.css, harmony.css) contain zero standalone hex color values in their body{} blocks. Every color is expressed as `--tug-color(hue, i, t)`, making the design intent — hue family, intensity, tone — explicit and machine-readable. `tug-palette.css` is not modified (its `var()` formulas for P3 overrides remain as-is).

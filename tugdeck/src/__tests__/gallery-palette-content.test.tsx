@@ -7,7 +7,7 @@
  * - L curve editor: 24 draggable points
  * - VibValPicker: appears on selection, 441 cells (21x21), drag updates swatch,
  *   preset overlay, CSS formula export
- * - citaColor: pure computation tests
+ * - tugColor: pure computation tests
  * - JSON export/import helpers (unit tests)
  * - Export/import UI elements
  *
@@ -24,7 +24,7 @@ import {
   buildExportPayload,
   parseImportPayload,
 } from "@/components/tugways/cards/gallery-palette-content";
-import { citaColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
+import { tugColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Render tests
@@ -269,32 +269,32 @@ describe("GalleryPaletteContent – VibValPicker", () => {
 });
 
 // ---------------------------------------------------------------------------
-// citaColor – pure computation tests
+// tugColor – pure computation tests
 // ---------------------------------------------------------------------------
 
-describe("citaColor – pure unit tests", () => {
+describe("tugColor – pure unit tests", () => {
   it("returns a valid oklch string", () => {
-    const result = citaColor("red", 50, 50, 0.79);
+    const result = tugColor("red", 50, 50, 0.79);
     expect(result).toMatch(/^oklch\(/);
   });
 
   it("intensity=0 produces zero chroma (gray)", () => {
-    const result = citaColor("red", 0, 50, 0.79);
+    const result = tugColor("red", 0, 50, 0.79);
     expect(result).toMatch(/oklch\([\d.]+ 0 /);
   });
 
   it("tone=0 produces dark color (L = L_DARK = 0.15)", () => {
-    const result = citaColor("red", 50, 0, 0.79);
+    const result = tugColor("red", 50, 0, 0.79);
     expect(result).toMatch(/oklch\(0\.15 /);
   });
 
   it("tone=100 produces light color (L = L_LIGHT = 0.96)", () => {
-    const result = citaColor("red", 50, 100, 0.79);
+    const result = tugColor("red", 50, 100, 0.79);
     expect(result).toMatch(/oklch\(0\.96 /);
   });
 
   it("tone=50 produces canonical L", () => {
-    const result = citaColor("red", 50, 50, 0.79);
+    const result = tugColor("red", 50, 50, 0.79);
     expect(result).toMatch(/oklch\(0\.79 /);
   });
 
@@ -302,7 +302,7 @@ describe("citaColor – pure unit tests", () => {
     // intensity=50 → C = (50/100) * (MAX_CHROMA * 2) = MAX_CHROMA
     const maxC = MAX_CHROMA_FOR_HUE["red"];
     const expectedC = parseFloat(maxC.toFixed(4)).toString();
-    const result = citaColor("red", 50, 50, 0.79);
+    const result = tugColor("red", 50, 50, 0.79);
     expect(result).toContain(expectedC);
   });
 
@@ -311,7 +311,7 @@ describe("citaColor – pure unit tests", () => {
     const maxC = MAX_CHROMA_FOR_HUE["red"];
     const peakC = maxC * 2;
     const expectedC = parseFloat(peakC.toFixed(4)).toString();
-    const result = citaColor("red", 100, 50, 0.79);
+    const result = tugColor("red", 100, 50, 0.79);
     expect(result).toContain(expectedC);
   });
 
@@ -323,7 +323,7 @@ describe("citaColor – pure unit tests", () => {
       "plum", "pink", "rose", "magenta", "berry", "coral",
     ];
     for (const name of hueNames) {
-      const result = citaColor(name, 50, 50, 0.8);
+      const result = tugColor(name, 50, 50, 0.8);
       expect(result).toMatch(/^oklch\(/);
     }
   });

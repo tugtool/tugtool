@@ -1,8 +1,8 @@
 /**
- * convert-hvv-to-cita — Batch conversion script for --hvv() → --cita() in CSS files.
+ * convert-hvv-to-tug-color — Batch conversion script for --hvv() → --tug-color() in CSS files.
  *
  * Reads a CSS file, finds all --hvv(hue, vib, val[, alpha]) calls using regex,
- * converts them to --cita(hue, i: vib, t: val[, a: alpha*100]) format,
+ * converts them to --tug-color(hue, i: vib, t: val[, a: alpha*100]) format,
  * and writes the file back.
  *
  * Conversion rules:
@@ -10,17 +10,17 @@
  *   - `hue-NNN` format: find nearest named hue + smallest degree offset
  *   - Raw numeric angles: same nearest-hue logic
  *   - Alpha: old alpha was 0-1, new alpha is 0-100. Multiply by 100. Omit `a:` if 100.
- *   - Simplification: if intensity==50 && tone==50 && no alpha → --cita(color)
- *   - Simplification: if tone==50 && no alpha → --cita(color, i: N)
+ *   - Simplification: if intensity==50 && tone==50 && no alpha ) → --tug-color(color)
+ *   - Simplification: if tone==50 && no alpha ) → --tug-color(color, i: N)
  *
  * Nearest-hue algorithm: for a raw angle, find the named hue with minimum
  * circular angular distance. Use that hue name + (angle - hue_angle) as offset.
  * Always minimize absolute offset (prefer e.g. violet-6 over cobalt+14).
  *
  * Usage (run from tugdeck directory):
- *   bun run scripts/convert-hvv-to-cita.ts <css-file> [<css-file> ...]
+ *   bun run scripts/convert-hvv-to-tug-color.ts <css-file> [<css-file> ...]
  *
- * @module scripts/convert-hvv-to-cita
+ * @module scripts/convert-hvv-to-tug-color
  */
 
 import { readFileSync, writeFileSync } from "fs";
@@ -105,7 +105,7 @@ const HVV_PATTERN = /--hvv\(\s*(hue-\d+|[a-z]+|\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+
 // ---------------------------------------------------------------------------
 
 /**
- * Convert one --hvv(...) match to --cita(...) format.
+ * Convert one --hvv(...) match to --tug-color(...) format.
  */
 function convertHvvMatch(
   hueArg: string,
@@ -156,11 +156,11 @@ function convertHvvMatch(
   // Simplification rules
   if (alpha === undefined && vib === 50 && val === 50) {
     // Simplest form: just the color
-    return `--cita(${colorSpec})`;
+    return `--tug-color(${colorSpec})`;
   }
   if (alpha === undefined && val === 50) {
     // Omit tone
-    return `--cita(${colorSpec}, i: ${vib})`;
+    return `--tug-color(${colorSpec}, i: ${vib})`;
   }
 
   // Full labeled form
@@ -168,7 +168,7 @@ function convertHvvMatch(
   if (alpha !== undefined) {
     parts.push(`a: ${alpha}`);
   }
-  return `--cita(${parts.join(", ")})`;
+  return `--tug-color(${parts.join(", ")})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ function convertHvvMatch(
 // ---------------------------------------------------------------------------
 
 /**
- * Convert all --hvv() calls in a CSS string to --cita() format.
+ * Convert all --hvv() calls in a CSS string to --tug-color() format.
  * Returns { converted, count }.
  */
 export function convertCSSContent(content: string): { converted: string; count: number } {
@@ -207,7 +207,7 @@ if (import.meta.main) {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.error("Usage: bun run scripts/convert-hvv-to-cita.ts <css-file> [<css-file> ...]");
+    console.error("Usage: bun run scripts/convert-hvv-to-tug-color.ts <css-file> [<css-file> ...]");
     process.exit(1);
   }
 
@@ -224,7 +224,7 @@ if (import.meta.main) {
     }
 
     writeFileSync(filePath, converted, "utf8");
-    console.log(`  Converted ${count} --hvv() calls to --cita().`);
+    console.log(`  Converted ${count} --hvv() calls to --tug-color().`);
     totalConverted += count;
 
     // Verify no --hvv( remains

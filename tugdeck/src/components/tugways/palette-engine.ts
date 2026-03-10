@@ -1,20 +1,20 @@
 /**
- * Palette Engine — Tugways CITA Runtime
+ * Palette Engine — Tugways TugColor Runtime
  *
  * Computes a continuous OKLCH color palette from 24 named hue families using
- * the CITA (Color · Intensity · Tone · Alpha) system. Each color is defined
+ * the TugColor (Hue · Intensity · Tone · Alpha) system. Each color is defined
  * by four axes:
  *   - Color: one of 24 named color families mapped to OKLCH hue angles
  *   - Intensity (0-100): chroma axis; at intensity=50, C equals the sRGB-safe max
  *   - Tone (0-100): lightness axis; tone=50 gives the per-hue canonical L
  *   - Alpha (0-100): opacity; default 100 (fully opaque)
  *
- * The CITA palette is expressed as pure CSS in `tug-palette.css`. This module
- * provides `citaColor()` for programmatic JS use and exports the authoritative
+ * The TugColor palette is expressed as pure CSS in `tug-palette.css`. This module
+ * provides `tugColor()` for programmatic JS use and exports the authoritative
  * source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE,
  * MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css was derived from.
  *
- * Five convenience presets per hue (CITA_PRESETS):
+ * Five convenience presets per hue (TUG_COLOR_PRESETS):
  *   canonical  intensity=50, tone=50   The crayon color — reference point
  *   light      intensity=20, tone=85   Background-safe, airy
  *   dark       intensity=50, tone=20   Contrast text, dark surfaces
@@ -25,7 +25,7 @@
  */
 
 // Single source of truth for canonical L values and global lightness anchors.
-import tugCitaCanonical from "../../../../roadmap/tug-cita-canonical.json";
+import tugColorCanonical from "../../../../roadmap/tug-color-canonical.json";
 
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 24 named hue families mapped to OKLCH hue angles
@@ -70,7 +70,7 @@ export const HUE_FAMILIES: Record<string, number> = {
 /**
  * Parameters that bound the chroma derivation search space.
  * `cMax` is the sRGB ceiling used by `_deriveChromaCaps` for the sRGB table.
- * `lMin` / `lMax` are retained for reference but not used by the CITA runtime.
+ * `lMin` / `lMax` are retained for reference but not used by the TugColor runtime.
  */
 export interface LCParams {
   /** L value at intensity 0 (near-white) — legacy, kept for reference */
@@ -248,8 +248,8 @@ export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): b
  * findMaxChroma), and optionally caps at maxCap.
  *
  * Per Spec S06:
- * - sRGB derivation: _deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
- * - P3 derivation:  _deriveChromaCaps(citaLSamples, isInP3Gamut) — no maxCap
+ * - sRGB derivation: _deriveChromaCaps(tugColorLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
+ * - P3 derivation:  _deriveChromaCaps(tugColorLSamples, isInP3Gamut) — no maxCap
  *
  * Not called at runtime. Run once to regenerate static tables.
  */
@@ -269,20 +269,20 @@ export function _deriveChromaCaps(
 }
 
 // ---------------------------------------------------------------------------
-// CITA Constants
+// TugColor Constants
 // ---------------------------------------------------------------------------
 
 /**
  * Lightness at tone=0 (very dark).
- * Source: tug-cita-canonical.json `global.l_dark`.
+ * Source: tug-color-canonical.json `global.l_dark`.
  */
-export const L_DARK: number = tugCitaCanonical.global.l_dark;
+export const L_DARK: number = tugColorCanonical.global.l_dark;
 
 /**
  * Lightness at tone=100 (very light).
- * Source: tug-cita-canonical.json `global.l_light`.
+ * Source: tug-color-canonical.json `global.l_light`.
  */
-export const L_LIGHT: number = tugCitaCanonical.global.l_light;
+export const L_LIGHT: number = tugColorCanonical.global.l_light;
 
 /**
  * Peak chroma scale factor. Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE.
@@ -295,10 +295,10 @@ export const PEAK_C_SCALE = 2;
  * These are the reference lightness values at intensity=50, tone=50.
  * Must remain above 0.555 (piecewise min() constraint, D04).
  *
- * Derived from tug-cita-canonical.json `hues[*].canonical_l`.
+ * Derived from tug-color-canonical.json `hues[*].canonical_l`.
  */
 export const DEFAULT_CANONICAL_L: Record<string, number> = Object.fromEntries(
-  Object.entries(tugCitaCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
+  Object.entries(tugColorCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
 );
 
 /**
@@ -306,7 +306,7 @@ export const DEFAULT_CANONICAL_L: Record<string, number> = Object.fromEntries(
  * These are labeled reference points in the continuous 100×100 intensity/tone space.
  * Per Table T01 in the plan specification.
  */
-export const CITA_PRESETS: Record<string, { intensity: number; tone: number }> = {
+export const TUG_COLOR_PRESETS: Record<string, { intensity: number; tone: number }> = {
   canonical: { intensity: 50, tone: 50 },
   light:     { intensity: 20, tone: 85 },
   dark:      { intensity: 50, tone: 20 },
@@ -315,7 +315,7 @@ export const CITA_PRESETS: Record<string, { intensity: number; tone: number }> =
 };
 
 // ---------------------------------------------------------------------------
-// MAX_CHROMA_FOR_HUE — Per-hue sRGB chroma caps (CITA L range)
+// MAX_CHROMA_FOR_HUE — Per-hue sRGB chroma caps (TugColor L range)
 // ---------------------------------------------------------------------------
 
 /**
@@ -363,7 +363,7 @@ export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// MAX_P3_CHROMA_FOR_HUE — Per-hue Display P3 chroma caps (CITA L range)
+// MAX_P3_CHROMA_FOR_HUE — Per-hue Display P3 chroma caps (TugColor L range)
 // ---------------------------------------------------------------------------
 
 /**
@@ -422,7 +422,7 @@ export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// oklchToCITA — Reverse mapper: oklch() string → CITA parameters
+// oklchToTugColor — Reverse mapper: oklch() string → TugColor parameters
 // ---------------------------------------------------------------------------
 
 /**
@@ -436,7 +436,7 @@ function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | 
 }
 
 /**
- * Reverse-map an `oklch(L C h)` CSS string to the closest CITA parameters.
+ * Reverse-map an `oklch(L C h)` CSS string to the closest TugColor parameters.
  *
  * Algorithm:
  * 1. Parse L, C, h from the oklch string.
@@ -448,7 +448,7 @@ function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | 
  * @param oklchStr - An `oklch(L C h)` CSS string.
  * @returns `{ hue, intensity, tone }` where hue is a named family or `hue-NNN`.
  */
-export function oklchToCITA(oklchStr: string): { hue: string; intensity: number; tone: number } {
+export function oklchToTugColor(oklchStr: string): { hue: string; intensity: number; tone: number } {
   const parsed = parseOklchStr(oklchStr);
   if (!parsed) {
     return { hue: "hue-0", intensity: 0, tone: 0 };
@@ -497,7 +497,7 @@ export function oklchToCITA(oklchStr: string): { hue: string; intensity: number;
 }
 
 /**
- * Format an `oklch()` string as a human-readable CITA description.
+ * Format an `oklch()` string as a human-readable TugColor description.
  *
  * Examples:
  *   - `"blue intensity=5 tone=13"`
@@ -506,13 +506,13 @@ export function oklchToCITA(oklchStr: string): { hue: string; intensity: number;
  * @param oklchStr - An `oklch(L C h)` CSS string.
  * @returns A human-readable string like `"blue intensity=5 tone=13"`.
  */
-export function citaPretty(oklchStr: string): string {
-  const { hue, intensity, tone } = oklchToCITA(oklchStr);
+export function tugColorPretty(oklchStr: string): string {
+  const { hue, intensity, tone } = oklchToTugColor(oklchStr);
   return `${hue} intensity=${intensity} tone=${tone}`;
 }
 
 // ---------------------------------------------------------------------------
-// citaColor — CITA color computation function
+// tugColor — TugColor color computation function
 // ---------------------------------------------------------------------------
 
 /**
@@ -540,7 +540,7 @@ export function citaPretty(oklchStr: string): string {
  *   allows P3-wider chroma (e.g., MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE).
  * @returns An `oklch(L C h)` CSS string.
  */
-export function citaColor(
+export function tugColor(
   hueName: string,
   intensity: number,
   tone: number,

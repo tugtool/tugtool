@@ -1,23 +1,23 @@
 /**
  * Step 8 integration: round-trip verification across all converted theme tokens.
  *
- * For every --cita() call in tug-tokens.css, bluenote.css, and harmony.css:
+ * For every --tug-color() call in tug-tokens.css, bluenote.css, and harmony.css:
  * 1. Expand via the PostCSS plugin to get an oklch() string.
- * 2. Run oklchToCITA() on the expanded oklch.
- * 3. Re-expand the recovered --cita() call via the plugin.
+ * 2. Run oklchToTugColor() on the expanded oklch.
+ * 3. Re-expand the recovered --tug-color() call via the plugin.
  * 4. Verify the two oklch strings match (within rounding tolerance).
  *
  * Also verifies:
- * - tug-palette.css is unmodified (no --cita() calls).
- * - brio.css is unmodified (no --cita() calls).
+ * - tug-palette.css is unmodified (no --tug-color() calls).
+ * - brio.css is unmodified (no --tug-color() calls).
  * - Zero standalone hex values remain in the three theme file body{} blocks.
  */
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import postcss from "postcss";
-import postcssCita from "../../postcss-cita";
-import { oklchToCITA } from "@/components/tugways/palette-engine";
+import postcssTugColor from "../../postcss-tug-color";
+import { oklchToTugColor } from "@/components/tugways/palette-engine";
 
 const STYLES_DIR = join(import.meta.dir, "../../styles");
 
@@ -25,8 +25,8 @@ const STYLES_DIR = join(import.meta.dir, "../../styles");
 // Helpers
 // ---------------------------------------------------------------------------
 
-function expandCitaInCSS(css: string): string {
-  return postcss([postcssCita()]).process(css, { from: undefined }).css;
+function expandTugColorInCSS(css: string): string {
+  return postcss([postcssTugColor()]).process(css, { from: undefined }).css;
 }
 
 function parseOklch(s: string): { L: number; C: number; h: number } | null {
@@ -49,9 +49,9 @@ function oklchDeltaE(
   return Math.sqrt(dL * dL + dC * dC + dHCart * dHCart);
 }
 
-/** Extract all --cita() calls from a CSS string. */
-function extractCitaCalls(css: string): string[] {
-  const pattern = /--cita\([^)]+\)/g;
+/** Extract all --tug-color() calls from a CSS string. */
+function extractTugColorCalls(css: string): string[] {
+  const pattern = /--tug-color\([^)]+\)/g;
   return css.match(pattern) ?? [];
 }
 
@@ -86,16 +86,16 @@ function extractStandaloneHex(css: string): string[] {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: tug-palette.css is unmodified", () => {
-  it("contains no --cita() calls", () => {
+  it("contains no --tug-color() calls", () => {
     const css = readFileSync(join(STYLES_DIR, "tug-palette.css"), "utf8");
-    expect(extractCitaCalls(css)).toHaveLength(0);
+    expect(extractTugColorCalls(css)).toHaveLength(0);
   });
 });
 
 describe("Step 8: brio.css is unmodified", () => {
-  it("contains no --cita() calls", () => {
+  it("contains no --tug-color() calls", () => {
     const css = readFileSync(join(STYLES_DIR, "brio.css"), "utf8");
-    expect(extractCitaCalls(css)).toHaveLength(0);
+    expect(extractTugColorCalls(css)).toHaveLength(0);
   });
 });
 
@@ -117,21 +117,21 @@ describe("Step 8: zero standalone hex values in theme files", () => {
 });
 
 // ---------------------------------------------------------------------------
-// --cita() expansion: all calls expand to valid oklch()
+// --tug-color() expansion: all calls expand to valid oklch()
 // ---------------------------------------------------------------------------
 
-describe("Step 8: all --cita() calls expand to valid oklch()", () => {
+describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
   const themeFiles = ["tug-tokens.css", "bluenote.css", "harmony.css"];
 
   for (const file of themeFiles) {
-    it(`${file}: every --cita() call expands to a parseable oklch()`, () => {
+    it(`${file}: every --tug-color() call expands to a parseable oklch()`, () => {
       const css = readFileSync(join(STYLES_DIR, file), "utf8");
-      const calls = extractCitaCalls(css);
+      const calls = extractTugColorCalls(css);
       expect(calls.length).toBeGreaterThan(0);
 
       const failures: string[] = [];
       for (const call of calls) {
-        const expanded = expandCitaInCSS(`a { color: ${call}; }`);
+        const expanded = expandTugColorInCSS(`a { color: ${call}; }`);
         const m = expanded.match(/color:\s*(oklch\([^)]+\))/);
         if (!m) {
           failures.push(`${call} → not expanded`);
@@ -147,34 +147,34 @@ describe("Step 8: all --cita() calls expand to valid oklch()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// oklchToCITA round-trip across all theme tokens
+// oklchToTugColor round-trip across all theme tokens
 // ---------------------------------------------------------------------------
 
-describe("Step 8: oklchToCITA() round-trip across all converted tokens", () => {
+describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () => {
   const themeFiles = ["tug-tokens.css", "bluenote.css", "harmony.css"];
 
   for (const file of themeFiles) {
     it(`${file}: round-trip stays within delta-E < 0.02 for all tokens`, () => {
       const css = readFileSync(join(STYLES_DIR, file), "utf8");
-      const calls = extractCitaCalls(css);
+      const calls = extractTugColorCalls(css);
 
       const failures: Array<{ call: string; dE: number }> = [];
 
       for (const call of calls) {
-        // Step 1: expand original --cita() to oklch
-        const expanded1CSS = expandCitaInCSS(`a { color: ${call}; }`);
+        // Step 1: expand original --tug-color() to oklch
+        const expanded1CSS = expandTugColorInCSS(`a { color: ${call}; }`);
         const m1 = expanded1CSS.match(/color:\s*(oklch\([^)]+\))/);
         if (!m1) continue;
         const oklch1 = m1[1];
         const parsed1 = parseOklch(oklch1);
         if (!parsed1) continue;
 
-        // Step 2: recover CITA params via oklchToCITA
-        const recovered = oklchToCITA(oklch1);
-        const recoveredCall = `--cita(${recovered.hue}, ${recovered.intensity}, ${recovered.tone})`;
+        // Step 2: recover TugColor params via oklchToTugColor
+        const recovered = oklchToTugColor(oklch1);
+        const recoveredCall = `--tug-color(${recovered.hue}, ${recovered.intensity}, ${recovered.tone})`;
 
-        // Step 3: re-expand recovered --cita()
-        const expanded2CSS = expandCitaInCSS(`a { color: ${recoveredCall}; }`);
+        // Step 3: re-expand recovered --tug-color()
+        const expanded2CSS = expandTugColorInCSS(`a { color: ${recoveredCall}; }`);
         const m2 = expanded2CSS.match(/color:\s*(oklch\([^)]+\))/);
         if (!m2) continue;
         const parsed2 = parseOklch(m2[1]);
@@ -196,39 +196,39 @@ describe("Step 8: oklchToCITA() round-trip across all converted tokens", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PostCSS plugin: declaration values have no --cita() remnants after expansion
+// PostCSS plugin: declaration values have no --tug-color() remnants after expansion
 // ---------------------------------------------------------------------------
 
-describe("Step 8: --cita() calls are fully expanded in theme files", () => {
-  it("tug-tokens.css: processing through plugin produces zero --cita() in declaration values", () => {
+describe("Step 8: --tug-color() calls are fully expanded in theme files", () => {
+  it("tug-tokens.css: processing through plugin produces zero --tug-color() in declaration values", () => {
     const css = readFileSync(join(STYLES_DIR, "tug-tokens.css"), "utf8");
-    const result = expandCitaInCSS(css);
+    const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];
     root.walkDecls((decl) => {
-      if (decl.value.includes("--cita(")) remaining.push(`${decl.prop}: ${decl.value}`);
+      if (decl.value.includes("--tug-color(")) remaining.push(`${decl.prop}: ${decl.value}`);
     });
     expect(remaining).toHaveLength(0);
   });
 
-  it("bluenote.css: processing through plugin produces zero --cita() in declaration values", () => {
+  it("bluenote.css: processing through plugin produces zero --tug-color() in declaration values", () => {
     const css = readFileSync(join(STYLES_DIR, "bluenote.css"), "utf8");
-    const result = expandCitaInCSS(css);
+    const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];
     root.walkDecls((decl) => {
-      if (decl.value.includes("--cita(")) remaining.push(`${decl.prop}: ${decl.value}`);
+      if (decl.value.includes("--tug-color(")) remaining.push(`${decl.prop}: ${decl.value}`);
     });
     expect(remaining).toHaveLength(0);
   });
 
-  it("harmony.css: processing through plugin produces zero --cita() in declaration values", () => {
+  it("harmony.css: processing through plugin produces zero --tug-color() in declaration values", () => {
     const css = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
-    const result = expandCitaInCSS(css);
+    const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];
     root.walkDecls((decl) => {
-      if (decl.value.includes("--cita(")) remaining.push(`${decl.prop}: ${decl.value}`);
+      if (decl.value.includes("--tug-color(")) remaining.push(`${decl.prop}: ${decl.value}`);
     });
     expect(remaining).toHaveLength(0);
   });
@@ -241,22 +241,22 @@ describe("Step 8: --cita() calls are fully expanded in theme files", () => {
 describe("Step 8: D06 contrast-critical overrides in harmony.css are correct", () => {
   const harmonyCss = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
 
-  const d06Expected: Array<{ token: string; cita: string }> = [
-    { token: "--tug-base-accent-muted",    cita: "--cita(flame, i: 45, t: 38)"  },
-    { token: "--tug-base-toast-warning-fg", cita: "--cita(yellow, i: 55, t: 35)" },
-    { token: "--tug-base-badge-warning-fg", cita: "--cita(yellow, i: 46, t: 27)" },
-    { token: "--tug-base-banner-info-fg",   cita: "--cita(blue, i: 42, t: 40)"   },
-    { token: "--tug-base-field-warning",    cita: "--cita(yellow, i: 62, t: 58)" },
+  const d06Expected: Array<{ token: string; tugColor: string }> = [
+    { token: "--tug-base-accent-muted",    tugColor: "--tug-color(flame, i: 45, t: 38)"  },
+    { token: "--tug-base-toast-warning-fg", tugColor: "--tug-color(yellow, i: 55, t: 35)" },
+    { token: "--tug-base-badge-warning-fg", tugColor: "--tug-color(yellow, i: 46, t: 27)" },
+    { token: "--tug-base-banner-info-fg",   tugColor: "--tug-color(blue, i: 42, t: 40)"   },
+    { token: "--tug-base-field-warning",    tugColor: "--tug-color(yellow, i: 62, t: 58)" },
   ];
 
-  for (const { token, cita } of d06Expected) {
-    it(`${token} equals ${cita}`, () => {
-      const pattern = new RegExp(`${token.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&")}:\\s*(--cita\\([^)]+\\))`);
+  for (const { token, tugColor } of d06Expected) {
+    it(`${token} equals ${tugColor}`, () => {
+      const pattern = new RegExp(`${token.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&")}:\\s*(--tug-color\\([^)]+\\))`);
       const m = harmonyCss.match(pattern);
       expect(m).not.toBeNull();
       // Normalise whitespace for comparison
       const actual = m![1].replace(/\s+/g, " ").trim();
-      const expected = cita.replace(/\s+/g, " ").trim();
+      const expected = tugColor.replace(/\s+/g, " ").trim();
       expect(actual).toBe(expected);
     });
   }

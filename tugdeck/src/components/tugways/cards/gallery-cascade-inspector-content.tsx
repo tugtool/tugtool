@@ -8,7 +8,7 @@
  *   (b) TugButton -- two-layer chain: --tug-base-* -> palette (no comp token)
  *   (c) Colored div using --tug-base-accent-default -- base -> palette chain
  *   (d) Div using --tug-base-surface-raised -- non-chromatic base token, terminal hex
- *   (e) Div with direct palette var -- var(--tug-orange-light), direct CITA provenance
+ *   (e) Div with direct palette var -- var(--tug-orange-light), direct TugColor provenance
  *
  * Rules of Tugways compliance:
  *   - Local useState for UI state only [D40]
@@ -137,7 +137,7 @@ export function GalleryCascadeInspectorContent() {
         </div>
         <p className="cg-description">
           Background uses <code>var(--tug-base-accent-default)</code> → palette variable.
-          Two-layer chain: base token → palette variable → CITA provenance.
+          Two-layer chain: base token → palette variable → TugColor provenance.
         </p>
         <div
           data-testid="inspector-sample-accent"
@@ -164,7 +164,7 @@ export function GalleryCascadeInspectorContent() {
         <p className="cg-description">
           Background uses <code>var(--tug-base-surface-raised)</code>.
           Non-chromatic base token: chain terminates at a literal hex value (not a
-          palette variable), so no CITA provenance is shown.
+          palette variable), so no TugColor provenance is shown.
         </p>
         <div
           data-testid="inspector-sample-surface"
@@ -184,7 +184,7 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (e) Direct palette reference: var(--tug-orange-light) -> CITA provenance ---- */}
+      {/* ---- (e) Direct palette reference: var(--tug-orange-light) -> TugColor provenance ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
           (e) Direct palette reference — <code>--tug-orange-light</code>
@@ -192,7 +192,7 @@ export function GalleryCascadeInspectorContent() {
         <p className="cg-description">
           Background uses <code>var(--tug-orange-light)</code> directly.
           Single-hop chain that terminates immediately at a palette variable —
-          inspector shows CITA provenance (hue: orange, preset: light) directly.
+          inspector shows TugColor provenance (hue: orange, preset: light) directly.
         </p>
         <div
           data-testid="inspector-sample-palette"

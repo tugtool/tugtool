@@ -1,6 +1,6 @@
-//! Implementation of the `tugcode cita` command
+//! Implementation of the `tugcode color` command
 //!
-//! Converts colors from various formats to CITA notation.
+//! Converts colors from various formats to TugColor notation.
 //! Supports: hex (#RGB, #RRGGBB, #RRGGBBAA), rgb(), rgba(), hsl(), hsla(),
 //! hsv(), oklch(), and CSS named colors.
 
@@ -8,7 +8,7 @@ use std::f64::consts::PI;
 
 // Canonical palette data generated from palette-engine.ts at build time
 mod palette_data {
-    include!(concat!(env!("OUT_DIR"), "/cita_palette_data.rs"));
+    include!(concat!(env!("OUT_DIR"), "/color_palette_data.rs"));
 }
 
 // ---------------------------------------------------------------------------
@@ -120,16 +120,16 @@ fn linear_to_srgb(c: f64) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// oklch_to_cita — matches palette-engine.ts oklchToCITA() exactly
+// oklch_to_tug_color — matches palette-engine.ts oklchToTugColor() exactly
 // ---------------------------------------------------------------------------
 
-struct CitaResult {
+struct TugColorResult {
     hue: String,
     intensity: i32,
     tone: i32,
 }
 
-fn oklch_to_cita(l: f64, c: f64, h: f64) -> CitaResult {
+fn oklch_to_tug_color(l: f64, c: f64, h: f64) -> TugColorResult {
     // Step 1: Find closest named hue
     let mut closest_hue = "";
     let mut closest_diff = f64::INFINITY;
@@ -184,7 +184,7 @@ fn oklch_to_cita(l: f64, c: f64, h: f64) -> CitaResult {
     };
     let intensity = intensity_raw.clamp(0.0, 100.0).round() as i32;
 
-    CitaResult {
+    TugColorResult {
         hue: hue_name,
         intensity,
         tone,
@@ -636,9 +636,9 @@ fn fmt4(n: f64) -> String {
 // Command entry point
 // ---------------------------------------------------------------------------
 
-pub fn run_cita(color: String, json_output: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_color(color: String, json_output: bool, quiet: bool) -> Result<i32, String> {
     let parsed = parse_color(&color)?;
-    let cita = oklch_to_cita(parsed.l, parsed.c, parsed.h);
+    let tug_color = oklch_to_tug_color(parsed.l, parsed.c, parsed.h);
 
     if quiet {
         return Ok(0);
@@ -678,13 +678,13 @@ pub fn run_cita(color: String, json_output: bool, quiet: bool) -> Result<i32, St
             None => String::new(),
         };
         println!(
-            r#"{{"status":"ok","hue":"{}","intensity":{},"tone":{},"cita":"--cita({}, i: {}, t: {}{})","oklch":"{}","hex":"{}"{}}}"#,
-            cita.hue,
-            cita.intensity,
-            cita.tone,
-            cita.hue,
-            cita.intensity,
-            cita.tone,
+            r#"{{"status":"ok","hue":"{}","intensity":{},"tone":{},"tug_color":"--tug-color({}, i: {}, t: {}{})","oklch":"{}","hex":"{}"{}}}"#,
+            tug_color.hue,
+            tug_color.intensity,
+            tug_color.tone,
+            tug_color.hue,
+            tug_color.intensity,
+            tug_color.tone,
             alpha_suffix,
             oklch_str,
             hex,
@@ -693,11 +693,11 @@ pub fn run_cita(color: String, json_output: bool, quiet: bool) -> Result<i32, St
     } else {
         println!(
             "{} intensity={} tone={}",
-            cita.hue, cita.intensity, cita.tone
+            tug_color.hue, tug_color.intensity, tug_color.tone
         );
         println!(
-            "  cita:  --cita({}, i: {}, t: {}{})",
-            cita.hue, cita.intensity, cita.tone, alpha_suffix
+            "  tug-color:  --tug-color({}, i: {}, t: {}{})",
+            tug_color.hue, tug_color.intensity, tug_color.tone, alpha_suffix
         );
         println!("  oklch: {}", oklch_str);
         println!("  hex:   {}", hex);
@@ -801,13 +801,13 @@ mod tests {
     }
 
     #[test]
-    fn test_cita_round_trip_blue() {
+    fn test_tug_color_round_trip_blue() {
         // blue canonical: oklch(0.771 0.143 230)
         let p = parse_color("oklch(0.771 0.143 230)").unwrap();
-        let cita = oklch_to_cita(p.l, p.c, p.h);
-        assert_eq!(cita.hue, "blue");
-        assert_eq!(cita.intensity, 50);
-        assert_eq!(cita.tone, 50);
+        let tc = oklch_to_tug_color(p.l, p.c, p.h);
+        assert_eq!(tc.hue, "blue");
+        assert_eq!(tc.intensity, 50);
+        assert_eq!(tc.tone, 50);
     }
 
     #[test]
@@ -828,12 +828,12 @@ mod tests {
     }
 
     #[test]
-    fn test_hex_to_cita_dark_blue() {
+    fn test_hex_to_tug_color_dark_blue() {
         // #1c1e22 is a dark blue-gray from tug-tokens.css
         let p = parse_color("#1c1e22").unwrap();
-        let cita = oklch_to_cita(p.l, p.c, p.h);
-        assert!(cita.tone < 20, "dark color should have low tone");
-        assert!(cita.intensity < 15, "near-gray should have low intensity");
+        let tc = oklch_to_tug_color(p.l, p.c, p.h);
+        assert!(tc.tone < 20, "dark color should have low tone");
+        assert!(tc.intensity < 15, "near-gray should have low intensity");
     }
 
     #[test]

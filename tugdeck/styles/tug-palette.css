@@ -1,8 +1,8 @@
 /* GENERATED FILE — do not edit. Source: palette-engine.ts */
 /**
- * tug-palette.css — CITA Palette Engine (Pure CSS)
+ * tug-palette.css — TugColor Palette Engine (Pure CSS)
  *
- * CITA color model: Color, Intensity, Tone, Alpha — a perceptual coordinate system
+ * TugColor color model: Color, Intensity, Tone, Alpha — a perceptual coordinate system
  * mapped to OKLCH. Each hue has three constants (h, canonical-l, peak-c).
  * Intensity (0-100) controls chroma as a fraction of peak-c. Tone (0-100)
  * controls lightness via a piecewise linear formula between three anchors:
@@ -17,7 +17,7 @@
  *   C = vib / 100 * peak-c
  *
  * Preset colors (canonical, light, dark, intense, muted) are handled by the
- * CITA parser and postcss-cita plugin at build time using the preset syntax.
+ * TugColor parser and postcss-tug-color plugin at build time using the preset syntax.
  * They are no longer stored as CSS variables in this file.
  *
  * Import order (in globals.css):

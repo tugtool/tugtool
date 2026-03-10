@@ -1,12 +1,12 @@
 /**
- * postcss-cita — PostCSS plugin for --cita() color notation expansion.
+ * postcss-tug-color — PostCSS plugin for --tug-color() color notation expansion.
  *
- * Expands `--cita(color, i: intensity, t: tone)` calls in CSS declaration values
+ * Expands `--tug-color(color, i: intensity, t: tone)` calls in CSS declaration values
  * to concrete `oklch(L C h)` strings at build time. Zero runtime cost; all
  * computation happens during the Vite/PostCSS build pipeline.
  *
  * Syntax:
- *   --cita( <color> [, i: <intensity>] [, t: <tone>] [, a: <alpha>] )
+ *   --tug-color( <color> [, i: <intensity>] [, t: <tone>] [, a: <alpha>] )
  *
  *   <color>     := <hue-name>[+/-<offset>] | black | white
  *   <hue-name>  := cherry | red | tomato | flame | orange | amber | gold | yellow
@@ -24,19 +24,19 @@
  *   white — always expands to oklch(1 0 0), ignoring intensity/tone
  *
  * Named hue examples:
- *   --cita(blue, i: 5, t: 13)          → oklch(0.3115 0.0143 230)
- *   --cita(cobalt, i: 3, t: 18)        → oklch(0.3727 0.0081 250)
- *   --cita(black, i: 0, t: 0, a: 50)  → oklch(0 0 0 / 0.5)
- *   --cita(white, i: 0, t: 100, a: 6) → oklch(1 0 0 / 0.06)
- *   --cita(red+5, i: 30, t: 70)        → resolved angle = red(25)+5 = 30
+ *   --tug-color(blue, i: 5, t: 13)          → oklch(0.3115 0.0143 230)
+ *   --tug-color(cobalt, i: 3, t: 18)        → oklch(0.3727 0.0081 250)
+ *   --tug-color(black, i: 0, t: 0, a: 50)  → oklch(0 0 0 / 0.5)
+ *   --tug-color(white, i: 0, t: 100, a: 6) → oklch(1 0 0 / 0.06)
+ *   --tug-color(red+5, i: 30, t: 70)        → resolved angle = red(25)+5 = 30
  *
  * Multiple calls in a single declaration are all expanded.
- * Values without --cita() are passed through unchanged.
+ * Values without --tug-color() are passed through unchanged.
  *
  * Import path: use explicit relative path from vite.config.ts (no @/ alias
  * in Node/Bun PostCSS context). Bun's native TS support handles .ts imports.
  *
- * @module postcss-cita
+ * @module postcss-tug-color
  */
 
 import type { Plugin } from "postcss";
@@ -48,12 +48,12 @@ import {
   L_DARK,
   L_LIGHT,
   findMaxChroma,
-  CITA_PRESETS,
+  TUG_COLOR_PRESETS,
 } from "./src/components/tugways/palette-engine";
-import { parseCITA, findCITACalls } from "./cita-parser";
+import { parseTugColor, findTugColorCalls } from "./tug-color-parser";
 
 // ---------------------------------------------------------------------------
-// Known hues set (for parseCITA validation)
+// Known hues set (for parseTugColor validation)
 // ---------------------------------------------------------------------------
 
 const KNOWN_HUES: ReadonlySet<string> = new Set([
@@ -63,14 +63,14 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// Known presets map (for parseCITA preset syntax validation)
+// Known presets map (for parseTugColor preset syntax validation)
 // ---------------------------------------------------------------------------
 
 const KNOWN_PRESETS: ReadonlyMap<string, { intensity: number; tone: number }> =
-  new Map(Object.entries(CITA_PRESETS));
+  new Map(Object.entries(TUG_COLOR_PRESETS));
 
 // ---------------------------------------------------------------------------
-// Formatting helper (matches citaColor() precision convention)
+// Formatting helper (matches tugColor() precision convention)
 // ---------------------------------------------------------------------------
 
 /** Format a number to 4 decimal places with trailing zeros stripped. */
@@ -83,7 +83,7 @@ function fmt(n: number): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Expand a single parsed --cita() call to an oklch() string.
+ * Expand a single parsed --tug-color() call to an oklch() string.
  *
  * Special achromatic keywords:
  *   "black" → oklch(0 0 0 [/ alpha])  — true black, ignores intensity/tone
@@ -93,7 +93,7 @@ function fmt(n: number): string {
  * For hues with offsets: resolved angle = HUE_FAMILIES[name] + offset, mod 360.
  *   peakC is computed dynamically via findMaxChroma() at the resolved angle.
  *
- * L formula (piecewise, matching citaColor()):
+ * L formula (piecewise, matching tugColor()):
  *   L = L_DARK + min(tone, 50) * (canonicalL - L_DARK) / 50
  *             + max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50
  *
@@ -103,7 +103,7 @@ function fmt(n: number): string {
  * Alpha: parsed alpha is 0-100; emitted as `/ ${alpha/100}` in oklch output.
  * Only emit alpha suffix if alpha < 100.
  */
-function expandCita(
+function expandTugColor(
   colorName: string,
   colorOffset: number,
   intensity: number,
@@ -122,7 +122,7 @@ function expandCita(
 
   const baseAngle = HUE_FAMILIES[colorName];
   if (baseAngle === undefined) {
-    // Unknown hue — emit as comment placeholder (shouldn't happen if parseCITA validated)
+    // Unknown hue — emit as comment placeholder (shouldn't happen if parseTugColor validated)
     return `oklch(0.5 0 0${alphaSuffix})`;
   }
 
@@ -144,7 +144,7 @@ function expandCita(
     peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
   }
 
-  // tone → L: piecewise formula (matches citaColor() exactly)
+  // tone → L: piecewise formula (matches tugColor() exactly)
   const L =
     L_DARK +
     Math.min(tone, 50) * (canonicalL - L_DARK) / 50 +
@@ -161,39 +161,39 @@ function expandCita(
 // ---------------------------------------------------------------------------
 
 /**
- * PostCSS plugin factory that expands `--cita()` notation to `oklch()` values.
+ * PostCSS plugin factory that expands `--tug-color()` notation to `oklch()` values.
  *
  * Usage in vite.config.ts:
- *   import postcssCita from "./postcss-cita";
+ *   import postcssTugColor from "./postcss-tug-color";
  *   // ...
- *   css: { postcss: { plugins: [postcssCita()] } }
+ *   css: { postcss: { plugins: [postcssTugColor()] } }
  *
  * @returns A PostCSS Plugin object.
  */
-export default function postcssCita(): Plugin {
+export default function postcssTugColor(): Plugin {
   return {
-    postcssPlugin: "postcss-cita",
+    postcssPlugin: "postcss-tug-color",
     Declaration(decl) {
-      if (!decl.value.includes("--cita(")) return;
+      if (!decl.value.includes("--tug-color(")) return;
 
-      const calls = findCITACalls(decl.value);
+      const calls = findTugColorCalls(decl.value);
       if (calls.length === 0) return;
 
       // Process in reverse order to preserve string indices
       let result = decl.value;
       for (let i = calls.length - 1; i >= 0; i--) {
         const call = calls[i];
-        const parseResult = parseCITA(call.inner, KNOWN_HUES, KNOWN_PRESETS);
+        const parseResult = parseTugColor(call.inner, KNOWN_HUES, KNOWN_PRESETS);
 
         if (!parseResult.ok) {
           for (const err of parseResult.errors) {
-            console.warn(`postcss-cita: ${err.message} (at pos ${err.pos}) in: ${call.inner}`);
+            console.warn(`postcss-tug-color: ${err.message} (at pos ${err.pos}) in: ${call.inner}`);
           }
           continue;
         }
 
         const { color, intensity, tone, alpha } = parseResult.value;
-        const expanded = expandCita(color.name, color.offset, intensity, tone, alpha);
+        const expanded = expandTugColor(color.name, color.offset, intensity, tone, alpha);
         result = result.slice(0, call.start) + expanded + result.slice(call.end);
       }
 
@@ -202,4 +202,4 @@ export default function postcssCita(): Plugin {
   };
 }
 
-postcssCita.postcss = true;
+postcssTugColor.postcss = true;
