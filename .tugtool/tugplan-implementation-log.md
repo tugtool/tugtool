@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-10T21:00:37Z
+---
+
+## step-7: Added --tug-base-skeleton-base and --tug-base-skeleton-highlight to bluenote.css; all three themes now have skeleton tokens
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-6
 date: 2025-03-10T20:56:49Z
 ---
