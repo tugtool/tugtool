@@ -3,15 +3,16 @@
  *
  * Step 1: WAAPI mock smoke tests.
  * Step 2: Physics solver unit tests (SpringSolver, GravitySolver, FrictionSolver).
- * Subsequent steps add TugAnimator coordination tests.
+ * Step 3: TugAnimator animate() coordination, named slots, cancellation modes.
  *
  * Import setup-rtl FIRST -- it installs the WAAPI mock on Element.prototype
  * before any test code runs.
  */
 import "./setup-rtl";
 
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, afterEach, beforeEach } from "bun:test";
 import { SpringSolver, GravitySolver, FrictionSolver } from "@/components/tugways/physics";
+import { animate, _resetSlots } from "@/components/tugways/tug-animator";
 
 // ---------------------------------------------------------------------------
 // WAAPI mock smoke tests (Step 1)
@@ -263,5 +264,334 @@ describe("FrictionSolver", () => {
     const solver = new FrictionSolver({ initialVelocity: 1.0 });
     const kf = solver.keyframes(10000);
     expect(kf.length).toBeLessThanOrEqual(300);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers shared by step 3+ tests
+// ---------------------------------------------------------------------------
+
+function getMock() {
+  return (global as any).__waapi_mock__;
+}
+
+// ---------------------------------------------------------------------------
+// animate() -- duration resolution (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("animate() duration resolution", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  it("calls el.animate() with the resolved duration and easing", () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 150,
+      easing: "ease-out",
+    });
+    const mock = getMock();
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0].options?.duration).toBe(150); // timing=1 (default)
+    expect(mock.calls[0].options?.easing).toBe("ease-out");
+  });
+
+  it("token string duration resolves via lookup map and is scaled by getTugTiming()", () => {
+    // Set timing scalar to 2
+    document.documentElement.style.setProperty("--tug-timing", "2");
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: "--tug-base-motion-duration-moderate",
+    });
+    const mock = getMock();
+    // moderate=200ms * timing=2 => 400ms
+    expect(mock.calls[0].options?.duration).toBe(400);
+  });
+
+  it("raw number duration is multiplied by getTugTiming()", () => {
+    document.documentElement.style.setProperty("--tug-timing", "3");
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { duration: 100 });
+    const mock = getMock();
+    expect(mock.calls[0].options?.duration).toBe(300);
+  });
+
+  it("unrecognized token string throws an error", () => {
+    const el = document.createElement("div");
+    expect(() =>
+      animate(el, [{ opacity: "0" }], {
+        duration: "--tug-base-motion-duration-nonexistent",
+      })
+    ).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// animate() -- named slots (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("animate() named slots", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  it("second animate() with same key cancels first via snap-to-end (.finish() called)", () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { key: "fade" });
+    const firstAnim = getMock().calls[0].animation;
+
+    let firstFinished = false;
+    firstAnim.finished.then(() => {
+      firstFinished = true;
+    });
+
+    // Second call with same key -- default slotCancelMode is snap-to-end.
+    animate(el, [{ opacity: "1" }, { opacity: "0" }], { key: "fade" });
+
+    // snap-to-end calls .finish(), which resolves .finished.
+    expect(firstAnim.playState).toBe("finished");
+  });
+
+  it("slotCancelMode: 'hold-at-current' uses commitStyles + cancel instead of finish", () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { key: "slide" });
+    const firstAnim = getMock().calls[0].animation;
+
+    let commitStylesCalled = false;
+    let cancelCalled = false;
+    let finishCalled = false;
+    const origCommit = firstAnim.commitStyles.bind(firstAnim);
+    firstAnim.commitStyles = () => { commitStylesCalled = true; origCommit(); };
+    const origCancel = firstAnim.cancel.bind(firstAnim);
+    firstAnim.cancel = () => { cancelCalled = true; origCancel(); };
+    const origFinish = firstAnim.finish.bind(firstAnim);
+    firstAnim.finish = () => { finishCalled = true; origFinish(); };
+
+    animate(el, [{ opacity: "1" }, { opacity: "0" }], {
+      key: "slide",
+      slotCancelMode: "hold-at-current",
+    });
+
+    expect(commitStylesCalled).toBe(true);
+    expect(cancelCalled).toBe(true);
+    expect(finishCalled).toBe(false);
+  });
+
+  it("slotCancelMode: 'hold-at-current' does not produce unhandled promise rejection", async () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { key: "move" });
+
+    // If unhandled rejection occurred, bun would surface it as a test failure.
+    // This test verifies that the internal .catch() absorbs it cleanly.
+    animate(el, [{ opacity: "1" }, { opacity: "0" }], {
+      key: "move",
+      slotCancelMode: "hold-at-current",
+    });
+
+    // Allow microtasks to flush (the rejection fires asynchronously).
+    await new Promise((r) => setTimeout(r, 0));
+    // If we reach here without an unhandled rejection error, the test passes.
+    expect(true).toBe(true);
+  });
+
+  it("different keys on same element coexist", () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { key: "alpha" });
+    animate(el, [{ translateX: "0px" }, { translateX: "100px" }], {
+      key: "beta",
+    });
+
+    const mock = getMock();
+    // Both animations should have been started (no cancellation between different keys).
+    expect(mock.calls).toHaveLength(2);
+    // Both are still running.
+    expect(mock.calls[0].animation.playState).toBe("running");
+    expect(mock.calls[1].animation.playState).toBe("running");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// animate() -- cancellation modes (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("animate() cancellation modes", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  it("cancel snap-to-end: .finish() called on underlying animation", () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 200,
+    });
+    const waapiAnim = getMock().calls[0].animation;
+
+    let finishCalled = false;
+    const orig = waapiAnim.finish.bind(waapiAnim);
+    waapiAnim.finish = () => { finishCalled = true; orig(); };
+
+    tugAnim.cancel("snap-to-end");
+    expect(finishCalled).toBe(true);
+    expect(waapiAnim.playState).toBe("finished");
+  });
+
+  it("cancel hold-at-current: commitStyles and cancel called", async () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 200,
+    });
+    const waapiAnim = getMock().calls[0].animation;
+
+    let commitStylesCalled = false;
+    let cancelCalled = false;
+    const origCommit = waapiAnim.commitStyles.bind(waapiAnim);
+    waapiAnim.commitStyles = () => { commitStylesCalled = true; origCommit(); };
+    const origCancel = waapiAnim.cancel.bind(waapiAnim);
+    waapiAnim.cancel = () => { cancelCalled = true; origCancel(); };
+
+    // Absorb the expected rejection so bun doesn't surface it as an unhandled error.
+    const p = tugAnim.finished.catch(() => { /* expected */ });
+    tugAnim.cancel("hold-at-current");
+    await p;
+    expect(commitStylesCalled).toBe(true);
+    expect(cancelCalled).toBe(true);
+  });
+
+  it("cancel hold-at-current: .finished promise rejects", async () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 200,
+    });
+
+    let rejected = false;
+    const p = tugAnim.finished.catch(() => { rejected = true; });
+    tugAnim.cancel("hold-at-current");
+    await p;
+    expect(rejected).toBe(true);
+  });
+
+  it("cancel snap-to-end: .finished promise resolves", async () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 200,
+    });
+
+    let resolved = false;
+    const p = tugAnim.finished.then(() => { resolved = true; });
+    tugAnim.cancel("snap-to-end");
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it("cancel reverse-from-current: starts a new animation from current to start values", () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(
+      el,
+      [{ opacity: "0" }, { opacity: "1" }],
+      { duration: 200 }
+    );
+
+    // The original animation is call index 0.
+    expect(getMock().calls).toHaveLength(1);
+
+    tugAnim.cancel("reverse-from-current");
+
+    // A second WAAPI animation should have been started (the reversal).
+    expect(getMock().calls).toHaveLength(2);
+    // The reversal animation should be running.
+    expect(getMock().calls[1].animation.playState).toBe("running");
+  });
+
+  it("cancel reverse-from-current: .finished re-wires to resolve when reversal completes", async () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(
+      el,
+      [{ opacity: "0" }, { opacity: "1" }],
+      { duration: 200 }
+    );
+
+    let resolved = false;
+    tugAnim.cancel("reverse-from-current");
+
+    // Wire up the handler AFTER the cancel (re-wire must already be in place).
+    const p = tugAnim.finished.then(() => { resolved = true; });
+
+    // Resolve the reversal animation (call index 1).
+    getMock().calls[1].resolve();
+    await p;
+    expect(resolved).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// animate() -- .finished promise and WeakMap slot cleanup (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("animate() .finished and slot cleanup", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  it(".finished resolves when the underlying WAAPI animation completes naturally", async () => {
+    const el = document.createElement("div");
+    const tugAnim = animate(el, [{ opacity: "0" }, { opacity: "1" }], {
+      duration: 200,
+    });
+
+    let resolved = false;
+    const p = tugAnim.finished.then(() => { resolved = true; });
+    // Resolve the mock animation.
+    getMock().calls[0].resolve();
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it("completed animation is removed from the named slot", async () => {
+    const el = document.createElement("div");
+    animate(el, [{ opacity: "0" }, { opacity: "1" }], { key: "test-slot" });
+
+    const mock = getMock();
+    // Resolve the WAAPI animation to trigger natural completion.
+    mock.calls[0].resolve();
+    // Wait for microtasks (the .then() that clears the slot fires asynchronously).
+    await new Promise((r) => setTimeout(r, 0));
+
+    // After natural completion, re-animating the same key should NOT cancel any
+    // previous animation (slot was cleared). Only one new WAAPI animate() call
+    // should be made.
+    const callCountBefore = mock.calls.length;
+    animate(el, [{ opacity: "1" }, { opacity: "0" }], { key: "test-slot" });
+    // The new animation is at the same index (no extra cancel calls).
+    expect(mock.calls.length).toBe(callCountBefore + 1);
+    // The new animation is running (not prematurely finished).
+    expect(mock.calls[mock.calls.length - 1].animation.playState).toBe("running");
   });
 });

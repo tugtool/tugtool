@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-10T18:30:13Z
+---
+
+## step-3: Created tug-animator.ts with animate(), named slot tracking (WeakMap), duration token resolution, three cancellation modes, and TugAnimation wrapper. Fixed D05 orphaned promise rejection.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7a-tug-animator.md
+
+---
+
+---
 step: step-2
 date: 2025-03-10T18:20:30Z
 ---
