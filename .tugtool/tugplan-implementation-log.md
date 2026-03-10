@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-10T20:53:47Z
+---
+
+## step-5: Rewrote handleItemSelect to use animate().finished; removed setTimeout, @keyframes tug-dropdown-blink, .tug-dropdown-item-selected; created tug-dropdown.test.tsx with 5 tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-4
 date: 2025-03-10T20:46:09Z
 ---
