@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-10T21:05:40Z
+---
+
+## step-8: Created TugSkeleton and TugSkeletonGroup components with CSS @keyframes td-shimmer, background-attachment: fixed; 15 tests in tug-skeleton.test.tsx
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-7
 date: 2025-03-10T21:00:37Z
 ---

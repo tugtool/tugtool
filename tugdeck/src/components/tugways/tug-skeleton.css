@@ -1,0 +1,67 @@
+/**
+ * TugSkeleton styles -- CSS shimmer animation for skeleton loading placeholders.
+ *
+ * Shimmer is a continuous, infinite CSS @keyframes animation (Rule 13 — CSS lane).
+ * background-attachment: fixed synchronizes shimmer position across all skeleton
+ * elements in the viewport simultaneously, regardless of DOM nesting. [D04]
+ *
+ * No explicit @media (prefers-reduced-motion) rule is needed here — the global
+ * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in
+ * tug-tokens.css already suppresses all CSS animations (including this shimmer)
+ * when reduced motion is active. The skeleton renders as a static placeholder
+ * in that case. [D04]
+ *
+ * **Authoritative references:**
+ * - [D04] TugSkeleton standalone with CSS shimmer
+ * - [D05] Standalone skeleton tokens per theme
+ * - Spec S01: TugSkeletonProps, TugSkeletonGroupProps
+ */
+
+/* ============================================================================
+   Shimmer keyframe
+   ============================================================================ */
+
+/*
+ * Sweeps a linear gradient highlight left-to-right across the skeleton.
+ * background-position animates from 200% (off-screen right) to -200%
+ * (off-screen left) so the highlight passes fully through the element.
+ * background-attachment: fixed is set on .tug-skeleton so all instances
+ * share the same viewport-relative coordinate system, keeping shimmer
+ * phase-synchronized across elements. [D04]
+ */
+@keyframes td-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============================================================================
+   Skeleton element
+   ============================================================================ */
+
+.tug-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--tug-base-skeleton-base) 0%,
+    var(--tug-base-skeleton-highlight) 50%,
+    var(--tug-base-skeleton-base) 100%
+  );
+  background-size: 200% 100%;
+  /* fixed attachment synchronizes shimmer phase across all skeleton elements */
+  background-attachment: fixed;
+  animation: td-shimmer calc(var(--tug-base-motion-duration-glacial) * 1.5) ease-in-out infinite;
+  border-radius: var(--tug-base-radius-sm);
+  display: block;
+}
+
+/* ============================================================================
+   Skeleton group
+   ============================================================================ */
+
+/*
+ * Flex column container for multiple TugSkeleton elements.
+ * Gap is applied as an inline style from the gap prop.
+ */
+.tug-skeleton-group {
+  display: flex;
+  flex-direction: column;
+}
