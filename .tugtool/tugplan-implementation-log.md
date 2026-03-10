@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-10T20:56:49Z
+---
+
+## step-6: Verification-only step: confirmed all dead keyframes removed, no animationend/setTimeout remain, tug-petals untouched; 1317 tests pass
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-5
 date: 2025-03-10T20:53:47Z
 ---
