@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-10T18:15:28Z
+---
+
+## step-1: Added WAAPI mock to setup-rtl.ts and created tug-animator.test.ts with smoke tests verifying the mock works
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7a-tug-animator.md
+
+---
+
+---
 step: step-8
 date: 2025-03-10T00:19:17Z
 ---
