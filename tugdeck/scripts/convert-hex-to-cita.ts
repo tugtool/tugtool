@@ -5,7 +5,7 @@
  * values in Declaration nodes with --cita(hue, i: intensity, t: tone) notation,
  * and writes the result back to the file.
  *
- * Hex values inside CSS function calls (rgba(), color-mix(), url()) are
+ * Hex values inside CSS function calls (rgba(), url(), etc.) are
  * preserved unchanged. Comments are separate AST nodes and are never visited,
  * so hex references in comments are automatically preserved.
  *
@@ -197,7 +197,7 @@ const HEX_PATTERN = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])/g;
 
 /**
  * Determine whether a #hex occurrence at `hexIndex` in `value` is inside
- * a CSS function call (rgba, color-mix, url, etc.).
+ * a CSS function call (rgba, url, linear-gradient, etc.).
  *
  * Walks backwards from hexIndex looking for an opening parenthesis that is
  * preceded by a word character (i.e. a function name). If found before

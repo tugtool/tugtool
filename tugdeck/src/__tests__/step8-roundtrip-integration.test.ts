@@ -55,7 +55,7 @@ function extractCitaCalls(css: string): string[] {
   return css.match(pattern) ?? [];
 }
 
-/** Extract all standalone #hex values from declaration lines (not in rgba/color-mix/comments). */
+/** Extract all standalone #hex values from declaration lines (not in rgba/url/comments). */
 function extractStandaloneHex(css: string): string[] {
   const lines = css.split("\n");
   const standaloneHex: string[] = [];

@@ -440,7 +440,7 @@ const CITA_MARKER = "--cita(";
 
 /**
  * Find all --cita() calls in a CSS value string.
- * Handles nested parentheses correctly (e.g. inside calc() or color-mix()).
+ * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
  */
 export function findCITACalls(cssValue: string): CITACallSpan[] {
   const calls: CITACallSpan[] = [];

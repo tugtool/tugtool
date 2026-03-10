@@ -10,7 +10,7 @@
  * - Alpha: --cita(blue, i: 5, t: 13, a: 50)
  * - Multiple --cita() calls in a single declaration value
  * - Values without --cita() pass through unchanged
- * - var(), color-mix(), rgba() values pass through unmodified
+ * - var(), rgba(), and other CSS functions pass through unmodified
  */
 import { describe, it, expect } from "bun:test";
 
@@ -323,8 +323,8 @@ describe("postcss-cita: values without --cita() are unchanged", () => {
     expect(processDecl("color", "var(--tug-blue)")).toBe("var(--tug-blue)");
   });
 
-  it("color-mix() value passes through unchanged", () => {
-    const value = "color-mix(in oklch, #3b82f6 50%, white)";
+  it("linear-gradient() value passes through unchanged", () => {
+    const value = "linear-gradient(to right, #3b82f6, white)";
     expect(processDecl("color", value)).toBe(value);
   });
 

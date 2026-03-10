@@ -170,8 +170,8 @@ describe("isHexInsideFunction()", () => {
     expect(isHexInsideFunction(value, idx)).toBe(true);
   });
 
-  it("returns true for hex inside color-mix()", () => {
-    const value = "color-mix(in oklch, #ffffff 50%, transparent)";
+  it("returns true for hex inside linear-gradient()", () => {
+    const value = "linear-gradient(to right, #ffffff 50%, transparent)";
     const idx = value.indexOf("#");
     expect(isHexInsideFunction(value, idx)).toBe(true);
   });
@@ -225,8 +225,8 @@ describe("convertValueHexToCita()", () => {
     expect(convertValueHexToCita(value)).toBe(value);
   });
 
-  it("hex inside color-mix() is preserved unchanged", () => {
-    const value = "color-mix(in oklch, #ffffff 50%, transparent)";
+  it("hex inside linear-gradient() is preserved unchanged", () => {
+    const value = "linear-gradient(to right, #ffffff 50%, transparent)";
     expect(convertValueHexToCita(value)).toBe(value);
   });
 
@@ -294,7 +294,7 @@ describe("convertCSSFile(): structure preservation", () => {
       "  --tug-base-bg: #3f474c;",
       "  --tug-base-shadow: rgba(0, 0, 0, 0.3);",
       "  --tug-base-accent: var(--tug-blue);",
-      "  --tug-base-color-mix: color-mix(in oklch, currentColor 20%, transparent);",
+      "  --tug-base-gradient: linear-gradient(to right, currentColor 20%, transparent);",
       "}",
     ].join("\n");
 
@@ -311,7 +311,7 @@ describe("convertCSSFile(): structure preservation", () => {
     expect(result).toContain("--cita(black, 0, 0,");
     // Non-color values must be preserved
     expect(result).toContain("var(--tug-blue)");
-    expect(result).toContain("color-mix(in oklch, currentColor 20%, transparent)");
+    expect(result).toContain("linear-gradient(to right, currentColor 20%, transparent)");
   });
 
   it("#ffffff → var(--tug-white) through the full file conversion pipeline", () => {

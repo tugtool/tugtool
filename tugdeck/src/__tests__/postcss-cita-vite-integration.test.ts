@@ -45,18 +45,18 @@ describe("postcss-cita Vite integration: plugin processes --cita() in CSS", () =
     expect(result).toMatch(/oklch\(/);
   });
 
-  it("preserves var() and color-mix() values alongside --cita() expansion", () => {
+  it("preserves var() and other CSS functions alongside --cita() expansion", () => {
     const css = [
       ".card {",
       "  color: --cita(blue, 5, 13);",
       "  background: var(--tug-surface);",
-      "  border: 1px solid color-mix(in oklch, currentColor 20%, transparent);",
+      "  border: 1px solid rgba(0, 0, 0, 0.2);",
       "}",
     ].join("\n");
     const result = processCSS(css);
     expect(result).not.toContain("--cita(");
     expect(result).toContain("var(--tug-surface)");
-    expect(result).toContain("color-mix(in oklch, currentColor 20%, transparent)");
+    expect(result).toContain("rgba(0, 0, 0, 0.2)");
     expect(result).toContain("oklch(");
   });
 

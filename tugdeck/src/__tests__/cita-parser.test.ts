@@ -401,7 +401,7 @@ describe("findCITACalls: CSS value scanning", () => {
   });
 
   it("handles nested parentheses", () => {
-    const calls = findCITACalls("color-mix(in oklch, --cita(blue, 50, 50) 50%, white)");
+    const calls = findCITACalls("linear-gradient(to right, --cita(blue, 50, 50) 50%, white)");
     expect(calls.length).toBe(1);
     expect(calls[0].inner).toBe("blue, 50, 50");
   });
