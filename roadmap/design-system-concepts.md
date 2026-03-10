@@ -2008,11 +2008,10 @@ The value `#1c1e22` is Brio's canvas color. Applied during HTML parse, before an
 ```html
 <div id="deck-startup-overlay"
      style="position:fixed;inset:0;background:#1c1e22;z-index:99999;
-            transition:opacity var(--td-duration-glacial, 500ms) var(--td-easing-standard, ease-out);
             pointer-events:none"></div>
 ```
 
-The overlay covers the viewport from first paint. It hides the empty `deck-container` during settings-fetch and React-mount phases. After first React paint, the overlay fades out using motion tokens (with hardcoded fallbacks since tokens aren't loaded yet during startup). The double `requestAnimationFrame` pattern ensures React has committed at least one paint before the fade begins.
+The overlay covers the viewport from first paint. It hides the empty `deck-container` during settings-fetch and React-mount phases. After React commits the first render to the DOM, a `useLayoutEffect` in the root component (DeckCanvas) fires deterministically — before the browser paints — and starts a TugAnimator fade-out on the overlay. The browser composites both the React content and the first frame of the fade animation in a single paint. This is the `onContentReady` pattern ([D78], [D79], Rules 11–12) applied at viewport scope: card-level readiness uses a ref flag + `useLayoutEffect`; viewport-level readiness uses `useLayoutEffect` directly in the root component. Same mechanism, same guarantees, different scope.
 
 Note: the overlay and Tugcard skeletons operate at different levels. The overlay covers the *entire viewport* during app bootstrap. Skeletons cover *individual cards* once mounted. The sequence is: overlay fades out → deck with skeleton cards is revealed → cards crossfade to real content as data arrives.
 
@@ -2034,7 +2033,7 @@ This concept establishes the pattern for all visual continuity in tugdeck:
 4. **Two complementary motion layers** — CSS `transition` for declarative hover/focus states (compositor-accelerated, zero JS); TugAnimator for everything programmatic (completion handlers, cancellation, springs, physics, coordinated groups). Not competing systems — one is declarative, one is imperative. ([#tuganimator](#tuganimator))
 5. **Enter/exit uses Radix's data-state + CSS keyframes** — standard component transitions use the Radix + tw-animate-css stack. Complex enter/exit (coordinated, physics-based) can use TugAnimator. ([#enter-exit-transitions](#enter-exit-transitions))
 6. **Skeletons are per-card, synchronized, and theme-aware** — each card defines its skeleton shape. All skeletons shimmer in unison. Colors come from theme tokens. ([#skeleton-loading](#skeleton-loading))
-7. **Startup is a special case with its own three-layer solution** — inline styles, overlay, HMR boundary. Operates at the viewport level, above the component system. ([#startup-continuity](#startup-continuity))
+7. **Startup follows the same rules as everything else** — nothing visible until ready, every transition authored. The three startup layers (inline body styles, startup overlay, CSS HMR boundary) are applications of these principles at the viewport level, not exceptions to them. The overlay is a viewport-scoped readiness gate, just as skeletons are card-scoped readiness gates. Both hide unready content and reveal it with a managed transition. The overlay fade-out uses `useLayoutEffect` in the root component as the deterministic readiness signal ([D78], [D79], Rules 11–12) and TugAnimator for the managed fade ([D76], Rules 13–14). ([#startup-continuity](#startup-continuity))
 
 ### 9. Alert and Dialog System {#c09-dialog}
 

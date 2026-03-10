@@ -131,37 +131,41 @@ short fade-out.
 <body style="margin:0;padding:0;overflow:hidden;background-color:#1c1e22">
   <div id="deck-startup-overlay"
        style="position:fixed;inset:0;background:#1c1e22;z-index:99999;
-              transition:opacity 150ms ease-out;pointer-events:none"></div>
+              pointer-events:none"></div>
   <script src="/diagnostic.js"></script>
   <div id="deck-container"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 ```
 
-**File:** `tugdeck/src/main.tsx` (at the end of the async IIFE, after
-`connection.connect()`)
+**File:** `tugdeck/src/components/chrome/deck-canvas.tsx` (root component, first mount)
 
-```ts
-// Remove startup overlay after first React paint
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    const overlay = document.getElementById("deck-startup-overlay");
-    if (overlay) {
-      overlay.style.opacity = "0";
-      overlay.addEventListener("transitionend", () => overlay.remove());
-    }
+```tsx
+// In DeckCanvas — deterministic overlay removal on first mount.
+// useLayoutEffect fires after React commits DOM, before browser paints.
+// This is the onContentReady pattern (Rules 11–12, D79) at viewport scope.
+useLayoutEffect(() => {
+  const overlay = document.getElementById("deck-startup-overlay");
+  if (!overlay) return;
+  const anim = animate(overlay, { opacity: [1, 0] }, {
+    duration: "--tug-base-motion-duration-glacial",
+    easing: "ease-out",
   });
-});
+  anim.finished.then(() => overlay.remove());
+}, []);
 ```
 
-The double `requestAnimationFrame` ensures React has committed at least one paint
-before the overlay begins fading. The 150ms fade-out is fast enough to feel
-instant but slow enough to mask any remaining layout jank.
+`useLayoutEffect` with empty deps fires deterministically after React commits
+the first render's DOM mutations, before the browser paints. The browser
+composites both the React content and the first frame of the fade animation in
+a single paint — the user never sees a frame where the overlay is gone but
+content isn't rendered. TugAnimator's `.finished` promise handles cleanup.
 
 **Why this works:** During a full page reload, the overlay covers the entire
 viewport from the moment HTML is parsed. The user sees a continuous dark
 background throughout the settings-fetch and React-mount phases. When the UI is
-ready, the overlay fades away and the fully-rendered deck is revealed.
+ready, the overlay fades away and the fully-rendered deck is revealed. No
+`requestAnimationFrame`, no timing bets — a React contract (D79).
 
 ### Layer C: CSS HMR Boundary (prevents full reloads for CSS changes)
 
@@ -245,7 +249,7 @@ recognizes CSS modules as valid dependency arguments for `accept()`.
 ### Step 2: Layer B — Startup overlay
 
 1. Add the `deck-startup-overlay` div to `index.html` (before `deck-container`).
-2. Add the overlay removal code to `main.tsx` (after `connection.connect()`).
+2. Add `useLayoutEffect` to DeckCanvas that triggers TugAnimator fade-out on the overlay (see code above).
 3. Verify: full page reload shows a continuous dark background, then the deck
    fades in smoothly.
 
@@ -293,7 +297,8 @@ Vite logs its own HMR decisions to the browser console:
 | File | Change |
 |------|--------|
 | `tugdeck/index.html` | Add inline body styles, add startup overlay div |
-| `tugdeck/src/main.tsx` | Replace CSS imports with `./css-imports`, add overlay removal |
+| `tugdeck/src/main.tsx` | Replace CSS imports with `./css-imports` |
+| `tugdeck/src/components/chrome/deck-canvas.tsx` | `useLayoutEffect` triggers TugAnimator overlay fade-out on first mount |
 | `tugdeck/src/css-imports.ts` | **New file** — CSS imports with HMR boundary |
 
 ## Open Questions

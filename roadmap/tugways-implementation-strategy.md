@@ -1033,14 +1033,14 @@ Phase 7 is split into three sub-phases.
 
 **What to do**:
 1. Layer A — Inline body styles in `index.html` (background matches Brio theme, eliminates white flash during HTML parse)
-2. Layer B — Startup overlay div (covers viewport during mount, fades out via TugAnimator after first React paint using double `requestAnimationFrame` pattern)
+2. Layer B — Startup overlay div (covers viewport during mount, fades out via TugAnimator triggered by `useLayoutEffect` in DeckCanvas — the `onContentReady` pattern at viewport scope, per Rules 11–12 and [D79])
 3. Layer C — CSS HMR boundary module (`css-imports.ts` with `import.meta.hot.accept()`, prevents CSS changes from triggering full page reload in dev mode)
 4. Verify: CSS edit → no flash. Browser reload → no flash. Backend restart → no flash.
 
 **Files created/modified**:
 1. `tugdeck/index.html` — inline body styles, startup overlay div
 2. `tugdeck/src/css-imports.ts` — CSS HMR boundary module
-3. `tugdeck/src/main.tsx` — overlay fade-out via TugAnimator after first paint
+3. `tugdeck/src/components/chrome/deck-canvas.tsx` — `useLayoutEffect` triggers TugAnimator overlay fade-out on first mount
 
 **Result**: Startup is seamless. The user never sees a blank or flashing viewport. Overlay fade-out uses TugAnimator for consistency (completion-based cleanup).
 
