@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-10T22:51:50Z
+---
+
+## step-2: Added deck-startup-overlay div to index.html with fixed positioning and #16171a background. Added useLayoutEffect in DeckCanvas to fade out overlay using TugAnimator animate(). Updated hook order comments in deck-canvas.tsx.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
 step: step-1
 date: 2025-03-10T22:46:47Z
 ---

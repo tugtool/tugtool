@@ -45,6 +45,7 @@
  *   useDeckManager -> useSyncExternalStore -> useState -> useRef ->
  *   useRequiredResponderChain -> useCallback -> useResponder ->
  *   useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
+ *   useLayoutEffect (startup overlay fade-out) ->
  *   useLayoutEffect (selection highlight sync) -> useLayoutEffect (initial clip-path) ->
  *   useEffect (store subscriber for clip-path updates)
  *
@@ -65,6 +66,7 @@
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import type { TugConnection } from "@/connection";
+import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
@@ -213,8 +215,10 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useState -> useRef ->
   //             useRequiredResponderChain -> useCallback -> useResponder ->
-  //             useEffect (tabDragCoordinator) -> useLayoutEffect (initial shadows) ->
-  //             useEffect (store subscriber for shadow updates)
+  //             useEffect (tabDragCoordinator init) -> useEffect (initial focused card restore) ->
+  //             useLayoutEffect (startup overlay fade-out) ->
+  //             useLayoutEffect (selection highlight sync) -> useLayoutEffect (initial clip-path) ->
+  //             useEffect (store subscriber for clip-path updates)
 
   // Register DeckCanvas as the root responder node.
   // Action handlers close over stable values only: refs, React state setters,
@@ -339,6 +343,27 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
     store.handleCardFocused(focusedCardId);
     setDeselected(false);
     manager.makeFirstResponder(focusedCardId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fade out the startup overlay once DeckCanvas has committed its first render.
+  //
+  // useLayoutEffect fires after React commits DOM mutations but before the browser
+  // paints, so the browser composites the React content and the first frame of the
+  // overlay fade in a single paint — no visible transition between "overlay covers
+  // everything" and "React content is visible". This is the onContentReady pattern
+  // (Rules 11-12, D78, D79) applied at viewport scope.
+  //
+  // The overlay is removed from the DOM after the TugAnimator animation completes.
+  // The `if (!overlay) return` guard handles rapid HMR reloads where the overlay
+  // may already be absent. [D02, Spec S03, Phase 7c]
+  useLayoutEffect(() => {
+    const overlay = document.getElementById("deck-startup-overlay");
+    if (!overlay) return;
+    const anim = animate(overlay, { opacity: [1, 0] }, {
+      duration: "--tug-base-motion-duration-slow",
+      easing: "cubic-bezier(0, 0, 0, 1)",
+    });
+    anim.finished.then(() => overlay.remove());
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync SelectionGuard highlight state whenever the focused card changes.
