@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-10T00:08:48Z
+---
+
+## step-6: Converted all 43 standalone hex values in bluenote.css to --hvv() calls. Blue tint characteristic confirmed. All rgba() values preserved. Build verified clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-5
 date: 2025-03-10T00:05:48Z
 ---

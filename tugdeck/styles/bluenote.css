@@ -13,98 +13,98 @@ body {
   /* --tug-base-* overrides — all color tokens that differ from Brio defaults. */
 
   /* Surfaces */
-  --tug-base-bg-app: #2a3136;
-  --tug-base-bg-canvas: #2a3136;
-  --tug-base-surface-sunken: #313b43;
-  --tug-base-surface-default: #3b4348;
-  --tug-base-surface-raised: #363e43;
-  --tug-base-surface-overlay: #3a454c;
-  --tug-base-surface-inset: #2a3237;
-  --tug-base-surface-control: #30373c;
-  --tug-base-surface-control-hover: #3b4348;
-  --tug-base-surface-control-active: #3a454c;
-  --tug-base-surface-content: #2a3237;
-  --tug-base-surface-screen: #5c6871;
+  --tug-base-bg-app: --hvv(hue-239, 5, 13);
+  --tug-base-bg-canvas: --hvv(hue-239, 5, 13);
+  --tug-base-surface-sunken: --hvv(hue-242, 8, 16);
+  --tug-base-surface-default: --hvv(hue-235, 5, 18);
+  --tug-base-surface-raised: --hvv(hue-235, 5, 17);
+  --tug-base-surface-overlay: --hvv(hue-236, 7, 19);
+  --tug-base-surface-inset: --hvv(hue-235, 5, 13);
+  --tug-base-surface-control: --hvv(hue-239, 5, 15);
+  --tug-base-surface-control-hover: --hvv(hue-235, 5, 18);
+  --tug-base-surface-control-active: --hvv(hue-236, 7, 19);
+  --tug-base-surface-content: --hvv(hue-235, 5, 13);
+  --tug-base-surface-screen: --hvv(hue-240, 8, 29);
 
   /* Foreground / Text */
-  --tug-base-fg-default: #dde4e8;
-  --tug-base-fg-muted: #a8b6bf;
-  --tug-base-fg-subtle: #79858d;
-  --tug-base-fg-disabled: #4a5560;
-  --tug-base-fg-inverse: #edf1f3;
-  --tug-base-fg-placeholder: #5b6871;
+  --tug-base-fg-default: --hvv(blue, 3, 88);
+  --tug-base-fg-muted: --hvv(hue-236, 8, 50);
+  --tug-base-fg-subtle: --hvv(hue-237, 7, 37);
+  --tug-base-fg-disabled: --hvv(cobalt, 8, 25);
+  --tug-base-fg-inverse: --hvv(blue, 2, 99);
+  --tug-base-fg-placeholder: --hvv(hue-238, 8, 29);
 
   /* Icon */
-  --tug-base-icon-default: #a8b6bf;
-  --tug-base-icon-muted: #6c7b85;
-  --tug-base-icon-disabled: #4a5560;
+  --tug-base-icon-default: --hvv(hue-236, 8, 50);
+  --tug-base-icon-muted: --hvv(hue-237, 9, 34);
+  --tug-base-icon-disabled: --hvv(cobalt, 8, 25);
 
   /* Borders */
-  --tug-base-border-default: #5b6871;
-  --tug-base-border-muted: #79858d;
-  --tug-base-border-strong: #8a9ba4;
-  --tug-base-border-inverse: #dde4e8;
-  --tug-base-focus-ring-offset: #2a3136;
+  --tug-base-border-default: --hvv(hue-238, 8, 29);
+  --tug-base-border-muted: --hvv(hue-237, 7, 37);
+  --tug-base-border-strong: --hvv(blue, 8, 43);
+  --tug-base-border-inverse: --hvv(blue, 3, 88);
+  --tug-base-focus-ring-offset: --hvv(hue-239, 5, 13);
 
   /* Elevation */
   --tug-base-shadow-sm: rgba(0, 0, 0, 0.44);
 
   /* Selection */
   --tug-base-selection-bg-inactive: rgba(100, 120, 130, 0.30);
-  --tug-base-selection-fg: #dde4e8;
+  --tug-base-selection-fg: --hvv(blue, 3, 88);
 
   /* Card */
-  --tug-base-card-bg: #3a454c;
-  --tug-base-card-border: #5b6871;
+  --tug-base-card-bg: --hvv(hue-236, 7, 19);
+  --tug-base-card-border: --hvv(hue-238, 8, 29);
   --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.45);
   --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.22);
   --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.18);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: #344f5e;
-  --tug-base-card-header-bg-inactive: #2a3a44;
-  --tug-base-card-header-bg-collapsed: #2e3a43;
-  --tug-base-card-header-fg: #dde4e8;
-  --tug-base-card-header-icon-inactive: #6c7b85;
-  --tug-base-card-header-divider: #3a4850;
+  --tug-base-card-header-bg-active: --hvv(blue, 14, 21);
+  --tug-base-card-header-bg-inactive: --hvv(hue-236, 10, 15);
+  --tug-base-card-header-bg-collapsed: --hvv(hue-241, 9, 15);
+  --tug-base-card-header-fg: --hvv(blue, 3, 88);
+  --tug-base-card-header-icon-inactive: --hvv(hue-237, 9, 34);
+  --tug-base-card-header-divider: --hvv(blue, 8, 20);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: #343c41;
-  --tug-base-tab-bg-active: #3b4348;
-  --tug-base-tab-fg-rest: #79858d;
-  --tug-base-tab-fg-active: #dde4e8;
-  --tug-base-tab-close-fg-hover: #dde4e8;
+  --tug-base-tab-bar-bg: --hvv(hue-235, 5, 16);
+  --tug-base-tab-bg-active: --hvv(hue-235, 5, 18);
+  --tug-base-tab-fg-rest: --hvv(hue-237, 7, 37);
+  --tug-base-tab-fg-active: --hvv(blue, 3, 88);
+  --tug-base-tab-close-fg-hover: --hvv(blue, 3, 88);
 
   /* Canvas / Grid */
   --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.04);
 
   /* Dock */
-  --tug-base-dock-bg: #2a3136;
+  --tug-base-dock-bg: --hvv(hue-239, 5, 13);
 
   /* Menus / Popovers */
-  --tug-base-menu-bg: #3a454c;
-  --tug-base-menu-border: #5b6871;
-  --tug-base-popover-bg: #3a454c;
-  --tug-base-popover-border: #5b6871;
-  --tug-base-tooltip-bg: #3b4348;
-  --tug-base-tooltip-border: #5b6871;
+  --tug-base-menu-bg: --hvv(hue-236, 7, 19);
+  --tug-base-menu-border: --hvv(hue-238, 8, 29);
+  --tug-base-popover-bg: --hvv(hue-236, 7, 19);
+  --tug-base-popover-border: --hvv(hue-238, 8, 29);
+  --tug-base-tooltip-bg: --hvv(hue-235, 5, 18);
+  --tug-base-tooltip-border: --hvv(hue-238, 8, 29);
 
   /* Dialogs */
-  --tug-base-dialog-bg: #3a454c;
-  --tug-base-dialog-border: #5b6871;
-  --tug-base-sheet-bg: #3a454c;
-  --tug-base-sheet-border: #5b6871;
+  --tug-base-dialog-bg: --hvv(hue-236, 7, 19);
+  --tug-base-dialog-border: --hvv(hue-238, 8, 29);
+  --tug-base-sheet-bg: --hvv(hue-236, 7, 19);
+  --tug-base-sheet-border: --hvv(hue-238, 8, 29);
 
   /* Scrollbar */
-  --tug-base-scrollbar-thumb: #5b6871;
-  --tug-base-scrollbar-thumb-hover: #79858d;
+  --tug-base-scrollbar-thumb: --hvv(hue-238, 8, 29);
+  --tug-base-scrollbar-thumb-hover: --hvv(hue-237, 7, 37);
 
   /* Terminal */
-  --tug-base-terminal-bg: #2a3237;
-  --tug-base-terminal-fg: #dde4e8;
-  --tug-base-terminal-fg-muted: #a8b6bf;
-  --tug-base-terminal-ansi-white: #dde4e8;
+  --tug-base-terminal-bg: --hvv(hue-235, 5, 13);
+  --tug-base-terminal-fg: --hvv(blue, 3, 88);
+  --tug-base-terminal-fg-muted: --hvv(hue-236, 8, 50);
+  --tug-base-terminal-ansi-white: --hvv(blue, 3, 88);
 
   /* Feed */
-  --tug-base-feed-bg: #2a3136;
+  --tug-base-feed-bg: --hvv(hue-239, 5, 13);
 }
