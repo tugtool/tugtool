@@ -91,3 +91,108 @@ if (typeof (global as any).requestAnimationFrame !== "function") {
 // Console output is globally suppressed by setup-silence.ts preload.
 // React act() warnings from Radix UI (radix-ui/primitives#1822) are
 // silenced as part of that blanket suppression.
+
+// ---------------------------------------------------------------------------
+// WAAPI mock -- happy-dom does not implement Element.prototype.animate.
+// ---------------------------------------------------------------------------
+//
+// The mock captures all calls to el.animate(keyframes, options) and returns
+// a fake Animation object with controllable .finished promise, .cancel(),
+// .finish(), .commitStyles(), .persist(), .playState, and .effect.
+//
+// Access call records and helpers via `(global as any).__waapi_mock__`.
+//
+// Tests that need to control promise resolution should call:
+//   const mock = (global as any).__waapi_mock__;
+//   const [call] = mock.calls;
+//   call.resolve();   // resolves .finished
+//   call.reject();    // rejects .finished
+//
+// Tests should call mock.reset() in afterEach to clear call history.
+
+export interface WaapiMockCall {
+  el: Element;
+  keyframes: Keyframe[] | PropertyIndexedKeyframes | null;
+  options: KeyframeAnimationOptions | undefined;
+  animation: MockAnimation;
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+}
+
+export interface MockAnimation {
+  finished: Promise<void>;
+  cancel: () => void;
+  finish: () => void;
+  commitStyles: () => void;
+  persist: () => void;
+  playState: AnimationPlayState;
+  effect: { getComputedTiming: () => { duration: number } };
+}
+
+export interface WaapiMock {
+  calls: WaapiMockCall[];
+  reset: () => void;
+}
+
+const waapiMock: WaapiMock = {
+  calls: [],
+  reset() {
+    this.calls = [];
+  },
+};
+
+(global as any).__waapi_mock__ = waapiMock;
+
+// Install mock on Element.prototype so all DOM elements use it.
+// We set it on the happy-dom Element class that is already on global.
+const ElementClass = (global as any).Element as typeof Element;
+(ElementClass.prototype as any).animate = function (
+  keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+  options?: number | KeyframeAnimationOptions
+): MockAnimation {
+  let resolveFinished!: () => void;
+  let rejectFinished!: (reason?: unknown) => void;
+  const finishedPromise = new Promise<void>((res, rej) => {
+    resolveFinished = res;
+    rejectFinished = rej;
+  });
+
+  const normalizedOptions: KeyframeAnimationOptions | undefined =
+    typeof options === "number" ? { duration: options } : options;
+
+  const animation: MockAnimation = {
+    finished: finishedPromise,
+    playState: "running" as AnimationPlayState,
+    effect: {
+      getComputedTiming() {
+        return { duration: (normalizedOptions?.duration as number) ?? 0 };
+      },
+    },
+    cancel() {
+      (this as MockAnimation).playState = "idle" as AnimationPlayState;
+      rejectFinished(new DOMException("Animation cancelled", "AbortError"));
+    },
+    finish() {
+      (this as MockAnimation).playState = "finished" as AnimationPlayState;
+      resolveFinished();
+    },
+    commitStyles() {
+      // no-op in mock
+    },
+    persist() {
+      // no-op in mock
+    },
+  };
+
+  const call: WaapiMockCall = {
+    el: this as Element,
+    keyframes,
+    options: normalizedOptions,
+    animation,
+    resolve: resolveFinished,
+    reject: rejectFinished,
+  };
+
+  waapiMock.calls.push(call);
+  return animation;
+};
