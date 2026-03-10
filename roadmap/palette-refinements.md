@@ -234,7 +234,7 @@ theme file.
 **For arbitrary i/t in JS:**
 
 ```typescript
-import { citaColor } from './palette-engine';
+import { tugColor } from './palette-engine';
 element.style.backgroundColor = tugColor('red', 30, 70);
 ```
 

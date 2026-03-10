@@ -522,9 +522,9 @@ per hue with fixed i/t mappings:
 
 ### Runtime Architecture (Transitioning to Pure CSS)
 
-**Current state.** The palette engine (`palette-engine.ts`) injects CSS variables
-via `injectCITACSS(themeName)` at app startup and theme switch. This JS injection
-approach is being replaced by pure CSS formulas in Phase 5d5e.
+**Current state.** The palette engine defines CSS variables via pure CSS formulas
+in `tug-palette.css`. The `tugColor()` JS function in `palette-engine.ts` provides
+programmatic access for inline styles and data visualization.
 
 **Target state (Phase 5d5e).** Per-hue constants and preset formulas are defined
 in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
@@ -1765,7 +1765,7 @@ This makes the style system navigable instead of mystical.
 
 ### Phase B: Introduce New Layers
 
-1. Implement the TugColor palette engine (TypeScript utility + startup injection). **DONE** — `injectCITACSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
+1. Implement the TugColor palette engine. **DONE** — Pure CSS formulas in `tug-palette.css` generate ~200 CSS variables with P3 support. `tugColor()` JS API for programmatic access.
 2. Add `--tug-{hue}[-preset]` computed variables and per-hue constants. **DONE.**
 3. Add `--tug-zoom`, `--tug-timing`, `--tug-motion` global multipliers. **DONE** — `--tug-zoom` drives `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI. Timing and motion work correctly.
 4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not TugColor palette references. Phase 5d5e will wire them.
@@ -1873,9 +1873,9 @@ results per element while hovered.
 Implementation status and remaining work across six sub-phases:
 
 1. **Phase 5d5a: TugColor Palette Engine** — **COMPLETE.** TugColor palette engine
-   with 24 hue families, 7 presets per hue, short-form `--tug-{hue}[-preset]`
-   CSS variables, P3 wide-gamut support, `tugColor()` JS API. Shipped as
-   `injectCITACSS()`. All legacy anchor/smoothstep/tone code removed.
+   with 24 hue families, 5 presets per hue, short-form `--tug-{hue}[-preset]`
+   CSS variables, P3 wide-gamut support, `tugColor()` JS API. Pure CSS formulas
+   in `tug-palette.css`. All legacy anchor/smoothstep/tone code removed.
 
 2. **Phase 5d5b: Global Scale & Timing** — **COMPLETE.** `--tug-zoom` drives
    `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI with one number.

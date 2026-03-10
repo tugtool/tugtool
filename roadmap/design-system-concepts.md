@@ -3717,7 +3717,7 @@ The `clamp()` piecewise math: t 0→50 maps L from L_DARK to canonical-l; t 50�
 );
 ```
 
-**Why pure CSS, not JS injection.** The TugColor transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()` + `clamp()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the `injectCITACSS()` runtime injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
+**Why pure CSS, not JS injection.** The TugColor transfer function (piecewise linear L, linear C) is simple enough to express entirely in CSS `calc()` + `clamp()`. CSS `oklch()` natively accepts `calc()` expressions for L, C, and h. This eliminates the runtime CSS injection dance entirely for the palette layer. The only values requiring JS computation are the chroma caps (gamut boundary search), but those are static constants that rarely change.
 
 **P3 support.** A `@media (color-gamut: p3)` block overrides `--tug-{hue}-peak-c` with wider P3 chroma caps derived from `MAX_P3_CHROMA_FOR_HUE`. All formulas (convenience presets and theme inline formulas) automatically produce richer colors because they reference `peak-c` — no separate P3 definitions needed.
 
@@ -4336,7 +4336,7 @@ Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the 
 
 Implementation planned across six sub-phases (5d5a–5d5f) in the implementation strategy. External research surveyed Primer, Spectrum, Open Props, Carbon, and Chakra for naming patterns; OKLCH guidance for perceptual uniformity; Adobe color naming guidance for hue family names.
 
-**Implementation history:** Phase 5d5a (Palette Engine) shipped first with the smoothstep/anchor-based system. After extensive curve tuning via the interactive gallery editor, the TugColor (Hue · Intensity · Tone · Alpha) system was designed as a replacement. The TugColor Runtime plan promoted `citaColor` and canonical constants to `palette-engine.ts`, added P3 support, wired `injectCITACSS` into the runtime, and removed all legacy anchor/smoothstep code. A post-merge fix corrected chroma cap derivation — caps are now derived at canonical L only (not the extreme L_DARK/L_LIGHT values which bottlenecked chroma to near-zero). The old `--tug-palette-hue-*` variable names and `tugPaletteColor()` function are gone; replaced by `--tug-{hue}[-preset]` naming and `tugColor()`.
+**Implementation history:** Phase 5d5a (Palette Engine) shipped first with the smoothstep/anchor-based system. After extensive curve tuning via the interactive gallery editor, the TugColor (Hue · Intensity · Tone · Alpha) system was designed as a replacement. The TugColor Runtime plan promoted `tugColor()` and canonical constants to `palette-engine.ts`, added P3 support, moved palette generation to pure CSS, and removed all legacy anchor/smoothstep code. A post-merge fix corrected chroma cap derivation — caps are now derived at canonical L only (not the extreme L_DARK/L_LIGHT values which bottlenecked chroma to near-zero). The old `--tug-palette-hue-*` variable names and `tugPaletteColor()` function are gone; replaced by `--tug-{hue}[-preset]` naming and `tugColor()`.
 
 ### Entry 31: Palette Engine Integration — Pure CSS, Neutrals, Phase 5d5e {#log-31} (2026-03-07)
 
@@ -4344,7 +4344,7 @@ Post-mortem on Phases 5d5c and 5d5d revealed a critical gap: the `--tug-base-*` 
 
 **Three key decisions:**
 
-- **[D70] revised — Continuous TugColor color space with convenience presets.** The palette engine exposes 24 hues × 100 i × 100 t as a continuous space. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values provide stable reference colors. Themes define chromatic semantic tokens using the inline `calc()`+`clamp()` formula with theme-specific i/t choices — this is where design intent lives. ~200 palette CSS vars (120 convenience presets + 74 per-hue constants + neutrals). P3 support: `@media (color-gamut: p3)` overrides `peak-c` constants. `injectCITACSS()` is eliminated — `tugColor()` is retained for programmatic JS use only.
+- **[D70] revised — Continuous TugColor color space with convenience presets.** The palette engine exposes 24 hues × 100 i × 100 t as a continuous space. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values provide stable reference colors. Themes define chromatic semantic tokens using the inline `calc()`+`clamp()` formula with theme-specific i/t choices — this is where design intent lives. ~200 palette CSS vars (120 convenience presets + 74 per-hue constants + neutrals). P3 support: `@media (color-gamut: p3)` overrides `peak-c` constants. Runtime CSS injection is eliminated — `tugColor()` is retained for programmatic JS use only.
 
 - **[D75] Neutral ramp and opacity.** The TugColor system extends to achromatic colors via `--tug-neutral-*` (the tone axis with C=0) plus `--tug-black`/`--tug-white` anchors. For semi-transparent variants, CSS relative color syntax (`oklch(from var(--tug-orange) l c h / 0.5)`) and `color-mix()` provide composable alpha at the point of use — no precomputed alpha variants needed.
 
