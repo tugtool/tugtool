@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-10T18:20:30Z
+---
+
+## step-2: Created SpringSolver, GravitySolver, and FrictionSolver classes in physics.ts with comprehensive unit tests
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7a-tug-animator.md
+
+---
+
+---
 step: step-1
 date: 2025-03-10T18:15:28Z
 ---
