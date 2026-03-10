@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-10T00:14:20Z
+---
+
+## step-7: Converted all standalone hex values in harmony.css to --hvv() calls. All 5 D06 contrast-critical mappings exact. 3 #ffffff -> var(--tug-white). D06 comments updated to HVV notation. Build verified clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-6
 date: 2025-03-10T00:08:48Z
 ---
