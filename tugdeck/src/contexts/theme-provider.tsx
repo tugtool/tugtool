@@ -96,7 +96,7 @@ export function removeThemeCSS(): void {
 /**
  * Post the canvas background hex to the Swift bridge.
  *
- * Computes the hex from the palette engine's HVV constants — same source
+ * Computes the hex from the palette engine's CITA constants — same source
  * of truth as PostCSS and tug-palette.css. No getComputedStyle, no browser
  * color format parsing, no drift.
  */

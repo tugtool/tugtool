@@ -16,8 +16,8 @@ The intent here is not a cosmetic rename. The intent is to:
 - Preserve and improve the accent concept instead of deleting it.
 - Define a large, explicit `--tug-base-*` semantic contract.
 - Make future component styling additive and controlled rather than ad hoc.
-- Add a HueVibVal (HVV) computed color palette with 24 hue families, two
-  independent axes (vibrancy 0–100, value 0–100), 7 named presets per hue,
+- Add a CITA (Color · Intensity · Tone · Alpha) computed color palette with 24 hue families, two
+  independent axes (intensity 0–100, tone 0–100), 7 named presets per hue,
   and P3 wide-gamut support, using OKLCH for perceptual uniformity.
 - Add a global scale system: one root number controls all dimensions in the UI.
 - Add a global timing system: one root number controls all animation durations.
@@ -348,26 +348,26 @@ The current accent system is doing several jobs at once:
 
 These jobs should be separated, but the accent concept absolutely remains.
 
-### 4. HueVibVal (HVV) Computed Color Palette
+### 4. CITA (Color · Intensity · Tone · Alpha) Computed Color Palette
 
 The earlier draft proposed 12 hue families with 4 fixed tones for 48 total
 palette entries. That was too rigid. The intensity-based system that replaced it
 (smoothstep transfer function, `--tug-palette-hue-<angle>-<name>-tone-<intensity>`
-naming) was then itself replaced by the **HueVibVal (HVV) system** — a simpler,
+naming) was then itself replaced by the **CITA (Color · Intensity · Tone · Alpha) system** — a simpler,
 more expressive model built on three axes:
 
 - **Hue**: 24 named color families (cherry through coral), mapped to OKLCH hue
   angles. Each hue has a per-hue **canonical lightness** tuned by eye.
-- **Vibrancy (vib)**: Chroma axis scaled 0–100. At vib=50, chroma equals the
+- **Intensity (i)**: Chroma axis scaled 0–100. At i=50, chroma equals the
   sRGB-safe maximum for the hue. Above 50 pushes toward P3 wide-gamut.
-- **Value (val)**: Lightness axis scaled 0–100. At val=50, lightness equals the
-  per-hue canonical L. val=0 is dark (L=0.15), val=100 is light (L=0.96).
+- **Tone (t)**: Lightness axis scaled 0–100. At t=50, lightness equals the
+  per-hue canonical L. t=0 is dark (L=0.15), t=100 is light (L=0.96).
 
 CSS variables use short-form naming: `--tug-{hue}` for canonical colors,
 `--tug-{hue}-{preset}` for the 7 named presets, and `--tug-{hue}-h`,
 `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c` for per-hue constants.
 
-See [HVV Color Palette System](#hvv-color-palette-system) for the full design.
+See [CITA Color Palette System](#cita-color-palette-system) for the full design.
 
 ### 5. One Global Scale Controls All Dimensions
 
@@ -396,21 +396,21 @@ size, stroke width, and elevation tiers where appropriate.
 
 ---
 
-## HVV Color Palette System
+## CITA Color Palette System
 
 ### The Problem with Earlier Approaches
 
 A fixed 4-tone system (soft/default/strong/intense) forces designers into
 exactly four choices per hue. The intensity-based system that followed (11
 standard stops per hue, smoothstep transfer function) was more flexible but
-still tied to a single axis. The HueVibVal (HVV) system replaces both with a
-two-axis model that separates chroma control (vibrancy) from lightness control
+still tied to a single axis. The CITA (Color · Intensity · Tone · Alpha) system replaces both with a
+two-axis model that separates chroma control (intensity) from lightness control
 (value), giving independent control over saturation and brightness.
 
-### Design: 24 Hue Families x Vibrancy x Value (Implemented)
+### Design: 24 Hue Families x Intensity x Tone (Implemented)
 
 **Hue families.** 24 named hues mapped to OKLCH hue angles. Each hue has a
-per-hue **canonical lightness** tuned for visual balance at vib=50, val=50:
+per-hue **canonical lightness** tuned for visual balance at i=50, t=50:
 
 | Hue Name | OKLCH Hue Angle | Canonical L |
 |----------|-----------------|-------------|
@@ -445,7 +445,7 @@ so that the "default" color for each hue sits at a visually balanced lightness.
 
 **Token naming format.** Short-form CSS variable names:
 
-- `--tug-{hue}` — canonical color (vib=50, val=50)
+- `--tug-{hue}` — canonical color (i=50, t=50)
 - `--tug-{hue}-{preset}` — named preset (e.g., `--tug-red-accent`)
 - `--tug-{hue}-h` — hue angle constant
 - `--tug-{hue}-canonical-l` — canonical lightness constant
@@ -455,42 +455,42 @@ so that the "default" color for each hue sits at a visually balanced lightness.
 
 Examples:
 
-- `--tug-red` — red at canonical (vib=50, val=50)
-- `--tug-red-accent` — red at vib=80, val=50
-- `--tug-violet-subtle` — violet at vib=15, val=92
-- `--tug-orange-dark` — orange at vib=50, val=25
+- `--tug-red` — red at canonical (i=50, t=50)
+- `--tug-red-accent` — red at i=80, t=50
+- `--tug-violet-subtle` — violet at i=15, t=92
+- `--tug-orange-dark` — orange at i=50, t=25
 
-**HVV axes:**
+**CITA axes:**
 
-- **Vibrancy (vib, 0–100):** Controls chroma. At vib=0, chroma is zero
-  (achromatic). At vib=50, chroma equals the per-hue sRGB-safe maximum. At
-  vib=100, chroma reaches the peak (2× the sRGB-safe max, pushing into P3 gamut
+- **Intensity (i, 0–100):** Controls chroma. At i=0, chroma is zero
+  (achromatic). At i=50, chroma equals the per-hue sRGB-safe maximum. At
+  i=100, chroma reaches the peak (2× the sRGB-safe max, pushing into P3 gamut
   on capable displays).
-- **Value (val, 0–100):** Controls lightness via piecewise linear mapping
-  through the per-hue canonical L at val=50. val=0 maps to L_DARK (0.15),
-  val=100 maps to L_LIGHT (0.96).
+- **Tone (t, 0–100):** Controls lightness via piecewise linear mapping
+  through the per-hue canonical L at t=50. t=0 maps to L_DARK (0.15),
+  t=100 maps to L_LIGHT (0.96).
 
 ### The Transfer Function (Implemented)
 
-The HVV system uses two independent linear mappings, not a smoothstep curve:
+The CITA system uses two independent linear mappings, not a smoothstep curve:
 
 **Value-to-Lightness:** Piecewise linear through the per-hue canonical L at
-val=50. Two segments:
-- val 0→50: L interpolates linearly from L_DARK (0.15) to canonical L
-- val 50→100: L interpolates linearly from canonical L to L_LIGHT (0.96)
+t=50. Two segments:
+- t 0→50: L interpolates linearly from L_DARK (0.15) to canonical L
+- t 50→100: L interpolates linearly from canonical L to L_LIGHT (0.96)
 
-**Vibrancy-to-Chroma:** Linear from 0 to peak chroma:
-- C = (vib / 100) × peakChroma
+**Intensity-to-Chroma:** Linear from 0 to peak chroma:
+- C = (i / 100) × peakChroma
 
 Peak chroma defaults to `MAX_CHROMA_FOR_HUE[hue] × PEAK_C_SCALE` (where
 PEAK_C_SCALE = 2). For P3 displays, peak chroma uses the wider
 `MAX_P3_CHROMA_FOR_HUE[hue] × PEAK_C_SCALE`.
 
 ```typescript
-export function hvvColor(
+export function citaColor(
   hueName: string,
-  vib: number,
-  val: number,
+  i: number,
+  t: number,
   canonicalL: number,
   peakChroma?: number,  // defaults to MAX_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE
 ): string
@@ -500,14 +500,14 @@ export function hvvColor(
 Per-hue chroma caps (`MAX_CHROMA_FOR_HUE`) are derived via binary search at
 three L sample points per hue: L_DARK (0.15), the per-hue canonical L, and
 L_LIGHT (0.96). The minimum safe chroma across all three points becomes the cap,
-with a 2% safety margin. This ensures no out-of-gamut colors at any val setting.
+with a 2% safety margin. This ensures no out-of-gamut colors at any tone setting.
 
 ### Seven Semantic Presets Per Hue (Implemented)
 
-Instead of arbitrary intensity stops, the HVV system provides 7 named presets
-per hue with fixed vib/val mappings:
+Instead of arbitrary intensity stops, the CITA system provides 7 named presets
+per hue with fixed i/t mappings:
 
-| Preset | CSS Variable | Vib | Val | Use Case |
+| Preset | CSS Variable | i | t | Use Case |
 |--------|-------------|-----|-----|----------|
 | canonical | `--tug-{hue}` | 50 | 50 | General-purpose default |
 | accent | `--tug-{hue}-accent` | 80 | 50 | Emphasized, high-chroma actions |
@@ -523,7 +523,7 @@ per hue with fixed vib/val mappings:
 ### Runtime Architecture (Transitioning to Pure CSS)
 
 **Current state.** The palette engine (`palette-engine.ts`) injects CSS variables
-via `injectHvvCSS(themeName)` at app startup and theme switch. This JS injection
+via `injectCITACSS(themeName)` at app startup and theme switch. This JS injection
 approach is being replaced by pure CSS formulas in Phase 5d5e.
 
 **Target state (Phase 5d5e).** Per-hue constants and preset formulas are defined
@@ -531,7 +531,7 @@ in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 
 ```css
 :root {
-  /* Per-hue constants (static, from tug-hvv-canonical.json): */
+  /* Per-hue constants (static, from tug-cita-canonical.json): */
   --tug-red-h: 25;
   --tug-red-canonical-l: 0.659;
   --tug-red-peak-c: 0.346;
@@ -560,8 +560,8 @@ in a static `tug-palette.css` file using CSS `oklch()` + `calc()`:
 }
 ```
 
-**Programmatic use.** For arbitrary vib/val combinations beyond the 7 presets,
-the TypeScript function `hvvColor(hueName, vib, val, canonicalL)` returns a raw
+**Programmatic use.** For arbitrary i/t combinations beyond the 7 presets,
+the TypeScript function `citaColor(hueName, i, t, canonicalL)` returns a raw
 `oklch(...)` string. Used in inline styles, color pickers, and data
 visualization. Retained in `palette-engine.ts` after JS injection is removed.
 
@@ -652,7 +652,7 @@ tugbank (`dev.tugtool.app` domain, key `scale`), and restored on reload.
 
 ### The Problem (Resolved)
 
-The legacy `--td-duration-scalar` system has been replaced. The HVV Runtime
+The legacy `--td-duration-scalar` system has been replaced. The CITA Runtime
 phase removed `--td-duration-scalar` entirely. Phase 5d5b introduced the
 `--tug-timing` / `--tug-motion` system described below, which is now
 implemented and working.
@@ -825,7 +825,7 @@ The important distinction:
 
 ## Proposed Token Architecture
 
-### Layer 0: HVV Palette (`--tug-{hue}[-preset]`, `--tug-{hue}-{constant}`)
+### Layer 0: CITA Palette (`--tug-{hue}[-preset]`, `--tug-{hue}-{constant}`)
 
 Purpose:
 
@@ -837,12 +837,12 @@ Purpose:
 
 Examples:
 
-- `--tug-red` — red canonical (vib=50, val=50)
-- `--tug-red-accent` — red accent preset (vib=80, val=50)
-- `--tug-orange-subtle` — orange subtle preset (vib=15, val=92)
-- `--tug-violet-dark` — violet dark preset (vib=50, val=25)
-- `--tug-neutral` — mid gray (val=50, C=0)
-- `--tug-neutral-light` — light gray (val=82, C=0)
+- `--tug-red` — red canonical (i=50, t=50)
+- `--tug-red-accent` — red accent preset (i=80, t=50)
+- `--tug-orange-subtle` — orange subtle preset (i=15, t=92)
+- `--tug-violet-dark` — violet dark preset (i=50, t=25)
+- `--tug-neutral` — mid gray (t=50, C=0)
+- `--tug-neutral-light` — light gray (t=82, C=0)
 - `--tug-black` — pure black (oklch(0 0 0))
 - `--tug-white` — pure white (oklch(1 0 0))
 - `--tug-red-h: 25` — hue angle constant
@@ -855,7 +855,7 @@ Rules:
 
 - Chromatic presets are pure CSS formulas: `oklch(L-calc C-calc h-const)`.
 - Per-hue constants (the only values requiring computation) are static —
-  derived from `tug-hvv-canonical.json` and hardcoded in the CSS file.
+  derived from `tug-cita-canonical.json` and hardcoded in the CSS file.
 - 242+ CSS variables: 168 chromatic presets + 74 constants + neutral ramp.
 - P3 support: `@media (color-gamut: p3)` overrides `--tug-{hue}-peak-c`
   with wider chroma caps; preset formulas auto-produce richer colors.
@@ -1087,8 +1087,8 @@ This is a first-class domain, not a side note.
 
 #### Palette Foundation
 
-The accent system derives from the HVV palette. Semantic accent tokens
-reference HVV preset variables:
+The accent system derives from the CITA palette. Semantic accent tokens
+reference CITA preset variables:
 
 ```css
 --tug-base-accent-default: var(--tug-orange);
@@ -1102,9 +1102,9 @@ reference HVV preset variables:
 --tug-base-accent-danger: var(--tug-red-accent);
 ```
 
-The seven HVV presets per hue (canonical, accent, muted, light, subtle, dark,
+The seven CITA presets per hue (canonical, accent, muted, light, subtle, dark,
 deep) map naturally to semantic accent roles. Because these resolve from the
-HVV palette, all themes share consistent accent behavior.
+CITA palette, all themes share consistent accent behavior.
 
 #### Accent-Derived Interaction Tokens
 
@@ -1431,7 +1431,7 @@ rules.
 
 #### Chart / Gauge
 
-Chart series colors reference HVV palette presets:
+Chart series colors reference CITA palette presets:
 
 - `--tug-base-chart-series-warm` = `var(--tug-orange)`
 - `--tug-base-chart-series-cool` = `var(--tug-cyan)`
@@ -1655,18 +1655,18 @@ The current accent contract needs a direct mapping so the migration is explicit.
 ### Why This Is Better
 
 - Chart, syntax, and multi-series visualization still get a stable expressive
-  palette — now with 7 named presets per hue plus programmatic `hvvColor()` for
-  arbitrary vib/val combinations.
+  palette — now with 7 named presets per hue plus programmatic `citaColor()` for
+  arbitrary i/t combinations.
 - Component authors no longer consume meaningless ordinals.
 - Semantic roles such as info/warning/danger stop depending on "knowing" what
   accent number means what.
-- Any hue at any vibrancy/value is available on demand via `hvvColor()`.
+- Any hue at any intensity/tone is available on demand via `citaColor()`.
 
 ---
 
 ## Legacy Removal Policy
 
-The following are scheduled for full removal:
+The following are scheduled for full remot:
 
 - `--td-*`
 - `--tways-*`
@@ -1708,7 +1708,7 @@ The overlay should show:
   - `--tug-comp-*` token if present.
   - `--tug-base-*` token it resolves from.
   - `--tug-{hue}[-preset]` palette value beneath that (including the hue family
-    name, preset name, and HVV coordinates: vibrancy/value/canonical L).
+    name, preset name, and CITA coordinates: intensity/tone/canonical L).
 - Current `--tug-zoom` and `--tug-timing` values and their effect on the
   inspected element's dimensions and transitions.
 
@@ -1742,8 +1742,8 @@ tugways style contract:
 - Which `--tug-comp-*` token applied.
 - Which `--tug-base-*` semantic is responsible.
 - Which theme primitive supplied the value.
-- For HVV palette colors: which hue family, preset name, and HVV coordinates
-  (vibrancy/value) produced the value.
+- For CITA palette colors: which hue family, preset name, and CITA coordinates
+  (intensity/tone) produced the value.
 - What multiplier effects `--tug-zoom` and `--tug-timing` have on the
   element.
 
@@ -1765,10 +1765,10 @@ This makes the style system navigable instead of mystical.
 
 ### Phase B: Introduce New Layers
 
-1. Implement the HVV palette engine (TypeScript utility + startup injection). **DONE** — `injectHvvCSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
+1. Implement the CITA palette engine (TypeScript utility + startup injection). **DONE** — `injectCITACSS()` ships 242 CSS variables with P3 support. Phase 5d5e will convert to pure CSS formulas.
 2. Add `--tug-{hue}[-preset]` computed variables and per-hue constants. **DONE.**
 3. Add `--tug-zoom`, `--tug-timing`, `--tug-motion` global multipliers. **DONE** — `--tug-zoom` drives `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI. Timing and motion work correctly.
-4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not HVV palette references. Phase 5d5e will wire them.
+4. Add `--tug-base-*` with scaled dimensions and timed durations. **DONE** (Phase 5d5c) — but chromatic tokens used hardcoded hex, not CITA palette references. Phase 5d5e will wire them.
 5. Add `--tug-comp-*` where needed, including component-level zoom overrides. **DONE** (Phase 5d5c).
 6. Add `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors. Planned for Phase 5d5e.
 6. Keep temporary aliases from old tokens to new tokens.
@@ -1817,13 +1817,13 @@ that every new `--tug-comp-*` resolves from existing `--tug-base-*`.
 ### 4. Computed Palette Performance
 
 Mitigation: pre-compute 242 CSS variables (168 presets + 74 constants) at
-startup. This is a one-time cost of < 1ms. Arbitrary vib/val combinations are
-computed on demand via `hvvColor()`, which is pure math with no DOM access.
+startup. This is a one-time cost of < 1ms. Arbitrary i/t combinations are
+computed on demand via `citaColor()`, which is pure math with no DOM access.
 **RESOLVED** — implemented and verified.
 
 ### 5. OKLCH Gamut Clipping
 
-Mitigation: the HVV palette engine includes per-hue chroma capping derived via
+Mitigation: the CITA palette engine includes per-hue chroma capping derived via
 binary search at three L sample points (L_DARK, canonical L, L_LIGHT) for both
 sRGB and P3 gamuts. A 2% safety margin prevents clipping.
 **RESOLVED** — implemented with `MAX_CHROMA_FOR_HUE` and `MAX_P3_CHROMA_FOR_HUE`
@@ -1855,7 +1855,7 @@ results per element while hovered.
 6. Tugways component CSS consumes `--tug-base-*` and `--tug-comp-*` only.
 7. Theme files own only `--tug-palette-*` primitives (plus engine parameters).
 8. The Tailwind/shadcn bridge points at the new canonical layer.
-9. The HVV palette engine computes 242 CSS variables (168 presets + 74
+9. The CITA palette engine computes 242 CSS variables (168 presets + 74
    constants) at startup, with P3 overrides in a `@media (color-gamut: p3)` block.
 10. `--tug-zoom` resizes the entire UI when changed. Verified at 0.85, 1.0,
     1.25, and 1.5.
@@ -1864,7 +1864,7 @@ results per element while hovered.
 12. `--tug-motion: 0` disables all motion. Verified with `prefers-reduced-motion`
     and manual toggle.
 13. Dev-mode `Ctrl+Option + hover` inspector can show full cascade resolution
-    for hovered components, including HVV palette provenance (hue/preset/vib/val).
+    for hovered components, including CITA palette provenance (hue/preset/i/t).
 
 ---
 
@@ -1872,10 +1872,10 @@ results per element while hovered.
 
 Implementation status and remaining work across six sub-phases:
 
-1. **Phase 5d5a: HVV Palette Engine** — **COMPLETE.** HueVibVal palette engine
+1. **Phase 5d5a: CITA Palette Engine** — **COMPLETE.** CITA palette engine
    with 24 hue families, 7 presets per hue, short-form `--tug-{hue}[-preset]`
-   CSS variables, P3 wide-gamut support, `hvvColor()` JS API. Shipped as
-   `injectHvvCSS()`. All legacy anchor/smoothstep/tone code removed.
+   CSS variables, P3 wide-gamut support, `citaColor()` JS API. Shipped as
+   `injectCITACSS()`. All legacy anchor/smoothstep/tone code removed.
 
 2. **Phase 5d5b: Global Scale & Timing** — **COMPLETE.** `--tug-zoom` drives
    `zoom: var(--tug-zoom)` on `<body>`, scaling the entire UI with one number.
@@ -1891,17 +1891,17 @@ Implementation status and remaining work across six sub-phases:
    compatibility aliases in `tokens.css`. Theme override files (`bluenote.css`,
    `harmony.css`) created. However, all chromatic `--tug-base-*` tokens used
    hardcoded hex values instead of `var(--tug-{hue})` palette references —
-   the HVV palette integration was deferred and is now Phase 5d5e.
+   the CITA palette integration was deferred and is now Phase 5d5e.
 
 4. **Phase 5d5d: Consumer Migration** — **COMPLETE.** Migrated all CSS and TS
    consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`.
    Rewrote the Tailwind/shadcn `@theme` bridge. Removed legacy aliases. Added
    `check-legacy-tokens.sh` CI enforcement script. Merged as PR #98. All
    consumers now point at `--tug-base-*` tokens — but those tokens still
-   resolve to hardcoded hex values, not the HVV palette.
+   resolve to hardcoded hex values, not the CITA palette.
 
 5. **Phase 5d5e: Palette Engine Integration** — Wire `--tug-base-*` chromatic
-   tokens to the HVV palette. Convert the palette layer from JS-injected
+   tokens to the CITA palette. Convert the palette layer from JS-injected
    `oklch()` strings to pure CSS formulas using `oklch()` + `calc()` + per-hue
    constants. Add `--tug-neutral-*` achromatic ramp [D75]. Wire accent, chart,
    syntax, status, and all other chromatic semantic tokens to `var(--tug-{hue}
@@ -1911,7 +1911,7 @@ Implementation status and remaining work across six sub-phases:
    palette engine and the consumer-facing tokens.
 
 6. **Phase 5d5f: Cascade Inspector** — Dev-mode `Ctrl+Option + hover` overlay,
-   HVV palette provenance display (hue/preset/vib/val), scale/timing readout.
+   CITA palette provenance display (hue/preset/i/t), scale/timing readout.
 
 Each sub-phase has its own tugplan. See `tugways-implementation-strategy.md` for
 the full phase descriptions and dependency map.

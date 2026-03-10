@@ -16,7 +16,7 @@ date: 2025-03-10T00:19:17Z
 ## step-8: Added integration checkpoint tests verifying all three theme files, PostCSS plugin expansion, round-trip accuracy (delta-E < 0.02), zero standalone hex, and tug-palette.css/brio.css unmodified.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -25,10 +25,10 @@ step: step-7
 date: 2025-03-10T00:14:20Z
 ---
 
-## step-7: Converted all standalone hex values in harmony.css to --hvv() calls. All 5 D06 contrast-critical mappings exact. 3 #ffffff -> var(--tug-white). D06 comments updated to HVV notation. Build verified clean.
+## step-7: Converted all standalone hex values in harmony.css to --cita() calls. All 5 D06 contrast-critical mappings exact. 3 #ffffff -> var(--tug-white). D06 comments updated to CITA notation. Build verified clean.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -37,10 +37,10 @@ step: step-6
 date: 2025-03-10T00:08:48Z
 ---
 
-## step-6: Converted all 43 standalone hex values in bluenote.css to --hvv() calls. Blue tint characteristic confirmed. All rgba() values preserved. Build verified clean.
+## step-6: Converted all 43 standalone hex values in bluenote.css to --cita() calls. Blue tint characteristic confirmed. All rgba() values preserved. Build verified clean.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -49,10 +49,10 @@ step: step-5
 date: 2025-03-10T00:05:48Z
 ---
 
-## step-5: Converted all 211 standalone hex values in tug-tokens.css to --hvv() calls. Fixed postcss-hvv plugin to handle hue-NNN format. Zero standalone hex remaining. Build verified clean.
+## step-5: Converted all 211 standalone hex values in tug-tokens.css to --cita() calls. Fixed postcss-cita plugin to handle hue-NNN format. Zero standalone hex remaining. Build verified clean.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -61,10 +61,10 @@ step: step-4
 date: 2025-03-09T23:57:03Z
 ---
 
-## step-4: Created convert-hex-to-hvv.ts script that parses CSS via PostCSS AST, converts standalone hex values to --hvv() calls using sRGB-to-OKLCH pipeline and oklchToHVV(). Special-cases #ffffff to var(--tug-white). Includes round-trip validation mode.
+## step-4: Created convert-hex-to-cita.ts script that parses CSS via PostCSS AST, converts standalone hex values to --cita() calls using sRGB-to-OKLCH pipeline and oklchToCITA(). Special-cases #ffffff to var(--tug-white). Includes round-trip validation mode.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -73,10 +73,10 @@ step: step-3
 date: 2025-03-09T23:49:32Z
 ---
 
-## step-3: Wired postcss-hvv plugin into vite.config.ts via css.postcss.plugins. Coexists with Tailwind v4 Vite plugin. Build verified clean.
+## step-3: Wired postcss-cita plugin into vite.config.ts via css.postcss.plugins. Coexists with Tailwind v4 Vite plugin. Build verified clean.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -85,10 +85,10 @@ step: step-2
 date: 2025-03-09T23:45:28Z
 ---
 
-## step-2: Created PostCSS plugin at postcss-hvv.ts that expands --hvv(hue, vib, val) calls to oklch() values using palette-engine math. Supports named hues and raw angles. Added postcss as explicit devDependency.
+## step-2: Created PostCSS plugin at postcss-cita.ts that expands --cita(hue, i, t) calls to oklch() values using palette-engine math. Supports named hues and raw angles. Added postcss as explicit devDependency.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -97,10 +97,10 @@ step: step-1
 date: 2025-03-09T23:40:18Z
 ---
 
-## step-1: Added oklchToHVV() to reverse-map oklch strings back to HVV triplets (hue name/angle, vibrancy, value) and hvvPretty() for human-readable formatting. Includes comprehensive round-trip tests for all 24 named hues.
+## step-1: Added oklchToCITA() to reverse-map oklch strings back to CITA triplets (hue name/angle, intensity, value) and citaPretty() for human-readable formatting. Includes comprehensive round-trip tests for all 24 named hues.
 
 **Files changed:**
-- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+- .tugtool/tugplan-tugways-phase-5g2-cita-postcss.md
 
 ---
 
@@ -145,7 +145,7 @@ step: step-5
 date: 2025-03-09T21:57:41Z
 ---
 
-## step-5: Updated palette-engine.test.ts: HVV_PRESETS tests assert 5 entries with Table T01 values, chromatic preset counts changed from 168 to 120, neutral ramp tests updated, gamut safety counts updated, P3 block regex updated. Full suite: 1083 pass, 0 fail.
+## step-5: Updated palette-engine.test.ts: CITA_PRESETS tests assert 5 entries with Table T01 values, chromatic preset counts changed from 168 to 120, neutral ramp tests updated, gamut safety counts updated, P3 block regex updated. Full suite: 1083 pass, 0 fail.
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
@@ -181,7 +181,7 @@ step: step-2
 date: 2025-03-09T21:40:27Z
 ---
 
-## step-2: Rewrote palette-engine.ts: updated HVV_PRESETS from 7 to 5 entries with Table T01 values, rewrote hvvColor() to clamp-based piecewise formula per Spec S02, updated JSDoc comments
+## step-2: Rewrote palette-engine.ts: updated CITA_PRESETS from 7 to 5 entries with Table T01 values, rewrote citaColor() to clamp-based piecewise formula per Spec S02, updated JSDoc comments
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-5g-palette-refinements.md
@@ -193,7 +193,7 @@ step: step-1
 date: 2025-03-09T21:35:29Z
 ---
 
-## step-1: Rewrote tug-palette.css: removed 13 coefficient variables, replaced 7-preset formula blocks with 5-preset calc()+clamp() using literal vib/val numbers, renamed accent to intense, removed subtle/deep, updated neutral ramp to 5 presets per Table T02
+## step-1: Rewrote tug-palette.css: removed 13 coefficient variables, replaced 7-preset formula blocks with 5-preset calc()+clamp() using literal i/t numbers, renamed accent to intense, removed subtle/deep, updated neutral ramp to 5 presets per Table T02
 
 **Files changed:**
 - .tugtool/tugplan-tugways-phase-5g-palette-refinements.md

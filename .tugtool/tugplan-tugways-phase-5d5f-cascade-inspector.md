@@ -2,7 +2,7 @@
 
 ## Tugways Phase 5d5f: Cascade Inspector {#cascade-inspector}
 
-**Purpose:** Ship a dev-mode `Ctrl+Option + hover` cascade inspector overlay that shows the full token resolution chain (component tokens, base tokens, palette variables, HVV provenance) and scale/timing readout for any inspected element, making the tugways style system navigable instead of opaque.
+**Purpose:** Ship a dev-mode `Ctrl+Option + hover` cascade inspector overlay that shows the full token resolution chain (component tokens, base tokens, palette variables, CITA provenance) and scale/timing readout for any inspected element, making the tugways style system navigable instead of opaque.
 
 ---
 
@@ -21,9 +21,9 @@
 
 #### Context {#context}
 
-The tugways design system now has a complete three-layer token architecture: `--tug-comp-*` component tokens resolve to `--tug-base-*` semantic tokens, which in turn resolve through `var(--tug-{hue}[-preset])` palette references down to pure CSS OKLCH formulas in `tug-palette.css`. Global scale (`--tug-zoom`) and timing (`--tug-timing`, `--tug-motion`) multipliers control dimensions and animation durations. This architecture is powerful but invisible -- developers cannot see which tokens are active on a given element, where color values come from in the HVV palette, or how scale/timing affect computed dimensions without manually reading CSS custom property chains in browser devtools.
+The tugways design system now has a complete three-layer token architecture: `--tug-comp-*` component tokens resolve to `--tug-base-*` semantic tokens, which in turn resolve through `var(--tug-{hue}[-preset])` palette references down to pure CSS OKLCH formulas in `tug-palette.css`. Global scale (`--tug-zoom`) and timing (`--tug-timing`, `--tug-motion`) multipliers control dimensions and animation durations. This architecture is powerful but invisible -- developers cannot see which tokens are active on a given element, where color values come from in the CITA palette, or how scale/timing affect computed dimensions without manually reading CSS custom property chains in browser devtools.
 
-Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token contract directly. Unlike browser devtools, this inspector understands the tugways token layers, HVV palette provenance (hue family, preset name, vibrancy/value coordinates), and scale/timing multiplier effects. It builds on the existing `StyleCascadeReader` singleton (Phase 5d3) and `scale-timing.ts` helpers (Phase 5d5b), and follows the pure TypeScript / no React pattern established by other tugways infrastructure modules.
+Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token contract directly. Unlike browser devtools, this inspector understands the tugways token layers, CITA palette provenance (hue family, preset name, intensity/tone coordinates), and scale/timing multiplier effects. It builds on the existing `StyleCascadeReader` singleton (Phase 5d3) and `scale-timing.ts` helpers (Phase 5d5b), and follows the pure TypeScript / no React pattern established by other tugways infrastructure modules.
 
 #### Strategy {#strategy}
 
@@ -39,7 +39,7 @@ Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token
 
 - Inspector activates only when `Ctrl+Option` are held and deactivates when released (`keydown`/`keyup` event verification).
 - Token chain correctly resolves all three layers for components that consume comp tokens: `--tug-comp-*` to `--tug-base-*` to `--tug-{hue}[-preset]` palette variables (verified on TugTabBar or Tugcard, which consume `--tug-comp-tab-*` and `--tug-comp-card-*` respectively). For components like TugButton that reference `--tug-base-*` directly, the chain shows two layers with a "(no comp token)" indicator.
-- HVV palette provenance displays hue family name, preset name, and coordinates (vibrancy, value, canonical L) for any palette-derived color.
+- CITA palette provenance displays hue family name, preset name, and coordinates (intensity, value, canonical L) for any palette-derived color.
 - Scale/timing readout shows current `--tug-zoom` and `--tug-timing` values.
 - Pin/unpin works: clicking pins the overlay in place; `Escape` closes it.
 - Inspector is absent from production bundles (verified by searching build output for inspector class names).
@@ -48,7 +48,7 @@ Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token
 
 #### Scope {#scope}
 
-1. `StyleInspectorOverlay` singleton -- modifier key tracking, overlay lifecycle, target identification, token chain resolution, HVV provenance extraction, scale/timing readout, pin/unpin, Escape to close.
+1. `StyleInspectorOverlay` singleton -- modifier key tracking, overlay lifecycle, target identification, token chain resolution, CITA provenance extraction, scale/timing readout, pin/unpin, Escape to close.
 2. `style-inspector-overlay.css` -- overlay panel styles, target highlight styles, section/row layout, color swatch rendering.
 3. `gallery-cascade-inspector-content.tsx` -- new gallery tab content component with inspectable sample elements.
 4. Gallery card registration updates -- add 11th tab entry to `GALLERY_DEFAULT_TABS` and register `gallery-cascade-inspector` componentId.
@@ -63,7 +63,7 @@ Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- Phase 5d5e (Palette Engine Integration) complete -- `tug-palette.css` with pure CSS HVV formulas and `tug-tokens.css` chromatic tokens resolving via `var(--tug-{hue}[-preset])`.
+- Phase 5d5e (Palette Engine Integration) complete -- `tug-palette.css` with pure CSS CITA formulas and `tug-tokens.css` chromatic tokens resolving via `var(--tug-{hue}[-preset])`.
 - Phase 5d3 (`StyleCascadeReader` singleton in `style-cascade-reader.ts`) available for import.
 - Phase 5d5b (`scale-timing.ts` helpers: `getTugZoom`, `getTugTiming`, `isTugMotionEnabled`) available for import.
 - Gallery card infrastructure (Phase 5b3) in place with card registration pattern.
@@ -77,7 +77,7 @@ Phase 5d5f adds a purpose-built cascade inspector that exposes the tugways token
 
 #### Assumptions {#assumptions}
 
-- Phase 5d5e is complete: `tug-palette.css` exists with pure CSS HVV formulas and `tug-tokens.css` chromatic tokens already resolve via `var(--tug-{hue}[-preset])` references.
+- Phase 5d5e is complete: `tug-palette.css` exists with pure CSS CITA formulas and `tug-tokens.css` chromatic tokens already resolve via `var(--tug-{hue}[-preset])` references.
 - The scale-timing helpers (`getTugZoom`, `getTugTiming`, `isTugMotionEnabled`) will be imported directly rather than reimplemented. The `StyleCascadeReader` singleton will NOT be used for token source detection because its `getDeclared()` method compares against `document.documentElement`, which returns empty strings for body-scoped tokens. The inspector implements its own body-aware token matching.
 - The overlay highlight uses a separate absolutely-positioned DOM element, consistent with the no-injection approach.
 - The overlay panel is a single fixed-position div appended to `document.body`, managed by the singleton lifecycle.
@@ -166,7 +166,7 @@ This plan uses explicit anchors per the skeleton contract. All anchors are kebab
 
 **Implications:**
 - Need a regex parser for `var(--tug-...[, fallback])` syntax.
-- Chain walking terminates at three points: (1) when the current property matches the PALETTE_VAR_REGEX (one of 24 known hue family names with an optional preset suffix from `accent|muted|light|subtle|dark|deep`) -- these resolve to `oklch()` expressions with nested `var()` calls to internal palette constants, which the HVV provenance display handles; (2) when the value starts with `oklch(` (formula terminal); (3) when the value does not contain a `var()` reference (literal hex, rgb, length, etc.).
+- Chain walking terminates at three points: (1) when the current property matches the PALETTE_VAR_REGEX (one of 24 known hue family names with an optional preset suffix from `accent|muted|light|subtle|dark|deep`) -- these resolve to `oklch()` expressions with nested `var()` calls to internal palette constants, which the CITA provenance display handles; (2) when the value starts with `oklch(` (formula terminal); (3) when the value does not contain a `var()` reference (literal hex, rgb, length, etc.).
 - Risk R01 applies if some browsers resolve through var() references in computed style.
 
 #### [D05] Pin/unpin interaction model (DECIDED) {#d05-pin-unpin}
@@ -206,7 +206,7 @@ This plan uses explicit anchors per the skeleton contract. All anchors are kebab
 | Term | Definition |
 |------|-----------|
 | Token chain | The sequence of CSS custom property references from a `--tug-comp-*` or `--tug-base-*` token down to its terminal resolved value |
-| HVV provenance | The hue family name, preset name, and vibrancy/value/canonical-L coordinates for a palette-derived color |
+| CITA provenance | The hue family name, preset name, and intensity/tone/canonical-L coordinates for a palette-derived color |
 | Inspect target | The DOM element returned by `elementFromPoint` at the cursor position |
 | Pinned | State where the overlay remains visible and locked to a target after clicking |
 | Terminal value | A CSS value that does not contain a `var()` reference (e.g., an OKLCH color, a hex color, a length) |
@@ -253,7 +253,7 @@ resolveTokenChain(element, startProperty):
     if rawValue is empty: break
     chain.push({ property: currentProp, value: rawValue })
     if currentProp matches PALETTE_VAR_REGEX (see below)
-      break  // palette variable reached -- HVV provenance handles inner constants
+      break  // palette variable reached -- CITA provenance handles inner constants
     if rawValue starts with "oklch(": break  // formula terminal
     match = rawValue.match(/var\((--tug-[a-z0-9-]+)/)
     if no match: break  // terminal value (hex, rgb, literal)
@@ -261,7 +261,7 @@ resolveTokenChain(element, startProperty):
   return chain
 ```
 
-**Chain termination rules:** The algorithm stops walking at `--tug-{hue}[-preset]` palette variables (e.g., `--tug-orange`, `--tug-cobalt-accent`). These resolve to `oklch()` expressions containing nested `var()` references to internal palette constants (`--tug-{hue}-canonical-l`, `--tug-preset-{name}-c`, etc.), which are implementation details of the palette engine formulas. The HVV provenance display (Spec S04) presents these constants in a structured, readable format instead. Walking into `oklch()` internals would produce a noisy, unhelpful chain of formula fragments.
+**Chain termination rules:** The algorithm stops walking at `--tug-{hue}[-preset]` palette variables (e.g., `--tug-orange`, `--tug-cobalt-accent`). These resolve to `oklch()` expressions containing nested `var()` references to internal palette constants (`--tug-{hue}-canonical-l`, `--tug-preset-{name}-c`, etc.), which are implementation details of the palette engine formulas. The CITA provenance display (Spec S04) presents these constants in a structured, readable format instead. Walking into `oklch()` internals would produce a noisy, unhelpful chain of formula fragments.
 
 **PALETTE_VAR_REGEX:** The palette variable detection regex must match only actual hue palette variables, not global constants like `--tug-l-dark`. Use a regex anchored to the 24 known hue family names:
 
@@ -294,7 +294,7 @@ The inspector reads and displays chain resolution for these CSS properties when 
 4. **Base token fallback:** If no `--tug-comp-*` match is found, try well-known `--tug-base-*` tokens for the property category (e.g., `--tug-base-surface-default` for `background-color`, `--tug-base-fg-default` for `color`).
 5. **No match:** If no token origin can be identified, display the raw computed value with a "(no token -- inspector could not determine the originating design token for this property)" indicator. This is expected for elements without `.tug-*` classes whose ancestors are also outside the tugways component tree, and for properties set via non-token CSS rules.
 
-**Spec S04: HVV Provenance Display** {#s04-hvv-provenance}
+**Spec S04: CITA Provenance Display** {#s04-cita-provenance}
 
 When a token chain terminates at a `--tug-{hue}` or `--tug-{hue}-{preset}` palette variable, the inspector displays:
 
@@ -324,7 +324,7 @@ The inspector always shows the current global multiplier values, read via the ex
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/components/tugways/style-inspector-overlay.ts` | StyleInspectorOverlay singleton -- modifier key tracking, overlay lifecycle, token chain resolution, HVV provenance, scale/timing readout |
+| `tugdeck/src/components/tugways/style-inspector-overlay.ts` | StyleInspectorOverlay singleton -- modifier key tracking, overlay lifecycle, token chain resolution, CITA provenance, scale/timing readout |
 | `tugdeck/src/components/tugways/style-inspector-overlay.css` | Overlay panel styles, highlight element styles, section layout, color swatches |
 | `tugdeck/src/components/tugways/cards/gallery-cascade-inspector-content.tsx` | Gallery tab content with inspectable sample components |
 
@@ -335,7 +335,7 @@ The inspector always shows the current global multiplier values, read via the ex
 | `StyleInspectorOverlay` | class | `style-inspector-overlay.ts` | Singleton managing the full inspector lifecycle |
 | `initStyleInspector` | fn (exported) | `style-inspector-overlay.ts` | Creates and initializes the singleton; returns cleanup function |
 | `resolveTokenChain` | method | `StyleInspectorOverlay` | Walks var() references to build the full token resolution chain |
-| `extractHvvProvenance` | method | `StyleInspectorOverlay` | Parses hue/preset from palette token names and reads HVV constants |
+| `extractHvvProvenance` | method | `StyleInspectorOverlay` | Parses hue/preset from palette token names and reads CITA constants |
 | `GalleryCascadeInspectorContent` | React component | `gallery-cascade-inspector-content.tsx` | Gallery tab content with sample inspectable elements |
 | `GALLERY_DEFAULT_TABS` | const (modified) | `gallery-card.tsx` | Add 11th entry for `gallery-cascade-inspector` |
 | `registerGalleryCards` | fn (modified) | `gallery-card.tsx` | Add `gallery-cascade-inspector` registration block |
@@ -357,7 +357,7 @@ The inspector always shows the current global multiplier values, read via the ex
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test token chain resolution logic, HVV provenance extraction, modifier key state tracking | Core inspector logic in isolation |
+| **Unit** | Test token chain resolution logic, CITA provenance extraction, modifier key state tracking | Core inspector logic in isolation |
 | **Integration** | Test overlay lifecycle (init/destroy), DOM element creation/removal, event handler wiring | Singleton behavior end-to-end |
 | **Manual verification** | Visual check of overlay positioning, panel content, highlight rendering | Browser-based visual QA |
 
@@ -405,13 +405,13 @@ The inspector always shows the current global multiplier values, read via the ex
 
 ---
 
-#### Step 2: Token chain resolution and HVV provenance {#step-2}
+#### Step 2: Token chain resolution and CITA provenance {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(tugways): add token chain resolution and HVV provenance to cascade inspector`
+**Commit:** `feat(tugways): add token chain resolution and CITA provenance to cascade inspector`
 
-**References:** [D04] Textual var() chain walking, Spec S02, Spec S04, Risk R01, (#s02-token-chain-algorithm, #s04-hvv-provenance, #r01-var-chain-fidelity)
+**References:** [D04] Textual var() chain walking, Spec S02, Spec S04, Risk R01, (#s02-token-chain-algorithm, #s04-cita-provenance, #r01-var-chain-fidelity)
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/style-inspector-overlay.ts` -- modified (add chain resolution methods)
@@ -422,8 +422,8 @@ The inspector always shows the current global multiplier values, read via the ex
 - [ ] Implement `extractHvvProvenance(tokenName)`: parse hue family and preset from `--tug-{hue}[-preset]` pattern; read `--tug-{hue}-canonical-l`, `--tug-{hue}-peak-c`, `--tug-{hue}-h` from `document.body` computed style (palette constants are scoped to `body` in `tug-palette.css`).
 - [ ] Integrate chain resolution into `inspectElement()`: for each inspected property (Spec S03), attempt to identify the originating `--tug-comp-*` or `--tug-base-*` token, then walk its chain.
 - [ ] Implement token discovery per Spec S03 strategy: use the element's class list (e.g., `.tug-tab-bar` -> `--tug-comp-tab-*`, `.tugcard` -> `--tug-comp-card-*`) to determine the component token family; enumerate known token names for that family; read each from `document.body` and check if its resolved value matches the element's computed value. Fall back to well-known `--tug-base-*` tokens if no component token matches. Note: do NOT use `styleCascadeReader.getDeclared()` for token source detection -- its token layer check compares against `document.documentElement`, which returns empty strings for body-scoped tokens. Instead, implement a body-aware check directly in the inspector: read the token from `document.body` and compare against the element's computed value.
-- [ ] Display token chain in the panel. For a three-layer component (e.g., TugTabBar): `--tug-comp-tab-bar-bg -> --tug-base-tab-bar-bg -> #23262d`. For a two-layer component (e.g., TugButton, which references `--tug-base-*` directly): `--tug-base-accent-cool-default -> --tug-cobalt-accent` with a "(no comp token)" indicator (chain terminates at the palette variable; HVV provenance shows cobalt/accent details). Show each hop with an arrow separator.
-- [ ] Display HVV provenance when chain terminates at a palette variable: hue family, preset, canonical L, peak C, hue angle per Spec S04.
+- [ ] Display token chain in the panel. For a three-layer component (e.g., TugTabBar): `--tug-comp-tab-bar-bg -> --tug-base-tab-bar-bg -> #23262d`. For a two-layer component (e.g., TugButton, which references `--tug-base-*` directly): `--tug-base-accent-cool-default -> --tug-cobalt-accent` with a "(no comp token)" indicator (chain terminates at the palette variable; CITA provenance shows cobalt/accent details). Show each hop with an arrow separator.
+- [ ] Display CITA provenance when chain terminates at a palette variable: hue family, preset, canonical L, peak C, hue angle per Spec S04.
 - [ ] Implement Risk R01 fallback: if `getPropertyValue` returns a fully resolved value (no `var()`), attempt to match the token name pattern against known palette variable naming conventions and display "(heuristic)" indicator.
 - [ ] Add color swatch rendering next to resolved color values in the panel.
 
@@ -439,7 +439,7 @@ The inspector always shows the current global multiplier values, read via the ex
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test`
-- [ ] Manual: hover a TugTabBar tab in the gallery, verify panel shows full three-layer chain from `--tug-comp-tab-*` through `--tug-base-*` to terminal value. Hover a TugButton (primary variant), verify panel shows two-layer chain `--tug-base-accent-cool-default -> --tug-cobalt-accent` with "(no comp token)" indicator and HVV provenance for cobalt/accent.
+- [ ] Manual: hover a TugTabBar tab in the gallery, verify panel shows full three-layer chain from `--tug-comp-tab-*` through `--tug-base-*` to terminal value. Hover a TugButton (primary variant), verify panel shows two-layer chain `--tug-base-accent-cool-default -> --tug-cobalt-accent` with "(no comp token)" indicator and CITA provenance for cobalt/accent.
 
 ---
 
@@ -460,7 +460,7 @@ The inspector always shows the current global multiplier values, read via the ex
 
 **Tasks:**
 - [ ] Create `GalleryCascadeInspectorContent` React component in `gallery-cascade-inspector-content.tsx`.
-- [ ] Add inspectable sample elements that exercise all token chain depths: (a) a TugDropdown instance (exercises full three-layer chain: `--tug-comp-dropdown-*` -> `--tug-base-*` -> palette), (b) a TugButton (exercises two-layer chain: `--tug-base-*` -> palette, with "(no comp token)" indicator -- tug-button.css references `--tug-base-*` directly), (c) a colored div using `--tug-base-accent-default` (exercises `--tug-base-*` -> palette chain), (d) a div using `--tug-base-surface-raised` (exercises non-chromatic base token, terminal hex value), and (e) a div with explicit inline `background: var(--tug-orange-light)` (exercises direct palette reference with HVV provenance).
+- [ ] Add inspectable sample elements that exercise all token chain depths: (a) a TugDropdown instance (exercises full three-layer chain: `--tug-comp-dropdown-*` -> `--tug-base-*` -> palette), (b) a TugButton (exercises two-layer chain: `--tug-base-*` -> palette, with "(no comp token)" indicator -- tug-button.css references `--tug-base-*` directly), (c) a colored div using `--tug-base-accent-default` (exercises `--tug-base-*` -> palette chain), (d) a div using `--tug-base-surface-raised` (exercises non-chromatic base token, terminal hex value), and (e) a div with explicit inline `background: var(--tug-orange-light)` (exercises direct palette reference with CITA provenance).
 - [ ] Add instructional text explaining: "Hold Ctrl+Option and hover the elements below to see the cascade inspector in action."
 - [ ] Add `GALLERY_DEFAULT_TABS` 11th entry: `{ id: "template", componentId: "gallery-cascade-inspector", title: "Cascade Inspector", closable: true }`.
 - [ ] Add `registerCard` call for `gallery-cascade-inspector` with factory, contentFactory, defaultMeta (`title: "Cascade Inspector"`, `icon: "Search"`, `closable: true`), family `"developer"`, acceptsFamilies `["developer"]`.
@@ -521,8 +521,8 @@ The inspector always shows the current global multiplier values, read via the ex
 - [ ] Verify `gallery-card.tsx` updated with 11th tab and registration.
 - [ ] Verify `main.tsx` updated with `initStyleInspector()` call.
 - [ ] Verify three-layer chain resolution: hover a TugTabBar element, see `--tug-comp-tab-bar-bg -> --tug-base-tab-bar-bg -> #23262d`.
-- [ ] Verify two-layer chain resolution: hover a TugButton, see `--tug-base-accent-cool-default -> --tug-cobalt-accent` with "(no comp token)" indicator and HVV provenance for cobalt/accent (TugButton CSS references `--tug-base-*` directly, not `--tug-comp-button-*`).
-- [ ] Verify HVV provenance displays hue, preset, canonical L, peak C, hue angle for palette-derived colors.
+- [ ] Verify two-layer chain resolution: hover a TugButton, see `--tug-base-accent-cool-default -> --tug-cobalt-accent` with "(no comp token)" indicator and CITA provenance for cobalt/accent (TugButton CSS references `--tug-base-*` directly, not `--tug-comp-button-*`).
+- [ ] Verify CITA provenance displays hue, preset, canonical L, peak C, hue angle for palette-derived colors.
 - [ ] Verify scale/timing readout shows current `--tug-zoom`, `--tug-timing`, and motion status.
 - [ ] Verify pin/unpin: click pins, Escape closes.
 - [ ] Verify all existing tests still pass.
@@ -538,13 +538,13 @@ The inspector always shows the current global multiplier values, read via the ex
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A dev-mode cascade inspector overlay activated by Ctrl+Option+hover that shows full token resolution chains (--tug-comp-* through --tug-base-* to palette variables), HVV palette provenance, and scale/timing readout for any hovered element, with an 11th gallery tab demonstrating the inspector.
+**Deliverable:** A dev-mode cascade inspector overlay activated by Ctrl+Option+hover that shows full token resolution chains (--tug-comp-* through --tug-base-* to palette variables), CITA palette provenance, and scale/timing readout for any hovered element, with an 11th gallery tab demonstrating the inspector.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] Inspector activates on Ctrl+Option, deactivates on release (verified manually).
 - [ ] Token chain displays all three layers for comp-token consumers (verified on TugTabBar or Tugcard hover) and two layers with "(no comp token)" for direct base-token consumers like TugButton.
-- [ ] HVV provenance shows hue family, preset, and coordinates (verified on palette-colored element).
+- [ ] CITA provenance shows hue family, preset, and coordinates (verified on palette-colored element).
 - [ ] Scale/timing readout shows current values (verified by changing --tug-zoom and re-inspecting).
 - [ ] Pin/unpin and Escape work correctly (verified manually).
 - [ ] Inspector absent from production build (verified by searching bundle for `tug-inspector-panel`).
@@ -567,7 +567,7 @@ The inspector always shows the current global multiplier values, read via the ex
 |------------|--------------|
 | Inspector activates in dev mode | Ctrl+Option+hover shows overlay |
 | Token chain resolution | Three-layer chain on TugTabBar/Tugcard; two-layer on TugButton with "(no comp token)" |
-| HVV provenance | Hue, preset, coordinates displayed for palette colors |
+| CITA provenance | Hue, preset, coordinates displayed for palette colors |
 | Scale/timing readout | Current multiplier values shown |
 | Pin/unpin | Click pins, Escape closes |
 | Gallery tab | 11th tab "Cascade Inspector" with demo components |

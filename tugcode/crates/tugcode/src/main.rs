@@ -178,7 +178,7 @@ fn main() -> ExitCode {
             port,
             param,
         }) => commands::run_tell(action, port, param, cli.json),
-        Some(Commands::Hvv { color }) => commands::run_hvv(color, cli.json, cli.quiet),
+        Some(Commands::Cita { color }) => commands::run_cita(color, cli.json, cli.quiet),
         Some(Commands::Dash(dash_cmd)) => match dash_cmd {
             DashCommands::Create { name, description } => {
                 commands::run_dash_create(name, description, cli.json, cli.quiet)

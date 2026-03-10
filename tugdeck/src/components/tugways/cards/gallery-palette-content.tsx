@@ -1,16 +1,17 @@
 /**
- * gallery-palette-content.tsx -- HueVibVal palette tuning editor.
+ * gallery-palette-content.tsx -- CITA palette tuning editor.
  *
- * Interactive tool for defining 24 canonical colors in the HueVibVal color
- * system. Each canonical color is defined by its OKLCH hue angle (fixed in
- * HUE_FAMILIES) and a tunable canonical lightness. Vibrancy and value axes
- * let the developer derive any shade from the canonical color.
+ * Interactive tool for defining 24 canonical colors in the CITA color
+ * system (Color · Intensity · Tone · Alpha). Each canonical color is defined
+ * by its OKLCH hue angle (fixed in HUE_FAMILIES) and a tunable canonical
+ * lightness. Intensity and tone axes let the developer derive any shade from
+ * the canonical color.
  *
  * UI sections:
- *   - Canonical color strip: 24 swatches at vib=50, val=50
+ *   - Canonical color strip: 24 swatches at intensity=50, tone=50
  *   - L curve editor: SVG with draggable points for per-hue canonical lightness
- *   - VibValPicker: interactive 2D vib/val drag picker for the selected hue,
- *     with preset overlay and CSS formula export
+ *   - IntensityTonePicker: interactive 2D intensity/tone drag picker for the
+ *     selected hue, with preset overlay and CSS formula export
  *   - Export/import: JSON serialization of canonical L values
  *
  * Rules of Tugways compliance:
@@ -24,9 +25,9 @@
 import React, { useState, useRef, useCallback } from "react";
 import {
   HUE_FAMILIES,
-  hvvColor,
+  citaColor,
   DEFAULT_CANONICAL_L,
-  HVV_PRESETS,
+  CITA_PRESETS,
   L_DARK,
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
@@ -38,8 +39,8 @@ import "./gallery-palette-content.css";
 
 const HUE_NAMES = Object.keys(HUE_FAMILIES);
 
-const VIB_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-const VAL_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
+const INTENSITY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const TONE_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
 
 // ---------------------------------------------------------------------------
 // SVG curve coordinate helpers (constants, outside component)
@@ -164,7 +165,7 @@ function LCurveEditor({
       {HUE_NAMES.map((name, i) => {
         const cx = hueX(i);
         const cy = lToY(canonicalL[name]);
-        const dotColor = hvvColor(name, 70, 50, canonicalL[name]);
+        const dotColor = citaColor(name, 70, 50, canonicalL[name]);
         const isSelected = name === selectedHue;
         return (
           <g key={name}>
@@ -223,7 +224,7 @@ function CanonicalStrip({
   return (
     <div className="gp-canonical-strip" data-testid="gp-canonical-strip">
       {HUE_NAMES.map((name) => {
-        const color = hvvColor(name, 50, 50, canonicalL[name]);
+        const color = citaColor(name, 50, 50, canonicalL[name]);
         const isSelected = name === selectedHue;
         return (
           <div
@@ -247,10 +248,10 @@ function CanonicalStrip({
 }
 
 // ---------------------------------------------------------------------------
-// VibValGrid — 2D grid of vib x val for a single hue
+// IntensityToneGrid — 2D grid of intensity x tone for a single hue
 // ---------------------------------------------------------------------------
 
-function VibValGrid({
+function IntensityToneGrid({
   hueName,
   canonicalL,
 }: {
@@ -259,26 +260,26 @@ function VibValGrid({
 }) {
   return (
     <div className="gp-vvgrid" data-testid="gp-vibval-grid">
-      {/* Header row: vib labels */}
+      {/* Header row: intensity labels */}
       <div className="gp-vvgrid-row">
         <div className="gp-vvgrid-corner" />
-        {VIB_STEPS.map((v) => (
+        {INTENSITY_STEPS.map((v) => (
           <div key={v} className="gp-vvgrid-header-cell">{v}</div>
         ))}
       </div>
-      {/* Data rows: val from 100 (top) to 0 (bottom) */}
-      {VAL_STEPS.map((val) => (
-        <div key={val} className="gp-vvgrid-row" data-testid="gp-vvgrid-val-row">
-          <div className="gp-vvgrid-row-label">{val}</div>
-          {VIB_STEPS.map((vib) => {
-            const color = hvvColor(hueName, vib, val, canonicalL);
-            const isCanonical = vib === 50 && val === 50;
+      {/* Data rows: tone from 100 (top) to 0 (bottom) */}
+      {TONE_STEPS.map((tone) => (
+        <div key={tone} className="gp-vvgrid-row" data-testid="gp-vvgrid-val-row">
+          <div className="gp-vvgrid-row-label">{tone}</div>
+          {INTENSITY_STEPS.map((intensity) => {
+            const color = citaColor(hueName, intensity, tone, canonicalL);
+            const isCanonical = intensity === 50 && tone === 50;
             return (
               <div
-                key={vib}
+                key={intensity}
                 className={`gp-vvgrid-cell${isCanonical ? " gp-vvgrid-cell--canonical" : ""}`}
                 style={{ backgroundColor: color }}
-                title={`${hueName} vib=${vib} val=${val}: ${color}`}
+                title={`${hueName} intensity=${intensity} tone=${tone}: ${color}`}
                 data-testid="gp-vvgrid-cell"
                 data-color={color}
               />
@@ -291,13 +292,13 @@ function VibValGrid({
 }
 
 // ---------------------------------------------------------------------------
-// VibVal picker grid constants
+// IntensityTone picker grid constants
 // ---------------------------------------------------------------------------
 
-// 21 steps: 0, 5, 10, ..., 100  (vib x-axis, val y-axis)
+// 21 steps: 0, 5, 10, ..., 100  (intensity x-axis, tone y-axis)
 const PICKER_STEPS = 21;
-const PICKER_VALS = Array.from({ length: PICKER_STEPS }, (_, i) => 100 - i * 5); // 100..0 top-to-bottom
-const PICKER_VIBS = Array.from({ length: PICKER_STEPS }, (_, i) => i * 5);       // 0..100 left-to-right
+const PICKER_TONES = Array.from({ length: PICKER_STEPS }, (_, i) => 100 - i * 5); // 100..0 top-to-bottom
+const PICKER_INTENSITIES = Array.from({ length: PICKER_STEPS }, (_, i) => i * 5); // 0..100 left-to-right
 
 // ---------------------------------------------------------------------------
 // PresetOverlay — 5 labeled preset dots on the picker surface
@@ -306,10 +307,10 @@ const PICKER_VIBS = Array.from({ length: PICKER_STEPS }, (_, i) => i * 5);      
 function PresetOverlay() {
   return (
     <>
-      {Object.entries(HVV_PRESETS).map(([name, { vib, val }]) => {
-        // left = vib/100*100%, bottom = val/100*100%
-        const leftPct = vib;
-        const bottomPct = val;
+      {Object.entries(CITA_PRESETS).map(([name, { intensity, tone }]) => {
+        // left = intensity/100*100%, bottom = tone/100*100%
+        const leftPct = intensity;
+        const bottomPct = tone;
         return (
           <div
             key={name}
@@ -317,7 +318,7 @@ function PresetOverlay() {
             style={{ left: `${leftPct}%`, bottom: `${bottomPct}%` }}
             data-testid="gp-preset-dot"
             data-preset={name}
-            title={`${name} (vib=${vib}, val=${val})`}
+            title={`${name} (intensity=${intensity}, tone=${tone})`}
           >
             <span className="gp-picker-preset-label">{name}</span>
           </div>
@@ -333,12 +334,12 @@ function PresetOverlay() {
 
 function CssFormulaExport({
   hueName,
-  vib,
-  val,
+  intensity,
+  tone,
 }: {
   hueName: string;
-  vib: number;
-  val: number;
+  intensity: number;
+  tone: number;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -346,12 +347,12 @@ function CssFormulaExport({
     `oklch(`,
     `  calc(`,
     `    var(--tug-l-dark)`,
-    `    + clamp(0, ${val}, 50)`,
+    `    + clamp(0, ${tone}, 50)`,
     `      * (var(--tug-${hueName}-canonical-l) - var(--tug-l-dark)) / 50`,
-    `    + (clamp(50, ${val}, 100) - 50)`,
+    `    + (clamp(50, ${tone}, 100) - 50)`,
     `      * (var(--tug-l-light) - var(--tug-${hueName}-canonical-l)) / 50`,
     `  )`,
-    `  calc(${vib} / 100 * var(--tug-${hueName}-peak-c))`,
+    `  calc(${intensity} / 100 * var(--tug-${hueName}-peak-c))`,
     `  var(--tug-${hueName}-h)`,
     `)`,
   ].join("\n");
@@ -380,51 +381,51 @@ function CssFormulaExport({
 }
 
 // ---------------------------------------------------------------------------
-// VibValPicker — interactive 2D vib/val drag picker
+// IntensityTonePicker — interactive 2D intensity/tone drag picker
 // ---------------------------------------------------------------------------
 
-function VibValPicker({
+function IntensityTonePicker({
   hueName,
   canonicalL,
 }: {
   hueName: string;
   canonicalL: number;
 }) {
-  const [vib, setVib] = useState(50);
-  const [val, setVal] = useState(50);
+  const [intensity, setIntensity] = useState(50);
+  const [tone, setTone] = useState(50);
   const gridRef = useRef<HTMLDivElement>(null);
   const capturedRef = useRef(false);
 
-  const computeVibVal = useCallback((clientX: number, clientY: number) => {
+  const computeIntensityTone = useCallback((clientX: number, clientY: number) => {
     if (!gridRef.current) return;
     const rect = gridRef.current.getBoundingClientRect();
-    const rawVib = ((clientX - rect.left) / rect.width) * 100;
-    const rawVal = (1 - (clientY - rect.top) / rect.height) * 100;
-    setVib(Math.round(Math.max(0, Math.min(100, rawVib))));
-    setVal(Math.round(Math.max(0, Math.min(100, rawVal))));
+    const rawIntensity = ((clientX - rect.left) / rect.width) * 100;
+    const rawTone = (1 - (clientY - rect.top) / rect.height) * 100;
+    setIntensity(Math.round(Math.max(0, Math.min(100, rawIntensity))));
+    setTone(Math.round(Math.max(0, Math.min(100, rawTone))));
   }, []);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
     capturedRef.current = true;
-    computeVibVal(e.clientX, e.clientY);
-  }, [computeVibVal]);
+    computeIntensityTone(e.clientX, e.clientY);
+  }, [computeIntensityTone]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!capturedRef.current) return;
-    computeVibVal(e.clientX, e.clientY);
-  }, [computeVibVal]);
+    computeIntensityTone(e.clientX, e.clientY);
+  }, [computeIntensityTone]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.releasePointerCapture?.(e.pointerId);
     capturedRef.current = false;
   }, []);
 
-  const selectedColor = hvvColor(hueName, vib, val, canonicalL);
+  const selectedColor = citaColor(hueName, intensity, tone, canonicalL);
 
-  // Crosshair position: left = vib%, bottom = val%
-  const crosshairLeft = `${vib}%`;
-  const crosshairBottom = `${val}%`;
+  // Crosshair position: left = intensity%, bottom = tone%
+  const crosshairLeft = `${intensity}%`;
+  const crosshairBottom = `${tone}%`;
 
   return (
     <div className="gp-picker-outer" data-testid="gp-picker-outer">
@@ -438,14 +439,14 @@ function VibValPicker({
         onPointerUp={handlePointerUp}
         style={{ touchAction: "none" }}
       >
-        {/* Rows: val from 100 (top) to 0 (bottom) */}
-        {PICKER_VALS.map((rowVal) => (
-          <div key={rowVal} className="gp-picker-row">
-            {PICKER_VIBS.map((colVib) => {
-              const color = hvvColor(hueName, colVib, rowVal, canonicalL);
+        {/* Rows: tone from 100 (top) to 0 (bottom) */}
+        {PICKER_TONES.map((rowTone) => (
+          <div key={rowTone} className="gp-picker-row">
+            {PICKER_INTENSITIES.map((colIntensity) => {
+              const color = citaColor(hueName, colIntensity, rowTone, canonicalL);
               return (
                 <div
-                  key={colVib}
+                  key={colIntensity}
                   className="gp-picker-cell"
                   style={{ backgroundColor: color }}
                   data-testid="gp-picker-cell"
@@ -473,17 +474,17 @@ function VibValPicker({
         style={{ backgroundColor: selectedColor }}
         data-testid="gp-picker-swatch"
         data-color={selectedColor}
-        title={`vib=${vib}, val=${val}: ${selectedColor}`}
+        title={`intensity=${intensity}, tone=${tone}: ${selectedColor}`}
       />
 
-      {/* Vib/val readout */}
+      {/* Intensity/tone readout */}
       <div className="gp-picker-readout" data-testid="gp-picker-readout">
-        <span>vib={vib}</span>
-        <span>val={val}</span>
+        <span>intensity={intensity}</span>
+        <span>tone={tone}</span>
       </div>
 
       {/* CSS formula export */}
-      <CssFormulaExport hueName={hueName} vib={vib} val={val} />
+      <CssFormulaExport hueName={hueName} intensity={intensity} tone={tone} />
     </div>
   );
 }
@@ -494,7 +495,7 @@ function VibValPicker({
 
 const EXPORT_VERSION = 2;
 
-interface HvvExportPayload {
+interface CitaExportPayload {
   version: number;
   global: { l_dark: number; l_light: number };
   hues: Record<string, { canonical_l: number }>;
@@ -506,7 +507,7 @@ interface HvvExportPayload {
 export function buildExportPayload(
   canonicalL: Record<string, number>,
 ): string {
-  const payload: HvvExportPayload = {
+  const payload: CitaExportPayload = {
     version: EXPORT_VERSION,
     global: { l_dark: L_DARK, l_light: L_LIGHT },
     hues: {},
@@ -581,7 +582,7 @@ export function GalleryPaletteContent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tug-hvv-canonical.json";
+    a.download = "tug-cita-canonical.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -676,11 +677,11 @@ export function GalleryPaletteContent() {
         />
       </div>
 
-      {/* VibVal picker for selected hue */}
+      {/* IntensityTone picker for selected hue */}
       {selectedHue && (
         <div className="cg-section">
-          <div className="cg-section-title">{selectedHue} — Vibrancy x Value</div>
-          <VibValPicker
+          <div className="cg-section-title">{selectedHue} — Intensity x Tone</div>
+          <IntensityTonePicker
             hueName={selectedHue}
             canonicalL={canonicalL[selectedHue]}
           />

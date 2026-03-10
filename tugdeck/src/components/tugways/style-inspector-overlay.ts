@@ -3,7 +3,7 @@
  *
  * A dev-only Shift+Option+hover cascade inspector overlay that shows the full
  * token resolution chain (component tokens, base tokens, palette variables,
- * HVV provenance) and scale/timing readout for any inspected element.
+ * CITA provenance) and scale/timing readout for any inspected element.
  *
  * Design decisions:
  *   [D01] Pure TypeScript singleton -- no React involvement. DOM manipulation only,
@@ -19,7 +19,7 @@
  *   Spec S01 (#s01-inspector-singleton)
  *   Spec S02 (#s02-token-chain-algorithm)
  *   Spec S03 (#s03-inspected-properties)
- *   Spec S04 (#s04-hvv-provenance)
+ *   Spec S04 (#s04-cita-provenance)
  *   Spec S05 (#s05-scale-timing-readout)
  *
  * @module components/tugways/style-inspector-overlay
@@ -27,7 +27,7 @@
 
 import "./style-inspector-overlay.css";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
-import { oklchToHVV } from "./palette-engine";
+import { oklchToCITA } from "./palette-engine";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -74,8 +74,8 @@ export interface TokenChainResult {
   usedHeuristic: boolean;
 }
 
-/** HVV provenance data for a palette variable. */
-export interface HvvProvenance {
+/** CITA provenance data for a palette variable. */
+export interface CitaProvenance {
   hue: string;
   preset: string;
   canonicalL: string;
@@ -181,7 +181,7 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
  * StyleInspectorOverlay -- singleton managing the full inspector lifecycle.
  *
  * Activated by holding Shift+Option (Mac). Tracks the element under the cursor
- * via elementFromPoint. Shows token chain resolution, HVV provenance, and
+ * via elementFromPoint. Shows token chain resolution, CITA provenance, and
  * scale/timing readout in a fixed-position panel.
  *
  * [D01] Pure TS singleton
@@ -550,7 +550,7 @@ export class StyleInspectorOverlay {
    * Reads from document.body (where all tug token CSS is scoped).
    *
    * Chain termination rules:
-   *   1. Property matches PALETTE_VAR_REGEX -- stop (HVV provenance handles inner constants)
+   *   1. Property matches PALETTE_VAR_REGEX -- stop (CITA provenance handles inner constants)
    *   2. Value starts with "oklch(" -- formula terminal
    *   3. Value does not contain a var() reference -- literal terminal
    *   4. Cycle detected (seen this property before) -- stop
@@ -603,12 +603,12 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Extract HVV provenance from a palette variable name.
+   * Extract CITA provenance from a palette variable name.
    * Reads canonical-l, peak-c, and h constants from document.body.
    *
-   * Spec S04 (#s04-hvv-provenance)
+   * Spec S04 (#s04-cita-provenance)
    */
-  extractHvvProvenance(tokenName: string): HvvProvenance | null {
+  extractCitaProvenance(tokenName: string): CitaProvenance | null {
     const m = PALETTE_VAR_REGEX.exec(tokenName);
     if (!m) return null;
 
@@ -938,32 +938,32 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Try to convert an oklch() color string to --hvv() notation.
+   * Try to convert an oklch() color string to --cita() notation.
    * Returns null if the string isn't a simple oklch(L C h) value
    * (e.g., contains calc() expressions).
    */
-  private tryFormatHvv(colorStr: string): string | null {
+  private tryFormatCita(colorStr: string): string | null {
     if (!colorStr || !colorStr.startsWith("oklch(")) return null;
     // Skip values with calc() or var() — can't reverse-map those
     if (colorStr.includes("calc(") || colorStr.includes("var(")) return null;
     try {
-      const { hue, vib, val } = oklchToHVV(colorStr);
-      return `--hvv(${hue}, ${vib}, ${val})`;
+      const { hue, intensity, tone } = oklchToCITA(colorStr);
+      return `--cita(${hue}, i: ${intensity}, t: ${tone})`;
     } catch {
       return null;
     }
   }
 
   /**
-   * Create a styled span showing HVV notation for a color value.
-   * Returns null if the color can't be converted to HVV.
+   * Create a styled span showing CITA notation for a color value.
+   * Returns null if the color can't be converted to CITA.
    */
-  private makeHvvEl(colorStr: string): HTMLSpanElement | null {
-    const hvv = this.tryFormatHvv(colorStr);
-    if (!hvv) return null;
+  private makeCitaEl(colorStr: string): HTMLSpanElement | null {
+    const cita = this.tryFormatCita(colorStr);
+    if (!cita) return null;
     const el = document.createElement("span");
-    el.className = "tug-inspector-hvv";
-    el.textContent = hvv;
+    el.className = "tug-inspector-cita";
+    el.textContent = cita;
     return el;
   }
 
@@ -1018,8 +1018,8 @@ export class StyleInspectorOverlay {
     computedRow.appendChild(computedVal);
 
     if (isColorProp) {
-      const hvvEl = this.makeHvvEl(computedValue);
-      if (hvvEl) computedRow.appendChild(hvvEl);
+      const citaEl = this.makeCitaEl(computedValue);
+      if (citaEl)computedRow.appendChild(citaEl);
     }
 
     section.appendChild(computedRow);
@@ -1079,8 +1079,8 @@ export class StyleInspectorOverlay {
           hopEl.appendChild(valEl);
 
           if (isColorProp) {
-            const hvvEl = this.makeHvvEl(hop.value);
-            if (hvvEl) hopEl.appendChild(hvvEl);
+            const citaEl = this.makeCitaEl(hop.value);
+            if (citaEl)hopEl.appendChild(citaEl);
           }
         }
 
@@ -1089,12 +1089,12 @@ export class StyleInspectorOverlay {
 
       section.appendChild(chainEl);
 
-      // HVV provenance if chain ends at a palette variable
+      // CITA provenance if chain ends at a palette variable
       if (result.endsAtPalette && result.paletteVar) {
-        const hvv = this.extractHvvProvenance(result.paletteVar);
-        if (hvv) {
-          const hvvSection = this.renderHvvSection(hvv);
-          section.appendChild(hvvSection);
+        const cita = this.extractCitaProvenance(result.paletteVar);
+        if (cita) {
+          const citaSection = this.renderCitaSection(cita);
+          section.appendChild(citaSection);
         }
       }
     } else if (result.originLayer === "none") {
@@ -1115,25 +1115,25 @@ export class StyleInspectorOverlay {
   }
 
   /**
-   * Render the HVV provenance sub-section.
+   * Render the CITA provenance sub-section.
    *
-   * Spec S04 (#s04-hvv-provenance)
+   * Spec S04 (#s04-cita-provenance)
    */
-  private renderHvvSection(hvv: HvvProvenance): HTMLElement {
+  private renderCitaSection(cita: CitaProvenance): HTMLElement {
     const container = document.createElement("div");
     container.className = "tug-inspector-section";
 
     const title = document.createElement("div");
     title.className = "tug-inspector-section__title";
-    title.textContent = "HVV Provenance";
+    title.textContent = "CITA Provenance";
     container.appendChild(title);
 
     const rows: Array<[string, string]> = [
-      ["hue", hvv.hue],
-      ["preset", hvv.preset],
-      ["canonical-l", hvv.canonicalL || "(n/a)"],
-      ["peak-c", hvv.peakC || "(n/a)"],
-      ["hue-angle", hvv.hueAngle || "(n/a)"],
+      ["hue", cita.hue],
+      ["preset", cita.preset],
+      ["canonical-l", cita.canonicalL || "(n/a)"],
+      ["peak-c", cita.peakC || "(n/a)"],
+      ["hue-angle", cita.hueAngle || "(n/a)"],
     ];
 
     for (const [label, value] of rows) {

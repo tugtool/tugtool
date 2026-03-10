@@ -235,13 +235,13 @@ pub enum Commands {
         param: Vec<String>,
     },
 
-    /// Convert a color to HVV notation
+    /// Convert a color to CITA notation
     ///
     /// Accepts hex, rgb(), rgba(), hsl(), hsla(), hsv(), oklch(), and CSS named colors.
     #[command(
-        long_about = "Convert a color to HVV notation.\n\nAccepts many color formats:\n  Hex:     #RGB, #RRGGBB, #RRGGBBAA\n  RGB:     rgb(255, 0, 0), rgba(255, 0, 0, 0.5)\n  HSL:     hsl(0, 100%, 50%), hsla(0, 100%, 50%, 0.5)\n  HSV:     hsv(0, 100%, 100%)\n  OKLCH:   oklch(0.771 0.143 230)\n  Named:   red, coral, steelblue, ...\n\nOutputs the HVV decomposition (hue, vibrancy, value) along with\nthe oklch() and hex equivalents.\n\nExamples:\n  tugcode hvv '#3b82f6'\n  tugcode hvv 'rgb(59, 130, 246)'\n  tugcode hvv 'oklch(0.771 0.143 230)'\n  tugcode hvv coral"
+        long_about = "Convert a color to CITA notation.\n\nAccepts many color formats:\n  Hex:     #RGB, #RRGGBB, #RRGGBBAA\n  RGB:     rgb(255, 0, 0), rgba(255, 0, 0, 0.5)\n  HSL:     hsl(0, 100%, 50%), hsla(0, 100%, 50%, 0.5)\n  HSV:     hsv(0, 100%, 100%)\n  OKLCH:   oklch(0.771 0.143 230)\n  Named:   red, coral, steelblue, ...\n\nOutputs the CITA decomposition (color, intensity, tone) along with\nthe oklch() and hex equivalents.\n\nExamples:\n  tugcode cita '#3b82f6'\n  tugcode cita 'rgb(59, 130, 246)'\n  tugcode cita 'oklch(0.771 0.143 230)'\n  tugcode cita coral"
     )]
-    Hvv {
+    Cita {
         /// Color string to convert
         color: String,
     },

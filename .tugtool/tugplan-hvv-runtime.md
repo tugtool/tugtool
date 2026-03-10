@@ -1,6 +1,6 @@
-## HueVibVal Runtime System {#hvv-runtime}
+## CITA Runtime System {#cita-runtime}
 
-**Purpose:** Replace the anchor-based palette injection with the HueVibVal CSS variable system, wire hvvColor into the runtime, add P3 display support, and remove all legacy anchor/smoothstep palette code — shipping a complete three-layer color API (semantic presets, per-hue constants, JS function) for the tugdeck palette.
+**Purpose:** Replace the anchor-based palette injection with the CITA CSS variable system, wire citaColor into the runtime, add P3 display support, and remove all legacy anchor/smoothstep palette code — shipping a complete three-layer color API (semantic presets, per-hue constants, JS function) for the tugdeck palette.
 
 ---
 
@@ -19,35 +19,35 @@
 
 #### Context {#context}
 
-The tugdeck palette engine currently uses two transfer functions (smoothstep and anchor-based interpolation) to map intensity values to OKLCH colors. The HueVibVal system, prototyped in gallery-palette-content.tsx, replaces this with a simpler model based on three axes: Hue (24 named colors), Vibrancy (chroma scaling 0-100), and Value (lightness scaling 0-100). Each named color has a canonical form at vib=50, val=50.
+The tugdeck palette engine currently uses two transfer functions (smoothstep and anchor-based interpolation) to map intensity values to OKLCH colors. The CITA system, prototyped in gallery-palette-content.tsx, replaces this with a simpler model based on three axes: Hue (24 named colors), Intensity (chroma scaling 0-100), and Tone (lightness scaling 0-100). Each named color has a canonical form at i=50, t=50.
 
-The gallery editor already has a working `hvvColor()` function and `DEFAULT_CANONICAL_L` table. This phase promotes those into palette-engine.ts as the authoritative runtime, builds the CSS variable injection system around them, adds P3 wide-gamut support, and removes all legacy anchor/smoothstep code.
+The gallery editor already has a working `citaColor()` function and `DEFAULT_CANONICAL_L` table. This phase promotes those into palette-engine.ts as the authoritative runtime, builds the CSS variable injection system around them, adds P3 wide-gamut support, and removes all legacy anchor/smoothstep code.
 
 #### Strategy {#strategy}
 
-- Promote hvvColor and canonical constants from gallery-palette-content.tsx into palette-engine.ts as the authoritative source, establishing the core computation layer first.
-- Build the CSS variable injection function (injectHvvCSS) that emits three layers: semantic presets, per-hue constants, and the JS API function.
+- Promote citaColor and canonical constants from gallery-palette-content.tsx into palette-engine.ts as the authoritative source, establishing the core computation layer first.
+- Build the CSS variable injection function (injectCITACSS) that emits three layers: semantic presets, per-hue constants, and the JS API function.
 - Add P3 display support via oklchToLinearP3, a MAX_P3_CHROMA_FOR_HUE static table, and a @media (color-gamut: p3) block with wider-gamut presets.
-- Wire injectHvvCSS into main.tsx and theme-provider.tsx, replacing injectPaletteCSS calls.
-- Add new HVV tests incrementally: Steps 1-3 each add new test blocks to palette-engine.test.ts alongside the existing legacy tests (which still compile and pass at those steps since the legacy code is not yet removed).
-- Remove all legacy code in a clean break: anchor types, smoothstep, TONE_ALIASES, theme-anchors.ts, and all related exports — removing legacy test blocks from palette-engine.test.ts and deleting theme-anchors.test.ts atomically in the same step to avoid build-breaking intermediate states. The new HVV test blocks added in Steps 1-3 are kept.
-- Update gallery-palette-content.tsx to import hvvColor from palette-engine.ts instead of defining it locally (done in the same step as promotion to ensure test continuity).
+- Wire injectCITACSS into main.tsx and theme-provider.tsx, replacing injectPaletteCSS calls.
+- Add new CITA tests incrementally: Steps 1-3 each add new test blocks to palette-engine.test.ts alongside the existing legacy tests (which still compile and pass at those steps since the legacy code is not yet removed).
+- Remove all legacy code in a clean break: anchor types, smoothstep, TONE_ALIASES, theme-anchors.ts, and all related exports — removing legacy test blocks from palette-engine.test.ts and deleting theme-anchors.test.ts atomically in the same step to avoid build-breaking intermediate states. The new CITA test blocks added in Steps 1-3 are kept.
+- Update gallery-palette-content.tsx to import citaColor from palette-engine.ts instead of defining it locally (done in the same step as promotion to ensure test continuity).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `injectHvvCSS('brio')` produces a `<style id="tug-palette">` element containing 168 semantic preset variables (7 presets x 24 hues), 74 per-hue constant variables, and a P3 media block (verified by test)
+- `injectCITACSS('brio')` produces a `<style id="tug-palette">` element containing 168 semantic preset variables (7 presets x 24 hues), 74 per-hue constant variables, and a P3 media block (verified by test)
 - All 24 hues x 7 presets produce valid oklch() strings (verified by unit test)
 - `@media (color-gamut: p3)` block is present with wider chroma values than the sRGB block (verified by test)
 - No references to `injectPaletteCSS`, `tugAnchoredColor`, `tugPaletteColor`, `smoothstep`, `TONE_ALIASES`, `AnchorPoint`, `HueAnchors`, `ThemeHueAnchors`, `ThemeAnchorData`, `interpolateAnchors`, or `theme-anchors.ts` remain in production code (verified by grep)
 - `bun test` passes with zero failures
-- Gallery editor renders correctly using hvvColor imported from palette-engine.ts
+- Gallery editor renders correctly using citaColor imported from palette-engine.ts
 
 #### Scope {#scope}
 
-1. Promote hvvColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE to palette-engine.ts
-2. Implement injectHvvCSS with Layer 1 (semantic presets) and Layer 2 (per-hue constants)
+1. Promote citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE to palette-engine.ts
+2. Implement injectCITACSS with Layer 1 (semantic presets) and Layer 2 (per-hue constants)
 3. Add P3 gamut support: oklchToLinearP3, isInP3Gamut, MAX_P3_CHROMA_FOR_HUE, @media block
-4. Wire injectHvvCSS into main.tsx and theme-provider.tsx
+4. Wire injectCITACSS into main.tsx and theme-provider.tsx
 5. Remove legacy code and rewrite test suites atomically: smoothstep, anchor types, theme-anchors.ts, TONE_ALIASES, readThemeParams, and their tests in a single step
 6. Update gallery-palette-content.tsx imports (done in Step 1 alongside promotion)
 
@@ -61,13 +61,13 @@ The gallery editor already has a working `hvvColor()` function and `DEFAULT_CANO
 #### Dependencies / Prerequisites {#dependencies}
 
 - Tugways Phase 5d5a palette engine must be complete (merged on main)
-- gallery-palette-content.tsx hvvColor prototype must be working (confirmed in codebase)
+- gallery-palette-content.tsx citaColor prototype must be working (confirmed in codebase)
 
 #### Constraints {#constraints}
 
-- Rules of Tugways: injectHvvCSS must use pure DOM manipulation (createElement/textContent), never React state [D08, D09, D40, D42]
+- Rules of Tugways: injectCITACSS must use pure DOM manipulation (createElement/textContent), never React state [D08, D09, D40, D42]
 - Existing `<style id="tug-palette">` idempotency pattern must be preserved
-- CSS variable names use short form: `--tug-{hue}`, not `--tug-hvv-{hue}` or `--tug-palette-hue-*`
+- CSS variable names use short form: `--tug-{hue}`, not `--tug-cita-{hue}` or `--tug-palette-hue-*`
 - All canonical L values must stay above 0.555 (piecewise min() constraint)
 
 #### Assumptions {#assumptions}
@@ -90,17 +90,17 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### [Q01] Third breakpoint in piecewise L mapping (DECIDED) {#q01-third-breakpoint}
 
-**Question:** The current hvvColor uses a two-segment piecewise linear for val-to-L (through canonical L at val=50). The gallery editor already added a third breakpoint. Should the runtime match?
+**Question:** The current citaColor uses a two-segment piecewise linear for tone-to-L (through canonical L at t=50). The gallery editor already added a third breakpoint. Should the runtime match?
 
 **Why it matters:** Mismatched transfer functions between gallery preview and runtime CSS would produce visually different colors.
 
 **Options (if known):**
-- Two-segment piecewise (current hvvColor in gallery)
+- Two-segment piecewise (current citaColor in gallery)
 - Three-segment piecewise (matching the gallery editor's latest commit)
 
 **Plan to resolve:** Check the gallery editor code and the latest commit message.
 
-**Resolution:** DECIDED — The latest commit (e82b57a) adds a third breakpoint to the gallery palette. However, the runtime hvvColor function in gallery-palette-content.tsx still uses two-segment piecewise. The CSS pure-piecewise uses min() for two segments. We proceed with two-segment piecewise for this phase; the third breakpoint can be added as a follow-on if the gallery editor ships it to the hvvColor function.
+**Resolution:** DECIDED — The latest commit (e82b57a) adds a third breakpoint to the gallery palette. However, the runtime citaColor function in gallery-palette-content.tsx still uses two-segment piecewise. The CSS pure-piecewise uses min() for two segments. We proceed with two-segment piecewise for this phase; the third breakpoint can be added as a follow-on if the gallery editor ships it to the citaColor function.
 
 ---
 
@@ -130,7 +130,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### [D01] Three-layer CSS variable architecture (DECIDED) {#d01-three-layers}
 
-**Decision:** The HVV system emits CSS variables in three layers: Layer 1 semantic presets (168 vars), Layer 2 per-hue constants (74 vars), and Layer 3 is the JS hvvColor() function for programmatic use.
+**Decision:** The CITA system emits CSS variables in three layers: Layer 1 semantic presets (168 vars), Layer 2 per-hue constants (74 vars), and Layer 3 is the JS citaColor() function for programmatic use.
 
 **Rationale:**
 - Presets cover the common use cases without requiring JS
@@ -138,7 +138,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 - JS API covers dynamic/programmatic needs
 
 **Implications:**
-- injectHvvCSS must emit both Layer 1 and Layer 2 in a single :root block
+- injectCITACSS must emit both Layer 1 and Layer 2 in a single :root block
 - Total variable count: 168 + 74 = 242 CSS variables (plus P3 overrides)
 
 #### [D02] Short-form CSS variable naming (DECIDED) {#d02-short-names}
@@ -147,7 +147,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 **Rationale:**
 - Short names are easier to type and read in CSS
-- The `--tug-` prefix is sufficient namespace; no need for `--tug-hvv-` or `--tug-palette-hue-`
+- The `--tug-` prefix is sufficient namespace; no need for `--tug-cita-` or `--tug-palette-hue-`
 - Matches the approved proposal naming scheme
 
 **Implications:**
@@ -156,7 +156,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### [D03] Seven semantic presets per hue (DECIDED) {#d03-seven-presets}
 
-**Decision:** Each hue gets 7 presets with fixed vib/val mappings: canonical(50/50), accent(80/50), muted(25/55), light(30/82), subtle(15/92), dark(50/25), deep(70/15).
+**Decision:** Each hue gets 7 presets with fixed i/t mappings: canonical(50/50), accent(80/50), muted(25/55), light(30/82), subtle(15/92), dark(50/25), deep(70/15).
 
 **Rationale:**
 - Covers the most common UI color needs (primary, accent, muted text, backgrounds, dark themes)
@@ -165,12 +165,12 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 **Implications:**
 - Preset variable format: `--tug-{hue}` (canonical) and `--tug-{hue}-{preset}` for the other six
-- Each sRGB preset computes via `hvvColor(hue, vib, val, canonicalL)` (default peak chroma)
-- Each P3 preset computes via `hvvColor(hue, vib, val, canonicalL, p3PeakChroma)` using the optional `peakChroma` parameter
+- Each sRGB preset computes via `citaColor(hue, i, t, canonicalL)` (default peak chroma)
+- Each P3 preset computes via `citaColor(hue, i, t, canonicalL, p3PeakChroma)` using the optional `peakChroma` parameter
 
 #### [D04] Pure CSS piecewise mapping via min() trick (DECIDED) {#d04-piecewise-min}
 
-**Decision:** The val-to-L mapping uses a two-segment piecewise linear through canonical L at val=50. The CSS representation uses min(segment1, segment2) because all canonical L values are above 0.555. The vib-to-C mapping is linear: calc(var(--vib) / 100 * var(--tug-{hue}-peak-c)).
+**Decision:** The tone-to-L mapping uses a two-segment piecewise linear through canonical L at t=50. The CSS representation uses min(segment1, segment2) because all canonical L values are above 0.555. The i-to-C mapping is linear: calc(var(--i) / 100 * var(--tug-{hue}-peak-c)).
 
 **Rationale:**
 - All canonical L values in DEFAULT_CANONICAL_L are well above 0.555 (minimum is cherry at 0.619)
@@ -202,20 +202,20 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 **Rationale:**
 - No production CSS references the old variable names
 - Leaving dead code creates confusion and maintenance burden
-- The HVV system is a complete replacement, not an incremental addition
+- The CITA system is a complete replacement, not an incremental addition
 
 **Implications:**
 - palette-engine.test.ts and theme-anchors.test.ts must be rewritten atomically alongside code removal (single step) to avoid a build-breaking intermediate state
 - main.tsx and theme-provider.tsx import statements change
 - Keep: HUE_FAMILIES, MAX_CHROMA_FOR_HUE, findMaxChroma, oklchToLinearSRGB, isInSRGBGamut, _deriveChromaCaps, LCParams, DEFAULT_LC_PARAMS
 
-#### [D08] Re-derive chroma tables for HVV L range (DECIDED) {#d08-rederive-chroma}
+#### [D08] Re-derive chroma tables for CITA L range (DECIDED) {#d08-rederive-chroma}
 
-**Decision:** Both MAX_CHROMA_FOR_HUE (sRGB) and MAX_P3_CHROMA_FOR_HUE (P3) are re-derived using L sample points from the HVV system's actual L range (L_DARK=0.15, per-hue canonical L from Table T02, L_LIGHT=0.96) instead of the legacy smoothstep range (L_MIN=0.42, L_MID=0.69). The existing _deriveChromaCaps helper is refactored to accept L sample points, an optional chroma cap, and a gamut checker as parameters. For sRGB, the chroma cap (DEFAULT_LC_PARAMS.cMax=0.22) is retained. For P3, no chroma cap is applied — the binary search result is used directly (with the standard 2% safety margin).
+**Decision:** Both MAX_CHROMA_FOR_HUE (sRGB) and MAX_P3_CHROMA_FOR_HUE (P3) are re-derived using L sample points from the CITA system's actual L range (L_DARK=0.15, per-hue canonical L from Table T02, L_LIGHT=0.96) instead of the legacy smoothstep range (L_MIN=0.42, L_MID=0.69). The existing _deriveChromaCaps helper is refactored to accept L sample points, an optional chroma cap, and a gamut checker as parameters. For sRGB, the chroma cap (DEFAULT_LC_PARAMS.cMax=0.22) is retained. For P3, no chroma cap is applied — the binary search result is used directly (with the standard 2% safety margin).
 
 **Rationale:**
-- The legacy _deriveChromaCaps samples at L=0.42 (smoothstep lMin) and L=0.69 (midpoint) — neither of which is the darkest L in HVV (L_DARK=0.15) or the per-hue canonical L
-- HVV presets span L_DARK=0.15 (deep preset, val=15) through L_LIGHT=0.96, so the chroma cap must be safe across this wider L range
+- The legacy _deriveChromaCaps samples at L=0.42 (smoothstep lMin) and L=0.69 (midpoint) — neither of which is the darkest L in CITA (L_DARK=0.15) or the per-hue canonical L
+- CITA presets span L_DARK=0.15 (deep preset, t=15) through L_LIGHT=0.96, so the chroma cap must be safe across this wider L range
 - The P3 gamut is strictly larger than sRGB; capping P3 chroma at 0.22 (sRGB cMax) would negate the purpose of P3 support
 - The L sample points for derivation should be: L_DARK (0.15), the per-hue canonical L (from Table T02), and L_LIGHT (0.96); the minimum safe chroma across all three points becomes the cap for that hue
 
@@ -225,9 +225,9 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 - _deriveP3ChromaCaps calls the same helper with isInP3Gamut and no maxCap
 - Tests that assert specific MAX_CHROMA_FOR_HUE values must be updated with the new values
 
-#### [D07] injectHvvCSS replaces injectPaletteCSS (DECIDED) {#d07-inject-hvv}
+#### [D07] injectCITACSS replaces injectPaletteCSS (DECIDED) {#d07-inject-cita}
 
-**Decision:** New function `injectHvvCSS(themeName: string)` replaces `injectPaletteCSS`. Called from main.tsx at boot and theme-provider.tsx on theme switch. Reuses the same `<style id="tug-palette">` element and idempotency pattern.
+**Decision:** New function `injectCITACSS(themeName: string)` replaces `injectPaletteCSS`. Called from main.tsx at boot and theme-provider.tsx on theme switch. Reuses the same `<style id="tug-palette">` element and idempotency pattern.
 
 **Rationale:**
 - Same injection pattern means no changes to the DOM lifecycle
@@ -235,7 +235,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 - Simpler signature: no anchor data parameter needed
 
 **Implications:**
-- main.tsx call changes from `injectPaletteCSS(theme, DEFAULT_ANCHOR_DATA[theme])` to `injectHvvCSS(theme)`
+- main.tsx call changes from `injectPaletteCSS(theme, DEFAULT_ANCHOR_DATA[theme])` to `injectCITACSS(theme)`
 - theme-provider.tsx call changes similarly
 - DEFAULT_ANCHOR_DATA import is removed from both files
 
@@ -245,17 +245,17 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 #### Terminology and Naming {#terminology}
 
-**Table T01: HVV Terminology** {#t01-terminology}
+**Table T01: CITA Terminology** {#t01-terminology}
 
 | Term | Definition |
 |------|-----------|
 | Hue | One of 24 named color families (cherry through berry), mapped to OKLCH hue angles |
-| Vibrancy (vib) | Chroma axis scaled 0-100. At vib=50, chroma equals the sRGB-safe max. Above 50 pushes into P3 |
-| Value (val) | Lightness axis scaled 0-100. val=50 produces the canonical lightness for the hue |
-| Canonical color | The reference color for a hue at vib=50, val=50 |
+| Intensity (i) | Chroma axis scaled 0-100. At i=50, chroma equals the sRGB-safe max. Above 50 pushes into P3 |
+| Tone (t) | Lightness axis scaled 0-100. t=50 produces the canonical lightness for the hue |
+| Canonical color | The reference color for a hue at i=50, t=50 |
 | Canonical L | The OKLCH lightness of a hue's canonical color. Per-hue, tunable, must be > 0.555 |
-| Preset | A named vib/val combination (e.g., accent=vib:80/val:50) |
-| Peak chroma | The maximum chroma at vib=100. Defaults to MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (sRGB). For P3, MAX_P3_CHROMA_FOR_HUE * PEAK_C_SCALE |
+| Preset | A named i/t combination (e.g., accent=i:80/t:50) |
+| Peak chroma | The maximum chroma at i=100. Defaults to MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (sRGB). For P3, MAX_P3_CHROMA_FOR_HUE * PEAK_C_SCALE |
 
 #### CSS Variable Specification {#css-vars}
 
@@ -263,7 +263,7 @@ This plan uses explicit anchors on all headings and stable labels for design dec
 
 7 presets per hue, 24 hues = 168 variables.
 
-| Preset | CSS Variable | Vib | Val |
+| Preset | CSS Variable | i | t |
 |--------|-------------|-----|-----|
 | canonical | `--tug-{hue}` | 50 | 50 |
 | accent | `--tug-{hue}-accent` | 80 | 50 |
@@ -296,26 +296,26 @@ The sRGB per-hue constants (`-h` and `-canonical-l`) are not overridden since th
 
 The `oklchToLinearP3` conversion uses the same OKLab pipeline as `oklchToLinearSRGB` (steps 1-3 are identical) but substitutes the LMS-to-linear-Display-P3 matrix in step 4. Matrix coefficients are derived from the Display P3 primaries and D65 white point per the CSS Color 4 specification: https://www.w3.org/TR/css-color-4/#color-conversion-code
 
-**Spec S04: hvvColor function signature** {#s04-hvv-color}
+**Spec S04: citaColor function signature** {#s04-cita-color}
 
 ```typescript
-export function hvvColor(
+export function citaColor(
   hueName: string,
-  vib: number,
-  val: number,
+  i: number,
+  t: number,
   canonicalL: number,
   peakChroma?: number,
 ): string
 ```
 
-Returns an `oklch(L C h)` CSS string. val-to-L is piecewise linear through canonicalL at val=50 (L_DARK at val=0, L_LIGHT at val=100). vib-to-C is linear from 0 to peakC.
+Returns an `oklch(L C h)` CSS string. tone-to-L is piecewise linear through canonicalL at t=50 (L_DARK at t=0, L_LIGHT at t=100). i-to-C is linear from 0 to peakC.
 
-The optional `peakChroma` parameter overrides the default peak chroma (`MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE`). When omitted, the sRGB-derived default is used. When provided, the caller supplies the peak chroma directly (e.g., `MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` for P3 presets). This enables `injectHvvCSS` to compute both sRGB and P3 preset values through the same function without duplicating color logic.
+The optional `peakChroma` parameter overrides the default peak chroma (`MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE`). When omitted, the sRGB-derived default is used. When provided, the caller supplies the peak chroma directly (e.g., `MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` for P3 presets). This enables `injectCITACSS` to compute both sRGB and P3 preset values through the same function without duplicating color logic.
 
-**Spec S05: injectHvvCSS function signature** {#s05-inject-hvv}
+**Spec S05: injectCITACSS function signature** {#s05-inject-cita}
 
 ```typescript
-export function injectHvvCSS(themeName: string): void
+export function injectCITACSS(themeName: string): void
 ```
 
 Creates or replaces a `<style id="tug-palette">` element. Emits:
@@ -334,9 +334,9 @@ function _deriveChromaCaps(
 
 For each hue, binary-searches the maximum safe chroma at each L sample point (via `findMaxChroma` with the provided `gamutCheck`), takes the minimum across all sample points, applies the 2% safety margin, and optionally caps at `maxCap`.
 
-**sRGB derivation:** `_deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` where `hvvLSamples(hue)` returns `[L_DARK, DEFAULT_CANONICAL_L[hue], L_LIGHT]`.
+**sRGB derivation:** `_deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` where `citaLSamples(hue)` returns `[L_DARK, DEFAULT_CANONICAL_L[hue], L_LIGHT]`.
 
-**P3 derivation:** `_deriveChromaCaps(hvvLSamples, isInP3Gamut)` — no `maxCap` parameter, allowing P3 chroma to exceed 0.22.
+**P3 derivation:** `_deriveChromaCaps(citaLSamples, isInP3Gamut)` — no `maxCap` parameter, allowing P3 chroma to exceed 0.22.
 
 #### Canonical L Table {#canonical-l-table}
 
@@ -409,7 +409,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **List L04: Preset definitions** {#l04-presets}
 
-| Preset Name | Vib | Val |
+| Preset Name | i | t |
 |-------------|-----|-----|
 | canonical | 50 | 50 |
 | accent | 80 | 50 |
@@ -437,14 +437,14 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 | `L_DARK` | const | `palette-engine.ts` | 0.15, promoted from gallery-palette-content.tsx |
 | `L_LIGHT` | const | `palette-engine.ts` | 0.96, promoted from gallery-palette-content.tsx |
 | `PEAK_C_SCALE` | const | `palette-engine.ts` | 2, promoted from gallery-palette-content.tsx |
-| `HVV_PRESETS` | const | `palette-engine.ts` | Map of preset name to {vib, val}, List L04 |
-| `hvvColor` | fn | `palette-engine.ts` | Promoted from gallery-palette-content.tsx, Spec S04 |
-| `injectHvvCSS` | fn | `palette-engine.ts` | New, replaces injectPaletteCSS, Spec S05 |
+| `CITA_PRESETS` | const | `palette-engine.ts` | Map of preset name to {i, t}, List L04 |
+| `citaColor` | fn | `palette-engine.ts` | Promoted from gallery-palette-content.tsx, Spec S04 |
+| `injectCITACSS` | fn | `palette-engine.ts` | New, replaces injectPaletteCSS, Spec S05 |
 | `findMaxChroma` | fn (modified) | `palette-engine.ts` | Add optional `gamutCheck` parameter, defaults to isInSRGBGamut |
 | `oklchToLinearP3` | fn | `palette-engine.ts` | New, OKLCH to linear P3 conversion |
 | `isInP3Gamut` | fn | `palette-engine.ts` | New, P3 gamut check |
 | `_deriveChromaCaps` | fn (modified) | `palette-engine.ts` | Refactored to accept lSamples, gamutCheck, maxCap? per Spec S06 |
-| `MAX_CHROMA_FOR_HUE` | const (re-derived) | `palette-engine.ts` | Re-derived with HVV L sample points per [D08] |
+| `MAX_CHROMA_FOR_HUE` | const (re-derived) | `palette-engine.ts` | Re-derived with CITA L sample points per [D08] |
 | `MAX_P3_CHROMA_FOR_HUE` | const | `palette-engine.ts` | New, derived via _deriveChromaCaps with isInP3Gamut, no maxCap |
 | `_deriveP3ChromaCaps` | fn | `palette-engine.ts` | New, calls _deriveChromaCaps with P3 gamut checker and no cap |
 
@@ -452,9 +452,9 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update palette-engine.ts module JSDoc header to describe HVV system
+- [ ] Update palette-engine.ts module JSDoc header to describe CITA system
 - [ ] Add JSDoc to all new exported symbols
-- [ ] Update gallery-palette-content.tsx module header to note hvvColor is imported from palette-engine
+- [ ] Update gallery-palette-content.tsx module header to note citaColor is imported from palette-engine
 
 ---
 
@@ -464,8 +464,8 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test hvvColor, preset computation, P3 gamut checks | Core color math, edge cases |
-| **Integration** | Test injectHvvCSS output (DOM element content) | CSS variable injection, variable counts |
+| **Unit** | Test citaColor, preset computation, P3 gamut checks | Core color math, edge cases |
+| **Integration** | Test injectCITACSS output (DOM element content) | CSS variable injection, variable counts |
 | **Contract** | Verify CSS variable names match naming spec | Spec S01, S02, S03 compliance |
 | **Drift Prevention** | Verify legacy symbols are gone | Grep-based removal verification |
 
@@ -477,75 +477,75 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 >
 > **Commit after all checkpoints pass.** This rule applies to every step below.
 
-#### Step 1: Promote hvvColor and canonical constants to palette-engine.ts {#step-1}
+#### Step 1: Promote citaColor and canonical constants to palette-engine.ts {#step-1}
 
-**Commit:** `feat(palette): promote hvvColor and canonical constants from gallery to palette-engine`
+**Commit:** `feat(palette): promote citaColor and canonical constants from gallery to palette-engine`
 
-**References:** [D01] Three-layer CSS variable architecture, [D06] Clean break from legacy code, [D08] Re-derive chroma tables for HVV L range, Table T02, List L01, Spec S04, Spec S06, (#canonical-l-table, #terminology)
+**References:** [D01] Three-layer CSS variable architecture, [D06] Clean break from legacy code, [D08] Re-derive chroma tables for CITA L range, Table T02, List L01, Spec S04, Spec S06, (#canonical-l-table, #terminology)
 
 **Artifacts:**
-- palette-engine.ts: add DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, HVV_PRESETS, hvvColor; refactor _deriveChromaCaps to accept parameters; re-derive and update MAX_CHROMA_FOR_HUE
-- gallery-palette-content.tsx: remove local definitions of DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, hvvColor; import hvvColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (PEAK_C_SCALE is not imported — only used internally by hvvColor)
+- palette-engine.ts: add DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, CITA_PRESETS, citaColor; refactor _deriveChromaCaps to accept parameters; re-derive and update MAX_CHROMA_FOR_HUE
+- gallery-palette-content.tsx: remove local definitions of DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, citaColor; import citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (PEAK_C_SCALE is not imported — only used internally by citaColor)
 
 **Tasks:**
 - [ ] Add `DEFAULT_CANONICAL_L` constant to palette-engine.ts with values from Table T02
 - [ ] Add `L_DARK = 0.15`, `L_LIGHT = 0.96`, `PEAK_C_SCALE = 2` as exported constants
-- [ ] Add `HVV_PRESETS` constant mapping preset names to {vib, val} per List L04
-- [ ] Move `hvvColor` function to palette-engine.ts with an added optional `peakChroma?: number` fifth parameter per Spec S04. When omitted, defaults to `MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` (preserving existing behavior). When provided, uses the caller-supplied value directly. This enables P3 preset computation in Step 3.
-- [ ] Export hvvColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, HVV_PRESETS from palette-engine.ts
+- [ ] Add `CITA_PRESETS` constant mapping preset names to {i, t} per List L04
+- [ ] Move `citaColor` function to palette-engine.ts with an added optional `peakChroma?: number` fifth parameter per Spec S04. When omitted, defaults to `MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE` (preserving existing behavior). When provided, uses the caller-supplied value directly. This enables P3 preset computation in Step 3.
+- [ ] Export citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, CITA_PRESETS from palette-engine.ts
 - [ ] Refactor `_deriveChromaCaps` to accept parameters per Spec S06: `_deriveChromaCaps(lSamples, gamutCheck, maxCap?)`. The existing behavior (legacy L sample points, sRGB gamut check, cMax cap) becomes the specific sRGB invocation.
-- [ ] Re-derive `MAX_CHROMA_FOR_HUE` using HVV L sample points: for each hue, sample at `[L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]`, binary-search max chroma at each L via `findMaxChroma`, take the minimum, apply 2% safety margin, cap at DEFAULT_LC_PARAMS.cMax (0.22). Run `_deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` and paste the new values into the hardcoded table. Values will likely decrease for some hues due to the wider L range (especially L_DARK=0.15).
+- [ ] Re-derive `MAX_CHROMA_FOR_HUE` using CITA L sample points: for each hue, sample at `[L_DARK (0.15), DEFAULT_CANONICAL_L[hue], L_LIGHT (0.96)]`, binary-search max chroma at each L via `findMaxChroma`, take the minimum, apply 2% safety margin, cap at DEFAULT_LC_PARAMS.cMax (0.22). Run `_deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)` and paste the new values into the hardcoded table. Values will likely decrease for some hues due to the wider L range (especially L_DARK=0.15).
 - [ ] Update any tests that assert specific MAX_CHROMA_FOR_HUE values to match the new re-derived table
-- [ ] In gallery-palette-content.tsx: remove local DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, hvvColor definitions (PEAK_C_SCALE local const is removed but not re-imported since hvvColor now handles it internally)
-- [ ] In gallery-palette-content.tsx: import hvvColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (do NOT import PEAK_C_SCALE — it is only used internally by hvvColor in palette-engine.ts and is not referenced anywhere else in gallery-palette-content.tsx; importing it would trigger an unused-import lint warning, which is a build failure under warnings-are-errors policy)
-- [ ] Verify gallery-palette-content.tsx still uses HVV_PRESETS-compatible vib/val values in its UI (VIB_STEPS, VAL_STEPS remain local as they are UI-only)
+- [ ] In gallery-palette-content.tsx: remove local DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE, citaColor definitions (PEAK_C_SCALE local const is removed but not re-imported since citaColor now handles it internally)
+- [ ] In gallery-palette-content.tsx: import citaColor, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT from palette-engine.ts (do NOT import PEAK_C_SCALE — it is only used internally by citaColor in palette-engine.ts and is not referenced anywhere else in gallery-palette-content.tsx; importing it would trigger an unused-import lint warning, which is a build failure under warnings-are-errors policy)
+- [ ] Verify gallery-palette-content.tsx still uses CITA_PRESETS-compatible i/t values in its UI (VIB_STEPS, VAL_STEPS remain local as they are UI-only)
 - [ ] Verify buildExportPayload in gallery-palette-content.tsx still works correctly — it references L_DARK and L_LIGHT which are now imported from palette-engine.ts rather than defined locally. Confirm the import covers both constants and the export payload round-trip test passes.
-- [ ] Update gallery-palette-content.test.tsx: change `hvvColor` import from `gallery-palette-content` to `palette-engine` (hvvColor is no longer exported from gallery-palette-content.tsx after this step)
+- [ ] Update gallery-palette-content.test.tsx: change `citaColor` import from `gallery-palette-content` to `palette-engine` (citaColor is no longer exported from gallery-palette-content.tsx after this step)
 
 **Tests:** (new tests added to palette-engine.test.ts alongside existing legacy tests, which still compile at this step)
-- [ ] Unit test: hvvColor('red', 50, 50, 0.659) returns valid oklch string with L=0.659
-- [ ] Unit test: hvvColor('red', 0, 50, 0.659) returns oklch with C=0 (zero vibrancy)
-- [ ] Unit test: hvvColor('red', 50, 0, 0.659) returns oklch with L=0.15 (val=0 gives L_DARK)
-- [ ] Unit test: hvvColor('red', 50, 100, 0.659) returns oklch with L=0.96 (val=100 gives L_LIGHT)
-- [ ] Unit test: hvvColor('red', 100, 50, 0.659) returns oklch with C = MAX_CHROMA_FOR_HUE['red'] * 2 (default peak chroma)
-- [ ] Unit test: hvvColor('red', 100, 50, 0.659, 0.5) returns oklch with C = 0.5 (explicit peakChroma overrides default)
-- [ ] Unit test: hvvColor('red', 50, 50, 0.659) with no peakChroma matches hvvColor('red', 50, 50, 0.659, MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE) — explicit default equivalence
+- [ ] Unit test: citaColor('red', 50, 50, 0.659) returns valid oklch string with L=0.659
+- [ ] Unit test: citaColor('red', 0, 50, 0.659) returns oklch with C=0 (zero intensity)
+- [ ] Unit test: citaColor('red', 50, 0, 0.659) returns oklch with L=0.15 (t=0 gives L_DARK)
+- [ ] Unit test: citaColor('red', 50, 100, 0.659) returns oklch with L=0.96 (t=100 gives L_LIGHT)
+- [ ] Unit test: citaColor('red', 100, 50, 0.659) returns oklch with C = MAX_CHROMA_FOR_HUE['red'] * 2 (default peak chroma)
+- [ ] Unit test: citaColor('red', 100, 50, 0.659, 0.5) returns oklch with C = 0.5 (explicit peakChroma overrides default)
+- [ ] Unit test: citaColor('red', 50, 50, 0.659) with no peakChroma matches citaColor('red', 50, 50, 0.659, MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE) — explicit default equivalence
 - [ ] Unit test: all 24 hue names produce valid oklch strings at canonical (50/50)
-- [ ] Unit test: HVV_PRESETS has exactly 7 entries with correct vib/val per List L04
-- [ ] Unit test: MAX_CHROMA_FOR_HUE values match re-derived table (spot-check a few hues against _deriveChromaCaps output with HVV L sample points)
-- [ ] Existing gallery-palette-content tests continue to pass (with updated hvvColor import path)
+- [ ] Unit test: CITA_PRESETS has exactly 7 entries with correct i/t per List L04
+- [ ] Unit test: MAX_CHROMA_FOR_HUE values match re-derived table (spot-check a few hues against _deriveChromaCaps output with CITA L sample points)
+- [ ] Existing gallery-palette-content tests continue to pass (with updated citaColor import path)
 - [ ] Existing `buildExportPayload -> parseImportPayload` round-trip test in gallery-palette-content.test.tsx passes (this existing test already verifies L_DARK/L_LIGHT are correct; no new test needed)
 
 **Checkpoint:**
 - [ ] `bun test` passes
-- [ ] gallery-palette-content.tsx has no local hvvColor definition (grep confirms)
-- [ ] gallery-palette-content.test.tsx imports hvvColor from palette-engine, not gallery-palette-content
+- [ ] gallery-palette-content.tsx has no local citaColor definition (grep confirms)
+- [ ] gallery-palette-content.test.tsx imports citaColor from palette-engine, not gallery-palette-content
 
 ---
 
-#### Step 2: Implement injectHvvCSS with sRGB presets and per-hue constants {#step-2}
+#### Step 2: Implement injectCITACSS with sRGB presets and per-hue constants {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(palette): implement injectHvvCSS with Layer 1 presets and Layer 2 constants`
+**Commit:** `feat(palette): implement injectCITACSS with Layer 1 presets and Layer 2 constants`
 
-**References:** [D01] Three-layer CSS variable architecture, [D02] Short-form CSS variable naming, [D03] Seven semantic presets, [D07] injectHvvCSS replaces injectPaletteCSS, Spec S01, Spec S02, Spec S05, List L04, (#css-vars)
+**References:** [D01] Three-layer CSS variable architecture, [D02] Short-form CSS variable naming, [D03] Seven semantic presets, [D07] injectCITACSS replaces injectPaletteCSS, Spec S01, Spec S02, Spec S05, List L04, (#css-vars)
 
 **Artifacts:**
-- palette-engine.ts: add injectHvvCSS function
+- palette-engine.ts: add injectCITACSS function
 
 **Tasks:**
-- [ ] Implement `injectHvvCSS(themeName: string)` in palette-engine.ts
+- [ ] Implement `injectCITACSS(themeName: string)` in palette-engine.ts
 - [ ] Emit `:root { }` block containing:
   - Layer 1: 168 semantic preset variables (7 presets x 24 hues) per Spec S01
   - Layer 2: 74 per-hue constants per Spec S02 (72 per-hue + 2 global)
-- [ ] Use hvvColor to compute each preset's oklch value with DEFAULT_CANONICAL_L
+- [ ] Use citaColor to compute each preset's oklch value with DEFAULT_CANONICAL_L
 - [ ] Reuse existing PALETTE_STYLE_ID ('tug-palette') and idempotency pattern
-- [ ] Export injectHvvCSS from palette-engine.ts
+- [ ] Export injectCITACSS from palette-engine.ts
 - [ ] Variable naming per [D02]: `--tug-{hue}` for canonical, `--tug-{hue}-{preset}` for others, `--tug-{hue}-h/canonical-l/peak-c` for constants
 
 **Tests:** (new tests added to palette-engine.test.ts alongside existing legacy tests, which still compile at this step)
-- [ ] Integration test: injectHvvCSS('brio') creates `<style id="tug-palette">` element
+- [ ] Integration test: injectCITACSS('brio') creates `<style id="tug-palette">` element
 - [ ] Integration test: CSS contains `--tug-red:` with oklch value (canonical preset)
 - [ ] Integration test: CSS contains `--tug-red-accent:` with oklch value
 - [ ] Integration test: CSS contains all 7 preset names for red (canonical, accent, muted, light, subtle, dark, deep)
@@ -559,7 +559,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Checkpoint:**
 - [ ] `bun test` passes
-- [ ] Manual inspection: injectHvvCSS output has correct variable names and counts
+- [ ] Manual inspection: injectCITACSS output has correct variable names and counts
 
 ---
 
@@ -569,20 +569,20 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Commit:** `feat(palette): add P3 display support with oklchToLinearP3, MAX_P3_CHROMA_FOR_HUE, and @media block`
 
-**References:** [D05] P3 support via @media block, [D08] Re-derive chroma tables for HVV L range, Spec S03, Spec S06, Risk R02, (#css-vars)
+**References:** [D05] P3 support via @media block, [D08] Re-derive chroma tables for CITA L range, Spec S03, Spec S06, Risk R02, (#css-vars)
 
 **Artifacts:**
 - palette-engine.ts: add oklchToLinearP3, isInP3Gamut, _deriveP3ChromaCaps, MAX_P3_CHROMA_FOR_HUE
-- palette-engine.ts: update injectHvvCSS to emit @media (color-gamut: p3) block
+- palette-engine.ts: update injectCITACSS to emit @media (color-gamut: p3) block
 
 **Tasks:**
 - [ ] Implement `oklchToLinearP3(L, C, h)` — same pipeline as oklchToLinearSRGB but with the LMS-to-linear-Display-P3 matrix in step 4 (instead of the LMS-to-linear-sRGB matrix). Steps 1-3 are identical (OKLCH polar to OKLab Cartesian, OKLab to LMS via inverse OKLab M1 matrix, cube-root undo). The LMS-to-linear-P3 matrix coefficients are derived from the Display P3 primaries and D65 white point; source: https://www.w3.org/TR/css-color-4/#color-conversion-code (see "LMS to Display P3" in the CSS Color 4 reference code). An alternative derivation is available at https://bottosson.github.io/posts/oklab/ by composing the OKLab LMS matrix with the XYZ-to-Display-P3 matrix from the CSS Color 4 spec.
 - [ ] Implement `isInP3Gamut(L, C, h, epsilon)` — same pattern as isInSRGBGamut but using oklchToLinearP3
 - [ ] Add optional `gamutCheck` parameter to `findMaxChroma`: `findMaxChroma(L, h, maxSearch?, steps?, gamutCheck?)` where `gamutCheck` defaults to `isInSRGBGamut`. This allows reuse for P3: `findMaxChroma(L, h, 0.4, 32, isInP3Gamut)`.
-- [ ] Implement `_deriveP3ChromaCaps()` by calling the parameterized `_deriveChromaCaps(hvvLSamples, isInP3Gamut)` with NO `maxCap` parameter. This is critical: the legacy `_deriveChromaCaps` included `Math.min(..., DEFAULT_LC_PARAMS.cMax)` which would silently clamp all P3 chroma to 0.22 (the sRGB ceiling). P3 chroma values must be allowed to exceed 0.22 — that is the entire point of P3 support. The HVV L sample points (L_DARK, per-hue canonical L, L_LIGHT) are used, same as the sRGB re-derivation in Step 1.
+- [ ] Implement `_deriveP3ChromaCaps()` by calling the parameterized `_deriveChromaCaps(citaLSamples, isInP3Gamut)` with NO `maxCap` parameter. This is critical: the legacy `_deriveChromaCaps` included `Math.min(..., DEFAULT_LC_PARAMS.cMax)` which would silently clamp all P3 chroma to 0.22 (the sRGB ceiling). P3 chroma values must be allowed to exceed 0.22 — that is the entire point of P3 support. The CITA L sample points (L_DARK, per-hue canonical L, L_LIGHT) are used, same as the sRGB re-derivation in Step 1.
 - [ ] Add `MAX_P3_CHROMA_FOR_HUE` static table (computed once via _deriveP3ChromaCaps, hardcoded like the sRGB table). Values will be larger than MAX_CHROMA_FOR_HUE for all 24 hues.
-- [ ] Update `injectHvvCSS` to append `@media (color-gamut: p3) { :root { ... } }` block with:
-  - P3-recomputed presets by calling `hvvColor(hue, vib, val, canonicalL, MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE)` — the optional `peakChroma` parameter (Spec S04) overrides the default sRGB peak chroma with the wider P3 value
+- [ ] Update `injectCITACSS` to append `@media (color-gamut: p3) { :root { ... } }` block with:
+  - P3-recomputed presets by calling `citaColor(hue, i, t, canonicalL, MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE)` — the optional `peakChroma` parameter (Spec S04) overrides the default sRGB peak chroma with the wider P3 value
   - P3 `--tug-{hue}-peak-c` overrides with `MAX_P3_CHROMA_FOR_HUE[hue] * PEAK_C_SCALE` values
 - [ ] Verify that P3 chroma values are larger than sRGB chroma values for all hues (the P3 gamut is strictly wider)
 
@@ -591,7 +591,7 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Unit test: isInP3Gamut returns true for a color inside P3 gamut
 - [ ] Unit test: isInP3Gamut returns false for a color outside P3 gamut
 - [ ] Unit test: MAX_P3_CHROMA_FOR_HUE has 24 entries, all > corresponding MAX_CHROMA_FOR_HUE entries
-- [ ] Integration test: injectHvvCSS output contains `@media (color-gamut: p3)`
+- [ ] Integration test: injectCITACSS output contains `@media (color-gamut: p3)`
 - [ ] Integration test: P3 block contains `--tug-red:` with wider chroma than sRGB block
 - [ ] Integration test: P3 block contains `--tug-red-peak-c:` with value > sRGB peak-c
 
@@ -601,25 +601,25 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 ---
 
-#### Step 4: Wire injectHvvCSS into main.tsx and theme-provider.tsx {#step-4}
+#### Step 4: Wire injectCITACSS into main.tsx and theme-provider.tsx {#step-4}
 
 **Depends on:** #step-3
 
-**Commit:** `feat(palette): wire injectHvvCSS into boot and theme-switch paths`
+**Commit:** `feat(palette): wire injectCITACSS into boot and theme-switch paths`
 
-**References:** [D07] injectHvvCSS replaces injectPaletteCSS, [D06] Clean break from legacy code, (#context, #strategy)
+**References:** [D07] injectCITACSS replaces injectPaletteCSS, [D06] Clean break from legacy code, (#context, #strategy)
 
 **Artifacts:**
-- main.tsx: replace injectPaletteCSS call with injectHvvCSS
-- theme-provider.tsx: replace injectPaletteCSS call with injectHvvCSS
+- main.tsx: replace injectPaletteCSS call with injectCITACSS
+- theme-provider.tsx: replace injectPaletteCSS call with injectCITACSS
 - Both files: remove DEFAULT_ANCHOR_DATA import from theme-anchors.ts
 
 **Tasks:**
-- [ ] In main.tsx (line 45): replace `injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme])` with `injectHvvCSS(initialTheme)`
-- [ ] In main.tsx: update import — remove `injectPaletteCSS` from palette-engine import, add `injectHvvCSS`
+- [ ] In main.tsx (line 45): replace `injectPaletteCSS(initialTheme, DEFAULT_ANCHOR_DATA[initialTheme])` with `injectCITACSS(initialTheme)`
+- [ ] In main.tsx: update import — remove `injectPaletteCSS` from palette-engine import, add `injectCITACSS`
 - [ ] In main.tsx: remove `DEFAULT_ANCHOR_DATA` import from theme-anchors.ts
-- [ ] In theme-provider.tsx (line 183): replace `injectPaletteCSS(newTheme, DEFAULT_ANCHOR_DATA[newTheme])` with `injectHvvCSS(newTheme)`
-- [ ] In theme-provider.tsx: update import — remove `injectPaletteCSS` from palette-engine import, add `injectHvvCSS`
+- [ ] In theme-provider.tsx (line 183): replace `injectPaletteCSS(newTheme, DEFAULT_ANCHOR_DATA[newTheme])` with `injectCITACSS(newTheme)`
+- [ ] In theme-provider.tsx: update import — remove `injectPaletteCSS` from palette-engine import, add `injectCITACSS`
 - [ ] In theme-provider.tsx: remove `DEFAULT_ANCHOR_DATA` import from theme-anchors.ts
 - [ ] Verify no other files import from theme-anchors.ts (grep check)
 
@@ -638,14 +638,14 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 **Depends on:** #step-4
 
-**Commit:** `refactor(palette): remove legacy anchor/smoothstep code, delete theme-anchors.ts, rewrite tests for HVV`
+**Commit:** `refactor(palette): remove legacy anchor/smoothstep code, delete theme-anchors.ts, rewrite tests for CITA`
 
 **References:** [D01] Three-layer CSS variable architecture, [D02] Short-form CSS variable naming, [D05] P3 support via @media block, [D06] Clean break from legacy code, List L02, List L03, Risk R01, Spec S01, Spec S02, Spec S03, Spec S04, (#strategy, #test-plan-concepts, #css-vars)
 
 **Artifacts:**
 - palette-engine.ts: remove symbols per List L02, update module JSDoc header
 - theme-anchors.ts: delete entire file per List L03
-- palette-engine.test.ts: rewritten to test HVV API (hvvColor, injectHvvCSS, P3 support)
+- palette-engine.test.ts: rewritten to test CITA API (citaColor, injectCITACSS, P3 support)
 - theme-anchors.test.ts: deleted
 
 **Tasks:**
@@ -653,13 +653,13 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 - [ ] Remove from palette-engine.ts all symbols in List L02: injectPaletteCSS, tugPaletteColor, tugAnchoredColor, smoothstep, intensityToLC, TONE_ALIASES, readThemeParams, clampedOklchString, tugPaletteVarName, STANDARD_STOPS, AnchorPoint, HueAnchors, ThemeHueAnchors, ThemeAnchorData, interpolateAnchors
 - [ ] Keep oklchToLinearSRGB and isInSRGBGamut as exported functions. They are consumed by: (a) the parameterized `_deriveChromaCaps` helper which passes `isInSRGBGamut` as the default gamut checker, (b) `findMaxChroma` which calls the gamut checker internally, and (c) tests that verify gamut safety of generated colors. They were previously private but are now part of the public API surface to support these use cases.
 - [ ] Delete theme-anchors.ts entirely
-- [ ] Update palette-engine.ts module JSDoc to describe HVV system (remove references to smoothstep, anchor-based interpolation, old CSS variable format)
+- [ ] Update palette-engine.ts module JSDoc to describe CITA system (remove references to smoothstep, anchor-based interpolation, old CSS variable format)
 - [ ] Verify List L01 symbols are all still present: HUE_FAMILIES, MAX_CHROMA_FOR_HUE, findMaxChroma, oklchToLinearSRGB, isInSRGBGamut, _deriveChromaCaps, LCParams, DEFAULT_LC_PARAMS
 - [ ] Delete theme-anchors.test.ts entirely
-- [ ] Clean up palette-engine.test.ts atomically with the code removal:
+- [ ] Clean up palette-engine.test.ts atomically with the code remot:
   - Remove all legacy test blocks and imports for deleted symbols (tugPaletteColor, clampedOklchString, tugPaletteVarName, TONE_ALIASES, tugAnchoredColor, injectPaletteCSS, all theme-anchor imports)
   - Keep HUE_FAMILIES and MAX_CHROMA_FOR_HUE tests (unchanged)
-  - Keep all new HVV test blocks added incrementally in Steps 1-3 (hvvColor, HVV_PRESETS, injectHvvCSS, P3 gamut tests)
+  - Keep all new CITA test blocks added incrementally in Steps 1-3 (citaColor, CITA_PRESETS, injectCITACSS, P3 gamut tests)
   - Add gamut safety tests: all 24 hues x 7 presets produce valid oklch strings
 - [ ] Verify total test count is reasonable (old suite had ~50 tests; new suite should have similar coverage)
 
@@ -703,15 +703,15 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A complete HueVibVal CSS variable system in palette-engine.ts with P3 support, wired into the tugdeck runtime, replacing all legacy anchor/smoothstep palette code.
+**Deliverable:** A complete CITA CSS variable system in palette-engine.ts with P3 support, wired into the tugdeck runtime, replacing all legacy anchor/smoothstep palette code.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `injectHvvCSS('brio')` produces 242 CSS variables (168 presets + 74 constants) in a `:root` block and P3 overrides in a `@media (color-gamut: p3)` block (`bun test` verification)
-- [ ] `hvvColor` is the sole color computation function, exported from palette-engine.ts (`grep` verification)
+- [ ] `injectCITACSS('brio')` produces 242 CSS variables (168 presets + 74 constants) in a `:root` block and P3 overrides in a `@media (color-gamut: p3)` block (`bun test` verification)
+- [ ] `citaColor` is the sole color computation function, exported from palette-engine.ts (`grep` verification)
 - [ ] No references to `injectPaletteCSS`, `tugAnchoredColor`, `tugPaletteColor`, `theme-anchors.ts`, or `--tug-palette-hue-*` remain in src/ (`grep` verification)
 - [ ] `bun test` passes with zero failures
-- [ ] Gallery palette editor renders and computes colors using hvvColor from palette-engine.ts
+- [ ] Gallery palette editor renders and computes colors using citaColor from palette-engine.ts
 
 **Acceptance tests:**
 - [ ] `bun test` — all tests pass
@@ -726,9 +726,9 @@ For each hue, binary-searches the maximum safe chroma at each L sample point (vi
 
 | Checkpoint | Verification |
 |------------|--------------|
-| HVV core computation | `bun test` — hvvColor unit tests pass |
-| CSS injection | `bun test` — injectHvvCSS integration tests pass, variable counts verified |
+| CITA core computation | `bun test` — citaColor unit tests pass |
+| CSS injection | `bun test` — injectCITACSS integration tests pass, variable counts verified |
 | P3 support | `bun test` — P3 gamut tests pass, @media block present |
-| Runtime wiring | `bun test` — main.tsx and theme-provider.tsx use injectHvvCSS |
+| Runtime wiring | `bun test` — main.tsx and theme-provider.tsx use injectCITACSS |
 | Legacy removal | `grep` — no old symbols or variable names in src/ |
 | Full suite | `bun test` — zero failures |

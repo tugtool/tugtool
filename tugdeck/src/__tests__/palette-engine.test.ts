@@ -1,12 +1,12 @@
 /**
- * Palette Engine tests — HVV Runtime + tug-palette.css verification.
+ * Palette Engine tests — CITA Runtime + tug-palette.css verification.
  *
  * Tests cover:
  * - HUE_FAMILIES and MAX_CHROMA_FOR_HUE tables
  * - oklchToLinearSRGB, isInSRGBGamut, findMaxChroma, _deriveChromaCaps utilities
- * - hvvColor(): val→L piecewise, vib→C linear, optional peakChroma override
+ * - citaColor(): tone→L piecewise, intensity→C linear, optional peakChroma override
  * - DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE constants
- * - HVV_PRESETS: 5 entries with correct vib/val
+ * - CITA_PRESETS: 5 entries with correct intensity/tone
  * - MAX_P3_CHROMA_FOR_HUE: all > corresponding sRGB caps
  * - oklchToLinearP3 and isInP3Gamut: P3 gamut conversion and checking
  * - Gamut safety: all 24 hues × 5 presets produce valid oklch strings
@@ -30,15 +30,15 @@ import {
   oklchToLinearP3,
   isInP3Gamut,
   _deriveChromaCaps,
-  hvvColor,
+  citaColor,
   DEFAULT_CANONICAL_L,
   L_DARK,
   L_LIGHT,
   PEAK_C_SCALE,
-  HVV_PRESETS,
+  CITA_PRESETS,
   MAX_P3_CHROMA_FOR_HUE,
-  oklchToHVV,
-  hvvPretty,
+  oklchToCITA,
+  citaPretty,
 } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ describe("HUE_FAMILIES", () => {
 });
 
 // ---------------------------------------------------------------------------
-// MAX_CHROMA_FOR_HUE (HVV L-range derivation)
+// MAX_CHROMA_FOR_HUE (CITA L-range derivation)
 // ---------------------------------------------------------------------------
 
 describe("MAX_CHROMA_FOR_HUE", () => {
@@ -141,9 +141,9 @@ describe("findMaxChroma()", () => {
 });
 
 describe("_deriveChromaCaps()", () => {
-  it("returns a record with 24 entries when called with HVV L samples", () => {
-    const hvvLSamples = (hue: string) => [L_DARK, DEFAULT_CANONICAL_L[hue] ?? 0.7, L_LIGHT];
-    const caps = _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax);
+  it("returns a record with 24 entries when called with CITA L samples", () => {
+    const citaLSamples = (hue: string) => [L_DARK, DEFAULT_CANONICAL_L[hue] ?? 0.7, L_LIGHT];
+    const caps = _deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax);
     expect(Object.keys(caps).length).toBe(24);
   });
 });
@@ -183,82 +183,82 @@ describe("L_DARK, L_LIGHT, PEAK_C_SCALE", () => {
 });
 
 // ---------------------------------------------------------------------------
-// HVV_PRESETS
+// CITA_PRESETS
 // ---------------------------------------------------------------------------
 
-describe("HVV_PRESETS", () => {
+describe("CITA_PRESETS", () => {
   it("has exactly 5 entries", () => {
-    expect(Object.keys(HVV_PRESETS).length).toBe(5);
+    expect(Object.keys(CITA_PRESETS).length).toBe(5);
   });
 
   it("contains exactly the keys: canonical, light, dark, intense, muted", () => {
-    expect(Object.keys(HVV_PRESETS).sort()).toEqual(["canonical", "dark", "intense", "light", "muted"]);
+    expect(Object.keys(CITA_PRESETS).sort()).toEqual(["canonical", "dark", "intense", "light", "muted"]);
   });
 
-  it("canonical: vib=50, val=50", () => {
-    expect(HVV_PRESETS["canonical"]).toEqual({ vib: 50, val: 50 });
+  it("canonical: intensity=50, tone=50", () => {
+    expect(CITA_PRESETS["canonical"]).toEqual({ intensity: 50, tone: 50 });
   });
-  it("light: vib=20, val=85", () => {
-    expect(HVV_PRESETS["light"]).toEqual({ vib: 20, val: 85 });
+  it("light: intensity=20, tone=85", () => {
+    expect(CITA_PRESETS["light"]).toEqual({ intensity: 20, tone: 85 });
   });
-  it("dark: vib=50, val=20", () => {
-    expect(HVV_PRESETS["dark"]).toEqual({ vib: 50, val: 20 });
+  it("dark: intensity=50, tone=20", () => {
+    expect(CITA_PRESETS["dark"]).toEqual({ intensity: 50, tone: 20 });
   });
-  it("intense: vib=90, val=50", () => {
-    expect(HVV_PRESETS["intense"]).toEqual({ vib: 90, val: 50 });
+  it("intense: intensity=90, tone=50", () => {
+    expect(CITA_PRESETS["intense"]).toEqual({ intensity: 90, tone: 50 });
   });
-  it("muted: vib=20, val=50", () => {
-    expect(HVV_PRESETS["muted"]).toEqual({ vib: 20, val: 50 });
+  it("muted: intensity=20, tone=50", () => {
+    expect(CITA_PRESETS["muted"]).toEqual({ intensity: 20, tone: 50 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// hvvColor()
+// citaColor()
 // ---------------------------------------------------------------------------
 
-describe("hvvColor()", () => {
+describe("citaColor()", () => {
   it("returns a valid oklch() string", () => {
-    expect(hvvColor("red", 50, 50, 0.659)).toMatch(/^oklch\(/);
+    expect(citaColor("red", 50, 50, 0.659)).toMatch(/^oklch\(/);
   });
 
-  it("val=50 produces canonical L", () => {
-    const parsed = parseOklch(hvvColor("red", 50, 50, 0.659));
+  it("tone=50 produces canonical L", () => {
+    const parsed = parseOklch(citaColor("red", 50, 50, 0.659));
     expect(parsed!.L).toBeCloseTo(0.659, 3);
   });
 
-  it("vib=0 produces C=0 (achromatic)", () => {
-    const parsed = parseOklch(hvvColor("red", 0, 50, 0.659));
+  it("intensity=0 produces C=0 (achromatic)", () => {
+    const parsed = parseOklch(citaColor("red", 0, 50, 0.659));
     expect(parsed!.C).toBe(0);
   });
 
-  it("val=0 produces L=L_DARK (0.15)", () => {
-    const parsed = parseOklch(hvvColor("red", 50, 0, 0.659));
+  it("tone=0 produces L=L_DARK (0.15)", () => {
+    const parsed = parseOklch(citaColor("red", 50, 0, 0.659));
     expect(parsed!.L).toBeCloseTo(L_DARK, 3);
   });
 
-  it("val=100 produces L=L_LIGHT (0.96)", () => {
-    const parsed = parseOklch(hvvColor("red", 50, 100, 0.659));
+  it("tone=100 produces L=L_LIGHT (0.96)", () => {
+    const parsed = parseOklch(citaColor("red", 50, 100, 0.659));
     expect(parsed!.L).toBeCloseTo(L_LIGHT, 3);
   });
 
-  it("vib=100 with no peakChroma gives C = MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
-    const parsed = parseOklch(hvvColor("red", 100, 50, 0.659));
+  it("intensity=100 with no peakChroma gives C = MAX_CHROMA_FOR_HUE['red'] * PEAK_C_SCALE", () => {
+    const parsed = parseOklch(citaColor("red", 100, 50, 0.659));
     expect(parsed!.C).toBeCloseTo(MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE, 4);
   });
 
   it("explicit peakChroma=0.5 overrides default", () => {
-    const parsed = parseOklch(hvvColor("red", 100, 50, 0.659, 0.5));
+    const parsed = parseOklch(citaColor("red", 100, 50, 0.659, 0.5));
     expect(parsed!.C).toBeCloseTo(0.5, 4);
   });
 
   it("no peakChroma matches explicit default peakChroma", () => {
     const defaultPeak = MAX_CHROMA_FOR_HUE["red"] * PEAK_C_SCALE;
-    expect(hvvColor("red", 50, 50, 0.659)).toBe(hvvColor("red", 50, 50, 0.659, defaultPeak));
+    expect(citaColor("red", 50, 50, 0.659)).toBe(citaColor("red", 50, 50, 0.659, defaultPeak));
   });
 
   it("all 24 hue names produce valid oklch strings at canonical (50/50)", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
-      const result = hvvColor(hueName, 50, 50, DEFAULT_CANONICAL_L[hueName]);
+      const result = citaColor(hueName, 50, 50, DEFAULT_CANONICAL_L[hueName]);
       expect(result).toMatch(/^oklch\(/);
       expect(parseOklch(result)).not.toBeNull();
     }
@@ -452,7 +452,7 @@ describe("tug-palette.css — chromatic preset formulas (120 = 24 × 5)", () => 
     expect(TUG_PALETTE_CSS).toContain("var(--tug-red-peak-c)");
   });
 
-  it("preset formulas use clamp() for val-to-L piecewise mapping", () => {
+  it("preset formulas use clamp() for tone-to-L piecewise mapping", () => {
     expect(TUG_PALETTE_CSS).toContain("clamp(");
   });
 
@@ -534,8 +534,8 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
     let count = 0;
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
-      for (const { vib, val } of Object.values(HVV_PRESETS)) {
-        const result = hvvColor(hueName, vib, val, canonL);
+      for (const { intensity, tone } of Object.values(CITA_PRESETS)) {
+        const result = citaColor(hueName, intensity, tone, canonL);
         expect(result).toMatch(/^oklch\(/);
         expect(parseOklch(result)).not.toBeNull();
         count++;
@@ -549,8 +549,8 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL  = DEFAULT_CANONICAL_L[hueName];
       const p3PeakC = MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE;
-      for (const { vib, val } of Object.values(HVV_PRESETS)) {
-        const result = hvvColor(hueName, vib, val, canonL, p3PeakC);
+      for (const { intensity, tone } of Object.values(CITA_PRESETS)) {
+        const result = citaColor(hueName, intensity, tone, canonL, p3PeakC);
         expect(result).toMatch(/^oklch\(/);
         expect(parseOklch(result)).not.toBeNull();
         count++;
@@ -561,104 +561,104 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
 });
 
 // ---------------------------------------------------------------------------
-// oklchToHVV() and hvvPretty()
+// oklchToCITA() and citaPretty()
 // ---------------------------------------------------------------------------
 
-describe("oklchToHVV()", () => {
-  it("round-trip: all 24 hues at vib=50, val=50 recover exact hue name and vib/val", () => {
+describe("oklchToCITA()", () => {
+  it("round-trip: all 24 hues at intensity=50, tone=50 recover exact hue name and intensity/tone", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
-      const oklch = hvvColor(hueName, 50, 50, canonL);
-      const result = oklchToHVV(oklch);
+      const oklch = citaColor(hueName, 50, 50, canonL);
+      const result = oklchToCITA(oklch);
       expect(result.hue).toBe(hueName);
-      expect(result.vib).toBe(50);
-      expect(result.val).toBe(50);
+      expect(result.intensity).toBe(50);
+      expect(result.tone).toBe(50);
     }
   });
 
-  it("round-trip edge values: vib=0, vib=100, val=0, val=100", () => {
+  it("round-trip edge values: intensity=0, intensity=100, tone=0, tone=100", () => {
     const hueName = "blue";
     const canonL = DEFAULT_CANONICAL_L[hueName];
 
-    const r0 = oklchToHVV(hvvColor(hueName, 0, 50, canonL));
+    const r0 = oklchToCITA(citaColor(hueName, 0, 50, canonL));
     expect(r0.hue).toBe(hueName);
-    expect(r0.vib).toBe(0);
-    expect(r0.val).toBe(50);
+    expect(r0.intensity).toBe(0);
+    expect(r0.tone).toBe(50);
 
-    const r100 = oklchToHVV(hvvColor(hueName, 100, 50, canonL));
+    const r100 = oklchToCITA(citaColor(hueName, 100, 50, canonL));
     expect(r100.hue).toBe(hueName);
-    expect(r100.vib).toBe(100);
-    expect(r100.val).toBe(50);
+    expect(r100.intensity).toBe(100);
+    expect(r100.tone).toBe(50);
 
-    const rV0 = oklchToHVV(hvvColor(hueName, 50, 0, canonL));
+    const rV0 = oklchToCITA(citaColor(hueName, 50, 0, canonL));
     expect(rV0.hue).toBe(hueName);
-    expect(rV0.vib).toBe(50);
-    expect(rV0.val).toBe(0);
+    expect(rV0.intensity).toBe(50);
+    expect(rV0.tone).toBe(0);
 
-    const rV100 = oklchToHVV(hvvColor(hueName, 50, 100, canonL));
+    const rV100 = oklchToCITA(citaColor(hueName, 50, 100, canonL));
     expect(rV100.hue).toBe(hueName);
-    expect(rV100.vib).toBe(50);
-    expect(rV100.val).toBe(100);
+    expect(rV100.intensity).toBe(50);
+    expect(rV100.tone).toBe(100);
   });
 
   it("raw angle test: oklch at hue angle 237 (not close to any named hue) returns hue-237", () => {
     // hue angle 237 — blue=230(7deg away), cobalt=250(13deg away), both > 5 deg threshold
     // Wait: 237-230=7, 250-237=13 — 7 > 5, so raw angle
     const oklch = "oklch(0.5 0.05 237)";
-    const result = oklchToHVV(oklch);
+    const result = oklchToCITA(oklch);
     expect(result.hue).toBe("hue-237");
   });
 
-  it("round-trip: all 24 hues at vib=20, val=85 recover correct hue name", () => {
+  it("round-trip: all 24 hues at intensity=20, tone=85 recover correct hue name", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
-      const oklch = hvvColor(hueName, 20, 85, canonL);
-      const result = oklchToHVV(oklch);
+      const oklch = citaColor(hueName, 20, 85, canonL);
+      const result = oklchToCITA(oklch);
       expect(result.hue).toBe(hueName);
-      expect(result.vib).toBe(20);
-      expect(result.val).toBe(85);
+      expect(result.intensity).toBe(20);
+      expect(result.tone).toBe(85);
     }
   });
 
   it("returns hue-NNN for raw angle when not within 5 degrees of any named hue", () => {
     // angle 237 is 7 degrees from blue (230), just outside the 5-degree threshold
-    const result = oklchToHVV("oklch(0.7 0.08 237)");
+    const result = oklchToCITA("oklch(0.7 0.08 237)");
     expect(result.hue).toMatch(/^hue-\d+/);
   });
 
   it("returns a named hue when within 5 degrees of a named hue angle", () => {
     // blue is at 230; angle 234 is 4 degrees away — within threshold
-    const result = oklchToHVV("oklch(0.7 0.08 234)");
+    const result = oklchToCITA("oklch(0.7 0.08 234)");
     expect(result.hue).toBe("blue");
   });
 
-  it("returns valid {hue, vib, val} for an invalid oklch string", () => {
-    const result = oklchToHVV("not-oklch");
+  it("returns valid {hue, intensity, tone} for an invalid oklch string", () => {
+    const result = oklchToCITA("not-oklch");
     expect(result).toHaveProperty("hue");
-    expect(result).toHaveProperty("vib");
-    expect(result).toHaveProperty("val");
+    expect(result).toHaveProperty("intensity");
+    expect(result).toHaveProperty("tone");
   });
 });
 
-describe("hvvPretty()", () => {
-  it("formats named hue as 'blue vib=5 val=13'", () => {
+describe("citaPretty()", () => {
+  it("formats named hue as 'blue intensity=5 tone=13'", () => {
     // blue at angle 230, within 5 deg threshold
-    const oklch = hvvColor("blue", 5, 13, DEFAULT_CANONICAL_L["blue"]);
-    const result = hvvPretty(oklch);
-    expect(result).toMatch(/^blue vib=\d+ val=\d+/);
-    expect(result).toBe("blue vib=5 val=13");
+    const oklch = citaColor("blue", 5, 13, DEFAULT_CANONICAL_L["blue"]);
+    const result = citaPretty(oklch);
+    expect(result).toMatch(/^blue intensity=\d+ tone=\d+/);
+    expect(result).toBe("blue intensity=5 tone=13");
   });
 
-  it("formats raw angle as 'hue-NNN vib=N val=N'", () => {
-    const result = hvvPretty("oklch(0.5 0.05 237)");
-    expect(result).toMatch(/^hue-237 vib=\d+ val=\d+$/);
+  it("formats raw angle as 'hue-NNN intensity=N tone=N'", () => {
+    const result = citaPretty("oklch(0.5 0.05 237)");
+    expect(result).toMatch(/^hue-237 intensity=\d+ tone=\d+$/);
   });
 
-  it("round-trip: hvvPretty(hvvColor(hue, vib, val)) contains correct hue name", () => {
+  it("round-trip: citaPretty(citaColor(hue, intensity, tone)) contains correct hue name", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
-      const oklch = hvvColor(hueName, 50, 50, canonL);
-      const pretty = hvvPretty(oklch);
+      const oklch = citaColor(hueName, 50, 50, canonL);
+      const pretty = citaPretty(oklch);
       expect(pretty).toMatch(new RegExp(`^${hueName} `));
     }
   });

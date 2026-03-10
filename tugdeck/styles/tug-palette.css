@@ -1,10 +1,10 @@
 /* GENERATED FILE — do not edit. Source: palette-engine.ts */
 /**
- * tug-palette.css — HVV Palette Engine (Pure CSS)
+ * tug-palette.css — CITA Palette Engine (Pure CSS)
  *
- * HVV color model: Hue, Vibrancy, Value — a perceptual coordinate system
+ * CITA color model: Color, Intensity, Tone, Alpha — a perceptual coordinate system
  * mapped to OKLCH. Each hue has three constants (h, canonical-l, peak-c).
- * Vibrancy (0-100) controls chroma as a fraction of peak-c. Value (0-100)
+ * Intensity (0-100) controls chroma as a fraction of peak-c. Tone (0-100)
  * controls lightness via a piecewise linear formula between three anchors:
  *   val=0  → L_DARK (0.15)
  *   val=50 → canonical-l (per-hue)

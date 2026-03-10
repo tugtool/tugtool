@@ -1,8 +1,8 @@
 <!-- tugplan-skeleton v2 -->
 
-## Tugways Phase 5g: HVV Palette Refinements {#phase-5g-palette-refinements}
+## Tugways Phase 5g: CITA Palette Refinements {#phase-5g-palette-refinements}
 
-**Purpose:** Reshape the HVV palette from a fixed-preset coefficient system to a continuous color space with five convenience presets per hue, replacing coefficient knobs with calc()+clamp() formulas, renaming accent to intense, and enhancing the gallery editor with interactive vib/val exploration.
+**Purpose:** Reshape the CITA palette from a fixed-preset coefficient system to a continuous color space with five convenience presets per hue, replacing coefficient knobs with calc()+clamp() formulas, renaming accent to intense, and enhancing the gallery editor with interactive i/t exploration.
 
 ---
 
@@ -21,15 +21,15 @@
 
 #### Context {#context}
 
-The current HVV palette system defines 7 presets per hue (canonical, accent, muted, light, subtle, dark, deep) using coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`). These knobs are indirection without benefit -- the presets are fixed values pretending to be tunable. The system also exposes 168 CSS variables (24 hues x 7 presets) when only 120 (24 x 5) are needed, since "subtle" and "deep" presets are unused by any component or theme.
+The current CITA palette system defines 7 presets per hue (canonical, accent, muted, light, subtle, dark, deep) using coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`). These knobs are indirection without benefit -- the presets are fixed values pretending to be tunable. The system also exposes 168 CSS variables (24 hues x 7 presets) when only 120 (24 x 5) are needed, since "subtle" and "deep" presets are unused by any component or theme.
 
-The palette-refinements design (documented in `roadmap/palette-refinements.md`) proposes reshaping the system into a continuous color space where five convenience presets serve as labeled reference points. The new calc()+clamp() piecewise formula makes the vib/val mapping explicit in the CSS itself, and theme files gain the ability to define chromatic semantic tokens using inline HVV formulas with arbitrary vib/val values.
+The palette-refinements design (documented in `roadmap/palette-refinements.md`) proposes reshaping the system into a continuous color space where five convenience presets serve as labeled reference points. The new calc()+clamp() piecewise formula makes the i/t mapping explicit in the CSS itself, and theme files gain the ability to define chromatic semantic tokens using inline CITA formulas with arbitrary i/t values.
 
 #### Strategy {#strategy}
 
 - Rewrite tug-palette.css first: replace coefficient knobs and old formula structure with the new five-preset calc()+clamp() system. This is the foundation everything else depends on.
 - Rename accent to intense across palette files, then do simple substitution in tug-tokens.css per user direction.
-- Update palette-engine.ts to match the new CSS formula exactly, with the new five-preset HVV_PRESETS.
+- Update palette-engine.ts to match the new CSS formula exactly, with the new five-preset CITA_PRESETS.
 - Update tests to assert five presets (120 = 24 x 5) instead of seven (168 = 24 x 7).
 - Update theme files minimally -- only fix tokens broken by the preset rename; leave passing tokens as-is per user direction.
 - Enhance gallery editor last -- it depends on the rewritten palette-engine.ts.
@@ -41,25 +41,25 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 - All references to `--tug-preset-*-l` and `--tug-preset-*-c` coefficient knobs are removed from tug-palette.css (verify by grep)
 - No file in the codebase references `--tug-{hue}-accent` as a palette preset variable (verify by grep; semantic `--tug-base-accent-*` tokens are unaffected)
 - No file references `--tug-{hue}-subtle` or `--tug-{hue}-deep` as palette preset variables (verify by grep)
-- HVV_PRESETS in palette-engine.ts has exactly 5 entries with correct vib/val values (verify by test)
+- CITA_PRESETS in palette-engine.ts has exactly 5 entries with correct i/t values (verify by test)
 - All existing tests pass with updated assertions (`bun test` in tugdeck)
-- Gallery editor renders interactive vib/val picker with drag, preset overlay, and CSS formula export (verify by visual inspection and test)
+- Gallery editor renders interactive i/t picker with drag, preset overlay, and CSS formula export (verify by visual inspection and test)
 
 #### Scope {#scope}
 
 1. Rewrite tug-palette.css: remove coefficient knobs, replace 7-preset formula block with 5-preset calc()+clamp() formulas, update neutral ramp, update file header comments
 2. Rename accent to intense in palette variable names across all files
 3. Remove subtle and deep presets from palette
-4. Rewrite palette-engine.ts: update HVV_PRESETS to 5 entries, rewrite hvvColor() to use clamp()-based piecewise formula
+4. Rewrite palette-engine.ts: update CITA_PRESETS to 5 entries, rewrite citaColor() to use clamp()-based piecewise formula
 5. Update tug-tokens.css: simple substitution of `var(--tug-{hue}-accent)` to `var(--tug-{hue}-intense)`
 6. Minimal theme file updates: fix only tokens broken by preset rename
 7. Update palette-engine.test.ts: adjust all assertions from 7 presets/168 vars to 5 presets/120 vars
 8. Consumer audit: search all files for removed/renamed preset references and update
-9. Gallery editor enhancement: interactive vib/val picker with drag, preset overlay, CSS formula export
+9. Gallery editor enhancement: interactive i/t picker with drag, preset overlay, CSS formula export
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Full theme chromatic rewrite using inline HVV formulas (only minimal rename-driven fixes)
+- Full theme chromatic rewrite using inline CITA formulas (only minimal rename-driven fixes)
 - Per-theme canonical-l tuning
 - Changing per-hue constants (h, canonical-l, peak-c) or global anchors (l-dark, l-light)
 - Modifying P3 @media block structure
@@ -79,7 +79,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 #### Assumptions {#assumptions}
 
 - The per-hue constants (h, canonical-l, peak-c), global anchors (l-dark, l-light), and P3 @media block in tug-palette.css are unchanged
-- The canonical preset formula with vib=50, val=50 produces mathematically identical output to the old coefficient-based formula (0.5 * peak-c chroma at canonical-l), so --tug-{hue} (no suffix) swatches remain visually unchanged
+- The canonical preset formula with i=50, t=50 produces mathematically identical output to the old coefficient-based formula (0.5 * peak-c chroma at canonical-l), so --tug-{hue} (no suffix) swatches remain visually unchanged
 - All tests in palette-engine.test.ts that currently assert 7 presets will need to be updated to assert 5 presets (120 = 24 x 5)
 - The tug-comp-tokens.css file does not directly reference palette preset names; it only references --tug-base-* tokens, so it requires no changes unless the base tokens it maps are being removed
 - Brio defaults live in tug-tokens.css body block -- there is no separate brio.css theme file
@@ -90,7 +90,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### [Q01] Muted preset formula change (DECIDED) {#q01-muted-formula}
 
-**Question:** The old muted preset uses upper-segment formula (above canonical-l). The new muted preset uses vib=20, val=50 which produces canonical-l lightness with reduced chroma. Should we accept the color change in consumers?
+**Question:** The old muted preset uses upper-segment formula (above canonical-l). The new muted preset uses i=20, t=50 which produces canonical-l lightness with reduced chroma. Should we accept the color change in consumers?
 
 **Why it matters:** Muted colors will shift visually -- lighter muted colors become mid-tone muted colors.
 
@@ -125,12 +125,12 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 **Rationale:**
 - Subtle and deep presets are not referenced by any component or semantic token
 - Five presets are easier to remember and cover the essential perceptual range
-- Full 100x100 vib/val space remains accessible via inline formula or hvvColor()
+- Full 100x100 i/t space remains accessible via inline formula or citaColor()
 
 **Implications:**
 - All `--tug-{hue}-subtle` and `--tug-{hue}-deep` CSS variables removed
 - `--tug-neutral-subtle` and `--tug-neutral-deep` removed from neutral ramp
-- HVV_PRESETS in palette-engine.ts reduced from 7 to 5 entries
+- CITA_PRESETS in palette-engine.ts reduced from 7 to 5 entries
 - Tests updated from 168 to 120 expected preset count
 
 #### [D02] Rename accent to intense (DECIDED) {#d02-rename-intense}
@@ -150,28 +150,28 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### [D03] Clean break for muted formula (DECIDED) {#d03-muted-clean-break}
 
-**Decision:** Update the muted preset formula to use vib=20, val=50 (producing canonical-l lightness with reduced chroma), accepting that this changes the visual output from the old muted formula (which used upper-segment lightness).
+**Decision:** Update the muted preset formula to use i=20, t=50 (producing canonical-l lightness with reduced chroma), accepting that this changes the visual output from the old muted formula (which used upper-segment lightness).
 
 **Rationale:**
 - User direction: clean break, audit and fix anything that looks wrong
-- The new muted formula is more intuitive -- "muted" means low vibrancy at the same lightness, not shifted lightness
+- The new muted formula is more intuitive -- "muted" means low intensity at the same lightness, not shifted lightness
 
 **Implications:**
 - Visual audit needed after formula change to verify no jarring color shifts in Brio, Bluenote, or Harmony themes
 
 #### [D04] Calc()+clamp() piecewise formula (DECIDED) {#d04-clamp-formula}
 
-**Decision:** Replace coefficient-knob formulas with the calc()+clamp() piecewise formula that uses literal vib/val numbers directly in the CSS.
+**Decision:** Replace coefficient-knob formulas with the calc()+clamp() piecewise formula that uses literal i/t numbers directly in the CSS.
 
 **Rationale:**
 - Coefficient knobs (`--tug-preset-{name}-l`, `--tug-preset-{name}-c`) are indirection without benefit since presets are fixed
-- Literal numbers make the vib/val intent explicit: reading `clamp(0, 20, 50)` tells you val=20
-- Same formula works in tug-palette.css presets, theme inline formulas, and hvvColor() in TypeScript
+- Literal numbers make the i/t intent explicit: reading `clamp(0, 20, 50)` tells you t=20
+- Same formula works in tug-palette.css presets, theme inline formulas, and citaColor() in TypeScript
 
 **Implications:**
 - All 13 `--tug-preset-*` coefficient variables removed from tug-palette.css
 - Each preset formula is self-contained (no var() references to coefficients)
-- hvvColor() rewritten to use same clamp-based piecewise logic
+- citaColor() rewritten to use same clamp-based piecewise logic
 
 #### [D05] Minimal theme updates (DECIDED) {#d05-minimal-themes}
 
@@ -179,7 +179,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 **Rationale:**
 - User direction: minimal theme scope
-- Full theme rewrite with inline HVV formulas is a separate future effort
+- Full theme rewrite with inline CITA formulas is a separate future effort
 - Bluenote and Harmony themes do not currently reference palette preset names directly (they override only `--tug-base-*` semantic tokens)
 
 **Implications:**
@@ -188,12 +188,12 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### [D06] Gallery editor with full interactive features (DECIDED) {#d06-gallery-editor}
 
-**Decision:** Enhance the gallery palette editor with all three features: interactive vib/val picker with drag, preset reference overlay, and CSS formula export.
+**Decision:** Enhance the gallery palette editor with all three features: interactive i/t picker with drag, preset reference overlay, and CSS formula export.
 
 **Rationale:**
 - User direction: all three features
 - The gallery editor is the primary tool for the theme design workflow
-- Interactive exploration of the continuous 100x100 vib/val space is the key benefit of the new system
+- Interactive exploration of the continuous 100x100 i/t space is the key benefit of the new system
 
 **Implications:**
 - New VibValPicker component with pointer drag across 2D space
@@ -207,9 +207,9 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 #### Preset Definitions {#preset-definitions}
 
-**Table T01: Five HVV Presets** {#t01-presets}
+**Table T01: Five CITA Presets** {#t01-presets}
 
-| Name      | Vib | Val | Character                         |
+| Name      | i | t | Character                         |
 |-----------|-----|-----|-----------------------------------|
 | canonical | 50  | 50  | The crayon color -- reference point |
 | light     | 20  | 85  | Background-safe, airy             |
@@ -221,7 +221,7 @@ The palette-refinements design (documented in `roadmap/palette-refinements.md`) 
 
 **Spec S01: Calc()+clamp() piecewise formula** {#s01-clamp-formula}
 
-For a preset with vib=V, val=W applied to hue H:
+For a preset with i=V, t=W applied to hue H:
 
 ```css
 --tug-H-PRESET: oklch(
@@ -237,7 +237,7 @@ For a preset with vib=V, val=W applied to hue H:
 );
 ```
 
-The canonical preset (vib=50, val=50) simplifies to:
+The canonical preset (i=50, t=50) simplifies to:
 
 ```css
 --tug-H: oklch(
@@ -253,15 +253,15 @@ The canonical preset (vib=50, val=50) simplifies to:
 
 | Variable              | oklch value      | Notes                              |
 |-----------------------|------------------|------------------------------------|
-| --tug-neutral         | oklch(0.555 0 0) | val=50 (canonical)                |
-| --tug-neutral-light   | oklch(0.839 0 0) | val=85                            |
-| --tug-neutral-dark    | oklch(0.312 0 0) | val=20                            |
+| --tug-neutral         | oklch(0.555 0 0) | t=50 (canonical)                |
+| --tug-neutral-light   | oklch(0.839 0 0) | t=85                            |
+| --tug-neutral-dark    | oklch(0.312 0 0) | t=20                            |
 | --tug-neutral-intense | oklch(0.555 0 0) | same as canonical (no chroma)     |
 | --tug-neutral-muted   | oklch(0.555 0 0) | same as canonical (no chroma)     |
 | --tug-black           | oklch(0 0 0)     | absolute anchor                   |
 | --tug-white           | oklch(1 0 0)     | absolute anchor                   |
 
-Neutral lightness values are derived from the same val-to-L piecewise formula (with L_DARK=0.15, L_LIGHT=0.96, canonical-L=0.555) and rounded to 3 decimal places.
+Neutral lightness values are derived from the same tone-to-L piecewise formula (with L_DARK=0.15, L_LIGHT=0.96, canonical-L=0.555) and rounded to 3 decimal places.
 
 #### Token Rename Mapping {#token-rename-mapping}
 
@@ -278,15 +278,15 @@ Neutral lightness values are derived from the same val-to-L piecewise formula (w
 
 These appear in the Accent System section (B) and Actions section (E) of tug-tokens.css.
 
-#### hvvColor() TypeScript Signature {#hvvcolor-signature}
+#### citaColor() TypeScript Signature {#citacolor-signature}
 
-**Spec S02: Rewritten hvvColor() function** {#s02-hvvcolor}
+**Spec S02: Rewritten citaColor() function** {#s02-hvvcolor}
 
 ```typescript
-export function hvvColor(
+export function citaColor(
   hueName: string,
-  vib: number,
-  val: number,
+  i: number,
+  t: number,
   canonicalL: number,
   peakChroma?: number,
 ): string
@@ -295,16 +295,16 @@ export function hvvColor(
 The function signature remains unchanged. The implementation is rewritten to use the clamp-based piecewise formula:
 
 ```typescript
-// val -> L: piecewise via clamp
+// t -> L: piecewise via clamp
 const L = L_DARK
-  + Math.min(val, 50) * (canonicalL - L_DARK) / 50
-  + Math.max(val - 50, 0) * (L_LIGHT - canonicalL) / 50;
+  + Math.min(t, 50) * (canonicalL - L_DARK) / 50
+  + Math.max(t - 50, 0) * (L_LIGHT - canonicalL) / 50;
 
-// vib -> C: linear
-const C = (vib / 100) * peakC;
+// i -> C: linear
+const C = (i / 100) * peakC;
 ```
 
-Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `Math.max(val - 50, 0)` is the JS equivalent of CSS `(clamp(50, val, 100) - 50)`. The mathematical result is identical to the current if/else implementation -- this is a readability alignment, not a behavioral change.
+Note: `Math.min(t, 50)` is the JS equivalent of CSS `clamp(0, t, 50)`, and `Math.max(t - 50, 0)` is the JS equivalent of CSS `(clamp(50, t, 100) - 50)`. The mathematical result is identical to the current if/else implementation -- this is a readability alignment, not a behavioral change.
 
 ---
 
@@ -320,9 +320,9 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `HVV_PRESETS` | const | `palette-engine.ts` | 7 entries -> 5 entries (remove accent/subtle/deep, add intense) |
-| `hvvColor()` | fn | `palette-engine.ts` | Rewrite body to use clamp-based piecewise (signature unchanged) |
-| `VibValPicker` | component | `gallery-palette-content.tsx` | New: interactive 2D vib/val drag picker |
+| `CITA_PRESETS` | const | `palette-engine.ts` | 7 entries -> 5 entries (remove accent/subtle/deep, add intense) |
+| `citaColor()` | fn | `palette-engine.ts` | Rewrite body to use clamp-based piecewise (signature unchanged) |
+| `VibValPicker` | component | `gallery-palette-content.tsx` | New: interactive 2D i/t drag picker |
 | `PresetOverlay` | component | `gallery-palette-content.tsx` | New: renders 5 preset dots on the picker surface |
 | `CssFormulaExport` | component | `gallery-palette-content.tsx` | New: generates and copies CSS formula snippet |
 
@@ -334,7 +334,7 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test HVV_PRESETS entries, hvvColor() math, formula equivalence | palette-engine.test.ts |
+| **Unit** | Test CITA_PRESETS entries, citaColor() math, formula equivalence | palette-engine.test.ts |
 | **Integration** | Test CSS file structure: 120 presets, no coefficient knobs, neutral ramp | palette-engine.test.ts (CSS verification) |
 | **Golden / Contract** | Test preset count (120), neutral count (5+2), P3 block structure | palette-engine.test.ts |
 | **Drift Prevention** | Grep-based tests for zero hits on removed/renamed preset names | palette-engine.test.ts or dedicated audit test |
@@ -358,21 +358,21 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 **Tasks:**
 - [ ] Remove all 13 `--tug-preset-*-l` and `--tug-preset-*-c` coefficient variables from the body block
-- [ ] Replace the 7-preset formula block per hue (168 formulas) with the 5-preset calc()+clamp() formula block per hue (120 formulas) using literal vib/val numbers per Table T01
-- [ ] The canonical preset formula for all 24 hues consistently uses `calc(50 / 100 * var(--tug-{hue}-peak-c))` for chroma (matching the general template with V=50, not a simplified `0.5 * peak-c` form) and `var(--tug-{hue}-canonical-l)` for lightness (the val=50 clamp terms cancel to produce canonical-l directly, so no clamp() wrapper is needed in the L component)
-- [ ] Each non-canonical preset uses the full calc()+clamp() piecewise formula per Spec S01 with the literal vib/val from Table T01
-- [ ] The muted preset uses vib=20, val=50 per [D03] (clean break from old upper-segment formula)
+- [ ] Replace the 7-preset formula block per hue (168 formulas) with the 5-preset calc()+clamp() formula block per hue (120 formulas) using literal i/t numbers per Table T01
+- [ ] The canonical preset formula for all 24 hues consistently uses `calc(50 / 100 * var(--tug-{hue}-peak-c))` for chroma (matching the general template with V=50, not a simplified `0.5 * peak-c` form) and `var(--tug-{hue}-canonical-l)` for lightness (the t=50 clamp terms cancel to produce canonical-l directly, so no clamp() wrapper is needed in the L component)
+- [ ] Each non-canonical preset uses the full calc()+clamp() piecewise formula per Spec S01 with the literal i/t from Table T01
+- [ ] The muted preset uses i=20, t=50 per [D03] (clean break from old upper-segment formula)
 - [ ] Rename `--tug-{hue}-accent` to `--tug-{hue}-intense` for all 24 hues
 - [ ] Remove `--tug-{hue}-subtle` and `--tug-{hue}-deep` for all 24 hues
 - [ ] Update the neutral ramp: remove `--tug-neutral-accent`, `--tug-neutral-subtle`, `--tug-neutral-deep`; add `--tug-neutral-intense` and `--tug-neutral-muted` per Table T02
-- [ ] Update file header comment: remove references to coefficient knobs and "Phase" tags; describe the HVV model, three axes, piecewise formula, and preset system
+- [ ] Update file header comment: remove references to coefficient knobs and "Phase" tags; describe the CITA model, three axes, piecewise formula, and preset system
 - [ ] Update the chromatic preset section comment: change "168 = 24 hues x 7 presets" to "120 = 24 hues x 5 presets"
 - [ ] Verify per-hue constants (72 vars), global anchors, and P3 @media block are unchanged
 
 **Tests:**
-- [ ] Verify muted preset for red produces canonical-l lightness with reduced chroma (vib=20)
+- [ ] Verify muted preset for red produces canonical-l lightness with reduced chroma (i=20)
 - [ ] Verify canonical preset produces same output as old formula (0.5 * peak-c at canonical-l)
-- [ ] Verify intense preset (formerly accent) uses vib=90, val=50
+- [ ] Verify intense preset (formerly accent) uses i=90, t=50
 
 **Checkpoint:**
 - [ ] Grep: zero hits for `--tug-preset-` in tug-palette.css
@@ -388,30 +388,30 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 **Depends on:** #step-1
 
-**Commit:** `refactor(palette): rewrite HVV_PRESETS to 5 entries and align hvvColor() with clamp formula`
+**Commit:** `refactor(palette): rewrite CITA_PRESETS to 5 entries and align citaColor() with clamp formula`
 
-**References:** [D01] Five convenience presets, [D02] Rename accent to intense, [D04] Calc()+clamp() piecewise formula, Spec S02, Table T01, (#hvvcolor-signature, #preset-definitions)
+**References:** [D01] Five convenience presets, [D02] Rename accent to intense, [D04] Calc()+clamp() piecewise formula, Spec S02, Table T01, (#citacolor-signature, #preset-definitions)
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/palette-engine.ts` modified
 
 **Tasks:**
-- [ ] Update HVV_PRESETS: remove `accent`, `subtle`, `deep` entries; add `intense` entry with `{ vib: 90, val: 50 }`; update `muted` to `{ vib: 20, val: 50 }`; update `light` to `{ vib: 20, val: 85 }`; update `dark` to `{ vib: 50, val: 20 }`; keep `canonical` at `{ vib: 50, val: 50 }`
-- [ ] Rewrite hvvColor() body to use clamp-based piecewise formula per Spec S02 (mathematically equivalent to current if/else but aligned with CSS formula structure)
+- [ ] Update CITA_PRESETS: remove `accent`, `subtle`, `deep` entries; add `intense` entry with `{ i: 90, t: 50 }`; update `muted` to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`; keep `canonical` at `{ i: 50, t: 50 }`
+- [ ] Rewrite citaColor() body to use clamp-based piecewise formula per Spec S02 (mathematically equivalent to current if/else but aligned with CSS formula structure)
 - [ ] Keep LCParams interface and DEFAULT_LC_PARAMS -- they are used by palette-engine.test.ts and _deriveChromaCaps; update JSDoc only
-- [ ] Update module-level JSDoc comment: remove references to "Phase" tags; describe HVV model and the five presets
+- [ ] Update module-level JSDoc comment: remove references to "Phase" tags; describe CITA model and the five presets
 
 **Checkpoint:**
-- [ ] `Object.keys(HVV_PRESETS).length === 5`
-- [ ] `HVV_PRESETS` contains keys: canonical, light, dark, intense, muted
-- [ ] `hvvColor('red', 50, 50, 0.659)` produces same output as before (canonical unchanged)
-- [ ] `hvvColor('red', 0, 50, 0.659)` produces C=0 (achromatic)
-- [ ] `hvvColor('red', 50, 0, 0.659)` produces L close to L_DARK (0.15)
+- [ ] `Object.keys(CITA_PRESETS).length === 5`
+- [ ] `CITA_PRESETS` contains keys: canonical, light, dark, intense, muted
+- [ ] `citaColor('red', 50, 50, 0.659)` produces same output as before (canonical unchanged)
+- [ ] `citaColor('red', 0, 50, 0.659)` produces C=0 (achromatic)
+- [ ] `citaColor('red', 50, 0, 0.659)` produces L close to L_DARK (0.15)
 
 **Tests:**
-- [ ] Verify HVV_PRESETS has exactly 5 entries with correct vib/val per Table T01
-- [ ] Verify hvvColor() produces same result for canonical (vib=50, val=50) as before
-- [ ] Verify hvvColor() boundary conditions: val=0 gives L_DARK, val=100 gives L_LIGHT, vib=0 gives C=0
+- [ ] Verify CITA_PRESETS has exactly 5 entries with correct i/t per Table T01
+- [ ] Verify citaColor() produces same result for canonical (i=50, t=50) as before
+- [ ] Verify citaColor() boundary conditions: t=0 gives L_DARK, t=100 gives L_LIGHT, i=0 gives C=0
 
 ---
 
@@ -497,7 +497,7 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 - `tugdeck/src/__tests__/palette-engine.test.ts` modified
 
 **Tasks:**
-- [ ] Update `HVV_PRESETS` test block: change "has exactly 7 entries" to "has exactly 5 entries"; remove `accent`, `subtle`, `deep` assertions; add `intense` assertion with `{ vib: 90, val: 50 }`; update `muted` assertion to `{ vib: 20, val: 50 }`; update `light` to `{ vib: 20, val: 85 }`; update `dark` to `{ vib: 50, val: 20 }`
+- [ ] Update `CITA_PRESETS` test block: change "has exactly 7 entries" to "has exactly 5 entries"; remove `accent`, `subtle`, `deep` assertions; add `intense` assertion with `{ i: 90, t: 50 }`; update `muted` assertion to `{ i: 20, t: 50 }`; update `light` to `{ i: 20, t: 85 }`; update `dark` to `{ i: 50, t: 20 }`
 - [ ] Update tug-palette.css verification tests: change preset count from 168 to 120 (24 x 5); change preset suffix list from 7 to 5; remove `-subtle` and `-deep` from suffix lists; add `-intense` to suffix list; remove `--tug-red-subtle` and `--tug-red-deep` assertions
 - [ ] Update gamut safety tests: change "24 hues x 7 presets" description to "24 hues x 5 presets"; change expected count from 168 to 120
 - [ ] Update neutral ramp tests: remove `--tug-neutral-deep` assertion; add `--tug-neutral-intense` assertion if missing; verify neutral count matches 5 presets
@@ -533,11 +533,11 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 ---
 
-#### Step 7: Enhance gallery editor with vib/val picker {#step-7}
+#### Step 7: Enhance gallery editor with i/t picker {#step-7}
 
 **Depends on:** #step-2
 
-**Commit:** `feat(gallery): add interactive vib/val picker with preset overlay and CSS formula export`
+**Commit:** `feat(gallery): add interactive i/t picker with preset overlay and CSS formula export`
 
 **References:** [D06] Gallery editor with full interactive features, Table T01, Spec S01, (#preset-definitions, #formula-template)
 
@@ -546,20 +546,20 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 - `tugdeck/src/components/tugways/cards/gallery-palette-content.css` modified (new picker styles)
 
 **Tasks:**
-- [ ] Add VibValPicker component: renders a color gradient surface using a CSS grid of divs at 21x21 resolution (vib 0-100 by 5, val 0-100 by 5 = 441 cells), each cell colored via inline `backgroundColor` set to `hvvColor()` output. This matches the existing VibValGrid pattern and keeps the DOM testable via data-testid/data-color attributes. X axis is vibrancy (0-100 left to right), Y axis is value (100 top to 0 bottom). Pointer interaction: on pointerDown, capture the pointer (`setPointerCapture`), compute vib/val from pointer position relative to the grid container using `(clientX - rect.left) / rect.width * 100` and `(1 - (clientY - rect.top) / rect.height) * 100`, clamped to [0, 100]. On pointerMove while captured, update vib/val state. On pointerUp, release capture. A crosshair indicator (absolutely-positioned div) marks the current vib/val position. A large result swatch (data-testid="gp-picker-swatch") below the grid displays the selected color with its oklch() string
-- [ ] Add PresetOverlay: renders the 5 preset dots (canonical, light, dark, intense, muted) as absolutely-positioned labeled elements at their fixed vib/val coordinates on the picker surface, positioned via percentage left/bottom calculated from their Table T01 vib/val values
-- [ ] Add CssFormulaExport: when a vib/val is selected, generates the CSS inline HVV formula snippet matching Spec S01 format -- output is a complete `oklch(calc(...) calc(V / 100 * var(--tug-H-peak-c)) var(--tug-H-h))` string with the selected hue's CSS variable names and literal vib/val numbers substituted. Provides a copy-to-clipboard button (using `navigator.clipboard.writeText()`) with a "Copied" feedback state
+- [ ] Add VibValPicker component: renders a color gradient surface using a CSS grid of divs at 21x21 resolution (i 0-100 by 5, t 0-100 by 5 = 441 cells), each cell colored via inline `backgroundColor` set to `citaColor()` output. This matches the existing VibValGrid pattern and keeps the DOM testable via data-testid/data-color attributes. X axis is intensity (0-100 left to right), Y axis is tone (100 top to 0 bottom). Pointer interaction: on pointerDown, capture the pointer (`setPointerCapture`), compute i/t from pointer position relative to the grid container using `(clientX - rect.left) / rect.width * 100` and `(1 - (clientY - rect.top) / rect.height) * 100`, clamped to [0, 100]. On pointerMove while captured, update i/t state. On pointerUp, release capture. A crosshair indicator (absolutely-positioned div) marks the current i/t position. A large result swatch (data-testid="gp-picker-swatch") below the grid displays the selected color with its oklch() string
+- [ ] Add PresetOverlay: renders the 5 preset dots (canonical, light, dark, intense, muted) as absolutely-positioned labeled elements at their fixed i/t coordinates on the picker surface, positioned via percentage left/bottom calculated from their Table T01 i/t values
+- [ ] Add CssFormulaExport: when a i/t is selected, generates the CSS inline CITA formula snippet matching Spec S01 format -- output is a complete `oklch(calc(...) calc(V / 100 * var(--tug-H-peak-c)) var(--tug-H-h))` string with the selected hue's CSS variable names and literal i/t numbers substituted. Provides a copy-to-clipboard button (using `navigator.clipboard.writeText()`) with a "Copied" feedback state
 - [ ] Wire VibValPicker into GalleryPaletteContent as a new section that replaces the existing VibValGrid when a hue is selected (the picker is a superset of the grid's functionality -- it shows the same color space interactively)
 - [ ] Use inline styles for color display (Rules of Tugways D08, D09)
-- [ ] Use local useState for picker state (vib, val, copied flag) per D40
+- [ ] Use local useState for picker state (i, t, copied flag) per D40
 - [ ] Add CSS styles for the new picker components in gallery-palette-content.css
 
 **Tests:**
 - [ ] VibValPicker renders 441 colored cells (21x21 grid) when a hue is selected (query by data-testid="gp-picker-cell", verify count)
-- [ ] VibValPicker responds to pointer drag (use fireEvent.pointerDown + fireEvent.pointerMove to simulate drag; verify updated vib/val via data-testid attributes on the swatch element)
-- [ ] VibValPicker result swatch (data-testid="gp-picker-swatch") color verified via data-color attribute matching expected hvvColor() output for the selected vib/val
+- [ ] VibValPicker responds to pointer drag (use fireEvent.pointerDown + fireEvent.pointerMove to simulate drag; verify updated i/t via data-testid attributes on the swatch element)
+- [ ] VibValPicker result swatch (data-testid="gp-picker-swatch") color verified via data-color attribute matching expected citaColor() output for the selected i/t
 - [ ] PresetOverlay renders 5 labeled dots at correct positions (query by data-testid="gp-preset-dot")
-- [ ] CssFormulaExport generates correct CSS formula for a given hue/vib/val (verify output string contains `calc(` and `clamp(` patterns with the correct literal vib/val numbers and `var(--tug-{hue}-` references)
+- [ ] CssFormulaExport generates correct CSS formula for a given hue/i/t (verify output string contains `calc(` and `clamp(` patterns with the correct literal i/t numbers and `var(--tug-{hue}-` references)
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test src/__tests__/gallery-palette-content.test.tsx`
@@ -590,16 +590,16 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** HVV palette reshaped to continuous color space with five convenience presets per hue, calc()+clamp() formulas, accent-to-intense rename complete, and gallery editor enhanced with interactive vib/val exploration.
+**Deliverable:** CITA palette reshaped to continuous color space with five convenience presets per hue, calc()+clamp() formulas, accent-to-intense rename complete, and gallery editor enhanced with interactive i/t exploration.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] tug-palette.css has exactly 120 chromatic preset variables (verify by regex count)
 - [ ] No coefficient knob variables remain (`--tug-preset-*`) (verify by grep)
 - [ ] No old preset names remain in any file (`--tug-{hue}-accent`, `--tug-{hue}-subtle`, `--tug-{hue}-deep`) (verify by grep)
-- [ ] HVV_PRESETS has exactly 5 entries (verify by test)
+- [ ] CITA_PRESETS has exactly 5 entries (verify by test)
 - [ ] All tests pass (`bun test` in tugdeck)
-- [ ] Gallery editor has interactive vib/val picker with preset overlay and CSS formula export (verify visually)
+- [ ] Gallery editor has interactive i/t picker with preset overlay and CSS formula export (verify visually)
 
 **Acceptance tests:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck && bun test`
@@ -608,10 +608,10 @@ Note: `Math.min(val, 50)` is the JS equivalent of CSS `clamp(0, val, 50)`, and `
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Full theme chromatic rewrite: define all chromatic semantic tokens using inline HVV formulas with theme-specific vib/val choices
+- [ ] Full theme chromatic rewrite: define all chromatic semantic tokens using inline CITA formulas with theme-specific i/t choices
 - [ ] Per-theme canonical-l tuning for contrast adjustments
 - [ ] Accessibility audit of muted preset color changes across all themes
-- [ ] Gallery editor: save/load theme vib/val configurations
+- [ ] Gallery editor: save/load theme i/t configurations
 
 | Checkpoint | Verification |
 |------------|--------------|

@@ -5,7 +5,7 @@
 //! - Build date (TUG_BUILD_DATE)
 //! - Rust compiler version (TUG_RUSTC_VERSION)
 //!
-//! Also parses palette-engine.ts and tug-hvv-canonical.json to extract HVV
+//! Also parses palette-engine.ts and tug-cita-canonical.json to extract CITA
 //! color system constants and generates a Rust source file with the canonical data.
 //!
 //! Per [D03], all values gracefully fall back to "unknown" if unavailable.
@@ -28,8 +28,8 @@ fn main() {
     let rustc_version = get_rustc_version();
     println!("cargo::rustc-env=TUG_RUSTC_VERSION={}", rustc_version);
 
-    // Generate HVV palette data from palette-engine.ts
-    generate_hvv_palette_data();
+    // Generate CITA palette data from palette-engine.ts
+    generate_cita_palette_data();
 
     // Rerun if git state changes (for accurate commit hash)
     // These may not exist in non-git builds, which is fine
@@ -117,7 +117,7 @@ fn get_rustc_version() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// HVV palette data generation
+// CITA palette data generation
 // ---------------------------------------------------------------------------
 
 /// Parse a TypeScript Record<string, number> block like:
@@ -162,7 +162,7 @@ fn parse_ts_const(content: &str, var_name: &str) -> Option<f64> {
     after[..end].trim().parse::<f64>().ok()
 }
 
-/// Parse tug-hvv-canonical.json to extract DEFAULT_CANONICAL_L entries.
+/// Parse tug-cita-canonical.json to extract DEFAULT_CANONICAL_L entries.
 ///
 /// Returns Vec<(hue_name, canonical_l)> in the order they appear in the JSON
 /// "hues" object (preserved by serde_json's BTreeMap when keys are sorted,
@@ -171,7 +171,9 @@ fn parse_canonical_json(path: &Path) -> Vec<(String, f64)> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => {
-            eprintln!("cargo::warning=tug-hvv-canonical.json not found, canonical_l will be empty");
+            eprintln!(
+                "cargo::warning=tug-cita-canonical.json not found, canonical_l will be empty"
+            );
             return vec![];
         }
     };
@@ -179,7 +181,7 @@ fn parse_canonical_json(path: &Path) -> Vec<(String, f64)> {
     let root: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("cargo::warning=failed to parse tug-hvv-canonical.json: {e}");
+            eprintln!("cargo::warning=failed to parse tug-cita-canonical.json: {e}");
             return vec![];
         }
     };
@@ -198,14 +200,14 @@ fn parse_canonical_json(path: &Path) -> Vec<(String, f64)> {
     entries
 }
 
-/// Generate src/hvv_palette_data.rs from palette-engine.ts and tug-hvv-canonical.json.
-fn generate_hvv_palette_data() {
+/// Generate src/cita_palette_data.rs from palette-engine.ts and tug-cita-canonical.json.
+fn generate_cita_palette_data() {
     // Find palette-engine.ts relative to the workspace root.
     // build.rs runs from the crate directory (tugcode/crates/tugcode/).
     // palette-engine.ts is at tugdeck/src/components/tugways/palette-engine.ts
     // relative to the workspace root (tugcode/../tugdeck/...).
     let palette_path = Path::new("../../../tugdeck/src/components/tugways/palette-engine.ts");
-    let canonical_json_path = Path::new("../../../roadmap/tug-hvv-canonical.json");
+    let canonical_json_path = Path::new("../../../roadmap/tug-cita-canonical.json");
 
     println!("cargo::rerun-if-changed={}", palette_path.to_string_lossy());
     println!(
@@ -217,8 +219,8 @@ fn generate_hvv_palette_data() {
         Ok(c) => c,
         Err(_) => {
             // If the file doesn't exist (e.g., CI without tugdeck), generate empty stubs
-            eprintln!("cargo::warning=palette-engine.ts not found, generating empty HVV data");
-            write_empty_hvv_data();
+            eprintln!("cargo::warning=palette-engine.ts not found, generating empty CITA data");
+            write_empty_cita_data();
             return;
         }
     };
@@ -226,7 +228,7 @@ fn generate_hvv_palette_data() {
     let hue_families = parse_ts_record(&content, "HUE_FAMILIES");
     let max_chroma = parse_ts_record(&content, "MAX_CHROMA_FOR_HUE");
 
-    // DEFAULT_CANONICAL_L is derived from tug-hvv-canonical.json (the single
+    // DEFAULT_CANONICAL_L is derived from tug-cita-canonical.json (the single
     // source of truth). palette-engine.ts imports it at runtime; we read it
     // directly here with serde_json.
     let canonical_l = parse_canonical_json(canonical_json_path);
@@ -236,12 +238,12 @@ fn generate_hvv_palette_data() {
     let peak_c_scale = parse_ts_const(&content, "PEAK_C_SCALE").unwrap_or(2.0);
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("hvv_palette_data.rs");
+    let dest_path = Path::new(&out_dir).join("cita_palette_data.rs");
     let mut f = fs::File::create(dest_path).unwrap();
 
     writeln!(
         f,
-        "// Auto-generated from palette-engine.ts and tug-hvv-canonical.json by build.rs"
+        "// Auto-generated from palette-engine.ts and tug-cita-canonical.json by build.rs"
     )
     .unwrap();
     writeln!(f, "// Do not edit manually.").unwrap();
@@ -278,9 +280,9 @@ fn generate_hvv_palette_data() {
 }
 
 /// Write empty stubs when palette-engine.ts is not available.
-fn write_empty_hvv_data() {
+fn write_empty_cita_data() {
     let out_dir = std::env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("hvv_palette_data.rs");
+    let dest_path = Path::new(&out_dir).join("cita_palette_data.rs");
     let mut f = fs::File::create(dest_path).unwrap();
 
     writeln!(f, "// Auto-generated stub (palette-engine.ts not found)").unwrap();

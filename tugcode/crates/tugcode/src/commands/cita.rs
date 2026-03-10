@@ -1,6 +1,6 @@
-//! Implementation of the `tugcode hvv` command
+//! Implementation of the `tugcode cita` command
 //!
-//! Converts colors from various formats to HVV notation.
+//! Converts colors from various formats to CITA notation.
 //! Supports: hex (#RGB, #RRGGBB, #RRGGBBAA), rgb(), rgba(), hsl(), hsla(),
 //! hsv(), oklch(), and CSS named colors.
 
@@ -8,7 +8,7 @@ use std::f64::consts::PI;
 
 // Canonical palette data generated from palette-engine.ts at build time
 mod palette_data {
-    include!(concat!(env!("OUT_DIR"), "/hvv_palette_data.rs"));
+    include!(concat!(env!("OUT_DIR"), "/cita_palette_data.rs"));
 }
 
 // ---------------------------------------------------------------------------
@@ -120,16 +120,16 @@ fn linear_to_srgb(c: f64) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// oklch_to_hvv — matches palette-engine.ts oklchToHVV() exactly
+// oklch_to_cita — matches palette-engine.ts oklchToCITA() exactly
 // ---------------------------------------------------------------------------
 
-struct HvvResult {
+struct CitaResult {
     hue: String,
-    vib: i32,
-    val: i32,
+    intensity: i32,
+    tone: i32,
 }
 
-fn oklch_to_hvv(l: f64, c: f64, h: f64) -> HvvResult {
+fn oklch_to_cita(l: f64, c: f64, h: f64) -> CitaResult {
     // Step 1: Find closest named hue
     let mut closest_hue = "";
     let mut closest_diff = f64::INFINITY;
@@ -168,26 +168,26 @@ fn oklch_to_hvv(l: f64, c: f64, h: f64) -> HvvResult {
         (cl, mc * palette_data::PEAK_C_SCALE)
     };
 
-    // Step 3: Invert val from L
-    let val_raw = if l <= canonical_l {
+    // Step 3: Invert tone from L
+    let tone_raw = if l <= canonical_l {
         50.0 * (l - palette_data::L_DARK) / (canonical_l - palette_data::L_DARK)
     } else {
         50.0 + 50.0 * (l - canonical_l) / (palette_data::L_LIGHT - canonical_l)
     };
-    let val = val_raw.clamp(0.0, 100.0).round() as i32;
+    let tone = tone_raw.clamp(0.0, 100.0).round() as i32;
 
-    // Step 4: Invert vib from C
-    let vib_raw = if peak_c > 0.0 {
+    // Step 4: Invert intensity from C
+    let intensity_raw = if peak_c > 0.0 {
         (c / peak_c) * 100.0
     } else {
         0.0
     };
-    let vib = vib_raw.clamp(0.0, 100.0).round() as i32;
+    let intensity = intensity_raw.clamp(0.0, 100.0).round() as i32;
 
-    HvvResult {
+    CitaResult {
         hue: hue_name,
-        vib,
-        val,
+        intensity,
+        tone,
     }
 }
 
@@ -636,9 +636,9 @@ fn fmt4(n: f64) -> String {
 // Command entry point
 // ---------------------------------------------------------------------------
 
-pub fn run_hvv(color: String, json_output: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_cita(color: String, json_output: bool, quiet: bool) -> Result<i32, String> {
     let parsed = parse_color(&color)?;
-    let hvv = oklch_to_hvv(parsed.l, parsed.c, parsed.h);
+    let cita = oklch_to_cita(parsed.l, parsed.c, parsed.h);
 
     if quiet {
         return Ok(0);
@@ -653,7 +653,10 @@ pub fn run_hvv(color: String, json_output: bool, quiet: bool) -> Result<i32, Str
 
     // Format alpha suffix for display
     let alpha_suffix = match parsed.alpha {
-        Some(a) => format!(", {}", fmt4(a)),
+        Some(a) => format!(
+            ", a: {}",
+            (fmt4(a).parse::<f64>().unwrap_or(1.0) * 100.0).round() as i32
+        ),
         None => String::new(),
     };
     let oklch_alpha = match parsed.alpha {
@@ -675,23 +678,26 @@ pub fn run_hvv(color: String, json_output: bool, quiet: bool) -> Result<i32, Str
             None => String::new(),
         };
         println!(
-            r#"{{"status":"ok","hue":"{}","vib":{},"val":{},"hvv":"--hvv({}, {}, {}{})","oklch":"{}","hex":"{}"{}}}"#,
-            hvv.hue,
-            hvv.vib,
-            hvv.val,
-            hvv.hue,
-            hvv.vib,
-            hvv.val,
+            r#"{{"status":"ok","hue":"{}","intensity":{},"tone":{},"cita":"--cita({}, i: {}, t: {}{})","oklch":"{}","hex":"{}"{}}}"#,
+            cita.hue,
+            cita.intensity,
+            cita.tone,
+            cita.hue,
+            cita.intensity,
+            cita.tone,
             alpha_suffix,
             oklch_str,
             hex,
             alpha_json
         );
     } else {
-        println!("{} vib={} val={}", hvv.hue, hvv.vib, hvv.val);
         println!(
-            "  hvv:   --hvv({}, {}, {}{})",
-            hvv.hue, hvv.vib, hvv.val, alpha_suffix
+            "{} intensity={} tone={}",
+            cita.hue, cita.intensity, cita.tone
+        );
+        println!(
+            "  cita:  --cita({}, i: {}, t: {}{})",
+            cita.hue, cita.intensity, cita.tone, alpha_suffix
         );
         println!("  oklch: {}", oklch_str);
         println!("  hex:   {}", hex);
@@ -795,13 +801,13 @@ mod tests {
     }
 
     #[test]
-    fn test_hvv_round_trip_blue() {
+    fn test_cita_round_trip_blue() {
         // blue canonical: oklch(0.771 0.143 230)
         let p = parse_color("oklch(0.771 0.143 230)").unwrap();
-        let hvv = oklch_to_hvv(p.l, p.c, p.h);
-        assert_eq!(hvv.hue, "blue");
-        assert_eq!(hvv.vib, 50);
-        assert_eq!(hvv.val, 50);
+        let cita = oklch_to_cita(p.l, p.c, p.h);
+        assert_eq!(cita.hue, "blue");
+        assert_eq!(cita.intensity, 50);
+        assert_eq!(cita.tone, 50);
     }
 
     #[test]
@@ -822,12 +828,12 @@ mod tests {
     }
 
     #[test]
-    fn test_hex_to_hvv_dark_blue() {
+    fn test_hex_to_cita_dark_blue() {
         // #1c1e22 is a dark blue-gray from tug-tokens.css
         let p = parse_color("#1c1e22").unwrap();
-        let hvv = oklch_to_hvv(p.l, p.c, p.h);
-        assert!(hvv.val < 20, "dark color should have low val");
-        assert!(hvv.vib < 15, "near-gray should have low vib");
+        let cita = oklch_to_cita(p.l, p.c, p.h);
+        assert!(cita.tone < 20, "dark color should have low tone");
+        assert!(cita.intensity < 15, "near-gray should have low intensity");
     }
 
     #[test]

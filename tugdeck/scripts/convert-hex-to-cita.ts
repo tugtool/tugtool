@@ -1,9 +1,9 @@
 /**
- * convert-hex-to-hvv — One-time hex-to-HVV conversion script for theme files.
+ * convert-hex-to-cita — One-time hex-to-CITA conversion script for theme files.
  *
  * Reads a CSS file, walks its PostCSS AST, replaces standalone #hex color
- * values in Declaration nodes with --hvv(hue, vib, val) notation, and writes
- * the result back to the file.
+ * values in Declaration nodes with --cita(hue, i: intensity, t: tone) notation,
+ * and writes the result back to the file.
  *
  * Hex values inside CSS function calls (rgba(), color-mix(), url()) are
  * preserved unchanged. Comments are separate AST nodes and are never visited,
@@ -12,21 +12,21 @@
  * Special case: #ffffff → var(--tug-white)
  *
  * Usage (run from the tugdeck directory):
- *   bun run scripts/convert-hex-to-hvv.ts <css-file-path> [--validate]
+ *   bun run scripts/convert-hex-to-cita.ts <css-file-path> [--validate]
  *
  * Options:
  *   --validate   After conversion, run round-trip validation comparing
  *                original hex oklch values against PostCSS-expanded output.
  *                Prints a report but does not fail on delta-E < 0.01.
  *
- * @module scripts/convert-hex-to-hvv
+ * @module scripts/convert-hex-to-cita
  */
 
 import { readFileSync, writeFileSync } from "fs";
 import postcss from "postcss";
 import type { Declaration } from "postcss";
-import { oklchToHVV } from "../src/components/tugways/palette-engine";
-import postcssHvv from "../postcss-hvv";
+import { oklchToCITA } from "../src/components/tugways/palette-engine";
+import postcssCita from "../postcss-cita";
 
 // ---------------------------------------------------------------------------
 // Hex → sRGB → linear sRGB → OKLab → OKLCH
@@ -126,7 +126,7 @@ export function hexToOklch(hex: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// RGBA → HVV conversion
+// RGBA → CITA conversion
 // ---------------------------------------------------------------------------
 
 /**
@@ -138,15 +138,15 @@ const RGBA_PATTERN =
   /rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+(?:\.\d+)?)\s*\)/g;
 
 /**
- * Convert an rgba(R, G, B, A) call to --hvv(hue, vib, val, alpha) notation.
+ * Convert an rgba(R, G, B, A) call to --cita(hue, i: intensity, t: tone, a: alpha) notation.
  *
  * Special cases:
- *   rgba(0, 0, 0, A)       → --hvv(black, 0, 0, A)
- *   rgba(255, 255, 255, A)  → --hvv(white, 0, 100, A)
+ *   rgba(0, 0, 0, A)       → --cita(black, 0, 0, A)
+ *   rgba(255, 255, 255, A)  → --cita(white, 0, 100, A)
  *
- * All other rgba values are converted through sRGB → OKLCH → HVV.
+ * All other rgba values are converted through sRGB → OKLCH → CITA.
  */
-function convertRgbaToHvv(
+function convertRgbaToCita(
   r: number,
   g: number,
   b: number,
@@ -154,32 +154,32 @@ function convertRgbaToHvv(
 ): string {
   // Pure black
   if (r === 0 && g === 0 && b === 0) {
-    return `--hvv(black, 0, 0, ${alpha})`;
+    return `--cita(black, 0, 0, ${alpha})`;
   }
   // Pure white
   if (r === 255 && g === 255 && b === 255) {
-    return `--hvv(white, 0, 100, ${alpha})`;
+    return `--cita(white, 0, 100, ${alpha})`;
   }
 
-  // General case: sRGB → linear → OKLCH → HVV
+  // General case: sRGB → linear → OKLCH → CITA
   const linR = sRGBToLinear(r / 255);
   const linG = sRGBToLinear(g / 255);
   const linB = sRGBToLinear(b / 255);
   const { L, C, h } = linearSRGBToOklch(linR, linG, linB);
   const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
   const oklchStr = `oklch(${fmt(L)} ${fmt(C)} ${fmt(h)})`;
-  const { hue, vib, val } = oklchToHVV(oklchStr);
-  return `--hvv(${hue}, ${vib}, ${val}, ${alpha})`;
+  const { hue, intensity, tone } = oklchToCITA(oklchStr);
+  return `--cita(${hue}, i: ${intensity}, t: ${tone}, a: ${Math.round(parseFloat(alpha) * 100)})`;
 }
 
 /**
- * Convert all rgba() calls in a CSS declaration value to --hvv() notation.
+ * Convert all rgba() calls in a CSS declaration value to --cita() notation.
  * Non-rgba values are left unchanged.
  */
-export function convertValueRgbaToHvv(value: string): string {
+export function convertValueRgbaToCita(value: string): string {
   RGBA_PATTERN.lastIndex = 0;
   return value.replace(RGBA_PATTERN, (_match, r, g, b, a) =>
-    convertRgbaToHvv(parseInt(r), parseInt(g), parseInt(b), a),
+    convertRgbaToCita(parseInt(r), parseInt(g), parseInt(b), a),
   );
 }
 
@@ -230,12 +230,12 @@ export function isHexInsideFunction(value: string, hexIndex: number): boolean {
 
 /**
  * Convert all standalone hex values in a CSS declaration value string to
- * --hvv() notation (or var(--tug-white) for #ffffff).
+ * --cita() notation (or var(--tug-white) for #ffffff).
  *
  * Hex values inside function calls are left unchanged.
  * Non-hex values are left unchanged.
  */
-export function convertValueHexToHvv(value: string): string {
+export function convertValueHexToCita(value: string): string {
   // Reset lastIndex since we're reusing the pattern across calls
   HEX_PATTERN.lastIndex = 0;
 
@@ -259,8 +259,8 @@ export function convertValueHexToHvv(value: string): string {
     } else {
       const oklch = hexToOklch(hex);
       if (!oklch) continue;
-      const { hue, vib, val } = oklchToHVV(oklch);
-      replacement = `--hvv(${hue}, ${vib}, ${val})`;
+      const { hue, intensity, tone } = oklchToCITA(oklch);
+      replacement = `--cita(${hue}, i: ${intensity}, t: ${tone})`;
     }
 
     replacements.push({ start: hexStart, end: hexEnd, replacement });
@@ -282,7 +282,7 @@ export function convertValueHexToHvv(value: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert all standalone hex values in a CSS file to --hvv() notation.
+ * Convert all standalone hex values in a CSS file to --cita() notation.
  * Reads the file, walks the PostCSS AST, replaces declaration values,
  * and writes the result back.
  *
@@ -296,14 +296,14 @@ export function convertCSSFile(filePath: string): string {
   root.walkDecls((decl: Declaration) => {
     // Convert hex values
     if (decl.value.includes("#")) {
-      const converted = convertValueHexToHvv(decl.value);
+      const converted = convertValueHexToCita(decl.value);
       if (converted !== decl.value) {
         decl.value = converted;
       }
     }
     // Convert rgba() values
     if (decl.value.includes("rgba(")) {
-      const converted = convertValueRgbaToHvv(decl.value);
+      const converted = convertValueRgbaToCita(decl.value);
       if (converted !== decl.value) {
         decl.value = converted;
       }
@@ -350,12 +350,12 @@ export function parseOklchString(s: string): { L: number; C: number; h: number }
 /**
  * Validate round-trip accuracy of a converted CSS string.
  *
- * For each --hvv() call in the converted CSS, expands it via postcss-hvv and
+ * For each --cita() call in the converted CSS, expands it via postcss-cita and
  * compares the resulting oklch against the original hex-derived oklch.
  * Reports any conversions with delta-E >= threshold.
  *
  * @param originalSource - The original CSS before conversion.
- * @param convertedSource - The CSS after hex-to-hvv conversion.
+ * @param convertedSource - The CSS after hex-to-cita conversion.
  * @param threshold - Delta-E threshold for flagging (default 0.01).
  * @returns Array of validation failures.
  */
@@ -370,8 +370,8 @@ export function validateRoundTrip(
   const originalRoot = postcss.parse(originalSource);
   const convertedRoot = postcss.parse(convertedSource);
 
-  // Expand --hvv() calls in the converted CSS via the plugin
-  const expandedSource = postcss([postcssHvv()]).process(convertedSource, { from: undefined }).css;
+  // Expand --cita() calls in the converted CSS via the plugin
+  const expandedSource = postcss([postcssCita()]).process(convertedSource, { from: undefined }).css;
   const expandedRoot = postcss.parse(expandedSource);
 
   // Build a map of prop → original hex value from the original AST
@@ -384,7 +384,7 @@ export function validateRoundTrip(
 
   // For each declaration in the converted AST that was changed, compare
   convertedRoot.walkDecls((decl: Declaration) => {
-    if (!decl.value.includes("--hvv(") && !decl.value.includes("var(--tug-white)")) return;
+    if (!decl.value.includes("--cita(") && !decl.value.includes("var(--tug-white)")) return;
 
     const origValue = originalValues.get(decl.prop);
     if (!origValue) return;
@@ -443,7 +443,7 @@ if (import.meta.main) {
 
   if (filePaths.length === 0) {
     console.error(
-      "Usage: bun run scripts/convert-hex-to-hvv.ts <css-file> [<css-file> ...] [--validate]",
+      "Usage: bun run scripts/convert-hex-to-cita.ts <css-file> [<css-file> ...] [--validate]",
     );
     process.exit(1);
   }

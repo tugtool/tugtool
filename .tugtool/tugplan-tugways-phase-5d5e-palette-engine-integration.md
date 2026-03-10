@@ -1,6 +1,6 @@
 ## Palette Engine Integration — Pure CSS, Neutrals, Phase 5d5e {#phase-5d5e}
 
-**Purpose:** Wire the HVV palette engine to the semantic token layer by replacing JS-injected oklch() strings with pure CSS formulas in a static `tug-palette.css`, adding the neutral ramp, and rewiring all chromatic `--tug-base-*` tokens to resolve from `var(--tug-{hue}[-preset])` palette references.
+**Purpose:** Wire the CITA palette engine to the semantic token layer by replacing JS-injected oklch() strings with pure CSS formulas in a static `tug-palette.css`, adding the neutral ramp, and rewiring all chromatic `--tug-base-*` tokens to resolve from `var(--tug-{hue}[-preset])` palette references.
 
 ---
 
@@ -19,7 +19,7 @@
 
 #### Context {#context}
 
-Phases 5d5a through 5d5d established the HVV palette engine (24 hues, 7 presets, P3 support), the semantic token architecture (`--tug-base-*`, `--tug-comp-*`), and migrated all CSS consumers to the new token names. However, a critical gap remains: the `--tug-base-*` chromatic tokens in `tug-tokens.css` contain ~120 hardcoded hex color values instead of resolving from the palette engine's `--tug-{hue}[-preset]` variables. The palette engine currently injects its 242 CSS variables at runtime via `injectHvvCSS()` in JavaScript -- but nothing in the semantic layer consumes them.
+Phases 5d5a through 5d5d established the CITA palette engine (24 hues, 7 presets, P3 support), the semantic token architecture (`--tug-base-*`, `--tug-comp-*`), and migrated all CSS consumers to the new token names. However, a critical gap remains: the `--tug-base-*` chromatic tokens in `tug-tokens.css` contain ~120 hardcoded hex color values instead of resolving from the palette engine's `--tug-{hue}[-preset]` variables. The palette engine currently injects its 242 CSS variables at runtime via `injectCITACSS()` in JavaScript -- but nothing in the semantic layer consumes them.
 
 Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() strings to pure CSS `calc()` + `oklch()` formulas in a static stylesheet, adds the `--tug-neutral-*` achromatic ramp per [D75], and rewires every chromatic `--tug-base-*` token to a `var(--tug-{hue}[-preset])` reference. After this phase, the entire color system is inspectable, debuggable, and composable in standard CSS with no JavaScript injection.
 
@@ -31,13 +31,13 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 - Override only `--tug-{hue}-peak-c` in the P3 media query block; preset formulas auto-produce richer colors
 - Rewire all chromatic `--tug-base-*` tokens to palette `var()` references in a single pass
 - Replace `rgba()` accent-derived tokens with `color-mix()` per [D75]
-- Remove `injectHvvCSS()` and its call sites; retain `hvvColor()` for programmatic JS use
+- Remove `injectCITACSS()` and its call sites; retain `citaColor()` for programmatic JS use
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - All chromatic `--tug-base-*` tokens in `tug-tokens.css` resolve through `var(--tug-{hue}[-preset])` palette references -- zero hardcoded hex values for chromatic tokens (grep verification)
 - `tug-palette.css` contains exactly 72 per-hue constants (24 hues x 3), 2 global constants, 168 chromatic preset variables, 9 neutral variables (7 presets + black + white), and 24 P3 `--tug-{hue}-peak-c` overrides -- 275 total variable declarations
-- No `injectHvvCSS` import or call exists anywhere in the codebase (grep verification)
+- No `injectCITACSS` import or call exists anywhere in the codebase (grep verification)
 - All three themes (Brio, Bluenote, Harmony) render correctly with palette-derived colors (`bun test` passes)
 - Theme override files contain no hardcoded hex values for chromatic tokens that have palette equivalents
 
@@ -46,21 +46,21 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 1. Static `tug-palette.css` with per-hue constants, preset formulas (pure CSS calc/oklch), neutral ramp, P3 overrides
 2. Rewire all chromatic `--tug-base-*` tokens in `tug-tokens.css` to `var(--tug-{hue}[-preset])` references
 3. Update theme override files (`bluenote.css`, `harmony.css`) -- remove hex overrides for chromatic tokens, let palette resolve
-4. Remove `injectHvvCSS()` from `palette-engine.ts`, `main.tsx`, and `theme-provider.tsx`
+4. Remove `injectCITACSS()` from `palette-engine.ts`, `main.tsx`, and `theme-provider.tsx`
 5. Update `globals.css` import order to include `tug-palette.css` before `tug-tokens.css`
-6. Update tests: delete `injectHvvCSS()` tests, add `tug-palette.css` correctness tests
+6. Update tests: delete `injectCITACSS()` tests, add `tug-palette.css` correctness tests
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Cross-hue reassignment in theme files (e.g., Bluenote accent = blue instead of orange) -- future phase
 - Per-theme canonical L tuning -- all themes share the same palette constants in 5d5e
 - Cascade inspector (Phase 5d5f)
-- Removing `hvvColor()` or other palette-engine.ts exports -- they are retained for programmatic use
+- Removing `citaColor()` or other palette-engine.ts exports -- they are retained for programmatic use
 
 #### Dependencies / Prerequisites {#dependencies}
 
 - Phase 5d5d (Consumer Migration) must be complete -- all consumers reference `--tug-base-*` tokens
-- Phase 5d5a (Palette Engine) must be complete -- `palette-engine.ts` exports HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE (the authoritative source for all per-hue constants; `tug-hvv-canonical.json` is a reference artifact but not directly consumed)
+- Phase 5d5a (Palette Engine) must be complete -- `palette-engine.ts` exports HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE (the authoritative source for all per-hue constants; `tug-cita-canonical.json` is a reference artifact but not directly consumed)
 
 #### Constraints {#constraints}
 
@@ -74,7 +74,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 - The 72 per-hue constants (plus 2 globals) are derived directly from existing values in `palette-engine.ts` (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE, PEAK_C_SCALE) -- no new computation
 - Neutral ramp uses static oklch() literals with C=0 as specified in [D75]
-- `hvvColor()` and all other palette-engine.ts exports are retained unchanged
+- `citaColor()` and all other palette-engine.ts exports are retained unchanged
 - P3 block overrides only `--tug-{hue}-peak-c` (24 overrides); preset formulas auto-produce richer colors
 - Accent tokens currently using `rgba()` will use `color-mix()` once rewired to palette references per [D75]
 - Theme files keep non-chromatic overrides (surfaces, grays, borders, shadows, etc.) unchanged
@@ -84,9 +84,9 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Neutral canonical L value for val=50 (DECIDED) {#q01-neutral-canonical-l}
+#### [Q01] Neutral canonical L value for t=50 (DECIDED) {#q01-neutral-canonical-l}
 
-**Question:** What lightness value should `--tug-neutral` (val=50) use?
+**Question:** What lightness value should `--tug-neutral` (t=50) use?
 
 **Why it matters:** The neutral ramp needs a canonical L that feels visually balanced as a mid-gray.
 
@@ -98,7 +98,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Visual regression from hex-to-oklch conversion | med | med | Compare screenshots before/after; oklch values were computed from same HVV parameters | Colors look noticeably different in any theme |
+| Visual regression from hex-to-oklch conversion | med | med | Compare screenshots before/after; oklch values were computed from same CITA parameters | Colors look noticeably different in any theme |
 | CSS calc() precision differences across browsers | low | low | Use sufficient decimal precision (4 digits); oklch is well-supported in modern browsers | Visible banding or color shifts in specific browsers |
 | Theme override cascade issues with new import order | med | low | Verify theme injection appends after tug-palette.css + tug-tokens.css in cascade | Theme colors don't override palette defaults |
 
@@ -106,10 +106,10 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 - **Risk:** Converting from hardcoded hex (sRGB) to oklch() formulas may produce slightly different rendered colors
 - **Mitigation:**
-  - The hex values in tug-tokens.css were originally hand-picked, not derived from the HVV engine, so some visual shift is expected and intentional
-  - The HVV palette produces perceptually uniform colors by design
+  - The hex values in tug-tokens.css were originally hand-picked, not derived from the CITA engine, so some visual shift is expected and intentional
+  - The CITA palette produces perceptually uniform colors by design
   - Visual verification across all three themes in the checkpoint steps
-- **Residual risk:** Some tokens may need manual tuning if the HVV-derived color is noticeably different from the hand-picked hex
+- **Residual risk:** Some tokens may need manual tuning if the CITA-derived color is noticeably different from the hand-picked hex
 
 ---
 
@@ -117,15 +117,15 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 #### [D01] Pure CSS formulas replace JS injection (DECIDED) {#d01-pure-css}
 
-**Decision:** The HVV palette is expressed entirely in CSS `calc()` + `oklch()` formulas in a static stylesheet, replacing the runtime `injectHvvCSS()` JavaScript injection.
+**Decision:** The CITA palette is expressed entirely in CSS `calc()` + `oklch()` formulas in a static stylesheet, replacing the runtime `injectCITACSS()` JavaScript injection.
 
 **Rationale:**
-- CSS `oklch()` natively accepts `calc()` expressions, making the entire HVV transfer function expressible in CSS
+- CSS `oklch()` natively accepts `calc()` expressions, making the entire CITA transfer function expressible in CSS
 - Static CSS is inspectable, debuggable, and composable without JavaScript
 - Eliminates a runtime dependency and potential flash-of-unstyled-content from late injection
 
 **Implications:**
-- `injectHvvCSS()` is removed from exports and all call sites
+- `injectCITACSS()` is removed from exports and all call sites
 - `tug-palette.css` must be imported before `tug-tokens.css` in `globals.css`
 - Theme files can override per-hue constants to tune colors
 
@@ -158,10 +158,10 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 
 #### [D04] Piecewise L formula as CSS min() (DECIDED) {#d04-piecewise-l}
 
-**Decision:** The HVV val-to-L piecewise linear mapping is expressed in CSS using `calc()` with the two linear segments. For val=50 presets, L equals the per-hue canonical L directly. For val!=50 presets, L is computed from the appropriate segment of the piecewise function.
+**Decision:** The CITA tone-to-L piecewise linear mapping is expressed in CSS using `calc()` with the two linear segments. For t=50 presets, L equals the per-hue canonical L directly. For t!=50 presets, L is computed from the appropriate segment of the piecewise function.
 
 **Rationale:**
-- The 7 presets have fixed val values, so each preset's L can be a single `calc()` expression using the appropriate segment (val<=50 or val>50)
+- The 7 presets have fixed tone values, so each preset's L can be a single `calc()` expression using the appropriate segment (t<=50 or t>50)
 - No need for CSS `min()` since each preset knows which segment applies at authoring time
 - Keeps formulas simple and readable
 
@@ -187,7 +187,7 @@ Phase 5d5e closes this gap. It converts the palette from JS-injected oklch() str
 **Decision:** Harmony (light theme) keeps chromatic foreground hex overrides where the Brio palette preset would have insufficient contrast on light backgrounds. Decorative and background chromatic tokens (bg-subtle, bg-emphasis, series colors used as fills) are removed and resolve from palette. Foreground-role tokens that need darker/more saturated variants for readability on light surfaces are preserved as hex overrides until per-theme canonical L tuning is implemented.
 
 **Rationale:**
-- The HVV palette presets (canonical, accent, muted, etc.) are tuned for dark backgrounds (Brio). On Harmony's light surfaces (e.g., surface-default #f4f1ea), high-L palette presets like `--tug-yellow` (L=0.901) produce text that is nearly invisible
+- The CITA palette presets (canonical, accent, muted, etc.) are tuned for dark backgrounds (Brio). On Harmony's light surfaces (e.g., surface-default #f4f1ea), high-L palette presets like `--tug-yellow` (L=0.901) produce text that is nearly invisible
 - Harmony uses intentionally darker variants: e.g., `--tug-base-toast-warning-fg: #b89000` (dark gold), `--tug-base-banner-warning-fg: #8a7200`, `--tug-base-syntax-function: #8a7200`, `--tug-base-badge-warning-fg: #8a7200`
 - Removing these overrides would cause contrast/accessibility failures, not merely a visual preference change
 - Per-theme canonical L tuning (listed in Non-goals) will eventually allow Harmony to resolve all chromatic tokens from palette with appropriate lightness
@@ -224,9 +224,9 @@ Global constants (2):
 
 **Table T02: Chromatic preset formulas (168 = 24 hues x 7 presets)** {#t02-preset-formulas}
 
-Each preset has fixed `vib` and `val` values from `HVV_PRESETS`. The CSS formula computes L and C:
+Each preset has fixed `i` and `t` values from `CITA_PRESETS`. The CSS formula computes L and C:
 
-| Preset | vib | val | L formula | C formula |
+| Preset | i | t | L formula | C formula |
 |--------|-----|-----|-----------|-----------|
 | canonical | 50 | 50 | `var(--tug-{hue}-canonical-l)` | `calc(0.5 * var(--tug-{hue}-peak-c))` |
 | accent | 80 | 50 | `var(--tug-{hue}-canonical-l)` | `calc(0.8 * var(--tug-{hue}-peak-c))` |
@@ -246,9 +246,9 @@ CSS output pattern:
 
 **Table T03: Neutral ramp variables (9 total)** {#t03-neutral-ramp}
 
-Static oklch() literals with C=0, using the same val-to-L mapping as chromatic presets but with a fixed canonical L of 0.555 per [D75]:
+Static oklch() literals with C=0, using the same tone-to-L mapping as chromatic presets but with a fixed canonical L of 0.555 per [D75]:
 
-| Variable | val | L | CSS |
+| Variable | t | L | CSS |
 |----------|-----|---|-----|
 | `--tug-neutral` | 50 | 0.555 | `oklch(0.555 0 0)` |
 | `--tug-neutral-accent` | 50 | 0.555 | `oklch(0.555 0 0)` |
@@ -260,7 +260,7 @@ Static oklch() literals with C=0, using the same val-to-L mapping as chromatic p
 | `--tug-black` | -- | 0 | `oklch(0 0 0)` |
 | `--tug-white` | -- | 1 | `oklch(1 0 0)` |
 
-Neutral ramp L values match the [D75] specification examples exactly. `--tug-black` and `--tug-white` are true black/white per [D75] (not HVV endpoints), serving as absolute anchors independent of the val-to-L mapping.
+Neutral ramp L values match the [D75] specification examples exactly. `--tug-black` and `--tug-white` are true black/white per [D75] (not CITA endpoints), serving as absolute anchors independent of the tone-to-L mapping.
 
 #### P3 Overrides {#p3-overrides}
 
@@ -462,21 +462,21 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/styles/tug-palette.css` | Static HVV palette: per-hue constants, preset formulas, neutral ramp, P3 overrides |
+| `tugdeck/styles/tug-palette.css` | Static CITA palette: per-hue constants, preset formulas, neutral ramp, P3 overrides |
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `injectHvvCSS` | fn (removed) | `tugdeck/src/components/tugways/palette-engine.ts` | Delete function and PALETTE_STYLE_ID constant |
-| `injectHvvCSS` import | import (removed) | `tugdeck/src/main.tsx` | Remove import and call |
-| `injectHvvCSS` import | import (removed) | `tugdeck/src/contexts/theme-provider.tsx` | Remove import and call in setTheme |
+| `injectCITACSS` | fn (removed) | `tugdeck/src/components/tugways/palette-engine.ts` | Delete function and PALETTE_STYLE_ID constant |
+| `injectCITACSS` import | import (removed) | `tugdeck/src/main.tsx` | Remove import and call |
+| `injectCITACSS` import | import (removed) | `tugdeck/src/contexts/theme-provider.tsx` | Remove import and call in setTheme |
 
 ---
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update `palette-engine.ts` module docstring to remove references to `injectHvvCSS`
+- [ ] Update `palette-engine.ts` module docstring to remove references to `injectCITACSS`
 - [ ] Update `tug-tokens.css` file header to reference palette integration (Phase 5d5e) instead of "deferred to Phase 5d5d"
 
 ---
@@ -489,7 +489,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 |----------|---------|-------------|
 | **Unit** | Verify tug-palette.css contains correct variable names and formula patterns | Palette structure correctness |
 | **Integration** | Verify all three themes render without errors after palette rewiring | Theme parity, no regression |
-| **Drift Prevention** | Grep-based checks for leftover hex values in chromatic tokens, leftover injectHvvCSS references | Prevent regression to hardcoded colors |
+| **Drift Prevention** | Grep-based checks for leftover hex values in chromatic tokens, leftover injectCITACSS references | Prevent regression to hardcoded colors |
 
 ---
 
@@ -537,10 +537,10 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Tasks:**
 - [ ] For each hue and preset, generate the CSS formula using the appropriate L and C expressions from Table T02
-- [ ] For val=50 presets (canonical, accent): L = `var(--tug-{hue}-canonical-l)` directly
-- [ ] For val>50 presets (muted val=55, light val=82, subtle val=92): L via upper segment calc
-- [ ] For val<50 presets (dark val=25, deep val=15): L via lower segment calc
-- [ ] C formula for all presets: `calc(vib/100 * var(--tug-{hue}-peak-c))`
+- [ ] For t=50 presets (canonical, accent): L = `var(--tug-{hue}-canonical-l)` directly
+- [ ] For t>50 presets (muted t=55, light t=82, subtle t=92): L via upper segment calc
+- [ ] For t<50 presets (dark t=25, deep t=15): L via lower segment calc
+- [ ] C formula for all presets: `calc(i/100 * var(--tug-{hue}-peak-c))`
 - [ ] Use `--tug-{hue}` for canonical preset, `--tug-{hue}-{preset}` for others
 
 **Tests:**
@@ -741,54 +741,54 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 ---
 
-#### Step 9: Remove injectHvvCSS from palette-engine.ts {#step-9}
+#### Step 9: Remove injectCITACSS from palette-engine.ts {#step-9}
 
 **Depends on:** #step-6
 
-**Commit:** `refactor(palette): remove injectHvvCSS from palette-engine.ts`
+**Commit:** `refactor(palette): remove injectCITACSS from palette-engine.ts`
 
 **References:** [D01] Pure CSS formulas, (#strategy, #scope)
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/palette-engine.ts` -- remove `injectHvvCSS` function and `PALETTE_STYLE_ID` constant
+- `tugdeck/src/components/tugways/palette-engine.ts` -- remove `injectCITACSS` function and `PALETTE_STYLE_ID` constant
 
 **Tasks:**
-- [ ] Delete the `injectHvvCSS` function definition (the `export function injectHvvCSS` block and its JSDoc)
+- [ ] Delete the `injectCITACSS` function definition (the `export function injectCITACSS` block and its JSDoc)
 - [ ] Delete the `PALETTE_STYLE_ID` constant declaration
-- [ ] Delete the section comment block (`// injectHvvCSS — CSS variable injection`)
-- [ ] Update the module docstring to remove references to CSS variable injection and `injectHvvCSS`
-- [ ] Retain all other exports: `hvvColor`, `HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `PEAK_C_SCALE`, `L_DARK`, `L_LIGHT`, `HVV_PRESETS`, `DEFAULT_LC_PARAMS`, `oklchToLinearSRGB`, `isInSRGBGamut`, `findMaxChroma`, `oklchToLinearP3`, `isInP3Gamut`, `_deriveChromaCaps`, `_deriveP3ChromaCaps`
+- [ ] Delete the section comment block (`// injectCITACSS — CSS variable injection`)
+- [ ] Update the module docstring to remove references to CSS variable injection and `injectCITACSS`
+- [ ] Retain all other exports: `citaColor`, `HUE_FAMILIES`, `DEFAULT_CANONICAL_L`, `MAX_CHROMA_FOR_HUE`, `MAX_P3_CHROMA_FOR_HUE`, `PEAK_C_SCALE`, `L_DARK`, `L_LIGHT`, `CITA_PRESETS`, `DEFAULT_LC_PARAMS`, `oklchToLinearSRGB`, `isInSRGBGamut`, `findMaxChroma`, `oklchToLinearP3`, `isInP3Gamut`, `_deriveChromaCaps`, `_deriveP3ChromaCaps`
 
 **Tests:**
-- [ ] Verify `injectHvvCSS` is no longer exported from palette-engine.ts
+- [ ] Verify `injectCITACSS` is no longer exported from palette-engine.ts
 
 **Checkpoint:**
-- [ ] `grep "injectHvvCSS" tugdeck/src/components/tugways/palette-engine.ts` returns no matches
+- [ ] `grep "injectCITACSS" tugdeck/src/components/tugways/palette-engine.ts` returns no matches
 - [ ] `grep "PALETTE_STYLE_ID" tugdeck/src/components/tugways/palette-engine.ts` returns no matches
 
 ---
 
-#### Step 10: Remove injectHvvCSS calls from main.tsx and theme-provider.tsx {#step-10}
+#### Step 10: Remove injectCITACSS calls from main.tsx and theme-provider.tsx {#step-10}
 
 **Depends on:** #step-9
 
-**Commit:** `refactor(palette): remove injectHvvCSS call sites from main.tsx and theme-provider.tsx`
+**Commit:** `refactor(palette): remove injectCITACSS call sites from main.tsx and theme-provider.tsx`
 
 **References:** [D01] Pure CSS formulas, (#scope, #strategy)
 
 **Artifacts:**
-- `tugdeck/src/main.tsx` -- remove `injectHvvCSS` import and call
-- `tugdeck/src/contexts/theme-provider.tsx` -- remove `injectHvvCSS` import and call in `setTheme`
+- `tugdeck/src/main.tsx` -- remove `injectCITACSS` import and call
+- `tugdeck/src/contexts/theme-provider.tsx` -- remove `injectCITACSS` import and call in `setTheme`
 
 **Tasks:**
-- [ ] In `main.tsx`: remove the `import { injectHvvCSS }` line and the `injectHvvCSS(initialTheme)` call (line ~43) and its preceding comment
-- [ ] In `theme-provider.tsx`: remove the `import { injectHvvCSS }` line and the `injectHvvCSS(newTheme)` call inside `setTheme` (line ~181) and its preceding comment
+- [ ] In `main.tsx`: remove the `import { injectCITACSS }` line and the `injectCITACSS(initialTheme)` call (line ~43) and its preceding comment
+- [ ] In `theme-provider.tsx`: remove the `import { injectCITACSS }` line and the `injectCITACSS(newTheme)` call inside `setTheme` (line ~181) and its preceding comment
 
 **Tests:**
-- [ ] Verify no file in the codebase imports `injectHvvCSS`
+- [ ] Verify no file in the codebase imports `injectCITACSS`
 
 **Checkpoint:**
-- [ ] `grep -r "injectHvvCSS" tugdeck/src/ --include="*.ts" --include="*.tsx" | grep -v "__tests__" | grep -v "node_modules"` returns no matches
+- [ ] `grep -r "injectCITACSS" tugdeck/src/ --include="*.ts" --include="*.tsx" | grep -v "__tests__" | grep -v "node_modules"` returns no matches
 - [ ] TypeScript compiles without errors: `cd tugdeck && bunx tsc --noEmit`
 
 ---
@@ -797,17 +797,17 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Depends on:** #step-9, #step-10
 
-**Commit:** `test(palette): replace injectHvvCSS tests with tug-palette.css verification tests`
+**Commit:** `test(palette): replace injectCITACSS tests with tug-palette.css verification tests`
 
 **References:** [D01] Pure CSS formulas, Tables T01-T04, (#test-plan-concepts)
 
 **Artifacts:**
-- `tugdeck/src/__tests__/palette-engine.test.ts` -- delete injectHvvCSS test sections, add tug-palette.css tests
+- `tugdeck/src/__tests__/palette-engine.test.ts` -- delete injectCITACSS test sections, add tug-palette.css tests
 
 **Tasks:**
-- [ ] Delete the `describe("injectHvvCSS() -- Layer 1 and Layer 2")` test block
-- [ ] Delete the `describe("injectHvvCSS() -- P3 @media block")` test block
-- [ ] Remove `injectHvvCSS` from the import statement
+- [ ] Delete the `describe("injectCITACSS() -- Layer 1 and Layer 2")` test block
+- [ ] Delete the `describe("injectCITACSS() -- P3 @media block")` test block
+- [ ] Remove `injectCITACSS` from the import statement
 - [ ] Add new test file or section: read `tug-palette.css` as text and verify:
   - Contains all 24 `--tug-{hue}-h` variables with correct hue angles
   - Contains all 24 `--tug-{hue}-canonical-l` variables with correct L values
@@ -819,11 +819,11 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 **Tests:**
 - [ ] All new tug-palette.css verification tests pass
-- [ ] All remaining palette-engine tests continue to pass (hvvColor, gamut checks, etc.)
+- [ ] All remaining palette-engine tests continue to pass (citaColor, gamut checks, etc.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test` passes with no failures in palette-engine tests
-- [ ] `grep "injectHvvCSS" tugdeck/src/__tests__/palette-engine.test.ts` returns no matches
+- [ ] `grep "injectCITACSS" tugdeck/src/__tests__/palette-engine.test.ts` returns no matches
 
 ---
 
@@ -836,7 +836,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 **References:** [D01] Pure CSS formulas, [D03] Color-mix, [D05] No cross-hue, Tables T01-T05, (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Verify no `injectHvvCSS` references remain anywhere in the codebase
+- [ ] Verify no `injectCITACSS` references remain anywhere in the codebase
 - [ ] Verify no hardcoded hex values remain in chromatic `--tug-base-*` token lines in tug-tokens.css
 - [ ] Verify tug-palette.css import order is correct in globals.css
 - [ ] Verify all three themes render correctly (visual inspection)
@@ -847,7 +847,7 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 - [ ] `cd tugdeck && bunx tsc --noEmit` compiles without TypeScript errors
 
 **Checkpoint:**
-- [ ] `grep -r "injectHvvCSS" tugdeck/src/ --include="*.ts" --include="*.tsx"` returns no matches
+- [ ] `grep -r "injectCITACSS" tugdeck/src/ --include="*.ts" --include="*.tsx"` returns no matches
 - [ ] `cd tugdeck && bun test` passes
 - [ ] `cd tugdeck && bunx tsc --noEmit` compiles without errors
 - [ ] `grep -E "accent-default|accent-strong|chart-series|syntax-keyword|status-success|action-primary-bg|toggle-track-on|dock-indicator" tugdeck/styles/tug-tokens.css | grep -c "#[0-9a-fA-F]"` returns 0
@@ -856,19 +856,19 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The HVV palette engine is fully connected to the semantic token layer via pure CSS formulas, with neutral ramp, P3 support, and no JavaScript injection.
+**Deliverable:** The CITA palette engine is fully connected to the semantic token layer via pure CSS formulas, with neutral ramp, P3 support, and no JavaScript injection.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] `tug-palette.css` exists with 275 variable declarations (72 per-hue constants + 2 globals + 168 presets + 9 neutrals + 24 P3 overrides)
 - [ ] All chromatic `--tug-base-*` tokens in `tug-tokens.css` resolve through `var(--tug-{hue}[-preset])` or `color-mix()` references
-- [ ] No `injectHvvCSS` import or call exists anywhere in the codebase
+- [ ] No `injectCITACSS` import or call exists anywhere in the codebase
 - [ ] All three themes render correctly with palette-derived colors
 - [ ] `bun test` passes with no failures
 - [ ] TypeScript compiles without errors
 
 **Acceptance tests:**
-- [ ] `grep -r "injectHvvCSS" tugdeck/src/ --include="*.ts" --include="*.tsx"` returns no matches
+- [ ] `grep -r "injectCITACSS" tugdeck/src/ --include="*.ts" --include="*.tsx"` returns no matches
 - [ ] `grep -E "(accent-default|chart-series-warm|syntax-keyword|terminal-ansi-red|action-primary-bg|toggle-track-on|dock-indicator|progress-fill)" tugdeck/styles/tug-tokens.css | grep -v "var(--tug-" | grep -v "color-mix" | grep -c "#"` returns 0
 - [ ] `cd tugdeck && bun test` passes
 - [ ] `cd tugdeck && bunx tsc --noEmit` compiles cleanly
@@ -878,12 +878,12 @@ Note: `rgba(0, 0, 0, ...)` and `rgba(255, 255, 255, ...)` tokens (shadows, overl
 - [ ] Phase 5d5f: Cascade Inspector -- dev-mode `Ctrl+Option + hover` shows token resolution chain
 - [ ] Cross-hue reassignment in theme files (Bluenote accent = blue, etc.)
 - [ ] Per-theme canonical L tuning
-- [ ] Remove `hvvColor()` if no programmatic consumers remain after cascade inspector is built
+- [ ] Remove `citaColor()` if no programmatic consumers remain after cascade inspector is built
 
 | Checkpoint | Verification |
 |------------|--------------|
 | tug-palette.css completeness | 275 total variable declarations |
 | Chromatic token rewiring | Zero hex values in chromatic --tug-base-* lines |
-| injectHvvCSS removal | Zero grep matches across codebase |
+| injectCITACSS removal | Zero grep matches across codebase |
 | Test suite | `bun test` passes |
 | TypeScript | `bunx tsc --noEmit` compiles cleanly |

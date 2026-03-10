@@ -6,105 +6,105 @@
  * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.
  *
  * Phase 5d5e: Chromatic tokens that resolved from hardcoded hex values have been
- * removed. They now resolve from the shared HVV palette via tug-tokens.css.
+ * removed. They now resolve from the shared CITA palette via tug-tokens.css.
  * Only non-chromatic overrides (surfaces, grays, structural colors, shadows) remain.
  */
 body {
   /* --tug-base-* overrides — all color tokens that differ from Brio defaults. */
 
   /* Surfaces */
-  --tug-base-bg-app: --hvv(hue-239, 5, 13);
-  --tug-base-bg-canvas: --hvv(hue-239, 5, 6);
-  --tug-base-surface-sunken: --hvv(hue-242, 8, 16);
-  --tug-base-surface-default: --hvv(hue-235, 5, 15);
-  --tug-base-surface-raised: --hvv(hue-235, 5, 17);
-  --tug-base-surface-overlay: --hvv(hue-236, 7, 19);
-  --tug-base-surface-inset: --hvv(hue-235, 5, 13);
-  --tug-base-surface-control: --hvv(hue-239, 5, 15);
-  --tug-base-surface-control-hover: --hvv(hue-235, 5, 18);
-  --tug-base-surface-control-active: --hvv(hue-236, 7, 19);
-  --tug-base-surface-content: --hvv(hue-235, 5, 13);
-  --tug-base-surface-screen: --hvv(hue-240, 8, 29);
+  --tug-base-bg-app: --cita(blue+9, i: 5, t: 13);
+  --tug-base-bg-canvas: --cita(blue+9, i: 5, t: 6);
+  --tug-base-surface-sunken: --cita(cobalt-8, i: 8, t: 16);
+  --tug-base-surface-default: --cita(blue+5, i: 5, t: 15);
+  --tug-base-surface-raised: --cita(blue+5, i: 5, t: 17);
+  --tug-base-surface-overlay: --cita(blue+6, i: 7, t: 19);
+  --tug-base-surface-inset: --cita(blue+5, i: 5, t: 13);
+  --tug-base-surface-control: --cita(blue+9, i: 5, t: 15);
+  --tug-base-surface-control-hover: --cita(blue+5, i: 5, t: 18);
+  --tug-base-surface-control-active: --cita(blue+6, i: 7, t: 19);
+  --tug-base-surface-content: --cita(blue+5, i: 5, t: 13);
+  --tug-base-surface-screen: --cita(blue+10, i: 8, t: 29);
 
   /* Foreground / Text */
-  --tug-base-fg-default: --hvv(blue, 3, 88);
-  --tug-base-fg-muted: --hvv(hue-236, 8, 50);
-  --tug-base-fg-subtle: --hvv(hue-237, 7, 37);
-  --tug-base-fg-disabled: --hvv(cobalt, 8, 25);
-  --tug-base-fg-inverse: --hvv(blue, 2, 99);
-  --tug-base-fg-placeholder: --hvv(hue-238, 8, 29);
+  --tug-base-fg-default: --cita(blue, i: 3, t: 88);
+  --tug-base-fg-muted: --cita(blue+6, i: 8);
+  --tug-base-fg-subtle: --cita(blue+7, i: 7, t: 37);
+  --tug-base-fg-disabled: --cita(cobalt, i: 8, t: 25);
+  --tug-base-fg-inverse: --cita(blue, i: 2, t: 99);
+  --tug-base-fg-placeholder: --cita(blue+8, i: 8, t: 29);
 
   /* Icon */
-  --tug-base-icon-default: --hvv(hue-236, 8, 50);
-  --tug-base-icon-muted: --hvv(hue-237, 9, 34);
-  --tug-base-icon-disabled: --hvv(cobalt, 8, 25);
+  --tug-base-icon-default: --cita(blue+6, i: 8);
+  --tug-base-icon-muted: --cita(blue+7, i: 9, t: 34);
+  --tug-base-icon-disabled: --cita(cobalt, i: 8, t: 25);
 
   /* Borders */
-  --tug-base-border-default: --hvv(hue-238, 8, 29);
-  --tug-base-border-muted: --hvv(hue-237, 7, 37);
-  --tug-base-border-strong: --hvv(blue, 8, 43);
-  --tug-base-border-inverse: --hvv(blue, 3, 88);
-  --tug-base-focus-ring-offset: --hvv(hue-239, 5, 13);
+  --tug-base-border-default: --cita(blue+8, i: 8, t: 29);
+  --tug-base-border-muted: --cita(blue+7, i: 7, t: 37);
+  --tug-base-border-strong: --cita(blue, i: 8, t: 43);
+  --tug-base-border-inverse: --cita(blue, i: 3, t: 88);
+  --tug-base-focus-ring-offset: --cita(blue+9, i: 5, t: 13);
 
   /* Elevation */
-  --tug-base-shadow-sm: --hvv(black, 0, 0, 0.44);
+  --tug-base-shadow-sm: --cita(black, i: 0, t: 0, a: 44);
 
   /* Selection */
-  --tug-base-selection-bg-inactive: --hvv(blue, 10, 33, 0.30);
-  --tug-base-selection-fg: --hvv(blue, 3, 88);
+  --tug-base-selection-bg-inactive: --cita(blue, i: 10, t: 33, a: 30);
+  --tug-base-selection-fg: --cita(blue, i: 3, t: 88);
 
   /* Card */
-  --tug-base-card-bg: --hvv(hue-236, 7, 19);
-  --tug-base-card-border: --hvv(hue-238, 8, 29);
-  --tug-base-card-shadow-active: 0 2px 8px --hvv(black, 0, 0, 0.45);
-  --tug-base-card-shadow-inactive: 0 1px 4px --hvv(black, 0, 0, 0.22);
-  --tug-base-card-dim-overlay: --hvv(black, 0, 0, 0.18);
+  --tug-base-card-bg: --cita(blue+6, i: 7, t: 19);
+  --tug-base-card-border: --cita(blue+8, i: 8, t: 29);
+  --tug-base-card-shadow-active: 0 2px 8px --cita(black, i: 0, t: 0, a: 45);
+  --tug-base-card-shadow-inactive: 0 1px 4px --cita(black, i: 0, t: 0, a: 22);
+  --tug-base-card-dim-overlay: --cita(black, i: 0, t: 0, a: 18);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: --hvv(blue, 14, 21);
-  --tug-base-card-header-bg-inactive: --hvv(hue-236, 10, 15);
-  --tug-base-card-header-bg-collapsed: --hvv(hue-241, 9, 15);
-  --tug-base-card-header-fg: --hvv(blue, 3, 88);
-  --tug-base-card-header-icon-inactive: --hvv(hue-237, 9, 34);
-  --tug-base-card-header-divider: --hvv(blue, 8, 20);
+  --tug-base-card-header-bg-active: --cita(blue, i: 14, t: 21);
+  --tug-base-card-header-bg-inactive: --cita(blue+6, i: 10, t: 15);
+  --tug-base-card-header-bg-collapsed: --cita(cobalt-9, i: 9, t: 15);
+  --tug-base-card-header-fg: --cita(blue, i: 3, t: 88);
+  --tug-base-card-header-icon-inactive: --cita(blue+7, i: 9, t: 34);
+  --tug-base-card-header-divider: --cita(blue, i: 8, t: 20);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: --hvv(hue-235, 5, 16);
-  --tug-base-tab-bg-active: --hvv(hue-235, 5, 18);
-  --tug-base-tab-fg-rest: --hvv(hue-237, 7, 37);
-  --tug-base-tab-fg-active: --hvv(blue, 3, 88);
-  --tug-base-tab-close-fg-hover: --hvv(blue, 3, 88);
+  --tug-base-tab-bar-bg: --cita(blue+5, i: 5, t: 16);
+  --tug-base-tab-bg-active: --cita(blue+5, i: 5, t: 18);
+  --tug-base-tab-fg-rest: --cita(blue+7, i: 7, t: 37);
+  --tug-base-tab-fg-active: --cita(blue, i: 3, t: 88);
+  --tug-base-tab-close-fg-hover: --cita(blue, i: 3, t: 88);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: --hvv(white, 0, 100, 0.04);
+  --tug-base-canvas-grid-line: --cita(white, i: 0, t: 100, a: 4);
 
   /* Dock */
-  --tug-base-dock-bg: --hvv(hue-239, 5, 13);
+  --tug-base-dock-bg: --cita(blue+9, i: 5, t: 13);
 
   /* Menus / Popovers */
-  --tug-base-menu-bg: --hvv(hue-236, 7, 19);
-  --tug-base-menu-border: --hvv(hue-238, 8, 29);
-  --tug-base-popover-bg: --hvv(hue-236, 7, 19);
-  --tug-base-popover-border: --hvv(hue-238, 8, 29);
-  --tug-base-tooltip-bg: --hvv(hue-235, 5, 18);
-  --tug-base-tooltip-border: --hvv(hue-238, 8, 29);
+  --tug-base-menu-bg: --cita(blue+6, i: 7, t: 19);
+  --tug-base-menu-border: --cita(blue+8, i: 8, t: 29);
+  --tug-base-popover-bg: --cita(blue+6, i: 7, t: 19);
+  --tug-base-popover-border: --cita(blue+8, i: 8, t: 29);
+  --tug-base-tooltip-bg: --cita(blue+5, i: 5, t: 18);
+  --tug-base-tooltip-border: --cita(blue+8, i: 8, t: 29);
 
   /* Dialogs */
-  --tug-base-dialog-bg: --hvv(hue-236, 7, 19);
-  --tug-base-dialog-border: --hvv(hue-238, 8, 29);
-  --tug-base-sheet-bg: --hvv(hue-236, 7, 19);
-  --tug-base-sheet-border: --hvv(hue-238, 8, 29);
+  --tug-base-dialog-bg: --cita(blue+6, i: 7, t: 19);
+  --tug-base-dialog-border: --cita(blue+8, i: 8, t: 29);
+  --tug-base-sheet-bg: --cita(blue+6, i: 7, t: 19);
+  --tug-base-sheet-border: --cita(blue+8, i: 8, t: 29);
 
   /* Scrollbar */
-  --tug-base-scrollbar-thumb: --hvv(hue-238, 8, 29);
-  --tug-base-scrollbar-thumb-hover: --hvv(hue-237, 7, 37);
+  --tug-base-scrollbar-thumb: --cita(blue+8, i: 8, t: 29);
+  --tug-base-scrollbar-thumb-hover: --cita(blue+7, i: 7, t: 37);
 
   /* Terminal */
-  --tug-base-terminal-bg: --hvv(hue-235, 5, 13);
-  --tug-base-terminal-fg: --hvv(blue, 3, 88);
-  --tug-base-terminal-fg-muted: --hvv(hue-236, 8, 50);
-  --tug-base-terminal-ansi-white: --hvv(blue, 3, 88);
+  --tug-base-terminal-bg: --cita(blue+5, i: 5, t: 13);
+  --tug-base-terminal-fg: --cita(blue, i: 3, t: 88);
+  --tug-base-terminal-fg-muted: --cita(blue+6, i: 8);
+  --tug-base-terminal-ansi-white: --cita(blue, i: 3, t: 88);
 
   /* Feed */
-  --tug-base-feed-bg: --hvv(hue-239, 5, 13);
+  --tug-base-feed-bg: --cita(blue+9, i: 5, t: 13);
 }

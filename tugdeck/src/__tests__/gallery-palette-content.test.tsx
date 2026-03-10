@@ -1,5 +1,5 @@
 /**
- * GalleryPaletteContent tests — HueVibVal editor.
+ * GalleryPaletteContent tests — HueIntensityTone editor.
  *
  * Tests cover:
  * - GalleryPaletteContent renders without errors
@@ -7,7 +7,7 @@
  * - L curve editor: 24 draggable points
  * - VibValPicker: appears on selection, 441 cells (21x21), drag updates swatch,
  *   preset overlay, CSS formula export
- * - hvvColor: pure computation tests
+ * - citaColor: pure computation tests
  * - JSON export/import helpers (unit tests)
  * - Export/import UI elements
  *
@@ -24,7 +24,7 @@ import {
   buildExportPayload,
   parseImportPayload,
 } from "@/components/tugways/cards/gallery-palette-content";
-import { hvvColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
+import { citaColor, MAX_CHROMA_FOR_HUE } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // Render tests
@@ -269,49 +269,49 @@ describe("GalleryPaletteContent – VibValPicker", () => {
 });
 
 // ---------------------------------------------------------------------------
-// hvvColor – pure computation tests
+// citaColor – pure computation tests
 // ---------------------------------------------------------------------------
 
-describe("hvvColor – pure unit tests", () => {
+describe("citaColor – pure unit tests", () => {
   it("returns a valid oklch string", () => {
-    const result = hvvColor("red", 50, 50, 0.79);
+    const result = citaColor("red", 50, 50, 0.79);
     expect(result).toMatch(/^oklch\(/);
   });
 
-  it("vib=0 produces zero chroma (gray)", () => {
-    const result = hvvColor("red", 0, 50, 0.79);
+  it("intensity=0 produces zero chroma (gray)", () => {
+    const result = citaColor("red", 0, 50, 0.79);
     expect(result).toMatch(/oklch\([\d.]+ 0 /);
   });
 
-  it("val=0 produces dark color (L = L_DARK = 0.15)", () => {
-    const result = hvvColor("red", 50, 0, 0.79);
+  it("tone=0 produces dark color (L = L_DARK = 0.15)", () => {
+    const result = citaColor("red", 50, 0, 0.79);
     expect(result).toMatch(/oklch\(0\.15 /);
   });
 
-  it("val=100 produces light color (L = L_LIGHT = 0.96)", () => {
-    const result = hvvColor("red", 50, 100, 0.79);
+  it("tone=100 produces light color (L = L_LIGHT = 0.96)", () => {
+    const result = citaColor("red", 50, 100, 0.79);
     expect(result).toMatch(/oklch\(0\.96 /);
   });
 
-  it("val=50 produces canonical L", () => {
-    const result = hvvColor("red", 50, 50, 0.79);
+  it("tone=50 produces canonical L", () => {
+    const result = citaColor("red", 50, 50, 0.79);
     expect(result).toMatch(/oklch\(0\.79 /);
   });
 
-  it("vib=50 produces sRGB-safe chroma (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = MAX_CHROMA_FOR_HUE)", () => {
-    // vib=50 → C = (50/100) * (MAX_CHROMA * 2) = MAX_CHROMA
+  it("intensity=50 produces sRGB-safe chroma (MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = MAX_CHROMA_FOR_HUE)", () => {
+    // intensity=50 → C = (50/100) * (MAX_CHROMA * 2) = MAX_CHROMA
     const maxC = MAX_CHROMA_FOR_HUE["red"];
     const expectedC = parseFloat(maxC.toFixed(4)).toString();
-    const result = hvvColor("red", 50, 50, 0.79);
+    const result = citaColor("red", 50, 50, 0.79);
     expect(result).toContain(expectedC);
   });
 
-  it("vib=100 produces 2x sRGB max chroma (P3 territory)", () => {
-    // vib=100 → C = MAX_CHROMA * 2
+  it("intensity=100 produces 2x sRGB max chroma (P3 territory)", () => {
+    // intensity=100 → C = MAX_CHROMA * 2
     const maxC = MAX_CHROMA_FOR_HUE["red"];
     const peakC = maxC * 2;
     const expectedC = parseFloat(peakC.toFixed(4)).toString();
-    const result = hvvColor("red", 100, 50, 0.79);
+    const result = citaColor("red", 100, 50, 0.79);
     expect(result).toContain(expectedC);
   });
 
@@ -323,7 +323,7 @@ describe("hvvColor – pure unit tests", () => {
       "plum", "pink", "rose", "magenta", "berry", "coral",
     ];
     for (const name of hueNames) {
-      const result = hvvColor(name, 50, 50, 0.8);
+      const result = citaColor(name, 50, 50, 0.8);
       expect(result).toMatch(/^oklch\(/);
     }
   });

@@ -1,29 +1,31 @@
 /**
- * Palette Engine — Tugways HVV Runtime
+ * Palette Engine — Tugways CITA Runtime
  *
  * Computes a continuous OKLCH color palette from 24 named hue families using
- * the HueVibVal (HVV) system. Each color is defined by three axes:
- *   - Hue: one of 24 named color families mapped to OKLCH hue angles
- *   - Vibrancy (0-100): chroma axis; at vib=50, C equals the sRGB-safe max
- *   - Value (0-100): lightness axis; val=50 gives the per-hue canonical L
+ * the CITA (Color · Intensity · Tone · Alpha) system. Each color is defined
+ * by four axes:
+ *   - Color: one of 24 named color families mapped to OKLCH hue angles
+ *   - Intensity (0-100): chroma axis; at intensity=50, C equals the sRGB-safe max
+ *   - Tone (0-100): lightness axis; tone=50 gives the per-hue canonical L
+ *   - Alpha (0-100): opacity; default 100 (fully opaque)
  *
- * The HVV palette is expressed as pure CSS in `tug-palette.css`. This module
- * provides `hvvColor()` for programmatic JS use and exports the authoritative
+ * The CITA palette is expressed as pure CSS in `tug-palette.css`. This module
+ * provides `citaColor()` for programmatic JS use and exports the authoritative
  * source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE,
  * MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css was derived from.
  *
- * Five convenience presets per hue (HVV_PRESETS):
- *   canonical  vib=50, val=50   The crayon color — reference point
- *   light      vib=20, val=85   Background-safe, airy
- *   dark       vib=50, val=20   Contrast text, dark surfaces
- *   intense    vib=90, val=50   Pops, draws attention
- *   muted      vib=20, val=50   Subdued, secondary
+ * Five convenience presets per hue (CITA_PRESETS):
+ *   canonical  intensity=50, tone=50   The crayon color — reference point
+ *   light      intensity=20, tone=85   Background-safe, airy
+ *   dark       intensity=50, tone=20   Contrast text, dark surfaces
+ *   intense    intensity=90, tone=50   Pops, draws attention
+ *   muted      intensity=20, tone=50   Subdued, secondary
  *
  * @module components/tugways/palette-engine
  */
 
 // Single source of truth for canonical L values and global lightness anchors.
-import tugHvvCanonical from "../../../../roadmap/tug-hvv-canonical.json";
+import tugCitaCanonical from "../../../../roadmap/tug-cita-canonical.json";
 
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 24 named hue families mapped to OKLCH hue angles
@@ -68,7 +70,7 @@ export const HUE_FAMILIES: Record<string, number> = {
 /**
  * Parameters that bound the chroma derivation search space.
  * `cMax` is the sRGB ceiling used by `_deriveChromaCaps` for the sRGB table.
- * `lMin` / `lMax` are retained for reference but not used by the HVV runtime.
+ * `lMin` / `lMax` are retained for reference but not used by the CITA runtime.
  */
 export interface LCParams {
   /** L value at intensity 0 (near-white) — legacy, kept for reference */
@@ -246,8 +248,8 @@ export function isInP3Gamut(L: number, C: number, h: number, epsilon = 0.001): b
  * findMaxChroma), and optionally caps at maxCap.
  *
  * Per Spec S06:
- * - sRGB derivation: _deriveChromaCaps(hvvLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
- * - P3 derivation:  _deriveChromaCaps(hvvLSamples, isInP3Gamut) — no maxCap
+ * - sRGB derivation: _deriveChromaCaps(citaLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax)
+ * - P3 derivation:  _deriveChromaCaps(citaLSamples, isInP3Gamut) — no maxCap
  *
  * Not called at runtime. Run once to regenerate static tables.
  */
@@ -267,53 +269,53 @@ export function _deriveChromaCaps(
 }
 
 // ---------------------------------------------------------------------------
-// HVV Constants
+// CITA Constants
 // ---------------------------------------------------------------------------
 
 /**
- * Lightness at val=0 (very dark).
- * Source: tug-hvv-canonical.json `global.l_dark`.
+ * Lightness at tone=0 (very dark).
+ * Source: tug-cita-canonical.json `global.l_dark`.
  */
-export const L_DARK: number = tugHvvCanonical.global.l_dark;
+export const L_DARK: number = tugCitaCanonical.global.l_dark;
 
 /**
- * Lightness at val=100 (very light).
- * Source: tug-hvv-canonical.json `global.l_light`.
+ * Lightness at tone=100 (very light).
+ * Source: tug-cita-canonical.json `global.l_light`.
  */
-export const L_LIGHT: number = tugHvvCanonical.global.l_light;
+export const L_LIGHT: number = tugCitaCanonical.global.l_light;
 
 /**
  * Peak chroma scale factor. Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE.
- * At vib=50, C equals the sRGB-safe max; above 50 pushes into P3.
+ * At intensity=50, C equals the sRGB-safe max; above 50 pushes into P3.
  */
 export const PEAK_C_SCALE = 2;
 
 /**
  * Default canonical L values for all 24 hue families (Table T02).
- * These are the reference lightness values at vib=50, val=50.
+ * These are the reference lightness values at intensity=50, tone=50.
  * Must remain above 0.555 (piecewise min() constraint, D04).
  *
- * Derived from tug-hvv-canonical.json `hues[*].canonical_l`.
+ * Derived from tug-cita-canonical.json `hues[*].canonical_l`.
  */
 export const DEFAULT_CANONICAL_L: Record<string, number> = Object.fromEntries(
-  Object.entries(tugHvvCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
+  Object.entries(tugCitaCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
 );
 
 /**
- * Five convenience presets per hue. Each preset maps a name to {vib, val}.
- * These are labeled reference points in the continuous 100×100 vib/val space.
+ * Five convenience presets per hue. Each preset maps a name to {intensity, tone}.
+ * These are labeled reference points in the continuous 100×100 intensity/tone space.
  * Per Table T01 in the plan specification.
  */
-export const HVV_PRESETS: Record<string, { vib: number; val: number }> = {
-  canonical: { vib: 50, val: 50 },
-  light:     { vib: 20, val: 85 },
-  dark:      { vib: 50, val: 20 },
-  intense:   { vib: 90, val: 50 },
-  muted:     { vib: 20, val: 50 },
+export const CITA_PRESETS: Record<string, { intensity: number; tone: number }> = {
+  canonical: { intensity: 50, tone: 50 },
+  light:     { intensity: 20, tone: 85 },
+  dark:      { intensity: 50, tone: 20 },
+  intense:   { intensity: 90, tone: 50 },
+  muted:     { intensity: 20, tone: 50 },
 };
 
 // ---------------------------------------------------------------------------
-// MAX_CHROMA_FOR_HUE — Per-hue sRGB chroma caps (HVV L range)
+// MAX_CHROMA_FOR_HUE — Per-hue sRGB chroma caps (CITA L range)
 // ---------------------------------------------------------------------------
 
 /**
@@ -326,7 +328,7 @@ export const HVV_PRESETS: Record<string, { vib: number; val: number }> = {
  * capped at DEFAULT_LC_PARAMS.cMax (0.22).
  *
  * Sampling at only canonical L keeps chroma caps high so canonical colors
- * (vib=50, val=50) are vibrant. At extreme val values (near L_DARK/L_LIGHT),
+ * (intensity=50, tone=50) are vibrant. At extreme tone values (near L_DARK/L_LIGHT),
  * chroma naturally exceeds the narrow gamut at those lightness levels, but
  * CSS oklch() handles this via browser gamut mapping.
  *
@@ -361,7 +363,7 @@ export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// MAX_P3_CHROMA_FOR_HUE — Per-hue Display P3 chroma caps (HVV L range)
+// MAX_P3_CHROMA_FOR_HUE — Per-hue Display P3 chroma caps (CITA L range)
 // ---------------------------------------------------------------------------
 
 /**
@@ -420,7 +422,7 @@ export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// oklchToHVV — Reverse mapper: oklch() string → HVV parameters
+// oklchToCITA — Reverse mapper: oklch() string → CITA parameters
 // ---------------------------------------------------------------------------
 
 /**
@@ -434,22 +436,22 @@ function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | 
 }
 
 /**
- * Reverse-map an `oklch(L C h)` CSS string to the closest HVV parameters.
+ * Reverse-map an `oklch(L C h)` CSS string to the closest CITA parameters.
  *
  * Algorithm:
  * 1. Parse L, C, h from the oklch string.
  * 2. Find closest named hue by comparing h to all HUE_FAMILIES angles.
  *    If within 5 degrees, use the named hue; otherwise return `hue-NNN`.
- * 3. Invert the val-to-L piecewise formula to recover val (integer).
- * 4. Compute peakC and invert to recover vib (integer).
+ * 3. Invert the tone-to-L piecewise formula to recover tone (integer).
+ * 4. Compute peakC and invert to recover intensity (integer).
  *
  * @param oklchStr - An `oklch(L C h)` CSS string.
- * @returns `{ hue, vib, val }` where hue is a named family or `hue-NNN`.
+ * @returns `{ hue, intensity, tone }` where hue is a named family or `hue-NNN`.
  */
-export function oklchToHVV(oklchStr: string): { hue: string; vib: number; val: number } {
+export function oklchToCITA(oklchStr: string): { hue: string; intensity: number; tone: number } {
   const parsed = parseOklchStr(oklchStr);
   if (!parsed) {
-    return { hue: "hue-0", vib: 0, val: 0 };
+    return { hue: "hue-0", intensity: 0, tone: 0 };
   }
   const { L, C, h } = parsed;
 
@@ -467,8 +469,8 @@ export function oklchToHVV(oklchStr: string): { hue: string; vib: number; val: n
   }
   const hue = closestDiff <= 5 ? closestHue : `hue-${Math.round(h)}`;
 
-  // Step 2: Invert val-to-L piecewise formula
-  // Forward: L = L_DARK + min(val,50)*(canonL-L_DARK)/50 + max(val-50,0)*(L_LIGHT-canonL)/50
+  // Step 2: Invert tone-to-L piecewise formula
+  // Forward: L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
   let canonicalL: number;
   let peakC: number;
   if (hue.startsWith("hue-")) {
@@ -479,69 +481,69 @@ export function oklchToHVV(oklchStr: string): { hue: string; vib: number; val: n
     peakC = (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
   }
 
-  let val: number;
+  let tone: number;
   if (L <= canonicalL) {
-    val = 50 * (L - L_DARK) / (canonicalL - L_DARK);
+    tone = 50 * (L - L_DARK) / (canonicalL - L_DARK);
   } else {
-    val = 50 + 50 * (L - canonicalL) / (L_LIGHT - canonicalL);
+    tone = 50 + 50 * (L - canonicalL) / (L_LIGHT - canonicalL);
   }
-  val = Math.round(Math.max(0, Math.min(100, val)));
+  tone = Math.round(Math.max(0, Math.min(100, tone)));
 
-  // Step 3: Invert vib-to-C linear formula
-  // Forward: C = (vib/100) * peakC
-  const vib = Math.round(Math.max(0, Math.min(100, (C / peakC) * 100)));
+  // Step 3: Invert intensity-to-C linear formula
+  // Forward: C = (intensity/100) * peakC
+  const intensity = Math.round(Math.max(0, Math.min(100, (C / peakC) * 100)));
 
-  return { hue, vib, val };
+  return { hue, intensity, tone };
 }
 
 /**
- * Format an `oklch()` string as a human-readable HVV description.
+ * Format an `oklch()` string as a human-readable CITA description.
  *
  * Examples:
- *   - `"blue vib=5 val=13"`
- *   - `"hue-237 vib=5 val=13"`
+ *   - `"blue intensity=5 tone=13"`
+ *   - `"hue-237 intensity=5 tone=13"`
  *
  * @param oklchStr - An `oklch(L C h)` CSS string.
- * @returns A human-readable string like `"blue vib=5 val=13"`.
+ * @returns A human-readable string like `"blue intensity=5 tone=13"`.
  */
-export function hvvPretty(oklchStr: string): string {
-  const { hue, vib, val } = oklchToHVV(oklchStr);
-  return `${hue} vib=${vib} val=${val}`;
+export function citaPretty(oklchStr: string): string {
+  const { hue, intensity, tone } = oklchToCITA(oklchStr);
+  return `${hue} intensity=${intensity} tone=${tone}`;
 }
 
 // ---------------------------------------------------------------------------
-// hvvColor — HVV color computation function
+// citaColor — CITA color computation function
 // ---------------------------------------------------------------------------
 
 /**
- * Compute an oklch() CSS string from hue name, vibrancy (0-100), value (0-100),
+ * Compute an oklch() CSS string from hue name, intensity (0-100), tone (0-100),
  * and canonical lightness.
  *
- * val → L: piecewise via clamp, matching the CSS calc()+clamp() formula in
- * tug-palette.css exactly. Math.min(val, 50) ≡ CSS clamp(0, val, 50), and
- * Math.max(val - 50, 0) ≡ CSS (clamp(50, val, 100) - 50).
- *   val=0   → L_DARK (0.15)
- *   val=50  → canonicalL
- *   val=100 → L_LIGHT (0.96)
+ * tone → L: piecewise via clamp, matching the CSS calc()+clamp() formula in
+ * tug-palette.css exactly. Math.min(tone, 50) ≡ CSS clamp(0, tone, 50), and
+ * Math.max(tone - 50, 0) ≡ CSS (clamp(50, tone, 100) - 50).
+ *   tone=0   → L_DARK (0.15)
+ *   tone=50  → canonicalL
+ *   tone=100 → L_LIGHT (0.96)
  *
- * vib → C: linear from 0 to peakC.
- *   vib=0   → C=0 (achromatic)
- *   vib=50  → C = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = sRGB max
- *   vib=100 → C = peakC = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE
+ * intensity → C: linear from 0 to peakC.
+ *   intensity=0   → C=0 (achromatic)
+ *   intensity=50  → C = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE / 2 = sRGB max
+ *   intensity=100 → C = peakC = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE
  *
  * @param hueName - One of the 24 hue family names in HUE_FAMILIES
- * @param vib - Vibrancy axis, 0-100
- * @param val - Value axis, 0-100
- * @param canonicalL - Canonical lightness for this hue at vib=50, val=50
+ * @param intensity - Intensity axis, 0-100
+ * @param tone - Tone axis, 0-100
+ * @param canonicalL - Canonical lightness for this hue at intensity=50, tone=50
  * @param peakChroma - Optional peak chroma override. When omitted, defaults to
  *   MAX_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE (sRGB-derived). When provided,
  *   allows P3-wider chroma (e.g., MAX_P3_CHROMA_FOR_HUE[hueName] * PEAK_C_SCALE).
  * @returns An `oklch(L C h)` CSS string.
  */
-export function hvvColor(
+export function citaColor(
   hueName: string,
-  vib: number,
-  val: number,
+  intensity: number,
+  tone: number,
   canonicalL: number,
   peakChroma?: number,
 ): string {
@@ -549,13 +551,13 @@ export function hvvColor(
   const maxC = MAX_CHROMA_FOR_HUE[hueName] ?? 0.022;
   const peakC = peakChroma !== undefined ? peakChroma : maxC * PEAK_C_SCALE;
 
-  // val → L: piecewise via clamp (matches CSS calc()+clamp() formula in tug-palette.css)
+  // tone → L: piecewise via clamp (matches CSS calc()+clamp() formula in tug-palette.css)
   const L = L_DARK
-    + Math.min(val, 50) * (canonicalL - L_DARK) / 50
-    + Math.max(val - 50, 0) * (L_LIGHT - canonicalL) / 50;
+    + Math.min(tone, 50) * (canonicalL - L_DARK) / 50
+    + Math.max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50;
 
-  // vib → C: linear 0 → peakC
-  const C = (vib / 100) * peakC;
+  // intensity → C: linear 0 → peakC
+  const C = (intensity / 100) * peakC;
 
   const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
   return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
@@ -602,4 +604,3 @@ export function oklchToHex(L: number, C: number, h: number): string {
   const hex = (n: number) => n.toString(16).padStart(2, "0");
   return `#${hex(rr)}${hex(gg)}${hex(bb)}`;
 }
-

@@ -7,7 +7,7 @@
  * - positionPanel clamps to viewport boundaries
  * - PALETTE_VAR_REGEX correctly matches palette variable names
  * - resolveTokenChain walks var() references and terminates correctly
- * - extractHvvProvenance parses hue family, preset, and reads HVV constants
+ * - extractCitaProvenance parses hue family, preset, and reads CITA constants
  *
  * Note: Tests use happy-dom (preloaded via bunfig.toml). The StyleInspectorOverlay
  * constructor creates DOM elements directly so no React setup is needed here.
@@ -481,10 +481,10 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
 });
 
 // ---------------------------------------------------------------------------
-// StyleInspectorOverlay -- extractHvvProvenance
+// StyleInspectorOverlay -- extractCitaProvenance
 // ---------------------------------------------------------------------------
 
-describe("StyleInspectorOverlay -- extractHvvProvenance", () => {
+describe("StyleInspectorOverlay -- extractCitaProvenance", () => {
   let overlay: StyleInspectorOverlay;
 
   beforeEach(() => {
@@ -515,39 +515,39 @@ describe("StyleInspectorOverlay -- extractHvvProvenance", () => {
   });
 
   it("returns null for non-palette token names", () => {
-    expect(overlay.extractHvvProvenance("--tug-base-accent-default")).toBeNull();
-    expect(overlay.extractHvvProvenance("--tug-l-dark")).toBeNull();
-    expect(overlay.extractHvvProvenance("--tug-zoom")).toBeNull();
+    expect(overlay.extractCitaProvenance("--tug-base-accent-default")).toBeNull();
+    expect(overlay.extractCitaProvenance("--tug-l-dark")).toBeNull();
+    expect(overlay.extractCitaProvenance("--tug-zoom")).toBeNull();
   });
 
-  it("extractHvvProvenance('--tug-orange-light') returns { hue: 'orange', preset: 'light' }", () => {
+  it("extractCitaProvenance('--tug-orange-light') returns { hue: 'orange', preset: 'light' }", () => {
     document.body.style.setProperty("--tug-orange-canonical-l", " 0.780");
     document.body.style.setProperty("--tug-orange-peak-c", " 0.266");
     document.body.style.setProperty("--tug-orange-h", " 55");
 
-    const result = overlay.extractHvvProvenance("--tug-orange-light");
+    const result = overlay.extractCitaProvenance("--tug-orange-light");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("orange");
     expect(result!.preset).toBe("light");
   });
 
-  it("extractHvvProvenance('--tug-cyan') returns { hue: 'cyan', preset: 'canonical' }", () => {
+  it("extractCitaProvenance('--tug-cyan') returns { hue: 'cyan', preset: 'canonical' }", () => {
     document.body.style.setProperty("--tug-cyan-canonical-l", " 0.750");
     document.body.style.setProperty("--tug-cyan-peak-c", " 0.180");
     document.body.style.setProperty("--tug-cyan-h", " 192");
 
-    const result = overlay.extractHvvProvenance("--tug-cyan");
+    const result = overlay.extractCitaProvenance("--tug-cyan");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("cyan");
     expect(result!.preset).toBe("canonical");
   });
 
-  it("extractHvvProvenance('--tug-cobalt-intense') returns { hue: 'cobalt', preset: 'intense' }", () => {
+  it("extractCitaProvenance('--tug-cobalt-intense') returns { hue: 'cobalt', preset: 'intense' }", () => {
     document.body.style.setProperty("--tug-cobalt-canonical-l", " 0.680");
     document.body.style.setProperty("--tug-cobalt-peak-c", " 0.220");
     document.body.style.setProperty("--tug-cobalt-h", " 240");
 
-    const result = overlay.extractHvvProvenance("--tug-cobalt-intense");
+    const result = overlay.extractCitaProvenance("--tug-cobalt-intense");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("cobalt");
     expect(result!.preset).toBe("intense");
@@ -556,8 +556,8 @@ describe("StyleInspectorOverlay -- extractHvvProvenance", () => {
     expect(result!.hueAngle.trim()).toBe("240");
   });
 
-  it("returns empty strings for HVV constants when not set on body", () => {
-    const result = overlay.extractHvvProvenance("--tug-orange");
+  it("returns empty strings for CITA constants when not set on body", () => {
+    const result = overlay.extractCitaProvenance("--tug-orange");
     expect(result).not.toBeNull();
     expect(result!.hue).toBe("orange");
     expect(result!.preset).toBe("canonical");

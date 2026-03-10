@@ -1,10 +1,10 @@
 /**
- * Tests for the convert-hex-to-hvv conversion script.
+ * Tests for the convert-hex-to-cita conversion script.
  *
  * Tests cover:
  * - hexToOklch(): conversion matches known reference values
  * - isHexInsideFunction(): correctly identifies standalone vs. in-function hex
- * - convertValueHexToHvv(): #ffffff → var(--tug-white), inline function preservation
+ * - convertValueHexToCita(): #ffffff → var(--tug-white), inline function preservation
  * - Hex values inside CSS comments are not modified (PostCSS AST separates them)
  * - convertCSSFile() integration: AST walk preserves comments, non-hex values
  * - oklchDeltaE(): Euclidean distance in OKLCH space
@@ -21,14 +21,14 @@ import {
   linearSRGBToOklch,
   hexToOklch,
   isHexInsideFunction,
-  convertValueHexToHvv,
+  convertValueHexToCita,
   convertCSSFile,
   oklchDeltaE,
   parseOklchString,
   validateRoundTrip,
-} from "../../scripts/convert-hex-to-hvv";
+} from "../../scripts/convert-hex-to-cita";
 
-import { hvvColor, DEFAULT_CANONICAL_L } from "@/components/tugways/palette-engine";
+import { citaColor, DEFAULT_CANONICAL_L } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // hexToSRGB
@@ -139,9 +139,9 @@ describe("hexToOklch(): known reference values", () => {
     expect(parsed!.L).toBeLessThan(0.7);
   });
 
-  it("round-trip via hvvColor: converting oklch back to hvv and re-expanding stays close", () => {
-    // Pick a known canonical color: blue at vib=50, val=50
-    const canonOklch = hvvColor("blue", 50, 50, DEFAULT_CANONICAL_L["blue"]);
+  it("round-trip via citaColor: converting oklch back to cita and re-expanding stays close", () => {
+    // Pick a known canonical color: blue at intensity=50, tone=50
+    const canonOklch = citaColor("blue", 50, 50, DEFAULT_CANONICAL_L["blue"]);
     // Parse it and convert back to "hex-like" via oklch string
     const canonParsed = parseOklchString(canonOklch);
     expect(canonParsed).not.toBeNull();
@@ -202,58 +202,57 @@ describe("isHexInsideFunction()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// convertValueHexToHvv
+// convertValueHexToCita
 // ---------------------------------------------------------------------------
 
-describe("convertValueHexToHvv()", () => {
+describe("convertValueHexToCita()", () => {
   it("#ffffff → var(--tug-white)", () => {
-    expect(convertValueHexToHvv("#ffffff")).toBe("var(--tug-white)");
+    expect(convertValueHexToCita("#ffffff")).toBe("var(--tug-white)");
   });
 
   it("#FFFFFF (uppercase) → var(--tug-white)", () => {
-    expect(convertValueHexToHvv("#FFFFFF")).toBe("var(--tug-white)");
+    expect(convertValueHexToCita("#FFFFFF")).toBe("var(--tug-white)");
   });
 
-  it("standalone hex → --hvv(hue, vib, val)", () => {
-    const result = convertValueHexToHvv("#3f474c");
-    // hue may be a named hue (e.g. "cobalt") or raw angle (e.g. "hue-235")
-    expect(result).toMatch(/^--hvv\([\w-]+, \d+, \d+\)$/);
+  it("standalone hex → --cita(hue, i: intensity, t: tone)", () => {
+    const result = convertValueHexToCita("#3f474c");
+    expect(result).toMatch(/^--cita\(/);
     expect(result).not.toContain("#");
   });
 
   it("hex inside rgba() is preserved unchanged", () => {
     const value = "rgba(0, 0, 0, 0.5)";
-    expect(convertValueHexToHvv(value)).toBe(value);
+    expect(convertValueHexToCita(value)).toBe(value);
   });
 
   it("hex inside color-mix() is preserved unchanged", () => {
     const value = "color-mix(in oklch, #ffffff 50%, transparent)";
-    expect(convertValueHexToHvv(value)).toBe(value);
+    expect(convertValueHexToCita(value)).toBe(value);
   });
 
   it("var() references pass through unchanged", () => {
     const value = "var(--tug-blue)";
-    expect(convertValueHexToHvv(value)).toBe(value);
+    expect(convertValueHexToCita(value)).toBe(value);
   });
 
   it("transparent passes through unchanged", () => {
-    expect(convertValueHexToHvv("transparent")).toBe("transparent");
+    expect(convertValueHexToCita("transparent")).toBe("transparent");
   });
 
   it("oklch() passes through unchanged", () => {
     const value = "oklch(0.5 0.1 230)";
-    expect(convertValueHexToHvv(value)).toBe(value);
+    expect(convertValueHexToCita(value)).toBe(value);
   });
 
   it("compound value with trailing rgba preserved", () => {
     const value = "0 4px 16px rgba(0, 0, 0, 0.24)";
-    expect(convertValueHexToHvv(value)).toBe(value);
+    expect(convertValueHexToCita(value)).toBe(value);
   });
 
   it("standalone hex in compound value is converted", () => {
     const value = "1px solid #7f796a";
-    const result = convertValueHexToHvv(value);
-    expect(result).toMatch(/^1px solid --hvv\(/);
+    const result = convertValueHexToCita(value);
+    expect(result).toMatch(/^1px solid --cita\(/);
     expect(result).not.toContain("#7f796a");
   });
 });
@@ -283,7 +282,7 @@ describe("convertCSSFile(): hex values in CSS comments are not modified", () => 
     expect(result).toContain("/* another comment with #8a7200 */");
     // Declaration must be converted
     expect(result).not.toContain("--tug-base-accent-muted: #c46020;");
-    expect(result).toContain("--tug-base-accent-muted: --hvv(");
+    expect(result).toContain("--tug-base-accent-muted: --cita(");
   });
 });
 
@@ -306,10 +305,10 @@ describe("convertCSSFile(): structure preservation", () => {
 
     // Hex must be converted
     expect(result).not.toContain("#3f474c");
-    expect(result).toContain("--tug-base-bg: --hvv(");
+    expect(result).toContain("--tug-base-bg: --cita(");
 
-    // rgba is now converted to --hvv with alpha
-    expect(result).toContain("--hvv(black, 0, 0, 0.3)");
+    // rgba is now converted to --cita with alpha
+    expect(result).toContain("--cita(black, 0, 0,");
     // Non-color values must be preserved
     expect(result).toContain("var(--tug-blue)");
     expect(result).toContain("color-mix(in oklch, currentColor 20%, transparent)");
@@ -347,7 +346,7 @@ describe("convertCSSFile(): structure preservation", () => {
 
     expect(result).toContain("@font-face { font-family: 'Test'; src: url('/font.woff2'); }");
     expect(result).toContain(":root { --tug-scale: 1; }");
-    expect(result).toContain("--tug-base-bg: --hvv(");
+    expect(result).toContain("--tug-base-bg: --cita(");
   });
 });
 
@@ -388,7 +387,7 @@ describe("oklchDeltaE()", () => {
 
 describe("validateRoundTrip()", () => {
   it("returns no failures for a perfectly round-tripped color", () => {
-    // Use a hex value that round-trips cleanly: cobalt at some known HVV coords.
+    // Use a hex value that round-trips cleanly: cobalt at some known CITA coords.
     // We pick a simple case: convert a CSS, then validate.
     const tmpFile = join(os.tmpdir(), `test-roundtrip-${Date.now()}.css`);
     const css = "body { --tug-base-bg: #3f474c; }";
@@ -407,7 +406,7 @@ describe("validateRoundTrip()", () => {
     // Craft a CSS where the "converted" value has a very wrong oklch
     const originalCSS = "body { --my-color: #3f474c; }";
     // Deliberately wrong conversion: a color far from the original
-    const badConverted = "body { --my-color: --hvv(cherry, 90, 90); }";
+    const badConverted = "body { --my-color: --cita(cherry, 90, 90); }";
 
     const failures = validateRoundTrip(originalCSS, badConverted, 0.001);
     // cherry at vib=90, val=90 is a very saturated red — very far from #3f474c (dark gray-blue)
