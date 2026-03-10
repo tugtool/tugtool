@@ -120,11 +120,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with twelve entries", () => {
+  it("gallery-buttons has defaultTabs with thirteen entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(12);
+    expect(reg!.defaultTabs!.length).toBe(13);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -133,7 +133,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("other eleven gallery registrations do NOT have defaultTabs or defaultTitle", () => {
+  it("other twelve gallery registrations do NOT have defaultTabs or defaultTitle", () => {
     registerGalleryCards();
     const others = [
       "gallery-chain-actions",
@@ -147,6 +147,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-scale-timing",
       "gallery-cascade-inspector",
       "gallery-animator",
+      "gallery-skeleton",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -161,8 +162,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has twelve entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(12);
+  it("has thirteen entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(13);
   });
 
   it("entries have the correct componentIds", () => {
@@ -178,6 +179,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(componentIds).toContain("gallery-palette");
     expect(componentIds).toContain("gallery-scale-timing");
     expect(componentIds).toContain("gallery-cascade-inspector");
+    expect(componentIds).toContain("gallery-skeleton");
   });
 
   it("entries have the correct titles", () => {
@@ -193,6 +195,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("Palette Engine");
     expect(titles).toContain("Scale & Timing");
     expect(titles).toContain("Cascade Inspector");
+    expect(titles).toContain("TugSkeleton");
   });
 
   it("all entries are closable", () => {
@@ -206,7 +209,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates twelve-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates thirteen-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -221,13 +224,13 @@ describe("DeckManager.addCard('gallery-buttons') creates twelve-tab gallery card
     cleanup();
   });
 
-  it("creates a card with twelve tabs, each with a distinct componentId", () => {
+  it("creates a card with thirteen tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(12);
+    expect(card.tabs.length).toBe(13);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -242,6 +245,7 @@ describe("DeckManager.addCard('gallery-buttons') creates twelve-tab gallery card
     expect(componentIds).toContain("gallery-scale-timing");
     expect(componentIds).toContain("gallery-cascade-inspector");
     expect(componentIds).toContain("gallery-animator");
+    expect(componentIds).toContain("gallery-skeleton");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -265,7 +269,7 @@ describe("DeckManager.addCard('gallery-buttons') creates twelve-tab gallery card
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(12);
+    expect(new Set(ids).size).toBe(13);
   });
 });
 
