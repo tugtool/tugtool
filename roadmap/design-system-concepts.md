@@ -16,6 +16,8 @@
 10. **Controls emit actions; responders handle actions.** Controls (buttons, sliders, pickers) are not responder nodes (D63). They dispatch ActionEvents into the chain. Responders receive and handle them. [D61, D63]
 11. **After triggering child `setState` from a parent effect, never measure child DOM inline — it's stale.** Use a child-driven ready callback: the child's own `useLayoutEffect` fires after its DOM commits. This is a React contract, not a timing bet. [D78]
 12. **Never use `requestAnimationFrame` for operations that depend on React state commits.** RAF timing relative to React's commit cycle is an implementation detail of the browser scheduler, not a contract. Use the ready-callback pattern (Rule 11) instead. [D79]
+13. **CSS handles declarative motion. TugAnimator handles programmatic motion. `requestAnimationFrame` is not for animation.** Three lanes, no overlap. CSS (`transition`, `@keyframes`) owns hover/focus states, Radix `data-state` enter/exit, continuous/infinite animations (shimmer, spinners that need no completion), and anything where the browser's compositor can run it with zero JS. TugAnimator owns animations that need completion promises, cancellation semantics, multi-element coordination, or physics curves. `requestAnimationFrame` is for gesture-driven frame loops (drag, resize, autoscroll) that read input and write DOM each frame — these are not animations. [D76]
+14. **Radix Presence owns enter/exit DOM lifecycle; TugAnimator does not cross that boundary.** Radix delays DOM removal by listening for `animationend`, which WAAPI does not fire. All Radix-managed enter/exit (Dialog, Popover, Dropdown, Toast) uses CSS `@keyframes` via `tw-animate-css` + `data-state`. TugAnimator is for animations where code — not Radix — controls DOM insertion and removal: flash overlays, skeleton-to-content crossfades, startup overlay fade. [D76]
 
 ---
 
@@ -1863,7 +1865,20 @@ Spring animations support velocity matching on interruption: when a running spri
 2. They auto-reverse when the triggering state changes (e.g., hover off mid-transition)
 3. They require no event listeners or cleanup
 
-TugAnimator handles everything else: enter/exit animations, skeleton shimmer, coordinated transitions, spring physics, drag release, flash overlays, startup fade. The existing `@keyframes` animations and `requestAnimationFrame` loops in the codebase will be migrated to TugAnimator calls.
+TugAnimator handles everything else: coordinated transitions, spring physics, drag release, flash overlays, startup fade, and skeleton-to-content crossfades. CSS `@keyframes` remain for Radix-managed enter/exit, continuous/infinite animations (shimmer, gallery petals), and any animation that needs no completion handler or cancellation. Gesture-driven `requestAnimationFrame` loops (drag tracking, resize, autoscroll) are not animations and stay as rAF.
+
+**Decision rule — CSS vs TugAnimator vs rAF:**
+
+| Question | → CSS | → TugAnimator | → rAF (not animation) |
+|----------|-------|---------------|----------------------|
+| Needs completion promise? | No | **Yes** | N/A |
+| Needs cancellation modes? | No | **Yes** | N/A |
+| Needs coordination across elements? | No | **Yes** | N/A |
+| Needs physics (spring, bounce, friction)? | No | **Yes** | N/A |
+| Triggered by CSS state (hover, focus, data-state)? | **Yes** | No | No |
+| Runs continuously/infinitely? | **Yes** | No | No |
+| Radix manages the DOM node? | **Yes** (`@keyframes`) | No | No |
+| Reads pointer/input each frame? | No | No | **Yes** |
 
 #### Enter/Exit Transitions {#enter-exit-transitions}
 
@@ -4364,4 +4379,18 @@ The Web Animations API (WAAPI) fills all three gaps with full browser support: `
 
 - **Physics solvers.** Spring (damped harmonic oscillator with velocity matching on interruption), gravity + bounce (coefficient of restitution), friction/deceleration (exponential decay). All pre-computed into WAAPI keyframes.
 
-- **Phase 7 split into three sub-phases.** 7a: TugAnimator engine (foundation). 7b: Enter/exit + managed animations (migrate @keyframes and rAF loops to TugAnimator, skeleton shimmer, per-card shapes). 7c: Startup continuity (three-layer flash elimination).
+- **Phase 7 split into three sub-phases.** 7a: TugAnimator engine (foundation). 7b: Managed animations + skeleton loading (migrate programmatic @keyframes to TugAnimator; CSS-only animations and rAF loops stay — see Entry 33). 7c: Startup continuity (three-layer flash elimination).
+
+### Entry 33: Animation Boundary Rules — Rules 13–14 Added {#log-33} (2026-03-10)
+
+Pre-planning review for Phase 7a revealed that Entry 32's scope for TugAnimator was over-broad. The original framing ("everything else consolidates into TugAnimator") would have migrated continuous CSS animations (gallery petals, skeleton shimmer), Radix-managed enter/exit, and gesture-driven rAF loops — none of which benefit from WAAPI.
+
+**Key decisions:**
+
+- **Added Rule 13 to Rules of Tugways.** Establishes three lanes: CSS for declarative/continuous motion, TugAnimator for programmatic motion (completion, cancellation, coordination, physics), `requestAnimationFrame` for gesture-driven frame loops. No overlap.
+
+- **Added Rule 14 to Rules of Tugways.** Radix Presence owns enter/exit DOM lifecycle via `animationend`. WAAPI doesn't fire `animationend`. Therefore TugAnimator never drives Radix-managed enter/exit. TugAnimator is for code-controlled DOM insertion/removal only (flash overlays, skeleton crossfades, startup overlay).
+
+- **Added decision rule cheat sheet** to the TugAnimator section of Concept 8 — an 8-row table that resolves CSS vs TugAnimator vs rAF for any animation scenario.
+
+- **Narrowed Phase 7b scope** in the strategy document. Removed: gallery petals/pole migration, rAF loop migration, skeleton shimmer via TugAnimator. Kept: flash overlay, dropdown blink, button spinner migrations (all need completion/cancellation). Added explicit "keep as CSS" and "keep as rAF" sections for clarity.

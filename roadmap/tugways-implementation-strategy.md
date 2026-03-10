@@ -995,33 +995,37 @@ Phase 7 is split into three sub-phases.
 
 **Result**: TugAnimator is the single programmatic animation engine for tugways. Completion handlers, cancellation, spring physics, and coordinated groups all work. No existing code is migrated yet — this phase establishes the foundation only.
 
-#### Phase 7b: Enter/Exit + Managed Animations
+#### Phase 7b: Managed Animations + Skeleton Loading
 
-**Goal**: Migrate all existing CSS `@keyframes` and `requestAnimationFrame` animations to TugAnimator. Implement skeleton loading states.
+**Goal**: Migrate programmatic animations to TugAnimator (per Rule 13: only animations needing completion promises, cancellation, or coordination). CSS-only animations stay as CSS. Implement skeleton loading states.
 
 **What to do**:
-1. Migrate enter/exit animations to TugAnimator — Radix data-state triggers TugAnimator calls instead of CSS @keyframes where programmatic control is needed (coordinated enter/exit, physics-based). Simple Radix enter/exit can keep CSS @keyframes where completion/cancellation isn't needed.
-2. Migrate existing `@keyframes` animations:
+1. Migrate programmatic `@keyframes` animations to TugAnimator:
    - Flash overlay (`set-flash-fade` in chrome.css) → TugAnimator with completion-based cleanup (replaces `animationend` listener)
    - Dropdown blink (`tug-dropdown-blink`) → TugAnimator
    - Button spinner (`tug-button-spin`) → TugAnimator
-   - Gallery petals/pole animations → TugAnimator
-3. Migrate `requestAnimationFrame` loops in card-frame.tsx (drag, resize) → TugAnimator
-4. Implement skeleton shimmer via TugAnimator — `background-attachment: fixed` for synchronized shimmer across all skeleton elements
+2. Keep CSS-only animations as CSS `@keyframes` (Rule 13 — no completion/cancellation needed):
+   - Gallery petals/pole animations — continuous, infinite, already respect `--tug-timing`
+   - Skeleton shimmer — continuous, synchronized via `background-attachment: fixed`
+   - All Radix-managed enter/exit — Radix Presence depends on `animationend` (Rule 14)
+3. Keep `requestAnimationFrame` loops as-is (Rule 13 — gesture-driven, not animations):
+   - `card-frame.tsx` drag/resize loops
+   - `selection-guard.ts` autoscroll
+   - `tab-drag-coordinator.ts` drag feedback
+   - `tug-tab-bar.tsx` overflow detection
+4. Implement skeleton shimmer via CSS `@keyframes` with `background-attachment: fixed` for synchronized shimmer across all skeleton elements
 5. Implement per-card skeleton shapes — each card type defines its own skeleton structure
 6. Implement skeleton → content crossfade via TugAnimator completion promise (skeleton fades out, content fades in, skeleton removed from DOM on completion)
-7. Verify: all existing animations work identically, skeleton shimmer is synchronized, skeleton → content transition is smooth
+7. Verify: migrated animations work identically, skeleton shimmer is synchronized, skeleton → content transition is smooth
 
 **Files created/modified**:
-1. `tugdeck/styles/chrome.css` — remove `@keyframes set-flash-fade`
+1. `tugdeck/styles/chrome.css` — remove `@keyframes set-flash-fade`, add `@keyframes td-shimmer`
 2. `tugdeck/src/components/tugways/tug-button.css` — remove `@keyframes tug-button-spin`
 3. `tugdeck/src/components/tugways/tug-dropdown.css` — remove `@keyframes tug-dropdown-blink`
-4. `tugdeck/src/components/tugways/cards/gallery-card.css` — remove `@keyframes` for petals/pole
-5. `tugdeck/src/components/chrome/card-frame.tsx` — replace rAF loops with TugAnimator
-6. `tugdeck/src/components/tugways/tugcard.tsx` — skeleton mounting and crossfade logic
-7. Per-card skeleton components as needed
+4. `tugdeck/src/components/tugways/tugcard.tsx` — skeleton mounting and crossfade logic
+5. Per-card skeleton components as needed
 
-**Result**: One programmatic animation system. No more `@keyframes` for non-hover animations, no more manual `requestAnimationFrame` loops, no more `animationend` event listener cleanup. Skeleton loading states work for all card types.
+**Result**: Clear animation boundary enforced. Programmatic animations (needing completion/cancellation) use TugAnimator. CSS-only animations (continuous, Radix enter/exit) stay as `@keyframes`. Gesture-driven rAF loops are unchanged. Skeleton loading states work for all card types.
 
 #### Phase 7c: Startup Continuity
 
@@ -1040,7 +1044,7 @@ Phase 7 is split into three sub-phases.
 
 **Result**: Startup is seamless. The user never sees a blank or flashing viewport. Overlay fade-out uses TugAnimator for consistency (completion-based cleanup).
 
-**Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates existing code and adds skeletons. Phase 7c is the smallest phase — mostly HTML and module wiring.
+**Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates only programmatic animations to TugAnimator and adds skeletons — CSS-only animations and rAF loops are untouched (Rules 13–14). Phase 7c is the smallest phase — mostly HTML and module wiring.
 
 ### Phase 8a: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
 
@@ -1414,7 +1418,7 @@ The suggested plan sequence:
 35. `tugways-phase-5g2-tug-color-postcss` — PostCSS `--tug-color()` plugin, `oklchToTugColor()` reverse mapper, convert all theme hex tokens to `--tug-color()` notation
 36. `tugways-phase-6-feed` — feed hooks, data flow
 37. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
-38. `tugways-phase-7b-managed-animations` — migrate @keyframes/rAF to TugAnimator, skeleton loading states
+38. `tugways-phase-7b-managed-animations` — migrate programmatic @keyframes to TugAnimator (CSS-only and rAF stay), skeleton loading states
 39. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
 40. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
 41. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
