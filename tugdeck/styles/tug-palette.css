@@ -1,3 +1,4 @@
+/* GENERATED FILE — do not edit. Source: palette-engine.ts */
 /**
  * tug-palette.css — HVV Palette Engine (Pure CSS)
  *
@@ -55,12 +56,12 @@ body {
 
   /* cherry — hue angle 10 */
   --tug-cherry-h: 10;
-  --tug-cherry-canonical-l: 0.62;
+  --tug-cherry-canonical-l: 0.619;
   --tug-cherry-peak-c: 0.44;
 
   /* red — hue angle 25 */
   --tug-red-h: 25;
-  --tug-red-canonical-l: 0.62;
+  --tug-red-canonical-l: 0.659;
   --tug-red-peak-c: 0.44;
 
   /* tomato — hue angle 35 */

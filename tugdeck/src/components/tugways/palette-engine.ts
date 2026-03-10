@@ -22,6 +22,9 @@
  * @module components/tugways/palette-engine
  */
 
+// Single source of truth for canonical L values and global lightness anchors.
+import tugHvvCanonical from "../../../../roadmap/tug-hvv-canonical.json";
+
 // ---------------------------------------------------------------------------
 // HUE_FAMILIES — 24 named hue families mapped to OKLCH hue angles
 // ---------------------------------------------------------------------------
@@ -267,11 +270,17 @@ export function _deriveChromaCaps(
 // HVV Constants
 // ---------------------------------------------------------------------------
 
-/** Lightness at val=0 (very dark). */
-export const L_DARK = 0.15;
+/**
+ * Lightness at val=0 (very dark).
+ * Source: tug-hvv-canonical.json `global.l_dark`.
+ */
+export const L_DARK: number = tugHvvCanonical.global.l_dark;
 
-/** Lightness at val=100 (very light). */
-export const L_LIGHT = 0.96;
+/**
+ * Lightness at val=100 (very light).
+ * Source: tug-hvv-canonical.json `global.l_light`.
+ */
+export const L_LIGHT: number = tugHvvCanonical.global.l_light;
 
 /**
  * Peak chroma scale factor. Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE.
@@ -283,33 +292,12 @@ export const PEAK_C_SCALE = 2;
  * Default canonical L values for all 24 hue families (Table T02).
  * These are the reference lightness values at vib=50, val=50.
  * Must remain above 0.555 (piecewise min() constraint, D04).
+ *
+ * Derived from tug-hvv-canonical.json `hues[*].canonical_l`.
  */
-export const DEFAULT_CANONICAL_L: Record<string, number> = {
-  cherry: 0.619,
-  red:    0.659,
-  tomato: 0.704,
-  flame:  0.740,
-  orange: 0.780,
-  amber:  0.821,
-  gold:   0.852,
-  yellow: 0.901,
-  lime:   0.861,
-  green:  0.821,
-  mint:   0.807,
-  teal:   0.803,
-  cyan:   0.803,
-  sky:    0.807,
-  blue:   0.771,
-  cobalt: 0.744,
-  violet: 0.708,
-  purple: 0.686,
-  plum:   0.731,
-  pink:   0.794,
-  rose:   0.758,
-  magenta:0.726,
-  berry:  0.668,
-  coral:  0.632,
-};
+export const DEFAULT_CANONICAL_L: Record<string, number> = Object.fromEntries(
+  Object.entries(tugHvvCanonical.hues).map(([hue, data]) => [hue, data.canonical_l]),
+);
 
 /**
  * Five convenience presets per hue. Each preset maps a name to {vib, val}.

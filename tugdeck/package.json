@@ -7,6 +7,7 @@
     "build": "vite build",
     "check": "bunx tsc --noEmit",
     "dev": "vite",
+    "generate:palette": "bun run scripts/generate-tug-palette.ts",
     "test": "bun test"
   },
   "dependencies": {
