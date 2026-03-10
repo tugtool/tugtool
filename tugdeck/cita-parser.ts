@@ -212,7 +212,7 @@ function parseColorTokens(
     return { name, offset: 0 };
   }
 
-  // Color name with offset: IDENT (PLUS|MINUS) NUMBER
+  // Color name with explicit sign offset: IDENT (PLUS|MINUS) NUMBER
   if (
     tokens.length === 3 &&
     (tokens[1].type === "plus" || tokens[1].type === "minus") &&
@@ -220,6 +220,14 @@ function parseColorTokens(
   ) {
     const sign = tokens[1].type === "plus" ? 1 : -1;
     const offset = sign * parseFloat(tokens[2].value);
+    return { name, offset };
+  }
+
+  // Color name with unsigned offset: IDENT NUMBER
+  // Lightning CSS (Tailwind v4) normalizes `+10` → `10` in custom property
+  // values, stripping the `+` sign.  Accept bare numbers as positive offsets.
+  if (tokens.length === 2 && tokens[1].type === "number") {
+    const offset = parseFloat(tokens[1].value);
     return { name, offset };
   }
 
