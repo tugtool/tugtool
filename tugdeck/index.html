@@ -6,7 +6,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:;">
   <title>tugdeck</title>
 </head>
-<body>
+<body style="margin:0;padding:0;overflow:hidden;background-color:#16171a">
+  <div id="deck-startup-overlay" style="position:fixed;inset:0;background:#16171a;z-index:99999;pointer-events:none"></div>
   <script src="/diagnostic.js"></script>
   <div id="deck-container"></div>
   <script type="module" src="/src/main.tsx"></script>

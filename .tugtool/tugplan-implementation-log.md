@@ -9,6 +9,54 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-10T22:58:06Z
+---
+
+## step-4: Verification-only step. All automated exit criteria pass: inline body styles, startup overlay, CSS HMR boundary, TypeScript compilation clean. Visual scenarios deferred to manual testing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
+step: step-3
+date: 2025-03-10T22:55:12Z
+---
+
+## step-3: Created css-imports.ts consolidating all CSS side-effect imports with import.meta.hot.accept() self-accept. Updated main.tsx to import css-imports instead of individual CSS files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
+step: step-2
+date: 2025-03-10T22:51:50Z
+---
+
+## step-2: Added deck-startup-overlay div to index.html with fixed positioning and #16171a background. Added useLayoutEffect in DeckCanvas to fade out overlay using TugAnimator animate(). Updated hook order comments in deck-canvas.tsx.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
+step: step-1
+date: 2025-03-10T22:46:47Z
+---
+
+## step-1: Added inline styles to <body> tag in index.html (margin:0, padding:0, overflow:hidden, background-color:#16171a) to eliminate white flash on page load. Updated plan file to reflect verified Brio canvas color #16171a.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
 step: step-10
 date: 2025-03-10T21:16:39Z
 ---

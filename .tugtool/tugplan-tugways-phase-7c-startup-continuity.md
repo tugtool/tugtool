@@ -25,7 +25,7 @@ Phase 7a delivered TugAnimator (WAAPI wrapper with completion promises, cancella
 
 #### Strategy {#strategy}
 
-- Layer A (inline body styles) eliminates the white flash by setting `background-color:#1c1e22` directly on `<body>` in `index.html`, applied during HTML parse before any CSS loads.
+- Layer A (inline body styles) eliminates the white flash by setting `background-color:#16171a` directly on `<body>` in `index.html`, applied during HTML parse before any CSS loads.
 - Layer B (startup overlay) hides the mount transition with a full-viewport overlay div that fades out via TugAnimator, triggered by `useLayoutEffect` in DeckCanvas — the onContentReady pattern (Rules 11-12, D79) at viewport scope.
 - Layer C (CSS HMR boundary) prevents CSS changes from triggering full page reloads by isolating all CSS imports into a self-accepting `css-imports.ts` module.
 - Each layer is independent and commits separately, allowing isolated verification.
@@ -65,7 +65,7 @@ Phase 7a delivered TugAnimator (WAAPI wrapper with completion promises, cancella
 
 #### Assumptions {#assumptions}
 
-- The Brio theme's `--tug-base-bg-canvas` token (computed from `--tug-color(violet-6, i: 2, t: 5)`) resolves to `#1c1e22` as specified in the design docs; this will be verified at implementation time via `canvasColorHex('brio')` in `canvas-color.ts`
+- The Brio theme's `--tug-base-bg-canvas` token (computed from `--tug-color(violet-6, i: 2, t: 5)`) resolves to `#16171a` as specified in the design docs; this will be verified at implementation time via `canvasColorHex('brio')` in `canvas-color.ts`
 - Vite's CSS module replacement (re-injecting `<style>` tags on HMR) does not leak duplicate style elements
 - The startup `useLayoutEffect` in DeckCanvas will be the first `useLayoutEffect` in the hook order, added before the existing selection highlight sync and initial clip-path effects
 - `anim.finished.then(() => overlay.remove())` is safe for cleanup — TugAnimation.finished resolves after the animation completes visually
@@ -76,7 +76,7 @@ Phase 7a delivered TugAnimator (WAAPI wrapper with completion promises, cancella
 
 #### [D01] Inline body styles use Brio default color (DECIDED) {#d01-inline-brio-default}
 
-**Decision:** The inline `style` attribute on `<body>` uses `background-color:#1c1e22` (Brio's canvas color) as a hardcoded value.
+**Decision:** The inline `style` attribute on `<body>` uses `background-color:#16171a` (Brio's canvas color) as a hardcoded value.
 
 **Rationale:**
 - Inline styles are applied during HTML parse, before any CSS or JS executes — this is the only way to eliminate the white flash completely
@@ -137,12 +137,12 @@ Phase 7a delivered TugAnimator (WAAPI wrapper with completion promises, cancella
 The `<body>` tag in `tugdeck/index.html` must have the following inline style:
 
 ```html
-<body style="margin:0;padding:0;overflow:hidden;background-color:#1c1e22">
+<body style="margin:0;padding:0;overflow:hidden;background-color:#16171a">
 ```
 
 - `margin:0;padding:0` — eliminates default browser margin/padding
 - `overflow:hidden` — prevents scrollbars during mount
-- `background-color:#1c1e22` — Brio default canvas color (`--tug-base-bg-canvas`), applied during HTML parse before any CSS loads
+- `background-color:#16171a` — Brio default canvas color (`--tug-base-bg-canvas`), applied during HTML parse before any CSS loads
 
 Note: `margin:0`, `padding:0`, and `overflow:hidden` intentionally duplicate rules in `globals.css`. The inline versions cover the window during the ~20-50ms before CSS loads; once `globals.css` is parsed, the CSS rules take over with identical values.
 
@@ -154,7 +154,7 @@ A div with id `deck-startup-overlay` is added to `index.html` as the first child
 
 ```html
 <div id="deck-startup-overlay"
-     style="position:fixed;inset:0;background:#1c1e22;z-index:99999;
+     style="position:fixed;inset:0;background:#16171a;z-index:99999;
             pointer-events:none"></div>
 ```
 
@@ -268,14 +268,14 @@ import "./css-imports";
 - Modified `tugdeck/index.html` — body tag gains inline style attribute
 
 **Tasks:**
-- [ ] Verify `#1c1e22` matches Brio's `--tug-base-bg-canvas` by checking that `canvasColorHex('brio')` in `tugdeck/src/canvas-color.ts` computes to `#1c1e22` (run in browser console or write a quick test). If the computed value differs, update all occurrences of `#1c1e22` in this plan and in `index.html` to match.
-- [ ] Edit `tugdeck/index.html`: add `style="margin:0;padding:0;overflow:hidden;background-color:#1c1e22"` to the `<body>` tag
+- [ ] Verify `#16171a` matches Brio's `--tug-base-bg-canvas` by checking that `canvasColorHex('brio')` in `tugdeck/src/canvas-color.ts` computes to `#16171a` (run in browser console or write a quick test). If the computed value differs, update all occurrences of `#16171a` in this plan and in `index.html` to match.
+- [ ] Edit `tugdeck/index.html`: add `style="margin:0;padding:0;overflow:hidden;background-color:#16171a"` to the `<body>` tag
 
 **Tests:**
 - [ ] Visual verification: full page reload no longer shows a white flash (body is dark from first paint)
 
 **Checkpoint:**
-- [ ] `grep -q 'background-color:#1c1e22' tugdeck/index.html` confirms inline style is present
+- [ ] `grep -q 'background-color:#16171a' tugdeck/index.html` confirms inline style is present
 
 ---
 
@@ -292,7 +292,7 @@ import "./css-imports";
 - Modified `tugdeck/src/components/chrome/deck-canvas.tsx` — add `useLayoutEffect` for overlay fade-out, add `animate` import from tug-animator
 
 **Tasks:**
-- [ ] Add `<div id="deck-startup-overlay" style="position:fixed;inset:0;background:#1c1e22;z-index:99999;pointer-events:none"></div>` as first child of `<body>` in `index.html`, before the diagnostic script
+- [ ] Add `<div id="deck-startup-overlay" style="position:fixed;inset:0;background:#16171a;z-index:99999;pointer-events:none"></div>` as first child of `<body>` in `index.html`, before the diagnostic script
 - [ ] Add `import { animate } from "@/components/tugways/tug-animator"` to deck-canvas.tsx
 - [ ] Add startup overlay `useLayoutEffect` as the first `useLayoutEffect` in DeckCanvas, before the selection highlight sync effect, per Spec S03
 - [ ] Update both hook order comments in DeckCanvas. The inline comment (line 214) is stale — it says "initial shadows" instead of the current hook names. First, bring the inline comment into full sync with the top-of-file JSDoc comment (line 44), then add the new `useLayoutEffect (startup overlay fade-out)` entry as the first layout effect in both comments
@@ -367,7 +367,7 @@ import "./css-imports";
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `tugdeck/index.html` has inline body styles with `background-color:#1c1e22` (grep verification)
+- [ ] `tugdeck/index.html` has inline body styles with `background-color:#16171a` (grep verification)
 - [ ] `tugdeck/index.html` has `deck-startup-overlay` div (grep verification)
 - [ ] `tugdeck/src/css-imports.ts` exists with HMR self-accept (file exists + grep verification)
 - [ ] `tugdeck/src/main.tsx` imports `./css-imports` instead of individual CSS files (grep verification)

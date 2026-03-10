@@ -1,6 +1,6 @@
-// CSS imports — globals.css imports tailwindcss and tug-tokens.css
-import "./globals.css";
-import "../styles/chrome.css";
+// CSS HMR boundary — all CSS side-effect imports are consolidated in css-imports.ts,
+// which self-accepts HMR updates so CSS changes never trigger a full page reload here.
+import "./css-imports";
 
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck-manager";
