@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-10T18:45:12Z
+---
+
+## step-6: Integration checkpoint: 52 TugAnimator tests pass, TypeScript type-checking clean, full suite 1312 tests pass with zero regressions. All 9 symbols verified, no circular dependencies.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7a-tug-animator.md
+
+---
+
+---
 step: step-5
 date: 2025-03-10T18:40:58Z
 ---
