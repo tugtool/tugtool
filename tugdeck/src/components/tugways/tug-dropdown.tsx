@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { animate } from "@/components/tugways/tug-animator";
 import "./tug-dropdown.css";
 
 // ---- Types (Spec S04) ----
@@ -51,9 +52,6 @@ export interface TugDropdownProps {
   onSelect: (id: string) => void;
 }
 
-// Blink animation duration in ms — matches @keyframes tug-dropdown-blink in CSS.
-const BLINK_DURATION_MS = 250;
-
 // ---- TugDropdown ----
 
 /**
@@ -66,12 +64,12 @@ const BLINK_DURATION_MS = 250;
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  *
- * Selection behavior (Rule 4 compliant):
+ * Selection behavior (Rule 4 compliant, [D02]):
  * - `onSelect` is intercepted; Radix close is prevented via event.preventDefault().
- * - A CSS class is applied imperatively to the clicked item's DOM element.
- * - After the blink animation completes, the class is removed, the callback fires,
- *   and Escape is dispatched to the document so Radix closes the menu — no React
- *   state is involved in the appearance change.
+ * - A double-blink background-color animation is driven by TugAnimator (programmatic
+ *   lane, Rule 13 — needs completion sequencing to know when to close the menu).
+ * - animate().finished resolves when the blink completes; the callback fires and
+ *   Escape is dispatched so Radix closes the menu — no React state involved.
  */
 export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
@@ -86,12 +84,36 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
     const target = event.currentTarget as HTMLElement;
 
-    // Apply blink class imperatively — Rule 4: DOM mutation, never React state.
-    target.classList.add("tug-dropdown-item-selected");
+    // Read the computed surface color for WAAPI keyframes.
+    // getPropertyValue() returns a string with leading whitespace per CSS spec;
+    // .trim() is required. WAAPI cannot interpolate CSS variable references
+    // directly, so we must resolve to a concrete color value. [D02]
+    const surfaceDefault = getComputedStyle(target)
+      .getPropertyValue("--tug-base-surface-default")
+      .trim() || "transparent";
 
-    setTimeout(() => {
-      // Remove blink class.
-      target.classList.remove("tug-dropdown-item-selected");
+    // Read the standard easing value at runtime — WAAPI does not resolve
+    // var() references in easing strings. [D02]
+    const easing = getComputedStyle(target)
+      .getPropertyValue("--tug-base-motion-easing-standard")
+      .trim() || "cubic-bezier(0.2, 0, 0, 1)";
+
+    // Double-blink keyframes: highlight → transparent → highlight → highlight.
+    // Reproduces the Mac-style menu selection blink. [D02]
+    const blinkKeyframes = [
+      { backgroundColor: surfaceDefault },
+      { backgroundColor: "transparent" },
+      { backgroundColor: surfaceDefault },
+      { backgroundColor: surfaceDefault },
+    ];
+
+    // Drive blink via TugAnimator; sequence menu close on animate().finished.
+    // moderate = 200ms. blinkingRef is reset inside .finished.then() so the
+    // trigger (which persists after menu close) can accept new selections. [D02]
+    animate(target, blinkKeyframes, {
+      duration: "--tug-base-motion-duration-moderate",
+      easing,
+    }).finished.then(() => {
       blinkingRef.current = false;
 
       // Fire caller's callback.
@@ -100,7 +122,7 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
       // Close the menu by dispatching Escape — Radix handles this natively
       // without any React state re-render.
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    }, BLINK_DURATION_MS);
+    });
   }
 
   return (

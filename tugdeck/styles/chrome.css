@@ -1,7 +1,7 @@
 /**
  * Chrome — minimal CSS for the tugdeck chrome layer.
  * Retains rules that are clearer as CSS than Tailwind utilities:
- * resize handle hit areas, snap guide borders, virtual sash hover, flash keyframes.
+ * resize handle hit areas, snap guide borders, virtual sash hover, flash overlays.
  * All other chrome styles are Tailwind utilities on React components.
  * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-base-* tokens from tug-tokens.css.
  */
@@ -70,15 +70,10 @@
   border-radius: 0;
 }
 
-/* ---- Card flash feedback (single-card break-out flash) ---- */
-@keyframes set-flash-fade {
-  0%   { opacity: 1; }
-  100% { opacity: 0; }
-}
-
 /*
  * .card-flash-overlay: full-perimeter flash on a single card frame (break-out flash).
  * Renamed from .set-flash-overlay; used exclusively by flashCardPerimeter(). [D55]
+ * Opacity is driven by TugAnimator.animate().finished (programmatic lane, Rule 13).
  */
 .card-flash-overlay {
   position: absolute;
@@ -89,7 +84,6 @@
   box-shadow:
     0 0 5px --tug-color(orange, i: 50, t: 50, a: 60),
     inset 0 0 16px --tug-color(orange, i: 50, t: 50, a: 20);
-  animation: set-flash-fade 0.5s ease-out forwards;
   z-index: 2;
   box-sizing: border-box;
 }
@@ -97,12 +91,12 @@
 /*
  * SVG hull flash: one SVG element per set, positioned on the ResponderScope.
  * Uses overflow: visible so the glow filter extends beyond SVG bounds.
- * Animated by the set-flash-fade keyframe; self-removes on animationend. [D02, Spec S03]
+ * Opacity is driven by TugAnimator.animate().finished (programmatic lane, Rule 13).
+ * [D01, D02, Spec S03]
  */
 .set-flash-svg {
   position: absolute;
   overflow: visible;
   pointer-events: none;
   z-index: 9999;
-  animation: set-flash-fade 0.5s ease-out forwards;
 }
