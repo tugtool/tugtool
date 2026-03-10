@@ -272,8 +272,7 @@ body {
   --tug-base-accent-cool-default: var(--tug-cobalt-intense);
   --tug-base-accent-positive: var(--tug-green-intense);
   --tug-base-accent-warning: var(--tug-yellow-intense);
-  --tug-base-accent-danger: --hvv(red, 50, 50);
-/*   --tug-base-accent-danger: var(--tug-red); */
+  --tug-base-accent-danger: var(--tug-red);
   --tug-base-accent-info: var(--tug-cyan-intense);
 
   /* Accent-derived interaction tokens */
