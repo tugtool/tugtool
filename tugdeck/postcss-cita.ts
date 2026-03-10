@@ -48,6 +48,7 @@ import {
   L_DARK,
   L_LIGHT,
   findMaxChroma,
+  CITA_PRESETS,
 } from "./src/components/tugways/palette-engine";
 import { parseCITA, findCITACalls } from "./cita-parser";
 
@@ -60,6 +61,13 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   "black",
   "white",
 ]);
+
+// ---------------------------------------------------------------------------
+// Known presets map (for parseCITA preset syntax validation)
+// ---------------------------------------------------------------------------
+
+const KNOWN_PRESETS: ReadonlyMap<string, { intensity: number; tone: number }> =
+  new Map(Object.entries(CITA_PRESETS));
 
 // ---------------------------------------------------------------------------
 // Formatting helper (matches citaColor() precision convention)
@@ -175,7 +183,7 @@ export default function postcssCita(): Plugin {
       let result = decl.value;
       for (let i = calls.length - 1; i >= 0; i--) {
         const call = calls[i];
-        const parseResult = parseCITA(call.inner, KNOWN_HUES);
+        const parseResult = parseCITA(call.inner, KNOWN_HUES, KNOWN_PRESETS);
 
         if (!parseResult.ok) {
           for (const err of parseResult.errors) {

@@ -6,7 +6,7 @@
  * motion-off rules, and scrollbar styling.
  *
  * Import order (enforced in globals.css):
- *   1. tug-palette.css     — CITA palette vars (--tug-{hue}[-preset])
+ *   1. tug-palette.css     — CITA palette constants (--tug-{hue}-h, --tug-{hue}-canonical-l, --tug-{hue}-peak-c)
  *   2. tug-tokens.css      — Fonts, multipliers, motion rules, Tier 2 base tokens (--tug-base-*), scrollbars [this file]
  *   3. tug-comp-tokens.css — Tier 3 component tokens (--tug-comp-*)
  *
@@ -146,8 +146,8 @@ body {
   --tug-base-fg-disabled: --cita(cobalt+8, i: 7, t: 23);
   --tug-base-fg-inverse: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-fg-placeholder: --cita(cobalt, i: 6, t: 30);
-  --tug-base-fg-link: var(--tug-cyan);
-  --tug-base-fg-link-hover: var(--tug-cyan-light);
+  --tug-base-fg-link: --cita(cyan);
+  --tug-base-fg-link-hover: --cita(cyan-light);
   --tug-base-fg-onAccent: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-fg-onDanger: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-fg-onWarning: --cita(violet-6, i: 4, t: 7);
@@ -157,7 +157,7 @@ body {
   --tug-base-icon-default: --cita(cobalt, i: 5, t: 66);
   --tug-base-icon-muted: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-icon-disabled: --cita(cobalt+8, i: 7, t: 23);
-  --tug-base-icon-active: var(--tug-cyan);
+  --tug-base-icon-active: --cita(cyan);
   --tug-base-icon-onAccent: --cita(cobalt-8, i: 3, t: 100);
 
   /* --- Borders / Dividers / Focus --- */
@@ -165,12 +165,12 @@ body {
   --tug-base-border-muted: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-border-strong: --cita(cobalt+8, i: 7, t: 40);
   --tug-base-border-inverse: --cita(cobalt, i: 3, t: 94);
-  --tug-base-border-accent: var(--tug-orange);
-  --tug-base-border-danger: var(--tug-red);
+  --tug-base-border-accent: --cita(orange);
+  --tug-base-border-danger: --cita(red);
   --tug-base-divider-default: --cita(violet-6, i: 6, t: 17);
   --tug-base-divider-muted: --cita(violet, i: 4, t: 15);
-  --tug-base-focus-ring-default: var(--tug-cyan);
-  --tug-base-focus-ring-danger: var(--tug-red);
+  --tug-base-focus-ring-default: --cita(cyan);
+  --tug-base-focus-ring-danger: --cita(red);
   --tug-base-focus-ring-offset: --cita(violet-6, i: 4, t: 7);
 
   /* --- Elevation / Overlay --- */
@@ -265,22 +265,22 @@ body {
      ====================================================================== */
 
   /* Core accent tokens — Brio defaults */
-  --tug-base-accent-default: var(--tug-orange);
-  --tug-base-accent-strong: var(--tug-orange-intense);
-  --tug-base-accent-muted: var(--tug-orange-muted);
+  --tug-base-accent-default: --cita(orange);
+  --tug-base-accent-strong: --cita(orange-intense);
+  --tug-base-accent-muted: --cita(orange-muted);
   --tug-base-accent-subtle: --cita(orange, i: 50, t: 50, a: 15);
-  --tug-base-accent-cool-default: var(--tug-cobalt-intense);
-  --tug-base-accent-positive: var(--tug-green-intense);
-  --tug-base-accent-warning: var(--tug-yellow-intense);
-  --tug-base-accent-danger: var(--tug-red);
-  --tug-base-accent-info: var(--tug-cyan-intense);
+  --tug-base-accent-cool-default: --cita(cobalt-intense);
+  --tug-base-accent-positive: --cita(green-intense);
+  --tug-base-accent-warning: --cita(yellow-intense);
+  --tug-base-accent-danger: --cita(red);
+  --tug-base-accent-info: --cita(cyan-intense);
 
   /* Accent-derived interaction tokens */
   --tug-base-accent-bg-subtle: --cita(orange, i: 50, t: 50, a: 12);
   --tug-base-accent-bg-emphasis: --cita(orange, i: 50, t: 50, a: 24);
-  --tug-base-accent-border: var(--tug-orange);
-  --tug-base-accent-border-hover: var(--tug-orange-intense);
-  --tug-base-accent-underline-active: var(--tug-orange);
+  --tug-base-accent-border: --cita(orange);
+  --tug-base-accent-border-hover: --cita(orange-intense);
+  --tug-base-accent-underline-active: --cita(orange);
   --tug-base-accent-guide: --cita(orange, i: 50, t: 50, a: 50);
   --tug-base-accent-flash: --cita(orange, i: 50, t: 50, a: 40);
 
@@ -316,14 +316,14 @@ body {
   --tug-base-card-header-bg-inactive: --cita(violet-9, i: 4, t: 15);
   --tug-base-card-header-bg-collapsed: --cita(violet, i: 4, t: 15);
   --tug-base-card-header-fg: --cita(cobalt, i: 3, t: 94);
-  --tug-base-card-header-icon-active: var(--tug-cyan);
+  --tug-base-card-header-icon-active: --cita(cyan);
   --tug-base-card-header-icon-inactive: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-card-header-divider: --cita(violet-6, i: 6, t: 17);
   --tug-base-card-header-button-bg-hover: --cita(white, i: 0, t: 100, a: 8);
   --tug-base-card-header-button-bg-active: --cita(white, i: 0, t: 100, a: 12);
   --tug-base-card-header-button-fg: --cita(cobalt, i: 5, t: 66);
-  --tug-base-card-header-button-fg-danger: var(--tug-red);
-  --tug-base-card-header-button-fg-danger-hover: var(--tug-red-light);
+  --tug-base-card-header-button-fg-danger: --cita(red);
+  --tug-base-card-header-button-fg-danger-hover: --cita(red-light);
   --tug-base-card-accessory-bg: --cita(violet, i: 5, t: 11);
   --tug-base-card-accessory-border: --cita(cobalt, i: 6, t: 30);
   --tug-base-card-findbar-bg: --cita(violet-6, i: 4, t: 7);
@@ -342,14 +342,14 @@ body {
   --tug-base-tab-fg-compact: --cita(cobalt, i: 5, t: 66);
   --tug-base-tab-close-bg-hover: --cita(white, i: 0, t: 100, a: 10);
   --tug-base-tab-close-fg-hover: --cita(cobalt, i: 3, t: 94);
-  --tug-base-tab-underline-active: var(--tug-orange);
+  --tug-base-tab-underline-active: --cita(orange);
   --tug-base-tab-dropTarget-bg: --cita(cyan, i: 50, t: 50, a: 12);
-  --tug-base-tab-dropTarget-border: var(--tug-cyan);
-  --tug-base-tab-badge-bg: var(--tug-orange);
+  --tug-base-tab-dropTarget-border: --cita(cyan);
+  --tug-base-tab-badge-bg: --cita(orange);
   --tug-base-tab-badge-fg: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-tab-ghost-bg: --cita(white, i: 0, t: 100, a: 4);
   --tug-base-tab-ghost-border: --cita(white, i: 0, t: 100, a: 8);
-  --tug-base-tab-insertIndicator: var(--tug-orange);
+  --tug-base-tab-insertIndicator: --cita(orange);
   --tug-base-tab-overflow-trigger-bg: --cita(white, i: 0, t: 100, a: 6);
   --tug-base-tab-overflow-trigger-fg: --cita(cobalt, i: 5, t: 66);
   --tug-base-tab-add-bg-hover: --cita(white, i: 0, t: 100, a: 8);
@@ -360,16 +360,16 @@ body {
   /* --- Dock / Canvas / Snap --- */
   --tug-base-dock-bg: --cita(violet-6, i: 4, t: 7);
   --tug-base-dock-border: --cita(violet-6, i: 6, t: 17);
-  --tug-base-dock-indicator: var(--tug-orange);
+  --tug-base-dock-indicator: --cita(orange);
   --tug-base-dock-menu-caret: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-dock-button-bg-hover: --cita(white, i: 0, t: 100, a: 8);
   --tug-base-dock-button-bg-active: --cita(white, i: 0, t: 100, a: 12);
   --tug-base-dock-button-fg: --cita(cobalt+7, i: 7, t: 37);
-  --tug-base-dock-button-fg-active: var(--tug-orange);
-  --tug-base-dock-button-fg-attention: var(--tug-yellow);
-  --tug-base-dock-button-badge-bg: var(--tug-red);
+  --tug-base-dock-button-fg-active: --cita(orange);
+  --tug-base-dock-button-fg-attention: --cita(yellow);
+  --tug-base-dock-button-badge-bg: --cita(red);
   --tug-base-dock-button-badge-fg: --cita(cobalt-8, i: 3, t: 100);
-  --tug-base-dock-button-insertIndicator: var(--tug-cyan);
+  --tug-base-dock-button-insertIndicator: --cita(cyan);
   /* --tug-base-canvas-grid-line: Brio default grid line opacity */
   --tug-base-canvas-grid-line: --cita(white, i: 0, t: 100, a: 5);
   --tug-base-canvas-grid-emphasis: --cita(white, i: 0, t: 100, a: 10);
@@ -379,7 +379,7 @@ body {
 
   /* --- Snap Sets --- */
   --tug-base-set-member-border-collapsed: --cita(cyan, i: 50, t: 50, a: 30);
-  --tug-base-set-member-corner-squared: var(--tug-cyan);
+  --tug-base-set-member-corner-squared: --cita(cyan);
   --tug-base-set-focused-outline: --cita(cyan, i: 50, t: 50, a: 50);
   --tug-base-set-hull-flash: --cita(cyan, i: 50, t: 50, a: 25);
   --tug-base-set-breakout-flash: --cita(orange, i: 50, t: 50, a: 35);
@@ -398,9 +398,9 @@ body {
   --tug-base-control-disabled-shadow: none;
 
   /* --- Generic Action Tokens --- */
-  --tug-base-action-primary-bg-rest: var(--tug-orange);
-  --tug-base-action-primary-bg-hover: var(--tug-orange-intense);
-  --tug-base-action-primary-bg-active: var(--tug-orange-dark);
+  --tug-base-action-primary-bg-rest: --cita(orange);
+  --tug-base-action-primary-bg-hover: --cita(orange-intense);
+  --tug-base-action-primary-bg-active: --cita(orange-dark);
   --tug-base-action-primary-fg: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-action-primary-border: transparent;
   --tug-base-action-secondary-bg-rest: --cita(violet, i: 5, t: 12);
@@ -410,9 +410,9 @@ body {
   --tug-base-action-secondary-border: --cita(cobalt, i: 6, t: 30);
   --tug-base-action-ghost-bg-hover: --cita(white, i: 0, t: 100, a: 7);
   --tug-base-action-ghost-fg: --cita(cobalt, i: 5, t: 66);
-  --tug-base-action-destructive-bg-rest: var(--tug-red);
-  --tug-base-action-destructive-bg-hover: var(--tug-red-intense);
-  --tug-base-action-destructive-bg-active: var(--tug-red-dark);
+  --tug-base-action-destructive-bg-rest: --cita(red);
+  --tug-base-action-destructive-bg-hover: --cita(red-intense);
+  --tug-base-action-destructive-bg-active: --cita(red-dark);
   --tug-base-action-destructive-fg: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-action-destructive-border: transparent;
   --tug-base-action-disabled-bg: --cita(violet, i: 5, t: 11);
@@ -431,26 +431,26 @@ body {
   --tug-base-field-placeholder: --cita(cobalt, i: 6, t: 30);
   --tug-base-field-border-rest: --cita(cobalt, i: 6, t: 30);
   --tug-base-field-border-hover: --cita(cobalt+7, i: 7, t: 37);
-  --tug-base-field-border-focus: var(--tug-cyan);
-  --tug-base-field-border-invalid: var(--tug-red);
-  --tug-base-field-border-valid: var(--tug-green);
+  --tug-base-field-border-focus: --cita(cyan);
+  --tug-base-field-border-invalid: --cita(red);
+  --tug-base-field-border-valid: --cita(green);
   --tug-base-field-border-disabled: --cita(violet-6, i: 6, t: 17);
   --tug-base-field-border-readOnly: --cita(violet-6, i: 6, t: 17);
   --tug-base-field-helper: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-field-label: --cita(cobalt, i: 5, t: 66);
-  --tug-base-field-required: var(--tug-red);
+  --tug-base-field-required: --cita(red);
   --tug-base-field-meta: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-field-counter: --cita(cobalt+7, i: 7, t: 37);
-  --tug-base-field-limit: var(--tug-red);
-  --tug-base-field-dirty: var(--tug-yellow);
+  --tug-base-field-limit: --cita(red);
+  --tug-base-field-dirty: --cita(yellow);
   --tug-base-field-readOnly: --cita(cobalt, i: 5, t: 66);
-  --tug-base-field-error: var(--tug-red);
-  --tug-base-field-warning: var(--tug-yellow);
-  --tug-base-field-success: var(--tug-green);
+  --tug-base-field-error: --cita(red);
+  --tug-base-field-warning: --cita(yellow);
+  --tug-base-field-success: --cita(green);
 
   /* --- Toggle / Range Tokens --- */
   --tug-base-toggle-track-off: --cita(violet-6, i: 6, t: 17);
-  --tug-base-toggle-track-on: var(--tug-orange);
+  --tug-base-toggle-track-on: --cita(orange);
   --tug-base-toggle-track-disabled: --cita(violet, i: 5, t: 11);
   --tug-base-toggle-track-mixed: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-toggle-thumb: --cita(cobalt-8, i: 3, t: 100);
@@ -461,7 +461,7 @@ body {
   --tug-base-checkmark-mixed: --cita(cobalt, i: 5, t: 66);
   --tug-base-radio-dot: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-range-track: --cita(violet-6, i: 6, t: 17);
-  --tug-base-range-fill: var(--tug-orange);
+  --tug-base-range-fill: --cita(orange);
   --tug-base-range-thumb: --cita(cobalt-8, i: 3, t: 100);
   --tug-base-range-thumb-disabled: --cita(cobalt+8, i: 7, t: 23);
   --tug-base-range-tick: --cita(cobalt, i: 6, t: 30);
@@ -483,11 +483,11 @@ body {
   --tug-base-menu-item-bg-selected: --cita(orange, i: 50, t: 50, a: 15);
   --tug-base-menu-item-fg: --cita(cobalt, i: 3, t: 94);
   --tug-base-menu-item-fg-disabled: --cita(cobalt+8, i: 7, t: 23);
-  --tug-base-menu-item-fg-danger: var(--tug-red);
+  --tug-base-menu-item-fg-danger: --cita(red);
   --tug-base-menu-item-meta: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-menu-item-shortcut: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-menu-item-icon: --cita(cobalt, i: 5, t: 66);
-  --tug-base-menu-item-icon-danger: var(--tug-red);
+  --tug-base-menu-item-icon-danger: --cita(red);
   --tug-base-menu-item-chevron: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-popover-bg: --cita(violet, i: 4, t: 14);
   --tug-base-popover-fg: --cita(cobalt, i: 3, t: 94);
@@ -506,11 +506,11 @@ body {
   --tug-base-toast-info-bg: --cita(violet, i: 5, t: 12);
   --tug-base-toast-info-fg: --cita(cobalt, i: 3, t: 94);
   --tug-base-toast-success-bg: --cita(green, i: 50, t: 50, a: 15);
-  --tug-base-toast-success-fg: var(--tug-green);
+  --tug-base-toast-success-fg: --cita(green);
   --tug-base-toast-warning-bg: --cita(yellow, i: 50, t: 50, a: 12);
-  --tug-base-toast-warning-fg: var(--tug-yellow);
+  --tug-base-toast-warning-fg: --cita(yellow);
   --tug-base-toast-danger-bg: --cita(red, i: 50, t: 50, a: 15);
-  --tug-base-toast-danger-fg: var(--tug-red);
+  --tug-base-toast-danger-fg: --cita(red);
   --tug-base-alert-bg: --cita(violet, i: 5, t: 12);
   --tug-base-alert-fg: --cita(cobalt, i: 3, t: 94);
 
@@ -518,30 +518,30 @@ body {
   --tug-base-badge-neutral-bg: --cita(violet-6, i: 6, t: 17);
   --tug-base-badge-neutral-fg: --cita(cobalt, i: 5, t: 66);
   --tug-base-badge-accent-bg: --cita(orange, i: 50, t: 50, a: 20);
-  --tug-base-badge-accent-fg: var(--tug-orange);
+  --tug-base-badge-accent-fg: --cita(orange);
   --tug-base-badge-success-bg: --cita(green, i: 50, t: 50, a: 20);
-  --tug-base-badge-success-fg: var(--tug-green);
+  --tug-base-badge-success-fg: --cita(green);
   --tug-base-badge-warning-bg: --cita(yellow, i: 50, t: 50, a: 15);
-  --tug-base-badge-warning-fg: var(--tug-yellow);
+  --tug-base-badge-warning-fg: --cita(yellow);
   --tug-base-badge-danger-bg: --cita(red, i: 50, t: 50, a: 20);
-  --tug-base-badge-danger-fg: var(--tug-red);
-  --tug-base-status-success: var(--tug-green);
-  --tug-base-status-warning: var(--tug-yellow);
-  --tug-base-status-danger: var(--tug-red);
-  --tug-base-status-info: var(--tug-cyan);
+  --tug-base-badge-danger-fg: --cita(red);
+  --tug-base-status-success: --cita(green);
+  --tug-base-status-warning: --cita(yellow);
+  --tug-base-status-danger: --cita(red);
+  --tug-base-status-info: --cita(cyan);
   --tug-base-progress-track: --cita(violet-6, i: 6, t: 17);
-  --tug-base-progress-fill: var(--tug-orange);
-  --tug-base-spinner: var(--tug-orange);
+  --tug-base-progress-fill: --cita(orange);
+  --tug-base-spinner: --cita(orange);
   --tug-base-skeleton-base: --cita(violet, i: 5, t: 12);
   --tug-base-skeleton-highlight: --cita(cobalt+10, i: 7, t: 16);
   --tug-base-emptyState-fg: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-emptyState-icon: --cita(cobalt, i: 6, t: 30);
   --tug-base-banner-info-bg: --cita(cyan, i: 50, t: 50, a: 12);
-  --tug-base-banner-info-fg: var(--tug-cyan);
+  --tug-base-banner-info-fg: --cita(cyan);
   --tug-base-banner-warning-bg: --cita(yellow, i: 50, t: 50, a: 12);
-  --tug-base-banner-warning-fg: var(--tug-yellow);
+  --tug-base-banner-warning-fg: --cita(yellow);
   --tug-base-banner-danger-bg: --cita(red, i: 50, t: 50, a: 12);
-  --tug-base-banner-danger-fg: var(--tug-red);
+  --tug-base-banner-danger-fg: --cita(red);
   --tug-base-kbd-bg: --cita(violet, i: 5, t: 12);
   --tug-base-kbd-fg: --cita(cobalt, i: 5, t: 66);
   --tug-base-kbd-border: --cita(cobalt, i: 6, t: 30);
@@ -575,35 +575,35 @@ body {
   /* --- Stat / Trend --- */
   --tug-base-stat-label: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-stat-value: --cita(cobalt, i: 3, t: 94);
-  --tug-base-stat-trend-positive: var(--tug-green);
-  --tug-base-stat-trend-negative: var(--tug-red);
+  --tug-base-stat-trend-positive: --cita(green);
+  --tug-base-stat-trend-negative: --cita(red);
   --tug-base-stat-trend-neutral: --cita(cobalt+7, i: 7, t: 37);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
-  --tug-base-chart-series-warm: var(--tug-orange);
-  --tug-base-chart-series-cool: var(--tug-cyan);
-  --tug-base-chart-series-violet: var(--tug-violet);
-  --tug-base-chart-series-rose: var(--tug-red);
-  --tug-base-chart-series-verdant: var(--tug-green);
-  --tug-base-chart-series-golden: var(--tug-yellow);
-  --tug-base-chart-series-orchid: var(--tug-pink);
-  --tug-base-chart-series-coral: var(--tug-coral-muted);
+  --tug-base-chart-series-warm: --cita(orange);
+  --tug-base-chart-series-cool: --cita(cyan);
+  --tug-base-chart-series-violet: --cita(violet);
+  --tug-base-chart-series-rose: --cita(red);
+  --tug-base-chart-series-verdant: --cita(green);
+  --tug-base-chart-series-golden: --cita(yellow);
+  --tug-base-chart-series-orchid: --cita(pink);
+  --tug-base-chart-series-coral: --cita(coral-muted);
   /* Chart infrastructure tokens */
   --tug-base-chart-grid: --cita(white, i: 0, t: 100, a: 6);
   --tug-base-chart-axis: --cita(cobalt, i: 6, t: 30);
   --tug-base-chart-tick: --cita(cobalt, i: 6, t: 30);
-  --tug-base-chart-threshold-warning: var(--tug-yellow);
-  --tug-base-chart-threshold-danger: var(--tug-red);
+  --tug-base-chart-threshold-warning: --cita(yellow);
+  --tug-base-chart-threshold-danger: --cita(red);
 
   /* --- Gauge --- */
   --tug-base-gauge-track: --cita(violet-6, i: 6, t: 17);
-  --tug-base-gauge-fill: var(--tug-orange);
+  --tug-base-gauge-fill: --cita(orange);
   --tug-base-gauge-needle: --cita(cobalt, i: 3, t: 94);
   --tug-base-gauge-tick-major: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-gauge-tick-minor: --cita(cobalt+8, i: 7, t: 23);
   --tug-base-gauge-readout: --cita(cobalt, i: 3, t: 94);
-  --tug-base-gauge-threshold-warning: var(--tug-yellow);
-  --tug-base-gauge-threshold-danger: var(--tug-red);
+  --tug-base-gauge-threshold-warning: --cita(yellow);
+  --tug-base-gauge-threshold-danger: --cita(red);
   --tug-base-gauge-unit: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-gauge-annotation: --cita(cobalt+7, i: 7, t: 37);
 
@@ -615,37 +615,37 @@ body {
      Accent-derived tokens: palette var() references per Phase 5d5e.
      Text-derived tokens: var() references to --tug-base-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
-  --tug-base-syntax-keyword: var(--tug-cyan);
-  --tug-base-syntax-string: var(--tug-coral-muted);
-  --tug-base-syntax-number: var(--tug-green);
-  --tug-base-syntax-function: var(--tug-yellow);
-  --tug-base-syntax-type: var(--tug-green);
-  --tug-base-syntax-variable: var(--tug-cyan);
+  --tug-base-syntax-keyword: --cita(cyan);
+  --tug-base-syntax-string: --cita(coral-muted);
+  --tug-base-syntax-number: --cita(green);
+  --tug-base-syntax-function: --cita(yellow);
+  --tug-base-syntax-type: --cita(green);
+  --tug-base-syntax-variable: --cita(cyan);
   /* text-derived — inherits per-theme via fg-muted override */
   --tug-base-syntax-comment: var(--tug-base-fg-muted);
   /* text-derived — inherits per-theme via fg-default override */
   --tug-base-syntax-operator: var(--tug-base-fg-default);
   --tug-base-syntax-punctuation: var(--tug-base-fg-default);
-  --tug-base-syntax-constant: var(--tug-cyan);
-  --tug-base-syntax-decorator: var(--tug-violet);
-  --tug-base-syntax-tag: var(--tug-cyan);
-  --tug-base-syntax-attribute: var(--tug-cyan);
+  --tug-base-syntax-constant: --cita(cyan);
+  --tug-base-syntax-decorator: --cita(violet);
+  --tug-base-syntax-tag: --cita(cyan);
+  --tug-base-syntax-attribute: --cita(cyan);
 
   /* --- Terminal --- */
   --tug-base-terminal-bg: --cita(violet-6, i: 5, t: 6);
   --tug-base-terminal-fg: --cita(cobalt, i: 3, t: 94);
   --tug-base-terminal-fg-muted: --cita(cobalt, i: 5, t: 66);
-  --tug-base-terminal-cursor: var(--tug-orange);
+  --tug-base-terminal-cursor: --cita(orange);
   --tug-base-terminal-selection-bg: --cita(cyan, i: 50, t: 50, a: 30);
   --tug-base-terminal-border: --cita(violet-6, i: 6, t: 17);
   /* ANSI color palette — palette var() references per Phase 5d5e */
   --tug-base-terminal-ansi-black: --cita(violet, i: 5, t: 12);
-  --tug-base-terminal-ansi-red: var(--tug-red);
-  --tug-base-terminal-ansi-green: var(--tug-green);
-  --tug-base-terminal-ansi-yellow: var(--tug-yellow);
-  --tug-base-terminal-ansi-blue: var(--tug-cyan);
-  --tug-base-terminal-ansi-magenta: var(--tug-violet);
-  --tug-base-terminal-ansi-cyan: var(--tug-cyan);
+  --tug-base-terminal-ansi-red: --cita(red);
+  --tug-base-terminal-ansi-green: --cita(green);
+  --tug-base-terminal-ansi-yellow: --cita(yellow);
+  --tug-base-terminal-ansi-blue: --cita(cyan);
+  --tug-base-terminal-ansi-magenta: --cita(violet);
+  --tug-base-terminal-ansi-cyan: --cita(cyan);
   --tug-base-terminal-ansi-white: --cita(cobalt, i: 3, t: 94);
 
   /* --- Conversation / Chat / Code Block --- */
@@ -670,25 +670,25 @@ body {
   --tug-base-tree-row-bg-current: --cita(cyan, i: 50, t: 50, a: 10);
   --tug-base-tree-row-fg: --cita(cobalt, i: 3, t: 94);
   --tug-base-tree-chevron: --cita(cobalt, i: 6, t: 30);
-  --tug-base-file-status-added: var(--tug-green);
-  --tug-base-file-status-modified: var(--tug-yellow);
-  --tug-base-file-status-deleted: var(--tug-red);
-  --tug-base-file-status-renamed: var(--tug-cyan);
+  --tug-base-file-status-added: --cita(green);
+  --tug-base-file-status-modified: --cita(yellow);
+  --tug-base-file-status-deleted: --cita(red);
+  --tug-base-file-status-renamed: --cita(cyan);
   --tug-base-diff-addition-bg: --cita(green, i: 50, t: 50, a: 12);
-  --tug-base-diff-addition-fg: var(--tug-green);
+  --tug-base-diff-addition-fg: --cita(green);
   --tug-base-diff-deletion-bg: --cita(red, i: 50, t: 50, a: 12);
-  --tug-base-diff-deletion-fg: var(--tug-red);
+  --tug-base-diff-deletion-fg: --cita(red);
 
   /* --- Workflow / Feed Progress --- */
   --tug-base-feed-bg: --cita(violet-6, i: 4, t: 7);
   --tug-base-feed-border: --cita(violet-6, i: 6, t: 17);
   --tug-base-feed-step-bg: --cita(violet, i: 5, t: 11);
   --tug-base-feed-step-fg: --cita(cobalt, i: 5, t: 66);
-  --tug-base-feed-step-active: var(--tug-orange);
-  --tug-base-feed-step-complete: var(--tug-green);
-  --tug-base-feed-step-error: var(--tug-red);
-  --tug-base-feed-stream-cursor: var(--tug-orange);
-  --tug-base-feed-handoff: var(--tug-cyan);
+  --tug-base-feed-step-active: --cita(orange);
+  --tug-base-feed-step-complete: --cita(green);
+  --tug-base-feed-step-error: --cita(red);
+  --tug-base-feed-stream-cursor: --cita(orange);
+  --tug-base-feed-handoff: --cita(cyan);
 
   /* ======================================================================
      === I. Inspector / Dev Tooling
@@ -705,18 +705,18 @@ body {
   --tug-base-inspector-field-default: --cita(violet, i: 5, t: 11);
   --tug-base-inspector-field-preview: --cita(orange, i: 50, t: 50, a: 10);
   --tug-base-inspector-field-cancelled: --cita(red, i: 50, t: 50, a: 10);
-  --tug-base-inspector-target-outline: var(--tug-cyan);
-  --tug-base-inspector-preview-outline: var(--tug-orange);
-  --tug-base-inspector-source-token: var(--tug-violet);
-  --tug-base-inspector-source-class: var(--tug-green);
-  --tug-base-inspector-source-inline: var(--tug-yellow);
-  --tug-base-inspector-source-preview: var(--tug-coral-muted);
+  --tug-base-inspector-target-outline: --cita(cyan);
+  --tug-base-inspector-preview-outline: --cita(orange);
+  --tug-base-inspector-source-token: --cita(violet);
+  --tug-base-inspector-source-class: --cita(green);
+  --tug-base-inspector-source-inline: --cita(yellow);
+  --tug-base-inspector-source-preview: --cita(coral-muted);
   --tug-base-inspector-emptyState-fg: --cita(cobalt+7, i: 7, t: 37);
   --tug-base-inspector-emptyState-icon: --cita(cobalt, i: 6, t: 30);
   --tug-base-inspector-swatch-border: --cita(cobalt, i: 6, t: 30);
   --tug-base-inspector-scrub-track: --cita(violet-6, i: 6, t: 17);
   --tug-base-inspector-scrub-thumb: --cita(cobalt+7, i: 7, t: 37);
-  --tug-base-inspector-scrub-active: var(--tug-orange);
+  --tug-base-inspector-scrub-active: --cita(orange);
   --tug-base-dev-overlay-bg: --cita(violet-6, i: 4, t: 7, a: 92);
   --tug-base-dev-overlay-fg: --cita(cobalt, i: 3, t: 94);
   --tug-base-dev-overlay-border: --cita(cobalt, i: 6, t: 30);

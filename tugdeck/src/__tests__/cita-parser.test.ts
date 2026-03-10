@@ -14,6 +14,7 @@
 import { describe, it, expect } from "bun:test";
 import { parseCITA, findCITACalls } from "../../cita-parser";
 import type { CITAParsed, CITAError } from "../../cita-parser";
+import { CITA_PRESETS } from "@/components/tugways/palette-engine";
 
 // A representative set of known hues for testing
 const KNOWN_HUES = new Set([
@@ -22,6 +23,10 @@ const KNOWN_HUES = new Set([
   "violet", "purple", "plum", "pink", "rose", "magenta", "berry", "coral",
   "black", "white",
 ]);
+
+// Known presets map from CITA_PRESETS
+const KNOWN_PRESETS: ReadonlyMap<string, { intensity: number; tone: number }> =
+  new Map(Object.entries(CITA_PRESETS));
 
 /** Assert a successful parse and return the parsed value. */
 function expectOk(input: string): CITAParsed {
@@ -35,9 +40,32 @@ function expectOk(input: string): CITAParsed {
   return result.value;
 }
 
+/** Assert a successful parse with presets and return the parsed value. */
+function expectOkWithPresets(input: string): CITAParsed {
+  const result = parseCITA(input, KNOWN_HUES, KNOWN_PRESETS);
+  if (!result.ok) {
+    throw new Error(
+      `Expected ok parse for '${input}', got errors:\n` +
+      result.errors.map((e) => `  - ${e.message}`).join("\n"),
+    );
+  }
+  return result.value;
+}
+
 /** Assert a failed parse and return the error list. */
 function expectErrors(input: string): CITAError[] {
   const result = parseCITA(input, KNOWN_HUES);
+  if (result.ok) {
+    throw new Error(
+      `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
+    );
+  }
+  return result.errors;
+}
+
+/** Assert a failed parse with presets and return the error list. */
+function expectErrorsWithPresets(input: string): CITAError[] {
+  const result = parseCITA(input, KNOWN_HUES, KNOWN_PRESETS);
   if (result.ok) {
     throw new Error(
       `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
@@ -368,6 +396,98 @@ describe("cita-parser: black and white", () => {
   it("black with alpha", () => {
     const v = expectOk("black, a: 50");
     expect(v.color.name).toBe("black");
+    expect(v.alpha).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Preset syntax: --cita(hue-preset)
+// ---------------------------------------------------------------------------
+
+describe("cita-parser: preset syntax", () => {
+  it("--cita(green-intense) uses intense preset defaults: i=90, t=50", () => {
+    const v = expectOkWithPresets("green-intense");
+    expect(v.color).toEqual({ name: "green", offset: 0, preset: "intense" });
+    expect(v.intensity).toBe(90);
+    expect(v.tone).toBe(50);
+    expect(v.alpha).toBe(100);
+  });
+
+  it("--cita(orange-muted) uses muted preset defaults: i=20, t=50", () => {
+    const v = expectOkWithPresets("orange-muted");
+    expect(v.color).toEqual({ name: "orange", offset: 0, preset: "muted" });
+    expect(v.intensity).toBe(20);
+    expect(v.tone).toBe(50);
+  });
+
+  it("--cita(blue-light) uses light preset defaults: i=20, t=85", () => {
+    const v = expectOkWithPresets("blue-light");
+    expect(v.color).toEqual({ name: "blue", offset: 0, preset: "light" });
+    expect(v.intensity).toBe(20);
+    expect(v.tone).toBe(85);
+  });
+
+  it("--cita(red-dark) uses dark preset defaults: i=50, t=20", () => {
+    const v = expectOkWithPresets("red-dark");
+    expect(v.color).toEqual({ name: "red", offset: 0, preset: "dark" });
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(20);
+  });
+
+  it("--cita(cyan-canonical) uses canonical preset defaults: i=50, t=50", () => {
+    const v = expectOkWithPresets("cyan-canonical");
+    expect(v.color).toEqual({ name: "cyan", offset: 0, preset: "canonical" });
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(50);
+  });
+
+  it("--cita(red-canonical) is equivalent to --cita(red) for numeric output", () => {
+    const withPreset = expectOkWithPresets("red-canonical");
+    const withoutPreset = expectOk("red");
+    expect(withPreset.intensity).toBe(withoutPreset.intensity);
+    expect(withPreset.tone).toBe(withoutPreset.tone);
+    expect(withPreset.alpha).toBe(withoutPreset.alpha);
+  });
+
+  it("preset with explicit alpha override: --cita(orange-muted, a: 50)", () => {
+    const v = expectOkWithPresets("orange-muted, a: 50");
+    expect(v.color.preset).toBe("muted");
+    expect(v.intensity).toBe(20); // from preset
+    expect(v.tone).toBe(50);     // from preset
+    expect(v.alpha).toBe(50);    // explicit override
+  });
+
+  it("preset with tone override: --cita(blue-light, t: 80) overrides tone to 80", () => {
+    const v = expectOkWithPresets("blue-light, t: 80");
+    expect(v.color.preset).toBe("light");
+    expect(v.intensity).toBe(20); // from preset
+    expect(v.tone).toBe(80);      // explicit override
+  });
+
+  it("preset with intensity override: --cita(green-muted, i: 40)", () => {
+    const v = expectOkWithPresets("green-muted, i: 40");
+    expect(v.color.preset).toBe("muted");
+    expect(v.intensity).toBe(40); // explicit override
+    expect(v.tone).toBe(50);      // from preset
+  });
+
+  it("unknown preset errors: --cita(red-foo) should error", () => {
+    const errs = expectErrorsWithPresets("red-foo");
+    expect(errs.some((e) => e.message.includes("Unknown preset 'foo'"))).toBe(true);
+  });
+
+  it("without knownPresets, ident-minus-ident fails with unknown preset error", () => {
+    // Without preset support (no knownPresets map), green-intense tokenizes as
+    // ident-minus-ident, which reports "Unknown preset" since there's no map to validate against
+    const errs = expectErrors("green-intense");
+    expect(errs.some((e) => e.message.includes("Unknown preset 'intense'"))).toBe(true);
+  });
+
+  it("labeled color with preset: --cita(c: orange-muted, a: 50)", () => {
+    const v = expectOkWithPresets("c: orange-muted, a: 50");
+    expect(v.color.preset).toBe("muted");
+    expect(v.intensity).toBe(20);
+    expect(v.tone).toBe(50);
     expect(v.alpha).toBe(50);
   });
 });

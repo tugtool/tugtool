@@ -409,51 +409,34 @@ describe("tug-palette.css — global lightness anchors", () => {
   });
 });
 
-describe("tug-palette.css — chromatic preset formulas (120 = 24 × 5)", () => {
-  it("contains all 5 preset variables for red", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-red:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-light:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-dark:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-intense:");
-    expect(TUG_PALETTE_CSS).toContain("--tug-red-muted:");
+describe("tug-palette.css — preset variables removed (unified into CITA)", () => {
+  // Preset CSS variables (--tug-red, --tug-red-light, etc.) have been removed
+  // from tug-palette.css. They are now computed at build time by the postcss-cita
+  // plugin from --cita(hue-preset) syntax in tug-tokens.css and theme files.
+
+  it("does NOT contain chromatic preset variables for red (removed, use --cita())", () => {
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-light:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-dark:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-intense:");
+    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-muted:");
   });
 
-  it("does NOT contain removed preset variables for red", () => {
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-accent:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-subtle:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-red-deep:");
-  });
-
-  it("contains all 5 preset variables for all 24 hues", () => {
+  it("does NOT contain any chromatic preset variables for any of the 24 hues", () => {
     const presetSuffixes = ["", "-light", "-dark", "-intense", "-muted"];
     for (const hue of Object.keys(HUE_FAMILIES)) {
       for (const suffix of presetSuffixes) {
-        expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}${suffix}:`);
+        expect(TUG_PALETTE_CSS).not.toContain(`--tug-${hue}${suffix}:`);
       }
     }
   });
 
-  it("total chromatic preset variable count is 120 in the sRGB block (5 × 24)", () => {
-    const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
-    const hueNames = Object.keys(HUE_FAMILIES).join("|");
-    // Only count chromatic hue presets, not neutral/black/white
-    const chromaticPattern = new RegExp(`--tug-(?:${hueNames})(?:-(?:intense|muted|light|dark))?:\\s*oklch\\(`, "g");
-    const presets = srgbBlock.match(chromaticPattern) ?? [];
-    expect(presets.length).toBe(120);
-  });
-
-  it("preset formulas use oklch( and calc( patterns", () => {
-    expect(TUG_PALETTE_CSS).toContain("oklch(");
-    expect(TUG_PALETTE_CSS).toContain("calc(");
-  });
-
-  it("preset formulas reference var(--tug-{hue}-canonical-l) and var(--tug-{hue}-peak-c)", () => {
-    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-canonical-l)");
-    expect(TUG_PALETTE_CSS).toContain("var(--tug-red-peak-c)");
-  });
-
-  it("preset formulas use clamp() for tone-to-L piecewise mapping", () => {
-    expect(TUG_PALETTE_CSS).toContain("clamp(");
+  it("still contains per-hue constants (h, canonical-l, peak-c) for all 24 hues", () => {
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
+      expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
+    }
   });
 
   it("does NOT contain coefficient knob variables (--tug-preset-*)", () => {

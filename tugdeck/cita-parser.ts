@@ -31,6 +31,7 @@
 export interface CITAColor {
   name: string;
   offset: number; // degrees, 0 if no offset specified
+  preset?: string; // preset name if specified (e.g. "intense", "light")
 }
 
 export interface CITAParsed {
@@ -179,13 +180,14 @@ function splitArgs(tokens: Token[]): Token[][] {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse tokens as a color value: IDENT [(PLUS|MINUS) NUMBER]
+ * Parse tokens as a color value: IDENT [(PLUS|MINUS) NUMBER] | IDENT MINUS IDENT(preset)
  * Returns null on failure after pushing errors.
  */
 function parseColorTokens(
   tokens: Token[],
   knownHues: ReadonlySet<string>,
   errors: CITAError[],
+  knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
 ): CITAColor | null {
   if (tokens.length === 0) {
     errors.push({ message: "Expected a color name", pos: 0 });
@@ -210,6 +212,26 @@ function parseColorTokens(
   // Color name alone
   if (tokens.length === 1) {
     return { name, offset: 0 };
+  }
+
+  // Color name with preset: IDENT MINUS IDENT(preset)
+  // e.g. "green-intense", "orange-muted"
+  // Distinct from offset (IDENT MINUS NUMBER) because the third token is an ident.
+  if (
+    tokens.length === 3 &&
+    tokens[1].type === "minus" &&
+    tokens[2].type === "ident"
+  ) {
+    const presetName = tokens[2].value;
+    if (knownPresets && knownPresets.has(presetName)) {
+      return { name, offset: 0, preset: presetName };
+    }
+    // Unknown preset — report error
+    errors.push({
+      message: `Unknown preset '${presetName}' for color '${name}'`,
+      pos: tokens[2].pos,
+    });
+    return null;
   }
 
   // Color name with explicit sign offset: IDENT (PLUS|MINUS) NUMBER
@@ -294,10 +316,14 @@ function parseNumericTokens(
  *
  * @param input  The text between the parentheses (not including them).
  * @param knownHues  Set of valid color names (e.g. "red", "blue", "cherry").
+ * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
+ *   When provided, enables preset syntax: --cita(green-intense), --cita(orange-muted, a: 50).
+ *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
  */
 export function parseCITA(
   input: string,
   knownHues: ReadonlySet<string>,
+  knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
 ): ParseResult {
   const tokenResult = tokenize(input);
   if (!Array.isArray(tokenResult)) {
@@ -361,7 +387,7 @@ export function parseCITA(
       const valueToks = group.slice(2);
 
       if (slot === "color") {
-        const c = parseColorTokens(valueToks, knownHues, errors);
+        const c = parseColorTokens(valueToks, knownHues, errors, knownPresets);
         if (c) color = c;
       } else if (slot === "intensity") {
         const n = parseNumericTokens(valueToks, "intensity", errors);
@@ -395,7 +421,7 @@ export function parseCITA(
       attempted.add(slot);
 
       if (slot === "color") {
-        const c = parseColorTokens(group, knownHues, errors);
+        const c = parseColorTokens(group, knownHues, errors, knownPresets);
         if (c) color = c;
       } else if (slot === "intensity") {
         const n = parseNumericTokens(group, "intensity", errors);
@@ -421,12 +447,24 @@ export function parseCITA(
     return { ok: false, errors };
   }
 
+  // Resolve preset defaults: if the color has a preset and i/t were not explicitly
+  // provided, use the preset's intensity/tone as defaults (instead of 50/50).
+  let defaultIntensity = DEFAULTS.intensity;
+  let defaultTone = DEFAULTS.tone;
+  if (color?.preset && knownPresets) {
+    const presetValues = knownPresets.get(color.preset);
+    if (presetValues) {
+      defaultIntensity = presetValues.intensity;
+      defaultTone = presetValues.tone;
+    }
+  }
+
   return {
     ok: true,
     value: {
       color: color!,
-      intensity: intensity ?? DEFAULTS.intensity,
-      tone: tone ?? DEFAULTS.tone,
+      intensity: intensity ?? defaultIntensity,
+      tone: tone ?? defaultTone,
       alpha: alpha ?? DEFAULTS.alpha,
     },
   };
