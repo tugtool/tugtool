@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-10T22:58:06Z
+---
+
+## step-4: Verification-only step. All automated exit criteria pass: inline body styles, startup overlay, CSS HMR boundary, TypeScript compilation clean. Visual scenarios deferred to manual testing.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
 step: step-3
 date: 2025-03-10T22:55:12Z
 ---
