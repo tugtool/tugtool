@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-10T00:19:17Z
+---
+
+## step-8: Added integration checkpoint tests verifying all three theme files, PostCSS plugin expansion, round-trip accuracy (delta-E < 0.02), zero standalone hex, and tug-palette.css/brio.css unmodified.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-5g2-hvv-postcss.md
+
+---
+
+---
 step: step-7
 date: 2025-03-10T00:14:20Z
 ---
