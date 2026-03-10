@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-10T22:55:12Z
+---
+
+## step-3: Created css-imports.ts consolidating all CSS side-effect imports with import.meta.hot.accept() self-accept. Updated main.tsx to import css-imports instead of individual CSS files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
 step: step-2
 date: 2025-03-10T22:51:50Z
 ---
