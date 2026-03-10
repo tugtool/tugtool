@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-10T20:33:33Z
+---
+
+## step-1: Removed dead @keyframes tug-button-spin and .tug-button-spinner CSS class from tug-button.css; live .tug-button-spinner-overlay preserved
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-6
 date: 2025-03-10T18:45:12Z
 ---

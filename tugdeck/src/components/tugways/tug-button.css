@@ -213,24 +213,6 @@
   border-radius: inherit;
 }
 
-.tug-button-spinner {
-  width: 1em;
-  height: 1em;
-  border: 2px solid transparent;
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: tug-button-spin var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard) infinite;
-}
-
-@keyframes tug-button-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .tug-button-loading-content {
   opacity: 0;
   pointer-events: none;
