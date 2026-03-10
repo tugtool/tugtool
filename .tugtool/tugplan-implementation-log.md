@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-10T22:46:47Z
+---
+
+## step-1: Added inline styles to <body> tag in index.html (margin:0, padding:0, overflow:hidden, background-color:#16171a) to eliminate white flash on page load. Updated plan file to reflect verified Brio canvas color #16171a.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7c-startup-continuity.md
+
+---
+
+---
 step: step-10
 date: 2025-03-10T21:16:39Z
 ---
