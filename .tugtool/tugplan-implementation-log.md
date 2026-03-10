@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-10T21:16:39Z
+---
+
+## step-10: Final verification: all animations in correct lanes per Table T01; 1332 tests pass; all phase exit criteria met
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7b-managed-animations.md
+
+---
+
+---
 step: step-9
 date: 2025-03-10T21:12:37Z
 ---
