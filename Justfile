@@ -52,8 +52,8 @@ app: build
     #!/usr/bin/env bash
     set -euo pipefail
     (cd tugdeck && bun run build)
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug build
-    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     MACOS_DIR="$APP_DIR/Contents/MacOS"
     cp tugcode/target/debug/tugcast "$MACOS_DIR/"
     cp tugcode/target/debug/tugcode "$MACOS_DIR/"
@@ -74,5 +74,5 @@ dmg:
 # Clean Rust targets and Mac app build artifacts
 clean:
     cd tugcode && cargo clean
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug clean 2>/dev/null || true
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
     rm -rf tugapp/build
