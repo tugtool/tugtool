@@ -16,44 +16,44 @@ body {
   /* --tug-base-* overrides (Phase 5d5e) — non-chromatic tokens + contrast-critical overrides. */
 
   /* Surfaces */
-  --tug-base-bg-app: #3f474c;
-  --tug-base-bg-canvas: #b0ab9f;
-  --tug-base-surface-sunken: #c6c2b8;
-  --tug-base-surface-default: #f4f1ea;
-  --tug-base-surface-raised: #4c555a;
-  --tug-base-surface-overlay: #dad6cc;
-  --tug-base-surface-inset: #fcf9f2;
-  --tug-base-surface-control: #e4ded1;
-  --tug-base-surface-control-hover: #f4f1ea;
-  --tug-base-surface-control-active: #dad6cc;
-  --tug-base-surface-content: #fcf9f2;
-  --tug-base-surface-screen: #d1dbe0;
+  --tug-base-bg-app: --hvv(hue-235, 5, 20);
+  --tug-base-bg-canvas: --hvv(yellow, 7, 39);
+  --tug-base-surface-sunken: --hvv(yellow, 6, 44);
+  --tug-base-surface-default: --hvv(yellow, 4, 99);
+  --tug-base-surface-raised: --hvv(blue, 5, 24);
+  --tug-base-surface-overlay: --hvv(yellow, 6, 48);
+  --tug-base-surface-inset: --hvv(yellow, 4, 100);
+  --tug-base-surface-control: --hvv(yellow, 7, 51);
+  --tug-base-surface-control-hover: --hvv(yellow, 4, 99);
+  --tug-base-surface-control-active: --hvv(yellow, 6, 48);
+  --tug-base-surface-content: --hvv(yellow, 4, 100);
+  --tug-base-surface-screen: --hvv(blue, 4, 80);
 
   /* Foreground / Text */
-  --tug-base-fg-default: #26333b;
-  --tug-base-fg-muted: #41525c;
-  --tug-base-fg-subtle: #5a6b75;
-  --tug-base-fg-disabled: #8e9fa8;
-  --tug-base-fg-inverse: #f4f7f8;
-  --tug-base-fg-placeholder: #7f796a;
-  --tug-base-fg-onAccent: #ffffff;
-  --tug-base-fg-onDanger: #ffffff;
-  --tug-base-fg-onWarning: #1c1e22;
-  --tug-base-fg-onSuccess: #1c1e22;
+  --tug-base-fg-default: --hvv(hue-235, 8, 13);
+  --tug-base-fg-muted: --hvv(blue, 9, 22);
+  --tug-base-fg-subtle: --hvv(blue, 9, 30);
+  --tug-base-fg-disabled: --hvv(blue, 8, 44);
+  --tug-base-fg-inverse: --hvv(sky, 1, 100);
+  --tug-base-fg-placeholder: --hvv(yellow, 9, 28);
+  --tug-base-fg-onAccent: var(--tug-white);
+  --tug-base-fg-onDanger: var(--tug-white);
+  --tug-base-fg-onWarning: --hvv(hue-264, 4, 7);
+  --tug-base-fg-onSuccess: --hvv(hue-264, 4, 7);
 
   /* Icon */
-  --tug-base-icon-default: #41525c;
-  --tug-base-icon-muted: #7f796a;
-  --tug-base-icon-disabled: #8e9fa8;
+  --tug-base-icon-default: --hvv(blue, 9, 22);
+  --tug-base-icon-muted: --hvv(yellow, 9, 28);
+  --tug-base-icon-disabled: --hvv(blue, 8, 44);
 
   /* Borders */
-  --tug-base-border-default: #7f796a;
-  --tug-base-border-muted: #a29b8a;
-  --tug-base-border-strong: #5a5448;
-  --tug-base-border-inverse: #26333b;
-  --tug-base-divider-default: #ccc8bf;
-  --tug-base-divider-muted: #d9d5cc;
-  --tug-base-focus-ring-offset: #f4f1ea;
+  --tug-base-border-default: --hvv(yellow, 9, 28);
+  --tug-base-border-muted: --hvv(yellow, 10, 36);
+  --tug-base-border-strong: --hvv(hue-85, 7, 24);
+  --tug-base-border-inverse: --hvv(hue-235, 8, 13);
+  --tug-base-divider-default: --hvv(yellow, 5, 46);
+  --tug-base-divider-muted: --hvv(yellow, 5, 48);
+  --tug-base-focus-ring-offset: --hvv(yellow, 4, 99);
 
   /* Elevation */
   --tug-base-shadow-xs: rgba(0, 0, 0, 0.08);
@@ -70,278 +70,278 @@ body {
   --tug-base-overlay-highlight: rgba(255, 255, 255, 0.5);
 
   /* Accent — contrast-critical overrides per [D06]
-     accent-muted: #c46020 is darker orange needed for muted text on light backgrounds.
+     accent-muted: --hvv(flame, 45, 38) is darker orange needed for muted text on light backgrounds.
      accent-subtle: Harmony-specific rgba with adjusted opacity for light bg.
      All other accent tokens resolve from palette. */
-  --tug-base-accent-muted: #c46020;
+  --tug-base-accent-muted: --hvv(flame, 45, 38);
   --tug-base-accent-subtle: rgba(255, 127, 42, 0.15);
 
   /* Selection */
   --tug-base-selection-bg-inactive: rgba(100, 90, 80, 0.20);
-  --tug-base-selection-fg: #26333b;
+  --tug-base-selection-fg: --hvv(hue-235, 8, 13);
 
   /* Highlight hover (achromatic for light theme) */
   --tug-base-highlight-hover: rgba(0, 0, 0, 0.04);
 
   /* Card */
-  --tug-base-card-bg: #dad6cc;
-  --tug-base-card-border: #7f796a;
+  --tug-base-card-bg: --hvv(yellow, 6, 48);
+  --tug-base-card-border: --hvv(yellow, 9, 28);
   --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.18);
   --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.09);
   --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.08);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: #d4b888;
-  --tug-base-card-header-bg-inactive: #c8c0b0;
-  --tug-base-card-header-bg-collapsed: #ccc5b5;
-  --tug-base-card-header-fg: #26333b;
-  --tug-base-card-header-icon-inactive: #a29b8a;
-  --tug-base-card-header-divider: #bbb6aa;
+  --tug-base-card-header-bg-active: --hvv(hue-81, 23, 57);
+  --tug-base-card-header-bg-inactive: --hvv(hue-85, 8, 60);
+  --tug-base-card-header-bg-collapsed: --hvv(yellow, 9, 45);
+  --tug-base-card-header-fg: --hvv(hue-235, 8, 13);
+  --tug-base-card-header-icon-inactive: --hvv(yellow, 10, 36);
+  --tug-base-card-header-divider: --hvv(yellow, 7, 42);
   --tug-base-card-header-button-bg-hover: rgba(0, 0, 0, 0.06);
   --tug-base-card-header-button-bg-active: rgba(0, 0, 0, 0.1);
-  --tug-base-card-header-button-fg: #41525c;
-  --tug-base-card-accessory-bg: #c6c2b8;
-  --tug-base-card-accessory-border: #7f796a;
-  --tug-base-card-findbar-bg: #f4f1ea;
-  --tug-base-card-findbar-border: #7f796a;
+  --tug-base-card-header-button-fg: --hvv(blue, 9, 22);
+  --tug-base-card-accessory-bg: --hvv(yellow, 6, 44);
+  --tug-base-card-accessory-border: --hvv(yellow, 9, 28);
+  --tug-base-card-findbar-bg: --hvv(yellow, 4, 99);
+  --tug-base-card-findbar-border: --hvv(yellow, 9, 28);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: #ece7dc;
+  --tug-base-tab-bar-bg: --hvv(yellow, 6, 74);
   --tug-base-tab-bg-hover: rgba(0, 0, 0, 0.05);
-  --tug-base-tab-bg-active: #f4f1ea;
+  --tug-base-tab-bg-active: --hvv(yellow, 4, 99);
   --tug-base-tab-bg-compact: rgba(0, 0, 0, 0.04);
-  --tug-base-tab-fg-rest: #7f796a;
-  --tug-base-tab-fg-active: #26333b;
-  --tug-base-tab-fg-compact: #41525c;
+  --tug-base-tab-fg-rest: --hvv(yellow, 9, 28);
+  --tug-base-tab-fg-active: --hvv(hue-235, 8, 13);
+  --tug-base-tab-fg-compact: --hvv(blue, 9, 22);
   --tug-base-tab-close-bg-hover: rgba(0, 0, 0, 0.08);
-  --tug-base-tab-close-fg-hover: #26333b;
+  --tug-base-tab-close-fg-hover: --hvv(hue-235, 8, 13);
   --tug-base-tab-ghost-bg: rgba(0, 0, 0, 0.04);
   --tug-base-tab-ghost-border: rgba(0, 0, 0, 0.08);
   --tug-base-tab-overflow-trigger-bg: rgba(0, 0, 0, 0.05);
-  --tug-base-tab-overflow-trigger-fg: #41525c;
+  --tug-base-tab-overflow-trigger-fg: --hvv(blue, 9, 22);
   --tug-base-tab-add-bg-hover: rgba(0, 0, 0, 0.06);
-  --tug-base-tab-add-fg: #7f796a;
-  --tug-base-tab-typePicker-bg: #f4f1ea;
-  --tug-base-tab-typePicker-fg: #41525c;
+  --tug-base-tab-add-fg: --hvv(yellow, 9, 28);
+  --tug-base-tab-typePicker-bg: --hvv(yellow, 4, 99);
+  --tug-base-tab-typePicker-fg: --hvv(blue, 9, 22);
 
   /* Dock */
-  --tug-base-dock-bg: #3f474c;
-  --tug-base-dock-border: #5a6b75;
+  --tug-base-dock-bg: --hvv(hue-235, 5, 20);
+  --tug-base-dock-border: --hvv(blue, 9, 30);
   --tug-base-dock-button-bg-hover: rgba(255, 255, 255, 0.1);
   --tug-base-dock-button-bg-active: rgba(255, 255, 255, 0.16);
-  --tug-base-dock-button-fg: #a29b8a;
+  --tug-base-dock-button-fg: --hvv(yellow, 10, 36);
 
   /* Canvas / Grid */
   --tug-base-canvas-grid-line: rgba(0, 0, 0, 0.06);
   --tug-base-canvas-grid-emphasis: rgba(0, 0, 0, 0.12);
 
   /* Actions */
-  --tug-base-action-secondary-bg-rest: #f4f1ea;
-  --tug-base-action-secondary-bg-hover: #ece7dc;
-  --tug-base-action-secondary-bg-active: #dad6cc;
-  --tug-base-action-secondary-fg: #26333b;
-  --tug-base-action-secondary-border: #7f796a;
+  --tug-base-action-secondary-bg-rest: --hvv(yellow, 4, 99);
+  --tug-base-action-secondary-bg-hover: --hvv(yellow, 6, 74);
+  --tug-base-action-secondary-bg-active: --hvv(yellow, 6, 48);
+  --tug-base-action-secondary-fg: --hvv(hue-235, 8, 13);
+  --tug-base-action-secondary-border: --hvv(yellow, 9, 28);
   --tug-base-action-ghost-bg-hover: rgba(0, 0, 0, 0.06);
-  --tug-base-action-ghost-fg: #41525c;
-  --tug-base-action-disabled-bg: #e4ded1;
-  --tug-base-action-disabled-fg: #8e9fa8;
-  --tug-base-action-disabled-border: #ccc8bf;
+  --tug-base-action-ghost-fg: --hvv(blue, 9, 22);
+  --tug-base-action-disabled-bg: --hvv(yellow, 7, 51);
+  --tug-base-action-disabled-fg: --hvv(blue, 8, 44);
+  --tug-base-action-disabled-border: --hvv(yellow, 5, 46);
 
   /* Disabled controls */
-  --tug-base-control-disabled-bg: #ece7dc;
-  --tug-base-control-disabled-fg: #8e9fa8;
-  --tug-base-control-disabled-border: #ccc8bf;
-  --tug-base-control-disabled-icon: #8e9fa8;
+  --tug-base-control-disabled-bg: --hvv(yellow, 6, 74);
+  --tug-base-control-disabled-fg: --hvv(blue, 8, 44);
+  --tug-base-control-disabled-border: --hvv(yellow, 5, 46);
+  --tug-base-control-disabled-icon: --hvv(blue, 8, 44);
 
   /* Fields */
-  --tug-base-field-bg-rest: #e4ded1;
-  --tug-base-field-bg-hover: #ece7dc;
-  --tug-base-field-bg-focus: #f4f1ea;
-  --tug-base-field-bg-disabled: #dad6cc;
-  --tug-base-field-bg-readOnly: #ece7dc;
-  --tug-base-field-fg: #26333b;
-  --tug-base-field-fg-disabled: #8e9fa8;
-  --tug-base-field-fg-readOnly: #41525c;
-  --tug-base-field-placeholder: #7f796a;
-  --tug-base-field-border-rest: #7f796a;
-  --tug-base-field-border-hover: #5a5448;
-  --tug-base-field-border-disabled: #ccc8bf;
-  --tug-base-field-border-readOnly: #ccc8bf;
-  --tug-base-field-helper: #7f796a;
-  --tug-base-field-label: #41525c;
-  --tug-base-field-meta: #7f796a;
-  --tug-base-field-readOnly: #bcc3cb;
-  --tug-base-field-counter: #7b828c;
-  /* field-warning: #ffe15a is a Harmony-specific shade; palette --tug-yellow has L=0.901
+  --tug-base-field-bg-rest: --hvv(yellow, 7, 51);
+  --tug-base-field-bg-hover: --hvv(yellow, 6, 74);
+  --tug-base-field-bg-focus: --hvv(yellow, 4, 99);
+  --tug-base-field-bg-disabled: --hvv(yellow, 6, 48);
+  --tug-base-field-bg-readOnly: --hvv(yellow, 6, 74);
+  --tug-base-field-fg: --hvv(hue-235, 8, 13);
+  --tug-base-field-fg-disabled: --hvv(blue, 8, 44);
+  --tug-base-field-fg-readOnly: --hvv(blue, 9, 22);
+  --tug-base-field-placeholder: --hvv(yellow, 9, 28);
+  --tug-base-field-border-rest: --hvv(yellow, 9, 28);
+  --tug-base-field-border-hover: --hvv(hue-85, 7, 24);
+  --tug-base-field-border-disabled: --hvv(yellow, 5, 46);
+  --tug-base-field-border-readOnly: --hvv(yellow, 5, 46);
+  --tug-base-field-helper: --hvv(yellow, 9, 28);
+  --tug-base-field-label: --hvv(blue, 9, 22);
+  --tug-base-field-meta: --hvv(yellow, 9, 28);
+  --tug-base-field-readOnly: --hvv(cobalt, 5, 66);
+  --tug-base-field-counter: --hvv(hue-257, 7, 37);
+  /* field-warning: --hvv(yellow, 62, 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
      which may be too bright on white field backgrounds. Keep as override. */
-  --tug-base-field-warning: #ffe15a;
+  --tug-base-field-warning: --hvv(yellow, 62, 58);
 
   /* Toggles / Range */
-  --tug-base-toggle-track-off: #ccc8bf;
-  --tug-base-toggle-track-disabled: #dad6cc;
-  --tug-base-toggle-thumb: #ffffff;
-  --tug-base-toggle-thumb-disabled: #8e9fa8;
-  --tug-base-range-track: #ccc8bf;
-  --tug-base-range-tick: #7f796a;
+  --tug-base-toggle-track-off: --hvv(yellow, 5, 46);
+  --tug-base-toggle-track-disabled: --hvv(yellow, 6, 48);
+  --tug-base-toggle-thumb: var(--tug-white);
+  --tug-base-toggle-thumb-disabled: --hvv(blue, 8, 44);
+  --tug-base-range-track: --hvv(yellow, 5, 46);
+  --tug-base-range-tick: --hvv(yellow, 9, 28);
 
   /* Menus / Overlays */
-  --tug-base-menu-bg: #f4f1ea;
-  --tug-base-menu-fg: #26333b;
-  --tug-base-menu-border: #7f796a;
+  --tug-base-menu-bg: --hvv(yellow, 4, 99);
+  --tug-base-menu-fg: --hvv(hue-235, 8, 13);
+  --tug-base-menu-border: --hvv(yellow, 9, 28);
   --tug-base-menu-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
   --tug-base-menu-item-bg-hover: rgba(0, 0, 0, 0.05);
-  --tug-base-menu-item-fg: #26333b;
-  --tug-base-menu-item-fg-disabled: #8e9fa8;
-  --tug-base-menu-item-meta: #7f796a;
-  --tug-base-menu-item-shortcut: #7f796a;
-  --tug-base-menu-item-icon: #41525c;
-  --tug-base-menu-item-chevron: #7f796a;
-  --tug-base-popover-bg: #f4f1ea;
-  --tug-base-popover-fg: #26333b;
-  --tug-base-popover-border: #7f796a;
-  --tug-base-tooltip-bg: #3f474c;
-  --tug-base-tooltip-fg: #f4f7f8;
-  --tug-base-tooltip-border: #5a6b75;
+  --tug-base-menu-item-fg: --hvv(hue-235, 8, 13);
+  --tug-base-menu-item-fg-disabled: --hvv(blue, 8, 44);
+  --tug-base-menu-item-meta: --hvv(yellow, 9, 28);
+  --tug-base-menu-item-shortcut: --hvv(yellow, 9, 28);
+  --tug-base-menu-item-icon: --hvv(blue, 9, 22);
+  --tug-base-menu-item-chevron: --hvv(yellow, 9, 28);
+  --tug-base-popover-bg: --hvv(yellow, 4, 99);
+  --tug-base-popover-fg: --hvv(hue-235, 8, 13);
+  --tug-base-popover-border: --hvv(yellow, 9, 28);
+  --tug-base-tooltip-bg: --hvv(hue-235, 5, 20);
+  --tug-base-tooltip-fg: --hvv(sky, 1, 100);
+  --tug-base-tooltip-border: --hvv(blue, 9, 30);
 
   /* Dialogs */
-  --tug-base-dialog-bg: #f4f1ea;
-  --tug-base-dialog-fg: #26333b;
-  --tug-base-dialog-border: #7f796a;
-  --tug-base-sheet-bg: #f4f1ea;
-  --tug-base-sheet-fg: #26333b;
-  --tug-base-sheet-border: #7f796a;
+  --tug-base-dialog-bg: --hvv(yellow, 4, 99);
+  --tug-base-dialog-fg: --hvv(hue-235, 8, 13);
+  --tug-base-dialog-border: --hvv(yellow, 9, 28);
+  --tug-base-sheet-bg: --hvv(yellow, 4, 99);
+  --tug-base-sheet-fg: --hvv(hue-235, 8, 13);
+  --tug-base-sheet-border: --hvv(yellow, 9, 28);
 
   /* Toasts */
-  --tug-base-toast-info-bg: #f4f1ea;
-  --tug-base-toast-info-fg: #26333b;
-  /* toast-warning-fg: preserved per [D06] — dark gold #b89000 needed for contrast on light bg */
-  --tug-base-toast-warning-fg: #b89000;
+  --tug-base-toast-info-bg: --hvv(yellow, 4, 99);
+  --tug-base-toast-info-fg: --hvv(hue-235, 8, 13);
+  /* toast-warning-fg: preserved per [D06] — --hvv(yellow, 55, 35) needed for contrast on light bg */
+  --tug-base-toast-warning-fg: --hvv(yellow, 55, 35);
 
   /* Badges / Status */
-  --tug-base-badge-neutral-bg: #ccc8bf;
-  --tug-base-badge-neutral-fg: #41525c;
-  /* badge-warning-fg: preserved per [D06] — dark gold #8a7200 needed for contrast on light bg */
-  --tug-base-badge-warning-fg: #8a7200;
+  --tug-base-badge-neutral-bg: --hvv(yellow, 5, 46);
+  --tug-base-badge-neutral-fg: --hvv(blue, 9, 22);
+  /* badge-warning-fg: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
+  --tug-base-badge-warning-fg: --hvv(yellow, 46, 27);
 
   /* Progress / Skeleton */
-  --tug-base-progress-track: #ccc8bf;
-  --tug-base-skeleton-base: #ece7dc;
-  --tug-base-skeleton-highlight: #f4f1ea;
-  --tug-base-emptyState-fg: #7f796a;
-  --tug-base-emptyState-icon: #a29b8a;
+  --tug-base-progress-track: --hvv(yellow, 5, 46);
+  --tug-base-skeleton-base: --hvv(yellow, 6, 74);
+  --tug-base-skeleton-highlight: --hvv(yellow, 4, 99);
+  --tug-base-emptyState-fg: --hvv(yellow, 9, 28);
+  --tug-base-emptyState-icon: --hvv(yellow, 10, 36);
 
   /* Banners */
-  /* banner-info-fg: preserved per [D06] — #2898c8 darker cyan needed for contrast on light bg */
-  --tug-base-banner-info-fg: #2898c8;
-  /* banner-warning-fg: preserved per [D06] — dark gold #8a7200 needed for contrast on light bg */
-  --tug-base-banner-warning-fg: #8a7200;
+  /* banner-info-fg: preserved per [D06] — --hvv(blue, 42, 40) darker cyan needed for contrast on light bg */
+  --tug-base-banner-info-fg: --hvv(blue, 42, 40);
+  /* banner-warning-fg: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
+  --tug-base-banner-warning-fg: --hvv(yellow, 46, 27);
 
   /* Kbd */
-  --tug-base-kbd-bg: #f4f1ea;
-  --tug-base-kbd-fg: #41525c;
-  --tug-base-kbd-border: #7f796a;
+  --tug-base-kbd-bg: --hvv(yellow, 4, 99);
+  --tug-base-kbd-fg: --hvv(blue, 9, 22);
+  --tug-base-kbd-border: --hvv(yellow, 9, 28);
 
   /* Scrollbar */
-  --tug-base-scrollbar-thumb: #7f796a;
-  --tug-base-scrollbar-thumb-hover: #5a5448;
+  --tug-base-scrollbar-thumb: --hvv(yellow, 9, 28);
+  --tug-base-scrollbar-thumb-hover: --hvv(hue-85, 7, 24);
 
   /* Separator / Avatar */
-  --tug-base-separator: #ccc8bf;
-  --tug-base-avatar-bg: #dad6cc;
-  --tug-base-avatar-fg: #41525c;
-  --tug-base-avatar-ring: #7f796a;
+  --tug-base-separator: --hvv(yellow, 5, 46);
+  --tug-base-avatar-bg: --hvv(yellow, 6, 48);
+  --tug-base-avatar-fg: --hvv(blue, 9, 22);
+  --tug-base-avatar-ring: --hvv(yellow, 9, 28);
 
   /* Tables / Lists */
-  --tug-base-table-header-bg: #ece7dc;
-  --tug-base-table-header-fg: #41525c;
+  --tug-base-table-header-bg: --hvv(yellow, 6, 74);
+  --tug-base-table-header-fg: --hvv(blue, 9, 22);
   --tug-base-table-row-bg-striped: rgba(0, 0, 0, 0.02);
   --tug-base-table-row-bg-hover: rgba(0, 0, 0, 0.04);
-  --tug-base-table-row-border: #d9d5cc;
-  --tug-base-table-cell-divider: #ccc8bf;
-  --tug-base-table-sortIndicator: #7f796a;
+  --tug-base-table-row-border: --hvv(yellow, 5, 48);
+  --tug-base-table-cell-divider: --hvv(yellow, 5, 46);
+  --tug-base-table-sortIndicator: --hvv(yellow, 9, 28);
   --tug-base-list-row-hover: rgba(0, 0, 0, 0.04);
 
   /* Stats */
-  --tug-base-stat-label: #7f796a;
-  --tug-base-stat-value: #26333b;
-  --tug-base-stat-trend-neutral: #7f796a;
+  --tug-base-stat-label: --hvv(yellow, 9, 28);
+  --tug-base-stat-value: --hvv(hue-235, 8, 13);
+  --tug-base-stat-trend-neutral: --hvv(yellow, 9, 28);
 
   /* Chart infrastructure (non-chromatic) */
   --tug-base-chart-grid: rgba(0, 0, 0, 0.06);
-  --tug-base-chart-axis: #7f796a;
-  --tug-base-chart-tick: #7f796a;
+  --tug-base-chart-axis: --hvv(yellow, 9, 28);
+  --tug-base-chart-tick: --hvv(yellow, 9, 28);
 
   /* Gauge (non-chromatic structural) */
-  --tug-base-gauge-track: #ccc8bf;
-  --tug-base-gauge-needle: #26333b;
-  --tug-base-gauge-tick-major: #7f796a;
-  --tug-base-gauge-tick-minor: #a29b8a;
-  --tug-base-gauge-readout: #26333b;
-  --tug-base-gauge-unit: #7f796a;
-  --tug-base-gauge-annotation: #7f796a;
+  --tug-base-gauge-track: --hvv(yellow, 5, 46);
+  --tug-base-gauge-needle: --hvv(hue-235, 8, 13);
+  --tug-base-gauge-tick-major: --hvv(yellow, 9, 28);
+  --tug-base-gauge-tick-minor: --hvv(yellow, 10, 36);
+  --tug-base-gauge-readout: --hvv(hue-235, 8, 13);
+  --tug-base-gauge-unit: --hvv(yellow, 9, 28);
+  --tug-base-gauge-annotation: --hvv(yellow, 9, 28);
 
   /* Syntax — contrast-critical override per [D06]
-     syntax-function: #8a7200 dark gold needed — palette --tug-yellow (L=0.901) has
-     insufficient contrast on Harmony's light surfaces (#f4f1ea). */
-  --tug-base-syntax-function: #8a7200;
+     syntax-function: --hvv(yellow, 46, 27) dark gold needed — palette --tug-yellow (L=0.901) has
+     insufficient contrast on Harmony's light surfaces. */
+  --tug-base-syntax-function: --hvv(yellow, 46, 27);
 
   /* Terminal */
-  --tug-base-terminal-bg: #fcf9f2;
-  --tug-base-terminal-fg: #26333b;
-  --tug-base-terminal-fg-muted: #41525c;
-  --tug-base-terminal-border: #ccc8bf;
-  --tug-base-terminal-ansi-black: #26333b;
-  /* terminal-ansi-yellow: preserved per [D06] — dark gold needed for contrast on light bg */
-  --tug-base-terminal-ansi-yellow: #8a7200;
+  --tug-base-terminal-bg: --hvv(yellow, 4, 100);
+  --tug-base-terminal-fg: --hvv(hue-235, 8, 13);
+  --tug-base-terminal-fg-muted: --hvv(blue, 9, 22);
+  --tug-base-terminal-border: --hvv(yellow, 5, 46);
+  --tug-base-terminal-ansi-black: --hvv(hue-235, 8, 13);
+  /* terminal-ansi-yellow: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
+  --tug-base-terminal-ansi-yellow: --hvv(yellow, 46, 27);
   /* terminal-ansi-white: Harmony-specific near-white for terminal display */
-  --tug-base-terminal-ansi-white: #f4f7f8;
+  --tug-base-terminal-ansi-white: --hvv(sky, 1, 100);
 
   /* Chat / Code Block */
-  --tug-base-chat-transcript-bg: #f4f1ea;
-  --tug-base-chat-message-user-bg: #ece7dc;
-  --tug-base-chat-message-assistant-bg: #dad6cc;
-  --tug-base-chat-message-border: #ccc8bf;
-  --tug-base-chat-composer-bg: #ece7dc;
-  --tug-base-chat-composer-border: #7f796a;
-  --tug-base-chat-attachment-bg: #dad6cc;
-  --tug-base-chat-attachment-border: #7f796a;
-  --tug-base-chat-attachment-fg: #41525c;
-  --tug-base-codeBlock-bg: #e4ded1;
-  --tug-base-codeBlock-border: #ccc8bf;
-  --tug-base-codeBlock-header-bg: #dad6cc;
-  --tug-base-codeBlock-header-fg: #7f796a;
+  --tug-base-chat-transcript-bg: --hvv(yellow, 4, 99);
+  --tug-base-chat-message-user-bg: --hvv(yellow, 6, 74);
+  --tug-base-chat-message-assistant-bg: --hvv(yellow, 6, 48);
+  --tug-base-chat-message-border: --hvv(yellow, 5, 46);
+  --tug-base-chat-composer-bg: --hvv(yellow, 6, 74);
+  --tug-base-chat-composer-border: --hvv(yellow, 9, 28);
+  --tug-base-chat-attachment-bg: --hvv(yellow, 6, 48);
+  --tug-base-chat-attachment-border: --hvv(yellow, 9, 28);
+  --tug-base-chat-attachment-fg: --hvv(blue, 9, 22);
+  --tug-base-codeBlock-bg: --hvv(yellow, 7, 51);
+  --tug-base-codeBlock-border: --hvv(yellow, 5, 46);
+  --tug-base-codeBlock-header-bg: --hvv(yellow, 6, 48);
+  --tug-base-codeBlock-header-fg: --hvv(yellow, 9, 28);
 
   /* Tree / File status — file-status-modified preserved per [D06] */
   --tug-base-tree-row-bg-hover: rgba(0, 0, 0, 0.04);
-  --tug-base-tree-row-fg: #26333b;
-  --tug-base-tree-chevron: #7f796a;
-  /* file-status-modified: preserved per [D06] — dark gold #8a7200 needed for contrast on light bg */
-  --tug-base-file-status-modified: #8a7200;
+  --tug-base-tree-row-fg: --hvv(hue-235, 8, 13);
+  --tug-base-tree-chevron: --hvv(yellow, 9, 28);
+  /* file-status-modified: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
+  --tug-base-file-status-modified: --hvv(yellow, 46, 27);
 
   /* Feed */
-  --tug-base-feed-bg: #f4f1ea;
-  --tug-base-feed-border: #ccc8bf;
-  --tug-base-feed-step-bg: #ece7dc;
-  --tug-base-feed-step-fg: #41525c;
+  --tug-base-feed-bg: --hvv(yellow, 4, 99);
+  --tug-base-feed-border: --hvv(yellow, 5, 46);
+  --tug-base-feed-step-bg: --hvv(yellow, 6, 74);
+  --tug-base-feed-step-fg: --hvv(blue, 9, 22);
 
   /* Inspector / Dev Overlay */
-  --tug-base-inspector-panel-bg: #ece7dc;
-  --tug-base-inspector-panel-border: #ccc8bf;
-  --tug-base-inspector-panel-bg-pinned: #f4f1ea;
-  --tug-base-inspector-section-bg: #e4ded1;
-  --tug-base-inspector-field-bg: #f4f1ea;
-  --tug-base-inspector-field-border: #ccc8bf;
-  --tug-base-inspector-field-readOnly: #ece7dc;
-  --tug-base-inspector-field-default: #ece7dc;
-  --tug-base-inspector-emptyState-fg: #7f796a;
-  --tug-base-inspector-emptyState-icon: #a29b8a;
-  --tug-base-inspector-swatch-border: #7f796a;
-  --tug-base-inspector-scrub-track: #ccc8bf;
-  --tug-base-inspector-scrub-thumb: #7f796a;
-  /* inspector-source-inline: preserved per [D06] — dark gold #8a7200 needed for contrast on light bg */
-  --tug-base-inspector-source-inline: #8a7200;
+  --tug-base-inspector-panel-bg: --hvv(yellow, 6, 74);
+  --tug-base-inspector-panel-border: --hvv(yellow, 5, 46);
+  --tug-base-inspector-panel-bg-pinned: --hvv(yellow, 4, 99);
+  --tug-base-inspector-section-bg: --hvv(yellow, 7, 51);
+  --tug-base-inspector-field-bg: --hvv(yellow, 4, 99);
+  --tug-base-inspector-field-border: --hvv(yellow, 5, 46);
+  --tug-base-inspector-field-readOnly: --hvv(yellow, 6, 74);
+  --tug-base-inspector-field-default: --hvv(yellow, 6, 74);
+  --tug-base-inspector-emptyState-fg: --hvv(yellow, 9, 28);
+  --tug-base-inspector-emptyState-icon: --hvv(yellow, 10, 36);
+  --tug-base-inspector-swatch-border: --hvv(yellow, 9, 28);
+  --tug-base-inspector-scrub-track: --hvv(yellow, 5, 46);
+  --tug-base-inspector-scrub-thumb: --hvv(yellow, 9, 28);
+  /* inspector-source-inline: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
+  --tug-base-inspector-source-inline: --hvv(yellow, 46, 27);
   --tug-base-dev-overlay-bg: rgba(244, 241, 234, 0.95);
-  --tug-base-dev-overlay-fg: #26333b;
-  --tug-base-dev-overlay-border: #7f796a;
+  --tug-base-dev-overlay-fg: --hvv(hue-235, 8, 13);
+  --tug-base-dev-overlay-border: --hvv(yellow, 9, 28);
   --tug-base-dev-overlay-targetDim: rgba(0, 0, 0, 0.2);
 }

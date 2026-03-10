@@ -432,6 +432,96 @@ export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
+// oklchToHVV — Reverse mapper: oklch() string → HVV parameters
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse an `oklch(L C h)` CSS string into its numeric components.
+ * Returns null if the string does not match the expected format.
+ */
+function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | null {
+  const m = oklchStr.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
+  if (!m) return null;
+  return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
+}
+
+/**
+ * Reverse-map an `oklch(L C h)` CSS string to the closest HVV parameters.
+ *
+ * Algorithm:
+ * 1. Parse L, C, h from the oklch string.
+ * 2. Find closest named hue by comparing h to all HUE_FAMILIES angles.
+ *    If within 5 degrees, use the named hue; otherwise return `hue-NNN`.
+ * 3. Invert the val-to-L piecewise formula to recover val (integer).
+ * 4. Compute peakC and invert to recover vib (integer).
+ *
+ * @param oklchStr - An `oklch(L C h)` CSS string.
+ * @returns `{ hue, vib, val }` where hue is a named family or `hue-NNN`.
+ */
+export function oklchToHVV(oklchStr: string): { hue: string; vib: number; val: number } {
+  const parsed = parseOklchStr(oklchStr);
+  if (!parsed) {
+    return { hue: "hue-0", vib: 0, val: 0 };
+  }
+  const { L, C, h } = parsed;
+
+  // Step 1: Find closest named hue
+  let closestHue = "";
+  let closestDiff = Infinity;
+  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
+    // Compute circular angular difference
+    let diff = Math.abs(h - angle);
+    if (diff > 180) diff = 360 - diff;
+    if (diff < closestDiff) {
+      closestDiff = diff;
+      closestHue = name;
+    }
+  }
+  const hue = closestDiff <= 5 ? closestHue : `hue-${Math.round(h)}`;
+
+  // Step 2: Invert val-to-L piecewise formula
+  // Forward: L = L_DARK + min(val,50)*(canonL-L_DARK)/50 + max(val-50,0)*(L_LIGHT-canonL)/50
+  let canonicalL: number;
+  let peakC: number;
+  if (hue.startsWith("hue-")) {
+    canonicalL = 0.77; // median of DEFAULT_CANONICAL_L values
+    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
+  } else {
+    canonicalL = DEFAULT_CANONICAL_L[hue] ?? 0.77;
+    peakC = (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
+  }
+
+  let val: number;
+  if (L <= canonicalL) {
+    val = 50 * (L - L_DARK) / (canonicalL - L_DARK);
+  } else {
+    val = 50 + 50 * (L - canonicalL) / (L_LIGHT - canonicalL);
+  }
+  val = Math.round(Math.max(0, Math.min(100, val)));
+
+  // Step 3: Invert vib-to-C linear formula
+  // Forward: C = (vib/100) * peakC
+  const vib = Math.round(Math.max(0, Math.min(100, (C / peakC) * 100)));
+
+  return { hue, vib, val };
+}
+
+/**
+ * Format an `oklch()` string as a human-readable HVV description.
+ *
+ * Examples:
+ *   - `"blue vib=5 val=13"`
+ *   - `"hue-237 vib=5 val=13"`
+ *
+ * @param oklchStr - An `oklch(L C h)` CSS string.
+ * @returns A human-readable string like `"blue vib=5 val=13"`.
+ */
+export function hvvPretty(oklchStr: string): string {
+  const { hue, vib, val } = oklchToHVV(oklchStr);
+  return `${hue} vib=${vib} val=${val}`;
+}
+
+// ---------------------------------------------------------------------------
 // hvvColor — HVV color computation function
 // ---------------------------------------------------------------------------
 

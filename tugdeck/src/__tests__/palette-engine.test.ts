@@ -37,6 +37,8 @@ import {
   PEAK_C_SCALE,
   HVV_PRESETS,
   MAX_P3_CHROMA_FOR_HUE,
+  oklchToHVV,
+  hvvPretty,
 } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -588,5 +590,109 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
       }
     }
     expect(count).toBe(120);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// oklchToHVV() and hvvPretty()
+// ---------------------------------------------------------------------------
+
+describe("oklchToHVV()", () => {
+  it("round-trip: all 24 hues at vib=50, val=50 recover exact hue name and vib/val", () => {
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const canonL = DEFAULT_CANONICAL_L[hueName];
+      const oklch = hvvColor(hueName, 50, 50, canonL);
+      const result = oklchToHVV(oklch);
+      expect(result.hue).toBe(hueName);
+      expect(result.vib).toBe(50);
+      expect(result.val).toBe(50);
+    }
+  });
+
+  it("round-trip edge values: vib=0, vib=100, val=0, val=100", () => {
+    const hueName = "blue";
+    const canonL = DEFAULT_CANONICAL_L[hueName];
+
+    const r0 = oklchToHVV(hvvColor(hueName, 0, 50, canonL));
+    expect(r0.hue).toBe(hueName);
+    expect(r0.vib).toBe(0);
+    expect(r0.val).toBe(50);
+
+    const r100 = oklchToHVV(hvvColor(hueName, 100, 50, canonL));
+    expect(r100.hue).toBe(hueName);
+    expect(r100.vib).toBe(100);
+    expect(r100.val).toBe(50);
+
+    const rV0 = oklchToHVV(hvvColor(hueName, 50, 0, canonL));
+    expect(rV0.hue).toBe(hueName);
+    expect(rV0.vib).toBe(50);
+    expect(rV0.val).toBe(0);
+
+    const rV100 = oklchToHVV(hvvColor(hueName, 50, 100, canonL));
+    expect(rV100.hue).toBe(hueName);
+    expect(rV100.vib).toBe(50);
+    expect(rV100.val).toBe(100);
+  });
+
+  it("raw angle test: oklch at hue angle 237 (not close to any named hue) returns hue-237", () => {
+    // hue angle 237 — blue=230(7deg away), cobalt=250(13deg away), both > 5 deg threshold
+    // Wait: 237-230=7, 250-237=13 — 7 > 5, so raw angle
+    const oklch = "oklch(0.5 0.05 237)";
+    const result = oklchToHVV(oklch);
+    expect(result.hue).toBe("hue-237");
+  });
+
+  it("round-trip: all 24 hues at vib=20, val=85 recover correct hue name", () => {
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const canonL = DEFAULT_CANONICAL_L[hueName];
+      const oklch = hvvColor(hueName, 20, 85, canonL);
+      const result = oklchToHVV(oklch);
+      expect(result.hue).toBe(hueName);
+      expect(result.vib).toBe(20);
+      expect(result.val).toBe(85);
+    }
+  });
+
+  it("returns hue-NNN for raw angle when not within 5 degrees of any named hue", () => {
+    // angle 237 is 7 degrees from blue (230), just outside the 5-degree threshold
+    const result = oklchToHVV("oklch(0.7 0.08 237)");
+    expect(result.hue).toMatch(/^hue-\d+/);
+  });
+
+  it("returns a named hue when within 5 degrees of a named hue angle", () => {
+    // blue is at 230; angle 234 is 4 degrees away — within threshold
+    const result = oklchToHVV("oklch(0.7 0.08 234)");
+    expect(result.hue).toBe("blue");
+  });
+
+  it("returns valid {hue, vib, val} for an invalid oklch string", () => {
+    const result = oklchToHVV("not-oklch");
+    expect(result).toHaveProperty("hue");
+    expect(result).toHaveProperty("vib");
+    expect(result).toHaveProperty("val");
+  });
+});
+
+describe("hvvPretty()", () => {
+  it("formats named hue as 'blue vib=5 val=13'", () => {
+    // blue at angle 230, within 5 deg threshold
+    const oklch = hvvColor("blue", 5, 13, DEFAULT_CANONICAL_L["blue"]);
+    const result = hvvPretty(oklch);
+    expect(result).toMatch(/^blue vib=\d+ val=\d+/);
+    expect(result).toBe("blue vib=5 val=13");
+  });
+
+  it("formats raw angle as 'hue-NNN vib=N val=N'", () => {
+    const result = hvvPretty("oklch(0.5 0.05 237)");
+    expect(result).toMatch(/^hue-237 vib=\d+ val=\d+$/);
+  });
+
+  it("round-trip: hvvPretty(hvvColor(hue, vib, val)) contains correct hue name", () => {
+    for (const hueName of Object.keys(HUE_FAMILIES)) {
+      const canonL = DEFAULT_CANONICAL_L[hueName];
+      const oklch = hvvColor(hueName, 50, 50, canonL);
+      const pretty = hvvPretty(oklch);
+      expect(pretty).toMatch(new RegExp(`^${hueName} `));
+    }
   });
 });
