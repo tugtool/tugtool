@@ -276,3 +276,4 @@ describe("postcss-hvv: works on any CSS property", () => {
     expect(result).not.toContain("--hvv(");
   });
 });
+

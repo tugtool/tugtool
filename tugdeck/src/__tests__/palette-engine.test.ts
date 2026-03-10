@@ -519,42 +519,9 @@ describe("tug-palette.css — neutral ramp and anchors", () => {
   });
 });
 
-describe("tug-palette.css — P3 @media block", () => {
-  it("contains @media (color-gamut: p3) block", () => {
-    expect(TUG_PALETTE_CSS).toContain("@media (color-gamut: p3)");
-  });
-
-  it("P3 block contains 24 peak-c overrides (one per hue)", () => {
-    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
-    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
-    const peakCOverrides = p3Block.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
-    expect(peakCOverrides.length).toBe(24);
-  });
-
-  it("P3 --tug-red-peak-c is greater than sRGB --tug-red-peak-c", () => {
-    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
-    const srgbBlock = TUG_PALETTE_CSS.slice(0, mediaIdx);
-    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
-    const srgbMatch = srgbBlock.match(/--tug-red-peak-c:\s*([\d.]+);/);
-    const p3Match   = p3Block.match(/--tug-red-peak-c:\s*([\d.]+);/);
-    expect(srgbMatch).not.toBeNull();
-    expect(p3Match).not.toBeNull();
-    expect(parseFloat(p3Match![1])).toBeGreaterThan(parseFloat(srgbMatch![1]));
-  });
-
-  it("P3 block does NOT contain preset formula overrides (only peak-c is overridden)", () => {
-    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
-    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
-    // No preset variables (canonical, intense, muted, light, dark, etc.) should appear in the P3 block
-    const presetVars = p3Block.match(/--tug-[a-z]+(?:-(?:intense|muted|light|dark))?:\s*oklch\(/g) ?? [];
-    expect(presetVars.length).toBe(0);
-  });
-
-  it("P3 block does NOT override hue angles or canonical-l (gamut-independent)", () => {
-    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
-    const p3Block = TUG_PALETTE_CSS.slice(mediaIdx);
-    expect(p3Block).not.toMatch(/--tug-\w+-h:\s*\d+;/);
-    expect(p3Block).not.toMatch(/--tug-\w+-canonical-l:\s*[\d.]+;/);
+describe("tug-palette.css — no P3 @media block", () => {
+  it("does not contain @media (color-gamut: p3) block", () => {
+    expect(TUG_PALETTE_CSS).not.toContain("@media (color-gamut: p3)");
   });
 });
 

@@ -18,7 +18,6 @@ import {
   HUE_FAMILIES,
   DEFAULT_CANONICAL_L,
   MAX_CHROMA_FOR_HUE,
-  MAX_P3_CHROMA_FOR_HUE,
   HVV_PRESETS,
   L_DARK,
   L_LIGHT,
@@ -201,27 +200,6 @@ lines.push(`  --tug-neutral-intense: oklch(0.555 0 0);`);
 lines.push(`  --tug-neutral-muted: oklch(0.555 0 0);`);
 lines.push(`  --tug-black: oklch(0 0 0);`);
 lines.push(`  --tug-white: oklch(1 0 0);`);
-lines.push(`}`);
-lines.push(``);
-
-// P3 gamut overrides
-lines.push(`/* ---------------------------------------------------------------------------`);
-lines.push(` * P3 gamut overrides — wider peak chroma on Display P3 displays`);
-lines.push(` * Only --tug-{hue}-peak-c is overridden; preset formulas reference peak-c and`);
-lines.push(` * automatically produce richer colors. Hue angles and canonical L are`);
-lines.push(` * gamut-independent and are NOT overridden here.`);
-lines.push(` * Source: MAX_P3_CHROMA_FOR_HUE * PEAK_C_SCALE(${PEAK_C_SCALE}) from palette-engine.ts`);
-lines.push(` * --------------------------------------------------------------------------- */`);
-lines.push(`@media (color-gamut: p3) {`);
-lines.push(`  body {`);
-
-for (const hue of HUE_ORDER) {
-  const p3C = MAX_P3_CHROMA_FOR_HUE[hue];
-  const peakP3 = p3C * PEAK_C_SCALE;
-  lines.push(`    --tug-${hue}-peak-c: ${fmt(peakP3, 3)};`);
-}
-
-lines.push(`  }`);
 lines.push(`}`);
 lines.push(``);
 
