@@ -26,8 +26,8 @@ import React, {
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
-import bluenoteCSS from "../../styles/bluenote.css?raw";
-import harmonyCSS from "../../styles/harmony.css?raw";
+import bluenoteCSS from "../../styles/bluenote.css?inline";
+import harmonyCSS from "../../styles/harmony.css?inline";
 
 // ---------------------------------------------------------------------------
 // Types
