@@ -195,14 +195,27 @@ fn oklch_to_hvv(l: f64, c: f64, h: f64) -> HvvResult {
 // Color parsing — supports many input formats
 // ---------------------------------------------------------------------------
 
-/// Parse a color string and return (L, C, h) in OKLCH space.
+/// Parsed color: OKLCH components plus optional alpha.
+struct ParsedColor {
+    l: f64,
+    c: f64,
+    h: f64,
+    alpha: Option<f64>,
+}
+
+/// Parse a color string and return OKLCH components plus optional alpha.
 /// Returns Err with a message if the format is not recognized.
-fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
+fn parse_color(input: &str) -> Result<ParsedColor, String> {
     let s = input.trim();
 
-    // oklch(L C h)
+    // oklch(L C h) or oklch(L C h / a)
     if let Some(lch) = try_parse_oklch(s) {
-        return Ok(lch);
+        return Ok(ParsedColor {
+            l: lch.0,
+            c: lch.1,
+            h: lch.2,
+            alpha: lch.3,
+        });
     }
 
     // Hex: #RGB, #RRGGBB, #RRGGBBAA
@@ -212,7 +225,13 @@ fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
             srgb_to_linear(rgb.1),
             srgb_to_linear(rgb.2),
         );
-        return Ok(linear_srgb_to_oklch(r, g, b));
+        let (l, c, h) = linear_srgb_to_oklch(r, g, b);
+        return Ok(ParsedColor {
+            l,
+            c,
+            h,
+            alpha: rgb.3,
+        });
     }
 
     // rgb(r, g, b) or rgba(r, g, b, a)
@@ -222,7 +241,13 @@ fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
             srgb_to_linear(rgb.1),
             srgb_to_linear(rgb.2),
         );
-        return Ok(linear_srgb_to_oklch(r, g, b));
+        let (l, c, h) = linear_srgb_to_oklch(r, g, b);
+        return Ok(ParsedColor {
+            l,
+            c,
+            h,
+            alpha: rgb.3,
+        });
     }
 
     // hsl(h, s%, l%) or hsla(h, s%, l%, a)
@@ -232,7 +257,13 @@ fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
             srgb_to_linear(rgb.1),
             srgb_to_linear(rgb.2),
         );
-        return Ok(linear_srgb_to_oklch(r, g, b));
+        let (l, c, h) = linear_srgb_to_oklch(r, g, b);
+        return Ok(ParsedColor {
+            l,
+            c,
+            h,
+            alpha: rgb.3,
+        });
     }
 
     // hsv(h, s%, v%) or hsb(h, s%, v%)
@@ -242,7 +273,13 @@ fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
             srgb_to_linear(rgb.1),
             srgb_to_linear(rgb.2),
         );
-        return Ok(linear_srgb_to_oklch(r, g, b));
+        let (l, c, h) = linear_srgb_to_oklch(r, g, b);
+        return Ok(ParsedColor {
+            l,
+            c,
+            h,
+            alpha: None,
+        });
     }
 
     // CSS named colors
@@ -252,47 +289,66 @@ fn parse_color(input: &str) -> Result<(f64, f64, f64), String> {
             srgb_to_linear(rgb.1),
             srgb_to_linear(rgb.2),
         );
-        return Ok(linear_srgb_to_oklch(r, g, b));
+        let (l, c, h) = linear_srgb_to_oklch(r, g, b);
+        return Ok(ParsedColor {
+            l,
+            c,
+            h,
+            alpha: None,
+        });
     }
 
     Err(format!("unrecognized color format: {}", s))
 }
 
-fn try_parse_oklch(s: &str) -> Option<(f64, f64, f64)> {
+fn try_parse_oklch(s: &str) -> Option<(f64, f64, f64, Option<f64>)> {
     let s = s.strip_prefix("oklch(")?;
     let s = s.strip_suffix(')')?;
-    let parts: Vec<&str> = s.split_whitespace().collect();
+    // Handle "L C h / alpha" syntax
+    let (lch_part, alpha) = if let Some((lch, a)) = s.split_once('/') {
+        (lch.trim(), Some(a.trim().parse::<f64>().ok()?))
+    } else {
+        (s, None)
+    };
+    let parts: Vec<&str> = lch_part.split_whitespace().collect();
     if parts.len() < 3 {
         return None;
     }
     let l = parts[0].parse::<f64>().ok()?;
     let c = parts[1].parse::<f64>().ok()?;
     let h = parts[2].parse::<f64>().ok()?;
-    Some((l, c, h))
+    Some((l, c, h, alpha))
 }
 
-fn try_parse_hex(s: &str) -> Option<(f64, f64, f64)> {
+fn try_parse_hex(s: &str) -> Option<(f64, f64, f64, Option<f64>)> {
     let s = s.strip_prefix('#')?;
-    let (r, g, b) = match s.len() {
+    let (r, g, b, alpha) = match s.len() {
         3 => {
             let r = u8::from_str_radix(&s[0..1], 16).ok()?;
             let g = u8::from_str_radix(&s[1..2], 16).ok()?;
             let b = u8::from_str_radix(&s[2..3], 16).ok()?;
-            (r * 17, g * 17, b * 17)
+            (r * 17, g * 17, b * 17, None)
         }
-        6 | 8 => {
+        6 => {
             let r = u8::from_str_radix(&s[0..2], 16).ok()?;
             let g = u8::from_str_radix(&s[2..4], 16).ok()?;
             let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-            (r, g, b)
+            (r, g, b, None)
+        }
+        8 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            (r, g, b, Some(a as f64 / 255.0))
         }
         _ => return None,
     };
-    Some((r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0))
+    Some((r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0, alpha))
 }
 
 /// Parse rgb(r, g, b) or rgba(r, g, b, a). Supports 0-255 integer or 0%-100%.
-fn try_parse_rgb(s: &str) -> Option<(f64, f64, f64)> {
+fn try_parse_rgb(s: &str) -> Option<(f64, f64, f64, Option<f64>)> {
     let inner = if let Some(rest) = s.strip_prefix("rgba(") {
         rest.strip_suffix(')')
     } else if let Some(rest) = s.strip_prefix("rgb(") {
@@ -317,11 +373,16 @@ fn try_parse_rgb(s: &str) -> Option<(f64, f64, f64)> {
     let r = parse_channel(parts[0])?.clamp(0.0, 1.0);
     let g = parse_channel(parts[1])?.clamp(0.0, 1.0);
     let b = parse_channel(parts[2])?.clamp(0.0, 1.0);
-    Some((r, g, b))
+    let alpha = if parts.len() >= 4 {
+        parts[3].parse::<f64>().ok()
+    } else {
+        None
+    };
+    Some((r, g, b, alpha))
 }
 
 /// Parse hsl(h, s%, l%) or hsla(h, s%, l%, a).
-fn try_parse_hsl(s: &str) -> Option<(f64, f64, f64)> {
+fn try_parse_hsl(s: &str) -> Option<(f64, f64, f64, Option<f64>)> {
     let inner = if let Some(rest) = s.strip_prefix("hsla(") {
         rest.strip_suffix(')')
     } else if let Some(rest) = s.strip_prefix("hsl(") {
@@ -343,8 +404,14 @@ fn try_parse_hsl(s: &str) -> Option<(f64, f64, f64)> {
         .ok()?;
     let s_pct = parts[1].strip_suffix('%')?.trim().parse::<f64>().ok()? / 100.0;
     let l_pct = parts[2].strip_suffix('%')?.trim().parse::<f64>().ok()? / 100.0;
+    let alpha = if parts.len() >= 4 {
+        parts[3].parse::<f64>().ok()
+    } else {
+        None
+    };
 
-    Some(hsl_to_srgb(h, s_pct, l_pct))
+    let (r, g, b) = hsl_to_srgb(h, s_pct, l_pct);
+    Some((r, g, b, alpha))
 }
 
 fn hsl_to_srgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
@@ -570,30 +637,62 @@ fn fmt4(n: f64) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn run_hvv(color: String, json_output: bool, quiet: bool) -> Result<i32, String> {
-    let (l, c, h) = parse_color(&color)?;
-    let hvv = oklch_to_hvv(l, c, h);
+    let parsed = parse_color(&color)?;
+    let hvv = oklch_to_hvv(parsed.l, parsed.c, parsed.h);
 
     if quiet {
         return Ok(0);
     }
 
     // Compute the sRGB hex for display
-    let (lr, lg, lb) = oklch_to_linear_srgb(l, c, h);
+    let (lr, lg, lb) = oklch_to_linear_srgb(parsed.l, parsed.c, parsed.h);
     let sr = (linear_to_srgb(lr.clamp(0.0, 1.0)) * 255.0).round() as u8;
     let sg = (linear_to_srgb(lg.clamp(0.0, 1.0)) * 255.0).round() as u8;
     let sb = (linear_to_srgb(lb.clamp(0.0, 1.0)) * 255.0).round() as u8;
     let hex = format!("#{:02x}{:02x}{:02x}", sr, sg, sb);
 
-    let oklch_str = format!("oklch({} {} {})", fmt4(l), fmt4(c), fmt4(h));
+    // Format alpha suffix for display
+    let alpha_suffix = match parsed.alpha {
+        Some(a) => format!(", {}", fmt4(a)),
+        None => String::new(),
+    };
+    let oklch_alpha = match parsed.alpha {
+        Some(a) => format!(" / {}", fmt4(a)),
+        None => String::new(),
+    };
+
+    let oklch_str = format!(
+        "oklch({} {} {}{})",
+        fmt4(parsed.l),
+        fmt4(parsed.c),
+        fmt4(parsed.h),
+        oklch_alpha
+    );
 
     if json_output {
+        let alpha_json = match parsed.alpha {
+            Some(a) => format!(r#","alpha":{}"#, fmt4(a)),
+            None => String::new(),
+        };
         println!(
-            r#"{{"status":"ok","hue":"{}","vib":{},"val":{},"hvv":"--hvv({}, {}, {})","oklch":"{}","hex":"{}"}}"#,
-            hvv.hue, hvv.vib, hvv.val, hvv.hue, hvv.vib, hvv.val, oklch_str, hex
+            r#"{{"status":"ok","hue":"{}","vib":{},"val":{},"hvv":"--hvv({}, {}, {}{})","oklch":"{}","hex":"{}"{}}}"#,
+            hvv.hue,
+            hvv.vib,
+            hvv.val,
+            hvv.hue,
+            hvv.vib,
+            hvv.val,
+            alpha_suffix,
+            oklch_str,
+            hex,
+            alpha_json
         );
     } else {
         println!("{} vib={} val={}", hvv.hue, hvv.vib, hvv.val);
-        println!("  hvv:   --hvv({}, {}, {})", hvv.hue, hvv.vib, hvv.val);
+        println!(
+            "  hvv:   --hvv({}, {}, {}{})",
+            hvv.hue, hvv.vib, hvv.val, alpha_suffix
+        );
         println!("  oklch: {}", oklch_str);
         println!("  hex:   {}", hex);
     }
@@ -612,57 +711,81 @@ mod tests {
     #[test]
     fn test_hex_parsing() {
         // Pure red
-        let (l, c, h) = parse_color("#ff0000").unwrap();
-        assert!((h - 29.2).abs() < 1.0, "red hue should be ~29°, got {}", h);
-        assert!(l > 0.0 && l < 1.0);
-        assert!(c > 0.0);
+        let p = parse_color("#ff0000").unwrap();
+        assert!(
+            (p.h - 29.2).abs() < 1.0,
+            "red hue should be ~29°, got {}",
+            p.h
+        );
+        assert!(p.l > 0.0 && p.l < 1.0);
+        assert!(p.c > 0.0);
+        assert!(p.alpha.is_none());
     }
 
     #[test]
     fn test_short_hex() {
-        let (l1, c1, h1) = parse_color("#fff").unwrap();
-        let (l2, c2, h2) = parse_color("#ffffff").unwrap();
-        assert!((l1 - l2).abs() < 0.001);
-        assert!((c1 - c2).abs() < 0.001);
-        // hue doesn't matter for white (c ≈ 0)
-        let _ = (h1, h2);
+        let p1 = parse_color("#fff").unwrap();
+        let p2 = parse_color("#ffffff").unwrap();
+        assert!((p1.l - p2.l).abs() < 0.001);
+        assert!((p1.c - p2.c).abs() < 0.001);
     }
 
     #[test]
     fn test_rgb_parsing() {
-        let (l, c, h) = parse_color("rgb(255, 0, 0)").unwrap();
-        assert!((h - 29.2).abs() < 1.0);
-        let _ = (l, c);
+        let p = parse_color("rgb(255, 0, 0)").unwrap();
+        assert!((p.h - 29.2).abs() < 1.0);
+        assert!(p.alpha.is_none());
     }
 
     #[test]
     fn test_rgba_parsing() {
-        let result = parse_color("rgba(0, 0, 255, 0.5)");
-        assert!(result.is_ok());
+        let p = parse_color("rgba(0, 0, 255, 0.5)").unwrap();
+        assert_eq!(p.alpha, Some(0.5));
     }
 
     #[test]
     fn test_hsl_parsing() {
         // hsl(0, 100%, 50%) = pure red
-        let (l, c, h) = parse_color("hsl(0, 100%, 50%)").unwrap();
-        assert!((h - 29.2).abs() < 1.0, "hsl red hue should be ~29°");
-        let _ = (l, c);
+        let p = parse_color("hsl(0, 100%, 50%)").unwrap();
+        assert!((p.h - 29.2).abs() < 1.0, "hsl red hue should be ~29°");
     }
 
     #[test]
     fn test_hsv_parsing() {
         // hsv(0, 100%, 100%) = pure red
-        let (l, c, h) = parse_color("hsv(0, 100%, 100%)").unwrap();
-        assert!((h - 29.2).abs() < 1.0, "hsv red hue should be ~29°");
-        let _ = (l, c);
+        let p = parse_color("hsv(0, 100%, 100%)").unwrap();
+        assert!((p.h - 29.2).abs() < 1.0, "hsv red hue should be ~29°");
     }
 
     #[test]
     fn test_oklch_parsing() {
-        let (l, c, h) = parse_color("oklch(0.771 0.143 230)").unwrap();
-        assert!((l - 0.771).abs() < 0.001);
-        assert!((c - 0.143).abs() < 0.001);
-        assert!((h - 230.0).abs() < 0.001);
+        let p = parse_color("oklch(0.771 0.143 230)").unwrap();
+        assert!((p.l - 0.771).abs() < 0.001);
+        assert!((p.c - 0.143).abs() < 0.001);
+        assert!((p.h - 230.0).abs() < 0.001);
+        assert!(p.alpha.is_none());
+    }
+
+    #[test]
+    fn test_oklch_alpha_parsing() {
+        let p = parse_color("oklch(0.5 0.1 200 / 0.75)").unwrap();
+        assert!((p.l - 0.5).abs() < 0.001);
+        assert_eq!(p.alpha, Some(0.75));
+    }
+
+    #[test]
+    fn test_hex_alpha_parsing() {
+        let p = parse_color("#ff000080").unwrap();
+        assert!((p.h - 29.2).abs() < 1.0);
+        let a = p.alpha.unwrap();
+        assert!((a - 0.502).abs() < 0.01, "alpha should be ~0.5, got {}", a);
+    }
+
+    #[test]
+    fn test_hsla_parsing() {
+        let p = parse_color("hsla(0, 100%, 50%, 0.3)").unwrap();
+        assert!((p.h - 29.2).abs() < 1.0);
+        assert_eq!(p.alpha, Some(0.3));
     }
 
     #[test]
@@ -674,8 +797,8 @@ mod tests {
     #[test]
     fn test_hvv_round_trip_blue() {
         // blue canonical: oklch(0.771 0.143 230)
-        let (l, c, h) = parse_color("oklch(0.771 0.143 230)").unwrap();
-        let hvv = oklch_to_hvv(l, c, h);
+        let p = parse_color("oklch(0.771 0.143 230)").unwrap();
+        let hvv = oklch_to_hvv(p.l, p.c, p.h);
         assert_eq!(hvv.hue, "blue");
         assert_eq!(hvv.vib, 50);
         assert_eq!(hvv.val, 50);
@@ -701,8 +824,8 @@ mod tests {
     #[test]
     fn test_hex_to_hvv_dark_blue() {
         // #1c1e22 is a dark blue-gray from tug-tokens.css
-        let (l, c, h) = parse_color("#1c1e22").unwrap();
-        let hvv = oklch_to_hvv(l, c, h);
+        let p = parse_color("#1c1e22").unwrap();
+        let hvv = oklch_to_hvv(p.l, p.c, p.h);
         assert!(hvv.val < 20, "dark color should have low val");
         assert!(hvv.vib < 15, "near-gray should have low vib");
     }

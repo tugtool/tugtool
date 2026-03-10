@@ -47,18 +47,18 @@ body {
   --tug-base-focus-ring-offset: --hvv(hue-239, 5, 13);
 
   /* Elevation */
-  --tug-base-shadow-sm: rgba(0, 0, 0, 0.44);
+  --tug-base-shadow-sm: --hvv(black, 0, 0, 0.44);
 
   /* Selection */
-  --tug-base-selection-bg-inactive: rgba(100, 120, 130, 0.30);
+  --tug-base-selection-bg-inactive: --hvv(blue, 10, 33, 0.30);
   --tug-base-selection-fg: --hvv(blue, 3, 88);
 
   /* Card */
   --tug-base-card-bg: --hvv(hue-236, 7, 19);
   --tug-base-card-border: --hvv(hue-238, 8, 29);
-  --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.45);
-  --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.22);
-  --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.18);
+  --tug-base-card-shadow-active: 0 2px 8px --hvv(black, 0, 0, 0.45);
+  --tug-base-card-shadow-inactive: 0 1px 4px --hvv(black, 0, 0, 0.22);
+  --tug-base-card-dim-overlay: --hvv(black, 0, 0, 0.18);
 
   /* Card Header */
   --tug-base-card-header-bg-active: --hvv(blue, 14, 21);
@@ -76,7 +76,7 @@ body {
   --tug-base-tab-close-fg-hover: --hvv(blue, 3, 88);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.04);
+  --tug-base-canvas-grid-line: --hvv(white, 0, 100, 0.04);
 
   /* Dock */
   --tug-base-dock-bg: --hvv(hue-239, 5, 13);

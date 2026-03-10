@@ -6,18 +6,25 @@
  * computation happens during the Vite/PostCSS build pipeline.
  *
  * Syntax:
- *   --hvv( <hue> , <vibrancy> , <value> )
+ *   --hvv( <hue> , <vibrancy> , <value> [, <alpha>] )
  *
- *   <hue>      := <hue-name> | <number> | hue-<number>
+ *   <hue>      := <hue-name> | <number> | hue-<number> | black | white
  *   <hue-name> := cherry | red | tomato | flame | orange | amber | gold | yellow
  *                | lime | green | mint | teal | cyan | sky | blue | cobalt
  *                | violet | purple | plum | pink | rose | magenta | berry | coral
  *   <vibrancy> := <number>   // 0–100
  *   <value>    := <number>   // 0–100
+ *   <alpha>    := <number>   // 0–1 (optional, omitted means fully opaque)
+ *
+ * Special achromatic keywords:
+ *   black — always expands to oklch(0 0 0), ignoring vibrancy/value
+ *   white — always expands to oklch(1 0 0), ignoring vibrancy/value
  *
  * Named hue examples:
- *   --hvv(blue, 5, 13)    → oklch(0.3115 0.0143 230)
- *   --hvv(cobalt, 3, 18)  → oklch(0.3727 0.0081 250)
+ *   --hvv(blue, 5, 13)          → oklch(0.3115 0.0143 230)
+ *   --hvv(cobalt, 3, 18)        → oklch(0.3727 0.0081 250)
+ *   --hvv(black, 0, 0, 0.5)     → oklch(0 0 0 / 0.5)
+ *   --hvv(white, 0, 100, 0.06)  → oklch(1 0 0 / 0.06)
  *
  * Raw angle examples:
  *   --hvv(237, 5, 13)     → uses findMaxChroma() at canonicalL=0.77
@@ -61,16 +68,17 @@ const RAW_ANGLE_CANONICAL_L = 0.77;
 /**
  * Matches a single --hvv() call.
  * Group 1: hue — one of:
- *   - Named hue word: `[a-z]+` (e.g. "blue", "cobalt")
+ *   - Named hue word: `[a-z]+` (e.g. "blue", "cobalt", "black", "white")
  *   - Raw angle: `\d+(?:\.\d+)?` (e.g. "237")
  *   - oklchToHVV() raw-angle form: `hue-\d+` (e.g. "hue-264" → angle 264)
  * Group 2: vibrancy (decimal number)
  * Group 3: value (decimal number)
+ * Group 4: alpha (optional decimal number, 0–1)
  *
  * The `g` flag allows replaceAll-style iteration over multiple calls in one
  * declaration value.
  */
-const HVV_PATTERN = /--hvv\(\s*(hue-\d+|[a-z]+|\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\)/g;
+const HVV_PATTERN = /--hvv\(\s*(hue-\d+|[a-z]+|\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*(\d*\.?\d+)\s*)?\)/g;
 
 // ---------------------------------------------------------------------------
 // Formatting helper (matches hvvColor() precision convention)
@@ -86,7 +94,11 @@ function fmt(n: number): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Expand a single --hvv(hue, vib, val) call to an oklch() string.
+ * Expand a single --hvv(hue, vib, val[, alpha]) call to an oklch() string.
+ *
+ * Special achromatic keywords:
+ *   "black" → oklch(0 0 0 [/ alpha])  — true black, ignores vib/val
+ *   "white" → oklch(1 0 0 [/ alpha])  — true white, ignores vib/val
  *
  * For named hues: uses DEFAULT_CANONICAL_L[hue] and MAX_CHROMA_FOR_HUE[hue].
  * For raw numeric angles: uses RAW_ANGLE_CANONICAL_L and findMaxChroma().
@@ -98,7 +110,17 @@ function fmt(n: number): string {
  * C formula (linear):
  *   C = (vib / 100) * peakC   where peakC = maxChroma * PEAK_C_SCALE
  */
-function expandHvv(hueArg: string, vibArg: string, valArg: string): string {
+function expandHvv(hueArg: string, vibArg: string, valArg: string, alphaArg?: string): string {
+  const alphaSuffix = alphaArg !== undefined ? ` / ${alphaArg}` : "";
+
+  // Special achromatic keywords — exact L values, no piecewise formula
+  if (hueArg === "black") {
+    return `oklch(0 0 0${alphaSuffix})`;
+  }
+  if (hueArg === "white") {
+    return `oklch(1 0 0${alphaSuffix})`;
+  }
+
   const vib = parseFloat(vibArg);
   const val = parseFloat(valArg);
 
@@ -134,7 +156,7 @@ function expandHvv(hueArg: string, vibArg: string, valArg: string): string {
   // vib → C: linear
   const C = (vib / 100) * peakC;
 
-  return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
+  return `oklch(${fmt(L)} ${fmt(C)} ${h}${alphaSuffix})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +180,8 @@ export default function postcssHvv(): Plugin {
       if (!decl.value.includes("--hvv(")) return;
       decl.value = decl.value.replace(
         HVV_PATTERN,
-        (_match, hue, vib, val) => expandHvv(hue as string, vib as string, val as string),
+        (_match, hue, vib, val, alpha) =>
+          expandHvv(hue as string, vib as string, val as string, alpha as string | undefined),
       );
     },
   };

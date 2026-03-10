@@ -45,9 +45,10 @@
   position: fixed;
   z-index: 999999;
   min-width: 280px;
-  max-width: 480px;
+  max-width: 540px;
   max-height: 75vh;
   overflow-y: auto;
+  overflow-x: hidden;
   background: oklch(0.14 0.01 240);
   color: oklch(0.88 0.01 240);
   border: 1px solid oklch(0.28 0.02 240);
@@ -143,6 +144,7 @@
   color: oklch(0.88 0.01 240);
   overflow-wrap: break-word;
   flex: 1;
+  min-width: 0;
 }
 
 .tug-inspector-row__value--dim {
@@ -182,7 +184,7 @@
 
 .tug-inspector-chain__terminal {
   color: oklch(0.72 0.18 55);
-  overflow-wrap: break-word;
+  white-space: nowrap;
 }
 
 .tug-inspector-chain__indicator {
@@ -204,6 +206,18 @@
   flex-shrink: 0;
   vertical-align: middle;
   margin-right: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   HVV annotation
+   --------------------------------------------------------------------------- */
+
+.tug-inspector-hvv {
+  color: oklch(0.72 0.18 140);
+  margin-left: auto;
+  padding-left: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------------

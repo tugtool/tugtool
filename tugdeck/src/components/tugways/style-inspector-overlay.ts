@@ -27,6 +27,7 @@
 
 import "./style-inspector-overlay.css";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "./scale-timing";
+import { oklchToHVV } from "./palette-engine";
 
 // ---------------------------------------------------------------------------
 // PALETTE_VAR_REGEX -- matches only known hue palette variables
@@ -937,6 +938,36 @@ export class StyleInspectorOverlay {
   }
 
   /**
+   * Try to convert an oklch() color string to --hvv() notation.
+   * Returns null if the string isn't a simple oklch(L C h) value
+   * (e.g., contains calc() expressions).
+   */
+  private tryFormatHvv(colorStr: string): string | null {
+    if (!colorStr || !colorStr.startsWith("oklch(")) return null;
+    // Skip values with calc() or var() — can't reverse-map those
+    if (colorStr.includes("calc(") || colorStr.includes("var(")) return null;
+    try {
+      const { hue, vib, val } = oklchToHVV(colorStr);
+      return `--hvv(${hue}, ${vib}, ${val})`;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Create a styled span showing HVV notation for a color value.
+   * Returns null if the color can't be converted to HVV.
+   */
+  private makeHvvEl(colorStr: string): HTMLSpanElement | null {
+    const hvv = this.tryFormatHvv(colorStr);
+    if (!hvv) return null;
+    const el = document.createElement("span");
+    el.className = "tug-inspector-hvv";
+    el.textContent = hvv;
+    return el;
+  }
+
+  /**
    * Render the token chain section for one CSS property.
    */
   private renderChainSection(
@@ -985,6 +1016,12 @@ export class StyleInspectorOverlay {
     computedVal.className = "tug-inspector-row__value";
     computedVal.textContent = computedValue;
     computedRow.appendChild(computedVal);
+
+    if (isColorProp) {
+      const hvvEl = this.makeHvvEl(computedValue);
+      if (hvvEl) computedRow.appendChild(hvvEl);
+    }
+
     section.appendChild(computedRow);
 
     // Show token chain
@@ -1040,6 +1077,11 @@ export class StyleInspectorOverlay {
           valEl.className = "tug-inspector-chain__terminal";
           valEl.textContent = hop.value;
           hopEl.appendChild(valEl);
+
+          if (isColorProp) {
+            const hvvEl = this.makeHvvEl(hop.value);
+            if (hvvEl) hopEl.appendChild(hvvEl);
+          }
         }
 
         chainEl.appendChild(hopEl);

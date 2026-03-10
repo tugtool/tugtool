@@ -308,8 +308,9 @@ describe("convertCSSFile(): structure preservation", () => {
     expect(result).not.toContain("#3f474c");
     expect(result).toContain("--tug-base-bg: --hvv(");
 
-    // Non-hex values must be preserved
-    expect(result).toContain("rgba(0, 0, 0, 0.3)");
+    // rgba is now converted to --hvv with alpha
+    expect(result).toContain("--hvv(black, 0, 0, 0.3)");
+    // Non-color values must be preserved
     expect(result).toContain("var(--tug-blue)");
     expect(result).toContain("color-mix(in oklch, currentColor 20%, transparent)");
   });

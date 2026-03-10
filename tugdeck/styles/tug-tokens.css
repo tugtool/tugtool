@@ -175,19 +175,19 @@ body {
 
   /* --- Elevation / Overlay --- */
   /* --tug-base-shadow-sm: Brio default shadow opacity */
-  --tug-base-shadow-xs: rgba(0, 0, 0, 0.2);
-  --tug-base-shadow-sm: rgba(0, 0, 0, 0.5);
-  --tug-base-shadow-md: rgba(0, 0, 0, 0.6);
-  --tug-base-shadow-lg: rgba(0, 0, 0, 0.7);
-  --tug-base-shadow-xl: rgba(0, 0, 0, 0.8);
+  --tug-base-shadow-xs: --hvv(black, 0, 0, 0.2);
+  --tug-base-shadow-sm: --hvv(black, 0, 0, 0.5);
+  --tug-base-shadow-md: --hvv(black, 0, 0, 0.6);
+  --tug-base-shadow-lg: --hvv(black, 0, 0, 0.7);
+  --tug-base-shadow-xl: --hvv(black, 0, 0, 0.8);
   /* --tug-base-shadow-card-active uses var(--tug-base-shadow-sm) per [D10] to preserve
      dynamic per-theme resolution without requiring per-theme overrides of this compound token. */
-  --tug-base-shadow-card-active: 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px -1px var(--tug-base-shadow-sm);
-  --tug-base-shadow-card-inactive: 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
-  --tug-base-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.6);
-  --tug-base-overlay-dim: rgba(0, 0, 0, 0.48);
-  --tug-base-overlay-scrim: rgba(0, 0, 0, 0.64);
-  --tug-base-overlay-highlight: rgba(255, 255, 255, 0.06);
+  --tug-base-shadow-card-active: 0 1px 0 0 --hvv(white, 0, 100, 0.18), 0 1px 2px -1px var(--tug-base-shadow-sm);
+  --tug-base-shadow-card-inactive: 0 1px 0 0 --hvv(white, 0, 100, 0.08), 0 1px 2px -1px --hvv(black, 0, 0, 0.3);
+  --tug-base-shadow-overlay: 0 4px 16px --hvv(black, 0, 0, 0.6);
+  --tug-base-overlay-dim: --hvv(black, 0, 0, 0.48);
+  --tug-base-overlay-scrim: --hvv(black, 0, 0, 0.64);
+  --tug-base-overlay-highlight: --hvv(white, 0, 100, 0.06);
 
   /* --- Typography (plain values; CSS zoom handles scaling) --- */
   --tug-base-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -272,7 +272,8 @@ body {
   --tug-base-accent-cool-default: var(--tug-cobalt-intense);
   --tug-base-accent-positive: var(--tug-green-intense);
   --tug-base-accent-warning: var(--tug-yellow-intense);
-  --tug-base-accent-danger: var(--tug-red-intense);
+/*   --tug-base-accent-danger: --hvv(red, 50, 50); */
+  --tug-base-accent-danger: var(--tug-red);
   --tug-base-accent-info: var(--tug-cyan-intense);
 
   /* Accent-derived interaction tokens */
@@ -289,9 +290,9 @@ body {
      ====================================================================== */
 
   --tug-base-selection-bg: color-mix(in oklch, var(--tug-cyan) 40%, transparent);
-  --tug-base-selection-bg-inactive: rgba(128, 128, 128, 0.25);
+  --tug-base-selection-bg-inactive: --hvv(yellow, 0, 30, 0.25);
   --tug-base-selection-fg: --hvv(cobalt, 3, 94);
-  --tug-base-highlight-hover: rgba(255, 255, 255, 0.05);
+  --tug-base-highlight-hover: --hvv(white, 0, 100, 0.05);
   --tug-base-highlight-dropTarget: color-mix(in oklch, var(--tug-cyan) 18%, transparent);
   --tug-base-highlight-preview: color-mix(in oklch, var(--tug-cyan) 12%, transparent);
   --tug-base-highlight-inspectorTarget: color-mix(in oklch, var(--tug-cyan) 22%, transparent);
@@ -306,9 +307,9 @@ body {
   --tug-base-card-bg: --hvv(violet, 4, 14);
   --tug-base-card-border: --hvv(cobalt, 6, 30);
   /* --tug-base-card-shadow-active and -inactive: Brio default card elevation values */
-  --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.2);
-  --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.15);
+  --tug-base-card-shadow-active: 0 2px 8px --hvv(black, 0, 0, 0.4);
+  --tug-base-card-shadow-inactive: 0 1px 4px --hvv(black, 0, 0, 0.2);
+  --tug-base-card-dim-overlay: --hvv(black, 0, 0, 0.15);
 
   /* --- Card Header --- */
   /* Card header Brio defaults: literal hex values for zero-visual-regression. */
@@ -319,8 +320,8 @@ body {
   --tug-base-card-header-icon-active: var(--tug-cyan);
   --tug-base-card-header-icon-inactive: --hvv(hue-257, 7, 37);
   --tug-base-card-header-divider: --hvv(hue-264, 6, 17);
-  --tug-base-card-header-button-bg-hover: rgba(255, 255, 255, 0.08);
-  --tug-base-card-header-button-bg-active: rgba(255, 255, 255, 0.12);
+  --tug-base-card-header-button-bg-hover: --hvv(white, 0, 100, 0.08);
+  --tug-base-card-header-button-bg-active: --hvv(white, 0, 100, 0.12);
   --tug-base-card-header-button-fg: --hvv(cobalt, 5, 66);
   --tug-base-card-header-button-fg-danger: var(--tug-red);
   --tug-base-card-header-button-fg-danger-hover: var(--tug-red-light);
@@ -334,25 +335,25 @@ body {
   /* --- Tab Bar --- */
   --tug-base-tab-bar-bg: --hvv(violet, 5, 11);
   --tug-base-tab-bg-rest: transparent;
-  --tug-base-tab-bg-hover: rgba(255, 255, 255, 0.05);
+  --tug-base-tab-bg-hover: --hvv(white, 0, 100, 0.05);
   --tug-base-tab-bg-active: --hvv(violet, 5, 12);
-  --tug-base-tab-bg-compact: rgba(255, 255, 255, 0.04);
+  --tug-base-tab-bg-compact: --hvv(white, 0, 100, 0.04);
   --tug-base-tab-fg-rest: --hvv(hue-257, 7, 37);
   --tug-base-tab-fg-active: --hvv(cobalt, 3, 94);
   --tug-base-tab-fg-compact: --hvv(cobalt, 5, 66);
-  --tug-base-tab-close-bg-hover: rgba(255, 255, 255, 0.1);
+  --tug-base-tab-close-bg-hover: --hvv(white, 0, 100, 0.1);
   --tug-base-tab-close-fg-hover: --hvv(cobalt, 3, 94);
   --tug-base-tab-underline-active: var(--tug-orange);
   --tug-base-tab-dropTarget-bg: color-mix(in oklch, var(--tug-cyan) 12%, transparent);
   --tug-base-tab-dropTarget-border: var(--tug-cyan);
   --tug-base-tab-badge-bg: var(--tug-orange);
   --tug-base-tab-badge-fg: --hvv(hue-242, 3, 100);
-  --tug-base-tab-ghost-bg: rgba(255, 255, 255, 0.04);
-  --tug-base-tab-ghost-border: rgba(255, 255, 255, 0.08);
+  --tug-base-tab-ghost-bg: --hvv(white, 0, 100, 0.04);
+  --tug-base-tab-ghost-border: --hvv(white, 0, 100, 0.08);
   --tug-base-tab-insertIndicator: var(--tug-orange);
-  --tug-base-tab-overflow-trigger-bg: rgba(255, 255, 255, 0.06);
+  --tug-base-tab-overflow-trigger-bg: --hvv(white, 0, 100, 0.06);
   --tug-base-tab-overflow-trigger-fg: --hvv(cobalt, 5, 66);
-  --tug-base-tab-add-bg-hover: rgba(255, 255, 255, 0.08);
+  --tug-base-tab-add-bg-hover: --hvv(white, 0, 100, 0.08);
   --tug-base-tab-add-fg: --hvv(hue-257, 7, 37);
   --tug-base-tab-typePicker-bg: --hvv(violet, 5, 12);
   --tug-base-tab-typePicker-fg: --hvv(cobalt, 5, 66);
@@ -362,8 +363,8 @@ body {
   --tug-base-dock-border: --hvv(hue-264, 6, 17);
   --tug-base-dock-indicator: var(--tug-orange);
   --tug-base-dock-menu-caret: --hvv(hue-257, 7, 37);
-  --tug-base-dock-button-bg-hover: rgba(255, 255, 255, 0.08);
-  --tug-base-dock-button-bg-active: rgba(255, 255, 255, 0.12);
+  --tug-base-dock-button-bg-hover: --hvv(white, 0, 100, 0.08);
+  --tug-base-dock-button-bg-active: --hvv(white, 0, 100, 0.12);
   --tug-base-dock-button-fg: --hvv(hue-257, 7, 37);
   --tug-base-dock-button-fg-active: var(--tug-orange);
   --tug-base-dock-button-fg-attention: var(--tug-yellow);
@@ -371,8 +372,8 @@ body {
   --tug-base-dock-button-badge-fg: --hvv(hue-242, 3, 100);
   --tug-base-dock-button-insertIndicator: var(--tug-cyan);
   /* --tug-base-canvas-grid-line: Brio default grid line opacity */
-  --tug-base-canvas-grid-line: rgba(255, 255, 255, 0.05);
-  --tug-base-canvas-grid-emphasis: rgba(255, 255, 255, 0.1);
+  --tug-base-canvas-grid-line: --hvv(white, 0, 100, 0.05);
+  --tug-base-canvas-grid-emphasis: --hvv(white, 0, 100, 0.1);
   --tug-base-snap-guide: color-mix(in oklch, var(--tug-cyan) 60%, transparent);
   --tug-base-sash-hover: color-mix(in oklch, var(--tug-orange) 40%, transparent);
   --tug-base-flash-perimeter: color-mix(in oklch, var(--tug-cyan) 70%, transparent);
@@ -408,7 +409,7 @@ body {
   --tug-base-action-secondary-bg-active: --hvv(hue-260, 7, 16);
   --tug-base-action-secondary-fg: --hvv(cobalt, 3, 94);
   --tug-base-action-secondary-border: --hvv(cobalt, 6, 30);
-  --tug-base-action-ghost-bg-hover: rgba(255, 255, 255, 0.07);
+  --tug-base-action-ghost-bg-hover: --hvv(white, 0, 100, 0.07);
   --tug-base-action-ghost-fg: --hvv(cobalt, 5, 66);
   --tug-base-action-destructive-bg-rest: var(--tug-red);
   --tug-base-action-destructive-bg-hover: var(--tug-red-intense);
@@ -478,8 +479,8 @@ body {
   --tug-base-menu-bg: --hvv(violet, 4, 14);
   --tug-base-menu-fg: --hvv(cobalt, 3, 94);
   --tug-base-menu-border: --hvv(cobalt, 6, 30);
-  --tug-base-menu-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  --tug-base-menu-item-bg-hover: rgba(255, 255, 255, 0.07);
+  --tug-base-menu-shadow: 0 4px 16px --hvv(black, 0, 0, 0.6);
+  --tug-base-menu-item-bg-hover: --hvv(white, 0, 100, 0.07);
   --tug-base-menu-item-bg-selected: color-mix(in oklch, var(--tug-orange) 15%, transparent);
   --tug-base-menu-item-fg: --hvv(cobalt, 3, 94);
   --tug-base-menu-item-fg-disabled: --hvv(hue-258, 7, 23);
@@ -563,13 +564,13 @@ body {
   --tug-base-table-header-bg: --hvv(violet, 5, 11);
   --tug-base-table-header-fg: --hvv(cobalt, 5, 66);
   --tug-base-table-row-bg: transparent;
-  --tug-base-table-row-bg-striped: rgba(255, 255, 255, 0.02);
-  --tug-base-table-row-bg-hover: rgba(255, 255, 255, 0.04);
+  --tug-base-table-row-bg-striped: --hvv(white, 0, 100, 0.02);
+  --tug-base-table-row-bg-hover: --hvv(white, 0, 100, 0.04);
   --tug-base-table-row-bg-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
   --tug-base-table-row-border: --hvv(violet, 4, 15);
   --tug-base-table-cell-divider: --hvv(hue-264, 6, 17);
   --tug-base-table-sortIndicator: --hvv(hue-257, 7, 37);
-  --tug-base-list-row-hover: rgba(255, 255, 255, 0.04);
+  --tug-base-list-row-hover: --hvv(white, 0, 100, 0.04);
   --tug-base-list-row-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
 
   /* --- Stat / Trend --- */
@@ -589,7 +590,7 @@ body {
   --tug-base-chart-series-orchid: var(--tug-pink);
   --tug-base-chart-series-coral: var(--tug-coral-muted);
   /* Chart infrastructure tokens */
-  --tug-base-chart-grid: rgba(255, 255, 255, 0.06);
+  --tug-base-chart-grid: --hvv(white, 0, 100, 0.06);
   --tug-base-chart-axis: --hvv(cobalt, 6, 30);
   --tug-base-chart-tick: --hvv(cobalt, 6, 30);
   --tug-base-chart-threshold-warning: var(--tug-yellow);
@@ -665,7 +666,7 @@ body {
   --tug-base-codeBlock-header-fg: --hvv(hue-257, 7, 37);
 
   /* --- Files / Git / Tree --- */
-  --tug-base-tree-row-bg-hover: rgba(255, 255, 255, 0.04);
+  --tug-base-tree-row-bg-hover: --hvv(white, 0, 100, 0.04);
   --tug-base-tree-row-bg-selected: color-mix(in oklch, var(--tug-orange) 10%, transparent);
   --tug-base-tree-row-bg-current: color-mix(in oklch, var(--tug-cyan) 10%, transparent);
   --tug-base-tree-row-fg: --hvv(cobalt, 3, 94);
@@ -717,11 +718,11 @@ body {
   --tug-base-inspector-scrub-track: --hvv(hue-264, 6, 17);
   --tug-base-inspector-scrub-thumb: --hvv(hue-257, 7, 37);
   --tug-base-inspector-scrub-active: var(--tug-orange);
-  --tug-base-dev-overlay-bg: rgba(28, 30, 34, 0.92);
+  --tug-base-dev-overlay-bg: --hvv(hue-264, 4, 7, 0.92);
   --tug-base-dev-overlay-fg: --hvv(cobalt, 3, 94);
   --tug-base-dev-overlay-border: --hvv(cobalt, 6, 30);
   --tug-base-dev-overlay-targetHighlight: color-mix(in oklch, var(--tug-cyan) 30%, transparent);
-  --tug-base-dev-overlay-targetDim: rgba(0, 0, 0, 0.5);
+  --tug-base-dev-overlay-targetDim: --hvv(black, 0, 0, 0.5);
 }
 
 /* ============================================================================

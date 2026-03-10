@@ -126,6 +126,64 @@ export function hexToOklch(hex: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// RGBA → HVV conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Pattern matching rgba(R, G, B, A) calls.
+ * Groups: 1=R, 2=G, 3=B, 4=A
+ * Handles integer (0-255) channels and decimal alpha.
+ */
+const RGBA_PATTERN =
+  /rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+(?:\.\d+)?)\s*\)/g;
+
+/**
+ * Convert an rgba(R, G, B, A) call to --hvv(hue, vib, val, alpha) notation.
+ *
+ * Special cases:
+ *   rgba(0, 0, 0, A)       → --hvv(black, 0, 0, A)
+ *   rgba(255, 255, 255, A)  → --hvv(white, 0, 100, A)
+ *
+ * All other rgba values are converted through sRGB → OKLCH → HVV.
+ */
+function convertRgbaToHvv(
+  r: number,
+  g: number,
+  b: number,
+  alpha: string,
+): string {
+  // Pure black
+  if (r === 0 && g === 0 && b === 0) {
+    return `--hvv(black, 0, 0, ${alpha})`;
+  }
+  // Pure white
+  if (r === 255 && g === 255 && b === 255) {
+    return `--hvv(white, 0, 100, ${alpha})`;
+  }
+
+  // General case: sRGB → linear → OKLCH → HVV
+  const linR = sRGBToLinear(r / 255);
+  const linG = sRGBToLinear(g / 255);
+  const linB = sRGBToLinear(b / 255);
+  const { L, C, h } = linearSRGBToOklch(linR, linG, linB);
+  const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
+  const oklchStr = `oklch(${fmt(L)} ${fmt(C)} ${fmt(h)})`;
+  const { hue, vib, val } = oklchToHVV(oklchStr);
+  return `--hvv(${hue}, ${vib}, ${val}, ${alpha})`;
+}
+
+/**
+ * Convert all rgba() calls in a CSS declaration value to --hvv() notation.
+ * Non-rgba values are left unchanged.
+ */
+export function convertValueRgbaToHvv(value: string): string {
+  RGBA_PATTERN.lastIndex = 0;
+  return value.replace(RGBA_PATTERN, (_match, r, g, b, a) =>
+    convertRgbaToHvv(parseInt(r), parseInt(g), parseInt(b), a),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Standalone hex detection
 // ---------------------------------------------------------------------------
 
@@ -236,10 +294,19 @@ export function convertCSSFile(filePath: string): string {
   const root = postcss.parse(source, { from: filePath });
 
   root.walkDecls((decl: Declaration) => {
-    if (!decl.value.includes("#")) return;
-    const converted = convertValueHexToHvv(decl.value);
-    if (converted !== decl.value) {
-      decl.value = converted;
+    // Convert hex values
+    if (decl.value.includes("#")) {
+      const converted = convertValueHexToHvv(decl.value);
+      if (converted !== decl.value) {
+        decl.value = converted;
+      }
+    }
+    // Convert rgba() values
+    if (decl.value.includes("rgba(")) {
+      const converted = convertValueRgbaToHvv(decl.value);
+      if (converted !== decl.value) {
+        decl.value = converted;
+      }
     }
   });
 

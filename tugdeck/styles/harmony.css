@@ -56,39 +56,39 @@ body {
   --tug-base-focus-ring-offset: --hvv(yellow, 4, 99);
 
   /* Elevation */
-  --tug-base-shadow-xs: rgba(0, 0, 0, 0.08);
-  --tug-base-shadow-sm: rgba(0, 0, 0, 0.24);
-  --tug-base-shadow-md: rgba(0, 0, 0, 0.3);
-  --tug-base-shadow-lg: rgba(0, 0, 0, 0.36);
-  --tug-base-shadow-xl: rgba(0, 0, 0, 0.44);
+  --tug-base-shadow-xs: --hvv(black, 0, 0, 0.08);
+  --tug-base-shadow-sm: --hvv(black, 0, 0, 0.24);
+  --tug-base-shadow-md: --hvv(black, 0, 0, 0.3);
+  --tug-base-shadow-lg: --hvv(black, 0, 0, 0.36);
+  --tug-base-shadow-xl: --hvv(black, 0, 0, 0.44);
   /* shadow-card-active and shadow-card-inactive are NOT overridden per D10 —
      they use var(--tug-base-shadow-sm) which is overridden above, so the
      compound token resolves correctly for Harmony without a per-theme override. */
-  --tug-base-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.24);
-  --tug-base-overlay-dim: rgba(0, 0, 0, 0.2);
-  --tug-base-overlay-scrim: rgba(0, 0, 0, 0.32);
-  --tug-base-overlay-highlight: rgba(255, 255, 255, 0.5);
+  --tug-base-shadow-overlay: 0 4px 16px --hvv(black, 0, 0, 0.24);
+  --tug-base-overlay-dim: --hvv(black, 0, 0, 0.2);
+  --tug-base-overlay-scrim: --hvv(black, 0, 0, 0.32);
+  --tug-base-overlay-highlight: --hvv(white, 0, 100, 0.5);
 
   /* Accent — contrast-critical overrides per [D06]
      accent-muted: --hvv(flame, 45, 38) is darker orange needed for muted text on light backgrounds.
      accent-subtle: Harmony-specific rgba with adjusted opacity for light bg.
      All other accent tokens resolve from palette. */
   --tug-base-accent-muted: --hvv(flame, 45, 38);
-  --tug-base-accent-subtle: rgba(255, 127, 42, 0.15);
+  --tug-base-accent-subtle: --hvv(flame, 55, 49, 0.15);
 
   /* Selection */
-  --tug-base-selection-bg-inactive: rgba(100, 90, 80, 0.20);
+  --tug-base-selection-bg-inactive: --hvv(amber, 8, 24, 0.20);
   --tug-base-selection-fg: --hvv(hue-235, 8, 13);
 
   /* Highlight hover (achromatic for light theme) */
-  --tug-base-highlight-hover: rgba(0, 0, 0, 0.04);
+  --tug-base-highlight-hover: --hvv(black, 0, 0, 0.04);
 
   /* Card */
   --tug-base-card-bg: --hvv(yellow, 6, 48);
   --tug-base-card-border: --hvv(yellow, 9, 28);
-  --tug-base-card-shadow-active: 0 2px 8px rgba(0, 0, 0, 0.18);
-  --tug-base-card-shadow-inactive: 0 1px 4px rgba(0, 0, 0, 0.09);
-  --tug-base-card-dim-overlay: rgba(0, 0, 0, 0.08);
+  --tug-base-card-shadow-active: 0 2px 8px --hvv(black, 0, 0, 0.18);
+  --tug-base-card-shadow-inactive: 0 1px 4px --hvv(black, 0, 0, 0.09);
+  --tug-base-card-dim-overlay: --hvv(black, 0, 0, 0.08);
 
   /* Card Header */
   --tug-base-card-header-bg-active: --hvv(hue-81, 23, 57);
@@ -97,8 +97,8 @@ body {
   --tug-base-card-header-fg: --hvv(hue-235, 8, 13);
   --tug-base-card-header-icon-inactive: --hvv(yellow, 10, 36);
   --tug-base-card-header-divider: --hvv(yellow, 7, 42);
-  --tug-base-card-header-button-bg-hover: rgba(0, 0, 0, 0.06);
-  --tug-base-card-header-button-bg-active: rgba(0, 0, 0, 0.1);
+  --tug-base-card-header-button-bg-hover: --hvv(black, 0, 0, 0.06);
+  --tug-base-card-header-button-bg-active: --hvv(black, 0, 0, 0.1);
   --tug-base-card-header-button-fg: --hvv(blue, 9, 22);
   --tug-base-card-accessory-bg: --hvv(yellow, 6, 44);
   --tug-base-card-accessory-border: --hvv(yellow, 9, 28);
@@ -107,19 +107,19 @@ body {
 
   /* Tab Bar */
   --tug-base-tab-bar-bg: --hvv(yellow, 6, 74);
-  --tug-base-tab-bg-hover: rgba(0, 0, 0, 0.05);
+  --tug-base-tab-bg-hover: --hvv(black, 0, 0, 0.05);
   --tug-base-tab-bg-active: --hvv(yellow, 4, 99);
-  --tug-base-tab-bg-compact: rgba(0, 0, 0, 0.04);
+  --tug-base-tab-bg-compact: --hvv(black, 0, 0, 0.04);
   --tug-base-tab-fg-rest: --hvv(yellow, 9, 28);
   --tug-base-tab-fg-active: --hvv(hue-235, 8, 13);
   --tug-base-tab-fg-compact: --hvv(blue, 9, 22);
-  --tug-base-tab-close-bg-hover: rgba(0, 0, 0, 0.08);
+  --tug-base-tab-close-bg-hover: --hvv(black, 0, 0, 0.08);
   --tug-base-tab-close-fg-hover: --hvv(hue-235, 8, 13);
-  --tug-base-tab-ghost-bg: rgba(0, 0, 0, 0.04);
-  --tug-base-tab-ghost-border: rgba(0, 0, 0, 0.08);
-  --tug-base-tab-overflow-trigger-bg: rgba(0, 0, 0, 0.05);
+  --tug-base-tab-ghost-bg: --hvv(black, 0, 0, 0.04);
+  --tug-base-tab-ghost-border: --hvv(black, 0, 0, 0.08);
+  --tug-base-tab-overflow-trigger-bg: --hvv(black, 0, 0, 0.05);
   --tug-base-tab-overflow-trigger-fg: --hvv(blue, 9, 22);
-  --tug-base-tab-add-bg-hover: rgba(0, 0, 0, 0.06);
+  --tug-base-tab-add-bg-hover: --hvv(black, 0, 0, 0.06);
   --tug-base-tab-add-fg: --hvv(yellow, 9, 28);
   --tug-base-tab-typePicker-bg: --hvv(yellow, 4, 99);
   --tug-base-tab-typePicker-fg: --hvv(blue, 9, 22);
@@ -127,13 +127,13 @@ body {
   /* Dock */
   --tug-base-dock-bg: --hvv(hue-235, 5, 20);
   --tug-base-dock-border: --hvv(blue, 9, 30);
-  --tug-base-dock-button-bg-hover: rgba(255, 255, 255, 0.1);
-  --tug-base-dock-button-bg-active: rgba(255, 255, 255, 0.16);
+  --tug-base-dock-button-bg-hover: --hvv(white, 0, 100, 0.1);
+  --tug-base-dock-button-bg-active: --hvv(white, 0, 100, 0.16);
   --tug-base-dock-button-fg: --hvv(yellow, 10, 36);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: rgba(0, 0, 0, 0.06);
-  --tug-base-canvas-grid-emphasis: rgba(0, 0, 0, 0.12);
+  --tug-base-canvas-grid-line: --hvv(black, 0, 0, 0.06);
+  --tug-base-canvas-grid-emphasis: --hvv(black, 0, 0, 0.12);
 
   /* Actions */
   --tug-base-action-secondary-bg-rest: --hvv(yellow, 4, 99);
@@ -141,7 +141,7 @@ body {
   --tug-base-action-secondary-bg-active: --hvv(yellow, 6, 48);
   --tug-base-action-secondary-fg: --hvv(hue-235, 8, 13);
   --tug-base-action-secondary-border: --hvv(yellow, 9, 28);
-  --tug-base-action-ghost-bg-hover: rgba(0, 0, 0, 0.06);
+  --tug-base-action-ghost-bg-hover: --hvv(black, 0, 0, 0.06);
   --tug-base-action-ghost-fg: --hvv(blue, 9, 22);
   --tug-base-action-disabled-bg: --hvv(yellow, 7, 51);
   --tug-base-action-disabled-fg: --hvv(blue, 8, 44);
@@ -188,8 +188,8 @@ body {
   --tug-base-menu-bg: --hvv(yellow, 4, 99);
   --tug-base-menu-fg: --hvv(hue-235, 8, 13);
   --tug-base-menu-border: --hvv(yellow, 9, 28);
-  --tug-base-menu-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-  --tug-base-menu-item-bg-hover: rgba(0, 0, 0, 0.05);
+  --tug-base-menu-shadow: 0 4px 16px --hvv(black, 0, 0, 0.24);
+  --tug-base-menu-item-bg-hover: --hvv(black, 0, 0, 0.05);
   --tug-base-menu-item-fg: --hvv(hue-235, 8, 13);
   --tug-base-menu-item-fg-disabled: --hvv(blue, 8, 44);
   --tug-base-menu-item-meta: --hvv(yellow, 9, 28);
@@ -254,12 +254,12 @@ body {
   /* Tables / Lists */
   --tug-base-table-header-bg: --hvv(yellow, 6, 74);
   --tug-base-table-header-fg: --hvv(blue, 9, 22);
-  --tug-base-table-row-bg-striped: rgba(0, 0, 0, 0.02);
-  --tug-base-table-row-bg-hover: rgba(0, 0, 0, 0.04);
+  --tug-base-table-row-bg-striped: --hvv(black, 0, 0, 0.02);
+  --tug-base-table-row-bg-hover: --hvv(black, 0, 0, 0.04);
   --tug-base-table-row-border: --hvv(yellow, 5, 48);
   --tug-base-table-cell-divider: --hvv(yellow, 5, 46);
   --tug-base-table-sortIndicator: --hvv(yellow, 9, 28);
-  --tug-base-list-row-hover: rgba(0, 0, 0, 0.04);
+  --tug-base-list-row-hover: --hvv(black, 0, 0, 0.04);
 
   /* Stats */
   --tug-base-stat-label: --hvv(yellow, 9, 28);
@@ -267,7 +267,7 @@ body {
   --tug-base-stat-trend-neutral: --hvv(yellow, 9, 28);
 
   /* Chart infrastructure (non-chromatic) */
-  --tug-base-chart-grid: rgba(0, 0, 0, 0.06);
+  --tug-base-chart-grid: --hvv(black, 0, 0, 0.06);
   --tug-base-chart-axis: --hvv(yellow, 9, 28);
   --tug-base-chart-tick: --hvv(yellow, 9, 28);
 
@@ -312,7 +312,7 @@ body {
   --tug-base-codeBlock-header-fg: --hvv(yellow, 9, 28);
 
   /* Tree / File status — file-status-modified preserved per [D06] */
-  --tug-base-tree-row-bg-hover: rgba(0, 0, 0, 0.04);
+  --tug-base-tree-row-bg-hover: --hvv(black, 0, 0, 0.04);
   --tug-base-tree-row-fg: --hvv(hue-235, 8, 13);
   --tug-base-tree-chevron: --hvv(yellow, 9, 28);
   /* file-status-modified: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
@@ -340,8 +340,8 @@ body {
   --tug-base-inspector-scrub-thumb: --hvv(yellow, 9, 28);
   /* inspector-source-inline: preserved per [D06] — --hvv(yellow, 46, 27) needed for contrast on light bg */
   --tug-base-inspector-source-inline: --hvv(yellow, 46, 27);
-  --tug-base-dev-overlay-bg: rgba(244, 241, 234, 0.95);
+  --tug-base-dev-overlay-bg: --hvv(yellow, 4, 99, 0.95);
   --tug-base-dev-overlay-fg: --hvv(hue-235, 8, 13);
   --tug-base-dev-overlay-border: --hvv(yellow, 9, 28);
-  --tug-base-dev-overlay-targetDim: rgba(0, 0, 0, 0.2);
+  --tug-base-dev-overlay-targetDim: --hvv(black, 0, 0, 0.2);
 }
