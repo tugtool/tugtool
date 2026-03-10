@@ -55,7 +55,7 @@ if (!container) {
 
   // Sync canvas color to Swift bridge so UserDefaults gets the correct
   // background color on startup before the user switches themes.
-  sendCanvasColor();
+  sendCanvasColor(initialTheme);
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored

@@ -126,8 +126,8 @@ body {
      ====================================================================== */
 
   /* --- Surfaces --- */
-  --tug-base-bg-app: --hvv(hue-264, 4, 7);
-  --tug-base-bg-canvas: --hvv(hue-264, 4, 7);
+  --tug-base-bg-app: --hvv(hue-264, 2, 5);
+  --tug-base-bg-canvas: --hvv(hue-264, 2, 5);
   --tug-base-surface-sunken: --hvv(violet, 5, 11);
   --tug-base-surface-default: --hvv(violet, 5, 12);
   --tug-base-surface-raised: --hvv(hue-264, 5, 11);

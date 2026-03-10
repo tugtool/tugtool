@@ -14,9 +14,9 @@ body {
 
   /* Surfaces */
   --tug-base-bg-app: --hvv(hue-239, 5, 13);
-  --tug-base-bg-canvas: --hvv(hue-239, 5, 13);
+  --tug-base-bg-canvas: --hvv(hue-239, 5, 6);
   --tug-base-surface-sunken: --hvv(hue-242, 8, 16);
-  --tug-base-surface-default: --hvv(hue-235, 5, 18);
+  --tug-base-surface-default: --hvv(hue-235, 5, 15);
   --tug-base-surface-raised: --hvv(hue-235, 5, 17);
   --tug-base-surface-overlay: --hvv(hue-236, 7, 19);
   --tug-base-surface-inset: --hvv(hue-235, 5, 13);

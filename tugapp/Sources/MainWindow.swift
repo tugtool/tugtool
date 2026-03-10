@@ -92,7 +92,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     }
 
     /// Brio canvas color — used as fallback when no saved value exists.
-    static let defaultBackgroundHex = "#1c1e22"
+    /// Matches --hvv(hue-264, 2, 5) from tug-tokens.css --tug-base-bg-canvas.
+    static let defaultBackgroundHex = "#18191b"
 
     /// Update the window background color from a CSS hex string (e.g. "#1c1e22").
     func updateBackgroundColor(_ hex: String) {

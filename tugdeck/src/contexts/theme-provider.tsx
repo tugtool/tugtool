@@ -26,6 +26,7 @@ import React, {
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
+import { canvasColorHex } from "../canvas-color";
 import bluenoteCSS from "../../styles/bluenote.css?inline";
 import harmonyCSS from "../../styles/harmony.css?inline";
 
@@ -92,29 +93,17 @@ export function removeThemeCSS(): void {
 // Swift bridge helpers (copied verbatim from use-theme.ts)
 // ---------------------------------------------------------------------------
 
-/** Convert a CSS color value (hex or rgb()) to a 6-digit hex string. */
-export function normalizeToHex(css: string): string | null {
-  const trimmed = css.trim();
-  // Already hex
-  if (trimmed.startsWith("#")) {
-    return trimmed.length === 7 ? trimmed : null;
-  }
-  // rgb(r, g, b)
-  const match = trimmed.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
-  if (!match) return null;
-  const [, r, g, b] = match;
-  const hex = (c: string) => Number(c).toString(16).padStart(2, "0");
-  return `#${hex(r)}${hex(g)}${hex(b)}`;
-}
-
-/** Read the resolved body background-color and post the hex string to the Swift bridge. */
-export function sendCanvasColor(): void {
-  const raw = getComputedStyle(document.body).getPropertyValue("background-color");
-  const hex = normalizeToHex(raw);
-  if (hex) {
-    (window as unknown as { webkit?: { messageHandlers?: { setTheme?: { postMessage: (v: unknown) => void } } } })
-      .webkit?.messageHandlers?.setTheme?.postMessage({ color: hex });
-  }
+/**
+ * Post the canvas background hex to the Swift bridge.
+ *
+ * Computes the hex from the palette engine's HVV constants — same source
+ * of truth as PostCSS and tug-palette.css. No getComputedStyle, no browser
+ * color format parsing, no drift.
+ */
+export function sendCanvasColor(theme: ThemeName): void {
+  const hex = canvasColorHex(theme);
+  (window as unknown as { webkit?: { messageHandlers?: { setTheme?: { postMessage: (v: unknown) => void } } } })
+    .webkit?.messageHandlers?.setTheme?.postMessage({ color: hex });
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +171,8 @@ export function TugThemeProvider({
       // localStorage may be unavailable in some contexts
     }
     putTheme(newTheme);
-    // Sync canvas color to Swift bridge after injection (styles are resolved synchronously)
-    sendCanvasColor();
+    // Sync canvas color to Swift bridge after injection
+    sendCanvasColor(newTheme);
   };
 
   // Keep ref current on every render so the stable wrapper always calls the latest setter.
@@ -201,7 +190,7 @@ export function TugThemeProvider({
       }
     }
     // Sync canvas color to Swift bridge after initial injection.
-    sendCanvasColor();
+    sendCanvasColor(initialTheme);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
