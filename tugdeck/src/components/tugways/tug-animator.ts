@@ -405,6 +405,12 @@ export function group(options?: {
       };
       const tugAnim = animate(el, keyframes, merged);
       animations.push(tugAnim);
+      // Silence the previous finishedPromise before replacing it. When an
+      // animation is cancelled the old Promise.all rejects; without a handler
+      // it becomes an orphaned rejected promise and surfaces as an unhandled
+      // rejection error. The new Promise.all (below) is the authoritative
+      // promise that callers hold a reference to via the getter.
+      finishedPromise.catch(() => { /* superseded promise -- rejection handled by new Promise.all */ });
       // Rebuild finished as Promise.all over all accumulated .finished promises.
       finishedPromise = Promise.all(
         animations.map((a) => a.finished)

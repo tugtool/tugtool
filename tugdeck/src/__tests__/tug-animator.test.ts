@@ -4,6 +4,7 @@
  * Step 1: WAAPI mock smoke tests.
  * Step 2: Physics solver unit tests (SpringSolver, GravitySolver, FrictionSolver).
  * Step 3: TugAnimator animate() coordination, named slots, cancellation modes.
+ * Step 4: Animation groups (group(), TugAnimationGroup).
  *
  * Import setup-rtl FIRST -- it installs the WAAPI mock on Element.prototype
  * before any test code runs.
@@ -12,7 +13,7 @@ import "./setup-rtl";
 
 import { describe, it, expect, afterEach, beforeEach } from "bun:test";
 import { SpringSolver, GravitySolver, FrictionSolver } from "@/components/tugways/physics";
-import { animate, _resetSlots } from "@/components/tugways/tug-animator";
+import { animate, group, _resetSlots } from "@/components/tugways/tug-animator";
 
 // ---------------------------------------------------------------------------
 // WAAPI mock smoke tests (Step 1)
@@ -593,5 +594,122 @@ describe("animate() .finished and slot cleanup", () => {
     expect(mock.calls.length).toBe(callCountBefore + 1);
     // The new animation is running (not prematurely finished).
     expect(mock.calls[mock.calls.length - 1].animation.playState).toBe("running");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// group() -- animation groups (Step 4)
+// ---------------------------------------------------------------------------
+
+describe("group()", () => {
+  beforeEach(() => {
+    _resetSlots();
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  afterEach(() => {
+    getMock().reset();
+    document.documentElement.style.removeProperty("--tug-timing");
+  });
+
+  it("empty group: .finished resolves immediately", async () => {
+    const g = group();
+    let resolved = false;
+    await g.finished.then(() => { resolved = true; });
+    expect(resolved).toBe(true);
+  });
+
+  it("group with two animations: .finished resolves only after both complete", async () => {
+    const g = group({ duration: 200 });
+    const el1 = document.createElement("div");
+    const el2 = document.createElement("div");
+    g.animate(el1, [{ opacity: "0" }, { opacity: "1" }]);
+    g.animate(el2, [{ opacity: "0" }, { opacity: "1" }]);
+
+    const mock = getMock();
+    let resolved = false;
+    const p = g.finished.then(() => { resolved = true; });
+
+    // Resolve only the first animation -- group should not resolve yet.
+    mock.calls[0].resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resolved).toBe(false);
+
+    // Resolve the second animation -- group should now resolve.
+    mock.calls[1].resolve();
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it("group with one animation cancelled: .finished rejects", async () => {
+    const g = group({ duration: 200 });
+    const el1 = document.createElement("div");
+    const el2 = document.createElement("div");
+    g.animate(el1, [{ opacity: "0" }, { opacity: "1" }]);
+    g.animate(el2, [{ opacity: "0" }, { opacity: "1" }]);
+
+    const mock = getMock();
+
+    // Attach .catch() on g.finished BEFORE cancelling so the Promise.all
+    // rejection is handled synchronously at the point it fires.
+    let rejected = false;
+    const p = g.finished.catch(() => { rejected = true; });
+
+    // Also absorb the per-animation rejection from the TugAnimation wrapper.
+    mock.calls[0].animation.finished.catch(() => { /* expected */ });
+
+    // Cancel the first underlying WAAPI animation directly (simulates
+    // hold-at-current: commitStyles is a no-op in the mock).
+    mock.calls[0].animation.cancel();
+
+    await p;
+    expect(rejected).toBe(true);
+  });
+
+  it("group cancel() cancels all constituent animations", () => {
+    const g = group({ duration: 200 });
+    const el1 = document.createElement("div");
+    const el2 = document.createElement("div");
+    const a1 = g.animate(el1, [{ opacity: "0" }, { opacity: "1" }]);
+    const a2 = g.animate(el2, [{ opacity: "0" }, { opacity: "1" }]);
+
+    // Absorb rejections before snap-to-end group cancel resolves both.
+    // snap-to-end calls .finish() which resolves, so no rejection expected here.
+    let a1Finished = false;
+    let a2Finished = false;
+    a1.finished.then(() => { a1Finished = true; }).catch(() => {});
+    a2.finished.then(() => { a2Finished = true; }).catch(() => {});
+
+    g.cancel("snap-to-end");
+
+    const mock = getMock();
+    // Both underlying WAAPI animations should have been finished (snap-to-end).
+    expect(mock.calls[0].animation.playState).toBe("finished");
+    expect(mock.calls[1].animation.playState).toBe("finished");
+  });
+
+  it("per-animation options override group defaults", () => {
+    const g = group({ duration: "--tug-base-motion-duration-slow", easing: "ease-in" });
+    const el = document.createElement("div");
+    // Override duration for this specific animation.
+    g.animate(el, [{ opacity: "0" }, { opacity: "1" }], { duration: 50, easing: "linear" });
+
+    const mock = getMock();
+    // timing=1 (default), so 50ms raw * 1 = 50ms.
+    expect(mock.calls[0].options?.duration).toBe(50);
+    expect(mock.calls[0].options?.easing).toBe("linear");
+  });
+
+  it("group animate() uses group defaults when no per-animation override", () => {
+    document.documentElement.style.setProperty("--tug-timing", "2");
+    const g = group({ duration: "--tug-base-motion-duration-fast", easing: "ease-out" });
+    const el = document.createElement("div");
+    g.animate(el, [{ opacity: "0" }, { opacity: "1" }]);
+
+    const mock = getMock();
+    // fast=100ms * timing=2 = 200ms.
+    expect(mock.calls[0].options?.duration).toBe(200);
+    expect(mock.calls[0].options?.easing).toBe("ease-out");
   });
 });
