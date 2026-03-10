@@ -5,8 +5,14 @@
 //! - Build date (TUG_BUILD_DATE)
 //! - Rust compiler version (TUG_RUSTC_VERSION)
 //!
+//! Also parses palette-engine.ts to extract HVV color system constants
+//! and generates a Rust source file with the canonical data.
+//!
 //! Per [D03], all values gracefully fall back to "unknown" if unavailable.
 
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 
 fn main() {
@@ -21,6 +27,9 @@ fn main() {
     // Capture rustc version
     let rustc_version = get_rustc_version();
     println!("cargo::rustc-env=TUG_RUSTC_VERSION={}", rustc_version);
+
+    // Generate HVV palette data from palette-engine.ts
+    generate_hvv_palette_data();
 
     // Rerun if git state changes (for accurate commit hash)
     // These may not exist in non-git builds, which is fine
@@ -105,4 +114,130 @@ fn get_rustc_version() -> String {
         .nth(1)
         .map(|s| s.to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// HVV palette data generation
+// ---------------------------------------------------------------------------
+
+/// Parse a TypeScript Record<string, number> block like:
+///   { cherry: 0.619, red: 0.659, ... }
+/// Returns Vec<(name, value)> in source order.
+fn parse_ts_record(content: &str, var_name: &str) -> Vec<(String, f64)> {
+    let pattern = format!("export const {}", var_name);
+    let start = match content.find(&pattern) {
+        Some(pos) => pos,
+        None => return vec![],
+    };
+    let block_start = match content[start..].find('{') {
+        Some(pos) => start + pos,
+        None => return vec![],
+    };
+    let block_end = match content[block_start..].find('}') {
+        Some(pos) => block_start + pos,
+        None => return vec![],
+    };
+    let block = &content[block_start + 1..block_end];
+
+    let mut entries = Vec::new();
+    for line in block.lines() {
+        let trimmed = line.trim().trim_end_matches(',');
+        if let Some((key, val)) = trimmed.split_once(':') {
+            let key = key.trim();
+            let val = val.trim();
+            if let Ok(num) = val.parse::<f64>() {
+                entries.push((key.to_string(), num));
+            }
+        }
+    }
+    entries
+}
+
+/// Parse a single `export const NAME = VALUE;` line.
+fn parse_ts_const(content: &str, var_name: &str) -> Option<f64> {
+    let pattern = format!("export const {} = ", var_name);
+    let start = content.find(&pattern)?;
+    let after = &content[start + pattern.len()..];
+    let end = after.find(';')?;
+    after[..end].trim().parse::<f64>().ok()
+}
+
+/// Generate src/hvv_palette_data.rs from palette-engine.ts constants.
+fn generate_hvv_palette_data() {
+    // Find palette-engine.ts relative to the workspace root.
+    // build.rs runs from the crate directory (tugcode/crates/tugcode/).
+    // palette-engine.ts is at tugdeck/src/components/tugways/palette-engine.ts
+    // relative to the workspace root (tugcode/../tugdeck/...).
+    let palette_path = Path::new("../../../tugdeck/src/components/tugways/palette-engine.ts");
+
+    println!("cargo::rerun-if-changed={}", palette_path.to_string_lossy());
+
+    let content = match fs::read_to_string(palette_path) {
+        Ok(c) => c,
+        Err(_) => {
+            // If the file doesn't exist (e.g., CI without tugdeck), generate empty stubs
+            eprintln!("cargo::warning=palette-engine.ts not found, generating empty HVV data");
+            write_empty_hvv_data();
+            return;
+        }
+    };
+
+    let hue_families = parse_ts_record(&content, "HUE_FAMILIES");
+    let canonical_l = parse_ts_record(&content, "DEFAULT_CANONICAL_L");
+    let max_chroma = parse_ts_record(&content, "MAX_CHROMA_FOR_HUE");
+    let l_dark = parse_ts_const(&content, "L_DARK").unwrap_or(0.15);
+    let l_light = parse_ts_const(&content, "L_LIGHT").unwrap_or(0.96);
+    let peak_c_scale = parse_ts_const(&content, "PEAK_C_SCALE").unwrap_or(2.0);
+
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("hvv_palette_data.rs");
+    let mut f = fs::File::create(dest_path).unwrap();
+
+    writeln!(f, "// Auto-generated from palette-engine.ts by build.rs").unwrap();
+    writeln!(f, "// Do not edit manually.").unwrap();
+    writeln!(f).unwrap();
+
+    // Constants — always emit as float literals (e.g., 2.0 not 2)
+    writeln!(f, "pub const L_DARK: f64 = {:?};", l_dark).unwrap();
+    writeln!(f, "pub const L_LIGHT: f64 = {:?};", l_light).unwrap();
+    writeln!(f, "pub const PEAK_C_SCALE: f64 = {:?};", peak_c_scale).unwrap();
+    writeln!(f).unwrap();
+
+    // HUE_FAMILIES: &[(&str, f64)]
+    writeln!(f, "pub const HUE_FAMILIES: &[(&str, f64)] = &[").unwrap();
+    for (name, angle) in &hue_families {
+        writeln!(f, "    (\"{name}\", {angle}_f64),").unwrap();
+    }
+    writeln!(f, "];").unwrap();
+    writeln!(f).unwrap();
+
+    // DEFAULT_CANONICAL_L: &[(&str, f64)]
+    writeln!(f, "pub const DEFAULT_CANONICAL_L: &[(&str, f64)] = &[").unwrap();
+    for (name, val) in &canonical_l {
+        writeln!(f, "    (\"{name}\", {val}_f64),").unwrap();
+    }
+    writeln!(f, "];").unwrap();
+    writeln!(f).unwrap();
+
+    // MAX_CHROMA_FOR_HUE: &[(&str, f64)]
+    writeln!(f, "pub const MAX_CHROMA_FOR_HUE: &[(&str, f64)] = &[").unwrap();
+    for (name, val) in &max_chroma {
+        writeln!(f, "    (\"{name}\", {val}_f64),").unwrap();
+    }
+    writeln!(f, "];").unwrap();
+}
+
+/// Write empty stubs when palette-engine.ts is not available.
+fn write_empty_hvv_data() {
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("hvv_palette_data.rs");
+    let mut f = fs::File::create(dest_path).unwrap();
+
+    writeln!(f, "// Auto-generated stub (palette-engine.ts not found)").unwrap();
+    writeln!(f, "pub const L_DARK: f64 = 0.15;").unwrap();
+    writeln!(f, "pub const L_LIGHT: f64 = 0.96;").unwrap();
+    writeln!(f, "pub const PEAK_C_SCALE: f64 = 2.0;").unwrap();
+    writeln!(f, "pub const HUE_FAMILIES: &[(&str, f64)] = &[];").unwrap();
+    writeln!(f, "pub const DEFAULT_CANONICAL_L: &[(&str, f64)] = &[];").unwrap();
+    writeln!(f, "pub const MAX_CHROMA_FOR_HUE: &[(&str, f64)] = &[];").unwrap();
 }

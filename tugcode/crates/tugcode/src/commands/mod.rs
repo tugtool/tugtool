@@ -3,6 +3,7 @@
 pub mod commit;
 pub mod dash;
 pub mod doctor;
+pub mod hvv;
 pub mod init;
 pub mod list;
 pub mod log;
@@ -21,6 +22,7 @@ pub use dash::{
     run_dash_show,
 };
 pub use doctor::run_doctor;
+pub use hvv::run_hvv;
 pub use init::run_init;
 pub use list::run_list;
 pub use log::{LogCommands, run_log_prepend, run_log_rotate};
