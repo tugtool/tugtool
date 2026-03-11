@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-11T02:23:50Z
+---
+
+## step-8: Removed @tailwindcss/vite plugin from vite.config.ts, @import tailwindcss and @theme block from globals.css, tailwindcss and @tailwindcss/vite from package.json. CSS bundle shrank 15 kB. 1332/1332 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-7
 date: 2025-03-11T02:19:44Z
 ---
