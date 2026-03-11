@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-11T02:34:45Z
+---
+
+## step-10: Added Phase 7d section to implementation strategy. Updated What To Keep table for Tailwind removal. Added future-phase guidance for wrapping Radix primitives directly instead of installing shadcn components.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-9
 date: 2025-03-11T02:27:02Z
 ---

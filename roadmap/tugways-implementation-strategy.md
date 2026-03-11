@@ -67,14 +67,14 @@ These modules are solid infrastructure with no design conflicts:
 | `settings-api.ts` | Clean API client, correct no-localStorage design | No changes needed |
 | `tokens.css` | Three-tier token system, three themes, fonts | Tier 1 prefix rename (`--tl-` → `--tways-`), remove legacy shadcn aliases later |
 | `chrome.css` | Resize handles, snap guides, sash cursors, set-flash | Compact, appropriate as CSS |
-| `globals.css` | Tailwind v4 `@theme` bridge, body/grid styling | Update when token prefix changes |
+| `globals.css` | Body/grid styling | Tailwind `@import` and `@theme` bridge removed in Phase 7d — now only imports token layers and defines body/html resets |
 | `index.html` | Minimal shell | Add inline body styles per eliminate-frontend-flash plan |
 | `snap.ts` | Spatial geometry — snapping, sets, shared edges | ~500 lines of real math, no design conflicts |
 | `serialization.ts` | Layout persistence (v5 format) | Extend for new CardState fields (collapsed, etc.) |
 | `layout-tree.ts` | Core data types (`CardState`, `DeckState`, `TabItem`) | Remove dead `TabNode` type |
 | `action-dispatch.ts` | Control frame routing from server/menu commands | Extend for new actions |
-| `components/ui/*.tsx` | shadcn primitives (button, dialog, dropdown, tooltip, etc.) | Private layer — tugways wraps these |
-| `lib/utils.ts` | `cn()` utility for class merging | Used everywhere |
+| `components/ui/*.tsx` | shadcn primitives (button, dialog, dropdown, tooltip, etc.) | Tailwind-free as of Phase 7d — all utility classes replaced with semantic CSS in `shadcn-base.css`; private layer — tugways wraps these; do not install new shadcn components in future phases — wrap Radix primitives directly instead |
+| `lib/utils.ts` | `cn()` utility for class joining | Simplified to plain `clsx` in Phase 7d — `tailwind-merge` removed since no Tailwind utilities remain |
 
 ## What To Demolish
 
@@ -1044,7 +1044,22 @@ Phase 7 is split into three sub-phases.
 
 **Result**: Startup is seamless. The user never sees a blank or flashing viewport. Overlay fade-out uses TugAnimator for consistency (completion-based cleanup).
 
-**Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates only programmatic animations to TugAnimator and adds skeletons — CSS-only animations and rAF loops are untouched (Rules 13–14). Phase 7c is the smallest phase — mostly HTML and module wiring.
+#### Phase 7d: Glitch Reduction (depends on 7c)
+
+**Goal**: Eliminate the CSS-edit flash caused by `@tailwindcss/vite`'s forced full-reload behavior by stripping Tailwind from the codebase entirely and adding a reload continuity overlay for all Vite-initiated reloads.
+
+**What to do**:
+1. **Strip Tailwind**: remove `@tailwindcss/vite` and `tailwindcss` from `package.json`, remove `tailwindcss()` plugin from `vite.config.ts`, remove `@import "tailwindcss"` and the `@theme` bridge block from `globals.css`
+2. **Create `shadcn-base.css`**: new stylesheet in `tugdeck/styles/` with a minimal CSS reset, `.sr-only` utility, animation keyframes (`shadcn-fade-in/out`, `shadcn-zoom-in/out`, `shadcn-slide-in/out`) per Spec S03, and semantic CSS class definitions for all 13 shadcn components — replacing every Tailwind utility string
+3. **Convert 13 shadcn components**: replace all Tailwind utility class strings in `components/ui/*.tsx` with single semantic class names (e.g., `.shadcn-dialog-content`, `.shadcn-button--default`) and define those classes in `shadcn-base.css` using `--tug-base-*` tokens directly
+4. **Simplify `cn()`**: change `lib/utils.ts` from `twMerge(clsx(...))` to `clsx(...)` and remove `tailwind-merge` from dependencies — no longer needed with no Tailwind utilities in the codebase
+5. **Add reload continuity overlay**: register `import.meta.hot.on('vite:beforeFullReload', ...)` in `css-imports.ts` — paints a `#16171a` fixed overlay synchronously before `location.reload()` fires, creating seamless dark-to-dark continuity for Vite-initiated reloads
+
+**Future-phase guidance**: Do not install new shadcn components in Phases 8b–8e or later. The shadcn CLI approach brings Tailwind utility strings that would need another stripping pass. Instead, wrap Radix primitives directly (as `components/ui/*.tsx` files did before shadcn was added) and style them with `--tug-base-*` tokens in the relevant CSS file from the start.
+
+**Result**: CSS edits in dev mode produce no visible flash. The `@tailwindcss/vite` plugin (which forced full-reload on every CSS change, bypassing HMR boundaries) is gone. The CSS bundle is ~15 kB smaller. All 13 shadcn components are styled with plain CSS using the existing design token system.
+
+**Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates only programmatic animations to TugAnimator and adds skeletons — CSS-only animations and rAF loops are untouched (Rules 13–14). Phase 7c is the smallest phase — mostly HTML and module wiring. Phase 7d is an internal refactoring only — no component public APIs changed.
 
 ### Phase 8a: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
 
@@ -1078,7 +1093,7 @@ Phase 7 is split into three sub-phases.
 **Goal**: Settings card has all the form controls it needs. Core display primitives available to all cards.
 
 **What to do**:
-1. Install shadcn primitives not yet present: `slider`, `label`, `separator`
+1. Add new Radix primitive wrappers for `slider`, `label`, `separator` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
 2. Implement 8 form control wrappers:
    - `TugInput` — wraps Input, adds validation states, error styling, `--td-*` tokens
    - `TugTextarea` — wraps Textarea, adds auto-resize option, char count, error state
@@ -1100,7 +1115,7 @@ Phase 7 is split into three sub-phases.
 **Goal**: Loading states, status display, menus, and scroll areas available to all cards.
 
 **What to do**:
-1. Install shadcn primitives not yet present: `context-menu`
+1. Add new Radix primitive wrapper for `context-menu` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
 2. Implement 7 display and feedback components:
    - `TugBadge` (original) — tone variants (good/warn/alert/info), pill shape, count mode
    - `TugSpinner` (original) — size variants, standalone loading indicator
@@ -1124,7 +1139,7 @@ Phase 7 is split into three sub-phases.
 **Goal**: Data-heavy cards (Stats, Git, Files, Conversation) have their specialized components.
 
 **What to do**:
-1. Install shadcn primitive not yet present: `table`
+1. Add new Radix primitive wrapper for `table` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
 2. Implement 4 data display components:
    - `TugTable` (wrapper) — wraps Table, adds sortable columns, stripe option
    - `TugStatCard` (original) — key-value metric display (label + large number + trend)
