@@ -27,7 +27,7 @@ The `roadmap/retronow/` directory contains the canonical design mockups and styl
 
 ### How to Use These References
 
-**When planning new components:** Consult `RetronowComponentPackPage.tsx` and `RetronowControlPack.tsx` for layout patterns, interactive control grouping, and the wrapper-style component approach. The retronow "AppButton wraps shadcn Button" pattern is exactly the pattern tugways follows (TugButton wraps shadcn Button, etc.).
+**When planning new components:** Consult `RetronowComponentPackPage.tsx` and `RetronowControlPack.tsx` for layout patterns, interactive control grouping, and the wrapper-style component approach. The retronow "AppButton wraps Radix primitives directly" pattern is exactly the pattern tugways follows (TugButton wraps Radix primitives directly, etc.).
 
 **When designing the Component Gallery:** The retronow component pack page is the direct inspiration for the tugways Component Gallery. Its tabbed layout (controls, workspace, diagnostics, custom gauges), panel grouping, and interactive toggle patterns should guide gallery expansion as new components are added in later phases.
 
@@ -52,7 +52,7 @@ The current tugdeck frontend is ~60 source files across:
 | Card components | 8 cards + conversation sub-components | ~3000 | about, code, terminal, git, files, stats, settings, developer |
 | Supporting | hooks, contexts, action-dispatch, lib, drag-state | ~500 | Wiring, utilities |
 | Entry | `main.tsx`, `index.html` | ~270 | Boot sequence |
-| shadcn primitives | `components/ui/*.tsx` | ~600 | button, dialog, dropdown, tooltip, etc. |
+| shadcn primitives | `components/ui/*.tsx` | ~600 | button, dialog, dropdown, tooltip, etc. — **removed in Phase 8a; Tug components now wrap Radix primitives directly** |
 
 **Total: ~9700 lines of frontend TypeScript/CSS.**
 
@@ -65,7 +65,7 @@ These modules are solid infrastructure with no design conflicts:
 | `connection.ts` | Clean WebSocket client, well-structured | No changes needed |
 | `protocol.ts` | Binary frame protocol, shared with Rust backend | No changes needed |
 | `settings-api.ts` | Clean API client, correct no-localStorage design | No changes needed |
-| `tokens.css` | Three-tier token system, three themes, fonts | Tier 1 prefix rename (`--tl-` → `--tways-`), remove legacy shadcn aliases later |
+| `tokens.css` | Three-tier token system, three themes, fonts | Tier 1 prefix rename (`--tl-` → `--tways-`), shadcn aliases removed |
 | `chrome.css` | Resize handles, snap guides, sash cursors, set-flash | Compact, appropriate as CSS |
 | `globals.css` | Body/grid styling | Tailwind `@import` and `@theme` bridge removed in Phase 7d — now only imports token layers and defines body/html resets |
 | `index.html` | Minimal shell | Add inline body styles per eliminate-frontend-flash plan |
@@ -73,7 +73,7 @@ These modules are solid infrastructure with no design conflicts:
 | `serialization.ts` | Layout persistence (v5 format) | Extend for new CardState fields (collapsed, etc.) |
 | `layout-tree.ts` | Core data types (`CardState`, `DeckState`, `TabItem`) | Remove dead `TabNode` type |
 | `action-dispatch.ts` | Control frame routing from server/menu commands | Extend for new actions |
-| `components/ui/*.tsx` | shadcn primitives (button, dialog, dropdown, tooltip, etc.) | Tailwind-free as of Phase 7d — all utility classes replaced with semantic CSS in `shadcn-base.css`; private layer — tugways wraps these; do not install new shadcn components in future phases — wrap Radix primitives directly instead |
+| `components/ui/*.tsx` | **REMOVED** — shadcn primitives (button, dialog, dropdown, tooltip, etc.) deleted in Phase 8a. All Tug components now wrap Radix primitives directly and are styled with `--tug-base-*` tokens. The `components/ui/` directory and `shadcn-base.css` are deleted. |
 | `lib/utils.ts` | `cn()` utility for class joining | Simplified to plain `clsx` in Phase 7d — `tailwind-merge` removed since no Tailwind utilities remain |
 
 ## What To Demolish
@@ -176,7 +176,7 @@ find any registered callbacks). This is fine — no errors, no crashes.
 **Goal**: TugButton works end-to-end. Component gallery visible in the app.
 
 **What to do**:
-1. Create `components/tugways/tug-button.tsx` — wraps shadcn `Button`, adds `onAction` chain-action mode, tugways variant tokens ([D07], [D08])
+1. Create `components/tugways/tug-button.tsx` — wraps Radix primitives directly, adds `onAction` chain-action mode, tugways variant tokens ([D07], [D08])
 2. Create a "Component Gallery" card — a standalone view (like retronow-unified-review but live in the app) that shows all tugways components with variant toggles
 3. Wire a Mac Developer menu item ("Show Component Gallery") via `sendControl` → `action-dispatch` to display the gallery as a floating panel on the canvas
 4. Gallery starts with just TugButton in all its variants
@@ -441,7 +441,7 @@ Phase 5e is split into four sub-phases for incremental delivery.
 **Goal**: Card and tab state survives both tab switching and app reload. Selections, scroll positions, collapse state, focused card identity, and card content state are all preserved. Inactive cards display selections with a dimmed appearance following standard GUI conventions.
 
 **What to do**:
-1. Add `collapsed?: boolean` to `CardState` in `layout-tree.ts` ([D52]). Update serialization to read/write it. No UI yet — Phase 8a builds the collapse toggle.
+1. Add `collapsed?: boolean` to `CardState` in `layout-tree.ts` ([D52]). Update serialization to read/write it. No UI yet — Phase 8c builds the collapse toggle.
 2. Add `focusedCardId?: string` to `DeckState` in `layout-tree.ts` ([D51]). DeckManager writes it to tugbank (`dev.tugtool.deck.state` → `focusedCardId`) on focus change. On reload, call `makeFirstResponder` on the restored card ID after mount.
 3. Implement `TabStateBag` type — `{ scroll?: { x: number; y: number }; selection?: SavedSelection | null; content?: unknown }`. Create an in-memory cache (`Map<string, TabStateBag>`) on DeckManager for fast tab-switch access.
 4. Implement Tugcard deactivation capture: on tab switch away, read `contentArea.scrollLeft`/`scrollTop`, call `SelectionGuard.saveSelection()`, call the card content's `onSave` callback (if registered). Write the state bag to the in-memory cache and debounce-write to tugbank (`dev.tugtool.deck.tabstate` domain, keyed by tab ID).
@@ -461,7 +461,7 @@ Phase 5e is split into four sub-phases for incremental delivery.
 7. `tugdeck/styles/tug-tokens.css` — add `--tug-base-selection-bg-inactive` token
 8. `tugdeck/styles/bluenote.css`, `tugdeck/styles/harmony.css` — theme-specific inactive selection overrides
 
-**Result**: Tab state survives both tab switches and app reload. Card content components can opt into state persistence via a simple hook. The selection guard's existing save/restore mechanism is extended from in-memory-only to durable persistence via tugbank. The `collapsed` field is ready for Phase 8a's UI. The focused card is restored on reload. Inactive cards display selections with a dimmed background following standard GUI conventions.
+**Result**: Tab state survives both tab switches and app reload. Card content components can opt into state persistence via a simple hook. The selection guard's existing save/restore mechanism is extended from in-memory-only to durable persistence via tugbank. The `collapsed` field is ready for Phase 8c's UI. The focused card is restored on reload. Inactive cards display selections with a dimmed background following standard GUI conventions.
 
 **Note**: Terminal buffer persistence is explicitly deferred to Phase 9's terminal card work. The `useTugcardPersistence` hook provides the mechanism; the terminal card will implement its own `onSave`/`onRestore` for xterm.js buffer state when the time comes. Similarly, Monaco editor state persistence (cursor position, scroll, folding, find widget) will use the same `useTugcardPersistence` hook via `editor.saveViewState()`/`editor.restoreViewState()` when a code card is introduced in Phase 8/9 — the hook's opaque `content` blob is designed to handle arbitrarily complex state structures.
 
@@ -634,7 +634,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Result**: The default button pattern works end-to-end. Enter activates the accent-filled `primary` button in any modal context. The responder chain manages scoping so nested modals (sheet inside a card while an alert is open) route Enter correctly.
 
-**Note**: Phase 5d1 depends on Phase 3 (responder chain exists) and Phase 5 (Tugcard base, where alerts and sheets are first consumed). It does not depend on Phase 8a (which builds TugAlert/TugSheet/TugConfirmPopover) — rather, Phase 8a depends on Phase 5d1 for the default button registration mechanism. Phase 5d1 establishes the responder chain extension and key pipeline wiring; Phase 8a wires it into the concrete alert/sheet/popover components.
+**Note**: Phase 5d1 depends on Phase 3 (responder chain exists) and Phase 5 (Tugcard base, where alerts and sheets are first consumed). It does not depend on Phase 8g (which builds TugAlert/TugSheet/TugConfirmPopover) — rather, Phase 8g depends on Phase 5d1 for the default button registration mechanism. Phase 5d1 establishes the responder chain extension and key pipeline wiring; Phase 8g wires it into the concrete alert/sheet/popover components.
 
 ### Phase 5d2: Control Action Foundation (Concept 19, [D61]-[D63])
 
@@ -695,7 +695,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 2. `tugdeck/src/components/tugways/style-cascade-reader.ts` — new: StyleCascadeReader utility
 3. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — mutation transaction demo section
 
-**Result**: The infrastructure for live-preview editing exists. Inspector panels (Phase 8e) and continuous controls (Phase 8b) can use transactions for scrub-preview-commit workflows without custom snapshot/restore code.
+**Result**: The infrastructure for live-preview editing exists. Inspector panels (Phase 8h) and continuous controls (Phase 8d) can use transactions for scrub-preview-commit workflows without custom snapshot/restore code.
 
 **Note**: Phase 5d3 depends on Phase 5d2 (action phases drive transaction lifecycle) and Phase 4 (mutation model hooks for appearance-zone operations). It does not depend on Phase 5d1.
 
@@ -718,7 +718,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 3. `tugdeck/src/components/tugways/tugcard.tsx` — setProperty action handler routing
 4. `tugdeck/src/components/tugways/cards/gallery-card.tsx` — inspector demo section
 
-**Result**: The property observation infrastructure is complete. Cards can opt in to inspectability with a hook call and a schema. Inspector panels (Phase 8e) compose with any card via the PropertyStore + responder chain, with zero direct coupling.
+**Result**: The property observation infrastructure is complete. Cards can opt in to inspectability with a hook call and a schema. Inspector panels (Phase 8h) compose with any card via the PropertyStore + responder chain, with zero direct coupling.
 
 **Note**: Phase 5d4 depends on Phase 5d2 (explicit-target dispatch for inspector→card actions) and Phase 5d3 (mutation transactions for live preview). It is the capstone of the 5d sub-phases, establishing the full inspector pipeline.
 
@@ -777,11 +777,11 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Status: COMPLETE** (2026-03-06)
 
-**Goal**: Introduce the `--tug-base-*` and `--tug-comp-*` token layers with the full semantic taxonomy. Temporary aliases bridge old tokens to new tokens. No consumer migration yet.
+**Goal**: Introduce the `--tug-base-*` and `--tug-<component>-*` token layers with the full semantic taxonomy. Temporary aliases bridge old tokens to new tokens. No consumer migration yet.
 
 **What was done**:
 1. Defined the complete `--tug-base-*` semantic taxonomy in `tug-tokens.css` — ~300 tokens across surfaces, foreground, icon, borders, elevation, typography, spacing, radius, motion, accent, selection, workspace chrome, controls, menus, overlays, feedback, tables, charts, syntax, terminal, chat, files, inspector domains
-2. Created `tug-comp-tokens.css` with initial `--tug-comp-*` component token families
+2. Created `tug-comp-tokens.css` with initial `--tug-<component>-*` component token families (naming convention: `--tug-<component>-<property>`, where `base` is the special root-level component)
 3. Created temporary backward-compatibility aliases in `tokens.css` — every `--td-*` and `--tways-*` token got an alias pointing to the equivalent `--tug-base-*` token
 4. Created theme override files: `bluenote.css` (~139 overrides) and `harmony.css` (~304 overrides) with theme-specific `--tug-base-*` values
 5. Verified: all existing components render identically with the backward-compatibility aliases in place across all three themes
@@ -790,7 +790,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Files created/modified**:
 1. `tugdeck/styles/tug-tokens.css` — new: complete `--tug-base-*` taxonomy (hardcoded hex values, not TugColor-wired)
-2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-comp-*` families
+2. `tugdeck/styles/tug-comp-tokens.css` — new: `--tug-<component>-*` families
 3. `tugdeck/styles/tokens.css` — backward-compatibility aliases added
 4. `tugdeck/styles/bluenote.css` — new: Bluenote theme overrides
 5. `tugdeck/styles/harmony.css` — new: Harmony theme overrides
@@ -801,7 +801,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Status: COMPLETE** (2026-03-07, PR #98)
 
-**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Remove all legacy aliases. Search-based enforcement.
+**Goal**: Migrate all CSS and TypeScript consumers from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-<component>-*`. Remove all legacy aliases. Search-based enforcement.
 
 **What was done**:
 1. Migrated 6 tugways component CSS files — `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `gallery-card.css`, `tug-tab-bar-animations.css` (169 var references updated)
@@ -821,7 +821,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 5. 12 TypeScript files — inline style references
 6. `tugdeck/scripts/check-legacy-tokens.sh` — new: CI enforcement
 
-**Result**: The migration is complete. All consumers point at `--tug-base-*` and `--tug-comp-*` tokens. No `--td-*`, `--tways-*`, or legacy aliases remain. CI enforcement prevents regression. However, the `--tug-base-*` tokens themselves still resolve to hardcoded hex values — the palette integration connecting Layer 0 (TugColor palette) to Layer 1 (semantic tokens) is Phase 5d5e.
+**Result**: The migration is complete. All consumers point at `--tug-base-*` and `--tug-<component>-*` tokens. No `--td-*`, `--tways-*`, or legacy aliases remain. CI enforcement prevents regression. However, the `--tug-base-*` tokens themselves still resolve to hardcoded hex values — the palette integration connecting Layer 0 (TugColor palette) to Layer 1 (semantic tokens) is Phase 5d5e.
 
 ### Phase 5d5e: Palette Engine Integration (Concept 22, [D70], [D71], [D75])
 
@@ -861,7 +861,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 **What to do**:
 1. Implement `StyleInspectorOverlay` singleton — tracks global modifier state for `Ctrl+Option`, manages overlay lifecycle
 2. On pointer move with modifiers active: locate target with `elementFromPoint`, walk to nearest inspect root, read computed style, resolve token chain via `StyleCascadeReader`
-3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`)
+3. Display overlay showing: component identity, DOM path, selected computed properties (background, foreground, border, shadow, radius, typography), full resolution chain (`--tug-<component>-*` → `--tug-base-*` → `--tug-{hue}[-preset]`)
 4. For TugColor palette colors: display hue family name, preset name, and TugColor coordinates (e.g., "orange canonical — i:50, t:50, L:0.780")
 5. Display current `--tug-zoom` and `--tug-timing` values and their effect on the inspected element's dimensions and transitions
 6. Implement pin/unpin — clicking while inspecting pins the overlay so the user can stop hovering and examine details. `Escape` closes
@@ -876,7 +876,7 @@ After Phase 5f4 shipped, state preservation was extended to cover the full macOS
 
 **Result**: The style system is navigable. Developers can point at any element and see exactly which tokens are in play, where they come from, and how scale/timing affect them. The computed palette provenance makes OKLCH color choices transparent.
 
-**Note**: Phase 5d5f depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain from `--tug-comp-*` through `--tug-base-*` to `--tug-{hue}[-preset]` palette variables). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
+**Note**: Phase 5d5f depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain from `--tug-<component>-*` through `--tug-base-*` to `--tug-{hue}[-preset]` palette variables). It also benefits from Phase 5d3 (`StyleCascadeReader` utility) and Phase 5d4 (`PropertyStore` for additional introspection), though it can function without them.
 
 ### Phase 5g: Palette Refinements (Concept 22, [D70])
 
@@ -1059,128 +1059,26 @@ Phase 7 is split into three sub-phases.
 
 **Result**: CSS edits in dev mode produce no visible flash. The `@tailwindcss/vite` plugin (which forced full-reload on every CSS change, bypassing HMR boundaries) is gone. The CSS bundle is ~15 kB smaller. All 13 shadcn components are styled with plain CSS using the existing design token system.
 
+**Post-completion note**: This phase's shadcn infrastructure (`shadcn-base.css`, `components/ui/*.tsx`) is superseded by Phase 8a, which removes shadcn entirely. All Tug components now wrap Radix primitives directly.
+
 **Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates only programmatic animations to TugAnimator and adds skeletons — CSS-only animations and rAF loops are untouched (Rules 13–14). Phase 7c is the smallest phase — mostly HTML and module wiring. Phase 7d is an internal refactoring only — no component public APIs changed.
 
-### Phase 8a: Alerts + Title Bar + Dock (Concepts 9, 10, 11)
+### Phase 8: Radix Foundation, 2.5D Visual Identity & Chrome
 
-**Goal**: Full chrome layer.
+**See `roadmap/tugways-phase-8-radix-redesign.md` for the complete Phase 8 plan.**
 
-**What to do**:
-1. **Alerts** ([D25], [D26]):
-   - Implement `TugAlertHost` at app root
-   - Implement `tugAlert()` imperative Promise API
-   - Implement `TugSheet` for card-modal dialogs
-   - Implement `TugConfirmPopover` for button-local confirmations
-   - Implement `TugToast` via Sonner integration
-2. **Title bar** ([D27]):
-   - Implement window-shade collapse (CSS height transition to 28px)
-   - Add `collapsed: boolean` to `CardState`
-   - Implement close confirmation via `TugConfirmPopover`
-   - Change menu icon from `EllipsisVertical` to `Ellipsis`
-3. **Dock** ([D28], [D29]):
-   - Rewrite Dock from scratch with three button types
-   - Implement declarative `DockConfig` shape
-   - Implement dock placement (any edge)
-   - Add Radix Tooltip hover labels
-   - Wire dock button actions through responder chain
+Phase 8 replaces shadcn with direct Radix primitives, introduces the Tugways 2.5D visual language, builds the full component library, and completes the chrome layer (title bar, alerts, inspectors, dock).
 
-**Design reference**: Retronow's titlebar, tabs, dialog, toast, popup, and button patterns (`retronow-components.css`, `RetronowComponentPackPage.tsx`) are the visual models for alerts, title bar, and dock. See [Retronow Design Reference](#retronow-design-reference).
-
-**Result**: The dock replaces Mac menu commands as the primary UI for creating and managing cards. Chrome is complete.
-
-### Phase 8b: Form Controls + Core Display ([D34])
-
-**Goal**: Settings card has all the form controls it needs. Core display primitives available to all cards.
-
-**What to do**:
-1. Add new Radix primitive wrappers for `slider`, `label`, `separator` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
-2. Implement 8 form control wrappers:
-   - `TugInput` — wraps Input, adds validation states, error styling, `--td-*` tokens
-   - `TugTextarea` — wraps Textarea, adds auto-resize option, char count, error state
-   - `TugSelect` — wraps Select, adds tugways variants, token-based styling
-   - `TugCheckbox` — wraps Checkbox, adds label integration, mixed state
-   - `TugRadioGroup` — wraps RadioGroup, adds group label, horizontal/vertical layout
-   - `TugSwitch` — wraps Switch, adds label position, size variants
-   - `TugSlider` — wraps Slider, adds value display, range labels, tick marks. Emits action phases (`begin`/`change`/`commit`/`cancel`) per [D61] when used with `action` prop
-   - `TugLabel` — wraps Label, adds required indicator, helper text slot
-3. Implement `TugSeparator` wrapper — horizontal/vertical, label slot
-4. All continuous controls (TugSlider, TugInput, TugTextarea) support the `action`/`target` props from [D61]/[D62] for chain-action mode with phases. Direct-action mode via `onChange` remains available
-5. Add all 9 components to the Component Gallery with interactive controls
-6. Write tests for each component following the established hook test pattern
-
-**Result**: All form controls exist. Continuous controls emit action phases for inspector integration. The Settings card can be built.
-
-### Phase 8c: Display, Feedback & Navigation ([D34])
-
-**Goal**: Loading states, status display, menus, and scroll areas available to all cards.
-
-**What to do**:
-1. Add new Radix primitive wrapper for `context-menu` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
-2. Implement 7 display and feedback components:
-   - `TugBadge` (original) — tone variants (good/warn/alert/info), pill shape, count mode
-   - `TugSpinner` (original) — size variants, standalone loading indicator
-   - `TugProgress` (original) — horizontal bar, percentage, indeterminate mode
-   - `TugSkeleton` (original) — shimmer placeholder, `background-attachment: fixed` sync ([D23])
-   - `TugKbd` (original) — keyboard shortcut chip display
-   - `TugAvatar` (original) — image + fallback initials, size variants
-   - `TugStatusIndicator` (original) — tone-colored dot + text (good/warn/alert/info)
-3. Implement 4 navigation and overlay wrappers:
-   - `TugTooltip` — wraps Tooltip, hover labels, kbd shortcut display
-   - `TugDropdownMenu` — wraps DropdownMenu, kbd shortcuts in items, tone icons
-   - `TugScrollArea` — wraps ScrollArea, themed scrollbar, autohide
-   - `TugContextMenu` — wraps ContextMenu, right-click menus for cards
-4. Add all 11 components to the Component Gallery
-5. Write tests for each component
-
-**Result**: Cards have loading states, status badges, scrollable areas, and context menus. Every card type has the display primitives it needs.
-
-### Phase 8d: Data Display, Visualization & Compound Components ([D34])
-
-**Goal**: Data-heavy cards (Stats, Git, Files, Conversation) have their specialized components.
-
-**What to do**:
-1. Add new Radix primitive wrapper for `table` directly in `components/ui/` — do NOT use the shadcn CLI (see Phase 7d guidance: wrap Radix primitives directly, style with `--tug-base-*` tokens in `shadcn-base.css`)
-2. Implement 4 data display components:
-   - `TugTable` (wrapper) — wraps Table, adds sortable columns, stripe option
-   - `TugStatCard` (original) — key-value metric display (label + large number + trend)
-   - `TugDialog` (wrapper) — wraps Dialog, general-purpose (not alert/sheet)
-   - `TugButtonGroup` (composition) — connected button row, shared border radius
-3. Implement 3 data visualization originals (from retronow custom instruments):
-   - `TugSparkline` — SVG inline chart with 4 variants: area, line, column, bar
-   - `TugLinearGauge` — horizontal gauge with needle, thresholds, major/minor tick marks
-   - `TugArcGauge` — radial gauge with needle, arc fill, center readout
-4. Implement 1 compound component:
-   - `TugChatInput` (composition) — TugTextarea + submit button + file attachment button, Shift+Enter for newline, Enter to submit
-5. Add all 8 components to the Component Gallery with interactive controls
-6. Write tests for each component
-
-**Design reference**: Sparklines and gauges are drawn directly from the retronow custom instruments (`retronow-unified-review.html`). The gauge configuration controls (scale, tick counts, format units, accent colors) serve as the reference for prop design. See [Retronow Design Reference](#retronow-design-reference).
-
-**Result**: The full 28-component library is complete. The Component Gallery is a comprehensive design system showcase. Phase 9 card rebuilds can begin.
-
-### Phase 8e: Inspector Panels (Concepts 19–21, [D61]-[D69])
-
-**Goal**: Color picker, font picker, and coordinate inspector panels available as first-class tugways components. Each emits action phases (begin/change/commit/cancel), works with mutation transactions for live preview, and reads/writes via PropertyStore.
-
-**What to do**:
-1. Implement `TugColorPicker` (original) — hue/saturation/brightness wheel or strip, opacity slider, hex/RGB input, swatch history. Emits `setColor` action with `begin/change/commit/cancel` phases. During `change` phase, uses MutationTransaction for live preview on the target element
-2. Implement `TugFontPicker` (original) — font family dropdown (system fonts), font size TugSlider, weight/style toggles. Emits `setFontSize`, `setFontFamily`, `setFontWeight` actions with phases
-3. Implement `TugCoordinateInspector` (original) — x/y/width/height number fields with scrub-on-drag (drag the label to scrub the value). Emits `setPosition`, `setSize` actions with phases. Fields read from PropertyStore and update on external changes
-4. Implement `TugInspectorPanel` (composition) — container that hosts inspector sections. Reads `PropertyStore.getSchema()` from the focused card and dynamically renders appropriate controls for each property. Registers as a responder node. Uses explicit-target dispatch (D62) to send edits to the focused card
-5. Wire `TugInspectorPanel` to respond to card focus changes — when the focused card changes, the inspector reads the new card's PropertyStore schema and updates its displayed controls. If the focused card has no PropertyStore, the inspector shows "No inspectable properties"
-6. Add all inspector components to the Component Gallery with interactive demos
-7. Verify: color picker scrub previews live with transaction, commit persists, cancel reverts. Font picker changes cascade through CSS. Coordinate inspector reflects current values and updates on external changes. Inspector works with any card that registers a PropertyStore
-
-**Files created/modified**:
-1. `tugdeck/src/components/tugways/tug-color-picker.tsx` — new
-2. `tugdeck/src/components/tugways/tug-font-picker.tsx` — new
-3. `tugdeck/src/components/tugways/tug-coordinate-inspector.tsx` — new
-4. `tugdeck/src/components/tugways/tug-inspector-panel.tsx` — new
-5. `tugdeck/styles/tug-inspector.css` — new
-
-**Result**: Inspector panels are reusable tugways components. Any card that exposes a PropertyStore gets free inspector support. The color/font/coordinate controls are available standalone for use in card content (e.g., a settings card's theme color editor).
-
-**Note**: Phase 8e depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore must exist) and Phase 8b (TugSlider and form controls used internally by inspector components). It does not depend on Phase 8a (chrome) or Phase 8d (data viz). Phase 8e is an enhancement — it does not block Phase 9, but Phase 9 cards benefit from PropertyStore support.
+Nine sub-phases:
+- **8a**: Shadcn Excision
+- **8b**: Tugways 2.5D Visual Language
+- **8c**: Card Frame & Title Bar
+- **8d**: Form Controls & Core Display
+- **8e**: Navigation, Data Display & Visualization
+- **8f**: Compound Components & Gallery Completion
+- **8g**: Alerts
+- **8h**: Inspector Panels
+- **8i**: Dock
 
 ### Phase 9: Card Rebuild
 
@@ -1248,29 +1146,29 @@ Responder Chain  Mutation Model                              │
              │                    │
              ├────────┐            │
              ▼        ▼            ▼
-         Phase 5b2: Phase 5b3: Phase 8a:
-         Tab Drag   Gallery    Chrome
-         Gestures   Card          │
-             │        │        Phase 8b: Form Controls
-             ├────────┤           │
-             ▼        │        Phase 8c: Display & Nav
+         Phase 5b2: Phase 5b3: Phase 8: ◄─── (5d1 + 5d2–5d4)
+         Tab Drag   Gallery    Radix Foundation,
+         Gestures   Card       2.5D Visual Identity
+             │        │        & Chrome
+             ├────────┤        (see redesign doc:
+             ▼        │         8a–8i)
          Phase 5b4:   │           │
-         Tab          │        Phase 8d: Data Viz & Compound
+         Tab          │           │
          Overflow     │           │
-             │        │        Phase 8e: ◄─── (5d2 + 5d3 + 5d4 + 8b)
-         Phase 5b5:   │        Inspector
-         Tab          │        Panels
-         Refinements  │                    │         │       │
-             │        │                    │         │       │
-             │     Phase 5e: ◄─────────────┤         │       │
-             │     Tugbank                 │         │       │
-             │        │                    │         │       │
-             │     Phase 5f: ◄─── (5b + 5e)│         │       │
-             │     State                   │         │       │
-             │     Preservation            │         │       │
-             │        │                    │         │       │
-             └────────┴────────────────┬───┴─────────┴───────┘
-                                       ▼
+             │        │           │
+         Phase 5b5:   │           │
+         Tab          │           │
+         Refinements  │           │         │       │
+             │        │           │         │       │
+             │     Phase 5e: ◄────┤         │       │
+             │     Tugbank        │         │       │
+             │        │           │         │       │
+             │     Phase 5f: ◄─── (5b + 5e) │       │
+             │     State                    │       │
+             │     Preservation             │       │
+             │        │                     │       │
+             └────────┴─────────────────┬───┴───────┘
+                                        ▼
                           Phase 9: Card Rebuild
 
     Theme Token Overhaul (can run in parallel with 5b–8e):
@@ -1304,14 +1202,12 @@ and 8a — all subsequent phases inherit the deterministic event flow guarantees
 by the store migration. Phases 5b, 5c, 5d1, 6, and 7 can all start as soon as Phase 5a2
 completes (Phase 7 also needs Phase 1's motion tokens). Phase 5d1 (Default Button) adds
 `setDefaultButton`/`clearDefaultButton` to the responder chain and wires Enter at stage 2
-of the key pipeline — a prerequisite for Phase 8a's alert, sheet, and popover components,
-which register their default buttons on mount. Phase 8a (Alerts + Title Bar + Dock)
-depends on Phase 5d1 for the default button mechanism. Phases 8b–8d are sequential (each
-wave builds on the previous) and depend on Phase 2 (Component Gallery exists) and Phase 4
-(mutation model hooks). They can run in parallel with Phases 5b, 5c, 6, and 7. Phase 9
+of the key pipeline — a prerequisite for Phase 8g's alert, sheet, and popover components,
+which register their default buttons on mount. Phase 8 (Radix Foundation, 2.5D Visual Identity & Chrome)
+depends on Phase 5d1 for the default button mechanism and Phases 5d2–5d4 for action phases, mutation transactions, and PropertyStore. See `roadmap/tugways-phase-8-radix-redesign.md` for the complete Phase 8 plan (sub-phases 8a–8i). Phase 9
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
-motion (Phase 7) for skeleton/transitions, chrome (Phase 8a) for title bar and dock, and
-the component library (Phases 8b–8e) for form controls, data display, visualization, and inspectors.
+motion (Phase 7) for skeleton/transitions, chrome (Phase 8) for title bar and dock, and
+the component library (Phase 8) for form controls, data display, visualization, and inspectors.
 Phases 5b, 5b2, 5b3, 5b4, 5b5, 5c, 5c2, and 5d1–5d4 are enhancements that can land before, during, or after Phase 9.
 Phase 5c2 (Card Snap Set Refinements) depends on Phase 5c (snap and set-move must exist). It adds set visual identity: corner rounding, perimeter flash, border collapse, and break-out restoration.
 Phase 5b2 (Tab Drag Gestures) depends on Phase 5b (tab bar component and tab state must exist).
@@ -1324,11 +1220,11 @@ Phase 5d4 (Observable Properties) depends on Phase 5d2 (explicit-target dispatch
 Phase 5e (Tugbank) can start anytime after Phase 5a2 — it is primarily Rust/backend work with a small `settings-api.ts` update. It does not depend on any frontend phase beyond the basic infrastructure.
 Phase 5f (State Preservation) depends on Phase 5e (tugbank must exist for durable storage) and Phase 5b (tabs must exist for per-tab state lifecycle). It does not block Phase 9, but Phase 9 cards benefit from the `useTugcardPersistence` hook.
 Phase 5f4 (State Preservation Solidified) depends on Phase 5f3 (content-first restore ordering and save-on-close must exist). It replaces the double-RAF timing bet with a deterministic child-driven ready callback (`onContentReady`). The `onContentReady` pattern is forward-compatible with Monaco editor and terminal buffer persistence in Phase 9. Rules of Tugways 11 [D78] and 12 [D79] are established here.
-Phase 8e (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8b (TugSlider and form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
+Phase 8h (Inspector Panels) depends on Phases 5d2–5d4 (action phases, mutation transactions, PropertyStore) and Phase 8d (form controls). It does not block Phase 9, but Phase 9 cards benefit from PropertyStore support for inspector integration.
 Phase 5d5a (Palette Engine → TugColor Runtime) is complete. It shipped a standalone TugColor palette engine with no coupling to the responder chain, mutation model, or property store.
 Phase 5d5b (Global Scale & Timing) is complete. CSS `zoom` on `<body>` scales the entire UI with one number.
-Phase 5d5c (Token Architecture) is complete. Introduced the full `--tug-base-*` and `--tug-comp-*` taxonomy with backward-compatibility aliases. Chromatic tokens used hardcoded hex values — palette integration was deferred.
-Phase 5d5d (Consumer Migration) is complete (PR #98). All consumers migrated from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-comp-*`. Legacy aliases removed. CI enforcement added.
+Phase 5d5c (Token Architecture) is complete. Introduced the full `--tug-base-*` and `--tug-<component>-*` taxonomy with backward-compatibility aliases. Chromatic tokens used hardcoded hex values — palette integration was deferred.
+Phase 5d5d (Consumer Migration) is complete (PR #98). All consumers migrated from `--td-*`/`--tways-*` to `--tug-base-*`/`--tug-<component>-*`. Legacy aliases removed. CI enforcement added.
 Phase 5d5e (Palette Engine Integration) depends on Phase 5d5d (consumers must already reference `--tug-base-*`). This is the critical missing step — it wires `--tug-base-*` chromatic tokens to `var(--tug-{hue}[-preset])` palette variables, converts the palette to pure CSS formulas (no JS injection), and adds the neutral ramp. This connects the TugColor palette engine to the consumer-facing tokens.
 Phase 5d5f (Cascade Inspector) depends on Phase 5d5e (palette integration must be complete so the inspector shows the full resolution chain). It benefits from Phase 5d3 (StyleCascadeReader) and Phase 5d4 (PropertyStore) but can function without them.
 The 5d5 sub-phases are an enhancement track that can run in parallel with Phases 5b–8e. They do not block Phase 9. Phase 5d5e (Palette Engine Integration) should ideally complete before Phase 9 begins, so rebuilt cards use palette-derived colors from the start.
@@ -1368,18 +1264,13 @@ The 5d5 sub-phases are an enhancement track that can run in parallel with Phases
 | 7a | ~2 files | ~500 lines |
 | 7b | ~8 files | ~400 lines |
 | 7c | ~3 files | ~100 lines |
-| 8a | ~8 files | ~1000 lines |
-| 8b | ~9 files | ~800 lines |
-| 8c | ~11 files | ~700 lines |
-| 8d | ~8 files | ~1000 lines |
-| 8e | ~5 files | ~800 lines |
+| 8 (8a–8i) | See `roadmap/tugways-phase-8-radix-redesign.md` | ~4300 lines |
 | 9 | ~20 files | ~3000 lines |
 
 **Total rebuild: ~18,700 lines** replacing the current ~9700 lines. The new
-codebase is larger because the 28-component library (Phases 8a–8d) adds ~2500
-lines of reusable UI primitives, the control action/transaction/property
-infrastructure (Phases 5d2–5d4) adds ~900 lines, the inspector panels (Phase 8e)
-add ~800 lines, tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
+codebase is larger because the component library (Phase 8, sub-phases 8a–8i) adds ~4300
+lines of reusable UI primitives and chrome, the control action/transaction/property
+infrastructure (Phases 5d2–5d4) adds ~900 lines, tugbank (Phase 5e) adds ~1500 lines of Rust infrastructure
 for typed persistence, and the theme token overhaul (Phases 5d5a–5d5f) adds
 ~2200 lines of palette engine, scaled/timed tokens, semantic taxonomy, and
 cascade inspector. The triple-registration redundancy is gone, the adapter
@@ -1417,7 +1308,7 @@ The suggested plan sequence:
 19. `tugways-phase-5d4-observable-properties` — PropertyStore, usePropertyStore hook, inspector demo
 20. `tugways-phase-5d5a-palette-engine` — TugColor OKLCH palette engine, 24 hues with Hue/Intensity/Tone axes, 7 presets, P3 support, interactive gallery editor
 21. `tugways-phase-5d5b-scale-timing` — global scale, global timing, motion toggle, per-component scale, JS helpers
-22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-comp-*` layers, full semantic taxonomy, backward-compatibility aliases
+22. `tugways-phase-5d5c-token-architecture` — `--tug-base-*` and `--tug-<component>-*` layers, full semantic taxonomy, backward-compatibility aliases
 23. `tugways-phase-5d5d-consumer-migration` — migrate all CSS/TS from `--td-*`/`--tways-*`, remove legacy aliases, enforcement
 24. `tugways-phase-5d5e-palette-engine-integration` — pure CSS palette formulas, wire `--tug-base-*` to TugColor palette, neutral ramp, remove JS injection
 25. `tugways-phase-5d5f-cascade-inspector` — dev-mode Ctrl+Option hover, token chain resolution, palette provenance
@@ -1435,12 +1326,8 @@ The suggested plan sequence:
 37. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
 38. `tugways-phase-7b-managed-animations` — migrate programmatic @keyframes to TugAnimator (CSS-only and rAF stay), skeleton loading states
 39. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
-40. `tugways-phase-8a-chrome` — alerts, title bar, dock (depends on 5d1 for default button)
-41. `tugways-phase-8b-form-controls` — form controls + core display (9 components); continuous controls emit action phases (D61)
-42. `tugways-phase-8c-display-nav` — display, feedback & navigation (11 components)
-43. `tugways-phase-8d-data-viz` — data display, visualization & compound (8 components)
-44. `tugways-phase-8e-inspector-panels` — TugColorPicker, TugFontPicker, TugCoordinateInspector, TugInspectorPanel
-44. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
+40. `tugways-phase-8` — see `roadmap/tugways-phase-8-radix-redesign.md` for the complete plan (sub-phases 8a–8i: shadcn excision, 2.5D visual language, card frame & title bar, form controls, navigation & data display, compound components, alerts, inspector panels, dock)
+41. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
 
@@ -1459,7 +1346,7 @@ The suggested plan sequence:
    existing feeds, and explicitly designed to come later per [D21].
 
 3. **Incremental usability**: Mac menu commands are acceptable until the dock
-   is built (Phase 8). Phase 8 can start right after Phase 5 — it doesn't
+   is built (Phase 8i). Phase 8 can start right after Phase 5 — it doesn't
    need to wait for feeds, motion, tabs, or snapping.
 
 4. **Test strategy**: Per-phase. Write tests for each new component as it's

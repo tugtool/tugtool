@@ -59,7 +59,7 @@
 | [D03] | Stylesheet injection replaces body classes | Concept 1 | [#d03-stylesheet-injection](#d03-stylesheet-injection) |
 | [D04] | Optional palette entries with `var()` fallbacks | Concept 1 | [#d04-optional-palette](#d04-optional-palette) |
 | [D05] | Three component kinds: wrappers, compositions, originals | Concept 2 | [#d05-component-kinds](#d05-component-kinds) |
-| [D06] | `components/tugways/` is public, `components/ui/` is private | Concept 2 | [#d06-file-org](#d06-file-org) |
+| [D06] | `components/tugways/` is the public component API | Concept 2 | [#d06-file-org](#d06-file-org) |
 | [D07] | Module-scope components, compose via JSX nesting | Concept 3 | [#d07-composition-model](#d07-composition-model) |
 | [D08] | Two button modes: direct-action and chain-action | Concept 3 | [#d08-button-modes](#d08-button-modes) |
 | [D09] | Responder chain operates outside React state | Concept 4 | [#d09-chain-outside-react](#d09-chain-outside-react) |
@@ -124,7 +124,7 @@
 | [D68] | PropertyStore integrates with useSyncExternalStore | Concept 21 | [#d68-property-store-sync](#d68-property-store-sync) |
 | [D69] | Inspector panels are responder participants | Concept 21 | [#d69-inspector-responders](#d69-inspector-responders) |
 | [D70] | TugColor OKLCH palette: 24 hues × continuous intensity/tone space, 5 convenience presets, inline formula for arbitrary colors, P3 support | Concept 22 | [#d70-computed-palette](#d70-computed-palette) |
-| [D71] | Token naming: `--tug-{hue}[-preset]`, `--tug-base-*`, `--tug-comp-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
+| [D71] | Token naming: `--tug-{hue}[-preset]`, `--tug-base-*`, `--tug-<component>-*` replace `--tways-*`/`--td-*` | Concept 22 | [#d71-token-naming](#d71-token-naming) |
 | [D72] | Global scale: `--tug-zoom` multiplies all dimensions | Concept 22 | [#d72-global-scale](#d72-global-scale) |
 | [D73] | Global timing: `--tug-timing` multiplies all durations, `--tug-motion` toggles motion | Concept 22 | [#d73-global-timing](#d73-global-timing) |
 | [D74] | Dev cascade inspector: `Ctrl+Option + hover` shows token resolution chain | Concept 22 | [#d74-cascade-inspector](#d74-cascade-inspector) |
@@ -167,7 +167,7 @@
 | `roadmap/tug-feed.md` | Tug-feed backend architecture (hooks, correlation, schema) |
 | `roadmap/eliminate-frontend-flash.md` | UI-flash root cause analysis and three-layer fix (referenced from [#startup-continuity](#startup-continuity)) |
 | `roadmap/tuglook-style-system-redesign.txt` | Prior art for theme system |
-| `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions |
+| `roadmap/react-shadcn-adoption.md` | React/shadcn adoption decisions (historical — shadcn has been removed; components now wrap Radix primitives directly) |
 | `roadmap/tugbank-proposal.md` | Tugbank SQLite-backed defaults store design (schema, API, CLI, concurrency model) |
 | `roadmap/theme-overhaul-proposal.md` | Theme token overhaul: computed OKLCH palette, three-layer token architecture, global scale/timing, cascade inspector |
 
@@ -200,7 +200,7 @@
 
 Themes need to be "separate" loadable resources; not hard-coded tailwind/CSS.
 
-However, if we think through all the implications of what changing a theme does in an app, we wind up needing to tackle quite a few complex questions like event flow, state management, rendering, component systems, and more. We have recently fixed on React as a core technology and added on shadcn as an aid to achieve quality and consistency. However, these alone are not enough. We also want a "tugcard" abstraction to encapsulate the look and feel of a single window-like component in the app, and we want all tugcards to be customizable based on a set of common behaviors. We need to specify what those behaviors are, how to store them, how to customize them, how to render them, and how to respond when they change.
+However, if we think through all the implications of what changing a theme does in an app, we wind up needing to tackle quite a few complex questions like event flow, state management, rendering, component systems, and more. We have recently fixed on React as a core technology and use Radix primitives directly for accessible, unstyled component foundations. However, these alone are not enough. We also want a "tugcard" abstraction to encapsulate the look and feel of a single window-like component in the app, and we want all tugcards to be customizable based on a set of common behaviors. We need to specify what those behaviors are, how to store them, how to customize them, how to render them, and how to respond when they change.
 
 There is also apprehension about React, since simple uses of it tend to accrete state changes that all too easily cause uncontrolled cascades of updates that ripple through an app, causing all sorts of undesirable effects, including brittleness and rigidness in the face of new changes, and poor performance when seemingly trivial updates occur. There are also difficult invariants like the "rule of hooks", which are like ticking time bombs that can go off at any time. We should probably lean away from states as much as possible and lean toward a model where component mutation is safe, controlled, and easy to understand.
 
@@ -209,12 +209,12 @@ There is also apprehension about React, since simple uses of it tend to accrete 
 - Themes need to be "separate" loadable resources; not hard-coded tailwind/CSS
 - Need a settings view for adjusting themes
 - Rethink themes as a precursor to the design system; build in support for revising and extending
-- Custom shadcn-based components for *everything*; never use "raw" shadcn
+- Custom Radix-based components for *everything*; never use raw Radix primitives directly in app code
 - Tugways: the name of the tug design system for components used in tugcards and tugdeck
 - Rename tuglook (the previous/tentative name for the design system) to tugways
 - All UI components get a `Tug` prefix to give namespacing and allow us to inventory what we have and what we don't
 - Start with `TugButton` as the first test-case component for how to design a tugways component
-- Follow on with all components: selects, sliders, input, badges, etc. (ref: https://ui.shadcn.com/docs/components)
+- Follow on with all components: selects, sliders, input, badges, etc.
 - The responder chain is key; it will determine how all components are wired up; look at Apple docs for this
 - Tugcard abstraction that serves as the common base component for all cards, offering standard API for what a card is and does
 - API to return calculated minsize of a tugcard, so that we can ensure content stays visible
@@ -238,11 +238,11 @@ There is also apprehension about React, since simple uses of it tend to accrete 
 
 **Theme system.** Three themes (Brio, Bluenote, Harmony) defined entirely in `tugdeck/styles/tokens.css` as CSS custom properties. Theme switching works via body class (`td-theme-bluenote`, `td-theme-harmony`; Brio is the `:root` default). The `use-theme.ts` hook reads/sets the current theme, persists to localStorage, dispatches a `td-theme-change` CustomEvent, and syncs to the Swift bridge. All theme data is hardcoded in that one CSS file — no separate loadable resources.
 
-**Token architecture.** Three tiers already in place: Tier 1 palette (`--tl-*`), Tier 2 semantic (`--td-*`), Tier 3 component-specific. Shadcn bridge aliases (`--background`, `--foreground`, etc.) map from the `--td-*` layer. This architecture is sound but the values are baked in.
+**Token architecture.** Three tiers already in place: Tier 1 palette (`--tl-*`), Tier 2 semantic (`--td-*`), Tier 3 component-specific. Legacy bridge aliases (`--background`, `--foreground`, etc.) map from the `--td-*` layer. This architecture is sound but the values are baked in.
 
 **Card system.** `TugCard` interface in `cards/card.ts` defines: `feedIds`, `collapsible`, `meta` (title, icon, closable, menuItems), and lifecycle methods (`mount`, `onFrame`, `onResize`, `focus`, `destroy`). `ReactCardAdapter` wraps React components to implement this interface. Eight card types are registered. Each card is a standalone React functional component with no shared base beyond what `CardContext` provides.
 
-**shadcn components.** 13 components in `components/ui/`: Button, Card, Checkbox, Dialog, DropdownMenu, Input, RadioGroup, ScrollArea, Select, Switch, Tabs, Textarea, Tooltip. All are stock shadcn — used raw except `CardDropdownMenu` which wraps `DropdownMenu` for the card menu item model.
+**Radix primitives.** shadcn has been removed. The former 13 shadcn components in `components/ui/` (Button, Card, Checkbox, Dialog, DropdownMenu, Input, RadioGroup, ScrollArea, Select, Switch, Tabs, Textarea, Tooltip) have been replaced by Tug components that wrap Radix primitives directly in `components/tugways/`.
 
 **Feed system.** `CardContext` provides `feedData: Map<FeedIdValue, Uint8Array>`, and the `useFeed()` hook gives individual cards access to their subscribed feed data. Each card decodes and renders its own feed data independently — there is no uniform `TugFeed` abstraction.
 
@@ -260,7 +260,7 @@ There is also apprehension about React, since simple uses of it tend to accrete 
 - Card min-size calculation API
 - Accessory view system for cards
 - Skeleton/loading model
-- Alert/dialog system beyond raw shadcn Dialog
+- Alert/dialog system beyond raw Radix Dialog
 - Keybindings view
 - Card minimize/window-shade control
 - Close confirmation for cards
@@ -370,7 +370,7 @@ Replace the current body-class approach with stylesheet injection:
 - Font declarations
 - Brio's palette values as `body { --tways-*: ... }` defaults
 - The entire Tier 2 semantic layer (`body { --td-*: var(--tways-*) }`)
-- The legacy/shadcn bridge aliases (`--background: var(--td-bg)`, etc.)
+- The legacy bridge aliases (`--background: var(--td-bg)`, etc.) — historical artifacts from the former shadcn layer, to be removed during token migration
 - Shared tokens that don't vary per theme (radius, spacing, fonts, line-height)
 - Scrollbar styling
 
@@ -389,7 +389,7 @@ When loading a theme (bundled or external), validate against Brio's palette as t
 
 **What tugways encompasses:**
 - **Tokens:** the three-tier variable system (palette, semantic, component)
-- **Components:** `Tug`-prefixed components that wrap, compose, or extend shadcn primitives
+- **Components:** `Tug`-prefixed components that wrap, compose, or extend Radix primitives
 - **Patterns:** how components compose (cards, accessory views, dialogs, skeletons)
 - **Conventions:** naming, file organization, how new components are added
 - **Behaviors:** responder chain, event flow, focus management
@@ -399,25 +399,24 @@ When loading a theme (bundled or external), validate against Brio's palette as t
 **The `Tug` wrapper's job: cosmetic + behavioral + contractual.** Tugways components are not thin cosmetic wrappers. They encapsulate:
 - **Semantic color mapping** — enforce and map tugways semantic colors to concrete elements
 - **Component subtypes** — a single tugways component can represent a family of related controls (e.g., TugButton encompasses push button, icon button, icon+text button, three-state button)
-- **State management** — states beyond what shadcn provides (disabled, loading, active, focused, selected), with consistent visual treatment across the design system
+- **State management** — states beyond what Radix primitives provide (disabled, loading, active, focused, selected), with consistent visual treatment across the design system
 - **Theme-awareness** — components respond to theme changes via CSS variable cascade (no React re-render needed, per concept 1)
 - **Responder chain integration** — components participate in the responder chain (concept 4)
 
-**Tugways components carry strong opinions.** shadcn's variant model (primary/secondary/danger/ghost) is a starting point, not the final vocabulary. Tugways components define their own variant sets that reflect the actual needs of the app — including subtypes, states, and semantic color mappings. The variants should cover the full range of what the component needs to express, not just what shadcn happens to offer.
+**Tugways components carry strong opinions.** Radix provides unstyled, accessible primitives — Tugways components add their own variant model (primary/secondary/danger/ghost and beyond) that reflects the actual needs of the app. The variants cover the full range of what the component needs to express, including subtypes, states, and semantic color mappings.
 
 **Three kinds of tugways components:** {#d05-component-kinds}
 
-1. **Wrappers** — a shadcn primitive wrapped with tugways opinions. The shadcn component is the internal implementation; the Tug component is the public API. Examples: TugButton (wraps Button), TugInput (wraps Input), TugSelect (wraps Select).
+1. **Wrappers** — a Radix primitive wrapped with tugways opinions. The Radix primitive is the internal implementation; the Tug component is the public API. Examples: TugButton (wraps Radix Slot), TugInput (wraps native input with tugways styling), TugSelect (wraps Radix Select).
 
-2. **Compositions** — multiple shadcn primitives assembled into a higher-level component that doesn't exist in shadcn. Examples: a search bar (Input + Button), a toolbar (multiple Buttons in a group), a labeled control (Label + Input + helper text).
+2. **Compositions** — multiple Radix primitives assembled into a higher-level component that has no single Radix equivalent. Examples: a search bar (Input + Button), a toolbar (multiple Buttons in a group), a labeled control (Label + Input + helper text).
 
-3. **Originals** — components that shadcn doesn't offer at all, built from scratch or from lower-level Radix primitives. Examples: card title bar, responder-chain-aware containers, skeleton placeholders, accessory view frames.
+3. **Originals** — components that have no Radix primitive equivalent, built from scratch. Examples: card title bar, responder-chain-aware containers, skeleton placeholders, accessory view frames.
 
 **File organization:**
 
 ```
 components/
-  ui/           # raw shadcn components (private implementation detail)
   tugways/      # Tug-prefixed components (public API)
     TugButton.tsx
     TugInput.tsx
@@ -426,7 +425,7 @@ components/
     ...
 ```
 
-**The rule: app code imports from `components/tugways/`, never from `components/ui/`.** {#d06-file-org} The `ui/` directory is kept as-is (for easy shadcn updates) but is consumed only by tugways wrappers. This gives us the best of both worlds: shadcn's accessible primitives and Radix behavior under the hood, with our own opinions, subtypes, and conventions on top. We don't reinvent — we customize. And when we need something shadcn doesn't offer, we build it as an original.
+**The rule: app code imports from `components/tugways/`.** {#d06-file-org} There is no private `ui/` layer — shadcn has been removed and Tug components wrap Radix primitives directly. This gives us accessible primitives and Radix behavior under the hood, with our own opinions, subtypes, and conventions on top. We don't reinvent — we customize. And when we need something Radix doesn't offer, we build it as an original.
 
 #### Component Library Inventory {#d34-component-library}
 
@@ -658,7 +657,7 @@ responderChain.setDefaultButton(buttonRef);   // register
 responderChain.clearDefaultButton(buttonRef); // unregister (idempotent)
 ```
 
-**Destructive variant visual treatment:** The `destructive` variant must be visually unmistakable — a bold danger fill, not a subtle tint. The fill color is `--td-danger` (`--tways-accent-4`, a deep red) with `--td-text-inverse` (white/near-white) text. The current shadcn wiring (`bg-destructive text-destructive-foreground`) provides the class hooks, but tug-button.css must ensure the fill reads clearly across all three themes — explicitly setting `background-color: var(--td-danger)` and `color: var(--td-text-inverse)` so the destructive button is never confused with secondary or ghost. Hover and active states use the same `filter: brightness()` pattern as primary. The destructive button is always visually distinct from the default button (`primary` = accent fill, `destructive` = danger fill).
+**Destructive variant visual treatment:** The `destructive` variant must be visually unmistakable — a bold danger fill, not a subtle tint. The fill color is `--td-danger` (`--tways-accent-4`, a deep red) with `--td-text-inverse` (white/near-white) text. `tug-button.css` must ensure the fill reads clearly across all three themes — explicitly setting `background-color: var(--td-danger)` and `color: var(--td-text-inverse)` so the destructive button is never confused with secondary or ghost. Hover and active states use the same `filter: brightness()` pattern as primary. The destructive button is always visually distinct from the default button (`primary` = accent fill, `destructive` = danger fill).
 
 **Interaction with alert button roles:** The `"cancel"` role in `tugAlert` and `tugSheet` ([#c09-dialog](#c09-dialog)) maps to the default button when a `"destructive"` button is present — Cancel gets `variant="primary"` and is registered as the default button. When no destructive button is present, the affirmative action button is the default. The `"destructive"` role never becomes the default button. This matches Apple's HIG: when confirming a destructive action, Enter should cancel (the safe choice), not confirm.
 
@@ -705,28 +704,28 @@ interface TugButtonProps {
 }
 ```
 
-#### What the Wrapper Adds Over shadcn Button
+#### What TugButton Adds Over Radix Primitives
 
-shadcn's `Button` provides: Radix slot support, CVA variant management (`variant`, `size`), basic styles, `asChild` prop, `ref` forwarding.
+Radix provides: accessible slot composition (`Slot`), focus management, and unstyled primitive behavior with `ref` forwarding.
 
 TugButton adds:
 
-1. **Subtypes** — `push`, `icon`, `icon-text`, `three-state`. shadcn has no concept of button subtypes. Each subtype adjusts layout (icon-only has square aspect ratio, icon-text has icon + label layout, three-state toggles through on/off/mixed).
-2. **Chain-action mode** — the `action` prop connects the button to the responder chain for validation and dispatch. shadcn has no event system integration.
-3. **Loading state** — a `loading` prop that shows a spinner overlay and disables interaction. shadcn has no loading state.
+1. **Subtypes** — `push`, `icon`, `icon-text`, `three-state`. Radix has no concept of button subtypes. Each subtype adjusts layout (icon-only has square aspect ratio, icon-text has icon + label layout, three-state toggles through on/off/mixed).
+2. **Chain-action mode** — the `action` prop connects the button to the responder chain for validation and dispatch. Radix has no event system integration.
+3. **Loading state** — a `loading` prop that shows a spinner overlay and disables interaction. Radix has no loading state.
 4. **Theme-responsive colors** — variant colors reference `var(--td-*)` semantic tokens, not hardcoded Tailwind classes. Theme switches are free.
-5. **Restricted API** — shadcn's `asChild` and some variants are not exposed. TugButton's API is opinionated — it expresses what tugdeck needs, not every possible button variation.
+5. **Restricted API** — TugButton's API is opinionated — it expresses what tugdeck needs, not every possible button variation.
 
 #### Focus, Keyboard, and Accessibility {#tugbutton-a11y}
 
-TugButton renders a native `<button>` element (via shadcn's `Button`). This gives us the browser's built-in accessibility baseline for free: focusable via Tab, activates on Enter and Space, announced as "button" by screen readers, and participates in the accessibility tree without extra work. TugButton's job is to *not break* any of that, and to extend it for the subtypes and modes that go beyond a plain button.
+TugButton renders a native `<button>` element (via Radix `Slot` composition). This gives us the browser's built-in accessibility baseline for free: focusable via Tab, activates on Enter and Space, announced as "button" by screen readers, and participates in the accessibility tree without extra work. TugButton's job is to *not break* any of that, and to extend it for the subtypes and modes that go beyond a plain button.
 
 **What the native `<button>` provides (inherited, not reimplemented):**
 - Tab/Shift+Tab focus navigation
 - Enter and Space to activate
 - `role="button"` implicit in the element
 - `disabled` attribute prevents focus and interaction
-- Focus ring via `:focus-visible` (styled by shadcn's `focus-visible:ring-2`)
+- Focus ring via `:focus-visible` (styled by tugways CSS)
 
 **What TugButton adds:**
 
@@ -780,7 +779,7 @@ The gallery card is a developer tool — it appears in the deck and persists acr
 TugButton establishes the pattern every tugways component follows:
 
 1. **Module-scope definition** in `components/tugways/tug-button.tsx`. Imported by app code. Never defined inline.
-2. **Wraps shadcn** internally — the `<Button>` from `components/ui/button` is the implementation. TugButton is the public API.
+2. **Wraps Radix primitives** internally — Radix `Slot` and native `<button>` are the implementation. TugButton is the public API.
 3. **Theme via CSS variables** — appearance-zone only. No React state for visual theming.
 4. **Responder chain via context** — chain-action mode for components that dispatch or validate actions. Most components will have a direct-action mode only; chain-action is for toolbar/menu scenarios.
 5. **Mutation zones are explicit** — appearance (CSS), local data (chain validation subscription), structure (conditional rendering by parent). Documented for each component.
@@ -1882,7 +1881,7 @@ TugAnimator handles everything else: coordinated transitions, spring physics, dr
 
 #### Enter/Exit Transitions {#enter-exit-transitions}
 
-Enter/exit is the hardest animation problem in React: when a component unmounts, its DOM node vanishes instantly, leaving no time for an exit animation. Tugdeck's approach uses **Radix's data-state mechanism + CSS `@keyframes`**, which is already in our stack via shadcn.
+Enter/exit is the hardest animation problem in React: when a component unmounts, its DOM node vanishes instantly, leaving no time for an exit animation. Tugdeck's approach uses **Radix's data-state mechanism + CSS `@keyframes`** directly.
 
 **How it works:**
 
@@ -2191,7 +2190,7 @@ Fire-and-forget notifications that don't interrupt the user's workflow.
 
 **Accessibility:** Sonner renders a persistent `<section role="region" aria-label="Notifications">` with `aria-relevant="additions text"`. Screen readers announce new toasts via the live region without interrupting the user's current interaction. The region element exists in the DOM even when no toasts are showing — required for ARIA live regions to work.
 
-**Implementation — Sonner (already in the shadcn ecosystem):**
+**Implementation — Sonner:**
 
 ```tsx
 // App root — render once
@@ -3655,7 +3654,7 @@ The inspector doesn't import the card's internal code. It discovers available pr
 
 **Status: DESIGNED**
 
-**The problem.** The current token system (`--tways-*` palette, `--td-*` semantic) has served well for establishing theme machinery, but the naming is ad hoc, the accent system uses meaningless ordinals (`accent-1` through `accent-8`), the color palette is rigid (fixed hex values per theme), and there's no systematic way to resize the UI or control animation speed. The shadcn bridge aliases (`--background`, `--foreground`, `--primary`, etc.) create an opaque layer that obscures the actual canonical tokens. The roadmap's much larger component inventory (28+ components, inspector panels, data visualization) requires a token system designed for the full scope, not just today's small CSS footprint.
+**The problem.** The current token system (`--tways-*` palette, `--td-*` semantic) has served well for establishing theme machinery, but the naming is ad hoc, the accent system uses meaningless ordinals (`accent-1` through `accent-8`), the color palette is rigid (fixed hex values per theme), and there's no systematic way to resize the UI or control animation speed. The legacy bridge aliases (`--background`, `--foreground`, `--primary`, etc.) — inherited from the former shadcn layer — create an opaque layer that obscures the actual canonical tokens. The roadmap's much larger component inventory (28+ components, inspector panels, data visualization) requires a token system designed for the full scope, not just today's small CSS footprint.
 
 **Full proposal.** The complete research-backed proposal is in `roadmap/theme-overhaul-proposal.md`, including external research references (Primer, Spectrum, Open Props, Carbon, Chakra, OKLCH guidance), current code audit, roadmap requirements analysis, and the complete semantic taxonomy (~300 tokens across 10 domains).
 
@@ -3792,13 +3791,13 @@ No precomputed alpha variants are needed. The palette system produces opaque col
 
 #### Three-Layer Token Architecture {#d71-token-naming}
 
-**[D71] `--tug-{hue}[-preset]` / `--tug-base-*` / `--tug-comp-*` replace `--tways-*`/`--td-*`.**
+**[D71] `--tug-{hue}[-preset]` / `--tug-base-*` / `--tug-<component>-*` replace `--tways-*`/`--td-*`.**
 
 - **Layer 0 (TugColor palette)**: A continuous color space (24 hues × 100 i × 100 t) expressed in pure CSS using `oklch()` + `calc()` + `clamp()`. Per-hue constants: `--tug-{hue}-h/canonical-l/peak-c`. Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t. Arbitrary colors via the inline formula with literal i/t numbers. Includes `--tug-neutral-*` achromatic ramp and `--tug-black`/`--tug-white` anchors [D75]. ~200 CSS variables in a static file — no JS injection. P3 overrides via `@media (color-gamut: p3)` block overriding `peak-c` constants. Themes write chromatic semantic tokens using the inline formula with theme-specific i/t choices.
 - **Layer 1 (`--tug-base-*`)**: Canonical semantics. The stable, readable contract. All component styling resolves from this layer. Chromatic tokens wire to TugColor presets (e.g., `--tug-base-accent-default: var(--tug-orange)`). Achromatic tokens (surfaces, foreground, borders) wire to `--tug-neutral-*` or remain literal values where no palette mapping applies.
-- **Layer 2 (`--tug-comp-*`)**: Component/pattern bindings. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
+- **Layer 2 (`--tug-<component>-*`)**: Component/pattern bindings. Named per component (e.g., `--tug-button-*`, `--tug-card-*`), where `base` is the special root-level component name used in Layer 1. Exist only when base semantics are too generic. Must resolve from `--tug-base-*`.
 
-The grammar is: `--tug-base-<domain>-<role>[-<emphasis>][-<state>]` for semantics, `--tug-comp-<pattern>-<role>[-<state>]` for components.
+The grammar is: `--tug-base-<domain>-<role>[-<emphasis>][-<state>]` for semantics, `--tug-<component>-<role>[-<state>]` for component tokens. The `--tug-comp-*` prefix is banned — it adds nothing and is confusingly similar to CSS "computed" style.
 
 All legacy prefixes (`--td-*`, `--tways-*`) and aliases (`--background`, `--foreground`, `--primary`, `--destructive`, etc.) are removed after migration. Temporary shims bridge the transition.
 
@@ -3815,7 +3814,7 @@ Setting `--tug-zoom: 1.25` makes the entire UI 25% larger. Setting `--tug-zoom: 
 
 No per-token `calc()` wiring is needed. Zoom scales all rendered content uniformly — Tailwind utility classes, hardcoded pixel values, inline styles, and token-driven dimensions all scale together. This eliminates the need to rewrite every dimension through `calc(<base> * var(--tug-zoom))`.
 
-**Component-level scale.** Each `Tug*` component family can optionally set `zoom: var(--tug-comp-<family>-zoom, 1)` on its root element for fine-tuning relative proportions. Zoom composes multiplicatively — a component with `zoom: 0.9` inside a body with `zoom: 1.25` renders at effective zoom `1.125`.
+**Component-level scale.** Each `Tug*` component family can optionally set `zoom: var(--tug-<component>-zoom, 1)` on its root element for fine-tuning relative proportions. Zoom composes multiplicatively — a component with `zoom: 0.9` inside a body with `zoom: 1.25` renders at effective zoom `1.125`.
 
 **What scales:** Everything rendered — font sizes, spacing, radii, icon sizes, stroke widths, component dimensions. **What doesn't scale:** Color, opacity, z-index, timing (that is the timing system's job).
 
@@ -3847,7 +3846,7 @@ Easing curves are not affected by timing — they describe motion shape, not dur
 
 - Component identity and DOM path.
 - Selected computed properties (background, foreground, border, shadow, radius, typography).
-- Full resolution chain: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`.
+- Full resolution chain: `--tug-<component>-*` → `--tug-base-*` → `--tug-{hue}[-preset]`.
 - For TugColor palette colors: hue family name, preset name, and TugColor coordinates (i/t/L).
 - Current `--tug-zoom` and `--tug-timing` multiplier effects.
 - Pin/unpin support. Escape closes.
@@ -3970,10 +3969,10 @@ Next: move to concept 2 (Tugways design system definition).
 Worked through all four questions for concept 2. Key decisions:
 
 - **Tug wrappers are substantial.** Not cosmetic — they encapsulate subtypes (push, icon, icon+text, three-state for buttons), additional states (disabled, loading, active), semantic color mapping, theme-awareness, and responder chain integration.
-- **Strong opinions.** shadcn's variant set is a starting point. Tugways components define their own variants that cover the actual needs of the app.
-- **Three component kinds:** wrappers (shadcn + opinions), compositions (multiple shadcn → higher-level), and originals (no shadcn equivalent).
-- **File organization:** `components/tugways/` is the public API; `components/ui/` is private implementation. App code never imports from `ui/` directly.
-- **Don't reinvent — customize.** shadcn provides accessible primitives and Radix behavior; tugways adds opinions, subtypes, and conventions on top.
+- **Strong opinions.** Radix provides unstyled accessible primitives. Tugways components define their own variants that cover the actual needs of the app.
+- **Three component kinds:** wrappers (Radix primitive + opinions), compositions (multiple Radix primitives → higher-level), and originals (no Radix equivalent).
+- **File organization:** `components/tugways/` is the public API. App code imports from `tugways/` only.
+- **Don't reinvent — customize.** Radix provides accessible primitives; tugways wraps them directly, adding opinions, subtypes, and conventions on top.
 
 Open items resolved in follow-up: priority list of 15 components after TugButton; single-component-with-subtype-prop as default naming (break out on a case-by-case basis); the `tugways/` directory itself is the inventory — no manifest.
 
@@ -4075,8 +4074,8 @@ Key decisions:
 - **[D08] Two button modes: direct-action and chain-action.** Direct-action buttons have an `onClick` handler — no responder chain involvement. Chain-action buttons have an `action` prop — they dispatch into the responder chain and auto-validate via `canHandle`/`validateAction`. Most buttons are direct-action; chain-action is for toolbar and menu scenarios.
 - **Three ambient connection mechanisms.** Components connect to the system through (1) CSS custom properties for theme, (2) React context for the responder chain, (3) props and callbacks for data. No tight coupling between layers. TugButton doesn't know it's inside a Tugcard.
 - **Mutation zone assignment explicit for TugButton** — appearance (CSS pseudo-classes for hover/focus/active, theme colors from `var(--td-*)`), local data (chain validation via `useSyncExternalStore`), structure (conditional rendering by parent). This pattern will be documented for every tugways component.
-- **TugButton API designed** — subtypes (push, icon, icon-text, three-state), variants (primary, secondary, ghost, destructive), chain-action mode, loading state. Wraps shadcn's `Button` internally but exposes a restricted, opinionated API.
-- **Pattern established for all tugways components** — module-scope definition, wraps shadcn internally, theme via CSS variables, responder chain via context, mutation zones documented, subtypes via prop.
+- **TugButton API designed** — subtypes (push, icon, icon-text, three-state), variants (primary, secondary, ghost, destructive), chain-action mode, loading state. Wraps Radix primitives internally but exposes a restricted, opinionated API.
+- **Pattern established for all tugways components** — module-scope definition, wraps Radix primitives internally, theme via CSS variables, responder chain via context, mutation zones documented, subtypes via prop.
 
 No open items. Concept 3 is fully designed.
 
@@ -4084,11 +4083,11 @@ No open items. Concept 3 is fully designed.
 
 Merged three previously separate concerns — skeleton/loading states (old concept 8), UI-flash prevention (old concept 14), and a new transitions/animations story — into a single unified concept. The unifying insight: these are all aspects of **how tugdeck manages visual state changes over time.**
 
-Researched motion systems across Material Design 3, Carbon (IBM), Norton DS, Cloudscape (AWS), Apple HIG, Radix, and shadcn/ui. Key findings that shaped the design:
+Researched motion systems across Material Design 3, Carbon (IBM), Norton DS, Cloudscape (AWS), Apple HIG, and Radix. Key findings that shaped the design:
 
 - **MD3 and Carbon publish motion tokens as structured values** (duration tiers, easing curves by behavior type). We adopted this as CSS custom properties following our `--td-*` convention.
 - **Norton DS's duration scalar pattern** — a single `--td-duration-scalar` multiplier that zeros out all durations for `prefers-reduced-motion`. Elegant: one variable swap, all motion stops. We use `0.001` instead of `0` so Radix's `animationend` events still fire.
-- **Radix's `data-state` + CSS `@keyframes`** is already in our stack via shadcn. Standard component transitions use this pattern. Critical constraint: Radix's Presence component listens for `animationend`, not `transitionend` — exit animations must use `@keyframes`. (Note: Entry 32 later introduced TugAnimator for programmatic animations beyond simple Radix transitions.)
+- **Radix's `data-state` + CSS `@keyframes`** is used directly. Standard component transitions use this pattern. Critical constraint: Radix's Presence component listens for `animationend`, not `transitionend` — exit animations must use `@keyframes`. (Note: Entry 32 later introduced TugAnimator for programmatic animations beyond simple Radix transitions.)
 - **Apple's "replace, don't remove" principle** for reduced motion — spatial animations become opacity fades, not nothing.
 
 Key decisions:
@@ -4113,7 +4112,7 @@ Key decisions:
 - **Imperative API for alerts and sheets.** `tugAlert()` and `tugSheet()` return Promises, inspired by `NSAlert.runModal()` returning `ModalResponse`. The imperative API wraps declarative React components (host pattern: `TugAlertHost` at app root, `TugSheetHost` inside each Tugcard).
 - **Radix AlertDialog for app-modal** (prevents overlay-click dismissal), **scoped Dialog for card-modal** (portal targets card container, manual `inert` scoping), **Radix Popover for button confirmation** (anchored, collision-aware, transient dismiss).
 - **Button roles from `UIAlertAction.Style`**: destructive (red, never default), cancel (bold, responds to Enter/Escape), default (standard). When destructive is present, cancel is always the default — matching Apple HIG.
-- **Sonner for toasts** — already in the shadcn ecosystem. Live region accessibility, never steals focus, theme-aware via `--td-*` tokens.
+- **Sonner for toasts** — live region accessibility, never steals focus, theme-aware via `--td-*` tokens.
 
 Card-modal scoping (TugSheet) is the most complex implementation: Radix doesn't support subtree-scoped modality natively. We diverge from Radix defaults here, applying `inert` to the card's content area only and rendering the portal inside the card container. This is justified because cards are independent workspaces — blocking the entire app for a card-level concern violates the model.
 
@@ -4199,7 +4198,7 @@ Key decisions:
 - **Alert button roles updated.** The `"cancel"` and `"default"` roles now explicitly reference D39. When a destructive button is present, Cancel gets `variant="primary"` and becomes the default button (Enter cancels). When no destructive button is present, the affirmative action gets `variant="primary"` and becomes the default button. The `"destructive"` role never becomes the default button.
 - **Key pipeline stage 2 updated.** The "Enter (confirm)" entry now references D39 as the formal mechanism.
 
-- **Destructive variant visual fix.** The `destructive` variant must show a bold danger fill (`--td-danger`, deep red) with inverse text (`--td-text-inverse`, white/near-white). The shadcn wiring provides the class hooks but the actual fill was not visually distinct. Phase 5d adds explicit `background-color` and `color` rules to `tug-button.css` to ensure destructive buttons are unmistakable across all themes.
+- **Destructive variant visual fix.** The `destructive` variant must show a bold danger fill (`--td-danger`, deep red) with inverse text (`--td-text-inverse`, white/near-white). The actual fill was not visually distinct. Phase 5d adds explicit `background-color` and `color` rules to `tug-button.css` to ensure destructive buttons are unmistakable across all themes.
 
 No new concepts. D39 is an addition to concept 3 that ties together concepts 3, 4, and 9.
 
@@ -4343,10 +4342,10 @@ Added Concept 22: Theme Token Overhaul. This is a comprehensive redesign of the 
 **Key design decisions:**
 
 - **[D70] TugColor (Hue · Intensity · Tone · Alpha) OKLCH palette.** 24 named hue families with a continuous color space: Hue (color family), Intensity (chroma 0–100), Tone (lightness 0–100). Five convenience presets per hue (canonical, light, dark, intense, muted) with fixed i/t values. Arbitrary colors via the inline `calc()`+`clamp()` formula with literal i/t numbers — themes write chromatic semantic tokens this way. ~200 CSS variables defined as pure CSS `oklch()` + `calc()` + `clamp()` formulas — no JS injection required. P3 wide-gamut support via `@media (color-gamut: p3)` block overriding `peak-c` constants. The JS function `tugColor()` provides programmatic color computation for inline styles and data viz. Per-hue canonical lightness values are tuned via an interactive gallery editor.
-- **[D71] Three-layer token naming.** TugColor palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-comp-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
-- **[D72] Global scale.** `--tug-zoom` (default: `1`) drives CSS `zoom` on `<body>`, scaling the entire UI uniformly — all dimensions, text, spacing, radii, icons. Per-component `--tug-comp-<family>-zoom` (default: `1`) allows fine-tuning via zoom on the component root.
+- **[D71] Three-layer token naming.** TugColor palette variables (`--tug-{hue}[-preset]`), `--tug-base-*` (canonical semantics), `--tug-<component>-*` (component bindings) replace the current `--tways-*` / `--td-*` two-tier system. The `--tug-comp-*` prefix is banned (confusingly similar to CSS "computed"). All legacy aliases (`--background`, `--foreground`, `--primary`, etc.) are removed after migration.
+- **[D72] Global scale.** `--tug-zoom` (default: `1`) drives CSS `zoom` on `<body>`, scaling the entire UI uniformly — all dimensions, text, spacing, radii, icons. Per-component `--tug-<component>-zoom` (default: `1`) allows fine-tuning via zoom on the component root.
 - **[D73] Global timing.** `--tug-timing` (default: `1`) multiplies all animation durations. `--tug-motion` (default: `1`, set to `0` by `prefers-reduced-motion`) toggles motion on/off. `data-tug-motion="off"` on body provides CSS hook. Two controls because "slow motion for debugging" and "no motion for accessibility" are categorically different.
-- **[D74] Dev cascade inspector.** `Ctrl+Option + hover` shows token resolution chain for any component: `--tug-comp-*` → `--tug-base-*` → `--tug-{hue}[-preset]`, including hue/intensity/tone provenance for computed colors and scale/timing effects.
+- **[D74] Dev cascade inspector.** `Ctrl+Option + hover` shows token resolution chain for any component: `--tug-<component>-*` → `--tug-base-*` → `--tug-{hue}[-preset]`, including hue/intensity/tone provenance for computed colors and scale/timing effects.
 
 Implementation planned across six sub-phases (5d5a–5d5f) in the implementation strategy. External research surveyed Primer, Spectrum, Open Props, Carbon, and Chakra for naming patterns; OKLCH guidance for perceptual uniformity; Adobe color naming guidance for hue family names.
 
