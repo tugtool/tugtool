@@ -1,40 +1,6 @@
-@import "tailwindcss";
 @import "../styles/tug-palette.css";
 @import "../styles/tug-tokens.css";
 @import "../styles/tug-comp-tokens.css";
-
-/*
- * Tailwind v4 @theme registration: maps --tug-base-* canonical tokens directly
- * into Tailwind's theme namespace so utility classes work (bg-background,
- * text-foreground, bg-primary, etc.). The shadcn short-name aliases
- * (--background, --foreground, etc.) have been removed from tug-tokens.css;
- * this block now references --tug-base-* as the single source of truth.
- * Table T02 defines the full mapping.
- */
-@theme {
-  --color-background: var(--tug-base-bg-app);
-  --color-foreground: var(--tug-base-fg-default);
-  --color-card: var(--tug-base-card-bg);
-  --color-card-foreground: var(--tug-base-fg-default);
-  --color-popover: var(--tug-base-surface-control);
-  --color-popover-foreground: var(--tug-base-fg-default);
-  --color-primary: var(--tug-base-accent-default);
-  --color-primary-foreground: var(--tug-base-fg-inverse);
-  --color-secondary: var(--tug-base-surface-control);
-  --color-secondary-foreground: var(--tug-base-fg-default);
-  --color-muted: var(--tug-base-surface-control);
-  --color-muted-foreground: var(--tug-base-fg-muted);
-  --color-accent: var(--tug-base-accent-cool-default);
-  --color-accent-foreground: var(--tug-base-bg-app);
-  --color-destructive: var(--tug-base-accent-danger);
-  --color-destructive-foreground: var(--tug-base-fg-inverse);
-  --color-border: var(--tug-base-border-default);
-  --color-input: var(--tug-base-border-default);
-  --color-ring: var(--tug-base-accent-cool-default);
-  --radius-sm: var(--tug-base-radius-sm);
-  --radius-md: var(--tug-base-radius-md);
-  --radius-lg: var(--tug-base-radius-lg);
-}
 
 /* Global resets (moved from inline <style> in index.html) */
 html,

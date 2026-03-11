@@ -1,9 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
-// Tailwind v4 operates as a Vite plugin (not PostCSS), so there is no conflict.
 import postcssTugColor from "./postcss-tug-color";
 
 export default defineConfig(() => {
@@ -14,7 +12,7 @@ export default defineConfig(() => {
     "/api": { target: `http://localhost:${tugcastPort}` },
   };
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react()],
     css: {
       postcss: {
         plugins: [postcssTugColor()],

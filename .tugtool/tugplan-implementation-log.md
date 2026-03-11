@@ -9,6 +9,138 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-11T02:37:41Z
+---
+
+## step-11: Final verification step. All automatable success criteria pass: tsc clean, build succeeds (91.66 kB CSS), 1332/1332 tests pass, zero Tailwind references remain across all source files.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-10
+date: 2025-03-11T02:34:45Z
+---
+
+## step-10: Added Phase 7d section to implementation strategy. Updated What To Keep table for Tailwind removal. Added future-phase guidance for wrapping Radix primitives directly instead of installing shadcn components.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-9
+date: 2025-03-11T02:27:02Z
+---
+
+## step-9: Added vite:beforeFullReload overlay in css-imports.ts for seamless dark-to-dark reload continuity. Creates fixed div (z-index 99998, #16171a) synchronously before location.reload(). Dev-only, tree-shaken in production.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-8
+date: 2025-03-11T02:23:50Z
+---
+
+## step-8: Removed @tailwindcss/vite plugin from vite.config.ts, @import tailwindcss and @theme block from globals.css, tailwindcss and @tailwindcss/vite from package.json. CSS bundle shrank 15 kB. 1332/1332 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-7
+date: 2025-03-11T02:19:44Z
+---
+
+## step-7: Verification-only step. Tailwind audit grep confirms zero remaining utilities in components/ui/. 1332/1332 tests pass. TypeScript and build clean.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-6
+date: 2025-03-11T02:14:08Z
+---
+
+## step-6: Replaced Tailwind utility strings in button cva() with semantic CSS classes. Added CSS rules for base .shadcn-button and all variant/size modifier classes. Updated test assertions. CVA structure retained per D01. 37/37 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-5
+date: 2025-03-11T02:08:36Z
+---
+
+## step-5: Replaced Tailwind utility strings with semantic CSS classes in four animated components. Bound @keyframes to data-state selectors per Spec S03 with correct fill-modes. Dialog centering via static translate coexisting with slide animation. Directional slides via data-side custom properties. Select popper uses margin offsets per Spec S04.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-4
+date: 2025-03-11T01:55:25Z
+---
+
+## step-4: Replaced Tailwind utility strings with semantic CSS classes in three interactive components. Added CSS rules with data-state variants, switch thumb translate transition, and scroll-area orientation variants. Dropped peer class from checkbox and switch.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-3
+date: 2025-03-11T01:48:05Z
+---
+
+## step-3: Replaced Tailwind utility strings with semantic CSS classes in five simple components. Added CSS rules to shadcn-base.css with --tug-base-* tokens, Spec S02 focus rings, and Table T03 media queries.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-2
+date: 2025-03-11T01:38:05Z
+---
+
+## step-2: Simplified cn() utility from clsx+tailwind-merge to plain clsx. Removed tailwind-merge dependency from package.json. JS bundle shrank ~26 kB.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
+step: step-1
+date: 2025-03-11T01:34:39Z
+---
+
+## step-1: Created shadcn-base.css with minimal CSS reset (~27 lines per D05), six animation @keyframes matching Spec S03, and stub sections for 13 components. Added import to css-imports.ts.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-4
 date: 2025-03-10T22:58:06Z
 ---
