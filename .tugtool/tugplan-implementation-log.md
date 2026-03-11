@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-11T02:14:08Z
+---
+
+## step-6: Replaced Tailwind utility strings in button cva() with semantic CSS classes. Added CSS rules for base .shadcn-button and all variant/size modifier classes. Updated test assertions. CVA structure retained per D01. 37/37 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-5
 date: 2025-03-11T02:08:36Z
 ---

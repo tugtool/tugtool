@@ -108,8 +108,126 @@ button,
    semantic class name from Table T01 in the plan.
    ========================================================================== */
 
-/* --- button.tsx stub (Step 6) --- */
-/* .shadcn-button, .shadcn-button--{variant}, .shadcn-button--size-{size} */
+/* --- button.tsx (Step 6) --- */
+
+.shadcn-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  border-radius: var(--tug-base-radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border: none;
+}
+
+.shadcn-button:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-button:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.shadcn-button svg {
+  pointer-events: none;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* Variants */
+
+.shadcn-button--default {
+  background-color: var(--tug-base-accent-default);
+  color: var(--tug-base-fg-inverse);
+}
+
+.shadcn-button--default:hover {
+  background-color: var(--tug-base-accent-strong);
+}
+
+.shadcn-button--destructive {
+  background-color: var(--tug-base-accent-danger);
+  color: var(--tug-base-fg-inverse);
+}
+
+.shadcn-button--destructive:hover {
+  background-color: var(--tug-base-accent-danger);
+  opacity: 0.9;
+}
+
+.shadcn-button--outline {
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-bg-app);
+  color: var(--tug-base-fg-default);
+}
+
+.shadcn-button--outline:hover {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-bg-app);
+}
+
+.shadcn-button--secondary {
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
+}
+
+.shadcn-button--secondary:hover {
+  background-color: var(--tug-base-surface-control-hover);
+}
+
+.shadcn-button--ghost {
+  background-color: transparent;
+  color: var(--tug-base-fg-default);
+}
+
+.shadcn-button--ghost:hover {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-bg-app);
+}
+
+.shadcn-button--link {
+  background-color: transparent;
+  color: var(--tug-base-accent-default);
+  text-underline-offset: 4px;
+}
+
+.shadcn-button--link:hover {
+  text-decoration: underline;
+}
+
+/* Sizes */
+
+.shadcn-button--size-default {
+  height: 2.5rem;
+  padding: 0.5rem 1rem;
+}
+
+.shadcn-button--size-sm {
+  height: 2.25rem;
+  border-radius: var(--tug-base-radius-md);
+  padding: 0 0.75rem;
+}
+
+.shadcn-button--size-lg {
+  height: 2.5rem;
+  border-radius: var(--tug-base-radius-md);
+  padding: 0 2rem;
+}
+
+.shadcn-button--size-icon {
+  height: 2.5rem;
+  width: 2.5rem;
+  padding: 0;
+}
 
 /* --- dialog.tsx (Step 5) --- */
 

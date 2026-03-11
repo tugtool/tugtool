@@ -249,14 +249,14 @@ describe("TugButton – three-state subtype", () => {
 describe("TugButton – variants", () => {
   it("primary variant: maps to shadcn default and applies variant class", () => {
     const btn = renderButton({ variant: "primary", children: "Primary" });
-    expect(btn.className).toContain("bg-primary");
+    expect(btn.className).toContain("shadcn-button--default");
     expect(btn.className).toContain("tug-button-primary");
     expect(btn.className).toContain("tug-button-bordered");
   });
 
   it("secondary variant: maps to shadcn secondary and applies variant class", () => {
     const btn = renderButton({ variant: "secondary", children: "Secondary" });
-    expect(btn.className).toContain("bg-secondary");
+    expect(btn.className).toContain("shadcn-button--secondary");
     expect(btn.className).toContain("tug-button-secondary");
     expect(btn.className).toContain("tug-button-bordered");
   });
@@ -269,7 +269,7 @@ describe("TugButton – variants", () => {
 
   it("destructive variant: maps to shadcn destructive and applies variant class", () => {
     const btn = renderButton({ variant: "destructive", children: "Delete" });
-    expect(btn.className).toContain("bg-destructive");
+    expect(btn.className).toContain("shadcn-button--destructive");
     expect(btn.className).toContain("tug-button-destructive");
     expect(btn.className).toContain("tug-button-bordered");
   });
@@ -280,19 +280,19 @@ describe("TugButton – variants", () => {
 // ============================================================================
 
 describe("TugButton – sizes", () => {
-  it("sm size: applies h-9 class", () => {
+  it("sm size: applies shadcn-button--size-sm class", () => {
     const btn = renderButton({ size: "sm", children: "Small" });
-    expect(btn.className).toContain("h-9");
+    expect(btn.className).toContain("shadcn-button--size-sm");
   });
 
-  it("md size: applies h-10 class (shadcn default)", () => {
+  it("md size: applies shadcn-button--size-default class (shadcn default)", () => {
     const btn = renderButton({ size: "md", children: "Medium" });
-    expect(btn.className).toContain("h-10");
+    expect(btn.className).toContain("shadcn-button--size-default");
   });
 
-  it("lg size: applies h-10 class (shadcn lg)", () => {
+  it("lg size: applies shadcn-button--size-lg class (shadcn lg)", () => {
     const btn = renderButton({ size: "lg", children: "Large" });
-    expect(btn.className).toContain("h-10");
+    expect(btn.className).toContain("shadcn-button--size-lg");
   });
 });
 
