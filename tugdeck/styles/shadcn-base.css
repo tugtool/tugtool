@@ -1,0 +1,158 @@
+/**
+ * shadcn-base.css — Phase 7d Glitch Reduction
+ *
+ * Plain CSS replacements for all Tailwind utilities used in shadcn/ui components.
+ * Includes:
+ *   1. Minimal CSS reset (replaces Tailwind preflight for shadcn components)
+ *   2. Animation keyframes for Radix open/close transitions
+ *   3. Stub sections for each component's semantic classes (populated in subsequent steps)
+ *
+ * Color values reference --tug-base-* tokens defined in tug-tokens.css.
+ * Import order: this file must be imported after tug-tokens.css and tug-comp-tokens.css.
+ */
+
+/* ============================================================================
+   Section 1: Minimal CSS Reset
+   Replaces the Tailwind preflight rules that shadcn components depend on.
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--tug-base-border-default);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 100%;
+  line-height: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button,
+[type="button"],
+[type="reset"],
+[type="submit"] {
+  -webkit-appearance: button;
+  background-color: transparent;
+}
+
+/* Screen-reader-only utility — used by dialog.tsx close button */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============================================================================
+   Section 2: Animation Keyframes
+   Per Spec S03 — each keyframe animates exactly one CSS property.
+   Composited via multiple animation-name values on a single element.
+   ========================================================================== */
+
+@keyframes shadcn-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shadcn-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes shadcn-zoom-in {
+  from { scale: 0.95; }
+  to   { scale: 1; }
+}
+
+@keyframes shadcn-zoom-out {
+  from { scale: 1; }
+  to   { scale: 0.95; }
+}
+
+/**
+ * Slide keyframes use CSS custom properties for both from and to values on
+ * both axes, so each component can control starting position and resting
+ * position independently. Dialog uses percentage values; dropdown/tooltip/
+ * select use rem values.
+ *
+ * Note: `translate` is the CSS individual transform property (not `transform:
+ * translate()`). It takes `x y` as a single value — X and Y must be combined
+ * in one keyframe.
+ */
+@keyframes shadcn-slide-in {
+  from { translate: var(--shadcn-slide-from-x, 0) var(--shadcn-slide-from-y, 0.5rem); }
+  to   { translate: var(--shadcn-slide-to-x, 0) var(--shadcn-slide-to-y, 0); }
+}
+
+@keyframes shadcn-slide-out {
+  from { translate: var(--shadcn-slide-to-x, 0) var(--shadcn-slide-to-y, 0); }
+  to   { translate: var(--shadcn-slide-from-x, 0) var(--shadcn-slide-from-y, 0.5rem); }
+}
+
+/* ============================================================================
+   Section 3: Component Semantic Classes
+   Populated in subsequent steps (steps 3–6).
+   Each component's Tailwind utility strings are replaced with a single
+   semantic class name from Table T01 in the plan.
+   ========================================================================== */
+
+/* --- button.tsx stub (Step 6) --- */
+/* .shadcn-button, .shadcn-button--{variant}, .shadcn-button--size-{size} */
+
+/* --- dialog.tsx stub (Step 5) --- */
+/* .shadcn-dialog-overlay, .shadcn-dialog-content, .shadcn-dialog-close,
+   .shadcn-dialog-header, .shadcn-dialog-footer, .shadcn-dialog-title,
+   .shadcn-dialog-description */
+
+/* --- checkbox.tsx stub (Step 4) --- */
+/* .shadcn-checkbox, .shadcn-checkbox-indicator */
+
+/* --- scroll-area.tsx stub (Step 4) --- */
+/* .shadcn-scroll-area, .shadcn-scroll-area-viewport, .shadcn-scrollbar,
+   .shadcn-scrollbar--horizontal, .shadcn-scroll-thumb */
+
+/* --- dropdown-menu.tsx stub (Step 5) --- */
+/* .shadcn-dropdown-content, .shadcn-dropdown-item, .shadcn-dropdown-item--inset,
+   .shadcn-dropdown-checkbox-item, .shadcn-dropdown-radio-item, .shadcn-dropdown-label,
+   .shadcn-dropdown-label--inset, .shadcn-dropdown-separator, .shadcn-dropdown-shortcut,
+   .shadcn-dropdown-sub-trigger, .shadcn-dropdown-sub-trigger--inset,
+   .shadcn-dropdown-sub-content */
+
+/* --- tooltip.tsx stub (Step 5) --- */
+/* .shadcn-tooltip-content */
+
+/* --- select.tsx stub (Step 5) --- */
+/* .shadcn-select-trigger, .shadcn-select-content, .shadcn-select-content--popper,
+   .shadcn-select-viewport, .shadcn-select-viewport--popper, .shadcn-select-item,
+   .shadcn-select-label, .shadcn-select-separator, .shadcn-select-scroll-button */
+
+/* --- input.tsx stub (Step 3) --- */
+/* .shadcn-input */
+
+/* --- textarea.tsx stub (Step 3) --- */
+/* .shadcn-textarea */
+
+/* --- switch.tsx stub (Step 4) --- */
+/* .shadcn-switch, .shadcn-switch-thumb */
+
+/* --- card.tsx stub (Step 3) --- */
+/* .shadcn-card, .shadcn-card-header, .shadcn-card-title, .shadcn-card-description,
+   .shadcn-card-content, .shadcn-card-footer */
+
+/* --- radio-group.tsx stub (Step 3) --- */
+/* .shadcn-radio-group, .shadcn-radio-group-item, .shadcn-radio-group-indicator */
+
+/* --- tabs.tsx stub (Step 3) --- */
+/* .shadcn-tabs-list, .shadcn-tabs-trigger, .shadcn-tabs-content */

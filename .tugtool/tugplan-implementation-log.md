@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-11T01:34:39Z
+---
+
+## step-1: Created shadcn-base.css with minimal CSS reset (~27 lines per D05), six animation @keyframes matching Spec S03, and stub sections for 13 components. Added import to css-imports.ts.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-4
 date: 2025-03-10T22:58:06Z
 ---
