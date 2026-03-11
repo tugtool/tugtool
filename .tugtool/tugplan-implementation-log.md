@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-11T02:27:02Z
+---
+
+## step-9: Added vite:beforeFullReload overlay in css-imports.ts for seamless dark-to-dark reload continuity. Creates fixed div (z-index 99998, #16171a) synchronously before location.reload(). Dev-only, tree-shaken in production.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-8
 date: 2025-03-11T02:23:50Z
 ---
