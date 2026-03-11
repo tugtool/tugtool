@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-11T02:08:36Z
+---
+
+## step-5: Replaced Tailwind utility strings with semantic CSS classes in four animated components. Bound @keyframes to data-state selectors per Spec S03 with correct fill-modes. Dialog centering via static translate coexisting with slide animation. Directional slides via data-side custom properties. Select popper uses margin offsets per Spec S04.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-4
 date: 2025-03-11T01:55:25Z
 ---

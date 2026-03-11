@@ -111,10 +111,139 @@ button,
 /* --- button.tsx stub (Step 6) --- */
 /* .shadcn-button, .shadcn-button--{variant}, .shadcn-button--size-{size} */
 
-/* --- dialog.tsx stub (Step 5) --- */
-/* .shadcn-dialog-overlay, .shadcn-dialog-content, .shadcn-dialog-close,
-   .shadcn-dialog-header, .shadcn-dialog-footer, .shadcn-dialog-title,
-   .shadcn-dialog-description */
+/* --- dialog.tsx (Step 5) --- */
+
+.shadcn-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.shadcn-dialog-overlay[data-state="open"] {
+  animation: shadcn-fade-in 200ms ease-out;
+}
+
+.shadcn-dialog-overlay[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards;
+}
+
+.shadcn-dialog-content {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 50;
+  display: grid;
+  width: 100%;
+  max-width: 32rem;
+  gap: 1rem;
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-bg-app);
+  padding: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  /* Static centering — takes effect after open animation ends (fill-mode: none) */
+  translate: -50% -50%;
+  --shadcn-slide-from-x: -50%;
+  --shadcn-slide-from-y: -48%;
+  --shadcn-slide-to-x: -50%;
+  --shadcn-slide-to-y: -50%;
+}
+
+.shadcn-dialog-content[data-state="open"] {
+  animation: shadcn-fade-in 200ms ease-out,
+             shadcn-zoom-in 200ms ease-out,
+             shadcn-slide-in 200ms ease-out;
+  /* fill-mode: none (default) — static translate takes over after animation ends */
+}
+
+.shadcn-dialog-content[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards,
+             shadcn-zoom-out 200ms ease-out forwards,
+             shadcn-slide-out 200ms ease-out forwards;
+}
+
+@media (min-width: 640px) {
+  .shadcn-dialog-content {
+    border-radius: var(--tug-base-radius-lg);
+  }
+}
+
+.shadcn-dialog-close {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  border-radius: var(--tug-base-radius-sm);
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shadcn-dialog-close:hover {
+  opacity: 1;
+}
+
+.shadcn-dialog-close:focus {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-dialog-close:disabled {
+  pointer-events: none;
+}
+
+.shadcn-dialog-close[data-state="open"] {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-dialog-close-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.shadcn-dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .shadcn-dialog-header {
+    text-align: left;
+  }
+}
+
+.shadcn-dialog-footer {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+@media (min-width: 640px) {
+  .shadcn-dialog-footer {
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+}
+
+.shadcn-dialog-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+
+.shadcn-dialog-description {
+  font-size: 0.875rem;
+  color: var(--tug-base-fg-muted);
+}
 
 /* --- checkbox.tsx (Step 4) --- */
 
@@ -196,20 +325,377 @@ button,
   background-color: var(--tug-base-border-default);
 }
 
-/* --- dropdown-menu.tsx stub (Step 5) --- */
-/* .shadcn-dropdown-content, .shadcn-dropdown-item, .shadcn-dropdown-item--inset,
-   .shadcn-dropdown-checkbox-item, .shadcn-dropdown-radio-item, .shadcn-dropdown-label,
-   .shadcn-dropdown-label--inset, .shadcn-dropdown-separator, .shadcn-dropdown-shortcut,
-   .shadcn-dropdown-sub-trigger, .shadcn-dropdown-sub-trigger--inset,
-   .shadcn-dropdown-sub-content */
+/* --- dropdown-menu.tsx (Step 5) --- */
 
-/* --- tooltip.tsx stub (Step 5) --- */
-/* .shadcn-tooltip-content */
+.shadcn-dropdown-content {
+  z-index: 50;
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  min-width: 8rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-control);
+  padding: 0.25rem;
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
 
-/* --- select.tsx stub (Step 5) --- */
-/* .shadcn-select-trigger, .shadcn-select-content, .shadcn-select-content--popper,
-   .shadcn-select-viewport, .shadcn-select-viewport--popper, .shadcn-select-item,
-   .shadcn-select-label, .shadcn-select-separator, .shadcn-select-scroll-button */
+.shadcn-dropdown-content[data-state="open"] {
+  animation: shadcn-fade-in 200ms ease-out,
+             shadcn-zoom-in 200ms ease-out,
+             shadcn-slide-in 200ms ease-out;
+}
+
+.shadcn-dropdown-content[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards,
+             shadcn-zoom-out 200ms ease-out forwards,
+             shadcn-slide-out 200ms ease-out forwards;
+}
+
+.shadcn-dropdown-content[data-side="bottom"] { --shadcn-slide-from-y: -0.5rem; }
+.shadcn-dropdown-content[data-side="top"]    { --shadcn-slide-from-y: 0.5rem; }
+.shadcn-dropdown-content[data-side="left"]   { --shadcn-slide-from-x: 0.5rem; }
+.shadcn-dropdown-content[data-side="right"]  { --shadcn-slide-from-x: -0.5rem; }
+
+.shadcn-dropdown-sub-content {
+  z-index: 50;
+  min-width: 8rem;
+  overflow: hidden;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-control);
+  padding: 0.25rem;
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.shadcn-dropdown-sub-content[data-state="open"] {
+  animation: shadcn-fade-in 200ms ease-out,
+             shadcn-zoom-in 200ms ease-out,
+             shadcn-slide-in 200ms ease-out;
+}
+
+.shadcn-dropdown-sub-content[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards,
+             shadcn-zoom-out 200ms ease-out forwards,
+             shadcn-slide-out 200ms ease-out forwards;
+}
+
+.shadcn-dropdown-sub-content[data-side="bottom"] { --shadcn-slide-from-y: -0.5rem; }
+.shadcn-dropdown-sub-content[data-side="top"]    { --shadcn-slide-from-y: 0.5rem; }
+.shadcn-dropdown-sub-content[data-side="left"]   { --shadcn-slide-from-x: 0.5rem; }
+.shadcn-dropdown-sub-content[data-side="right"]  { --shadcn-slide-from-x: -0.5rem; }
+
+.shadcn-dropdown-item,
+.shadcn-dropdown-checkbox-item,
+.shadcn-dropdown-radio-item {
+  position: relative;
+  display: flex;
+  cursor: default;
+  user-select: none;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--tug-base-radius-sm);
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shadcn-dropdown-item:focus,
+.shadcn-dropdown-checkbox-item:focus,
+.shadcn-dropdown-radio-item:focus {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-bg-app);
+}
+
+.shadcn-dropdown-item[data-disabled],
+.shadcn-dropdown-checkbox-item[data-disabled],
+.shadcn-dropdown-radio-item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* checkbox and radio items have left-padded layout for the indicator */
+.shadcn-dropdown-checkbox-item,
+.shadcn-dropdown-radio-item {
+  padding: 0.375rem 0.5rem 0.375rem 2rem;
+}
+
+.shadcn-dropdown-item--inset {
+  padding-left: 2rem;
+}
+
+.shadcn-dropdown-item svg,
+.shadcn-dropdown-sub-trigger svg {
+  pointer-events: none;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.shadcn-dropdown-sub-trigger svg:last-child {
+  margin-left: auto;
+}
+
+.shadcn-dropdown-sub-trigger {
+  display: flex;
+  cursor: default;
+  user-select: none;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--tug-base-radius-sm);
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.shadcn-dropdown-sub-trigger:focus,
+.shadcn-dropdown-sub-trigger[data-state="open"] {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-bg-app);
+}
+
+.shadcn-dropdown-sub-trigger--inset {
+  padding-left: 2rem;
+}
+
+.shadcn-dropdown-label {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.shadcn-dropdown-label--inset {
+  padding-left: 2rem;
+}
+
+.shadcn-dropdown-separator {
+  margin: 0.25rem -0.25rem;
+  height: 1px;
+  background-color: var(--tug-base-surface-control);
+}
+
+.shadcn-dropdown-shortcut {
+  margin-left: auto;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+}
+
+.shadcn-dropdown-item-indicator-span {
+  position: absolute;
+  left: 0.5rem;
+  display: flex;
+  height: 0.875rem;
+  width: 0.875rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.shadcn-dropdown-item-indicator-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.shadcn-dropdown-radio-item-icon {
+  width: 0.5rem;
+  height: 0.5rem;
+  fill: currentColor;
+}
+
+/* --- tooltip.tsx (Step 5) --- */
+
+/* Tooltip open animation is unconditional (no data-state=open gate),
+   matching Tailwind behavior where animate-in/fade-in/zoom-in classes
+   are applied without a data-[state=open]: prefix. */
+.shadcn-tooltip-content {
+  z-index: 50;
+  overflow: hidden;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-control);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation: shadcn-fade-in 200ms ease-out,
+             shadcn-zoom-in 200ms ease-out,
+             shadcn-slide-in 200ms ease-out;
+}
+
+.shadcn-tooltip-content[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards,
+             shadcn-zoom-out 200ms ease-out forwards,
+             shadcn-slide-out 200ms ease-out forwards;
+}
+
+.shadcn-tooltip-content[data-side="bottom"] { --shadcn-slide-from-y: -0.5rem; }
+.shadcn-tooltip-content[data-side="top"]    { --shadcn-slide-from-y: 0.5rem; }
+.shadcn-tooltip-content[data-side="left"]   { --shadcn-slide-from-x: 0.5rem; }
+.shadcn-tooltip-content[data-side="right"]  { --shadcn-slide-from-x: -0.5rem; }
+
+/* --- select.tsx (Step 5) --- */
+
+.shadcn-select-trigger {
+  display: flex;
+  height: 2.5rem;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-bg-app);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--tug-base-fg-default);
+  cursor: pointer;
+}
+
+.shadcn-select-trigger[data-placeholder] {
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-select-trigger:focus {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-select-trigger > span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.shadcn-select-trigger-icon {
+  width: 1rem;
+  height: 1rem;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.shadcn-select-content {
+  position: relative;
+  z-index: 50;
+  max-height: var(--radix-select-content-available-height);
+  min-width: 8rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-surface-control);
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  transform-origin: var(--radix-select-content-transform-origin);
+}
+
+.shadcn-select-content[data-state="open"] {
+  animation: shadcn-fade-in 200ms ease-out,
+             shadcn-zoom-in 200ms ease-out,
+             shadcn-slide-in 200ms ease-out;
+}
+
+.shadcn-select-content[data-state="closed"] {
+  animation: shadcn-fade-out 200ms ease-out forwards,
+             shadcn-zoom-out 200ms ease-out forwards,
+             shadcn-slide-out 200ms ease-out forwards;
+}
+
+.shadcn-select-content[data-side="bottom"] { --shadcn-slide-from-y: -0.5rem; }
+.shadcn-select-content[data-side="top"]    { --shadcn-slide-from-y: 0.5rem; }
+.shadcn-select-content[data-side="left"]   { --shadcn-slide-from-x: 0.5rem; }
+.shadcn-select-content[data-side="right"]  { --shadcn-slide-from-x: -0.5rem; }
+
+/* Per Spec S04: use margin instead of translate for popper offset,
+   keeping translate free for animation keyframes. */
+.shadcn-select-content--popper[data-side="bottom"] { margin-top: 0.25rem; }
+.shadcn-select-content--popper[data-side="top"]    { margin-bottom: 0.25rem; }
+.shadcn-select-content--popper[data-side="left"]   { margin-right: 0.25rem; }
+.shadcn-select-content--popper[data-side="right"]  { margin-left: 0.25rem; }
+
+.shadcn-select-viewport {
+  padding: 0.25rem;
+}
+
+.shadcn-select-viewport--popper {
+  height: var(--radix-select-trigger-height);
+  width: 100%;
+  min-width: var(--radix-select-trigger-width);
+}
+
+.shadcn-select-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  cursor: default;
+  user-select: none;
+  align-items: center;
+  border-radius: var(--tug-base-radius-sm);
+  padding: 0.375rem 0.5rem 0.375rem 2rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.shadcn-select-item:focus {
+  background-color: var(--tug-base-accent-cool-default);
+  color: var(--tug-base-bg-app);
+}
+
+.shadcn-select-item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.shadcn-select-item-indicator-span {
+  position: absolute;
+  left: 0.5rem;
+  display: flex;
+  height: 0.875rem;
+  width: 0.875rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.shadcn-select-item-indicator-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.shadcn-select-label {
+  padding: 0.375rem 0.5rem 0.375rem 2rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.shadcn-select-separator {
+  margin: 0.25rem -0.25rem;
+  height: 1px;
+  background-color: var(--tug-base-surface-control);
+}
+
+.shadcn-select-scroll-button {
+  display: flex;
+  cursor: default;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0;
+}
+
+.shadcn-select-scroll-icon {
+  width: 1rem;
+  height: 1rem;
+}
 
 /* --- input.tsx (Step 3) --- */
 
