@@ -13,6 +13,7 @@ body {
 }
 
 body {
+  font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
   background-color: var(--tug-base-bg-canvas);
   background-image:
