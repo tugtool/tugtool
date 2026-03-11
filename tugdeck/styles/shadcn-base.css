@@ -116,12 +116,85 @@ button,
    .shadcn-dialog-header, .shadcn-dialog-footer, .shadcn-dialog-title,
    .shadcn-dialog-description */
 
-/* --- checkbox.tsx stub (Step 4) --- */
-/* .shadcn-checkbox, .shadcn-checkbox-indicator */
+/* --- checkbox.tsx (Step 4) --- */
 
-/* --- scroll-area.tsx stub (Step 4) --- */
-/* .shadcn-scroll-area, .shadcn-scroll-area-viewport, .shadcn-scrollbar,
-   .shadcn-scrollbar--horizontal, .shadcn-scroll-thumb */
+.shadcn-checkbox {
+  display: grid;
+  place-content: center;
+  height: 1rem;
+  width: 1rem;
+  flex-shrink: 0;
+  border-radius: var(--tug-base-radius-sm);
+  border: 1px solid var(--tug-base-accent-default);
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shadcn-checkbox:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-checkbox[data-state="checked"] {
+  background-color: var(--tug-base-accent-default);
+  color: var(--tug-base-fg-inverse);
+}
+
+.shadcn-checkbox-indicator {
+  display: grid;
+  place-content: center;
+  color: currentColor;
+}
+
+.shadcn-checkbox-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* --- scroll-area.tsx (Step 4) --- */
+
+.shadcn-scroll-area {
+  position: relative;
+  overflow: hidden;
+}
+
+.shadcn-scroll-area-viewport {
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+}
+
+.shadcn-scrollbar {
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* vertical (default) */
+  height: 100%;
+  width: 0.625rem;
+  border-left: 1px solid transparent;
+  padding: 1px;
+}
+
+.shadcn-scrollbar--horizontal {
+  height: 0.625rem;
+  width: 100%;
+  flex-direction: column;
+  border-left: none;
+  border-top: 1px solid transparent;
+}
+
+.shadcn-scroll-thumb {
+  position: relative;
+  flex: 1;
+  border-radius: 9999px;
+  background-color: var(--tug-base-border-default);
+}
 
 /* --- dropdown-menu.tsx stub (Step 5) --- */
 /* .shadcn-dropdown-content, .shadcn-dropdown-item, .shadcn-dropdown-item--inset,
@@ -214,8 +287,57 @@ button,
   }
 }
 
-/* --- switch.tsx stub (Step 4) --- */
-/* .shadcn-switch, .shadcn-switch-thumb */
+/* --- switch.tsx (Step 4) --- */
+
+.shadcn-switch {
+  display: inline-flex;
+  height: 1.5rem;
+  width: 2.75rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: var(--tug-base-border-default);
+}
+
+.shadcn-switch:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-switch[data-state="checked"] {
+  background-color: var(--tug-base-accent-default);
+}
+
+.shadcn-switch[data-state="unchecked"] {
+  background-color: var(--tug-base-border-default);
+}
+
+.shadcn-switch-thumb {
+  pointer-events: none;
+  display: block;
+  height: 1.25rem;
+  width: 1.25rem;
+  border-radius: 9999px;
+  background-color: var(--tug-base-bg-app);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shadcn-switch-thumb[data-state="checked"] {
+  transform: translateX(1.25rem);
+}
+
+.shadcn-switch-thumb[data-state="unchecked"] {
+  transform: translateX(0);
+}
 
 /* --- card.tsx (Step 3) --- */
 

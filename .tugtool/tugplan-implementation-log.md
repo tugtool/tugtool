@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-11T01:55:25Z
+---
+
+## step-4: Replaced Tailwind utility strings with semantic CSS classes in three interactive components. Added CSS rules with data-state variants, switch thumb translate transition, and scroll-area orientation variants. Dropped peer class from checkbox and switch.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-3
 date: 2025-03-11T01:48:05Z
 ---
