@@ -138,21 +138,220 @@ button,
    .shadcn-select-viewport, .shadcn-select-viewport--popper, .shadcn-select-item,
    .shadcn-select-label, .shadcn-select-separator, .shadcn-select-scroll-button */
 
-/* --- input.tsx stub (Step 3) --- */
-/* .shadcn-input */
+/* --- input.tsx (Step 3) --- */
 
-/* --- textarea.tsx stub (Step 3) --- */
-/* .shadcn-textarea */
+.shadcn-input {
+  display: flex;
+  height: 2.5rem;
+  width: 100%;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-bg-app);
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  color: var(--tug-base-fg-default);
+}
+
+.shadcn-input::placeholder {
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-input:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-input::file-selector-button {
+  border: 0;
+  background-color: transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--tug-base-fg-default);
+}
+
+@media (min-width: 768px) {
+  .shadcn-input {
+    font-size: 0.875rem;
+  }
+}
+
+/* --- textarea.tsx (Step 3) --- */
+
+.shadcn-textarea {
+  display: flex;
+  min-height: 80px;
+  width: 100%;
+  border-radius: var(--tug-base-radius-md);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-bg-app);
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  color: var(--tug-base-fg-default);
+}
+
+.shadcn-textarea::placeholder {
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-textarea:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (min-width: 768px) {
+  .shadcn-textarea {
+    font-size: 0.875rem;
+  }
+}
 
 /* --- switch.tsx stub (Step 4) --- */
 /* .shadcn-switch, .shadcn-switch-thumb */
 
-/* --- card.tsx stub (Step 3) --- */
-/* .shadcn-card, .shadcn-card-header, .shadcn-card-title, .shadcn-card-description,
-   .shadcn-card-content, .shadcn-card-footer */
+/* --- card.tsx (Step 3) --- */
 
-/* --- radio-group.tsx stub (Step 3) --- */
-/* .shadcn-radio-group, .shadcn-radio-group-item, .shadcn-radio-group-indicator */
+.shadcn-card {
+  border-radius: var(--tug-base-radius-lg);
+  border: 1px solid var(--tug-base-border-default);
+  background-color: var(--tug-base-card-bg);
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
 
-/* --- tabs.tsx stub (Step 3) --- */
-/* .shadcn-tabs-list, .shadcn-tabs-trigger, .shadcn-tabs-content */
+.shadcn-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1.5rem;
+}
+
+.shadcn-card-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+
+.shadcn-card-description {
+  font-size: 0.875rem;
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-card-content {
+  padding: 1.5rem;
+  padding-top: 0;
+}
+
+.shadcn-card-footer {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  padding-top: 0;
+}
+
+/* --- radio-group.tsx (Step 3) --- */
+
+.shadcn-radio-group {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.shadcn-radio-group-item {
+  aspect-ratio: 1;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 50%;
+  border: 1px solid var(--tug-base-accent-default);
+  color: var(--tug-base-accent-default);
+  background-color: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shadcn-radio-group-item:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-radio-group-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-radio-group-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shadcn-radio-group-icon {
+  width: 0.625rem;
+  height: 0.625rem;
+  fill: currentColor;
+  color: currentColor;
+}
+
+/* --- tabs.tsx (Step 3) --- */
+
+.shadcn-tabs-list {
+  display: inline-flex;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--tug-base-radius-md);
+  background-color: var(--tug-base-surface-control);
+  padding: 0.25rem;
+  color: var(--tug-base-fg-muted);
+}
+
+.shadcn-tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: var(--tug-base-radius-sm);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+
+.shadcn-tabs-trigger:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.shadcn-tabs-trigger:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.shadcn-tabs-trigger[data-state="active"] {
+  background-color: var(--tug-base-bg-app);
+  color: var(--tug-base-fg-default);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.shadcn-tabs-content {
+  margin-top: 0.5rem;
+}
+
+.shadcn-tabs-content:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}

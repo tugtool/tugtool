@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-11T01:48:05Z
+---
+
+## step-3: Replaced Tailwind utility strings with semantic CSS classes in five simple components. Added CSS rules to shadcn-base.css with --tug-base-* tokens, Spec S02 focus rings, and Table T03 media queries.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-7d-glitch-reduction.md
+
+---
+
+---
 step: step-2
 date: 2025-03-11T01:38:05Z
 ---
