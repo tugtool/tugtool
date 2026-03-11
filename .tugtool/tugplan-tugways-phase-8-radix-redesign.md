@@ -21,7 +21,7 @@
 
 #### Context {#context}
 
-shadcn was adopted as a convenience layer over Radix. In practice, it has become a liability. shadcn components ship with Tailwind utility strings (now converted to semantic CSS in `shadcn-base.css`, but still carrying shadcn's design opinions). Every Tug component must override these opinions. The current architecture is: Radix primitive -> shadcn wrapper in `components/ui/` -> Tug wrapper in `components/tugways/`. With direct Radix wrapping, this collapses to: Radix primitive -> Tug component. One layer instead of two. Phase 7d already prohibits installing new shadcn components. We removed Tailwind. The shadcn CLI is incompatible with our build. Only 2 shadcn components are actively used (Button and DropdownMenu). There is no path forward with shadcn.
+shadcn was adopted as a convenience layer over Radix. In practice, it has become a liability. shadcn components ship with Tailwind utility strings (now converted to semantic CSS in `shadcn-base.css`, but still carrying shadcn's design opinions). Every Tug component must override these opinions. The current architecture is: Radix primitive -> shadcn wrapper in `components/ui/` -> Tug wrapper in `components/tugways/`. With direct Radix wrapping, this collapses to: Radix primitive -> Tug component. One layer instead of two. Phase 7d already prohibits installing new shadcn components. We removed Tailwind. The shadcn CLI is incompatible with our build. Only 2 shadcn components are actively used in app code (Button and DropdownMenu); `scaffold.test.tsx` also imports shadcn Button directly. The `cn()` utility in `lib/utils.ts` depends only on `clsx` and is retained. There is no path forward with shadcn.
 
 The current tugdeck frontend is approximately 9700 lines of TypeScript/CSS across ~60 source files. The transport, settings, layout engine, card layer, and chrome layers are all retained. The `components/ui/` shadcn layer (~600 lines, 13 files) and `shadcn-base.css` (~25KB) are removed. Radix primitives provide exactly what we need: accessible by default (ARIA roles, keyboard navigation, focus management), unstyled (zero visual opinions), composable (compound component patterns), and presence management (enter/exit animations via `data-state`). We already have 10 Radix packages installed.
 
@@ -62,7 +62,7 @@ The current tugdeck frontend is approximately 9700 lines of TypeScript/CSS acros
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Card content rebuild (Phase 9 -- depends on component library existing, agnostic to implementation layer)
-- Responder chain infrastructure changes (Phase 5x -- already built)
+- Responder chain infrastructure changes beyond modal support (Phase 5x -- already built); Step 7 adds `modalScope` and node suspension specifically for TugAlert and TugSheet
 - Mutation model or observable properties changes (Phase 5x -- already built)
 - New card types (Phase 9)
 - Mobile or touch interaction patterns
@@ -72,7 +72,7 @@ The current tugdeck frontend is approximately 9700 lines of TypeScript/CSS acros
 - Phase 7d (Glitch Reduction) is complete -- provides stable rendering foundation
 - Phase 5x infrastructure (responder chain, mutation model, observable properties, palette engine) is complete
 - 10 Radix packages already installed
-- Sonner library available for toast integration
+- Sonner library to be installed in Step 7 for toast integration
 
 #### Constraints {#constraints}
 
@@ -90,79 +90,6 @@ The current tugdeck frontend is approximately 9700 lines of TypeScript/CSS acros
 - The 2.5D visual language works across all three themes (Brio light, Bluenote dark, Harmony dark) without per-theme structural changes
 - Sonner integrates cleanly with our CSS token system for toast styling
 - The existing 10 Radix packages cover the majority of needed primitives; only a few new packages need to be installed
-
----
-
-### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
-
-This plan format relies on **explicit, named anchors** and **rich `References:` lines** in execution steps.
-
-#### 1) Use explicit anchors everywhere you will cite later
-
-- **Technique**: append an explicit anchor to the end of a heading using `{#anchor-name}`.
-  - Example (append anchor to any heading):
-    - `### Design Decisions {#my-design-decisions}`
-    - `#### [D01] Workspace snapshots are immutable (DECIDED) {#d01-snapshots-immutable}`
-- **Why**: do not rely on auto-generated heading slugs; explicit anchors are stable when titles change.
-
-#### 2) Anchor naming rules (lock these in)
-
-- **Allowed characters**: lowercase `a-z`, digits `0-9`, and hyphen `-` only.
-- **Style**: short, semantic, **kebab-case**, no phase numbers (anchors should survive renumbering).
-- **Prefix conventions (use these consistently)**:
-  - **`step-N`**: execution step anchors (e.g. `step-1`, `step-2`, `step-3`)
-  - **`dNN-...`**: design decisions (`[D01]`) anchors, e.g. `{#d01-sandbox-copy}`
-  - **`qNN-...`**: open questions (`[Q01]`) anchors, e.g. `{#q01-import-resolution}`
-  - **`rNN-...`**: risk notes (`Risk R01`) anchors, e.g. `{#r01-perf-regression}`
-  - **`lNN-...`**: lists (`List L01`) anchors, e.g. `{#l01-supported-ops}`
-  - **`mNN-...`**: milestones (`Milestone M01`) anchors, e.g. `{#m01-first-ship}`
-  - **`sNN-...`**: specs (`Spec S01`) anchors, e.g. `{#s01-command-response}`
-  - **Domain anchors**: for major concepts/sections, use a clear noun phrase, e.g. `{#cross-platform}`, `{#config-schema}`, `{#error-scenarios}`
-
-#### 3) Stable label conventions (for non-heading artifacts)
-
-Use stable labels so steps can cite exact plan artifacts even when prose moves around:
-
-- **Design decisions**: `#### [D01] <Title> (DECIDED) {#d01-...}`
-- **Open questions**: `#### [Q01] <Title> (OPEN) {#q01-...}`
-- **Specs**: `**Spec S01: <Title>** {#s01-slug}` (or make it a `####` heading if you prefer)
-- **Tables**: `**Table T01: <Title>** {#t01-slug}`
-- **Lists**: `**List L01: <Title>** {#l01-slug}`
-- **Risks**: `**Risk R01: <Title>** {#r01-slug}`
-- **Milestones**: `**Milestone M01: <Title>** {#m01-slug}`
-
-Numbering rules:
-- Always use **two digits**: `D01`, `Q01`, `S01`, `T01`, `L01`, `R01`, `M01`.
-- Never reuse an ID within a plan. If you delete one, leave the gap.
-
-#### 4) `**Depends on:**` lines for execution step dependencies
-
-Steps that depend on other steps must include a `**Depends on:**` line that references step anchors.
-
-**Format:**
-```markdown
-**Depends on:** #step-1, #step-2
-```
-
-**Rules:**
-- Use **anchor references** (`#step-N`), not step titles or numbers
-- Omit the line entirely for steps with no dependencies (typically Step 1)
-- Multiple dependencies are comma-separated
-- Dependencies must reference valid step anchors within the document (validated by `tug validate`)
-
----
-
-#### 5) `**References:**` lines are required for every execution step
-
-Every step must include a `**References:**` line that cites the plan artifacts it implements.
-
-Rules:
-- Cite **decisions** by ID: `[D05] ...`
-- Cite **open questions** by ID when the step resolves/de-risks them: `[Q03] ...`
-- Cite **specs/lists/tables/risks/milestones** by label: `Spec S15`, `List L03`, `Tables T27-T28`, `Risk R02`, `Milestone M01`, etc.
-- Cite **anchors** for deep links in parentheses using `#anchor` tokens (keep them stable).
-- **Do not cite line numbers.** If you find yourself writing "lines 5-10", add an anchor and cite that instead.
-- Prefer **rich, exhaustive citations**. Avoid `N/A` unless the step is truly refactor-only.
 
 ---
 
@@ -399,6 +326,7 @@ Light source: top-center, far distant
 - Every Tug component defines `--tug-<name>-*` tokens in its CSS file
 - Base tokens live in `tug-tokens.css`
 - Theme overrides live in `bluenote.css` and `harmony.css`
+- The existing `tug-comp-tokens.css` file and all `--tug-comp-*` references (~83 occurrences across `tug-comp-tokens.css`, `tug-button.css`, `tug-tab-bar.css`, `tugcard.css`, `tug-dropdown.css`, `style-inspector-overlay.ts`) must be migrated to the `--tug-<component>-*` naming and the file deleted as part of Step 1 (clean foundation)
 
 #### [D06] Four modal categories (DECIDED) {#d06-four-modal-categories}
 
@@ -451,7 +379,7 @@ A `TugAlertHost` component (rendered once, at the app root) listens for alert re
 
 **TugSheet -- Card-Modal Dialog:**
 
-Blocks a single card. Other cards remain interactive. The card's responder node is marked `suspended`. Actions dispatched from within the card's subtree are blocked. Focus is trapped within the card's sheet content. The sheet renders within the card's bounds using Radix Dialog with `container` prop targeting the card's content container. Overlay is scoped to the card (CSS `position: absolute`), not the viewport.
+Blocks a single card. Other cards remain interactive. The card's responder node is marked `suspended`. Actions dispatched from within the card's subtree are blocked. Focus is trapped within the card's sheet content. The sheet renders within the card's bounds using Radix Dialog with `container` prop targeting the root `.tugcard` element (not `.tugcard-content`, because the overlay must cover both header and content). Tugcard exposes a ref to its root div for this purpose. TugSheetHost renders as a direct child of `.tugcard` (sibling of header, accessory, and content) with `position: absolute; inset: 0`. Overlay is scoped to the card, not the viewport.
 
 Imperative API:
 
@@ -522,13 +450,13 @@ tugToast.promise(deployBuild(), {
 
 **Specification:**
 
-State is stored in `CardState` (the layout tree's per-card state object):
+State is stored in `CardState` (the layout tree's per-card state object). The `collapsed?: boolean` field already exists in `layout-tree.ts` and serialization already handles it. Step 3 wires the UI to this existing field rather than adding a new one.
 
 ```ts
 interface CardState {
   position: { x: number; y: number };
   size: { width: number; height: number };
-  collapsed: boolean;  // collapse state
+  collapsed: boolean;  // collapse state (already exists in layout-tree.ts)
 }
 ```
 
@@ -548,7 +476,7 @@ CardFrame behavior when collapsed:
 Double-click on title bar toggles collapse (secondary gesture, matching macOS behavior).
 
 **Implications:**
-- `collapsed` field in `CardState` must be serialized/deserialized
+- `collapsed` field already exists in `CardState` (`layout-tree.ts`) and serialization already handles it; Step 3 wires the UI
 - Collapsed cards participate in snap sets normally (using collapsed height)
 - Expanding restores previous height
 
@@ -756,7 +684,7 @@ Note: TugInput and TugTextarea wrap native elements, not Radix primitives. They 
 **Tier 2 -- Display & Feedback (8 components)**
 
 | Component | Kind | Notes |
-|-----------|------|-------|
+|-----------|----------|-------|
 | TugBadge | Original | Tone variants (good/warn/alert/info), pill shape, count mode |
 | TugSpinner | Original | Size variants, replaces loading prop visuals |
 | TugProgress | Wrapper | Horizontal bar, percentage, indeterminate mode |
@@ -779,7 +707,7 @@ Note: TugInput and TugTextarea wrap native elements, not Radix primitives. They 
 **Tier 4 -- Data Display (3 components)**
 
 | Component | Kind | Notes |
-|-----------|------|-------|
+|-----------|----------|-------|
 | TugTable | Original | Header/row/cell, sortable columns, stripe option |
 | TugStatCard | Original | Key-value metric (label + large number + trend) |
 | TugDialog | Wrapper | General-purpose dialog (not alert/sheet) |
@@ -787,7 +715,7 @@ Note: TugInput and TugTextarea wrap native elements, not Radix primitives. They 
 **Tier 5 -- Data Visualization (3 originals)**
 
 | Component | Kind | Notes |
-|-----------|------|-------|
+|-----------|----------|-------|
 | TugSparkline | Original | SVG inline chart: area, line, column, bar variants |
 | TugLinearGauge | Original | Horizontal gauge with needle, thresholds, tick marks |
 | TugArcGauge | Original | Radial gauge with needle, arc fill, center readout |
@@ -949,9 +877,10 @@ tugdeck/src/components/chrome/
 | Package | Phase | Purpose |
 |---------|-------|---------|
 | `@radix-ui/react-accordion` | 8e | TugAccordion |
+| `@radix-ui/react-alert-dialog` | 8g | TugAlertHost |
 | `@radix-ui/react-avatar` | 8d | TugAvatar |
 | `@radix-ui/react-label` | 8d | TugLabel |
-| `@radix-ui/react-popover` | 8d | TugPopover, TugConfirmPopover |
+| `@radix-ui/react-popover` | 8e | TugPopover, TugConfirmPopover |
 | `@radix-ui/react-progress` | 8d | TugProgress |
 | `@radix-ui/react-separator` | 8d | TugSeparator |
 | `@radix-ui/react-slider` | 8d | TugSlider |
@@ -963,7 +892,7 @@ tugdeck/src/components/chrome/
 #### New files {#new-files}
 
 | File | Phase | Purpose |
-|------|-------|---------|
+|----------|-------|-----------|
 | `tugdeck/src/components/tugways/tug-input.tsx` | 8d | Text input wrapper |
 | `tugdeck/src/components/tugways/tug-input.css` | 8d | Input styles |
 | `tugdeck/src/components/tugways/tug-textarea.tsx` | 8d | Textarea wrapper |
@@ -988,8 +917,8 @@ tugdeck/src/components/chrome/
 | `tugdeck/src/components/tugways/tug-spinner.css` | 8d | Spinner styles |
 | `tugdeck/src/components/tugways/tug-progress.tsx` | 8d | Progress bar |
 | `tugdeck/src/components/tugways/tug-progress.css` | 8d | Progress styles |
-| `tugdeck/src/components/tugways/tug-skeleton.tsx` | 8d | Skeleton placeholder |
-| `tugdeck/src/components/tugways/tug-skeleton.css` | 8d | Skeleton styles |
+| `tugdeck/src/components/tugways/tug-skeleton.tsx` | 8d | Skeleton placeholder (already exists -- enhance with 2.5D tokens) |
+| `tugdeck/src/components/tugways/tug-skeleton.css` | 8d | Skeleton styles (already exists -- enhance) |
 | `tugdeck/src/components/tugways/tug-separator.tsx` | 8d | Separator wrapper |
 | `tugdeck/src/components/tugways/tug-separator.css` | 8d | Separator styles |
 | `tugdeck/src/components/tugways/tug-keyboard.tsx` | 8d | Keyboard shortcut chip |
@@ -1042,15 +971,16 @@ tugdeck/src/components/chrome/
 | `tugdeck/styles/tug-inspector.css` | 8h | Inspector styles |
 | `tugdeck/src/components/chrome/dock.tsx` | 8i | Dock rewrite |
 | `tugdeck/src/components/chrome/dock.css` | 8i | 2.5D dock styles |
-| `tugdeck/src/dock-config.ts` | 8i | DockConfig type + defaults |
+| `tugdeck/src/components/chrome/dock-config.ts` | 8i | DockConfig type + defaults |
 
 #### Files deleted {#files-deleted}
 
 | File | Phase | Reason |
-|------|-------|--------|
+|----------|-------|-----------|
 | `tugdeck/src/components/ui/*.tsx` (13 files) | 8a | shadcn wrappers removed |
 | `tugdeck/styles/shadcn-base.css` | 8a | shadcn stylesheet removed |
 | `tugdeck/components.json` | 8a | shadcn config removed |
+| `tugdeck/styles/tug-comp-tokens.css` | 8a | Legacy `--tug-comp-*` tokens migrated to `--tug-<component>-*` |
 
 ---
 
@@ -1087,7 +1017,7 @@ tugdeck/src/components/chrome/
 >
 > **Commit after all checkpoints pass.** This rule applies to every step below.
 >
-> **Phase dependency graph:**
+> **Phase dependency graph** (Steps 4 and 5 are order-independent -- either can proceed without the other's output -- but both modify `package.json` and the Component Gallery, so they should be done sequentially to avoid merge conflicts):
 >
 > ```
 > Step 1 (8a: Shadcn Excision)
@@ -1097,7 +1027,7 @@ tugdeck/src/components/chrome/
 >     |
 >     +--------------------+
 >     v                    v
-> Step 3 (8c:          Step 4 + Step 5 (parallel):
+> Step 3 (8c:          Step 4 + Step 5 (order-independent):
 > Card Frame &         8d: Form Controls & Core Display
 > Title Bar)           8e: Navigation, Data Display & Viz
 >     |                    |
@@ -1122,24 +1052,32 @@ tugdeck/src/components/chrome/
 **References:** [D01] Radix-direct wrapping replaces shadcn, [D03] Component file organization, Table T01, (#context, #radix-audit)
 
 **Artifacts:**
-- Rewritten `tug-button.tsx` and `tug-button.css` (wraps `@radix-ui/react-slot` directly)
+- Rewritten `tug-button.tsx` and `tug-button.css` (plain `<button>` with Radix Slot for `asChild` polymorphism; variant CSS sufficient to pass existing tests; 2.5D elevation added later in Step 2)
 - Rewritten `tug-dropdown.tsx` and `tug-dropdown.css` (wraps `@radix-ui/react-dropdown-menu` directly)
 - Deleted `components/ui/` directory (13 files)
 - Deleted `styles/shadcn-base.css`
 - Deleted `components.json`
-- Updated `globals.css` (removed shadcn-base.css import)
+- Deleted `styles/tug-comp-tokens.css` (legacy `--tug-comp-*` tokens migrated to `--tug-<component>-*`)
+- Updated `css-imports.ts` (removed shadcn-base.css import)
+- Updated `globals.css` (removed tug-comp-tokens.css import)
 - Updated `scaffold.test.tsx`
+- Updated all files referencing `--tug-comp-*` tokens
 - Updated documentation files
+- Retained `lib/utils.ts` (`cn()` utility depends only on `clsx`, not shadcn)
 
 **Tasks:**
-- [ ] Rewrite TugButton to use `@radix-ui/react-slot` directly; move all styling to `tug-button.css`; remove CVA dependency if unused elsewhere
-- [ ] Rewrite TugDropdown to use `@radix-ui/react-dropdown-menu` directly; move all styling to `tug-dropdown.css`
+- [ ] Rewrite TugButton as a plain `<button>` element with Radix Slot for `asChild` polymorphism (Slot is a polymorphism utility, not a button primitive); remove CVA dependency if unused elsewhere. Step 1 TugButton needs variant CSS sufficient to pass existing tests -- 2.5D elevation is added in Step 2. CSS properties to extract from shadcn into `tug-button.css`: padding per size (sm/md/lg), font-size per size, height per size (sm=36px, md=40px, lg=44px), background-color per variant at rest/hover/active/disabled (primary uses `--tug-base-accent-cool-default`, secondary uses default surface, ghost transparent, destructive uses `--tug-base-accent-danger`), border per variant (existing `tug-button-bordered` class), color per variant (primary/destructive use `--tug-base-fg-inverse`), icon-subtype square dimensions per size, disabled opacity (0.5). The existing `tug-button.css` already has variant hover/active/disabled rules -- preserve and extend these
+- [ ] Rewrite TugDropdown to use `@radix-ui/react-dropdown-menu` directly (import primitives from `@radix-ui/react-dropdown-menu` instead of `components/ui/dropdown-menu`); move all styling to `tug-dropdown.css`
+- [ ] Verify TugDropdown blink animation works after shadcn removal: the WAAPI blink reads computed `--tug-base-surface-default` and `--tug-base-motion-easing-standard` values, then dispatches synthetic Escape to close the menu. These CSS variable reads depend on the menu item DOM element existing with the correct computed styles -- test that the selection blink plays and menu closes correctly with the new direct Radix imports
 - [ ] Delete all 13 files in `components/ui/`
 - [ ] Delete `styles/shadcn-base.css` (~25KB)
 - [ ] Delete `components.json`
 - [ ] Remove `class-variance-authority` from `package.json` if no longer referenced
 - [ ] Relocate any still-needed animation keyframes from shadcn-base.css into relevant Tug component CSS files as `tug-*` named keyframes
-- [ ] Update `globals.css` to remove the shadcn-base.css import
+- [ ] Update `css-imports.ts` to remove the shadcn-base.css import (the import is in `css-imports.ts`, not `globals.css`)
+- [ ] Migrate all `--tug-comp-*` tokens to `--tug-<component>-*` naming. Run `grep -r "tug-comp-" tugdeck/src/ tugdeck/styles/ --include="*.css" --include="*.ts" --include="*.tsx"` to find all references. Files requiring content changes: `tug-comp-tokens.css` (84 occurrences, deleted after migration), `style-inspector-overlay.ts` (31), `tugcard.css` (9), `tug-tab-bar.css` (7), `style-inspector-overlay.test.ts` (7), `tug-dropdown.css` (5), `gallery-cascade-inspector-content.tsx` (4), `tug-button.css` (1), `tug-tokens.css` (1), `globals.css` (1 -- the @import). `shadcn-base.css` (1 occurrence) is deleted separately. Delete `styles/tug-comp-tokens.css`; remove its `@import` from `globals.css`
+- [ ] Update `scripts/check-legacy-tokens.sh`: (a) add a `run_grep` call for `tug-comp-` as a legacy pattern so CI catches any regressions, and (b) change the FAIL message on line 87 from "Migrate to --tug-base-* or --tug-comp-* naming" to "Migrate to --tug-base-* or --tug-<component>-* naming" -- `--tug-comp-*` is banned per [D05]
+- [ ] Retain `lib/utils.ts` (`cn()` utility) -- it depends only on `clsx`, not shadcn; do not delete it
 - [ ] Update `scaffold.test.tsx` (currently imports Button from `ui/`)
 - [ ] Update `design-system-concepts.md` -- remove shadcn references from D05, D06, D07 and Concept 2
 - [ ] Update `tugways-implementation-strategy.md` -- update phase descriptions
@@ -1150,12 +1088,14 @@ tugdeck/src/components/chrome/
 - [ ] `bun test` -- all existing tests pass
 - [ ] TugButton renders and responds to click in all variants
 - [ ] TugDropdown opens, shows items, handles selection
+- [ ] TugDropdown blink animation plays on item selection and menu closes after blink completes
 - [ ] No `components/ui` imports exist in production source (excluding `_archive/`)
 
 **Checkpoint:**
 - [ ] `bun run build` exits 0
 - [ ] `bun test` exits 0
 - [ ] `grep -r "components/ui" tugdeck/src/ --include="*.tsx" --include="*.ts" | grep -v _archive` returns empty
+- [ ] `grep -r "tug-comp-" tugdeck/src/ tugdeck/styles/ --include="*.css" --include="*.ts" --include="*.tsx"` returns empty
 
 ---
 
@@ -1207,18 +1147,26 @@ tugdeck/src/components/chrome/
 **References:** [D04] 2.5D elevation model, [D07] Window-shade collapse, Spec S02, (#elevation-spec)
 
 **Artifacts:**
-- Updated `card-header.tsx` with collapse toggle, menu icon change, 2.5D buttons
-- Updated `card-header.css` with 2.5D elevation styles for title bar controls
+- New `card-header.tsx` extracted from `tugcard.tsx` (the card header is currently rendered inline in tugcard.tsx; this step extracts it into its own file in `components/chrome/`). CardHeader props interface:
+  - `title: string` -- display title (from effectiveMeta.title)
+  - `icon?: string` -- lucide icon name (from effectiveMeta.icon); CardHeader renders the icon via lucide-react lookup
+  - `closable?: boolean` -- whether to show close button (default true; from effectiveMeta.closable)
+  - `collapsed: boolean` -- current collapse state
+  - `onCollapse: () => void` -- toggle collapse callback
+  - `onClose?: () => void` -- close callback (omitted when closable is false)
+  - `onDragStart?: (event: React.PointerEvent) => void` -- header pointerdown for drag initiation
+  - Close button pointer-capture behavior (`setPointerCapture`/`pointerup` hit-test pattern) transfers into CardHeader as internal implementation; the `onClose` callback fires only on confirmed pointer-up-inside or keyboard Enter/Space
+- New `card-header.css` with 2.5D elevation styles for title bar controls
 - Updated `card-frame.tsx` with collapsed height handling
 - Updated `deck-manager.ts` with collapse state management
 - Updated `serialization.ts` with collapsed state persistence
 - Title bar demo in Component Gallery
 
 **Tasks:**
-- [ ] Implement window-shade collapse: CSS height transition to `CARD_TITLE_BAR_HEIGHT` (28px) + border; add `collapsed: boolean` to `CardState`
+- [ ] Implement window-shade collapse: CSS height transition to `CARD_TITLE_BAR_HEIGHT` (28px) + border; wire existing `collapsed?: boolean` field in `CardState` (already in `layout-tree.ts`)
 - [ ] Add collapse/expand toggle via chevron icon (`ChevronDown`/`ChevronUp` from lucide-react) replacing current `Minus` icon
 - [ ] Change menu icon from `EllipsisVertical` to `Ellipsis` (horizontal)
-- [ ] Implement basic close button (closes immediately, no confirmation -- deferred to Step 7)
+- [ ] Implement basic close button (closes immediately, no confirmation -- deferred to Step 7). Note: the current close button uses `setPointerCapture` on `pointerdown` to suppress browser focus/selection side effects. When Step 7 wraps this button in `TugConfirmPopover`, the pointer capture may conflict with Radix Popover's focus management -- Step 7 must verify that pointer capture is released before the popover opens, or switch the close button to a standard click handler
 - [ ] Apply 2.5D elevation treatment to title bar control buttons (close, collapse, menu); title bar surface stays flat
 - [ ] Wire collapse state into DeckManager: collapsed cards use collapsed height in snap sets; expanding restores previous height
 - [ ] Persist collapsed state: wire serialization to read/write `collapsed` field in `CardState`
@@ -1259,7 +1207,7 @@ tugdeck/src/components/chrome/
 - New Radix packages installed
 
 **Tasks:**
-- [ ] Install Radix packages: `@radix-ui/react-avatar`, `@radix-ui/react-label`, `@radix-ui/react-popover`, `@radix-ui/react-progress`, `@radix-ui/react-separator`, `@radix-ui/react-slider`, `@radix-ui/react-toggle`
+- [ ] Install Radix packages: `@radix-ui/react-avatar`, `@radix-ui/react-label`, `@radix-ui/react-progress`, `@radix-ui/react-separator`, `@radix-ui/react-slider`, `@radix-ui/react-toggle`
 - [ ] Build TugInput (native input wrapper with validation states, error styling, 2.5D inset appearance)
 - [ ] Build TugTextarea (native textarea wrapper with auto-resize, char count, 2.5D inset)
 - [ ] Build TugSelect (wraps Radix Select with 2.5D trigger, token-based popover)
@@ -1272,7 +1220,7 @@ tugdeck/src/components/chrome/
 - [ ] Build TugBadge (original: tone variants, pill shape, count mode)
 - [ ] Build TugSpinner (original: size variants)
 - [ ] Build TugProgress (wraps Radix Progress: bar, percentage, indeterminate mode)
-- [ ] Build TugSkeleton (original: shimmer placeholder, `background-attachment: fixed` sync)
+- [ ] Enhance existing TugSkeleton (already exists -- update to use `--tug-skeleton-*` tokens, ensure `background-attachment: fixed` sync)
 - [ ] Build TugSeparator (wraps Radix Separator: horizontal/vertical, label slot)
 - [ ] Build TugKeyboard (original: keyboard shortcut keycap chip with 2.5D keycap appearance)
 - [ ] Build TugAvatar (wraps Radix Avatar: image + fallback initials, size variants)
@@ -1293,7 +1241,7 @@ tugdeck/src/components/chrome/
 **Checkpoint:**
 - [ ] `bun run build` exits 0
 - [ ] `bun test` exits 0
-- [ ] 17 new components visible in Component Gallery
+- [ ] All 17 Tier 1-2 components from this step visible in Component Gallery (running total with Step 1's TugButton and TugDropdown: 19)
 
 ---
 
@@ -1306,7 +1254,7 @@ tugdeck/src/components/chrome/
 **References:** [D02] Three component kinds, [D04] 2.5D elevation model, Table T01, Table T02, List L01, Spec S02, (#component-inventory, #radix-audit)
 
 **Artifacts:**
-- 5 Tier 3 navigation/overlay components (TugTooltip, TugScrollArea, TugContextMenu, TugPopover, TugDialog)
+- 5 Tier 3 navigation/overlay components (TugTooltip, TugScrollArea, TugContextMenu, TugPopover, TugDialog); note: TugDropdown was already rewritten in Step 1
 - 2 Tier 4 data display components (TugTable, TugStatCard)
 - 3 Tier 5 visualization components (TugSparkline, TugLinearGauge, TugArcGauge)
 - 3 additional Radix-based components (TugAccordion, TugToggleGroup, TugToolbar)
@@ -1314,7 +1262,7 @@ tugdeck/src/components/chrome/
 - All added to Component Gallery
 
 **Tasks:**
-- [ ] Install Radix packages: `@radix-ui/react-accordion`, `@radix-ui/react-toggle-group`, `@radix-ui/react-toolbar`, `@radix-ui/react-context-menu`
+- [ ] Install Radix packages: `@radix-ui/react-accordion`, `@radix-ui/react-popover`, `@radix-ui/react-toggle-group`, `@radix-ui/react-toolbar`, `@radix-ui/react-context-menu`
 - [ ] Build TugTooltip (wraps Radix Tooltip: hover labels, keyboard shortcut display)
 - [ ] Build TugScrollArea (wraps Radix ScrollArea: themed scrollbar, autohide)
 - [ ] Build TugContextMenu (wraps Radix ContextMenu: right-click menus for cards)
@@ -1345,8 +1293,8 @@ tugdeck/src/components/chrome/
 **Checkpoint:**
 - [ ] `bun run build` exits 0
 - [ ] `bun test` exits 0
-- [ ] 13 additional components visible in Component Gallery
-- [ ] Combined library now has 30 components (17 from Step 4 + 13 from Step 5)
+- [ ] All Tier 3-5 and additional Radix-based components from this step visible in Component Gallery (TugDropdown already rewritten in Step 1, not rebuilt here)
+- [ ] Component Gallery shows all components built so far across Steps 1, 4, and 5 (everything except the 3 Tier 6 compositions from Step 6)
 
 ---
 
@@ -1401,13 +1349,20 @@ tugdeck/src/components/chrome/
 - `tug-confirm-popover.tsx` -- button-anchored confirmation
 - `tug-toast.tsx` -- Sonner-based toasts
 - `tug-alert.css` -- styles for all alert components
+- Updated `responder-chain-manager.ts` -- added `modalScope` property and node suspension support
 - Updated `card-header.tsx` -- TugConfirmPopover wired onto close button
 - Alert/sheet/popover/toast demos in Component Gallery
 
 **Tasks:**
-- [ ] Build TugAlertHost: mount at app root, render AlertDialog instances driven by imperative queue
+- [ ] Install `@radix-ui/react-alert-dialog` (not in package.json yet)
+- [ ] Install `sonner` (not in package.json yet)
+- [ ] Add `modalScope` property to `ResponderChainManager`: `null` (normal), `"app"` (TugAlert blocks all dispatch), or a card ID (TugSheet blocks that card's subtree)
+- [ ] Add `suspended` flag to `ResponderNode`: when true, `dispatch()` calls targeting this node's subtree are refused
+- [ ] Modify `dispatch()` to check `modalScope` -- when `modalScope === "app"`, return `false` (callers already handle `false` as "not handled"). During app-modal scope, the alert's own default button mechanism still works because it uses direct click dispatch, not the responder chain walk
+- [ ] Modify `dispatchTo()` to check node `suspended` flag -- when the target node or an ancestor is suspended, return `false`. The `setDefaultButton` mechanism for the alert/sheet's own buttons operates independently of the suspended check (the default button is registered on the alert/sheet's own scope, not on a suspended node)
+- [ ] Build TugAlertHost: mount at app root, render AlertDialog instances driven by imperative queue; on open, set `modalScope: "app"` on the responder chain; on close, clear it
 - [ ] Implement `tugAlert()`: imperative Promise API returning the clicked button role; supports `default`, `cancel`, `destructive` button roles
-- [ ] Build TugSheet: card-modal dialog using Radix Dialog with `container` prop for scoped rendering; overlay scoped to card; card's responder node marked `suspended`
+- [ ] Build TugSheet: card-modal dialog using Radix Dialog with `container` prop for scoped rendering. The container target must be the root `.tugcard` element (not `.tugcard-content`) so the overlay covers both header and content -- this requires Tugcard to expose a ref to its root div. TugSheetHost renders as a direct child of `.tugcard` (sibling of header, accessory, and content), using `position: absolute; inset: 0` to overlay the entire card. On open, mark card's responder node as `suspended`; on close, clear it
 - [ ] Implement `tugSheet()`: imperative Promise API scoped to a card ID
 - [ ] Build TugConfirmPopover: wraps Radix Popover, declarative component API with `onConfirm`, `message`, `confirmLabel`, `confirmVariant` props
 - [ ] Build TugToast: Sonner integration with tone variants (good/warn/alert/info), auto-dismiss, configurable duration
@@ -1420,8 +1375,8 @@ tugdeck/src/components/chrome/
 
 **Tests:**
 - [ ] `tugAlert()` returns Promise that resolves to clicked button label
-- [ ] Alert blocks responder chain (dispatch during alert returns refused)
-- [ ] TugSheet blocks only the target card's responder node
+- [ ] Alert blocks responder chain: `dispatch()` returns `false` when `modalScope === "app"`; alert's own default button still activates via Enter
+- [ ] TugSheet blocks only the target card's responder node: `dispatchTo()` returns `false` for suspended node; other cards dispatch normally; sheet's own default button still activates
 - [ ] TugConfirmPopover opens on trigger click, closes on Escape/click-away
 - [ ] TugConfirmPopover confirm button fires `onConfirm`
 - [ ] Close button on card title bar shows confirmation popover
@@ -1490,7 +1445,7 @@ tugdeck/src/components/chrome/
 **Artifacts:**
 - `dock.tsx` -- full rewrite with three button types
 - `dock.css` -- 2.5D dock styles
-- `dock-config.ts` -- DockConfig type and default configuration
+- `components/chrome/dock-config.ts` -- DockConfig type and default configuration
 - Dock demo in Component Gallery
 
 **Tasks:**
