@@ -105,7 +105,7 @@ body {
 .tug-tab[data-active="true"] {
   background-color: var(--tug-tab-bg-active);
   color: var(--tug-tab-fg-active);
-  border-bottom-color: var(--tug-tab-underline-active);
+  box-shadow: inset 0 -2px 0 0 var(--tug-tab-underline-active);
 }
 
 /* Inactive tab hover (Table T01) */
