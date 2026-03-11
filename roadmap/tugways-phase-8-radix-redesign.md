@@ -1,80 +1,347 @@
-# Tugways Phase 8 — Radix Foundation & 2.5D Visual Identity
+<!-- tugplan-skeleton v2 -->
 
-## Summary
+## Tugways Phase 8 -- Radix Foundation & 2.5D Visual Identity {#phase-8-radix-redesign}
 
-This proposal replaces shadcn with direct Radix primitives as the component foundation, defines the full Tug component inventory built on Radix, introduces a "2.5D" visual language called Tugways where controls are tactile objects that float above the canvas surface, and consolidates all Phase 8 work — components, chrome, alerts, inspectors, and dock — into a single phased plan.
-
-The work breaks into nine phases:
-
-- **Phase 8a**: Shadcn Excision — remove all shadcn artifacts, replace with direct Radix wrappers
-- **Phase 8b**: Tugways 2.5D Visual Language — define and implement the elevation/light/shadow system
-- **Phase 8c**: Card Frame & Title Bar — 2.5D title bar chrome with window-shade collapse (basic close, no confirmation yet)
-- **Phase 8d**: Form Controls & Core Display — build all Tier 1–2 Tug components on Radix
-- **Phase 8e**: Navigation, Data Display & Visualization — build Tier 3–5 Tug components
-- **Phase 8f**: Compound Components & Gallery Completion — compositions, gauges, polish
-- **Phase 8g**: Alerts — alert host, sheets, confirm popovers, toasts; wire close confirmation into title bar
-- **Phase 8h**: Inspector Panels — color picker, font picker, coordinate inspector, inspector panel
-- **Phase 8i**: Dock — rewrite dock from scratch with three button types and edge placement
+**Purpose:** Replace shadcn with direct Radix primitives as the component foundation, define a tactile "2.5D" visual language where controls float above the canvas surface, and build the complete 31-component Tugways library across nine sub-phases (8a--8i) covering components, chrome, alerts, inspectors, and dock.
 
 ---
 
-## Motivation
+### Plan Metadata {#plan-metadata}
 
-### Why Remove shadcn
+| Field | Value |
+|------|-------|
+| Owner | kocienda |
+| Status | draft |
+| Target branch | main |
+| Last updated | 2026-03-11 |
 
-shadcn was adopted as a convenience layer over Radix. In practice, it has become a liability:
+---
 
-1. **Opinionated styling fights our design system.** shadcn components ship with Tailwind utility strings (now converted to semantic CSS in `shadcn-base.css`, but still carrying shadcn's design opinions). Every Tug component must override these opinions. This is backwards — we're fighting defaults instead of building from clean primitives.
+### Phase Overview {#phase-overview}
 
-2. **The "private ui/ layer" adds unnecessary indirection.** The current architecture is: Radix primitive -> shadcn wrapper in `components/ui/` -> Tug wrapper in `components/tugways/`. With direct Radix wrapping, this collapses to: Radix primitive -> Tug component. One layer instead of two.
+#### Context {#context}
 
-3. **shadcn CLI is incompatible with our build.** Phase 7d already prohibits installing new shadcn components. We removed Tailwind. The shadcn ecosystem assumes Tailwind. There's no path forward with shadcn.
+shadcn was adopted as a convenience layer over Radix. In practice, it has become a liability. shadcn components ship with Tailwind utility strings (now converted to semantic CSS in `shadcn-base.css`, but still carrying shadcn's design opinions). Every Tug component must override these opinions. The current architecture is: Radix primitive -> shadcn wrapper in `components/ui/` -> Tug wrapper in `components/tugways/`. With direct Radix wrapping, this collapses to: Radix primitive -> Tug component. One layer instead of two. Phase 7d already prohibits installing new shadcn components. We removed Tailwind. The shadcn CLI is incompatible with our build. Only 2 shadcn components are actively used (Button and DropdownMenu). There is no path forward with shadcn.
 
-4. **Only 2 shadcn components are actively used.** Button and DropdownMenu are the only production imports. The other 11 components in `ui/` are dead weight.
+The current tugdeck frontend is approximately 9700 lines of TypeScript/CSS across ~60 source files. The transport, settings, layout engine, card layer, and chrome layers are all retained. The `components/ui/` shadcn layer (~600 lines, 13 files) and `shadcn-base.css` (~25KB) are removed. Radix primitives provide exactly what we need: accessible by default (ARIA roles, keyboard navigation, focus management), unstyled (zero visual opinions), composable (compound component patterns), and presence management (enter/exit animations via `data-state`). We already have 10 Radix packages installed.
 
-### Why Radix Directly
+#### Strategy {#strategy}
 
-Radix primitives provide exactly what we need and nothing we don't:
+- Remove shadcn entirely before building anything new (clean foundation first)
+- Define the 2.5D visual language on TugButton as the reference implementation, then apply it to all subsequent components
+- Build the card title bar early (Phase 8c) with basic close -- defer close confirmation until the alert system exists in Phase 8g
+- Build form controls (Tier 1--2) and navigation/display components (Tier 3--5) in parallel after the visual language is established
+- Converge on alerts (Phase 8g) which depends on both form controls and the title bar
+- Build inspectors and dock last, as they depend on the full component library
+- Every component follows the same CSS pattern: `--tug-<component>-*` tokens, elevation model, per-component CSS file
 
-- **Accessible by default** — ARIA roles, keyboard navigation, focus management
-- **Unstyled** — zero visual opinions, we apply our own CSS from scratch
-- **Composable** — compound component patterns (Root/Trigger/Content) that map cleanly to our composition model
-- **Presence management** — enter/exit animations via `data-state`, which Rule 14 already depends on
+#### Success Criteria (Measurable) {#success-criteria}
 
-We already have 10 Radix packages installed. The primitives are proven infrastructure.
+> Make these falsifiable. Avoid "works well".
 
-### The 2.5D Visual Language
+- Zero shadcn imports in production code after Step 1 (`grep -r "components/ui" tugdeck/src/ --include="*.tsx" --include="*.ts"` returns 0 results, excluding `_archive/`)
+- All 31 components render correctly in the Component Gallery across all three themes (Brio, Bluenote, Harmony)
+- All form controls pass WCAG 2.1 AA keyboard navigation (Tab, Shift+Tab, Enter, Escape, Arrow keys as applicable)
+- `bun run build` succeeds with zero warnings
+- All existing tests pass (`bun test`)
+- Window-shade collapse persists across reloads (serialize collapsed state, reload, verify collapsed cards remain collapsed)
+- `tugAlert()` returns a Promise that resolves to the clicked button role
+- Inspector panels update when focused card changes (switch focus, verify inspector reflects new card's properties)
+- Dock placement persists across reloads (change dock edge, reload, verify dock appears on the correct edge)
 
-The entire computer industry has been stuck in a "flat design" rut for over a decade. Tugways breaks from this with a tactile, 2.5D aesthetic:
+#### Scope {#scope}
 
-**Core principles:**
-- **Controls are objects.** Buttons look like buttons. They have physical presence — they float slightly above the canvas surface.
-- **Clear definition between controls and content.** You can always tell what's interactive and what's informational.
-- **Far-distant top-center light source.** A subtle, consistent light model creates depth without heavy gradients.
-- **Hover/rollover response.** Controls lighten or darken on hover, providing immediate feedback.
-- **Press interaction.** Controls are "pushed down" toward the canvas on press. The shadow collapses (the control gets closer to the surface), and the top highlight dims.
-- **Minimal gradients.** Depth comes from shadows, highlights, and elevation changes — not from gradient fills.
-- **Tiny top reflection + larger bottom shadow.** The reflection is a 1px or sub-pixel highlight on the top edge. The shadow is a soft spread beneath the control that "collapses" on press.
+1. Remove all shadcn artifacts (components/ui/, shadcn-base.css, components.json, CVA)
+2. Define and implement the 2.5D elevation/light/shadow visual language
+3. Build 31 Tug components across 6 tiers (form controls, display/feedback, navigation/overlay, data display, visualization, compositions)
+4. Rebuild card title bar with window-shade collapse, 2.5D controls, close confirmation
+5. Full alert system (TugAlert, TugSheet, TugConfirmPopover, TugToast)
+6. Inspector panels (color picker, font picker, coordinate inspector, inspector panel)
+7. Dock rewrite with three button types and edge placement
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Card content rebuild (Phase 9 -- depends on component library existing, agnostic to implementation layer)
+- Responder chain infrastructure changes (Phase 5x -- already built)
+- Mutation model or observable properties changes (Phase 5x -- already built)
+- New card types (Phase 9)
+- Mobile or touch interaction patterns
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- Phase 7d (Glitch Reduction) is complete -- provides stable rendering foundation
+- Phase 5x infrastructure (responder chain, mutation model, observable properties, palette engine) is complete
+- 10 Radix packages already installed
+- Sonner library available for toast integration
+
+#### Constraints {#constraints}
+
+- Warnings are errors (`-D warnings` in `.cargo/config.toml` for tugcode; zero-warning builds for tugdeck)
+- Never use npm -- always use bun for package management
+- Never call `root.render()` after initial mount (Rules of Tugways D40, D42)
+- Read external state with `useSyncExternalStore` only (Rules of Tugways D40)
+- Use `useLayoutEffect` for registrations that events depend on (Rules of Tugways D41)
+- Appearance changes go through CSS and DOM, never React state (Rules of Tugways D08, D09)
+- React 19.2.4 -- verify all lifecycle behavior against React 19 semantics
+
+#### Assumptions {#assumptions}
+
+- Radix primitives are stable and will not have breaking changes during Phase 8
+- The 2.5D visual language works across all three themes (Brio light, Bluenote dark, Harmony dark) without per-theme structural changes
+- Sonner integrates cleanly with our CSS token system for toast styling
+- The existing 10 Radix packages cover the majority of needed primitives; only a few new packages need to be installed
+
+---
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+This plan format relies on **explicit, named anchors** and **rich `References:` lines** in execution steps.
+
+#### 1) Use explicit anchors everywhere you will cite later
+
+- **Technique**: append an explicit anchor to the end of a heading using `{#anchor-name}`.
+  - Example (append anchor to any heading):
+    - `### Design Decisions {#my-design-decisions}`
+    - `#### [D01] Workspace snapshots are immutable (DECIDED) {#d01-snapshots-immutable}`
+- **Why**: do not rely on auto-generated heading slugs; explicit anchors are stable when titles change.
+
+#### 2) Anchor naming rules (lock these in)
+
+- **Allowed characters**: lowercase `a-z`, digits `0-9`, and hyphen `-` only.
+- **Style**: short, semantic, **kebab-case**, no phase numbers (anchors should survive renumbering).
+- **Prefix conventions (use these consistently)**:
+  - **`step-N`**: execution step anchors (e.g. `step-1`, `step-2`, `step-3`)
+  - **`dNN-...`**: design decisions (`[D01]`) anchors, e.g. `{#d01-sandbox-copy}`
+  - **`qNN-...`**: open questions (`[Q01]`) anchors, e.g. `{#q01-import-resolution}`
+  - **`rNN-...`**: risk notes (`Risk R01`) anchors, e.g. `{#r01-perf-regression}`
+  - **`lNN-...`**: lists (`List L01`) anchors, e.g. `{#l01-supported-ops}`
+  - **`mNN-...`**: milestones (`Milestone M01`) anchors, e.g. `{#m01-first-ship}`
+  - **`sNN-...`**: specs (`Spec S01`) anchors, e.g. `{#s01-command-response}`
+  - **Domain anchors**: for major concepts/sections, use a clear noun phrase, e.g. `{#cross-platform}`, `{#config-schema}`, `{#error-scenarios}`
+
+#### 3) Stable label conventions (for non-heading artifacts)
+
+Use stable labels so steps can cite exact plan artifacts even when prose moves around:
+
+- **Design decisions**: `#### [D01] <Title> (DECIDED) {#d01-...}`
+- **Open questions**: `#### [Q01] <Title> (OPEN) {#q01-...}`
+- **Specs**: `**Spec S01: <Title>** {#s01-slug}` (or make it a `####` heading if you prefer)
+- **Tables**: `**Table T01: <Title>** {#t01-slug}`
+- **Lists**: `**List L01: <Title>** {#l01-slug}`
+- **Risks**: `**Risk R01: <Title>** {#r01-slug}`
+- **Milestones**: `**Milestone M01: <Title>** {#m01-slug}`
+
+Numbering rules:
+- Always use **two digits**: `D01`, `Q01`, `S01`, `T01`, `L01`, `R01`, `M01`.
+- Never reuse an ID within a plan. If you delete one, leave the gap.
+
+#### 4) `**Depends on:**` lines for execution step dependencies
+
+Steps that depend on other steps must include a `**Depends on:**` line that references step anchors.
+
+**Format:**
+```markdown
+**Depends on:** #step-1, #step-2
+```
+
+**Rules:**
+- Use **anchor references** (`#step-N`), not step titles or numbers
+- Omit the line entirely for steps with no dependencies (typically Step 1)
+- Multiple dependencies are comma-separated
+- Dependencies must reference valid step anchors within the document (validated by `tug validate`)
+
+---
+
+#### 5) `**References:**` lines are required for every execution step
+
+Every step must include a `**References:**` line that cites the plan artifacts it implements.
+
+Rules:
+- Cite **decisions** by ID: `[D05] ...`
+- Cite **open questions** by ID when the step resolves/de-risks them: `[Q03] ...`
+- Cite **specs/lists/tables/risks/milestones** by label: `Spec S15`, `List L03`, `Tables T27-T28`, `Risk R02`, `Milestone M01`, etc.
+- Cite **anchors** for deep links in parentheses using `#anchor` tokens (keep them stable).
+- **Do not cite line numbers.** If you find yourself writing "lines 5-10", add an anchor and cite that instead.
+- Prefer **rich, exhaustive citations**. Avoid `N/A` unless the step is truly refactor-only.
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+> Open questions are tracked work. If a question remains open at phase-end, explicitly defer it with a rationale and a follow-up plan.
+
+#### [Q01] Gradient exception for accent buttons (OPEN) {#q01-accent-gradient}
+
+**Question:** Should accent-colored controls (primary buttons) use a very subtle (<5% opacity) top-to-bottom gradient for richer appearance, or should the no-gradient rule be absolute?
+
+**Why it matters:** If we allow the exception, every theme needs gradient values tuned. If we don't, primary buttons may look flat compared to the rest of the 2.5D system.
+
+**Options (if known):**
+- Allow <5% opacity gradient on primary variant only
+- No gradients anywhere -- rely entirely on shadow/highlight for depth
+
+**Plan to resolve:** Implement TugButton with both approaches during Step 2, compare visually across all three themes, decide before Step 3.
+
+**Resolution:** OPEN
+
+#### [Q02] Always-confirm vs conditional close confirmation (OPEN) {#q02-close-confirm-policy}
+
+**Question:** Should every closable card always show a confirmation popover on close, or should only cards with unsaved state require confirmation?
+
+**Why it matters:** Always-confirm is safer but adds friction. Conditional-confirm requires a notion of "unsaved state" in the card model, which does not exist yet.
+
+**Options (if known):**
+- Always confirm (Phase 8g ships this)
+- Conditional confirm (requires card model extension, deferred to Phase 9)
+
+**Plan to resolve:** Ship always-confirm in Phase 8g. Revisit in Phase 9 when card content is rebuilt and unsaved-state tracking can be added.
+
+**Resolution:** OPEN -- shipping always-confirm as the pragmatic default
+
+#### [Q03] Sonner styling integration (OPEN) {#q03-sonner-styling}
+
+**Question:** How deeply do we customize Sonner's toast styling? Do we use Sonner's built-in theming, or do we override everything with our own CSS?
+
+**Why it matters:** Sonner ships with its own styling. If we override everything, we take on maintenance. If we use Sonner's theming, we may fight it when our design diverges.
+
+**Options (if known):**
+- Full CSS override with `--tug-toast-*` tokens
+- Sonner theme mode with minimal overrides
+
+**Plan to resolve:** Spike during Step 7, evaluate visual quality across themes.
+
+**Resolution:** OPEN
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Radix breaking change during Phase 8 | med | low | Pin Radix versions in package.json | Any Radix major version release |
+| 2.5D visual language looks dated or gimmicky | high | low | TugButton reference impl reviewed before proceeding | Negative visual review of Step 2 output |
+| Card-scoped modality diverges from Radix defaults | med | med | Implement manual inert scoping in TugSheet | TugSheet focus trapping breaks other cards |
+| Component count (31) causes scope creep | high | med | Strict tier ordering; defer Tier 5 visualization if needed | Step 5 exceeds time estimate by 2x |
+
+**Risk R01: Radix API surface mismatch** {#r01-radix-mismatch}
+
+- **Risk:** Some Radix primitives may not expose the hooks or props needed for our 2.5D visual treatment or action-phase integration.
+- **Mitigation:** Audit all Radix primitives we plan to wrap (Table T01 in Deep Dives) before building. Identify gaps early. For gaps, use Radix's `asChild` pattern or build as originals.
+- **Residual risk:** One or two components may need to be reclassified from wrapper to original mid-implementation.
+
+**Risk R02: Performance regression from elevation CSS** {#r02-elevation-perf}
+
+- **Risk:** The `box-shadow` + `transform` + `transition` pattern on every interactive control could cause paint/composite overhead, especially in cards with many form controls.
+- **Mitigation:** Use `will-change: transform` sparingly (only on active state). Measure paint time in Chrome DevTools during Step 2. Disable transitions when `prefers-reduced-motion` is set.
+- **Residual risk:** Cards with 20+ form controls may need a simplified elevation (fewer shadow layers).
+
+---
+
+### Design Decisions {#design-decisions}
+
+> Record *decisions* (not options). Each decision includes the "why" so later phases don't reopen it accidentally.
+
+#### [D01] Radix-direct wrapping replaces shadcn (DECIDED) {#d01-radix-direct}
+
+**Decision:** Components wrap Radix primitives directly. No intermediate shadcn layer.
+
+**Rationale:**
+- shadcn's opinionated styling fights our design system -- every Tug component must override shadcn defaults
+- The `components/ui/` layer adds unnecessary indirection (Radix -> shadcn -> Tug becomes Radix -> Tug)
+- shadcn CLI is incompatible with our build (Tailwind removed, shadcn ecosystem assumes Tailwind)
+- Only 2 of 13 shadcn components are actively used (Button, DropdownMenu)
+
+**Implications:**
+- `components/ui/` directory is deleted entirely
+- `shadcn-base.css` (~25KB) is deleted
+- `components.json` is deleted
+- `class-variance-authority` dependency is removed if no longer referenced
+- All Tug components import Radix primitives directly
+
+#### [D02] Three component kinds (DECIDED) {#d02-component-kinds}
+
+**Decision:** Tugways components fall into exactly three kinds: wrappers, compositions, and originals.
+
+**Rationale:**
+- Clear taxonomy prevents ambiguity about how to build a new component
+- Maps directly to our Radix dependency: wrappers use one primitive, compositions assemble multiple, originals use none
+
+**The three kinds:**
+
+1. **Wrappers** -- a Radix primitive wrapped with tugways opinions. The Radix primitive is the internal implementation; the Tug component is the public API. Examples: TugButton (wraps Radix Slot), TugSelect (wraps Radix Select), TugCheckbox (wraps Radix Checkbox).
+
+2. **Compositions** -- multiple Radix primitives assembled into a higher-level component that has no single Radix equivalent. Examples: TugSearchBar (Input + Button), TugChatInput (Textarea + Button x 2), TugButtonGroup (Button x N).
+
+3. **Originals** -- components that have no Radix primitive equivalent, built from scratch. Examples: TugBadge, TugSpinner, TugKeyboard, TugSparkline, TugTable, gauges.
+
+**Implications:**
+- Each new component must be classified as one of these three kinds
+- The kind determines the implementation approach and which Radix packages (if any) are needed
+- Table T01 in Deep Dives classifies every component
+
+#### [D03] Component file organization (DECIDED) {#d03-file-org}
+
+**Decision:** `components/tugways/` is the single public API directory. App code imports from `components/tugways/` only.
+
+**Rationale:**
+- Single import path eliminates confusion about where components live
+- No private `ui/` layer -- shadcn has been removed
+- Tug components wrap Radix primitives directly, with our own opinions, subtypes, and conventions on top
+
+**File structure:**
+
+```
+components/
+  tugways/      # Tug-prefixed components (public API)
+    tug-button.tsx
+    tug-button.css
+    tug-input.tsx
+    tug-input.css
+    tug-select.tsx
+    tug-select.css
+    ...
+```
+
+**Implications:**
+- Each component gets its own `.tsx` and `.css` file pair
+- CSS file uses `--tug-<component>-*` tokens (see [D05])
+- No barrel exports -- import individual components by path
+
+#### [D04] 2.5D elevation model (DECIDED) {#d04-elevation-model}
+
+**Decision:** Interactive controls use a 2.5D visual language with a far-distant top-center light source, top-edge highlight (reflection), soft bottom shadow, and press-down interaction.
+
+**Rationale:**
+- The flat design rut has lasted over a decade; Tugways breaks from this with tactile controls
+- Clear visual distinction between interactive controls and informational content
+- Consistent light model creates depth without heavy gradients
 
 **The elevation model:**
 
 ```
 Light source: top-center, far distant
-         ↓↓↓↓↓↓↓↓↓
-
-  ┌──────────────────┐  ← 1px top highlight (reflection)
-  │     CONTROL      │  ← slightly lighter face than canvas
-  └──────────────────┘
-  ░░░░░░░░░░░░░░░░░░░░  ← soft shadow (larger spread)
+         |
+  +------------------+  <- 1px top highlight (reflection)
+  |     CONTROL      |  <- slightly lighter face than canvas
+  +------------------+
+  ░░░░░░░░░░░░░░░░░░░░  <- soft shadow (larger spread)
 
   [on hover: face lightens slightly]
 
   [on press:]
-  ┌──────────────────┐  ← highlight dims
-  │     CONTROL      │  ← face darkens slightly
-  └──────────────────┘
-  ░░░░░░░░░░░░░░░░░░░░  ← shadow collapses (smaller spread, less offset)
+  +------------------+  <- highlight dims
+  |     CONTROL      |  <- face darkens slightly
+  +------------------+
+  ░░░░░░░░░░░░░░░░░░░░  <- shadow collapses (smaller spread, less offset)
 ```
+
+**Core principles:**
+- Controls are objects -- buttons look like buttons, with physical presence floating above the canvas
+- Clear definition between controls and content -- interactive vs informational is always visually distinct
+- Hover/rollover response -- controls lighten or darken on hover for immediate feedback
+- Press interaction -- controls are "pushed down" toward the canvas on press; shadow collapses, highlight dims
+- Minimal gradients -- depth comes from shadows, highlights, and elevation changes, not gradient fills
+- Tiny top reflection + larger bottom shadow -- reflection is 1px or sub-pixel highlight on top edge; shadow is soft spread beneath
 
 **CSS implementation approach:**
 - `box-shadow` for the bottom shadow (collapse via transition on `:active`)
@@ -84,67 +351,302 @@ Light source: top-center, far distant
 - `transition` for smooth state changes
 - All values driven by `--tug-base-*` and `--tug-<component>-*` tokens
 
+**Design constraints:**
+- No gradients on control faces. Exception: accent-colored controls may use a very subtle (<5% opacity) gradient (see [Q01])
+- Disabled controls lose elevation -- flat, no shadow, no highlight, reduced opacity
+- Focus ring sits above the elevation layer -- `outline` is independent of shadow/highlight
+- Cards themselves do NOT get 2.5D treatment on their faces -- cards have their existing shadow system; 2.5D is for interactive controls within cards and the dock
+
+**Implications:**
+- Every interactive Tug component follows this CSS pattern
+- Elevation tokens are defined at the base level and overridden per-component
+- Theme overrides in `bluenote.css` and `harmony.css` adapt the light model to each theme's surface colors
+- `prefers-reduced-motion` disables transitions
+
+#### [D05] Component token naming (DECIDED) {#d05-token-naming}
+
+**Decision:** Component tokens use `--tug-<component>-<property>` naming. The `--tug-comp-*` prefix is banned.
+
+**Rationale:**
+- `--tug-comp-*` is confusingly similar to CSS "computed" style
+- `--tug-<component>-*` is clear and self-documenting
+- `base` is the special root-level component that all others inherit from
+
+**Token pattern:**
+
+```css
+/* Base elevation tokens in tug-tokens.css */
+--tug-base-elevation-highlight:       /* top-edge highlight color */
+--tug-base-elevation-highlight-hover:  /* brighter on hover */
+--tug-base-elevation-highlight-active: /* dims on press */
+--tug-base-elevation-shadow:           /* resting shadow */
+--tug-base-elevation-shadow-hover:     /* slightly deeper on hover */
+--tug-base-elevation-shadow-active:    /* collapsed on press */
+--tug-base-elevation-face:             /* control face color */
+--tug-base-elevation-face-hover:       /* lightened on hover */
+--tug-base-elevation-face-active:      /* darkened on press */
+--tug-base-elevation-press-offset:     /* translateY distance on press */
+--tug-base-elevation-transition:       /* transition timing */
+
+/* Per-component tokens reference base but can be overridden */
+--tug-button-face:       var(--tug-base-elevation-face);
+--tug-button-highlight:  var(--tug-base-elevation-highlight);
+--tug-button-shadow:     var(--tug-base-elevation-shadow);
+/* ...hover and active variants... */
+```
+
+**Implications:**
+- Every Tug component defines `--tug-<name>-*` tokens in its CSS file
+- Base tokens live in `tug-tokens.css`
+- Theme overrides live in `bluenote.css` and `harmony.css`
+
+#### [D06] Four modal categories (DECIDED) {#d06-four-modal-categories}
+
+**Decision:** The alert/dialog system has exactly four categories: TugAlert (app-modal), TugSheet (card-modal), TugConfirmPopover (button-local), and TugToast (non-blocking).
+
+**Rationale:**
+- Maps directly from Apple's AppKit modal model (NSAlert, NSWindow.beginSheet, NSPopover, Notification Center)
+- Each category has different responder chain impact, focus behavior, and visual treatment
+- Covers all modal interaction needs without overlap
+
+**Category mapping:**
+
+| Category | Apple equivalent | Scope | Chain impact | Focus |
+|----------|-----------------|-------|-------------|-------|
+| **TugAlert** | `NSAlert.runModal()` | Entire app | Chain blocked | Trapped in dialog |
+| **TugSheet** | `NSWindow.beginSheet()` | Single card | Card's node suspended | Trapped in sheet |
+| **TugConfirmPopover** | iPad `confirmationDialog` | Button-local | None | Moves to popover |
+| **TugToast** | Notification center | None | None | Never steals focus |
+
+**TugAlert -- App-Modal Alert:**
+
+Blocks the entire application. Uses Radix AlertDialog (sets `role="alertdialog"`, prevents overlay-click dismissal). The responder chain manager enters `modalScope: "app"` -- all `dispatch()` calls to the main chain are refused. Global shortcuts (Cmd+Q) are blocked. Escape dismisses the alert.
+
+Imperative, Promise-based API:
+
+```tsx
+const response = await tugAlert({
+  title: "Delete project?",
+  message: "This action cannot be undone.",
+  style: "warning",                              // "informational" | "warning" | "critical"
+  buttons: [
+    { label: "Delete", role: "destructive" },    // red text, not the default
+    { label: "Cancel", role: "cancel" },          // bold, default (Enter key)
+  ],
+});
+// response === "Delete" | "Cancel"
+```
+
+A `TugAlertHost` component (rendered once, at the app root) listens for alert requests and manages the AlertDialog state. The `tugAlert()` function posts a request and returns a Promise that resolves when the user clicks a button.
+
+**Button roles** (modeled on `UIAlertAction.Style` and Apple HIG):
+- `"destructive"` -- red text, `variant="destructive"`. Signals danger. Never the default button.
+- `"cancel"` -- the safe choice. Responds to Escape. When a `"destructive"` button is present, Cancel becomes the default button: `variant="primary"` (accent fill), registered via `setDefaultButton`, responds to Enter (see [D10]).
+- `"default"` -- the affirmative action. When no `"destructive"` button is present, this is the default button. When a `"destructive"` button is present, uses `variant="secondary"`.
+
+**Alert styles** (modeled on `NSAlert.Style`):
+- `"informational"` -- app icon. Notice about a current or impending event.
+- `"warning"` -- caution badge. User should be aware of consequences.
+- `"critical"` -- caution icon. Potential data loss or system damage.
+
+**TugSheet -- Card-Modal Dialog:**
+
+Blocks a single card. Other cards remain interactive. The card's responder node is marked `suspended`. Actions dispatched from within the card's subtree are blocked. Focus is trapped within the card's sheet content. The sheet renders within the card's bounds using Radix Dialog with `container` prop targeting the card's content container. Overlay is scoped to the card (CSS `position: absolute`), not the viewport.
+
+Imperative API:
+
+```tsx
+const response = await tugSheet(cardId, {
+  title: "Close this card?",
+  message: "You have unsaved changes.",
+  buttons: [
+    { label: "Close Without Saving", role: "destructive" },
+    { label: "Cancel", role: "cancel" },
+  ],
+});
+```
+
+**TugConfirmPopover -- Button-Anchored Confirmation:**
+
+A small popover graphically tied to a button that compels the user to move their mouse and click again to confirm. Not modal in the responder chain sense. Uses Radix Popover internally.
+
+When to use: close-button confirmation on cards, delete-item buttons, any single-button destructive action where a full alert is too heavy.
+
+Declarative component API:
+
+```tsx
+<TugConfirmPopover
+  onConfirm={() => closeCard(cardId)}
+  message="Close this card?"
+  confirmLabel="Close"
+  confirmVariant="destructive"
+>
+  <TugButton subtype="icon" icon={<X />} aria-label="Close card" />
+</TugConfirmPopover>
+```
+
+Focus moves to the popover on open. The confirm button is registered as the default button via `setDefaultButton` (see [D10]). Escape closes the popover. Tab can move out of it (transient behavior, matching `NSPopover.Behavior.transient`).
+
+**TugToast -- Non-Blocking Notification:**
+
+Fire-and-forget notifications via Sonner. Never steals focus. Auto-dismiss with configurable duration. Tone variants (good/warn/alert/info).
+
+```tsx
+// App root
+<TugToaster position="bottom-right" theme="system" duration={4000} />
+
+// Anywhere
+tugToast.success("Build succeeded");
+tugToast.error("Connection lost");
+tugToast.promise(deployBuild(), {
+  loading: "Deploying...",
+  success: "Deployed successfully",
+  error: (err) => `Deploy failed: ${err.message}`,
+});
+```
+
+**Implications:**
+- TugAlertHost renders once at app root
+- TugSheetHost renders inside each Tugcard
+- TugConfirmPopover is the standard pattern for destructive button actions
+- Sonner is a new dependency for toasts
+
+#### [D07] Window-shade collapse (DECIDED) {#d07-window-shade}
+
+**Decision:** Cards collapse to title bar height (~28px) via CSS height transition. Content is hidden (CSS `overflow: hidden`), not unmounted (React). State is preserved.
+
+**Rationale:**
+- Classic Mac OS "window shade" from System 7 through Mac OS 9 -- a proven interaction pattern
+- CSS-only collapse preserves internal card state (terminal sessions, scroll positions, form values)
+- Persisted in `CardState` so collapsed cards survive reload
+
+**Specification:**
+
+State is stored in `CardState` (the layout tree's per-card state object):
+
+```ts
+interface CardState {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  collapsed: boolean;  // collapse state
+}
+```
+
+Control: a chevron button in the title bar. Chevron points down when expanded (collapse available), up when collapsed (expand available). Uses `ChevronDown` / `ChevronUp` from lucide-react.
+
+```
+Expanded:  [icon] TERMINAL    [...] [v] [x]
+Collapsed: [icon] TERMINAL    [...] [^] [x]
+```
+
+CardFrame behavior when collapsed:
+1. Height animates from `size.height` to `CARD_TITLE_BAR_HEIGHT` (28px) + border using `--td-duration-moderate` and `--td-easing-standard`
+2. Content area has `overflow: hidden`, height goes to 0. Content is NOT unmounted.
+3. Resize handles hidden when collapsed. Drag remains active.
+4. Card collapses downward in place (top edge stays, bottom edge moves up).
+
+Double-click on title bar toggles collapse (secondary gesture, matching macOS behavior).
+
+**Implications:**
+- `collapsed` field in `CardState` must be serialized/deserialized
+- Collapsed cards participate in snap sets normally (using collapsed height)
+- Expanding restores previous height
+
+#### [D08] Three dock button types (DECIDED) {#d08-dock-button-types}
+
+**Decision:** The dock has three kinds of buttons: card toggle, command, and popout menu.
+
+**Rationale:**
+- The dock currently only has card-toggle buttons -- this is too limiting
+- Command buttons allow direct actions without card intermediaries
+- Popout menus group related commands (settings, theme selector)
+
+**Button types:**
+
+| Type | Click behavior | Visual indicator | Example |
+|------|---------------|-----------------|---------|
+| **Card toggle** | Show/focus/toggle a card | Badge count | Terminal, Git, Files |
+| **Command** | Execute an action directly | None (or brief flash) | Future test-case buttons |
+| **Popout menu** | Open a floating menu anchored to the button | Caret/chevron | Settings, grouped commands |
+
+**Card toggle buttons** -- click shows the card if hidden, focuses it if visible but not key, or toggles it off if already key. Badge counts display notification state. Top group in the dock.
+
+**Command buttons** -- click fires a callback immediately. No popover, no menu. Can optionally wrap in `TugConfirmPopover` for destructive commands. Below card toggles in the dock.
+
+**Popout menu buttons** -- open a floating menu using Radix DropdownMenu, positioned to the side of the dock opposite its edge (dock on right -> menu opens left). Menu `side` and `align` props adjust automatically based on dock placement.
+
+**Implications:**
+- Dock layout is defined as a typed `DockConfig` configuration object
+- Each button specifies its type, icon, label, action, and optional badge
+- Dock buttons dispatch actions through the responder chain (no direct DeckManager coupling)
+
+#### [D09] Dock placement (DECIDED) {#d09-dock-placement}
+
+**Decision:** The dock can be positioned on any edge of the canvas. Right is the default. Placement is persisted in the settings API.
+
+**Rationale:**
+- Users have different screen layouts and preferences
+- Right-edge default matches common IDE patterns (VS Code activity bar)
+
+**Placement options:**
+
+| Placement | Layout | Menu direction |
+|-----------|--------|---------------|
+| Right | Vertical, 48px wide, fixed to right edge | Menus open left |
+| Left | Vertical, 48px wide, fixed to left edge | Menus open right |
+| Top | Horizontal, 48px tall, fixed to top edge | Menus open below |
+| Bottom | Horizontal, 48px tall, fixed to bottom edge | Menus open above |
+
+The dock is always a flexbox: `flex-col` for vertical placements (left/right), `flex-row` for horizontal (top/bottom). The canvas area (`DeckCanvas`) adjusts its inset to account for dock position and dimensions.
+
+**Implications:**
+- Dock position props computed from `dockPlacement` setting
+- DropdownMenu `side` prop flips based on placement
+- Dock placement stored in settings API alongside theme
+
+#### [D10] Default button (DECIDED) {#d10-default-button}
+
+**Decision:** In dialogs, alerts, sheets, and popovers, one button is the default button -- the button activated by the Enter key. The default button uses `variant="primary"` (accent fill). The responder chain handles default button registration.
+
+**Rationale:**
+- Fundamental interaction pattern from Apple's HIG
+- The accent fill (`--td-accent`) is the visual affordance that communicates which button Enter will activate
+- Consistent keyboard interaction across all modal contexts
+
+**Mechanism:**
+
+A container registers its default button via `setDefaultButton(buttonRef)` on the `ResponderChainManager`. When Enter is pressed:
+
+1. If a native `<button>` has DOM focus, the browser's default behavior fires (focused button wins)
+2. If a text input or textarea has DOM focus, Enter is consumed by the input
+3. Otherwise, the responder chain checks for a registered default button and activates it via synthetic click
+
+Registration API:
+
+```tsx
+responderChain.setDefaultButton(buttonRef);   // register
+responderChain.clearDefaultButton(buttonRef); // unregister (idempotent)
+```
+
+**Destructive variant:** Bold danger fill (`--td-danger`), white text (`--td-text-inverse`). Never the default button. Hover/active use `filter: brightness()`.
+
+**Interaction with alert button roles:** The `"cancel"` role maps to the default button when a `"destructive"` button is present (Cancel gets `variant="primary"`, registered as default). When no destructive button, the affirmative action is the default. The `"destructive"` role never becomes the default button.
+
+**Implications:**
+- Every modal context (alert, sheet, popover) must register its default button on mount and clear on unmount
+- Only one default button per modal scope
+
 ---
 
-## Phase 8a: Shadcn Excision
+### Deep Dives {#deep-dives}
 
-**Goal**: Remove all shadcn artifacts. Replace the two active shadcn components (Button, DropdownMenu) with direct Radix wrappers. Delete the `components/ui/` directory. Delete `shadcn-base.css`. Delete `components.json`.
+> Structured analysis critical for implementation alignment.
 
-### What to do
+#### 2.5D Visual Language {#elevation-spec}
 
-1. **Rewrite TugButton** — currently wraps `components/ui/button.tsx` (which wraps Radix Slot). Rewrite to use `@radix-ui/react-slot` directly. Move all styling to `tug-button.css`. Remove CVA (class-variance-authority) dependency if no longer needed elsewhere.
+The complete elevation model specification. This is the CSS recipe that every interactive Tug component follows.
 
-2. **Rewrite TugDropdown** — currently wraps `components/ui/dropdown-menu.tsx` (which wraps `@radix-ui/react-dropdown-menu`). Rewrite to use `@radix-ui/react-dropdown-menu` directly. Move all styling to `tug-dropdown.css`.
-
-3. **Delete `components/ui/`** — all 13 files. None are imported by production code after steps 1–2. Archived card code in `_archive/` that imports from `ui/` stays broken (it's archived).
-
-4. **Delete `styles/shadcn-base.css`** — the 25KB stylesheet of shadcn semantic classes. All styling moves to per-component Tug CSS files.
-
-5. **Delete `components.json`** — the shadcn configuration file.
-
-6. **Remove `class-variance-authority` from dependencies** if no longer referenced.
-
-7. **Remove animation keyframes from shadcn-base.css** — `shadcn-fade-in/out`, `shadcn-zoom-in/out`, `shadcn-slide-in/out`. Relocate any that are still needed (for Radix `data-state` enter/exit) into the relevant Tug component CSS files as `tug-*` named keyframes.
-
-8. **Update `globals.css`** — remove the `shadcn-base.css` import.
-
-9. **Audit and update all documentation** — remove "shadcn" references from:
-   - `roadmap/design-system-concepts.md` — update D05, D06, D07 and Concept 2 to describe direct Radix wrapping
-   - `roadmap/tugways-implementation-strategy.md` — update all phase descriptions
-   - `CLAUDE.md` — if any shadcn references exist
-   - Any other roadmap docs that reference the shadcn layer
-
-10. **Update the scaffold test** (`scaffold.test.tsx`) — currently imports Button from `ui/`.
-
-11. **Verify**: all tests pass, app builds, no shadcn references remain in source code (excluding `_archive/` and historical plan files in `.tugtool/`).
-
-### Files deleted
-- `tugdeck/src/components/ui/*.tsx` (13 files)
-- `tugdeck/styles/shadcn-base.css`
-- `tugdeck/components.json`
-
-### Files modified
-- `tugdeck/src/components/tugways/tug-button.tsx`
-- `tugdeck/src/components/tugways/tug-button.css`
-- `tugdeck/src/components/tugways/tug-dropdown.tsx`
-- `tugdeck/src/components/tugways/tug-dropdown.css`
-- `tugdeck/src/globals.css`
-- `tugdeck/package.json` (remove `class-variance-authority` if unused)
-- `tugdeck/src/__tests__/scaffold.test.tsx`
-- Documentation files (as listed above)
-
-### Result
-The `components/ui/` private layer is gone. Tug components wrap Radix primitives directly. One less layer of indirection. ~25KB of dead CSS removed. The shadcn chapter is closed.
-
----
-
-## Phase 8b: Tugways 2.5D Visual Language
-
-**Goal**: Define the elevation, light, and shadow token system. Implement it on TugButton as the reference component. Establish CSS patterns that all subsequent Tug components will follow.
-
-### Token Design
-
-New tokens in `tug-tokens.css` under the elevation domain:
+**Token design -- new tokens in `tug-tokens.css`:**
 
 ```css
 /* Elevation: the 2.5D light model */
@@ -164,21 +666,9 @@ New tokens in `tug-tokens.css` under the elevation domain:
 --tug-base-elevation-transition:       /* transition timing for state changes */
 ```
 
-Per-theme overrides in `bluenote.css` and `harmony.css` — the light model adapts to each theme's surface colors and overall brightness.
+Per-theme overrides in `bluenote.css` and `harmony.css` -- the light model adapts to each theme's surface colors and overall brightness.
 
-### Component Token Pattern
-
-Each Tug component gets `--tug-<component>-*` tokens that reference the base elevation tokens but can be overridden per-component. The `--tug-comp-*` prefix is **banned** — it adds nothing and is confusingly similar to CSS "computed" style. The naming convention is simply `--tug-<component>-<property>`, where `base` is the special root-level component that all others inherit from.
-
-```css
-/* Example: tug-button component tokens */
---tug-button-face:       var(--tug-base-elevation-face);
---tug-button-highlight:  var(--tug-base-elevation-highlight);
---tug-button-shadow:     var(--tug-base-elevation-shadow);
-/* ...hover and active variants... */
-```
-
-### CSS Pattern (reference implementation on TugButton)
+**Reference CSS implementation (TugButton):**
 
 ```css
 .tug-button {
@@ -205,183 +695,96 @@ Each Tug component gets `--tug-<component>-*` tokens that reference the base ele
 }
 ```
 
-### What to do
+**Control vs content convention:** Interactive controls (buttons, inputs, switches, sliders, toggles, checkboxes, radio buttons) get the elevation treatment. Content areas (text, labels, cards themselves, separators, badges, status indicators) stay flat. Inputs have an "inset" appearance (recessed into the surface, opposite of buttons).
 
-1. **Define elevation tokens** in `tug-tokens.css` with Brio defaults.
-2. **Define elevation overrides** in `bluenote.css` and `harmony.css`.
-3. **Implement 2.5D on TugButton** — the reference implementation that proves the visual language.
-4. **Define the "control vs. content" CSS convention** — which elements get elevation treatment (interactive controls) vs. which stay flat (content areas, text, cards themselves). Document this as a Rule of Tugways.
-5. **Create a "2.5D States" demo section in the Component Gallery** — shows the elevation model across all interactive states (rest, hover, focus, active, disabled) for TugButton in all variants and all three themes.
-6. **Document the elevation pattern** — CSS recipe that every Tug component follows. Add to `design-system-concepts.md`.
+#### Complete Radix Audit {#radix-audit}
 
-### Design Constraints
+**Table T01: Radix primitive-to-component mapping** {#t01-radix-mapping}
 
-- **No gradients on control faces.** Depth comes from shadow/highlight, not gradient fills. Exception: accent-colored controls (primary buttons) may use a very subtle (<5% opacity) top-to-bottom gradient for richer appearance.
-- **Disabled controls lose elevation.** They go flat — no shadow, no highlight, reduced opacity.
-- **Focus ring sits above the elevation layer.** The focus ring (outline) is independent of the shadow/highlight system.
-- **Cards themselves do NOT get the 2.5D treatment on their faces.** Cards have their existing shadow system ([D57], [D58]). The 2.5D elevation is for interactive controls *within* cards and the dock.
+| Radix Primitive | Tug Component | Phase | Status |
+|----------------|---------------|-------|--------|
+| Accordion | TugAccordion | 8e | NEW |
+| Alert Dialog | TugAlertDialog | 8g | NEW |
+| Aspect Ratio | -- | -- | Skip (CSS `aspect-ratio` sufficient) |
+| Avatar | TugAvatar | 8d | NEW |
+| Checkbox | TugCheckbox | 8d | Tier 1 form control |
+| Collapsible | -- | -- | Skip (card window-shade uses own mechanism) |
+| Context Menu | TugContextMenu | 8e | NEW |
+| Dialog | TugDialog | 8e | NEW |
+| Dropdown Menu | TugDropdown | 8a | Rewritten (exists) |
+| Form | -- | -- | Skip (we handle form state ourselves) |
+| Hover Card | -- | -- | Skip (tooltips suffice) |
+| Label | TugLabel | 8d | Tier 1 form control |
+| Menubar | -- | -- | Skip (Mac native menu bar) |
+| Navigation Menu | -- | -- | Skip (not applicable to card-based UI) |
+| Popover | TugPopover | 8d | NEW |
+| Progress | TugProgress | 8d | Tier 2 display |
+| Radio Group | TugRadioGroup | 8d | Tier 1 form control |
+| Scroll Area | TugScrollArea | 8e | NEW |
+| Select | TugSelect | 8d | Tier 1 form control |
+| Separator | TugSeparator | 8d | Tier 2 display |
+| Slider | TugSlider | 8d | Tier 1 form control |
+| Switch | TugSwitch | 8d | Tier 1 form control |
+| Tabs | -- | -- | Skip (TugTabBar has own implementation) |
+| Toast | TugToast | 8g | Via Sonner |
+| Toggle | TugToggle | 8d | NEW |
+| Toggle Group | TugToggleGroup | 8e | NEW |
+| Toolbar | TugToolbar | 8e | NEW |
+| Tooltip | TugTooltip | 8e | NEW |
+| Visually Hidden | -- | -- | Use directly as utility, no wrapper |
 
-### Result
-The visual language is defined, implemented on the flagship component, and documented. Every subsequent Tug component follows this pattern.
+#### Component Library Inventory {#component-inventory}
 
----
+**Table T02: Complete component inventory (31 components)** {#t02-component-inventory}
 
-## Phase 8c: Card Frame & Title Bar
+**Tier 1 -- Form Controls (9 components)**
 
-**Goal**: Rebuild the card title bar with 2.5D visual language. Window-shade collapse, menu icon update, basic close button. Close confirmation is deferred to Phase 8g when the alert system exists.
+| Component | Kind | Wraps (Radix) | What it adds |
+|-----------|------|--------------|-------------|
+| TugInput | Wrapper | -- (native `<input>`) | Validation states, error styling, `--tug-input-*` tokens, 2.5D inset |
+| TugTextarea | Wrapper | -- (native `<textarea>`) | Auto-resize, char count, error state, 2.5D inset |
+| TugSelect | Wrapper | `@radix-ui/react-select` | Tugways variants, 2.5D trigger, token-based popover |
+| TugCheckbox | Wrapper | `@radix-ui/react-checkbox` | Label integration, mixed state, 2.5D check target |
+| TugRadioGroup | Wrapper | `@radix-ui/react-radio-group` | Group label, horizontal/vertical, 2.5D radio dots |
+| TugSwitch | Wrapper | `@radix-ui/react-switch` | Label position, size variants, 2.5D track/thumb |
+| TugSlider | Wrapper | `@radix-ui/react-slider` | Value display, range labels, tick marks, action phases |
+| TugLabel | Wrapper | `@radix-ui/react-label` | Required indicator, helper text slot |
+| TugToggle | Wrapper | `@radix-ui/react-toggle` | Two-state with 2.5D pressed/unpressed |
 
-**References**: Concept 10 ([D27]), retronow titlebar patterns.
+Note: TugInput and TugTextarea wrap native elements, not Radix primitives. They still get full 2.5D treatment -- inputs have an "inset" appearance (recessed into the surface, opposite of buttons).
 
-### What to do
-
-1. **Implement window-shade collapse** ([D27]) — CSS height transition to title bar height (~28px). Add `collapsed: boolean` to `CardState`. Collapse/expand toggle via chevron icon in the title bar. Collapsed cards show only the title bar; content area is hidden.
-2. **Update card header chrome** — change menu icon from `EllipsisVertical` to `Ellipsis` (horizontal). Apply 2.5D elevation treatment to title bar control buttons (close, collapse, menu).
-3. **Basic close button** — closes the card immediately without confirmation. Phase 8g wires `TugConfirmPopover` onto this button after the alert system exists.
-4. **Title bar 2.5D treatment** — title bar buttons (close, collapse, menu) get the elevation model from Phase 8b. The title bar surface itself stays flat (it's chrome, not a control).
-5. **Wire collapse state into DeckManager** — collapsed cards participate in snap sets normally (their frame geometry uses the collapsed height). Expanding a collapsed card restores its previous height.
-6. **Persist collapsed state** — `collapsed` field in `CardState` is already defined in `layout-tree.ts` (added in Phase 5f). Wire serialization to read/write it. Cards restore their collapsed/expanded state on reload.
-7. **Add title bar demo to Component Gallery** — shows collapse toggle, menu, close in all three themes.
-
-### Files modified
-- `tugdeck/src/components/chrome/card-header.tsx` — collapse toggle, menu icon, 2.5D buttons
-- `tugdeck/src/components/chrome/card-header.css` — 2.5D elevation styles for title bar controls
-- `tugdeck/src/components/chrome/card-frame.tsx` — collapsed height handling
-- `tugdeck/src/deck-manager.ts` — collapse state management
-- `tugdeck/src/serialization.ts` — collapsed state persistence (if not already wired)
-
-### Result
-Title bar is fully functional with window-shade collapse and 2.5D controls. Close works immediately (no confirmation yet — that comes in Phase 8g). Cards remember their collapsed state across reloads.
-
----
-
-## Phase 8d: Form Controls & Core Display
-
-**Goal**: Build all Tier 1 (form controls) and Tier 2 (display/feedback) components directly on Radix primitives with the 2.5D visual language.
-
-### Radix Primitives to Wrap
-
-The complete inventory of Radix UI primitives and which ones we'll use:
-
-| Radix Primitive | Tug Component | Status |
-|----------------|---------------|--------|
-| Accordion | TugAccordion | NEW — collapsible content sections |
-| Alert Dialog | TugAlertDialog | Phase 8g |
-| Aspect Ratio | — | Skip — CSS `aspect-ratio` is sufficient |
-| Avatar | TugAvatar | NEW — image + fallback initials |
-| Checkbox | TugCheckbox | Tier 1 form control |
-| Collapsible | — | Skip — Tugcard window-shade uses its own mechanism |
-| Context Menu | TugContextMenu | Phase 8e |
-| Dialog | TugDialog | Phase 8e |
-| Dropdown Menu | TugDropdown | Already exists (rewritten in 8a) |
-| Form | — | Skip — we handle form state ourselves |
-| Hover Card | — | Skip — not needed; tooltips suffice |
-| Label | TugLabel | Tier 1 form control |
-| Menubar | — | Skip — Mac native menu bar handles this |
-| Navigation Menu | — | Skip — not applicable to our card-based UI |
-| Popover | TugPopover | NEW — general-purpose anchored overlay |
-| Progress | TugProgress | Tier 2 display (Radix provides accessible base) |
-| Radio Group | TugRadioGroup | Tier 1 form control |
-| Scroll Area | TugScrollArea | Phase 8e |
-| Select | TugSelect | Tier 1 form control |
-| Separator | TugSeparator | Tier 2 display |
-| Slider | TugSlider | Tier 1 form control |
-| Switch | TugSwitch | Tier 1 form control |
-| Tabs | — | Skip — TugTabBar has its own implementation |
-| Toast | TugToast | Phase 8g (via Sonner) |
-| Toggle | TugToggle | NEW — two-state button |
-| Toggle Group | TugToggleGroup | NEW — exclusive/multi toggle row |
-| Toolbar | TugToolbar | NEW — grouped controls with arrow key nav |
-| Tooltip | TugTooltip | Phase 8e |
-| Visually Hidden | — | Use directly as utility, no wrapper needed |
-
-### New Radix Packages to Install
-
-```
-@radix-ui/react-accordion
-@radix-ui/react-avatar
-@radix-ui/react-collapsible  (if TugAccordion needs it internally)
-@radix-ui/react-label
-@radix-ui/react-popover
-@radix-ui/react-progress
-@radix-ui/react-separator
-@radix-ui/react-slider
-@radix-ui/react-toggle
-@radix-ui/react-toggle-group
-@radix-ui/react-toolbar
-```
-
-### Tier 1 — Form Controls (9 components)
-
-All form controls get 2.5D elevation treatment.
-
-| Component | Wraps (Radix) | What it adds |
-|-----------|--------------|-------------|
-| TugInput | — (native `<input>`) | Validation states, error styling, `--tug-input-*` tokens, 2.5D inset |
-| TugTextarea | — (native `<textarea>`) | Auto-resize, char count, error state, 2.5D inset |
-| TugSelect | `@radix-ui/react-select` | Tugways variants, 2.5D trigger, token-based popover |
-| TugCheckbox | `@radix-ui/react-checkbox` | Label integration, mixed state, 2.5D check target |
-| TugRadioGroup | `@radix-ui/react-radio-group` | Group label, horizontal/vertical, 2.5D radio dots |
-| TugSwitch | `@radix-ui/react-switch` | Label position, size variants, 2.5D track/thumb |
-| TugSlider | `@radix-ui/react-slider` | Value display, range labels, tick marks, action phases |
-| TugLabel | `@radix-ui/react-label` | Required indicator, helper text slot |
-| TugToggle | `@radix-ui/react-toggle` | Two-state with 2.5D pressed/unpressed |
-
-Note: TugInput and TugTextarea wrap native elements, not Radix primitives (Radix doesn't provide these). They still get full 2.5D treatment — inputs have an "inset" appearance (recessed into the surface, opposite of buttons).
-
-### Tier 2 — Display & Feedback (8 components)
+**Tier 2 -- Display & Feedback (8 components)**
 
 | Component | Kind | Notes |
 |-----------|------|-------|
 | TugBadge | Original | Tone variants (good/warn/alert/info), pill shape, count mode |
 | TugSpinner | Original | Size variants, replaces loading prop visuals |
-| TugProgress | Radix wrapper | Horizontal bar, percentage, indeterminate mode |
+| TugProgress | Wrapper | Horizontal bar, percentage, indeterminate mode |
 | TugSkeleton | Original | Shimmer placeholder, `background-attachment: fixed` sync |
-| TugSeparator | Radix wrapper | Horizontal/vertical, label slot |
+| TugSeparator | Wrapper | Horizontal/vertical, label slot |
 | TugKeyboard | Original | Keyboard shortcut chip, 2.5D keycap appearance |
-| TugAvatar | Radix wrapper | Image + fallback initials, size variants |
+| TugAvatar | Wrapper | Image + fallback initials, size variants |
 | TugStatusIndicator | Original | Tone-colored dot + text |
 
-### What to do
+**Tier 3 -- Navigation & Overlay (5 components)**
 
-1. Install new Radix packages.
-2. Build each Tier 1 component directly on its Radix primitive (or native element). Apply 2.5D visual language per the Phase 8b pattern.
-3. Build each Tier 2 component. Originals are built from scratch with 2.5D where appropriate (TugKeyboard gets keycap appearance; TugBadge, TugSpinner, TugStatusIndicator are flat/informational).
-4. Each component gets its own CSS file (`tug-{name}.css`) using `--tug-<component>-*` tokens.
-5. All continuous controls (TugSlider, TugInput, TugTextarea) support `action`/`target` props from [D61]/[D62].
-6. Add all components to the Component Gallery with interactive demos.
-7. Write tests for each component.
+| Component | Kind | Wraps (Radix) | Notes |
+|-----------|------|--------------|-------|
+| TugTooltip | Wrapper | `@radix-ui/react-tooltip` | Hover labels, keyboard shortcut display |
+| TugDropdown | Wrapper | `@radix-ui/react-dropdown-menu` | Rewritten in 8a |
+| TugScrollArea | Wrapper | `@radix-ui/react-scroll-area` | Themed scrollbar, autohide |
+| TugContextMenu | Wrapper | `@radix-ui/react-context-menu` | Right-click menus for cards |
+| TugPopover | Wrapper | `@radix-ui/react-popover` | General anchored overlay |
 
-### Result
-17 components built. All form controls and core display primitives are available. Settings card can be built.
-
----
-
-## Phase 8e: Navigation, Data Display & Visualization
-
-**Goal**: Build Tier 3 (navigation/overlay), Tier 4 (data display), and Tier 5 (visualization) components.
-
-### Tier 3 — Navigation & Overlay (5 components)
-
-| Component | Wraps (Radix) | Notes |
-|-----------|--------------|-------|
-| TugTooltip | `@radix-ui/react-tooltip` | Hover labels, keyboard shortcut display |
-| TugDropdown | `@radix-ui/react-dropdown-menu` | Already rewritten in 8a |
-| TugScrollArea | `@radix-ui/react-scroll-area` | Themed scrollbar, autohide |
-| TugContextMenu | `@radix-ui/react-context-menu` | Right-click menus for cards |
-| TugPopover | `@radix-ui/react-popover` | General anchored overlay |
-
-New Radix package: `@radix-ui/react-context-menu` (others already installed).
-
-### Tier 4 — Data Display (4 components)
+**Tier 4 -- Data Display (3 components)**
 
 | Component | Kind | Notes |
 |-----------|------|-------|
 | TugTable | Original | Header/row/cell, sortable columns, stripe option |
 | TugStatCard | Original | Key-value metric (label + large number + trend) |
-| TugStatusIndicator | Original | (already in Tier 2) |
-| TugDialog | Radix wrapper | General-purpose dialog (not alert/sheet) |
+| TugDialog | Wrapper | General-purpose dialog (not alert/sheet) |
 
-### Tier 5 — Data Visualization (3 originals)
+**Tier 5 -- Data Visualization (3 originals)**
 
 | Component | Kind | Notes |
 |-----------|------|-------|
@@ -389,225 +792,23 @@ New Radix package: `@radix-ui/react-context-menu` (others already installed).
 | TugLinearGauge | Original | Horizontal gauge with needle, thresholds, tick marks |
 | TugArcGauge | Original | Radial gauge with needle, arc fill, center readout |
 
-### Additional Components (from Radix inventory)
+**Tier 6 -- Compositions (3 components)**
 
-| Component | Wraps (Radix) | Notes |
-|-----------|--------------|-------|
-| TugAccordion | `@radix-ui/react-accordion` | Collapsible content sections, settings/inspector panels |
-| TugToggleGroup | `@radix-ui/react-toggle-group` | Exclusive/multi toggle button row, 2.5D |
-| TugToolbar | `@radix-ui/react-toolbar` | Grouped controls with arrow key navigation |
+| Component | Kind | Composes | Notes |
+|-----------|------|----------|-------|
+| TugButtonGroup | Composition | TugButton x N | Connected button row, shared border radius, 2.5D group elevation |
+| TugChatInput | Composition | TugTextarea + TugButton x 2 | Submit + attachment, Enter to submit |
+| TugSearchBar | Composition | TugInput + TugButton | Search field with action button |
 
-### What to do
+**Additional Radix-based (counted in tiers above):**
 
-1. Install remaining Radix packages (`react-context-menu`).
-2. Build navigation/overlay components with 2.5D on trigger elements.
-3. Build data display components.
-4. Build visualization components (SVG-based, theme-token-aware).
-5. Build additional Radix-based components (Accordion, ToggleGroup, Toolbar).
-6. Add all to Component Gallery. Write tests.
+| Component | Kind | Wraps (Radix) | Notes |
+|-----------|------|--------------|-------|
+| TugAccordion | Wrapper | `@radix-ui/react-accordion` | Collapsible content sections |
+| TugToggleGroup | Wrapper | `@radix-ui/react-toggle-group` | Exclusive/multi toggle row |
+| TugToolbar | Wrapper | `@radix-ui/react-toolbar` | Grouped controls with arrow key nav |
 
-### Result
-12 additional components. Combined with 8d, the library has 29+ components.
-
----
-
-## Phase 8f: Compound Components & Gallery Completion
-
-**Goal**: Build composition components, finalize the Component Gallery as a comprehensive design system showcase.
-
-### Compound Components (3 compositions)
-
-| Component | Composes | Notes |
-|-----------|----------|-------|
-| TugButtonGroup | TugButton x N | Connected button row, shared border radius, 2.5D group elevation |
-| TugChatInput | TugTextarea + TugButton x 2 | Submit + attachment, Enter to submit |
-| TugSearchBar | TugInput + TugButton | Search field with action button |
-
-### Gallery Completion
-
-1. Organize gallery into tabbed sections by tier.
-2. Each section shows all components in all variants, all states (rest/hover/focus/active/disabled), and all three themes.
-3. Interactive controls for toggling variants, sizes, and states.
-4. The gallery itself dogfoods TugAccordion, TugToggleGroup, TugToolbar, and other components for its own UI.
-
-### Result
-The full component library is complete. The Component Gallery is the canonical reference for the Tugways design system.
-
----
-
-## Phase 8g: Alerts
-
-**Goal**: Full alert and notification system. Wire close confirmation into the title bar built in Phase 8c.
-
-**References**: Concept 9 ([D25], [D26]), Phase 5d1 (default button mechanism).
-
-### What to do
-
-1. **TugAlertHost** — mount at app root. Renders `AlertDialog` (Radix) instances driven by an imperative queue.
-2. **`tugAlert()`** — imperative Promise API. Returns the button role the user clicked. Supports multiple button roles (`default`, `cancel`, `destructive`) with configurable labels.
-3. **TugSheet** — card-modal dialog. Slides in from an edge, dims the card behind it. Uses Radix Dialog internally.
-4. **TugConfirmPopover** — button-local confirmation anchored to the trigger element. Uses Radix Popover internally. "Are you sure?" pattern for destructive actions.
-5. **TugToast** — notification toasts via Sonner integration. Tone variants (good/warn/alert/info). Auto-dismiss with configurable duration.
-6. **Wire close confirmation into title bar** — the basic close button from Phase 8c now shows a `TugConfirmPopover` when the card has unsaved state or is marked as requiring confirmation. Cards opt in via a `confirmClose` flag or callback on their registration.
-7. **Wire default button** — alerts and sheets use the default button mechanism from Phase 5d1. When a destructive button is present, the cancel button is the default (accent-filled, Enter activates it). When no destructive button, the default role button is the default.
-8. **Add all alert/sheet/popover/toast components to the Component Gallery** with interactive demos.
-
-### Files created
-- `tugdeck/src/components/tugways/tug-alert-host.tsx`
-- `tugdeck/src/components/tugways/tug-sheet.tsx`
-- `tugdeck/src/components/tugways/tug-confirm-popover.tsx`
-- `tugdeck/src/components/tugways/tug-toast.tsx`
-- `tugdeck/styles/tug-alert.css`
-
-### Files modified
-- `tugdeck/src/components/chrome/card-header.tsx` — wire TugConfirmPopover onto close button
-
-### Result
-The alert system is complete. Close confirmation is wired into the title bar. Toasts provide non-modal feedback. The default button pattern ensures safe keyboard interaction with destructive dialogs.
-
----
-
-## Phase 8h: Inspector Panels
-
-**Goal**: Color picker, font picker, and coordinate inspector panels available as first-class tugways components. Each emits action phases (begin/change/commit/cancel), works with mutation transactions for live preview, and reads/writes via PropertyStore.
-
-**References**: Concepts 19–21 ([D61]–[D69]), Phase 5d2–5d4 infrastructure.
-
-### What to do
-
-1. **TugColorPicker** (original) — hue/saturation/brightness wheel or strip, opacity slider, hex/RGB input, swatch history. Emits `setColor` action with `begin/change/commit/cancel` phases. During `change` phase, uses MutationTransaction for live preview on the target element.
-2. **TugFontPicker** (original) — font family dropdown (system fonts), font size TugSlider, weight/style toggles. Emits `setFontSize`, `setFontFamily`, `setFontWeight` actions with phases.
-3. **TugCoordinateInspector** (original) — x/y/width/height number fields with scrub-on-drag (drag the label to scrub the value). Emits `setPosition`, `setSize` actions with phases. Fields read from PropertyStore and update on external changes.
-4. **TugInspectorPanel** (composition) — container that hosts inspector sections. Reads `PropertyStore.getSchema()` from the focused card and dynamically renders appropriate controls for each property. Registers as a responder node. Uses explicit-target dispatch ([D62]) to send edits to the focused card.
-5. **Wire focus-change response** — when the focused card changes, the inspector reads the new card's PropertyStore schema and updates its displayed controls. If the focused card has no PropertyStore, the inspector shows "No inspectable properties."
-6. **Add all inspector components to the Component Gallery** with interactive demos.
-7. **Verify**: color picker scrub previews live with transaction, commit persists, cancel reverts. Font picker changes cascade through CSS. Coordinate inspector reflects current values and updates on external changes. Inspector works with any card that registers a PropertyStore.
-
-### Files created
-- `tugdeck/src/components/tugways/tug-color-picker.tsx`
-- `tugdeck/src/components/tugways/tug-font-picker.tsx`
-- `tugdeck/src/components/tugways/tug-coordinate-inspector.tsx`
-- `tugdeck/src/components/tugways/tug-inspector-panel.tsx`
-- `tugdeck/styles/tug-inspector.css`
-
-### Result
-Inspector panels are reusable tugways components. Any card that exposes a PropertyStore gets free inspector support. The color/font/coordinate controls are available standalone for use in card content (e.g., a settings card's theme color editor).
-
----
-
-## Phase 8i: Dock
-
-**Goal**: Rewrite the dock from scratch as the primary UI for creating and managing cards. Replaces Mac menu commands as the main interaction surface.
-
-**References**: Concept 11 ([D28], [D29]).
-
-### What to do
-
-1. **Rewrite Dock from scratch** with three button types ([D28]):
-   - **Card toggle** — creates a card if none exists, or focuses/cycles existing cards of that type
-   - **Command** — dispatches an action into the responder chain (e.g., "Show Component Gallery")
-   - **Popout menu** — opens a TugDropdown anchored to the dock button (e.g., settings, theme selector)
-2. **Declarative `DockConfig`** — the dock layout is defined as a typed configuration object. Each button specifies its type, icon, label, action, and optional badge.
-3. **Dock placement** ([D29]) — the dock can be positioned on any edge of the canvas (right is default). Placement is persisted.
-4. **TugTooltip hover labels** — each dock button shows a tooltip with its label and keyboard shortcut (if any).
-5. **2.5D dock buttons** — dock buttons get the elevation model from Phase 8b. Active state (card is visible) uses a distinct visual treatment (e.g., accent-colored indicator).
-6. **Wire dock button actions through the responder chain** — dock buttons dispatch actions; the responder chain routes them. No direct DeckManager coupling.
-7. **Add dock demo to Component Gallery**.
-
-### Files created
-- `tugdeck/src/components/chrome/dock.tsx` — full rewrite
-- `tugdeck/src/components/chrome/dock.css` — 2.5D dock styles
-- `tugdeck/src/dock-config.ts` — DockConfig type and default configuration
-
-### Result
-The dock replaces Mac menu commands as the primary UI for creating and managing cards. Chrome is complete.
-
----
-
-## Supplementary Custom Components (No Radix Equivalent)
-
-These components have no Radix primitive and are built entirely from scratch:
-
-| Component | Description |
-|-----------|-------------|
-| TugBadge | Status/count badge with tone variants |
-| TugLinearGauge | Horizontal gauge with needle, thresholds, ticks |
-| TugArcGauge | Radial/arc gauge with needle, arc fill, center readout |
-| TugSparkline | SVG inline charts (area, line, column, bar) |
-| TugSpinner | Loading spinner, size variants |
-| TugProgress | Progress bar (wraps Radix Progress for a11y, but visual is custom) |
-| TugSkeleton | Shimmer placeholder |
-| TugKeyboard | Keyboard shortcut keycap chip |
-| TugStatCard | Key-value metric display |
-| TugStatusIndicator | Tone-colored dot + text |
-| TugTable | Data table with sorting |
-
-All custom components follow the same 2.5D token patterns where appropriate (TugKeyboard looks like a physical keycap; gauges and sparklines are flat/informational).
-
----
-
-## Phase Dependencies
-
-```
-Phase 8a: Shadcn Excision
-    │
-    ▼
-Phase 8b: 2.5D Visual Language (TugButton reference impl)
-    │
-    ├──────────────────────┐
-    ▼                      ▼
-Phase 8c:              Phase 8d + 8e (parallel):
-Card Frame &           Form Controls, Navigation,
-Title Bar              Data Display, Viz
-(basic close)              │
-    │                      ▼
-    │                  Phase 8f:
-    │                  Compound Components
-    │                  & Gallery Completion
-    │                      │
-    └──────────┬───────────┘
-               ▼
-           Phase 8g:
-           Alerts
-           (wires close confirmation into 8c title bar)
-               │
-               ▼
-           Phase 8h:
-           Inspector Panels
-           (needs form controls from 8d + alerts from 8g)
-               │
-               ▼
-           Phase 8i:
-           Dock
-           (needs tooltips from 8e, alerts from 8g, everything)
-```
-
-**Sequential chain**: 8a → 8b → 8c (title bar ships with basic close).
-
-**Parallel work after 8b**: 8c (card frame) and 8d+8e (components) can proceed in parallel.
-
-**Convergence at 8g**: Alerts need form controls (buttons, etc.) from 8d. Once alerts ship, close confirmation is wired into the title bar from 8c.
-
-**Late phases**: 8h (inspectors) needs form controls + alerts. 8i (dock) needs the full component library, tooltips, and alert infrastructure.
-
----
-
-## Relationship to Existing Strategy
-
-This proposal **replaces** all Phase 8 content in `tugways-implementation-strategy.md`:
-- Old Phase 8a (Alerts + Title Bar + Dock) is split into 8c (title bar), 8g (alerts), and 8i (dock)
-- Old Phases 8b, 8c, 8d (component building) are replaced by 8d, 8e, 8f (Radix-direct approach)
-- Old Phase 8e (Inspector Panels) becomes 8h
-
-Phases that are **unaffected**:
-- All Phase 5x infrastructure — responder chain, mutation model, observable properties, palette engine, etc.
-- Phase 9 (Card Rebuild) — depends on component library existing, agnostic to implementation layer
-
-After this proposal is approved, `design-system-concepts.md` and `tugways-implementation-strategy.md` will be updated to reflect the Radix-direct approach, the 2.5D visual language, and the revised phase numbering.
-
----
-
-## Total Component Count
+**Total count:**
 
 | Category | Count |
 |----------|-------|
@@ -616,4 +817,753 @@ After this proposal is approved, `design-system-concepts.md` and `tugways-implem
 | Compositions | 3 |
 | **Total** | **31** |
 
-This is a superset of the previous 28-component plan, adding TugAccordion, TugToggleGroup, TugToolbar, TugPopover, and TugSearchBar.
+#### Retronow Design Reference {#retronow-reference}
+
+The `roadmap/retronow/` directory contains the canonical design mockups and style references for the tugways design system. All phase work must consult these resources when designing components, layouts, and visual treatments.
+
+**Table T03: Retronow resource inventory** {#t03-retronow-resources}
+
+| Resource | Path | What It Provides |
+|----------|------|------------------|
+| **Component Pack Page** | `components/retronow/RetronowComponentPackPage.tsx` | Full-page mockup showing wrapper-style component interactions: tabs, dialogs, buttons, sliders, inputs, textareas, selects, radio groups, checkboxes, card canvas, toasts, ArcGauge. Primary reference for component gallery layout. |
+| **Control Pack** | `components/retronow/RetronowControlPack.tsx` | Compact control showcase: input, textarea, combo, button, slider, radio, checkbox, address bar. Reference for control layout and grouping. |
+| **Deck Canvas** | `components/retronow/RetronowDeckCanvas.tsx` | Card deck canvas with drag, resize, snap. Reference for card frame, header, canvas layout. |
+| **Class Recipes** | `components/retronow/retronow-classes.ts` | Central class recipes: shell, panel, button, input, textarea, tabs, card, cardHeader, cardBody, cardCanvas. Reference for consistent styling patterns. |
+| **Component CSS** | `styles/retronow-components.css` | Full CSS: titlebar, tabs, buttons, fields, sliders, panels, popups, screens, gauges, scrollbars, dialog, toast, typography. Three theme variants. |
+| **Deck CSS** | `styles/retronow-deck.css` | Card/canvas system styles: visible grid, snap affordances, resize handles, card frames. |
+| **Design Tokens** | `styles/retronow-tokens.css` | Three-theme token system (`--rn-*`): surfaces, text, accents (8-color palette), borders, shadows, spacing, radii, fonts, depths. |
+| **Unified Review** | `mockups/retronow-unified-review.html` | Browser-openable all-in-one review page. |
+| **Style Mockup** | `mockups/retronow-style-mockup.html` | Standalone style exploration mockup. |
+| **Component Pack Mockup** | `mockups/retronow-component-pack-mockup.html` | Browser-openable component pack preview. |
+
+**How to use:**
+
+- **New components:** Consult `RetronowComponentPackPage.tsx` and `RetronowControlPack.tsx` for layout patterns and interactive control grouping. The retronow "AppButton wraps Radix primitives directly" pattern is exactly the pattern tugways follows.
+- **Component Gallery:** The retronow component pack page is the direct inspiration. Its tabbed layout (controls, workspace, diagnostics, custom gauges), panel grouping, and interactive toggle patterns guide gallery expansion.
+- **CSS:** Consult `retronow-components.css` for CSS structure -- how controls are themed across light/dark/brio variants. The tugways equivalent uses `var(--td-*)` semantic tokens instead of `var(--rn-*)`, but structural patterns are the same.
+- **Tokens:** Consult `retronow-tokens.css` for naming scheme and palette structure. The 8-accent-color system and surface layering directly informed tugways token design.
+- **Card frames:** Consult `RetronowDeckCanvas.tsx`, `retronow-deck.css`, and class recipes for card shell, header, and body patterns.
+
+---
+
+### Specification {#specification}
+
+#### Component Token Naming Convention {#token-convention}
+
+**Spec S01: Token naming rules** {#s01-token-naming}
+
+All component tokens follow: `--tug-<component>-<property>[-<state>]`
+
+- `<component>`: lowercase component name without `Tug` prefix (e.g., `button`, `input`, `select`)
+- `<property>`: the CSS property or semantic role (e.g., `face`, `highlight`, `shadow`, `border`)
+- `<state>`: optional interactive state suffix (e.g., `hover`, `active`, `disabled`)
+- `base` is the reserved root-level component name
+
+Examples:
+- `--tug-button-face` -- button background at rest
+- `--tug-button-face-hover` -- button background on hover
+- `--tug-input-border-focus` -- input border when focused
+- `--tug-base-elevation-shadow` -- base shadow token inherited by all components
+
+The `--tug-comp-*` prefix is **banned**.
+
+#### CSS Patterns {#css-patterns}
+
+**Spec S02: Elevation CSS pattern** {#s02-elevation-css}
+
+Every interactive component follows this three-state CSS pattern:
+
+```css
+.tug-<component> {
+  background-color: var(--tug-<component>-face);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-<component>-highlight),
+    0 1px 3px 0 var(--tug-<component>-shadow);
+  transition: all var(--tug-base-elevation-transition);
+}
+
+.tug-<component>:hover {
+  background-color: var(--tug-<component>-face-hover);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-<component>-highlight-hover),
+    0 2px 4px 0 var(--tug-<component>-shadow-hover);
+}
+
+.tug-<component>:active {
+  background-color: var(--tug-<component>-face-active);
+  transform: translateY(var(--tug-base-elevation-press-offset));
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-<component>-highlight-active),
+    0 0px 1px 0 var(--tug-<component>-shadow-active);
+}
+```
+
+Inputs use an inverted pattern (inset shadow, no elevation):
+
+```css
+.tug-input {
+  box-shadow: inset 0 1px 2px 0 var(--tug-input-shadow);
+  /* no bottom shadow, no translateY on active */
+}
+```
+
+#### File Organization {#file-organization}
+
+**Spec S03: Component file structure** {#s03-file-structure}
+
+```
+tugdeck/src/components/tugways/
+  tug-button.tsx          # component implementation
+  tug-button.css          # component styles with --tug-button-* tokens
+  tug-input.tsx
+  tug-input.css
+  tug-select.tsx
+  tug-select.css
+  tug-alert-host.tsx      # app-level alert host
+  tug-sheet.tsx           # card-modal sheet
+  tug-confirm-popover.tsx # button-anchored confirmation
+  tug-toast.tsx           # toast wrapper around Sonner
+  ...                     # one .tsx + .css pair per component
+```
+
+Chrome components remain in `components/chrome/`:
+
+```
+tugdeck/src/components/chrome/
+  card-header.tsx         # title bar with collapse, menu, close
+  card-header.css
+  card-frame.tsx          # card container with collapse handling
+  dock.tsx                # dock with three button types
+  dock.css
+  dock-config.ts          # DockConfig type and defaults
+```
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New packages {#new-packages}
+
+**List L01: Radix packages to install** {#l01-radix-packages}
+
+| Package | Phase | Purpose |
+|---------|-------|---------|
+| `@radix-ui/react-accordion` | 8e | TugAccordion |
+| `@radix-ui/react-avatar` | 8d | TugAvatar |
+| `@radix-ui/react-label` | 8d | TugLabel |
+| `@radix-ui/react-popover` | 8d | TugPopover, TugConfirmPopover |
+| `@radix-ui/react-progress` | 8d | TugProgress |
+| `@radix-ui/react-separator` | 8d | TugSeparator |
+| `@radix-ui/react-slider` | 8d | TugSlider |
+| `@radix-ui/react-toggle` | 8d | TugToggle |
+| `@radix-ui/react-toggle-group` | 8e | TugToggleGroup |
+| `@radix-ui/react-toolbar` | 8e | TugToolbar |
+| `@radix-ui/react-context-menu` | 8e | TugContextMenu |
+
+#### New files {#new-files}
+
+| File | Phase | Purpose |
+|------|-------|---------|
+| `tugdeck/src/components/tugways/tug-input.tsx` | 8d | Text input wrapper |
+| `tugdeck/src/components/tugways/tug-input.css` | 8d | Input styles |
+| `tugdeck/src/components/tugways/tug-textarea.tsx` | 8d | Textarea wrapper |
+| `tugdeck/src/components/tugways/tug-textarea.css` | 8d | Textarea styles |
+| `tugdeck/src/components/tugways/tug-select.tsx` | 8d | Select wrapper |
+| `tugdeck/src/components/tugways/tug-select.css` | 8d | Select styles |
+| `tugdeck/src/components/tugways/tug-checkbox.tsx` | 8d | Checkbox wrapper |
+| `tugdeck/src/components/tugways/tug-checkbox.css` | 8d | Checkbox styles |
+| `tugdeck/src/components/tugways/tug-radio-group.tsx` | 8d | Radio group wrapper |
+| `tugdeck/src/components/tugways/tug-radio-group.css` | 8d | Radio group styles |
+| `tugdeck/src/components/tugways/tug-switch.tsx` | 8d | Switch wrapper |
+| `tugdeck/src/components/tugways/tug-switch.css` | 8d | Switch styles |
+| `tugdeck/src/components/tugways/tug-slider.tsx` | 8d | Slider wrapper |
+| `tugdeck/src/components/tugways/tug-slider.css` | 8d | Slider styles |
+| `tugdeck/src/components/tugways/tug-label.tsx` | 8d | Label wrapper |
+| `tugdeck/src/components/tugways/tug-label.css` | 8d | Label styles |
+| `tugdeck/src/components/tugways/tug-toggle.tsx` | 8d | Toggle wrapper |
+| `tugdeck/src/components/tugways/tug-toggle.css` | 8d | Toggle styles |
+| `tugdeck/src/components/tugways/tug-badge.tsx` | 8d | Badge component |
+| `tugdeck/src/components/tugways/tug-badge.css` | 8d | Badge styles |
+| `tugdeck/src/components/tugways/tug-spinner.tsx` | 8d | Loading spinner |
+| `tugdeck/src/components/tugways/tug-spinner.css` | 8d | Spinner styles |
+| `tugdeck/src/components/tugways/tug-progress.tsx` | 8d | Progress bar |
+| `tugdeck/src/components/tugways/tug-progress.css` | 8d | Progress styles |
+| `tugdeck/src/components/tugways/tug-skeleton.tsx` | 8d | Skeleton placeholder |
+| `tugdeck/src/components/tugways/tug-skeleton.css` | 8d | Skeleton styles |
+| `tugdeck/src/components/tugways/tug-separator.tsx` | 8d | Separator wrapper |
+| `tugdeck/src/components/tugways/tug-separator.css` | 8d | Separator styles |
+| `tugdeck/src/components/tugways/tug-keyboard.tsx` | 8d | Keyboard shortcut chip |
+| `tugdeck/src/components/tugways/tug-keyboard.css` | 8d | Keyboard styles |
+| `tugdeck/src/components/tugways/tug-avatar.tsx` | 8d | Avatar wrapper |
+| `tugdeck/src/components/tugways/tug-avatar.css` | 8d | Avatar styles |
+| `tugdeck/src/components/tugways/tug-status-indicator.tsx` | 8d | Status dot + text |
+| `tugdeck/src/components/tugways/tug-status-indicator.css` | 8d | Status indicator styles |
+| `tugdeck/src/components/tugways/tug-tooltip.tsx` | 8e | Tooltip wrapper |
+| `tugdeck/src/components/tugways/tug-tooltip.css` | 8e | Tooltip styles |
+| `tugdeck/src/components/tugways/tug-scroll-area.tsx` | 8e | Scroll area wrapper |
+| `tugdeck/src/components/tugways/tug-scroll-area.css` | 8e | Scroll area styles |
+| `tugdeck/src/components/tugways/tug-context-menu.tsx` | 8e | Context menu wrapper |
+| `tugdeck/src/components/tugways/tug-context-menu.css` | 8e | Context menu styles |
+| `tugdeck/src/components/tugways/tug-popover.tsx` | 8e | Popover wrapper |
+| `tugdeck/src/components/tugways/tug-popover.css` | 8e | Popover styles |
+| `tugdeck/src/components/tugways/tug-accordion.tsx` | 8e | Accordion wrapper |
+| `tugdeck/src/components/tugways/tug-accordion.css` | 8e | Accordion styles |
+| `tugdeck/src/components/tugways/tug-toggle-group.tsx` | 8e | Toggle group wrapper |
+| `tugdeck/src/components/tugways/tug-toggle-group.css` | 8e | Toggle group styles |
+| `tugdeck/src/components/tugways/tug-toolbar.tsx` | 8e | Toolbar wrapper |
+| `tugdeck/src/components/tugways/tug-toolbar.css` | 8e | Toolbar styles |
+| `tugdeck/src/components/tugways/tug-table.tsx` | 8e | Data table |
+| `tugdeck/src/components/tugways/tug-table.css` | 8e | Table styles |
+| `tugdeck/src/components/tugways/tug-stat-card.tsx` | 8e | Stat card display |
+| `tugdeck/src/components/tugways/tug-stat-card.css` | 8e | Stat card styles |
+| `tugdeck/src/components/tugways/tug-dialog.tsx` | 8e | General dialog wrapper |
+| `tugdeck/src/components/tugways/tug-dialog.css` | 8e | Dialog styles |
+| `tugdeck/src/components/tugways/tug-sparkline.tsx` | 8e | SVG sparkline chart |
+| `tugdeck/src/components/tugways/tug-sparkline.css` | 8e | Sparkline styles |
+| `tugdeck/src/components/tugways/tug-linear-gauge.tsx` | 8e | Linear gauge |
+| `tugdeck/src/components/tugways/tug-linear-gauge.css` | 8e | Linear gauge styles |
+| `tugdeck/src/components/tugways/tug-arc-gauge.tsx` | 8e | Arc/radial gauge |
+| `tugdeck/src/components/tugways/tug-arc-gauge.css` | 8e | Arc gauge styles |
+| `tugdeck/src/components/tugways/tug-button-group.tsx` | 8f | Connected button row |
+| `tugdeck/src/components/tugways/tug-button-group.css` | 8f | Button group styles |
+| `tugdeck/src/components/tugways/tug-chat-input.tsx` | 8f | Chat input composition |
+| `tugdeck/src/components/tugways/tug-chat-input.css` | 8f | Chat input styles |
+| `tugdeck/src/components/tugways/tug-search-bar.tsx` | 8f | Search bar composition |
+| `tugdeck/src/components/tugways/tug-search-bar.css` | 8f | Search bar styles |
+| `tugdeck/src/components/tugways/tug-alert-host.tsx` | 8g | App-level alert host |
+| `tugdeck/src/components/tugways/tug-sheet.tsx` | 8g | Card-modal sheet |
+| `tugdeck/src/components/tugways/tug-confirm-popover.tsx` | 8g | Button-anchored confirmation |
+| `tugdeck/src/components/tugways/tug-toast.tsx` | 8g | Toast via Sonner |
+| `tugdeck/styles/tug-alert.css` | 8g | Alert/sheet/toast styles |
+| `tugdeck/src/components/tugways/tug-color-picker.tsx` | 8h | Color picker |
+| `tugdeck/src/components/tugways/tug-font-picker.tsx` | 8h | Font picker |
+| `tugdeck/src/components/tugways/tug-coordinate-inspector.tsx` | 8h | Coordinate inspector |
+| `tugdeck/src/components/tugways/tug-inspector-panel.tsx` | 8h | Inspector container |
+| `tugdeck/styles/tug-inspector.css` | 8h | Inspector styles |
+| `tugdeck/src/components/chrome/dock.tsx` | 8i | Dock rewrite |
+| `tugdeck/src/components/chrome/dock.css` | 8i | 2.5D dock styles |
+| `tugdeck/src/dock-config.ts` | 8i | DockConfig type + defaults |
+
+#### Files deleted {#files-deleted}
+
+| File | Phase | Reason |
+|------|-------|--------|
+| `tugdeck/src/components/ui/*.tsx` (13 files) | 8a | shadcn wrappers removed |
+| `tugdeck/styles/shadcn-base.css` | 8a | shadcn stylesheet removed |
+| `tugdeck/components.json` | 8a | shadcn config removed |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] Update `roadmap/design-system-concepts.md` -- remove shadcn references from D05, D06, D07 and Concept 2; describe direct Radix wrapping
+- [ ] Update `roadmap/tugways-implementation-strategy.md` -- update all phase descriptions for Radix-direct approach
+- [ ] Update `CLAUDE.md` -- remove any shadcn references if present
+- [ ] Document the 2.5D elevation pattern as a Rule of Tugways in `design-system-concepts.md`
+- [ ] Document the "control vs content" CSS convention (which elements get elevation, which stay flat)
+- [ ] Add all 31 components to the Component Gallery with interactive demos
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+> Describe the kinds of tests that prove the spec. Leave the actual enumeration of tests to the Execution Steps below.
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| **Unit** | Test individual component rendering, prop handling, state management | Every Tug component, token resolution |
+| **Integration** | Test component interactions (alert flow, inspector focus-change, dock button dispatch) | Cross-component workflows |
+| **Accessibility** | Verify keyboard navigation, ARIA roles, focus management | Every interactive component |
+| **Visual regression** | Verify 2.5D elevation renders correctly across themes | After establishing the elevation pattern |
+| **Build verification** | Verify zero shadcn imports, clean build, no warnings | After shadcn excision and every subsequent step |
+
+---
+
+### Execution Steps {#execution-steps}
+
+> Execution comes last. Each step should be executable, with a clear commit boundary and a checkpoint.
+>
+> **Commit after all checkpoints pass.** This rule applies to every step below.
+>
+> **Phase dependency graph:**
+>
+> ```
+> Step 1 (8a: Shadcn Excision)
+>     |
+>     v
+> Step 2 (8b: 2.5D Visual Language)
+>     |
+>     +--------------------+
+>     v                    v
+> Step 3 (8c:          Step 4 + Step 5 (parallel):
+> Card Frame &         8d: Form Controls & Core Display
+> Title Bar)           8e: Navigation, Data Display & Viz
+>     |                    |
+>     |                    v
+>     |                Step 6 (8f: Compound Components)
+>     |                    |
+>     +--------+-----------+
+>              v
+>          Step 7 (8g: Alerts)
+>              |
+>              v
+>          Step 8 (8h: Inspector Panels)
+>              |
+>              v
+>          Step 9 (8i: Dock)
+> ```
+
+#### Step 1: Shadcn Excision {#step-1}
+
+**Commit:** `refactor(tugdeck): remove shadcn layer, wrap Radix primitives directly`
+
+**References:** [D01] Radix-direct wrapping replaces shadcn, [D03] Component file organization, Table T01, (#context, #radix-audit)
+
+**Artifacts:**
+- Rewritten `tug-button.tsx` and `tug-button.css` (wraps `@radix-ui/react-slot` directly)
+- Rewritten `tug-dropdown.tsx` and `tug-dropdown.css` (wraps `@radix-ui/react-dropdown-menu` directly)
+- Deleted `components/ui/` directory (13 files)
+- Deleted `styles/shadcn-base.css`
+- Deleted `components.json`
+- Updated `globals.css` (removed shadcn-base.css import)
+- Updated `scaffold.test.tsx`
+- Updated documentation files
+
+**Tasks:**
+- [ ] Rewrite TugButton to use `@radix-ui/react-slot` directly; move all styling to `tug-button.css`; remove CVA dependency if unused elsewhere
+- [ ] Rewrite TugDropdown to use `@radix-ui/react-dropdown-menu` directly; move all styling to `tug-dropdown.css`
+- [ ] Delete all 13 files in `components/ui/`
+- [ ] Delete `styles/shadcn-base.css` (~25KB)
+- [ ] Delete `components.json`
+- [ ] Remove `class-variance-authority` from `package.json` if no longer referenced
+- [ ] Relocate any still-needed animation keyframes from shadcn-base.css into relevant Tug component CSS files as `tug-*` named keyframes
+- [ ] Update `globals.css` to remove the shadcn-base.css import
+- [ ] Update `scaffold.test.tsx` (currently imports Button from `ui/`)
+- [ ] Update `design-system-concepts.md` -- remove shadcn references from D05, D06, D07 and Concept 2
+- [ ] Update `tugways-implementation-strategy.md` -- update phase descriptions
+- [ ] Update `CLAUDE.md` if any shadcn references exist
+
+**Tests:**
+- [ ] `bun run build` succeeds with zero warnings
+- [ ] `bun test` -- all existing tests pass
+- [ ] TugButton renders and responds to click in all variants
+- [ ] TugDropdown opens, shows items, handles selection
+- [ ] No `components/ui` imports exist in production source (excluding `_archive/`)
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] `grep -r "components/ui" tugdeck/src/ --include="*.tsx" --include="*.ts" | grep -v _archive` returns empty
+
+---
+
+#### Step 2: 2.5D Visual Language {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(tugdeck): implement 2.5D elevation model with TugButton reference`
+
+**References:** [D04] 2.5D elevation model, [D05] Component token naming, Spec S01, Spec S02, (#elevation-spec, #token-convention, #css-patterns)
+
+**Artifacts:**
+- Elevation tokens in `tug-tokens.css`
+- Theme overrides in `bluenote.css` and `harmony.css`
+- TugButton updated with full 2.5D treatment (reference implementation)
+- "2.5D States" demo section in Component Gallery
+- Documentation of the elevation pattern
+
+**Tasks:**
+- [ ] Define elevation tokens in `tug-tokens.css` with Brio defaults (all `--tug-base-elevation-*` tokens)
+- [ ] Define elevation overrides in `bluenote.css` and `harmony.css`
+- [ ] Implement 2.5D on TugButton using the reference CSS pattern from Spec S02
+- [ ] Define per-component token pattern (`--tug-button-face`, `--tug-button-highlight`, `--tug-button-shadow`, etc.)
+- [ ] Define "control vs content" CSS convention -- document which elements get elevation vs stay flat
+- [ ] Create "2.5D States" demo in Component Gallery showing rest/hover/focus/active/disabled across all variants and themes
+- [ ] Document the elevation pattern in `design-system-concepts.md` as a Rule of Tugways
+- [ ] Resolve [Q01] (gradient exception) by comparing both approaches visually
+
+**Tests:**
+- [ ] TugButton renders with box-shadow in rest state
+- [ ] TugButton shadow collapses on `:active` state
+- [ ] TugButton elevation tokens resolve correctly in all three themes
+- [ ] Disabled TugButton has no shadow/highlight
+- [ ] Component Gallery 2.5D demo renders without errors
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Visual review of TugButton in Brio, Bluenote, and Harmony themes confirms 2.5D elevation reads correctly
+
+---
+
+#### Step 3: Card Frame & Title Bar {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tugdeck): card title bar with 2.5D controls and window-shade collapse`
+
+**References:** [D04] 2.5D elevation model, [D07] Window-shade collapse, Spec S02, (#elevation-spec)
+
+**Artifacts:**
+- Updated `card-header.tsx` with collapse toggle, menu icon change, 2.5D buttons
+- Updated `card-header.css` with 2.5D elevation styles for title bar controls
+- Updated `card-frame.tsx` with collapsed height handling
+- Updated `deck-manager.ts` with collapse state management
+- Updated `serialization.ts` with collapsed state persistence
+- Title bar demo in Component Gallery
+
+**Tasks:**
+- [ ] Implement window-shade collapse: CSS height transition to `CARD_TITLE_BAR_HEIGHT` (28px) + border; add `collapsed: boolean` to `CardState`
+- [ ] Add collapse/expand toggle via chevron icon (`ChevronDown`/`ChevronUp` from lucide-react) replacing current `Minus` icon
+- [ ] Change menu icon from `EllipsisVertical` to `Ellipsis` (horizontal)
+- [ ] Implement basic close button (closes immediately, no confirmation -- deferred to Step 7)
+- [ ] Apply 2.5D elevation treatment to title bar control buttons (close, collapse, menu); title bar surface stays flat
+- [ ] Wire collapse state into DeckManager: collapsed cards use collapsed height in snap sets; expanding restores previous height
+- [ ] Persist collapsed state: wire serialization to read/write `collapsed` field in `CardState`
+- [ ] Implement double-click on title bar to toggle collapse
+- [ ] Hide resize handles when collapsed; keep drag active
+- [ ] Add title bar demo to Component Gallery (collapse toggle, menu, close in all three themes)
+
+**Tests:**
+- [ ] Clicking chevron collapses card to title bar height
+- [ ] Clicking chevron again expands card to previous height
+- [ ] Collapsed state persists across page reload
+- [ ] Close button removes the card
+- [ ] Double-click on title bar toggles collapse
+- [ ] Resize handles are hidden when collapsed
+- [ ] Collapsed cards can still be dragged
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Collapse a card, reload page, verify card is still collapsed
+- [ ] Title bar buttons show 2.5D elevation (visual review)
+
+---
+
+#### Step 4: Form Controls & Core Display {#step-4}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tugdeck): build Tier 1-2 Tug components on Radix with 2.5D`
+
+**References:** [D02] Three component kinds, [D04] 2.5D elevation model, [D05] Component token naming, Table T02, List L01, Spec S01, Spec S02, Spec S03, (#component-inventory, #radix-audit, #elevation-spec, #token-convention)
+
+**Artifacts:**
+- 9 Tier 1 form control components (TugInput, TugTextarea, TugSelect, TugCheckbox, TugRadioGroup, TugSwitch, TugSlider, TugLabel, TugToggle)
+- 8 Tier 2 display/feedback components (TugBadge, TugSpinner, TugProgress, TugSkeleton, TugSeparator, TugKeyboard, TugAvatar, TugStatusIndicator)
+- Each with `.tsx` + `.css` file pair using `--tug-<component>-*` tokens
+- All added to Component Gallery
+- New Radix packages installed
+
+**Tasks:**
+- [ ] Install Radix packages: `@radix-ui/react-avatar`, `@radix-ui/react-label`, `@radix-ui/react-popover`, `@radix-ui/react-progress`, `@radix-ui/react-separator`, `@radix-ui/react-slider`, `@radix-ui/react-toggle`
+- [ ] Build TugInput (native input wrapper with validation states, error styling, 2.5D inset appearance)
+- [ ] Build TugTextarea (native textarea wrapper with auto-resize, char count, 2.5D inset)
+- [ ] Build TugSelect (wraps Radix Select with 2.5D trigger, token-based popover)
+- [ ] Build TugCheckbox (wraps Radix Checkbox with label integration, mixed state, 2.5D check target)
+- [ ] Build TugRadioGroup (wraps Radix RadioGroup with group label, layout options, 2.5D radio dots)
+- [ ] Build TugSwitch (wraps Radix Switch with label position, size variants, 2.5D track/thumb)
+- [ ] Build TugSlider (wraps Radix Slider with value display, range labels, tick marks, action phases)
+- [ ] Build TugLabel (wraps Radix Label with required indicator, helper text slot)
+- [ ] Build TugToggle (wraps Radix Toggle with 2.5D pressed/unpressed states)
+- [ ] Build TugBadge (original: tone variants, pill shape, count mode)
+- [ ] Build TugSpinner (original: size variants)
+- [ ] Build TugProgress (wraps Radix Progress: bar, percentage, indeterminate mode)
+- [ ] Build TugSkeleton (original: shimmer placeholder, `background-attachment: fixed` sync)
+- [ ] Build TugSeparator (wraps Radix Separator: horizontal/vertical, label slot)
+- [ ] Build TugKeyboard (original: keyboard shortcut keycap chip with 2.5D keycap appearance)
+- [ ] Build TugAvatar (wraps Radix Avatar: image + fallback initials, size variants)
+- [ ] Build TugStatusIndicator (original: tone-colored dot + text)
+- [ ] Ensure all continuous controls (TugSlider, TugInput, TugTextarea) support `action`/`target` props
+- [ ] Add all components to Component Gallery with interactive demos
+- [ ] Write tests for each component
+
+**Tests:**
+- [ ] Each component renders without errors
+- [ ] Form controls handle keyboard navigation (Tab, Enter, Space, Arrow keys as appropriate)
+- [ ] 2.5D elevation renders on all interactive controls across all themes
+- [ ] Disabled states show flat appearance (no elevation)
+- [ ] TugSlider emits action phases (begin/change/commit)
+- [ ] TugCheckbox supports mixed state
+- [ ] TugInput shows validation error state
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] 17 new components visible in Component Gallery
+
+---
+
+#### Step 5: Navigation, Data Display & Visualization {#step-5}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tugdeck): build Tier 3-5 Tug components and additional Radix wrappers`
+
+**References:** [D02] Three component kinds, [D04] 2.5D elevation model, Table T01, Table T02, List L01, Spec S02, (#component-inventory, #radix-audit)
+
+**Artifacts:**
+- 5 Tier 3 navigation/overlay components (TugTooltip, TugScrollArea, TugContextMenu, TugPopover, TugDialog)
+- 2 Tier 4 data display components (TugTable, TugStatCard)
+- 3 Tier 5 visualization components (TugSparkline, TugLinearGauge, TugArcGauge)
+- 3 additional Radix-based components (TugAccordion, TugToggleGroup, TugToolbar)
+- New Radix packages installed
+- All added to Component Gallery
+
+**Tasks:**
+- [ ] Install Radix packages: `@radix-ui/react-accordion`, `@radix-ui/react-toggle-group`, `@radix-ui/react-toolbar`, `@radix-ui/react-context-menu`
+- [ ] Build TugTooltip (wraps Radix Tooltip: hover labels, keyboard shortcut display)
+- [ ] Build TugScrollArea (wraps Radix ScrollArea: themed scrollbar, autohide)
+- [ ] Build TugContextMenu (wraps Radix ContextMenu: right-click menus for cards)
+- [ ] Build TugPopover (wraps Radix Popover: general anchored overlay)
+- [ ] Build TugDialog (wraps Radix Dialog: general-purpose dialog)
+- [ ] Build TugTable (original: header/row/cell, sortable columns, stripe option)
+- [ ] Build TugStatCard (original: key-value metric with label + large number + trend)
+- [ ] Build TugSparkline (original: SVG inline chart with area, line, column, bar variants)
+- [ ] Build TugLinearGauge (original: horizontal gauge with needle, thresholds, tick marks)
+- [ ] Build TugArcGauge (original: radial gauge with needle, arc fill, center readout)
+- [ ] Build TugAccordion (wraps Radix Accordion: collapsible content sections)
+- [ ] Build TugToggleGroup (wraps Radix ToggleGroup: exclusive/multi toggle row, 2.5D)
+- [ ] Build TugToolbar (wraps Radix Toolbar: grouped controls with arrow key navigation)
+- [ ] Apply 2.5D elevation on trigger elements for navigation/overlay components
+- [ ] Build SVG-based visualization components with theme-token-aware styling
+- [ ] Add all to Component Gallery; write tests
+
+**Tests:**
+- [ ] TugTooltip shows on hover, hides on mouse leave
+- [ ] TugContextMenu opens on right-click with correct items
+- [ ] TugScrollArea shows themed scrollbar
+- [ ] TugTable sorts columns on header click
+- [ ] TugSparkline renders SVG with correct data points
+- [ ] TugAccordion expands/collapses sections
+- [ ] TugToolbar supports arrow key navigation between grouped controls
+- [ ] All visualization components render with theme tokens
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] 13 additional components visible in Component Gallery
+- [ ] Combined library now has 30 components (17 from Step 4 + 13 from Step 5)
+
+---
+
+#### Step 6: Compound Components & Gallery Completion {#step-6}
+
+**Depends on:** #step-4, #step-5
+
+**Commit:** `feat(tugdeck): build composition components, complete Component Gallery`
+
+**References:** [D02] Three component kinds, Table T02, (#component-inventory, #retronow-reference)
+
+**Artifacts:**
+- 3 composition components (TugButtonGroup, TugChatInput, TugSearchBar)
+- Reorganized Component Gallery with tabbed sections by tier
+- Gallery dogfoods TugAccordion, TugToggleGroup, TugToolbar for its own UI
+
+**Tasks:**
+- [ ] Build TugButtonGroup (composition: connected button row with shared border radius, 2.5D group elevation)
+- [ ] Build TugChatInput (composition: TugTextarea + TugButton x 2, Enter to submit)
+- [ ] Build TugSearchBar (composition: TugInput + TugButton)
+- [ ] Organize gallery into tabbed sections by tier
+- [ ] Each section shows all components in all variants, all states (rest/hover/focus/active/disabled), all three themes
+- [ ] Add interactive controls for toggling variants, sizes, states
+- [ ] Gallery dogfoods TugAccordion, TugToggleGroup, TugToolbar for its own UI
+
+**Tests:**
+- [ ] TugButtonGroup renders connected buttons with shared border radius
+- [ ] TugChatInput submits on Enter, shows attachment button
+- [ ] TugSearchBar triggers search on button click and Enter
+- [ ] Component Gallery tab navigation works
+- [ ] Gallery renders all 31 components without errors
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Full 31-component library visible in Component Gallery
+- [ ] Gallery uses its own components (accordion, toggle group, toolbar) for navigation
+
+---
+
+#### Step 7: Alerts {#step-7}
+
+**Depends on:** #step-3, #step-6
+
+**Commit:** `feat(tugdeck): alert system with TugAlert, TugSheet, TugConfirmPopover, TugToast`
+
+**References:** [D06] Four modal categories, [D07] Window-shade collapse, [D10] Default button, (#d06-four-modal-categories, #d10-default-button)
+
+**Artifacts:**
+- `tug-alert-host.tsx` -- app root alert host
+- `tug-sheet.tsx` -- card-modal sheet
+- `tug-confirm-popover.tsx` -- button-anchored confirmation
+- `tug-toast.tsx` -- Sonner-based toasts
+- `tug-alert.css` -- styles for all alert components
+- Updated `card-header.tsx` -- TugConfirmPopover wired onto close button
+- Alert/sheet/popover/toast demos in Component Gallery
+
+**Tasks:**
+- [ ] Build TugAlertHost: mount at app root, render AlertDialog instances driven by imperative queue
+- [ ] Implement `tugAlert()`: imperative Promise API returning the clicked button role; supports `default`, `cancel`, `destructive` button roles
+- [ ] Build TugSheet: card-modal dialog using Radix Dialog with `container` prop for scoped rendering; overlay scoped to card; card's responder node marked `suspended`
+- [ ] Implement `tugSheet()`: imperative Promise API scoped to a card ID
+- [ ] Build TugConfirmPopover: wraps Radix Popover, declarative component API with `onConfirm`, `message`, `confirmLabel`, `confirmVariant` props
+- [ ] Build TugToast: Sonner integration with tone variants (good/warn/alert/info), auto-dismiss, configurable duration
+- [ ] Wire close confirmation into title bar: card close button from Step 3 now wrapped in `TugConfirmPopover`; click X -> popover appears -> click "Close" or Enter -> card closes
+- [ ] Wire default button mechanism: alerts and sheets register default button via `setDefaultButton`; when destructive button present, cancel is default; when no destructive, affirmative is default
+- [ ] Implement alert styles: `"informational"`, `"warning"`, `"critical"` with appropriate icon treatment
+- [ ] Resolve [Q02] by shipping always-confirm and noting conditional-confirm as Phase 9 work
+- [ ] Resolve [Q03] by spiking Sonner styling integration
+- [ ] Add all alert/sheet/popover/toast components to Component Gallery with interactive demos
+
+**Tests:**
+- [ ] `tugAlert()` returns Promise that resolves to clicked button label
+- [ ] Alert blocks responder chain (dispatch during alert returns refused)
+- [ ] TugSheet blocks only the target card's responder node
+- [ ] TugConfirmPopover opens on trigger click, closes on Escape/click-away
+- [ ] TugConfirmPopover confirm button fires `onConfirm`
+- [ ] Close button on card title bar shows confirmation popover
+- [ ] Default button responds to Enter in alerts, sheets, and popovers
+- [ ] Destructive button is never the default
+- [ ] TugToast appears and auto-dismisses
+- [ ] TugToast never steals focus
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Alert flow: trigger alert -> respond -> verify Promise resolves with correct value
+- [ ] Close confirmation flow: click X -> popover -> confirm -> card closes
+- [ ] Toast flow: fire toast -> verify it appears -> verify it auto-dismisses
+
+---
+
+#### Step 8: Inspector Panels {#step-8}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(tugdeck): inspector panels with color picker, font picker, coordinate inspector`
+
+**References:** [D04] 2.5D elevation model, [D05] Component token naming, Spec S02, (#component-inventory)
+
+**Artifacts:**
+- `tug-color-picker.tsx` -- hue/saturation/brightness, opacity, hex/RGB input, swatch history
+- `tug-font-picker.tsx` -- font family, size, weight/style toggles
+- `tug-coordinate-inspector.tsx` -- x/y/width/height with scrub-on-drag
+- `tug-inspector-panel.tsx` -- container that hosts inspector sections
+- `tug-inspector.css` -- inspector styles
+- Inspector demos in Component Gallery
+
+**Tasks:**
+- [ ] Build TugColorPicker (original): hue/saturation/brightness wheel or strip, opacity slider, hex/RGB input, swatch history; emits `setColor` action with `begin/change/commit/cancel` phases; uses MutationTransaction for live preview during `change` phase
+- [ ] Build TugFontPicker (original): font family dropdown (system fonts), font size TugSlider, weight/style toggles; emits `setFontSize`, `setFontFamily`, `setFontWeight` actions with phases
+- [ ] Build TugCoordinateInspector (original): x/y/width/height number fields with scrub-on-drag (drag the label to scrub the value); emits `setPosition`, `setSize` actions with phases; reads from PropertyStore
+- [ ] Build TugInspectorPanel (composition): container hosting inspector sections; reads `PropertyStore.getSchema()` from focused card; dynamically renders controls; registers as responder node; uses explicit-target dispatch to send edits to focused card
+- [ ] Wire focus-change response: when focused card changes, inspector reads new card's PropertyStore schema; if no PropertyStore, shows "No inspectable properties"
+- [ ] Add all inspector components to Component Gallery with interactive demos
+
+**Tests:**
+- [ ] TugColorPicker scrub previews live with MutationTransaction, commit persists, cancel reverts
+- [ ] TugFontPicker changes cascade through CSS
+- [ ] TugCoordinateInspector reflects current values and updates on external changes
+- [ ] TugInspectorPanel shows controls for focused card's properties
+- [ ] Switching focused card updates inspector contents
+- [ ] Card with no PropertyStore shows "No inspectable properties"
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Color picker: drag hue slider -> see live preview on target -> release -> value persisted
+- [ ] Inspector: focus card A -> see A's properties -> focus card B -> see B's properties
+
+---
+
+#### Step 9: Dock {#step-9}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(tugdeck): dock rewrite with three button types and edge placement`
+
+**References:** [D08] Three dock button types, [D09] Dock placement, [D04] 2.5D elevation model, Spec S02, (#d08-dock-button-types, #d09-dock-placement, #elevation-spec)
+
+**Artifacts:**
+- `dock.tsx` -- full rewrite with three button types
+- `dock.css` -- 2.5D dock styles
+- `dock-config.ts` -- DockConfig type and default configuration
+- Dock demo in Component Gallery
+
+**Tasks:**
+- [ ] Rewrite dock from scratch with three button types: card toggle, command, popout menu
+- [ ] Define `DockConfig` type: typed configuration object where each button specifies type, icon, label, action, optional badge
+- [ ] Implement card toggle buttons: show/focus/toggle card; badge count display
+- [ ] Implement command buttons: fire callback immediately on click
+- [ ] Implement popout menu buttons: open TugDropdown anchored to dock button; menu position adjusts based on dock edge
+- [ ] Implement dock placement: right (default), left, top, bottom; persist in settings API
+- [ ] Compute dock CSS from placement setting: `flex-col` for vertical, `flex-row` for horizontal; canvas inset adjusts
+- [ ] Apply 2.5D elevation to dock buttons; active state (card visible) uses accent-colored indicator
+- [ ] Add TugTooltip hover labels on each dock button (label + keyboard shortcut)
+- [ ] Wire dock button actions through responder chain (no direct DeckManager coupling)
+- [ ] Add dock demo to Component Gallery
+
+**Tests:**
+- [ ] Card toggle button creates/focuses/toggles card
+- [ ] Command button fires callback on click
+- [ ] Popout menu opens anchored to button, on correct side based on dock placement
+- [ ] Dock renders correctly on all four edges
+- [ ] Dock placement persists across reload
+- [ ] Dock buttons show tooltips on hover
+- [ ] Dock buttons dispatch through responder chain
+
+**Checkpoint:**
+- [ ] `bun run build` exits 0
+- [ ] `bun test` exits 0
+- [ ] Dock on right edge: menu opens left; switch to bottom: menu opens above
+- [ ] Change dock placement, reload, verify dock appears on correct edge
+- [ ] All three button types functional in demo
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+> This is the single place we define "done" for the phase. Keep it crisp and testable.
+
+**Deliverable:** Complete 31-component Tugways library built on Radix primitives with 2.5D visual language, full alert system, inspector panels, and dock -- replacing shadcn entirely.
+
+#### Phase Exit Criteria ("Done means...") {#exit-criteria}
+
+- [ ] Zero shadcn imports in production code (`grep -r "components/ui" tugdeck/src/ --include="*.tsx" --include="*.ts" | grep -v _archive` returns empty)
+- [ ] All 31 components render in Component Gallery across all three themes
+- [ ] `bun run build` exits 0 with zero warnings
+- [ ] `bun test` exits 0 with all tests passing
+- [ ] Window-shade collapse persists across reloads
+- [ ] `tugAlert()` Promise resolves with correct button role
+- [ ] Close confirmation popover works on card title bar close button
+- [ ] Inspector panels update when focused card changes
+- [ ] Dock supports all three button types and all four edge placements
+- [ ] Dock placement persists across reloads
+
+**Acceptance tests:**
+- [ ] Full alert flow: `tugAlert({ title: "Test", buttons: [{ label: "OK", role: "default" }] })` resolves to `"OK"`
+- [ ] Full sheet flow: `tugSheet(cardId, { title: "Test", buttons: [...] })` resolves correctly
+- [ ] Full confirm flow: click close X -> popover -> confirm -> card closes
+- [ ] Full toast flow: `tugToast.success("Test")` -> toast appears -> auto-dismisses
+- [ ] Full inspector flow: focus card -> inspector shows properties -> edit value -> value persists
+- [ ] Full dock flow: click card toggle -> card appears; click popout -> menu opens on correct side
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Conditional close confirmation (only for cards with unsaved state) -- requires card model extension in Phase 9
+- [ ] Additional dock button types (e.g., mode toggles, drag-to-reorder)
+- [ ] Component library npm packaging for external use
+- [ ] Phase 9: Card Rebuild -- uses the component library built here
+- [ ] Accessibility audit beyond WCAG 2.1 AA keyboard navigation
+
+| Checkpoint | Verification |
+|------------|--------------|
+| shadcn fully removed | `grep -r "shadcn\|components/ui" tugdeck/src/ --include="*.tsx" --include="*.ts" \| grep -v _archive` returns empty |
+| 31 components built | Component Gallery renders all 31 without errors |
+| 2.5D visual language | TugButton in all three themes shows elevation/shadow/highlight |
+| Alert system complete | All four modal categories functional |
+| Inspector panels work | Focus-change updates inspector |
+| Dock rewrite complete | Three button types + four edge placements |
