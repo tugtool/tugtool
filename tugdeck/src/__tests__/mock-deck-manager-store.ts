@@ -51,6 +51,8 @@ export function makeMockStore(
     // Phase 5f3: no-op stubs; tests that need to inspect these can spyOn them.
     registerSaveCallback: () => {},
     unregisterSaveCallback: () => {},
+    // Step 3: collapse toggle no-op stub.
+    toggleCardCollapse: () => {},
   };
 
   return { ...base, ...overrides };

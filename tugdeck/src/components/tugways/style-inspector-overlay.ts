@@ -92,45 +92,45 @@ export interface TugColorProvenance {
  * Used by the token discovery strategy (Spec S03 step 1-2).
  */
 const CLASS_TO_COMP_FAMILY: Record<string, string> = {
-  "tug-tab-bar": "--tug-comp-tab",
-  "tug-tab": "--tug-comp-tab",
-  tugcard: "--tug-comp-card",
-  "tugcard-header": "--tug-comp-card",
-  "tug-dropdown": "--tug-comp-dropdown",
+  "tug-tab-bar": "--tug-tab",
+  "tug-tab": "--tug-tab",
+  tugcard: "--tug-card",
+  "tugcard-header": "--tug-card",
+  "tug-dropdown": "--tug-dropdown",
 };
 
 /**
  * Known component tokens for each family.
- * Derived from tug-comp-tokens.css for class-to-token mapping.
+ * Derived from component CSS files for class-to-token mapping.
  * Spec S03 step 3.
  */
 const COMP_FAMILY_TOKENS: Record<string, string[]> = {
-  "--tug-comp-tab": [
-    "--tug-comp-tab-bar-bg",
-    "--tug-comp-tab-bar-border",
-    "--tug-comp-tab-active-bg",
-    "--tug-comp-tab-active-fg",
-    "--tug-comp-tab-active-border",
-    "--tug-comp-tab-rest-bg",
-    "--tug-comp-tab-rest-fg",
-    "--tug-comp-tab-hover-bg",
-    "--tug-comp-tab-hover-fg",
+  "--tug-tab": [
+    "--tug-tab-bar-bg",
+    "--tug-tab-bar-border",
+    "--tug-tab-bg-active",
+    "--tug-tab-fg-active",
+    "--tug-tab-underline-active",
+    "--tug-tab-bg-rest",
+    "--tug-tab-fg-rest",
+    "--tug-tab-bg-hover",
+    "--tug-tab-fg-hover",
   ],
-  "--tug-comp-card": [
-    "--tug-comp-card-bg",
-    "--tug-comp-card-border",
-    "--tug-comp-card-header-bg",
-    "--tug-comp-card-header-fg",
-    "--tug-comp-card-header-border",
-    "--tug-comp-card-shadow",
+  "--tug-card": [
+    "--tug-card-bg",
+    "--tug-card-border",
+    "--tug-card-header-bg-active",
+    "--tug-card-header-fg",
+    "--tug-card-header-divider",
+    "--tug-card-shadow-active",
   ],
-  "--tug-comp-dropdown": [
-    "--tug-comp-dropdown-bg",
-    "--tug-comp-dropdown-border",
-    "--tug-comp-dropdown-item-fg",
-    "--tug-comp-dropdown-item-hover-bg",
-    "--tug-comp-dropdown-item-hover-fg",
-    "--tug-comp-dropdown-shadow",
+  "--tug-dropdown": [
+    "--tug-dropdown-bg",
+    "--tug-dropdown-border",
+    "--tug-dropdown-item-fg",
+    "--tug-dropdown-item-bg-hover",
+    "--tug-dropdown-item-hover-fg",
+    "--tug-dropdown-shadow",
   ],
 };
 
@@ -471,7 +471,12 @@ export class StyleInspectorOverlay {
     const cssToken = this.findTokenFromCSSRules(el, property);
     if (cssToken) {
       result.originToken = cssToken;
-      if (cssToken.startsWith("--tug-comp-")) {
+      // Check if it's a component-level token (--tug-<component>-* but not --tug-base-*)
+      const isComponentToken =
+        cssToken.startsWith("--tug-") &&
+        !cssToken.startsWith("--tug-base-") &&
+        !PALETTE_VAR_REGEX.test(cssToken);
+      if (isComponentToken) {
         result.originLayer = "comp";
       } else if (
         cssToken.startsWith("--tug-base-") ||
@@ -479,8 +484,8 @@ export class StyleInspectorOverlay {
       ) {
         result.originLayer = "base";
       } else {
-        // Non-tug variable (e.g. Tailwind/shadcn --secondary-foreground).
-        // Show it as an external token — we can read its value but won't
+        // Non-tug variable (e.g. external library variable).
+        // Show it as an external token -- we can read its value but won't
         // walk into the tug chain.
         result.originLayer = "base";
       }

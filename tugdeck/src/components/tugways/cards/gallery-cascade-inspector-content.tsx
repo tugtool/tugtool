@@ -4,7 +4,7 @@
  * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
  * Provides a set of sample elements that exercise all token chain depths:
  *
- *   (a) TugDropdown -- full three-layer chain: --tug-comp-dropdown-* -> --tug-base-* -> palette
+ *   (a) TugDropdown -- full three-layer chain: --tug-dropdown-* -> --tug-base-* -> palette
  *   (b) TugButton -- two-layer chain: --tug-base-* -> palette (no comp token)
  *   (c) Colored div using --tug-base-accent-default -- base -> palette chain
  *   (d) Div using --tug-base-surface-raised -- non-chromatic base token, terminal hex
@@ -73,13 +73,13 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (a) TugDropdown: three-layer chain --tug-comp-dropdown-* -> --tug-base-* -> palette ---- */}
+      {/* ---- (a) TugDropdown: three-layer chain --tug-dropdown-* -> --tug-base-* -> palette ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
           (a) TugDropdown — three-layer chain
         </div>
         <p className="cg-description">
-          <code>--tug-comp-dropdown-*</code> →{" "}
+          <code>--tug-dropdown-*</code> →{" "}
           <code>--tug-base-*</code> → palette variable
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
@@ -110,7 +110,7 @@ export function GalleryCascadeInspectorContent() {
         <p className="cg-description">
           <code>--tug-base-action-primary-bg-rest</code> → palette variable.
           TugButton CSS references <code>--tug-base-*</code> directly — no{" "}
-          <code>--tug-comp-button-*</code> tokens are wired yet.
+          <code>--tug-button-*</code> tokens are wired yet.
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-button">
           <TugButton subtype="push" variant="primary" size="md">

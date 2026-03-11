@@ -1,13 +1,13 @@
 /**
  * Gallery card tests -- Step 6 rewrite (updated for eight gallery sections in Phase 5d4).
+ * Step 2 (Phase 8): adds gallery-elevation (2.5D States) tab -- fourteen tabs total.
  *
  * Phase 5b3: The ComponentGallery floating panel is replaced by registered
  * card types in the "developer" family. This file tests the new gallery card
  * system defined in gallery-card.tsx.
  *
  * Tests cover:
- * - registerGalleryCards() registers all eight gallery componentIds in the
- *   card registry
+ * - registerGalleryCards() registers all gallery componentIds in the card registry
  * - Each of the content components renders without errors
  * - Responder chain walk: gallery card rendered as Tugcard, chain-action
  *   buttons dispatch through the responder chain to DeckCanvas
@@ -29,6 +29,7 @@ import {
   GalleryTabBarContent,
   GalleryDropdownContent,
   GalleryDefaultButtonContent,
+  Gallery2p5DContent,
 } from "@/components/tugways/cards/gallery-card";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -68,7 +69,7 @@ describe("registerGalleryCards – card registry integration", () => {
     _resetForTest();
   });
 
-  it("registers all eleven gallery componentIds", () => {
+  it("registers all twelve gallery componentIds (plus animator, skeleton, elevation)", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).not.toBeNull();
@@ -82,6 +83,7 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(getRegistration("gallery-palette")).not.toBeNull();
     expect(getRegistration("gallery-scale-timing")).not.toBeNull();
     expect(getRegistration("gallery-cascade-inspector")).not.toBeNull();
+    expect(getRegistration("gallery-elevation")).not.toBeNull();
   });
 
   it("gallery-buttons has family 'developer'", () => {
@@ -90,11 +92,11 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.family).toBe("developer");
   });
 
-  it("gallery-buttons has defaultTabs with thirteen tabs", () => {
+  it("gallery-buttons has defaultTabs with fifteen tabs", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg?.defaultTabs).toBeDefined();
-    expect(reg?.defaultTabs?.length).toBe(13);
+    expect(reg?.defaultTabs?.length).toBe(15);
   });
 
   it("gallery-buttons has defaultTitle 'Component Gallery'", () => {
@@ -103,17 +105,17 @@ describe("registerGalleryCards – card registry integration", () => {
     expect(reg?.defaultTitle).toBe("Component Gallery");
   });
 
-  it("all eleven gallery registrations have family 'developer'", () => {
+  it("all fifteen gallery registrations have family 'developer'", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector", "gallery-animator", "gallery-skeleton", "gallery-elevation", "gallery-title-bar"];
     for (const id of ids) {
       expect(getRegistration(id)?.family).toBe("developer");
     }
   });
 
-  it("all eleven gallery registrations have acceptsFamilies ['developer']", () => {
+  it("all fifteen gallery registrations have acceptsFamilies ['developer']", () => {
     registerGalleryCards();
-    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector"];
+    const ids = ["gallery-buttons", "gallery-chain-actions", "gallery-mutation", "gallery-tabbar", "gallery-dropdown", "gallery-default-button", "gallery-mutation-tx", "gallery-observable-props", "gallery-palette", "gallery-scale-timing", "gallery-cascade-inspector", "gallery-animator", "gallery-skeleton", "gallery-elevation", "gallery-title-bar"];
     for (const id of ids) {
       expect(getRegistration(id)?.acceptsFamilies).toEqual(["developer"]);
     }
@@ -195,6 +197,16 @@ describe("GalleryDefaultButtonContent – renders without errors", () => {
       ));
     });
     expect(container.querySelector("[data-testid='gallery-default-button-content']")).not.toBeNull();
+  });
+});
+
+describe("Gallery2p5DContent – renders without errors", () => {
+  it("renders the gallery-elevation (2.5D States) content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<Gallery2p5DContent />));
+    });
+    expect(container.querySelector("[data-testid='gallery-2p5d-content']")).not.toBeNull();
   });
 });
 

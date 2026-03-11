@@ -1,6 +1,5 @@
 @import "../styles/tug-palette.css";
 @import "../styles/tug-tokens.css";
-@import "../styles/tug-comp-tokens.css";
 
 /* Global resets (moved from inline <style> in index.html) */
 html,

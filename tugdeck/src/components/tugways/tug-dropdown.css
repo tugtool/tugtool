@@ -1,30 +1,98 @@
 /**
- * TugDropdown styles -- tugways-specific CSS using --tug-comp-dropdown-* and --tug-base-* tokens.
+ * TugDropdown styles -- tugways-specific CSS using --tug-dropdown-* and --tug-base-* tokens.
  *
  * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugDropdown re-paints without React re-renders.
  *
  * **Authoritative references:**
- * - [D02] TugDropdown wraps shadcn DropdownMenu
+ * - [D01] Radix-direct wrapping replaces shadcn
  * - Spec S04: TugDropdownProps
  */
+
+/* ============================================================================
+   Component Token Definitions
+   ============================================================================ */
+
+/*
+ * --tug-dropdown-* tokens map to --tug-base-menu-* and --tug-base-surface-* tokens.
+ * Defined on body so they inherit to all dropdown elements.
+ */
+body {
+  --tug-dropdown-bg: var(--tug-base-menu-bg);
+  --tug-dropdown-fg: var(--tug-base-menu-fg);
+  --tug-dropdown-border: var(--tug-base-menu-border);
+  --tug-dropdown-shadow: var(--tug-base-menu-shadow);
+  --tug-dropdown-item-bg-hover: var(--tug-base-menu-item-bg-hover);
+  --tug-dropdown-item-bg-selected: var(--tug-base-menu-item-bg-selected);
+  --tug-dropdown-item-fg: var(--tug-base-menu-item-fg);
+  --tug-dropdown-item-fg-disabled: var(--tug-base-menu-item-fg-disabled);
+  --tug-dropdown-item-fg-danger: var(--tug-base-menu-item-fg-danger);
+  --tug-dropdown-item-meta: var(--tug-base-menu-item-meta);
+  --tug-dropdown-item-shortcut: var(--tug-base-menu-item-shortcut);
+  --tug-dropdown-item-icon: var(--tug-base-menu-item-icon);
+  --tug-dropdown-item-icon-danger: var(--tug-base-menu-item-icon-danger);
+  --tug-dropdown-item-chevron: var(--tug-base-menu-item-chevron);
+}
+
+/* ============================================================================
+   Animation Keyframes (relocated from shadcn-base.css)
+   ============================================================================ */
+
+@keyframes tug-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tug-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes tug-zoom-in {
+  from { scale: 0.95; }
+  to   { scale: 1; }
+}
+
+@keyframes tug-zoom-out {
+  from { scale: 1; }
+  to   { scale: 0.95; }
+}
+
+/*
+ * Slide keyframes use CSS custom properties for both from and to values on
+ * both axes, so each component can control starting position and resting
+ * position independently.
+ *
+ * Note: `translate` is the CSS individual transform property (not `transform:
+ * translate()`). It takes `x y` as a single value -- X and Y must be combined
+ * in one keyframe.
+ */
+@keyframes tug-slide-in {
+  from { translate: var(--tug-slide-from-x, 0) var(--tug-slide-from-y, 0.5rem); }
+  to   { translate: var(--tug-slide-to-x, 0) var(--tug-slide-to-y, 0); }
+}
+
+@keyframes tug-slide-out {
+  from { translate: var(--tug-slide-to-x, 0) var(--tug-slide-to-y, 0); }
+  to   { translate: var(--tug-slide-from-x, 0) var(--tug-slide-from-y, 0.5rem); }
+}
 
 /* ============================================================================
    Dropdown Content Panel
    ============================================================================ */
 
 /*
- * Override shadcn's Tailwind-based bg-popover / border with semantic tokens.
+ * Override Radix defaults with semantic tokens.
  * The content renders in a Radix portal at the document root, so z-index
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
   background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-comp-dropdown-border);
+  border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
   box-shadow: var(--tug-base-shadow-sm);
-  color: var(--tug-comp-dropdown-fg);
+  color: var(--tug-dropdown-fg);
   /* High z-index so the portal-rendered dropdown renders above all cards */
   z-index: 200;
 }
@@ -34,7 +102,7 @@
    ============================================================================ */
 
 .tug-dropdown-item {
-  color: var(--tug-comp-dropdown-fg);
+  color: var(--tug-dropdown-fg);
   border-radius: var(--tug-base-radius-sm);
   cursor: default;
   user-select: none;
@@ -51,7 +119,7 @@
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {
   background-color: var(--tug-base-surface-default);
-  color: var(--tug-comp-dropdown-fg);
+  color: var(--tug-dropdown-fg);
 }
 
 /* Disabled items: reduced opacity, no pointer interaction */
@@ -79,4 +147,3 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-

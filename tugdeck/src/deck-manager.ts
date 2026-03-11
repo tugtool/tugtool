@@ -181,6 +181,9 @@ export class DeckManager implements IDeckManagerStore {
   /** Stable bound callback: merge a tab from one card into another. */
   public mergeTab: (sourceCardId: string, tabId: string, targetCardId: string, insertAtIndex: number) => void;
 
+  /** Stable bound callback: toggle the collapsed state of a card. */
+  public toggleCardCollapse: (cardId: string) => void;
+
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
   /**
@@ -243,6 +246,7 @@ export class DeckManager implements IDeckManagerStore {
     this.reorderTab = this._reorderTab.bind(this);
     this.detachTab = this._detachTab.bind(this);
     this.mergeTab = this._mergeTab.bind(this);
+    this.toggleCardCollapse = this._toggleCardCollapse.bind(this);
 
     // Load or build the initial canvas state.
     // subscribers, stateVersion, handleCard*, and deckState must all be initialized
@@ -852,6 +856,35 @@ export class DeckManager implements IDeckManagerStore {
     });
 
     this.deckState = { ...this.deckState, cards: finalCards };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  // ---- Collapse management (Step 3) ----
+
+  /**
+   * Toggle the collapsed state of a card.
+   *
+   * When collapsing (collapsed was falsy): sets `collapsed: true` in CardState.
+   * When expanding (collapsed was true): removes the `collapsed` field (or sets
+   * it to undefined, treated as false per layout-tree.ts comment).
+   *
+   * Notifies subscribers and schedules a save so collapsed state is persisted.
+   * No-op if the card is not found.
+   */
+  private _toggleCardCollapse(cardId: string): void {
+    const card = this.deckState.cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    const nowCollapsed = !card.collapsed;
+    const updatedCard = nowCollapsed
+      ? { ...card, collapsed: true as const }
+      : { ...card, collapsed: undefined };
+
+    this.deckState = {
+      ...this.deckState,
+      cards: this.deckState.cards.map((c) => (c.id === cardId ? updatedCard : c)),
+    };
     this.notify();
     this.scheduleSave();
   }

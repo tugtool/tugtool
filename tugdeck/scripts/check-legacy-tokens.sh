@@ -43,6 +43,9 @@ run_grep "--td-" '\-\-td-'
 # Pattern 2: legacy Tier 1 palette prefix
 run_grep "--tways-" '\-\-tways-'
 
+# Pattern 3: banned --tug-comp-* prefix (replaced by --tug-<component>-* per [D05])
+run_grep "--tug-comp-" '\-\-tug-comp-'
+
 # Pattern 3: legacy short-name alias definitions (as property definitions, not values)
 SHORTNAME_PATTERNS=(
   '\-\-background:'
@@ -84,6 +87,6 @@ if [ "$FOUND" -eq 0 ]; then
   exit 0
 else
   echo ""
-  echo "FAIL: Legacy token violations detected. Migrate to --tug-base-* or --tug-comp-* naming."
+  echo "FAIL: Legacy token violations detected. Migrate to --tug-base-* or --tug-<component>-* naming."
   exit 1
 fi

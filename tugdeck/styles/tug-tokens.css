@@ -8,7 +8,7 @@
  * Import order (enforced in globals.css):
  *   1. tug-palette.css     — TugColor palette constants (--tug-{hue}-h, --tug-{hue}-canonical-l, --tug-{hue}-peak-c)
  *   2. tug-tokens.css      — Fonts, multipliers, motion rules, Tier 2 base tokens (--tug-base-*), scrollbars [this file]
- *   3. tug-comp-tokens.css — Tier 3 component tokens (--tug-comp-*)
+ *   3. Component CSS files — Tier 3 component tokens (--tug-<component>-*)
  *
  * Chromatic color tokens use --tug-color() notation, expanded to oklch() at build
  * time by postcss-tug-color. Semi-transparent chromatic tokens use the `a:` (alpha)
@@ -188,6 +188,33 @@ body {
   --tug-base-overlay-dim: --tug-color(black, i: 0, t: 0, a: 48);
   --tug-base-overlay-scrim: --tug-color(black, i: 0, t: 0, a: 64);
   --tug-base-overlay-highlight: --tug-color(white, i: 0, t: 100, a: 6);
+
+  /* --- 2.5D Elevation Model (Brio dark defaults) ---
+     Light source: top-center, far distant. Controls float above the canvas
+     surface with a top-edge highlight (reflection) and a soft bottom shadow.
+     On press, the shadow collapses and the control translates down (press-offset).
+     [D04] 2.5D elevation model */
+
+  /* Top-edge highlight: simulates reflected light from the distant top source */
+  --tug-base-elevation-highlight:        --tug-color(white, i: 0, t: 100, a: 14);
+  --tug-base-elevation-highlight-hover:  --tug-color(white, i: 0, t: 100, a: 22);
+  --tug-base-elevation-highlight-active: --tug-color(white, i: 0, t: 100, a: 6);
+
+  /* Bottom shadow: soft spread beneath the control */
+  --tug-base-elevation-shadow:        --tug-color(black, i: 0, t: 0, a: 50);
+  --tug-base-elevation-shadow-hover:  --tug-color(black, i: 0, t: 0, a: 60);
+  --tug-base-elevation-shadow-active: --tug-color(black, i: 0, t: 0, a: 30);
+
+  /* Control face: slightly lighter than the canvas surface to create floating appearance */
+  --tug-base-elevation-face:        --tug-color(violet, i: 5, t: 12);
+  --tug-base-elevation-face-hover:  --tug-color(violet, i: 4, t: 15);
+  --tug-base-elevation-face-active: --tug-color(violet, i: 5, t: 10);
+
+  /* Press-down offset: control translates toward canvas on :active */
+  --tug-base-elevation-press-offset: 1px;
+
+  /* Transition timing used by all elevation state changes */
+  --tug-base-elevation-transition: 80ms cubic-bezier(0.2, 0, 0, 1);
 
   /* --- Typography (plain values; CSS zoom handles scaling) --- */
   --tug-base-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;

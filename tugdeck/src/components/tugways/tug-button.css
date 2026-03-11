@@ -1,41 +1,176 @@
 /**
- * TugButton styles -- tugways-specific CSS using --tug-comp-button-* and --tug-base-* tokens.
+ * TugButton styles -- tugways-specific CSS using --tug-base-* tokens.
  *
  * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugButton re-paints without React re-renders.
  *
  * [D04] Semantic tokens exclusively
+ * [D04] 2.5D elevation model: per-component tokens feed from --tug-base-elevation-*
+ * Spec S01 (token naming), Spec S02 (elevation CSS pattern)
  */
+
+/* ============================================================================
+   Per-Component Token Definitions (Spec S01, Spec S02)
+   Per-component tokens map from --tug-base-elevation-* for the secondary variant.
+   Primary and destructive variants override face tokens with their accent colors
+   but share the same highlight and shadow geometry from the base layer.
+   ========================================================================= */
+
+:root {
+  /* Secondary (default): face pulls from elevation face tokens */
+  --tug-button-face:        var(--tug-base-elevation-face);
+  --tug-button-face-hover:  var(--tug-base-elevation-face-hover);
+  --tug-button-face-active: var(--tug-base-elevation-face-active);
+
+  /* Shared highlight (top-edge light reflection): all variants */
+  --tug-button-highlight:        var(--tug-base-elevation-highlight);
+  --tug-button-highlight-hover:  var(--tug-base-elevation-highlight-hover);
+  --tug-button-highlight-active: var(--tug-base-elevation-highlight-active);
+
+  /* Shared shadow (bottom depth): all variants */
+  --tug-button-shadow:        var(--tug-base-elevation-shadow);
+  --tug-button-shadow-hover:  var(--tug-base-elevation-shadow-hover);
+  --tug-button-shadow-active: var(--tug-base-elevation-shadow-active);
+}
+
+/* ============================================================================
+   Base Button
+   ========================================================================= */
+
+.tug-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  border-radius: var(--tug-base-radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  border: none;
+  color: var(--tug-base-fg-default);
+  position: relative;
+
+  /* 2.5D elevation: secondary variant defaults (Spec S02) */
+  background-color: var(--tug-button-face);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight),
+    0 1px 3px 0 var(--tug-button-shadow);
+  transition: background-color var(--tug-base-elevation-transition),
+    box-shadow var(--tug-base-elevation-transition),
+    border-color var(--tug-base-elevation-transition),
+    filter var(--tug-base-elevation-transition),
+    transform var(--tug-base-elevation-transition);
+}
+
+.tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-button-face-hover);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-hover),
+    0 2px 4px 0 var(--tug-button-shadow-hover);
+}
+
+.tug-button:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-button-face-active);
+  transform: translateY(var(--tug-base-elevation-press-offset));
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-active),
+    0 0px 1px 0 var(--tug-button-shadow-active);
+}
+
+.tug-button:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+.tug-button:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+  /* Disabled: no shadow/highlight (flat appearance) */
+  box-shadow: none;
+}
+
+.tug-button svg {
+  pointer-events: none;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-button-size-sm {
+  height: 2.25rem; /* 36px */
+  padding: 0 0.75rem;
+}
+
+.tug-button-size-md {
+  height: 2.5rem; /* 40px */
+  padding: 0.5rem 1rem;
+}
+
+.tug-button-size-lg {
+  height: 2.75rem; /* 44px */
+  padding: 0 2rem;
+}
 
 /* ============================================================================
    Variant Borders
    ========================================================================= */
 
 /*
- * shadcn button variants (default, secondary, destructive) don't include
- * borders. Add a subtle border for definition against panel backgrounds.
- * Ghost variant intentionally has no border.
+ * Non-ghost variants include a subtle border for definition against panel
+ * backgrounds. Ghost variant intentionally has no visible border but uses
+ * a transparent one to preserve layout consistency.
  */
 .tug-button-bordered {
   border: 1px solid var(--tug-base-border-default);
 }
 
-/* Ghost variant: invisible border so it occupies the same space as bordered variants */
+/* Ghost variant: transparent border for layout consistency */
 .tug-button-ghost {
   border: 1px solid transparent;
 }
 
-/* Primary variant: accent-cool fill with inverse text (cyan, #35bcff) */
+/* ============================================================================
+   Variant Face Colors (2.5D: each variant overrides the face color)
+   The shared highlight and shadow tokens apply to all variants.
+   ========================================================================= */
+
+/* Primary variant: accent-cool fill with inverse text */
 .tug-button-primary {
   background-color: var(--tug-base-accent-cool-default);
   color: var(--tug-base-fg-inverse);
+  /* Primary: slightly reduced highlight — accent is already bright */
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight),
+    0 1px 3px 0 var(--tug-button-shadow);
 }
 
-/* Destructive variant: bold red fill with white text */
+/* Secondary variant: inherits face from --tug-button-face (base elevation) */
+.tug-button-secondary {
+  color: var(--tug-base-fg-default);
+}
+
+/* Ghost variant: no background in rest state */
+.tug-button-ghost {
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--tug-base-fg-default);
+}
+
+/* Destructive variant: danger red fill with inverse text */
 .tug-button-destructive {
   background-color: var(--tug-base-accent-danger);
   color: var(--tug-base-fg-inverse);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight),
+    0 1px 3px 0 var(--tug-button-shadow);
 }
 
 /* Destructive variant: red-tinted border to communicate caution */
@@ -44,70 +179,64 @@
 }
 
 /* ============================================================================
-   Hover States
+   Hover States (2.5D: hover deepens shadow, brightens highlight)
+   Base .tug-button hover handles secondary. Overrides here for other variants.
+   [aria-disabled='true'] guard: chain-action disabled buttons stay visually inert.
    ========================================================================= */
 
-/*
- * shadcn's Tailwind hover classes (hover:bg-primary/90) don't work reliably
- * with CSS custom property color values. Override with explicit hover styles
- * using semantic tokens.
- *
- * Ghost variant uses --tug-base-surface-control instead of shadcn's
- * hover:bg-accent (which resolves to accent-cool cyan via the bridge).
- *
- * [aria-disabled='true'] guard: chain-action disabled buttons stay visually
- * inert on hover -- no filter, background, or border-color changes.
- */
+/* Primary: brightness filter on hover (preserves accent hue while adding depth) */
 .tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(1.25) saturate(1.1);
+  filter: brightness(1.15);
   border-color: var(--tug-base-border-muted);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-hover),
+    0 2px 4px 0 var(--tug-button-shadow-hover);
 }
 
-.tug-button-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-surface-default);
-  border-color: var(--tug-base-border-muted);
-}
-
+/* Ghost: shows surface on hover — flat, no elevation */
 .tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-surface-control);
   color: var(--tug-base-fg-default);
+  box-shadow: none;
 }
 
+/* Destructive: brightness filter on hover */
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(1.25) saturate(1.1);
+  filter: brightness(1.15);
   border-color: var(--tug-base-accent-danger);
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-hover),
+    0 2px 4px 0 var(--tug-button-shadow-hover);
 }
 
 /* ============================================================================
-   Pressed / Active States
+   Pressed / Active States (2.5D: shadow collapses, button translates down)
+   Base .tug-button active handles secondary. Overrides here for other variants.
    ========================================================================= */
 
+/* Primary: darken on press, shadow collapses */
 .tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(0.8) saturate(1.2);
+  filter: brightness(0.9);
+  transform: translateY(var(--tug-base-elevation-press-offset));
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-active),
+    0 0px 1px 0 var(--tug-button-shadow-active);
 }
 
-.tug-button-secondary:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-surface-control);
-  border-color: var(--tug-base-border-default);
-}
-
+/* Ghost: subtle fill on press — flat, no translateY */
 .tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-surface-default);
+  transform: none;
+  box-shadow: none;
 }
 
+/* Destructive: darken on press, shadow collapses */
 .tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(0.8) saturate(1.2);
-}
-
-/* Transition for smooth hover/active; component-level scale via CSS transform */
-.tug-button-primary,
-.tug-button-secondary,
-.tug-button-ghost,
-.tug-button-destructive {
-  transition:
-    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
-    border-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
-    filter var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
+  filter: brightness(0.9);
+  transform: translateY(var(--tug-base-elevation-press-offset));
+  box-shadow:
+    inset 0 1px 0 0 var(--tug-button-highlight-active),
+    0 0px 1px 0 var(--tug-button-shadow-active);
 }
 
 /* ============================================================================
@@ -119,9 +248,10 @@
  * disabled attribute so they remain in the tab order (keyboard accessible).
  *
  * Visual treatment mirrors the native :disabled state:
- *   - reduced opacity (matches shadcn's disabled:opacity-50)
+ *   - reduced opacity
  *   - cursor: not-allowed
  *   - pointer-events: none to suppress browser hover state flicker
+ *   - box-shadow: none (flat appearance, no 2.5D elevation when disabled)
  *
  * Hover and active rules above already exclude [aria-disabled='true'] via
  * :not([aria-disabled='true']) guards, so no extra override rules are needed.
@@ -133,6 +263,7 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+  box-shadow: none;
 }
 
 /* ============================================================================
@@ -141,23 +272,23 @@
 
 /*
  * Icon subtype buttons use square aspect ratio.
- * shadcn size icon = h-10 w-10, but we need all three sizes.
+ * All three sizes are explicitly defined.
  */
 .tug-button-icon-sm {
-  width: 2.25rem; /* h-9 = 36px */
+  width: 2.25rem; /* 36px */
   height: 2.25rem;
   padding: 0;
 }
 
 .tug-button-icon-md {
-  width: 2.5rem; /* h-10 = 40px */
+  width: 2.5rem; /* 40px */
   height: 2.5rem;
   padding: 0;
 }
 
 .tug-button-icon-lg {
-  width: 2.5rem; /* h-10 = 40px */
-  height: 2.5rem;
+  width: 2.75rem; /* 44px */
+  height: 2.75rem;
   padding: 0;
 }
 

@@ -1,8 +1,8 @@
 /**
  * TugButton -- tugways public API for buttons.
  *
- * Wraps shadcn's Button as a private implementation detail.
- * App code imports TugButton; never imports from components/ui/button directly.
+ * Wraps a plain <button> element with Radix Slot for asChild polymorphism.
+ * App code imports TugButton; never imports from components/ui/button.
  *
  * Phase 2: Direct-action mode (onClick) and all four subtypes.
  * Phase 3: Chain-action mode added via `action` prop.
@@ -12,7 +12,7 @@
  *   - When `action` is undefined or no ResponderChainProvider is in the tree,
  *     TugButton falls through to direct-action mode (existing onClick behavior).
  *
- * [D01] TugButton wraps shadcn Button as a private implementation detail
+ * [D01] TugButton wraps Radix Slot for asChild polymorphism (no shadcn)
  * [D05] Two-level action validation drives chain-action enabled state
  * [D06] Chain-action TugButton uses useSyncExternalStore for validation
  * [D04] TugButton CSS uses semantic tokens exclusively
@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useSyncExternalStore } from "react";
-import { Button } from "@/components/ui/button";
+import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "./responder-chain-provider";
 import "./tug-button.css";
@@ -115,28 +115,13 @@ export interface TugButtonProps {
 
   /** Additional CSS class names */
   className?: string;
+
+  /**
+   * Render as a different element or component (Radix asChild polymorphism).
+   * When true, the single child element becomes the button's DOM root.
+   */
+  asChild?: boolean;
 }
-
-// ---- Variant mapping (TugButton -> shadcn) ----
-
-type ShadcnVariant = "default" | "secondary" | "ghost" | "destructive";
-
-const VARIANT_MAP: Record<TugButtonVariant, ShadcnVariant> = {
-  primary: "default",
-  secondary: "secondary",
-  ghost: "ghost",
-  destructive: "destructive",
-};
-
-// ---- Size mapping (TugButton -> shadcn) ----
-
-type ShadcnSize = "sm" | "default" | "lg" | "icon";
-
-const SIZE_MAP: Record<TugButtonSize, ShadcnSize> = {
-  sm: "sm",
-  md: "default",
-  lg: "lg",
-};
 
 // ---- Border-radius tokens (rem-based, Tailwind-proportional) ----
 
@@ -195,6 +180,7 @@ export function TugButton({
   rounded,
   "aria-label": ariaLabel,
   className,
+  asChild = false,
 }: TugButtonProps) {
   // Three-state subtype internal state management
   const [internalState, setInternalState] = useState<TugButtonState>(state);
@@ -283,14 +269,6 @@ export function TugButton({
   // Border radius: explicit token wins, otherwise size-proportional default
   const resolvedRadius = ROUNDED_MAP[rounded ?? SIZE_ROUNDED_DEFAULT[size]];
 
-  // Shadcn variant and size
-  const shadcnVariant = VARIANT_MAP[variant];
-  const shadcnSize = SIZE_MAP[size];
-
-  // Icon subtype: use shadcn's "icon" size for square aspect ratio override
-  const resolvedShadcnSize: ShadcnSize =
-    subtype === "icon" ? "icon" : shadcnSize;
-
   // ---- Click handler ----
 
   const handleClick = () => {
@@ -347,7 +325,12 @@ export function TugButton({
 
   // CSS class composition
   const variantClass = `tug-button-${variant}`;
+  const sizeClass = `tug-button-size-${size}`;
   const buttonClassName = cn(
+    // Base tug-button class
+    "tug-button",
+    // Size class
+    sizeClass,
     // Variant class for hover/active/transition styles
     variantClass,
     // Border for non-ghost variants
@@ -406,10 +389,11 @@ export function TugButton({
     }
   }
 
+  // Use Radix Slot for asChild polymorphism; plain button otherwise.
+  const Comp = asChild ? Slot : "button";
+
   return (
-    <Button
-      variant={shadcnVariant}
-      size={resolvedShadcnSize}
+    <Comp
       disabled={disabled}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
@@ -420,6 +404,6 @@ export function TugButton({
       style={{ borderRadius: resolvedRadius }}
     >
       {renderContent()}
-    </Button>
+    </Comp>
   );
 }

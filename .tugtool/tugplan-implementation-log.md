@@ -9,6 +9,42 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-11T19:03:52Z
+---
+
+## step-3: Extracted card header into CardHeader component in chrome/. Implemented window-shade collapse with CSS height transition (content stays mounted per D07). Added collapse/menu/close buttons with 2.5D elevation. Wired collapse state through DeckManager.toggleCardCollapse() with serialization persistence. Added gallery-title-bar demo tab. Resize handles hidden when collapsed, drag remains active.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-8-radix-redesign.md
+
+---
+
+---
+step: step-2
+date: 2025-03-11T18:37:19Z
+---
+
+## step-2: Defined --tug-base-elevation-* tokens in tug-tokens.css with Brio defaults, Bluenote and Harmony theme overrides. Rewrote tug-button.css with full 2.5D pattern (inset highlight, bottom shadow, hover deepening, active press-down with translateY, disabled flat). Added 2.5D States demo tab to Component Gallery. Documented elevation pattern as Rule 15 in design-system-concepts.md. Resolved Q01 (no gradients).
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-8-radix-redesign.md
+
+---
+
+---
+step: step-1
+date: 2025-03-11T18:20:26Z
+---
+
+## step-1: Removed all 13 shadcn ui/ components, shadcn-base.css, components.json, and CVA dependency. Rewrote TugButton to use plain <button> + Radix Slot. Rewrote TugDropdown to import @radix-ui/react-dropdown-menu directly. Migrated all --tug-comp-* tokens to --tug-<component>-* naming. Deleted tug-comp-tokens.css. Updated scaffold tests, style inspector, and legacy token checker.
+
+**Files changed:**
+- .tugtool/tugplan-tugways-phase-8-radix-redesign.md
+
+---
+
+---
 step: step-11
 date: 2025-03-11T02:37:41Z
 ---

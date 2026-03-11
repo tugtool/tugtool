@@ -69,6 +69,20 @@ body {
   --tug-base-overlay-scrim: --tug-color(black, i: 0, t: 0, a: 32);
   --tug-base-overlay-highlight: --tug-color(white, i: 0, t: 100, a: 50);
 
+  /* 2.5D Elevation — Harmony light warm-neutral overrides.
+     Harmony is a light theme; highlights are more subtle (white on near-white
+     surfaces blends quickly), shadows are much lighter than dark themes.
+     Face tokens reference the warm yellow surface palette. */
+  --tug-base-elevation-highlight:        --tug-color(white, i: 0, t: 100, a: 70);
+  --tug-base-elevation-highlight-hover:  --tug-color(white, i: 0, t: 100, a: 90);
+  --tug-base-elevation-highlight-active: --tug-color(white, i: 0, t: 100, a: 40);
+  --tug-base-elevation-shadow:        --tug-color(black, i: 0, t: 0, a: 18);
+  --tug-base-elevation-shadow-hover:  --tug-color(black, i: 0, t: 0, a: 25);
+  --tug-base-elevation-shadow-active: --tug-color(black, i: 0, t: 0, a: 10);
+  --tug-base-elevation-face:        --tug-color(yellow, i: 4, t: 99);
+  --tug-base-elevation-face-hover:  --tug-color(yellow, i: 4, t: 100);
+  --tug-base-elevation-face-active: --tug-color(yellow, i: 6, t: 74);
+
   /* Accent — contrast-critical overrides per [D06]
      accent-muted: --tug-color(flame, i: 45, t: 38) is darker orange needed for muted text on light backgrounds.
      accent-subtle: Harmony-specific rgba with adjusted opacity for light bg.

@@ -31,6 +31,7 @@ import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 import { animate } from "@/components/tugways/tug-animator";
+import { CARD_TITLE_BAR_HEIGHT } from "./card-header";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]
@@ -85,6 +86,10 @@ export interface CardFrameInjectedProps {
   onDragStart: (event: React.PointerEvent) => void;
   /** Tugcard calls this to report its computed minimum size to CardFrame. */
   onMinSizeChange: (size: { width: number; height: number }) => void;
+  /** Whether the card is currently collapsed. Forwarded from cardState.collapsed. */
+  collapsed: boolean;
+  /** Called when the user toggles collapse. CardFrame forwards to onCardCollapsed. */
+  onCollapse: () => void;
 }
 
 /**
@@ -131,6 +136,12 @@ export interface CardFrameProps {
   zIndex: number;
   /** Whether this card is the focused (topmost) card. Drives visual focus styles. */
   isFocused: boolean;
+  /**
+   * Called when the user toggles collapse on the card header.
+   * CardFrame passes this as onCollapse to the Tugcard via renderContent.
+   * DeckCanvas wires this to store.toggleCardCollapse(id).
+   */
+  onCardCollapsed?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,8 +168,10 @@ export function CardFrame({
   activeTabId,
   zIndex,
   isFocused,
+  onCardCollapsed,
 }: CardFrameProps) {
   const { id, position, size } = cardState;
+  const collapsed = cardState.collapsed === true;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
   const frameRef = useRef<HTMLDivElement>(null);
@@ -331,6 +344,10 @@ export function CardFrame({
 
       // Capture pointer on the frame element for reliable move/up tracking outside bounds.
       frame.setPointerCapture(event.nativeEvent.pointerId);
+
+      // Disable height transition during drag so the collapse animation does not
+      // conflict with pointer-driven position updates. [D07, chrome.css]
+      frame.setAttribute("data-gesture", "true");
 
       // Snapshot canvas bounds and drag start state once.
       dragCanvasBounds.current = frame.parentElement?.getBoundingClientRect() ?? null;
@@ -628,6 +645,9 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
+        // Re-enable height transition now that the drag gesture is complete. [D07]
+        frame.removeAttribute("data-gesture");
+
         // Remove snap guides immediately on drop. [D03]
         // Must happen before any early return (e.g. merge) to prevent guide leaks.
         clearGuideElements(dragGuideEls);
@@ -773,6 +793,9 @@ export function CardFrame({
       const frame: HTMLDivElement = frameRef.current!;
 
       frame.setPointerCapture(event.nativeEvent.pointerId);
+
+      // Disable height transition during resize. [D07, chrome.css]
+      frame.setAttribute("data-gesture", "true");
 
       const startX = event.clientX;
       const startY = event.clientY;
@@ -1050,6 +1073,9 @@ export function CardFrame({
         frame.removeEventListener("pointerup", onPointerUp);
         frame.releasePointerCapture(e.pointerId);
 
+        // Re-enable height transition now that the resize gesture is complete. [D07]
+        frame.removeAttribute("data-gesture");
+
         // Compute final resize with snap applied first, THEN clear guides. [D03]
         // clearGuideElements must come AFTER computeAndApplyResize so that when snap
         // is active, syncGuideElements inside computeAndApplyResize does not re-create
@@ -1102,9 +1128,22 @@ export function CardFrame({
   // Render
   // ---------------------------------------------------------------------------
 
+  // When collapsed, the frame height is locked to CARD_TITLE_BAR_HEIGHT (28px) + 2px border.
+  // The card retains its full width for dragging. The stored `size.height` is preserved
+  // and restored when the card expands.
+  const COLLAPSED_FRAME_HEIGHT = CARD_TITLE_BAR_HEIGHT + 2; // 28px title bar + 2px border
+
+  const frameHeight = collapsed ? COLLAPSED_FRAME_HEIGHT : size.height;
+
+  const handleCollapse = useCallback(() => {
+    onCardCollapsed?.(id);
+  }, [id, onCardCollapsed]);
+
   const injected: CardFrameInjectedProps = {
     onDragStart: handleDragStart,
     onMinSizeChange: handleMinSizeChange,
+    collapsed,
+    onCollapse: handleCollapse,
   };
 
   return (
@@ -1114,19 +1153,20 @@ export function CardFrame({
       data-testid="card-frame"
       data-card-id={id}
       data-focused={isFocused ? "true" : "false"}
+      data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleFramePointerDown}
       style={{
         position: "absolute",
         left: position.x,
         top: position.y,
         width: size.width,
-        height: size.height,
+        height: frameHeight,
         zIndex,
         boxSizing: "border-box",
       }}
     >
-      {/* 8 resize handles -- CSS classes defined in chrome.css */}
-      {RESIZE_EDGES.map((edge) => (
+      {/* 8 resize handles -- hidden when collapsed; drag remains active [D07] */}
+      {!collapsed && RESIZE_EDGES.map((edge) => (
         <div
           key={edge}
           className={`card-frame-resize card-frame-resize-${edge}`}

@@ -477,6 +477,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
             onCardMoved={store.handleCardMoved}
             onCardClosed={handleClose}
             onCardFocused={handleCardFocused}
+            onCardCollapsed={(id) => store.toggleCardCollapse(id)}
             onCardMerged={(sourceCardId, targetCardId, insertIndex) => {
               // Resolve the active tab id from the source card at commit time.
               // store.mergeTab takes (sourceCardId, tabId, targetCardId, insertAtIndex).
@@ -508,6 +509,8 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
                   onClose={handleClose}
                   onDragStart={injected.onDragStart}
                   onMinSizeChange={injected.onMinSizeChange}
+                  collapsed={injected.collapsed}
+                  onCollapse={injected.onCollapse}
                   cardTitle={hasMultipleTabs ? cardState.title : undefined}
                   acceptedFamilies={hasMultipleTabs ? cardState.acceptsFamilies : undefined}
                 >

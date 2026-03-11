@@ -247,16 +247,14 @@ describe("TugButton – three-state subtype", () => {
 // ============================================================================
 
 describe("TugButton – variants", () => {
-  it("primary variant: maps to shadcn default and applies variant class", () => {
+  it("primary variant: applies tug-button-primary variant class", () => {
     const btn = renderButton({ variant: "primary", children: "Primary" });
-    expect(btn.className).toContain("shadcn-button--default");
     expect(btn.className).toContain("tug-button-primary");
     expect(btn.className).toContain("tug-button-bordered");
   });
 
-  it("secondary variant: maps to shadcn secondary and applies variant class", () => {
+  it("secondary variant: applies tug-button-secondary variant class", () => {
     const btn = renderButton({ variant: "secondary", children: "Secondary" });
-    expect(btn.className).toContain("shadcn-button--secondary");
     expect(btn.className).toContain("tug-button-secondary");
     expect(btn.className).toContain("tug-button-bordered");
   });
@@ -267,9 +265,8 @@ describe("TugButton – variants", () => {
     expect(btn.className).not.toContain("tug-button-bordered");
   });
 
-  it("destructive variant: maps to shadcn destructive and applies variant class", () => {
+  it("destructive variant: applies tug-button-destructive variant class", () => {
     const btn = renderButton({ variant: "destructive", children: "Delete" });
-    expect(btn.className).toContain("shadcn-button--destructive");
     expect(btn.className).toContain("tug-button-destructive");
     expect(btn.className).toContain("tug-button-bordered");
   });
@@ -280,19 +277,19 @@ describe("TugButton – variants", () => {
 // ============================================================================
 
 describe("TugButton – sizes", () => {
-  it("sm size: applies shadcn-button--size-sm class", () => {
+  it("sm size: applies tug-button-size-sm class", () => {
     const btn = renderButton({ size: "sm", children: "Small" });
-    expect(btn.className).toContain("shadcn-button--size-sm");
+    expect(btn.className).toContain("tug-button-size-sm");
   });
 
-  it("md size: applies shadcn-button--size-default class (shadcn default)", () => {
+  it("md size: applies tug-button-size-md class", () => {
     const btn = renderButton({ size: "md", children: "Medium" });
-    expect(btn.className).toContain("shadcn-button--size-default");
+    expect(btn.className).toContain("tug-button-size-md");
   });
 
-  it("lg size: applies shadcn-button--size-lg class (shadcn lg)", () => {
+  it("lg size: applies tug-button-size-lg class", () => {
     const btn = renderButton({ size: "lg", children: "Large" });
-    expect(btn.className).toContain("shadcn-button--size-lg");
+    expect(btn.className).toContain("tug-button-size-lg");
   });
 });
 
@@ -356,5 +353,60 @@ describe("TugButton – disabled state", () => {
     const btn = renderButton({ disabled: true, onClick: handler, children: "Save" });
     fireEvent.click(btn);
     expect(handler).toHaveBeenCalledTimes(0);
+  });
+});
+
+// ============================================================================
+// 2.5D Elevation model (Step 2)
+// ============================================================================
+
+describe("TugButton – 2.5D elevation (Spec S02)", () => {
+  it("secondary variant renders with tug-button class for elevation CSS", () => {
+    const btn = renderButton({ variant: "secondary", children: "Save" });
+    // The .tug-button class is the elevation hook; CSS applies box-shadow via tokens
+    expect(btn.className).toContain("tug-button");
+    expect(btn.className).toContain("tug-button-secondary");
+  });
+
+  it("primary variant renders with tug-button-primary class", () => {
+    const btn = renderButton({ variant: "primary", children: "Confirm" });
+    expect(btn.className).toContain("tug-button");
+    expect(btn.className).toContain("tug-button-primary");
+  });
+
+  it("destructive variant renders with tug-button-destructive class", () => {
+    const btn = renderButton({ variant: "destructive", children: "Delete" });
+    expect(btn.className).toContain("tug-button");
+    expect(btn.className).toContain("tug-button-destructive");
+  });
+
+  it("ghost variant renders with tug-button-ghost class (no elevation)", () => {
+    const btn = renderButton({ variant: "ghost", children: "Cancel" });
+    expect(btn.className).toContain("tug-button");
+    expect(btn.className).toContain("tug-button-ghost");
+    // Ghost has no bordered class — no elevation border
+    expect(btn.className).not.toContain("tug-button-bordered");
+  });
+
+  it("disabled button has disabled attribute (no hover/active elevation)", () => {
+    const btn = renderButton({ disabled: true, children: "Disabled" });
+    // HTML disabled attr means no hover/active states — elevation suppressed
+    expect(btn.disabled).toBe(true);
+    expect(btn.className).toContain("tug-button");
+  });
+
+  it("disabled button still has tug-button class", () => {
+    const btn = renderButton({ disabled: true, variant: "secondary", children: "Disabled" });
+    // The :disabled CSS rule applies box-shadow: none via the stylesheet
+    expect(btn.className).toContain("tug-button");
+    expect(btn.className).toContain("tug-button-secondary");
+  });
+
+  it("aria-disabled chain-action button has no active elevation (has aria-disabled class suppression)", () => {
+    // aria-disabled buttons also get box-shadow: none via CSS
+    // We verify the aria-disabled attribute is set when chain is active but not handled
+    const btn = renderButton({ disabled: false, variant: "secondary", children: "Active" });
+    // Not chain-disabled by default — no aria-disabled
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
   });
 });

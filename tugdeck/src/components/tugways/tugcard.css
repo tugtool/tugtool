@@ -1,7 +1,7 @@
 /**
  * Tugcard styles.
  *
- * All colors use --tug-comp-card-* and --tug-base-* semantic tokens.
+ * All colors use --tug-card-* and --tug-base-* semantic tokens.
  * No hardcoded hex values, no raw Tailwind color classes.
  *
  * Spec S07: Tugcard internal layout (flex column).
@@ -9,6 +9,37 @@
  *
  * [D04] Semantic tokens exclusively
  */
+
+/* ============================================================================
+   Component Token Definitions
+   ============================================================================ */
+
+body {
+  --tug-card-bg: var(--tug-base-card-bg);
+  --tug-card-border: var(--tug-base-card-border);
+  --tug-card-header-bg-active: var(--tug-base-card-header-bg-active);
+  --tug-card-header-bg-inactive: var(--tug-base-card-header-bg-inactive);
+  --tug-card-header-bg-collapsed: var(--tug-base-card-header-bg-collapsed);
+  --tug-card-header-fg: var(--tug-base-card-header-fg);
+  --tug-card-header-icon-active: var(--tug-base-card-header-icon-active);
+  --tug-card-header-icon-inactive: var(--tug-base-card-header-icon-inactive);
+  --tug-card-header-divider: var(--tug-base-card-header-divider);
+  --tug-card-header-button-bg-hover: var(--tug-base-card-header-button-bg-hover);
+  --tug-card-header-button-bg-active: var(--tug-base-card-header-button-bg-active);
+  --tug-card-header-button-fg: var(--tug-base-card-header-button-fg);
+  --tug-card-header-button-fg-danger: var(--tug-base-card-header-button-fg-danger);
+  --tug-card-header-button-fg-danger-hover: var(--tug-base-card-header-button-fg-danger-hover);
+  --tug-card-content-bg: var(--tug-base-surface-content);
+  --tug-card-accessory-bg: var(--tug-base-card-accessory-bg);
+  --tug-card-accessory-border: var(--tug-base-card-accessory-border);
+  --tug-card-shadow-active: var(--tug-base-card-shadow-active);
+  --tug-card-shadow-inactive: var(--tug-base-card-shadow-inactive);
+  --tug-card-dim-overlay: var(--tug-base-card-dim-overlay);
+  --tug-card-findbar-bg: var(--tug-base-card-findbar-bg);
+  --tug-card-findbar-border: var(--tug-base-card-findbar-border);
+  --tug-card-findbar-match: var(--tug-base-card-findbar-match);
+  --tug-card-findbar-match-active: var(--tug-base-card-findbar-match-active);
+}
 
 /* ============================================================================
    Tugcard root
@@ -20,8 +51,46 @@
   width: 100%;
   height: 100%;
   background-color: var(--tug-base-surface-default);
-  border: 1px solid var(--tug-comp-card-border);
+  border: 1px solid var(--tug-card-border);
   border-radius: var(--tug-base-radius-md);
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Tugcard body wrapper -- holds accessory + content below the header [D07]
+   ============================================================================ */
+
+/*
+ * .tugcard-body wraps the accessory slot and content area.
+ * When expanded: flex:1 fills remaining height after the 28px header.
+ * When collapsed: height:0 with overflow:hidden collapses the body while the
+ * React subtrees stay MOUNTED. Terminal sessions, scroll positions, and form
+ * state are preserved. [D07, Rule 4 — appearance via CSS, not React state]
+ */
+.tugcard-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Tugcard collapsed state -- title bar only, content CSS-hidden [D07]
+   ============================================================================ */
+
+/*
+ * When collapsed (.tugcard--collapsed), the .tugcard-body collapses to
+ * height:0. The React tree stays mounted -- only the CSS box disappears.
+ * CardFrame sets the frame height to CARD_TITLE_BAR_HEIGHT (28px) + 2px border
+ * via inline style when cardState.collapsed is true.
+ */
+.tugcard--collapsed .tugcard-body {
+  height: 0;
+  flex: none;
+}
+
+.tugcard--collapsed {
   overflow: hidden;
 }
 
@@ -36,7 +105,7 @@
   height: 28px;
   min-height: 28px;
   padding: 0 8px;
-  background-color: var(--tug-comp-card-header-bg-inactive);
+  background-color: var(--tug-card-header-bg-inactive);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -60,7 +129,7 @@
  * which is the ancestor of the Tugcard.
  */
 .card-frame[data-focused="true"] .tugcard-header {
-  background-color: var(--tug-comp-card-header-bg-active);
+  background-color: var(--tug-card-header-bg-active);
 }
 
 .tugcard-header:active {
@@ -78,7 +147,7 @@
   white-space: nowrap;
   font-size: 12px;
   font-weight: 500;
-  color: var(--tug-comp-card-header-fg);
+  color: var(--tug-card-header-fg);
   pointer-events: none;
 }
 
@@ -97,44 +166,27 @@
 }
 
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--tug-comp-card-header-icon-active);
+  color: var(--tug-card-header-icon-active);
 }
 
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--tug-comp-card-header-icon-inactive);
+  color: var(--tug-card-header-icon-inactive);
 }
 
 /* ============================================================================
-   Close button
+   Header controls group
    ============================================================================ */
 
-.tugcard-close-btn {
+/*
+ * Groups the collapse, menu, and close buttons on the right side of the header.
+ * CardHeader renders .card-header-btn elements inside this container.
+ * Per-button 2.5D elevation styles are in card-header.css (imported by card-header.tsx).
+ */
+.card-header-controls {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  margin-left: 4px;
-  background: none;
-  border: none;
-  border-radius: var(--tug-base-radius-sm);
-  color: var(--tug-comp-card-header-button-fg);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
-              color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
-}
-
-.tugcard-close-btn:hover {
-  background-color: var(--tug-base-surface-control);
-  color: var(--tug-base-fg-default);
-}
-
-.tugcard-close-btn:active {
-  background-color: var(--tug-base-surface-default);
+  margin-left: 4px;
 }
 
 /* ============================================================================
@@ -148,7 +200,7 @@
 .tugcard-accessory {
   flex-shrink: 0;
   background-color: var(--tug-base-surface-default);
-  border-bottom: 1px solid var(--tug-comp-card-border);
+  border-bottom: 1px solid var(--tug-card-border);
 }
 
 .tugcard-accessory:empty {

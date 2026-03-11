@@ -17,6 +17,24 @@
 .card-frame-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
 .card-frame-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
+/* ---- Card frame: height transition for window-shade collapse [D07] ----
+ *
+ * When a card collapses or expands, the frame height animates smoothly.
+ * The transition is disabled during active drag or resize gestures
+ * (data-gesture="true") to prevent the browser from interpolating height
+ * changes that are driven by pointer position, not collapse state.
+ *
+ * data-gesture="true" is set on the frame element by CardFrame at
+ * drag-start and resize-start, and cleared at gesture-end.
+ */
+.card-frame {
+  transition: height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard);
+}
+
+.card-frame[data-gesture="true"] {
+  transition: none;
+}
+
 /* ---- Card shadow: inactive by default, active when focused ---- */
 .tugcard {
   box-shadow: var(--tug-base-card-shadow-inactive);

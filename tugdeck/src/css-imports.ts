@@ -6,7 +6,6 @@
  * trigger a full page reload since main.tsx has no HMR accept handler).
  */
 import "./globals.css";
-import "../styles/shadcn-base.css";
 import "../styles/chrome.css";
 import "@xterm/xterm/css/xterm.css";
 

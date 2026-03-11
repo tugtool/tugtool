@@ -49,6 +49,19 @@ body {
   /* Elevation */
   --tug-base-shadow-sm: --tug-color(black, i: 0, t: 0, a: 44);
 
+  /* 2.5D Elevation — Bluenote dark blue-steel overrides.
+     Bluenote surfaces are deeper blue than Brio violet, so the highlight is
+     slightly cooler and the face tokens reference blue rather than violet. */
+  --tug-base-elevation-highlight:        --tug-color(white, i: 0, t: 100, a: 12);
+  --tug-base-elevation-highlight-hover:  --tug-color(white, i: 0, t: 100, a: 20);
+  --tug-base-elevation-highlight-active: --tug-color(white, i: 0, t: 100, a: 5);
+  --tug-base-elevation-shadow:        --tug-color(black, i: 0, t: 0, a: 55);
+  --tug-base-elevation-shadow-hover:  --tug-color(black, i: 0, t: 0, a: 65);
+  --tug-base-elevation-shadow-active: --tug-color(black, i: 0, t: 0, a: 35);
+  --tug-base-elevation-face:        --tug-color(blue+9, i: 5, t: 15);
+  --tug-base-elevation-face-hover:  --tug-color(blue+5, i: 5, t: 18);
+  --tug-base-elevation-face-active: --tug-color(blue+9, i: 5, t: 13);
+
   /* Selection */
   --tug-base-selection-bg-inactive: --tug-color(blue, i: 10, t: 33, a: 30);
   --tug-base-selection-fg: --tug-color(blue, i: 3, t: 88);

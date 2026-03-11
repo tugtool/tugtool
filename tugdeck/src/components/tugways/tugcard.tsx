@@ -40,7 +40,6 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FeedIdValue } from "../../protocol";
-import { icons } from "lucide-react";
 import type { TabItem, TabStateBag } from "../../layout-tree";
 import { selectionGuard } from "./selection-guard";
 import type { SavedSelection } from "./selection-guard";
@@ -55,6 +54,7 @@ import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
+import { CardHeader } from "../chrome/card-header";
 import "./tugcard.css";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +131,16 @@ export interface TugcardProps {
   onDragStart?: (event: React.PointerEvent) => void;
   /** Called when the close action fires. Forwarded from CardFrame via registry factory. */
   onClose?: () => void;
+  /**
+   * Whether the card is collapsed (title bar only, content hidden).
+   * Forwarded from CardState.collapsed via CardFrame.
+   */
+  collapsed?: boolean;
+  /**
+   * Called when the user toggles collapse (chevron click or header double-click).
+   * Forwarded from CardFrame which calls store.toggleCardCollapse.
+   */
+  onCollapse?: () => void;
   /** Card-specific content components. */
   children: React.ReactNode;
 
@@ -198,6 +208,8 @@ export function Tugcard({
   onMinSizeChange,
   onDragStart,
   onClose,
+  collapsed = false,
+  onCollapse,
   children,
   tabs,
   activeTabId,
@@ -675,57 +687,12 @@ export function Tugcard({
   const emptyFeedData = useRef(new Map<number, unknown>());
 
   // ---------------------------------------------------------------------------
-  // Header drag handler
+  // Collapse callback (forwarded from CardFrame via onCollapse prop)
   // ---------------------------------------------------------------------------
 
-  const handleHeaderPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      onDragStart?.(event);
-    },
-    [onDragStart],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Close button
-  // ---------------------------------------------------------------------------
-
-  // Mac-like close button: pointerdown captures the pointer and suppresses
-  // browser focus/selection side effects; pointerup-inside fires the action.
-  // The selection guard's handlePointerDown also early-returns for elements
-  // with data-no-activate, preventing highlight swap to the background card.
-  const handleClosePointerDown = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation(); // prevent bring-to-front
-      event.preventDefault(); // prevent focus/selection shift
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [],
-  );
-
-  const handleClosePointerUp = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      const rect = event.currentTarget.getBoundingClientRect();
-      const inside =
-        event.clientX >= rect.left &&
-        event.clientX <= rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY <= rect.bottom;
-      if (inside) {
-        onClose?.();
-      }
-    },
-    [onClose],
-  );
-
-  // Keyboard fallback: Enter/Space fires click without pointerdown.
-  const handleCloseClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-      onClose?.();
-    },
-    [onClose],
-  );
+  const handleCollapse = useCallback(() => {
+    onCollapse?.();
+  }, [onCollapse]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -734,73 +701,74 @@ export function Tugcard({
   const closable = effectiveMeta.closable !== false; // default true
 
   return (
-    <div className="tugcard" data-card-id={cardId} onPointerDown={handleCardPointerDown}>
-      {/* CardHeader: 28px, title + icon + close button */}
-      <div
-        className="tugcard-header"
-        onPointerDown={handleHeaderPointerDown}
-        data-testid="tugcard-header"
-      >
-        {effectiveMeta.icon && icons[effectiveMeta.icon as keyof typeof icons] && (
-          <span className="tugcard-icon" data-testid="tugcard-icon">
-            {React.createElement(icons[effectiveMeta.icon as keyof typeof icons], { size: 14 })}
-          </span>
-        )}
-        <span className="tugcard-title" data-testid="tugcard-title">
-          {displayTitle}
-        </span>
-        {closable && (
-          <button
-            type="button"
-            className="tugcard-close-btn"
-            data-no-activate
-            onPointerDown={handleClosePointerDown}
-            onPointerUp={handleClosePointerUp}
-            onClick={handleCloseClick}
-            aria-label="Close card"
-            data-testid="tugcard-close-btn"
-          >
-            ×
-          </button>
-        )}
-      </div>
+    <div
+      className={collapsed ? "tugcard tugcard--collapsed" : "tugcard"}
+      data-card-id={cardId}
+      data-collapsed={collapsed ? "true" : "false"}
+      onPointerDown={handleCardPointerDown}
+    >
+      {/* CardHeader: 28px title bar with 2.5D controls and collapse support */}
+      <CardHeader
+        title={displayTitle}
+        icon={effectiveMeta.icon}
+        closable={closable}
+        collapsed={collapsed}
+        onCollapse={handleCollapse}
+        onClose={onClose}
+        onDragStart={onDragStart}
+      />
 
-      {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
-          data-card-id is used by TabDragCoordinator to identify single-tab card
-          drop targets (tier-2 hit-test cache entry, [D05, Spec S07]). */}
+      {/*
+       * Accessory slot and content stay MOUNTED when collapsed [D07].
+       * Terminal sessions, scroll positions, and form values are preserved.
+       * Visibility is controlled via CSS: .tugcard--collapsed wraps these in
+       * a container with overflow:hidden and height:0 so they are invisible
+       * but their React subtrees remain alive.
+       *
+       * Rule 4 of Rules of Tugways: appearance changes go through CSS and DOM,
+       * never React state.
+       */}
       <div
-        ref={accessoryRef}
-        className="tugcard-accessory"
-        data-testid="tugcard-accessory"
-        data-card-id={cardId}
-        style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
+        className="tugcard-body"
+        data-testid="tugcard-body"
       >
-        {resolvedAccessory}
-      </div>
+        {/* Accessory slot: TugTabBar when tabs.length > 1, else original accessory or 0px.
+            data-card-id is used by TabDragCoordinator to identify single-tab card
+            drop targets (tier-2 hit-test cache entry, [D05, Spec S07]). */}
+        <div
+          ref={accessoryRef}
+          className="tugcard-accessory"
+          data-testid="tugcard-accessory"
+          data-card-id={cardId}
+          style={resolvedAccessory == null ? { height: 0, overflow: "hidden" } : undefined}
+        >
+          {resolvedAccessory}
+        </div>
 
-      {/* Content area: flex-grow, overflow auto */}
-      <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
-        <TugcardDataProvider feedData={emptyFeedData.current}>
-          <ResponderScope>
-            {/* Phase 5d4: provide PropertyStore registration callback to card content.
-                Card content calls usePropertyStore() which reads this context and
-                calls registerPropertyStore in useLayoutEffect. [D01] */}
-            <TugcardPropertyContext value={registerPropertyStore}>
-              {/* Phase 5f Step 4: provide persistence registration callback to card content.
-                  Card content calls useTugcardPersistence() (Step 6) which reads this
-                  context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
-              <TugcardPersistenceContext value={registerPersistenceCallbacks}>
-                <TugcardDirtyContext value={markDirty}>
-                  {feedsReady ? children : (
-                    <div className="tugcard-loading" data-testid="tugcard-loading">
-                      Loading...
-                    </div>
-                  )}
-                </TugcardDirtyContext>
-              </TugcardPersistenceContext>
-            </TugcardPropertyContext>
-          </ResponderScope>
-        </TugcardDataProvider>
+        {/* Content area: flex-grow, overflow auto */}
+        <div ref={contentRef} className="tugcard-content" data-testid="tugcard-content">
+          <TugcardDataProvider feedData={emptyFeedData.current}>
+            <ResponderScope>
+              {/* Phase 5d4: provide PropertyStore registration callback to card content.
+                  Card content calls usePropertyStore() which reads this context and
+                  calls registerPropertyStore in useLayoutEffect. [D01] */}
+              <TugcardPropertyContext value={registerPropertyStore}>
+                {/* Phase 5f Step 4: provide persistence registration callback to card content.
+                    Card content calls useTugcardPersistence() (Step 6) which reads this
+                    context and registers its save/restore callbacks in useLayoutEffect. [D02] */}
+                <TugcardPersistenceContext value={registerPersistenceCallbacks}>
+                  <TugcardDirtyContext value={markDirty}>
+                    {feedsReady ? children : (
+                      <div className="tugcard-loading" data-testid="tugcard-loading">
+                        Loading...
+                      </div>
+                    )}
+                  </TugcardDirtyContext>
+                </TugcardPersistenceContext>
+              </TugcardPropertyContext>
+            </ResponderScope>
+          </TugcardDataProvider>
+        </div>
       </div>
     </div>
   );

@@ -81,7 +81,7 @@ describe("PALETTE_VAR_REGEX", () => {
     expect(PALETTE_VAR_REGEX.test("--tug-l-dark")).toBe(false);
     expect(PALETTE_VAR_REGEX.test("--tug-l-light")).toBe(false);
     expect(PALETTE_VAR_REGEX.test("--tug-base-accent-default")).toBe(false);
-    expect(PALETTE_VAR_REGEX.test("--tug-comp-tab-bar-bg")).toBe(false);
+    expect(PALETTE_VAR_REGEX.test("--tug-tab-bar-bg")).toBe(false);
     expect(PALETTE_VAR_REGEX.test("--tug-zoom")).toBe(false);
   });
 
@@ -385,7 +385,7 @@ describe("StyleInspectorOverlay -- resolveTokenChain", () => {
 
   afterEach(() => {
     // Clean up any custom properties set on body
-    document.body.style.removeProperty("--tug-comp-tab-bar-bg");
+    document.body.style.removeProperty("--tug-tab-bar-bg");
     document.body.style.removeProperty("--tug-base-tab-bar-bg");
     document.body.style.removeProperty("--tug-orange");
     document.body.style.removeProperty("--tug-base-accent-cool-default");
@@ -583,7 +583,7 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   });
 
   afterEach(() => {
-    document.body.style.removeProperty("--tug-comp-tab-bar-bg");
+    document.body.style.removeProperty("--tug-tab-bar-bg");
     document.body.style.removeProperty("--tug-base-tab-bar-bg");
     document.body.style.removeProperty("--tug-cobalt-intense");
 
@@ -593,15 +593,15 @@ describe("StyleInspectorOverlay -- resolveTokenChain three-layer chain", () => {
   });
 
   it("walks a three-layer chain: comp -> base -> terminal hex", () => {
-    // Simulate: --tug-comp-tab-bar-bg -> var(--tug-base-tab-bar-bg) -> #1a1d24
-    document.body.style.setProperty("--tug-comp-tab-bar-bg", " var(--tug-base-tab-bar-bg)");
+    // Simulate: --tug-tab-bar-bg -> var(--tug-base-tab-bar-bg) -> #1a1d24
+    document.body.style.setProperty("--tug-tab-bar-bg", " var(--tug-base-tab-bar-bg)");
     document.body.style.setProperty("--tug-base-tab-bar-bg", " #1a1d24");
 
-    const chain = overlay.resolveTokenChain("--tug-comp-tab-bar-bg");
+    const chain = overlay.resolveTokenChain("--tug-tab-bar-bg");
 
     // Should have at least one hop (comp token)
     expect(chain.length).toBeGreaterThanOrEqual(1);
-    expect(chain[0].property).toBe("--tug-comp-tab-bar-bg");
+    expect(chain[0].property).toBe("--tug-tab-bar-bg");
 
     // If happy-dom propagates the var() walk, should have two hops
     if (chain.length >= 2) {
