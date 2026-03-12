@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-12T17:52:23Z
+---
+
+## step-3: Replaced 17 raw --tug-color() values in tug-inspector.css with var(--tug-base-*) semantic references per Spec S01
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-2
 date: 2025-03-12T17:48:28Z
 ---
