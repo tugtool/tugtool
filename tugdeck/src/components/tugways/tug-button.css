@@ -28,16 +28,16 @@
   color: var(--tug-base-fg-default);
   position: relative;
 
-  background-color: var(--tug-base-action-secondary-bg-rest);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   transition: background-color 80ms ease, filter 80ms ease;
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-action-secondary-bg-hover);
+  background-color: var(--tug-base-control-secondary-bg-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-action-secondary-bg-active);
+  background-color: var(--tug-base-control-secondary-bg-active);
 }
 
 .tug-button:focus-visible {
@@ -117,13 +117,13 @@
 
 /* Destructive variant: danger red fill with inverse text */
 .tug-button-destructive {
-  background-color: var(--tug-base-accent-danger);
+  background-color: var(--tug-base-control-destructive-bg-rest);
   color: var(--tug-base-fg-inverse);
 }
 
 /* Destructive variant: red-tinted border to communicate caution */
 .tug-button-destructive.tug-button-bordered {
-  border-color: var(--tug-base-accent-danger);
+  border-color: var(--tug-base-control-destructive-border);
 }
 
 /* ============================================================================
@@ -139,14 +139,14 @@
 
 /* Ghost: shows surface on hover */
 .tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 
 /* Destructive: brightness filter on hover */
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.15);
-  border-color: var(--tug-base-accent-danger);
+  border-color: var(--tug-base-control-destructive-bg-rest); /* uses -bg-rest to preserve red border on hover */
 }
 
 /* ============================================================================

@@ -108,7 +108,7 @@ export function GalleryCascadeInspectorContent() {
           (b) TugButton — two-layer chain (no comp token)
         </div>
         <p className="cg-description">
-          <code>--tug-base-action-primary-bg-rest</code> → palette variable.
+          <code>--tug-base-control-primary-bg-rest</code> → palette variable.
           TugButton CSS references <code>--tug-base-*</code> directly — no{" "}
           <code>--tug-button-*</code> tokens are wired yet.
         </p>

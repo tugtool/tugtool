@@ -23,9 +23,9 @@ body {
   --tug-base-surface-raised: --tug-color(blue, i: 5, t: 24);
   --tug-base-surface-overlay: --tug-color(yellow, i: 6, t: 48);
   --tug-base-surface-inset: --tug-color(yellow, i: 4, t: 100);
-  --tug-base-surface-control: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-surface-control-hover: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-surface-control-active: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-control-secondary-bg-rest: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-control-secondary-bg-hover: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-control-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
   --tug-base-surface-content: --tug-color(yellow, i: 4, t: 100);
   --tug-base-surface-screen: --tug-color(blue, i: 4, t: 80);
 
@@ -135,17 +135,14 @@ body {
   --tug-canvas-grid-line: --tug-color(black, i: 0, t: 0, a: 6);
   --tug-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
 
-  /* Actions */
-  --tug-base-action-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-action-secondary-bg-hover: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-action-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-action-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-action-secondary-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-action-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-action-ghost-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-action-disabled-bg: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-action-disabled-fg: --tug-color(blue, i: 8, t: 44);
-  --tug-base-action-disabled-border: --tug-color(yellow, i: 5, t: 46);
+  /* Control Surfaces */
+  --tug-base-control-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-control-secondary-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-control-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-control-ghost-fg: --tug-color(blue, i: 9, t: 22);
+  /* selected/highlighted fg: Brio default (cobalt, i:3, t:94) is near-white — invisible on Harmony's light bg */
+  --tug-base-control-selected-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-control-highlighted-fg: --tug-color(blue+5, i: 8, t: 13);
 
   /* Disabled controls */
   --tug-base-control-disabled-bg: --tug-color(yellow, i: 6, t: 74);
@@ -214,14 +211,16 @@ body {
   /* Toasts */
   --tug-toast-info-bg: --tug-color(yellow, i: 4, t: 99);
   --tug-toast-info-fg: --tug-color(blue+5, i: 8, t: 13);
-  /* toast-warning-fg: preserved per [D06] — --tug-color(yellow, i: 55, t: 35) needed for contrast on light bg */
-  --tug-toast-warning-fg: --tug-color(yellow, i: 55, t: 35);
 
   /* Badges / Status */
   --tug-badge-neutral-bg: --tug-color(yellow, i: 5, t: 46);
   --tug-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
-  /* badge-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-badge-warning-fg: --tug-color(yellow, i: 46, t: 27);
+
+  /* Tone overrides — contrast-critical per [D06]; darker values needed on Harmony's light backgrounds */
+  /* warning-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
+  --tug-base-tone-warning-fg: --tug-color(yellow, i: 46, t: 27);
+  /* info-fg: darker cyan needed for contrast on light bg */
+  --tug-base-tone-info-fg: --tug-color(blue, i: 42, t: 40);
 
   /* Progress / Skeleton */
   --tug-progress-track: --tug-color(yellow, i: 5, t: 46);
@@ -229,12 +228,6 @@ body {
   --tug-skeleton-highlight: --tug-color(yellow, i: 4, t: 85);
   --tug-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
   --tug-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
-
-  /* Banners */
-  /* banner-info-fg: preserved per [D06] — --tug-color(blue, i: 42, t: 40) darker cyan needed for contrast on light bg */
-  --tug-banner-info-fg: --tug-color(blue, i: 42, t: 40);
-  /* banner-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-banner-warning-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Kbd */
   --tug-kbd-bg: --tug-color(yellow, i: 4, t: 99);

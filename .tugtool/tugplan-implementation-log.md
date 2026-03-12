@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-12T16:40:54Z
+---
+
+## step-7: Final verification: all grep checks pass (zero old token refs, 20 tone tokens, 42 control tokens), typecheck clean, 1358 tests pass. Manual visual inspection deferred.
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-6
+date: 2025-03-12T16:36:38Z
+---
+
+## step-6: Verified all theme overrides in harmony.css and bluenote.css, added control-selected-fg and control-highlighted-fg overrides for Harmony light theme visibility
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-5
+date: 2025-03-12T16:31:16Z
+---
+
+## step-5: Removed accent-positive/warning/danger/info from tug-base.css, migrated tug-button.css destructive variant to control-destructive-* tokens, migrated disconnect-banner.tsx to tone-warning
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-4
+date: 2025-03-12T16:27:28Z
+---
+
+## step-4: Removed 22 tone-duplicate tokens from tug-dialog.css, collapsed 4 harmony per-component overrides into 2 tone-level overrides (tone-warning-fg, tone-info-fg), updated step8 integration test
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-3
+date: 2025-03-12T16:21:40Z
+---
+
+## step-3: Removed 3 surface-control definitions from tug-base.css, updated all var() call sites across 6 component CSS files, renamed overrides in bluenote.css and harmony.css, resolved duplicate harmony.css entries
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-2
+date: 2025-03-12T16:13:59Z
+---
+
+## step-2: Renamed all --tug-base-action-* to --tug-base-control-* across 5 files, deleted redundant action-disabled-* tokens, added ~15 new control tokens (ghost, disabled, icon, selected, highlighted), fixed -fg-rest bug in style-inspector-overlay.ts
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
+step: step-1
+date: 2025-03-12T16:07:37Z
+---
+
+## step-1: Added 20 --tug-base-tone-* custom properties (positive/warning/danger/info × base/bg/fg/border/icon) in new Semantic Tones section C of tug-base.css
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-3
 date: 2025-03-11T19:03:52Z
 ---
