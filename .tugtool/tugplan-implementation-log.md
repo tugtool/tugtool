@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-12T18:00:24Z
+---
+
+## step-5: Replaced 11 raw --tug-color() values in tug-dock.css with var(--tug-base-*) semantic references per Spec S01
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-4
 date: 2025-03-12T17:56:57Z
 ---
