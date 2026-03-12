@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-12T16:07:37Z
+---
+
+## step-1: Added 20 --tug-base-tone-* custom properties (positive/warning/danger/info × base/bg/fg/border/icon) in new Semantic Tones section C of tug-base.css
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-3
 date: 2025-03-11T19:03:52Z
 ---

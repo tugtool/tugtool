@@ -284,7 +284,33 @@ body {
   --tug-base-accent-flash: --tug-color(orange, i: 50, t: 50, a: 40);
 
   /* ======================================================================
-     === C. Selection / Highlight / Preview
+     === C. Semantic Tones
+     ====================================================================== */
+
+  /* --- Semantic Tones --- */
+  --tug-base-tone-positive: --tug-color(green);
+  --tug-base-tone-positive-bg: --tug-color(green, i: 50, t: 50, a: 15);
+  --tug-base-tone-positive-fg: --tug-color(green);
+  --tug-base-tone-positive-border: --tug-color(green);
+  --tug-base-tone-positive-icon: --tug-color(green);
+  --tug-base-tone-warning: --tug-color(yellow);
+  --tug-base-tone-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-base-tone-warning-fg: --tug-color(yellow);
+  --tug-base-tone-warning-border: --tug-color(yellow);
+  --tug-base-tone-warning-icon: --tug-color(yellow);
+  --tug-base-tone-danger: --tug-color(red);
+  --tug-base-tone-danger-bg: --tug-color(red, i: 50, t: 50, a: 15);
+  --tug-base-tone-danger-fg: --tug-color(red);
+  --tug-base-tone-danger-border: --tug-color(red);
+  --tug-base-tone-danger-icon: --tug-color(red);
+  --tug-base-tone-info: --tug-color(cyan);
+  --tug-base-tone-info-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
+  --tug-base-tone-info-fg: --tug-color(cyan);
+  --tug-base-tone-info-border: --tug-color(cyan);
+  --tug-base-tone-info-icon: --tug-color(cyan);
+
+  /* ======================================================================
+     === D. Selection / Highlight / Preview
      ====================================================================== */
 
   --tug-base-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 40);
