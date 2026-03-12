@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-12T18:25:19Z
+---
+
+## step-10: Integration verification: aggregate grep audit confirms zero migrate-classified tokens retain --tug-color() across all 8 component CSS files
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-9
 date: 2025-03-12T18:18:51Z
 ---
