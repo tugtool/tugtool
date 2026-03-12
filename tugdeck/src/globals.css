@@ -1,5 +1,11 @@
 @import "../styles/tug-palette.css";
-@import "../styles/tug-tokens.css";
+@import "../styles/tug-base.css";
+/* Component token files (token definitions; rules are colocated with component TSX imports) */
+@import "./components/tugways/tug-dock.css";
+@import "./components/tugways/tug-dialog.css";
+@import "./components/tugways/tug-data.css";
+@import "./components/tugways/tug-code.css";
+@import "./components/tugways/tug-inspector.css";
 
 /* Global resets (moved from inline <style> in index.html) */
 html,
@@ -16,8 +22,8 @@ body {
   color: var(--tug-base-fg-default);
   background-color: var(--tug-base-bg-canvas);
   background-image:
-    linear-gradient(var(--tug-base-canvas-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--tug-base-canvas-grid-line) 1px, transparent 1px);
+    linear-gradient(var(--tug-canvas-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tug-canvas-grid-line) 1px, transparent 1px);
   background-size: 24px 24px;
   user-select: none;
 }

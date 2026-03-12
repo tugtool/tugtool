@@ -2,7 +2,7 @@
  * @theme-name Brio
  * @theme-description Default dark graphite theme
  *
- * Brio's canonical values are defined as defaults in tug-tokens.css (body { --tug-base-* }).
+ * Brio's canonical values are defined as defaults in tug-base.css (body { --tug-base-* }).
  * This file exists for symmetry with other theme files and future override capability.
  */
 body {

@@ -25,7 +25,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
-import { CardHeader } from "@/components/chrome/card-header";
+import { CardHeader } from "@/components/tugways/card-header";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
 import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
 import { GalleryPaletteContent } from "./gallery-palette-content";

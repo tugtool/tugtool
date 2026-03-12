@@ -2,7 +2,7 @@
  * scale-timing.ts -- JS helpers for the global scale/timing/motion multipliers.
  *
  * Provides runtime access to the three global CSS custom properties defined on
- * :root in tug-tokens.css:
+ * :root in tug-base.css:
  *   --tug-zoom   continuous dimension multiplier (default 1)
  *   --tug-timing  continuous animation-duration multiplier (default 1)
  *   --tug-motion  binary motion toggle: 1 = on, 0 = off (default 1)

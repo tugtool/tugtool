@@ -6,7 +6,7 @@
  * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.
  *
  * Phase 5d5e: Chromatic tokens that resolved from hardcoded hex values have been
- * removed. They now resolve from the shared TugColor palette via tug-tokens.css.
+ * removed. They now resolve from the shared TugColor palette via tug-base.css.
  * Only non-chromatic overrides (surfaces, grays, structural colors, shadows) remain.
  */
 body {
@@ -54,61 +54,61 @@ body {
   --tug-base-selection-fg: --tug-color(blue, i: 3, t: 88);
 
   /* Card */
-  --tug-base-card-bg: --tug-color(blue+6, i: 7, t: 19);
-  --tug-base-card-border: --tug-color(blue+8, i: 8, t: 29);
-  --tug-base-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 45);
-  --tug-base-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 22);
-  --tug-base-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 18);
+  --tug-card-bg: --tug-color(blue+6, i: 7, t: 19);
+  --tug-card-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 45);
+  --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 22);
+  --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 18);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: --tug-color(blue, i: 14, t: 21);
-  --tug-base-card-header-bg-inactive: --tug-color(blue+6, i: 10, t: 15);
-  --tug-base-card-header-bg-collapsed: --tug-color(cobalt-9, i: 9, t: 15);
-  --tug-base-card-header-fg: --tug-color(blue, i: 3, t: 88);
-  --tug-base-card-header-icon-inactive: --tug-color(blue+7, i: 9, t: 34);
-  --tug-base-card-header-divider: --tug-color(blue, i: 8, t: 20);
+  --tug-card-header-bg-active: --tug-color(blue, i: 14, t: 21);
+  --tug-card-header-bg-inactive: --tug-color(blue+6, i: 10, t: 15);
+  --tug-card-header-bg-collapsed: --tug-color(cobalt-9, i: 9, t: 15);
+  --tug-card-header-fg: --tug-color(blue, i: 3, t: 88);
+  --tug-card-header-icon-inactive: --tug-color(blue+7, i: 9, t: 34);
+  --tug-card-header-divider: --tug-color(blue, i: 8, t: 20);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: --tug-color(blue+5, i: 5, t: 16);
-  --tug-base-tab-bg-active: --tug-color(blue+5, i: 5, t: 18);
-  --tug-base-tab-fg-rest: --tug-color(blue+7, i: 7, t: 37);
-  --tug-base-tab-fg-active: --tug-color(blue, i: 3, t: 88);
-  --tug-base-tab-close-fg-hover: --tug-color(blue, i: 3, t: 88);
+  --tug-tab-bar-bg: --tug-color(blue+5, i: 5, t: 16);
+  --tug-tab-bg-active: --tug-color(blue+5, i: 5, t: 18);
+  --tug-tab-fg-rest: --tug-color(blue+7, i: 7, t: 37);
+  --tug-tab-fg-active: --tug-color(blue, i: 3, t: 88);
+  --tug-tab-close-fg-hover: --tug-color(blue, i: 3, t: 88);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: --tug-color(white, i: 0, t: 100, a: 4);
+  --tug-canvas-grid-line: --tug-color(white, i: 0, t: 100, a: 4);
 
   /* Dock */
-  --tug-base-dock-bg: --tug-color(blue+9, i: 5, t: 13);
+  --tug-dock-bg: --tug-color(blue+9, i: 5, t: 13);
 
   /* Menus / Popovers */
-  --tug-base-menu-bg: --tug-color(blue+6, i: 7, t: 19);
-  --tug-base-menu-border: --tug-color(blue+8, i: 8, t: 29);
-  --tug-base-popover-bg: --tug-color(blue+6, i: 7, t: 19);
-  --tug-base-popover-border: --tug-color(blue+8, i: 8, t: 29);
-  --tug-base-tooltip-bg: --tug-color(blue+5, i: 5, t: 18);
-  --tug-base-tooltip-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-menu-bg: --tug-color(blue+6, i: 7, t: 19);
+  --tug-menu-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-popover-bg: --tug-color(blue+6, i: 7, t: 19);
+  --tug-popover-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-tooltip-bg: --tug-color(blue+5, i: 5, t: 18);
+  --tug-tooltip-border: --tug-color(blue+8, i: 8, t: 29);
 
   /* Dialogs */
-  --tug-base-dialog-bg: --tug-color(blue+6, i: 7, t: 19);
-  --tug-base-dialog-border: --tug-color(blue+8, i: 8, t: 29);
-  --tug-base-sheet-bg: --tug-color(blue+6, i: 7, t: 19);
-  --tug-base-sheet-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-dialog-bg: --tug-color(blue+6, i: 7, t: 19);
+  --tug-dialog-border: --tug-color(blue+8, i: 8, t: 29);
+  --tug-sheet-bg: --tug-color(blue+6, i: 7, t: 19);
+  --tug-sheet-border: --tug-color(blue+8, i: 8, t: 29);
 
   /* Scrollbar */
   --tug-base-scrollbar-thumb: --tug-color(blue+8, i: 8, t: 29);
   --tug-base-scrollbar-thumb-hover: --tug-color(blue+7, i: 7, t: 37);
 
   /* Terminal */
-  --tug-base-terminal-bg: --tug-color(blue+5, i: 5, t: 13);
-  --tug-base-terminal-fg: --tug-color(blue, i: 3, t: 88);
-  --tug-base-terminal-fg-muted: --tug-color(blue+6, i: 8);
-  --tug-base-terminal-ansi-white: --tug-color(blue, i: 3, t: 88);
+  --tug-terminal-bg: --tug-color(blue+5, i: 5, t: 13);
+  --tug-terminal-fg: --tug-color(blue, i: 3, t: 88);
+  --tug-terminal-fg-muted: --tug-color(blue+6, i: 8);
+  --tug-terminal-ansi-white: --tug-color(blue, i: 3, t: 88);
 
   /* Feed */
-  --tug-base-feed-bg: --tug-color(blue+9, i: 5, t: 13);
+  --tug-feed-bg: --tug-color(blue+9, i: 5, t: 13);
 
   /* Progress / Skeleton */
-  --tug-base-skeleton-base: --tug-color(blue+8, i: 7, t: 24);
-  --tug-base-skeleton-highlight: --tug-color(blue+5, i: 5, t: 32);
+  --tug-skeleton-base: --tug-color(blue+8, i: 7, t: 24);
+  --tug-skeleton-highlight: --tug-color(blue+5, i: 5, t: 32);
 }

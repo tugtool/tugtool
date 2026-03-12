@@ -7,7 +7,7 @@
  * Spacing, radius, typography, stroke, icon-size are theme-invariant and not overridden.
  *
  * Phase 5d5e: Chromatic tokens that are safely derivable from the TugColor palette have been
- * removed. They now resolve from the shared palette via tug-tokens.css.
+ * removed. They now resolve from the shared palette via tug-base.css.
  * Contrast-critical fg overrides are PRESERVED per [D06] — these are tokens where the
  * palette preset has insufficient contrast on Harmony's light backgrounds. They will be
  * removed when per-theme canonical L tuning is implemented in a future phase.
@@ -84,56 +84,56 @@ body {
   --tug-base-highlight-hover: --tug-color(black, i: 0, t: 0, a: 4);
 
   /* Card */
-  --tug-base-card-bg: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-card-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 18);
-  --tug-base-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 9);
-  --tug-base-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-card-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-card-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 18);
+  --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 9);
+  --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 8);
 
   /* Card Header */
-  --tug-base-card-header-bg-active: --tug-color(gold+6, i: 23, t: 57);
-  --tug-base-card-header-bg-inactive: --tug-color(yellow-5, i: 8, t: 60);
-  --tug-base-card-header-bg-collapsed: --tug-color(yellow, i: 9, t: 45);
-  --tug-base-card-header-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-card-header-icon-inactive: --tug-color(yellow, i: 10, t: 36);
-  --tug-base-card-header-divider: --tug-color(yellow, i: 7, t: 42);
-  --tug-base-card-header-button-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-card-header-button-bg-active: --tug-color(black, i: 0, t: 0, a: 10);
-  --tug-base-card-header-button-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-card-accessory-bg: --tug-color(yellow, i: 6, t: 44);
-  --tug-base-card-accessory-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-card-findbar-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-card-findbar-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-card-header-bg-active: --tug-color(gold+6, i: 23, t: 57);
+  --tug-card-header-bg-inactive: --tug-color(yellow-5, i: 8, t: 60);
+  --tug-card-header-bg-collapsed: --tug-color(yellow, i: 9, t: 45);
+  --tug-card-header-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-card-header-icon-inactive: --tug-color(yellow, i: 10, t: 36);
+  --tug-card-header-divider: --tug-color(yellow, i: 7, t: 42);
+  --tug-card-header-button-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-card-header-button-bg-active: --tug-color(black, i: 0, t: 0, a: 10);
+  --tug-card-header-button-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-card-accessory-bg: --tug-color(yellow, i: 6, t: 44);
+  --tug-card-accessory-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-card-findbar-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-card-findbar-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Tab Bar */
-  --tug-base-tab-bar-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-tab-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
-  --tug-base-tab-bg-active: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-tab-bg-compact: --tug-color(black, i: 0, t: 0, a: 4);
-  --tug-base-tab-fg-rest: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-tab-fg-active: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-tab-fg-compact: --tug-color(blue, i: 9, t: 22);
-  --tug-base-tab-close-bg-hover: --tug-color(black, i: 0, t: 0, a: 8);
-  --tug-base-tab-close-fg-hover: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-tab-ghost-bg: --tug-color(black, i: 0, t: 0, a: 4);
-  --tug-base-tab-ghost-border: --tug-color(black, i: 0, t: 0, a: 8);
-  --tug-base-tab-overflow-trigger-bg: --tug-color(black, i: 0, t: 0, a: 5);
-  --tug-base-tab-overflow-trigger-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-tab-add-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-tab-add-fg: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-tab-typePicker-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-tab-typePicker-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-tab-bar-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-tab-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-tab-bg-active: --tug-color(yellow, i: 4, t: 99);
+  --tug-tab-bg-compact: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-tab-fg-rest: --tug-color(yellow, i: 9, t: 28);
+  --tug-tab-fg-active: --tug-color(blue+5, i: 8, t: 13);
+  --tug-tab-fg-compact: --tug-color(blue, i: 9, t: 22);
+  --tug-tab-close-bg-hover: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-tab-close-fg-hover: --tug-color(blue+5, i: 8, t: 13);
+  --tug-tab-ghost-bg: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-tab-ghost-border: --tug-color(black, i: 0, t: 0, a: 8);
+  --tug-tab-overflow-trigger-bg: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-tab-overflow-trigger-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-tab-add-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-tab-add-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-tab-typePicker-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-tab-typePicker-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Dock */
-  --tug-base-dock-bg: --tug-color(blue+5, i: 5, t: 20);
-  --tug-base-dock-border: --tug-color(blue, i: 9, t: 30);
-  --tug-base-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
-  --tug-base-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 16);
-  --tug-base-dock-button-fg: --tug-color(yellow, i: 10, t: 36);
+  --tug-dock-bg: --tug-color(blue+5, i: 5, t: 20);
+  --tug-dock-border: --tug-color(blue, i: 9, t: 30);
+  --tug-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
+  --tug-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 16);
+  --tug-dock-button-fg: --tug-color(yellow, i: 10, t: 36);
 
   /* Canvas / Grid */
-  --tug-base-canvas-grid-line: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
+  --tug-canvas-grid-line: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
 
   /* Actions */
   --tug-base-action-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
@@ -185,61 +185,61 @@ body {
   --tug-base-range-tick: --tug-color(yellow, i: 9, t: 28);
 
   /* Menus / Overlays */
-  --tug-base-menu-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-menu-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-menu-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-menu-shadow: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 24);
-  --tug-base-menu-item-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
-  --tug-base-menu-item-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-menu-item-fg-disabled: --tug-color(blue, i: 8, t: 44);
-  --tug-base-menu-item-meta: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-menu-item-shortcut: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-menu-item-icon: --tug-color(blue, i: 9, t: 22);
-  --tug-base-menu-item-chevron: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-popover-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-popover-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-popover-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-tooltip-bg: --tug-color(blue+5, i: 5, t: 20);
-  --tug-base-tooltip-fg: --tug-color(sky, i: 1, t: 100);
-  --tug-base-tooltip-border: --tug-color(blue, i: 9, t: 30);
+  --tug-menu-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-menu-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-menu-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-menu-shadow: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 24);
+  --tug-menu-item-bg-hover: --tug-color(black, i: 0, t: 0, a: 5);
+  --tug-menu-item-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-menu-item-fg-disabled: --tug-color(blue, i: 8, t: 44);
+  --tug-menu-item-meta: --tug-color(yellow, i: 9, t: 28);
+  --tug-menu-item-shortcut: --tug-color(yellow, i: 9, t: 28);
+  --tug-menu-item-icon: --tug-color(blue, i: 9, t: 22);
+  --tug-menu-item-chevron: --tug-color(yellow, i: 9, t: 28);
+  --tug-popover-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-popover-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-popover-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-tooltip-bg: --tug-color(blue+5, i: 5, t: 20);
+  --tug-tooltip-fg: --tug-color(sky, i: 1, t: 100);
+  --tug-tooltip-border: --tug-color(blue, i: 9, t: 30);
 
   /* Dialogs */
-  --tug-base-dialog-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-dialog-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-dialog-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-sheet-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-sheet-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-sheet-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-dialog-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-dialog-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-dialog-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-sheet-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-sheet-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-sheet-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Toasts */
-  --tug-base-toast-info-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-toast-info-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-toast-info-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-toast-info-fg: --tug-color(blue+5, i: 8, t: 13);
   /* toast-warning-fg: preserved per [D06] — --tug-color(yellow, i: 55, t: 35) needed for contrast on light bg */
-  --tug-base-toast-warning-fg: --tug-color(yellow, i: 55, t: 35);
+  --tug-toast-warning-fg: --tug-color(yellow, i: 55, t: 35);
 
   /* Badges / Status */
-  --tug-base-badge-neutral-bg: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-badge-neutral-bg: --tug-color(yellow, i: 5, t: 46);
+  --tug-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
   /* badge-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-badge-warning-fg: --tug-color(yellow, i: 46, t: 27);
+  --tug-badge-warning-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Progress / Skeleton */
-  --tug-base-progress-track: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-skeleton-base: --tug-color(yellow, i: 6, t: 52);
-  --tug-base-skeleton-highlight: --tug-color(yellow, i: 4, t: 85);
-  --tug-base-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
+  --tug-progress-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-skeleton-base: --tug-color(yellow, i: 6, t: 52);
+  --tug-skeleton-highlight: --tug-color(yellow, i: 4, t: 85);
+  --tug-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
 
   /* Banners */
   /* banner-info-fg: preserved per [D06] — --tug-color(blue, i: 42, t: 40) darker cyan needed for contrast on light bg */
-  --tug-base-banner-info-fg: --tug-color(blue, i: 42, t: 40);
+  --tug-banner-info-fg: --tug-color(blue, i: 42, t: 40);
   /* banner-warning-fg: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-banner-warning-fg: --tug-color(yellow, i: 46, t: 27);
+  --tug-banner-warning-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Kbd */
-  --tug-base-kbd-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-kbd-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-kbd-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-kbd-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-kbd-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-kbd-border: --tug-color(yellow, i: 9, t: 28);
 
   /* Scrollbar */
   --tug-base-scrollbar-thumb: --tug-color(yellow, i: 9, t: 28);
@@ -252,96 +252,96 @@ body {
   --tug-base-avatar-ring: --tug-color(yellow, i: 9, t: 28);
 
   /* Tables / Lists */
-  --tug-base-table-header-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-table-header-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-table-row-bg-striped: --tug-color(black, i: 0, t: 0, a: 2);
-  --tug-base-table-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
-  --tug-base-table-row-border: --tug-color(yellow, i: 5, t: 48);
-  --tug-base-table-cell-divider: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-table-sortIndicator: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-list-row-hover: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-table-header-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-table-header-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-table-row-bg-striped: --tug-color(black, i: 0, t: 0, a: 2);
+  --tug-table-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-table-row-border: --tug-color(yellow, i: 5, t: 48);
+  --tug-table-cell-divider: --tug-color(yellow, i: 5, t: 46);
+  --tug-table-sortIndicator: --tug-color(yellow, i: 9, t: 28);
+  --tug-list-row-hover: --tug-color(black, i: 0, t: 0, a: 4);
 
   /* Stats */
-  --tug-base-stat-label: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-stat-value: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-stat-trend-neutral: --tug-color(yellow, i: 9, t: 28);
+  --tug-stat-label: --tug-color(yellow, i: 9, t: 28);
+  --tug-stat-value: --tug-color(blue+5, i: 8, t: 13);
+  --tug-stat-trend-neutral: --tug-color(yellow, i: 9, t: 28);
 
   /* Chart infrastructure (non-chromatic) */
-  --tug-base-chart-grid: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-chart-axis: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-chart-tick: --tug-color(yellow, i: 9, t: 28);
+  --tug-chart-grid: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-chart-axis: --tug-color(yellow, i: 9, t: 28);
+  --tug-chart-tick: --tug-color(yellow, i: 9, t: 28);
 
   /* Gauge (non-chromatic structural) */
-  --tug-base-gauge-track: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-gauge-needle: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-gauge-tick-major: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-gauge-tick-minor: --tug-color(yellow, i: 10, t: 36);
-  --tug-base-gauge-readout: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-gauge-unit: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-gauge-annotation: --tug-color(yellow, i: 9, t: 28);
+  --tug-gauge-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-gauge-needle: --tug-color(blue+5, i: 8, t: 13);
+  --tug-gauge-tick-major: --tug-color(yellow, i: 9, t: 28);
+  --tug-gauge-tick-minor: --tug-color(yellow, i: 10, t: 36);
+  --tug-gauge-readout: --tug-color(blue+5, i: 8, t: 13);
+  --tug-gauge-unit: --tug-color(yellow, i: 9, t: 28);
+  --tug-gauge-annotation: --tug-color(yellow, i: 9, t: 28);
 
   /* Syntax — contrast-critical override per [D06]
      syntax-function: --tug-color(yellow, i: 46, t: 27) dark gold needed — palette --tug-yellow (L=0.901) has
      insufficient contrast on Harmony's light surfaces. */
-  --tug-base-syntax-function: --tug-color(yellow, i: 46, t: 27);
+  --tug-syntax-function: --tug-color(yellow, i: 46, t: 27);
 
   /* Terminal */
-  --tug-base-terminal-bg: --tug-color(yellow, i: 4, t: 100);
-  --tug-base-terminal-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-terminal-fg-muted: --tug-color(blue, i: 9, t: 22);
-  --tug-base-terminal-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-terminal-ansi-black: --tug-color(blue+5, i: 8, t: 13);
+  --tug-terminal-bg: --tug-color(yellow, i: 4, t: 100);
+  --tug-terminal-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-terminal-fg-muted: --tug-color(blue, i: 9, t: 22);
+  --tug-terminal-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-terminal-ansi-black: --tug-color(blue+5, i: 8, t: 13);
   /* terminal-ansi-yellow: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-terminal-ansi-yellow: --tug-color(yellow, i: 46, t: 27);
+  --tug-terminal-ansi-yellow: --tug-color(yellow, i: 46, t: 27);
   /* terminal-ansi-white: Harmony-specific near-white for terminal display */
-  --tug-base-terminal-ansi-white: --tug-color(sky, i: 1, t: 100);
+  --tug-terminal-ansi-white: --tug-color(sky, i: 1, t: 100);
 
   /* Chat / Code Block */
-  --tug-base-chat-transcript-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-chat-message-user-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-chat-message-assistant-bg: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-chat-message-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-chat-composer-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-chat-composer-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-chat-attachment-bg: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-chat-attachment-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-chat-attachment-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-codeBlock-bg: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-codeBlock-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-codeBlock-header-bg: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-codeBlock-header-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-chat-transcript-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-chat-message-user-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-chat-message-assistant-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-chat-message-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-chat-composer-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-chat-composer-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-chat-attachment-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-chat-attachment-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-chat-attachment-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-codeBlock-bg: --tug-color(yellow, i: 7, t: 51);
+  --tug-codeBlock-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-codeBlock-header-bg: --tug-color(yellow, i: 6, t: 48);
+  --tug-codeBlock-header-fg: --tug-color(yellow, i: 9, t: 28);
 
   /* Tree / File status — file-status-modified preserved per [D06] */
-  --tug-base-tree-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
-  --tug-base-tree-row-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-tree-chevron: --tug-color(yellow, i: 9, t: 28);
+  --tug-tree-row-bg-hover: --tug-color(black, i: 0, t: 0, a: 4);
+  --tug-tree-row-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-tree-chevron: --tug-color(yellow, i: 9, t: 28);
   /* file-status-modified: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-file-status-modified: --tug-color(yellow, i: 46, t: 27);
+  --tug-file-status-modified: --tug-color(yellow, i: 46, t: 27);
 
   /* Feed */
-  --tug-base-feed-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-feed-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-feed-step-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-feed-step-fg: --tug-color(blue, i: 9, t: 22);
+  --tug-feed-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-feed-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-feed-step-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-feed-step-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Inspector / Dev Overlay */
-  --tug-base-inspector-panel-bg: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-inspector-panel-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-inspector-panel-bg-pinned: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-inspector-section-bg: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-inspector-field-bg: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-inspector-field-border: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-inspector-field-readOnly: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-inspector-field-default: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-inspector-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-inspector-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
-  --tug-base-inspector-swatch-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-inspector-scrub-track: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-inspector-scrub-thumb: --tug-color(yellow, i: 9, t: 28);
+  --tug-inspector-panel-bg: --tug-color(yellow, i: 6, t: 74);
+  --tug-inspector-panel-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-inspector-panel-bg-pinned: --tug-color(yellow, i: 4, t: 99);
+  --tug-inspector-section-bg: --tug-color(yellow, i: 7, t: 51);
+  --tug-inspector-field-bg: --tug-color(yellow, i: 4, t: 99);
+  --tug-inspector-field-border: --tug-color(yellow, i: 5, t: 46);
+  --tug-inspector-field-readOnly: --tug-color(yellow, i: 6, t: 74);
+  --tug-inspector-field-default: --tug-color(yellow, i: 6, t: 74);
+  --tug-inspector-emptyState-fg: --tug-color(yellow, i: 9, t: 28);
+  --tug-inspector-emptyState-icon: --tug-color(yellow, i: 10, t: 36);
+  --tug-inspector-swatch-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-inspector-scrub-track: --tug-color(yellow, i: 5, t: 46);
+  --tug-inspector-scrub-thumb: --tug-color(yellow, i: 9, t: 28);
   /* inspector-source-inline: preserved per [D06] — --tug-color(yellow, i: 46, t: 27) needed for contrast on light bg */
-  --tug-base-inspector-source-inline: --tug-color(yellow, i: 46, t: 27);
-  --tug-base-dev-overlay-bg: --tug-color(yellow, i: 4, t: 99, a: 95);
-  --tug-base-dev-overlay-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-dev-overlay-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 20);
+  --tug-inspector-source-inline: --tug-color(yellow, i: 46, t: 27);
+  --tug-dev-overlay-bg: --tug-color(yellow, i: 4, t: 99, a: 95);
+  --tug-dev-overlay-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-dev-overlay-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 20);
 }

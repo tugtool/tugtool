@@ -1,0 +1,89 @@
+/**
+ * TugCode — Syntax, Terminal, Chat, CodeBlock, Tree, Diff, Feed component tokens.
+ *
+ * Token prefix: --tug-syntax-*, --tug-terminal-*, --tug-chat-*, --tug-codeBlock-*,
+ *               --tug-tree-*, --tug-file-status-*, --tug-diff-*, --tug-feed-*
+ * Drops the "base" segment per CSS reorganization.
+ * No CSS rules yet — tokens only.
+ */
+
+body {
+  /* --- Syntax ---
+     Accent-derived tokens: palette var() references per Phase 5d5e.
+     Text-derived tokens: var() references to --tug-base-fg-* per [D09] — these do NOT
+     need per-theme overrides since they inherit from the already-overridden fg tokens. */
+  --tug-syntax-keyword: --tug-color(cyan);
+  --tug-syntax-string: --tug-color(coral-muted);
+  --tug-syntax-number: --tug-color(green);
+  --tug-syntax-function: --tug-color(yellow);
+  --tug-syntax-type: --tug-color(green);
+  --tug-syntax-variable: --tug-color(cyan);
+  /* text-derived — inherits per-theme via fg-muted override */
+  --tug-syntax-comment: var(--tug-base-fg-muted);
+  /* text-derived — inherits per-theme via fg-default override */
+  --tug-syntax-operator: var(--tug-base-fg-default);
+  --tug-syntax-punctuation: var(--tug-base-fg-default);
+  --tug-syntax-constant: --tug-color(cyan);
+  --tug-syntax-decorator: --tug-color(violet);
+  --tug-syntax-tag: --tug-color(cyan);
+  --tug-syntax-attribute: --tug-color(cyan);
+
+  /* --- Terminal --- */
+  --tug-terminal-bg: --tug-color(violet-6, i: 5, t: 6);
+  --tug-terminal-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-terminal-fg-muted: --tug-color(cobalt, i: 5, t: 66);
+  --tug-terminal-cursor: --tug-color(orange);
+  --tug-terminal-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 30);
+  --tug-terminal-border: --tug-color(violet-6, i: 6, t: 17);
+  /* ANSI color palette — palette var() references per Phase 5d5e */
+  --tug-terminal-ansi-black: --tug-color(violet, i: 5, t: 12);
+  --tug-terminal-ansi-red: --tug-color(red);
+  --tug-terminal-ansi-green: --tug-color(green);
+  --tug-terminal-ansi-yellow: --tug-color(yellow);
+  --tug-terminal-ansi-blue: --tug-color(cyan);
+  --tug-terminal-ansi-magenta: --tug-color(violet);
+  --tug-terminal-ansi-cyan: --tug-color(cyan);
+  --tug-terminal-ansi-white: --tug-color(cobalt, i: 3, t: 94);
+
+  /* --- Conversation / Chat / Code Block --- */
+  --tug-chat-transcript-bg: --tug-color(violet-6, i: 4, t: 7);
+  --tug-chat-message-user-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-chat-message-assistant-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-chat-message-system-bg: --tug-color(cyan, i: 50, t: 50, a: 7);
+  --tug-chat-message-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-chat-composer-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-chat-composer-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-chat-attachment-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-chat-attachment-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-chat-attachment-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-codeBlock-bg: --tug-color(violet-6, i: 5, t: 8);
+  --tug-codeBlock-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-codeBlock-header-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-codeBlock-header-fg: --tug-color(cobalt+7, i: 7, t: 37);
+
+  /* --- Files / Git / Tree --- */
+  --tug-tree-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
+  --tug-tree-row-bg-selected: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
+  --tug-tree-row-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-tree-chevron: --tug-color(cobalt, i: 6, t: 30);
+  --tug-file-status-added: --tug-color(green);
+  --tug-file-status-modified: --tug-color(yellow);
+  --tug-file-status-deleted: --tug-color(red);
+  --tug-file-status-renamed: --tug-color(cyan);
+  --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
+  --tug-diff-addition-fg: --tug-color(green);
+  --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
+  --tug-diff-deletion-fg: --tug-color(red);
+
+  /* --- Workflow / Feed Progress --- */
+  --tug-feed-bg: --tug-color(violet-6, i: 4, t: 7);
+  --tug-feed-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-feed-step-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-feed-step-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-feed-step-active: --tug-color(orange);
+  --tug-feed-step-complete: --tug-color(green);
+  --tug-feed-step-error: --tug-color(red);
+  --tug-feed-stream-cursor: --tug-color(orange);
+  --tug-feed-handoff: --tug-color(cyan);
+}

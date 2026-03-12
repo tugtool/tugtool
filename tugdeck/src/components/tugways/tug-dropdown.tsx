@@ -13,7 +13,7 @@
 import React, { useRef } from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
-import "./tug-dropdown.css";
+import "./tug-menu.css";
 
 // ---- Types (Spec S04) ----
 

@@ -7,7 +7,7 @@
  *
  * No explicit @media (prefers-reduced-motion) rule is needed here — the global
  * body[data-tug-motion="off"] * { animation-duration: 0s !important } rule in
- * tug-tokens.css already suppresses all CSS animations (including this pulse)
+ * tug-base.css already suppresses all CSS animations (including this pulse)
  * when reduced motion is active. The skeleton renders as a static placeholder
  * in that case. [D04]
  *
@@ -26,8 +26,8 @@
  * Matches shadcn/ui Skeleton approach — always visible, never disappears.
  */
 @keyframes td-shimmer {
-  0%, 100% { background-color: var(--tug-base-skeleton-base); }
-  50%      { background-color: var(--tug-base-skeleton-highlight); }
+  0%, 100% { background-color: var(--tug-skeleton-base); }
+  50%      { background-color: var(--tug-skeleton-highlight); }
 }
 
 /* ============================================================================
@@ -35,7 +35,7 @@
    ============================================================================ */
 
 .tug-skeleton {
-  background-color: var(--tug-base-skeleton-base);
+  background-color: var(--tug-skeleton-base);
   animation: td-shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   border-radius: var(--tug-base-radius-sm);
   display: block;

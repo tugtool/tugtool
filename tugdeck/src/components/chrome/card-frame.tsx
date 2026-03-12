@@ -31,7 +31,7 @@ import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 import { animate } from "@/components/tugways/tug-animator";
-import { CARD_TITLE_BAR_HEIGHT } from "./card-header";
+import { CARD_TITLE_BAR_HEIGHT } from "../tugways/card-header";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]
@@ -43,7 +43,7 @@ let nextFlashId = 0;
 // Shadow extension constant [Spec S02]
 //
 // px beyond border-box for exterior edges in clip-path: inset().
-// Derived from --tug-base-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
+// Derived from --tug-card-shadow-active: 0 2px 8px rgba(0,0,0,0.4).
 // 20px = blur(8) * 2 + offset(2) + margin — generous enough to show full shadow.
 // ---------------------------------------------------------------------------
 

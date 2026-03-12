@@ -412,7 +412,7 @@ describe("tug-palette.css — global lightness anchors", () => {
 describe("tug-palette.css — preset variables removed (unified into TugColor)", () => {
   // Preset CSS variables (--tug-red, --tug-red-light, etc.) have been removed
   // from tug-palette.css. They are now computed at build time by the postcss-tug-color
-  // plugin from --tug-color(hue-preset) syntax in tug-tokens.css and theme files.
+  // plugin from --tug-color(hue-preset) syntax in tug-base.css and theme files.
 
   it("does NOT contain chromatic preset variables for red (removed, use --tug-color())", () => {
     expect(TUG_PALETTE_CSS).not.toContain("--tug-red:");

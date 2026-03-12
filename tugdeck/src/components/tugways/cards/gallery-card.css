@@ -490,7 +490,7 @@
   width: 0.2em;
   height: 0.5em;
   border-radius: 50%;
-  background-color: var(--tug-base-spinner, currentColor);
+  background-color: var(--tug-spinner, currentColor);
   animation: tug-petals-fade calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite,
              tug-petals-scale calc(800ms * var(--tug-timing, 1)) var(--tug-base-motion-easing-standard) infinite;
 }
@@ -546,7 +546,7 @@
   height: var(--tug-pole-height);
   width: 100%;
   border-radius: calc(var(--tug-pole-height) / 2);
-  background-color: var(--tug-base-progress-track, #3a3e46);
+  background-color: var(--tug-progress-track, #3a3e46);
   overflow: hidden;
   position: relative;
 }
@@ -557,8 +557,8 @@
   border-radius: inherit;
   background-image: repeating-linear-gradient(
     -45deg,
-    var(--tug-base-progress-fill, #ff8a38) 0px,
-    var(--tug-base-progress-fill, #ff8a38) 5px,
+    var(--tug-progress-fill, #ff8a38) 0px,
+    var(--tug-progress-fill, #ff8a38) 5px,
     transparent 5px,
     transparent 10px
   );

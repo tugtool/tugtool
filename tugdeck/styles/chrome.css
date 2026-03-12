@@ -3,7 +3,7 @@
  * Retains rules that are clearer as CSS than Tailwind utilities:
  * resize handle hit areas, snap guide borders, virtual sash hover, flash overlays.
  * All other chrome styles are Tailwind utilities on React components.
- * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-base-* tokens from tug-tokens.css.
+ * Replaces cards-chrome.css (404 lines, now deleted). Uses --tug-base-* tokens from tug-base.css.
  */
 
 /* ---- Resize handles: 8px hit area on each edge/corner ---- */
@@ -37,11 +37,11 @@
 
 /* ---- Card shadow: inactive by default, active when focused ---- */
 .tugcard {
-  box-shadow: var(--tug-base-card-shadow-inactive);
+  box-shadow: var(--tug-card-shadow-inactive);
 }
 
 .card-frame[data-focused="true"] .tugcard {
-  box-shadow: var(--tug-base-card-shadow-active);
+  box-shadow: var(--tug-card-shadow-active);
 }
 
 /* ---- Card focus: border-radius on focused, dim overlay on unfocused ---- */
@@ -57,7 +57,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--tug-base-card-dim-overlay);
+  background: var(--tug-card-dim-overlay);
   border-radius: var(--tug-base-radius-md);
   pointer-events: none;
   z-index: 2;

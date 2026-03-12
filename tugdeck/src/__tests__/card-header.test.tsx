@@ -21,7 +21,7 @@ import React from "react";
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
-import { CardHeader, CARD_TITLE_BAR_HEIGHT } from "@/components/chrome/card-header";
+import { CardHeader, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/card-header";
 import { CardFrame } from "@/components/chrome/card-frame";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 import type { CardState } from "@/layout-tree";

@@ -1,0 +1,42 @@
+/**
+ * TugDock + Canvas + Snap component tokens.
+ *
+ * Token prefix: --tug-dock-*, --tug-canvas-*, --tug-snap-*, --tug-sash-*,
+ *               --tug-flash-*, --tug-set-*
+ * Drops the "base" segment per CSS reorganization.
+ * No CSS rules yet — tokens only. Rules live in chrome.css for now.
+ */
+
+body {
+  /* --- Dock --- */
+  --tug-dock-bg: --tug-color(violet-6, i: 4, t: 7);
+  --tug-dock-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-dock-indicator: --tug-color(orange);
+  --tug-dock-menu-caret: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
+  --tug-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
+  --tug-dock-button-fg: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-dock-button-fg-active: --tug-color(orange);
+  --tug-dock-button-fg-attention: --tug-color(yellow);
+  --tug-dock-button-badge-bg: --tug-color(red);
+  --tug-dock-button-badge-fg: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-dock-button-insertIndicator: --tug-color(cyan);
+
+  /* --- Canvas / Grid --- */
+  /* --tug-canvas-grid-line: Brio default grid line opacity */
+  --tug-canvas-grid-line: --tug-color(white, i: 0, t: 100, a: 5);
+  --tug-canvas-grid-emphasis: --tug-color(white, i: 0, t: 100, a: 10);
+
+  /* --- Snap / Sash / Flash --- */
+  --tug-snap-guide: --tug-color(cyan, i: 50, t: 50, a: 60);
+  --tug-sash-hover: --tug-color(orange, i: 50, t: 50, a: 40);
+  --tug-flash-perimeter: --tug-color(cyan, i: 50, t: 50, a: 70);
+
+  /* --- Snap Sets --- */
+  --tug-set-member-border-collapsed: --tug-color(cyan, i: 50, t: 50, a: 30);
+  --tug-set-member-corner-squared: --tug-color(cyan);
+  --tug-set-focused-outline: --tug-color(cyan, i: 50, t: 50, a: 50);
+  --tug-set-hull-flash: --tug-color(cyan, i: 50, t: 50, a: 25);
+  --tug-set-breakout-flash: --tug-color(orange, i: 50, t: 50, a: 35);
+  --tug-set-dropTarget: --tug-color(cyan, i: 50, t: 50, a: 18);
+}

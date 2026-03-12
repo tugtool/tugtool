@@ -54,8 +54,8 @@ import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
-import { CardHeader } from "../chrome/card-header";
-import "./tugcard.css";
+import { CardHeader } from "./card-header";
+import "./tug-card.css";
 
 // ---------------------------------------------------------------------------
 // TugcardDirtyContext — contentchange mechanism

@@ -29,7 +29,7 @@
  *   [D04] selectionchange safety net for keyboard selection
  *   [D05] data-td-select attribute API
  *   [D06] Cmd+A selectAll action (wired in tugcard.tsx, Step 5)
- *   [D07] Selection tokens (tug-tokens.css)
+ *   [D07] Selection tokens (tug-base.css)
  *
  * API reference: Spec S01, Spec S04
  * Risk mitigations: R01 (caretPositionFromPoint compat), R02 (selection flash)

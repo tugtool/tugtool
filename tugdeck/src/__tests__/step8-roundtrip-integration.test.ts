@@ -1,7 +1,7 @@
 /**
  * Step 8 integration: round-trip verification across all converted theme tokens.
  *
- * For every --tug-color() call in tug-tokens.css, bluenote.css, and harmony.css:
+ * For every --tug-color() call in tug-base.css, bluenote.css, and harmony.css:
  * 1. Expand via the PostCSS plugin to get an oklch() string.
  * 2. Run oklchToTugColor() on the expanded oklch.
  * 3. Re-expand the recovered --tug-color() call via the plugin.
@@ -100,8 +100,8 @@ describe("Step 8: brio.css is unmodified", () => {
 });
 
 describe("Step 8: zero standalone hex values in theme files", () => {
-  it("tug-tokens.css has no standalone hex values", () => {
-    const css = readFileSync(join(STYLES_DIR, "tug-tokens.css"), "utf8");
+  it("tug-base.css has no standalone hex values", () => {
+    const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
     expect(extractStandaloneHex(css)).toHaveLength(0);
   });
 
@@ -121,7 +121,7 @@ describe("Step 8: zero standalone hex values in theme files", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
-  const themeFiles = ["tug-tokens.css", "bluenote.css", "harmony.css"];
+  const themeFiles = ["tug-base.css", "bluenote.css", "harmony.css"];
 
   for (const file of themeFiles) {
     it(`${file}: every --tug-color() call expands to a parseable oklch()`, () => {
@@ -151,7 +151,7 @@ describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () => {
-  const themeFiles = ["tug-tokens.css", "bluenote.css", "harmony.css"];
+  const themeFiles = ["tug-base.css", "bluenote.css", "harmony.css"];
 
   for (const file of themeFiles) {
     it(`${file}: round-trip stays within delta-E < 0.02 for all tokens`, () => {
@@ -200,8 +200,8 @@ describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () 
 // ---------------------------------------------------------------------------
 
 describe("Step 8: --tug-color() calls are fully expanded in theme files", () => {
-  it("tug-tokens.css: processing through plugin produces zero --tug-color() in declaration values", () => {
-    const css = readFileSync(join(STYLES_DIR, "tug-tokens.css"), "utf8");
+  it("tug-base.css: processing through plugin produces zero --tug-color() in declaration values", () => {
+    const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
     const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];
@@ -243,10 +243,10 @@ describe("Step 8: D06 contrast-critical overrides in harmony.css are correct", (
 
   const d06Expected: Array<{ token: string; tugColor: string }> = [
     { token: "--tug-base-accent-muted",    tugColor: "--tug-color(flame, i: 45, t: 38)"  },
-    { token: "--tug-base-toast-warning-fg", tugColor: "--tug-color(yellow, i: 55, t: 35)" },
-    { token: "--tug-base-badge-warning-fg", tugColor: "--tug-color(yellow, i: 46, t: 27)" },
-    { token: "--tug-base-banner-info-fg",   tugColor: "--tug-color(blue, i: 42, t: 40)"   },
-    { token: "--tug-base-field-warning",    tugColor: "--tug-color(yellow, i: 62, t: 58)" },
+    { token: "--tug-toast-warning-fg",     tugColor: "--tug-color(yellow, i: 55, t: 35)" },
+    { token: "--tug-badge-warning-fg",     tugColor: "--tug-color(yellow, i: 46, t: 27)" },
+    { token: "--tug-banner-info-fg",       tugColor: "--tug-color(blue, i: 42, t: 40)"   },
+    { token: "--tug-base-field-warning",   tugColor: "--tug-color(yellow, i: 62, t: 58)" },
   ];
 
   for (const { token, tugColor } of d06Expected) {

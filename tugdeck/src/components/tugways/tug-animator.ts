@@ -4,7 +4,7 @@
  * Wraps the Web Animations API (WAAPI) with:
  *   - Named animation slots (WeakMap-based, GC-safe)
  *   - Three cancellation modes: snap-to-end, hold-at-current, reverse-from-current
- *   - Duration token resolution from tug-tokens.css base values, scaled by getTugTiming()
+ *   - Duration token resolution from tug-base.css base values, scaled by getTugTiming()
  *   - Reduced-motion awareness via isTugMotionEnabled()
  *   - Animation groups via group()
  *
@@ -12,7 +12,7 @@
  * Callers: import { animate, group } from './tug-animator'
  *
  * Cross-reference: DURATION_TOKEN_MAP values must stay in sync with
- * tug-tokens.css --tug-base-motion-duration-* definitions.
+ * tug-base.css --tug-base-motion-duration-* definitions.
  *
  * Re-exports physics solvers for convenience.
  */
@@ -26,7 +26,7 @@ export { SpringSolver, GravitySolver, FrictionSolver } from "./physics";
 
 /**
  * Maps --tug-base-motion-duration-* token names to their unscaled base ms values.
- * Mirrors tug-tokens.css. Must be updated if new duration tokens are added there.
+ * Mirrors tug-base.css. Must be updated if new duration tokens are added there.
  *
  * These are base (unscaled) values. getTugTiming() is applied at call time to
  * get the final scaled duration, so runtime timing changes propagate to new

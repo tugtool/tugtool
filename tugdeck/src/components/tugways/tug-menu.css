@@ -1,5 +1,10 @@
 /**
- * TugDropdown styles -- tugways-specific CSS using --tug-dropdown-* and --tug-base-* tokens.
+ * TugMenu + TugDropdown styles — component token definitions and rules.
+ *
+ * Token prefix: --tug-menu-*, --tug-popover-*, --tug-tooltip-*
+ * Drops the "base" segment per CSS reorganization.
+ *
+ * The --tug-dropdown-* aliases map to --tug-menu-* tokens (formerly --tug-base-menu-*).
  *
  * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
@@ -12,27 +17,46 @@
 
 /* ============================================================================
    Component Token Definitions
-   ============================================================================ */
+   ========================================================================= */
 
-/*
- * --tug-dropdown-* tokens map to --tug-base-menu-* and --tug-base-surface-* tokens.
- * Defined on body so they inherit to all dropdown elements.
- */
 body {
-  --tug-dropdown-bg: var(--tug-base-menu-bg);
-  --tug-dropdown-fg: var(--tug-base-menu-fg);
-  --tug-dropdown-border: var(--tug-base-menu-border);
-  --tug-dropdown-shadow: var(--tug-base-menu-shadow);
-  --tug-dropdown-item-bg-hover: var(--tug-base-menu-item-bg-hover);
-  --tug-dropdown-item-bg-selected: var(--tug-base-menu-item-bg-selected);
-  --tug-dropdown-item-fg: var(--tug-base-menu-item-fg);
-  --tug-dropdown-item-fg-disabled: var(--tug-base-menu-item-fg-disabled);
-  --tug-dropdown-item-fg-danger: var(--tug-base-menu-item-fg-danger);
-  --tug-dropdown-item-meta: var(--tug-base-menu-item-meta);
-  --tug-dropdown-item-shortcut: var(--tug-base-menu-item-shortcut);
-  --tug-dropdown-item-icon: var(--tug-base-menu-item-icon);
-  --tug-dropdown-item-icon-danger: var(--tug-base-menu-item-icon-danger);
-  --tug-dropdown-item-chevron: var(--tug-base-menu-item-chevron);
+  /* --- Menu / Popover / Tooltip --- */
+  --tug-menu-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-menu-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-menu-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-menu-shadow: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 60);
+  --tug-menu-item-bg-hover: --tug-color(white, i: 0, t: 100, a: 7);
+  --tug-menu-item-bg-selected: --tug-color(orange, i: 50, t: 50, a: 15);
+  --tug-menu-item-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-menu-item-fg-disabled: --tug-color(cobalt+8, i: 7, t: 23);
+  --tug-menu-item-fg-danger: --tug-color(red);
+  --tug-menu-item-meta: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-menu-item-shortcut: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-menu-item-icon: --tug-color(cobalt, i: 5, t: 66);
+  --tug-menu-item-icon-danger: --tug-color(red);
+  --tug-menu-item-chevron: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-popover-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-popover-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-popover-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-tooltip-bg: --tug-color(cobalt+10, i: 7, t: 16);
+  --tug-tooltip-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-tooltip-border: --tug-color(cobalt, i: 6, t: 30);
+
+  /* --tug-dropdown-* aliases: map to --tug-menu-* tokens */
+  --tug-dropdown-bg: var(--tug-menu-bg);
+  --tug-dropdown-fg: var(--tug-menu-fg);
+  --tug-dropdown-border: var(--tug-menu-border);
+  --tug-dropdown-shadow: var(--tug-menu-shadow);
+  --tug-dropdown-item-bg-hover: var(--tug-menu-item-bg-hover);
+  --tug-dropdown-item-bg-selected: var(--tug-menu-item-bg-selected);
+  --tug-dropdown-item-fg: var(--tug-menu-item-fg);
+  --tug-dropdown-item-fg-disabled: var(--tug-menu-item-fg-disabled);
+  --tug-dropdown-item-fg-danger: var(--tug-menu-item-fg-danger);
+  --tug-dropdown-item-meta: var(--tug-menu-item-meta);
+  --tug-dropdown-item-shortcut: var(--tug-menu-item-shortcut);
+  --tug-dropdown-item-icon: var(--tug-menu-item-icon);
+  --tug-dropdown-item-icon-danger: var(--tug-menu-item-icon-danger);
+  --tug-dropdown-item-chevron: var(--tug-menu-item-chevron);
 }
 
 /* ============================================================================

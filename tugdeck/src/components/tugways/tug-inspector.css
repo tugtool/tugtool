@@ -1,0 +1,40 @@
+/**
+ * TugInspector + DevOverlay component tokens.
+ *
+ * Token prefix: --tug-inspector-*, --tug-dev-overlay-*
+ * Drops the "base" segment per CSS reorganization.
+ * No CSS rules here — the actual inspector overlay uses hardcoded oklch
+ * values in style-inspector-overlay.css for dev tooling purposes.
+ * Token definitions only.
+ */
+
+body {
+  --tug-inspector-panel-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-inspector-panel-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-inspector-panel-bg-pinned: --tug-color(violet, i: 5, t: 12);
+  --tug-inspector-section-bg: --tug-color(violet-6, i: 5, t: 8);
+  --tug-inspector-field-bg: --tug-color(violet-6, i: 4, t: 7);
+  --tug-inspector-field-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-inspector-field-readOnly: --tug-color(violet, i: 5, t: 11);
+  --tug-inspector-field-inherited: --tug-color(cyan, i: 50, t: 50, a: 8);
+  --tug-inspector-field-default: --tug-color(violet, i: 5, t: 11);
+  --tug-inspector-field-preview: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug-inspector-field-cancelled: --tug-color(red, i: 50, t: 50, a: 10);
+  --tug-inspector-target-outline: --tug-color(cyan);
+  --tug-inspector-preview-outline: --tug-color(orange);
+  --tug-inspector-source-token: --tug-color(violet);
+  --tug-inspector-source-class: --tug-color(green);
+  --tug-inspector-source-inline: --tug-color(yellow);
+  --tug-inspector-source-preview: --tug-color(coral-muted);
+  --tug-inspector-emptyState-fg: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-inspector-emptyState-icon: --tug-color(cobalt, i: 6, t: 30);
+  --tug-inspector-swatch-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-inspector-scrub-track: --tug-color(violet-6, i: 6, t: 17);
+  --tug-inspector-scrub-thumb: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-inspector-scrub-active: --tug-color(orange);
+  --tug-dev-overlay-bg: --tug-color(violet-6, i: 4, t: 7, a: 92);
+  --tug-dev-overlay-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-dev-overlay-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-dev-overlay-targetHighlight: --tug-color(cyan, i: 50, t: 50, a: 30);
+  --tug-dev-overlay-targetDim: --tug-color(black, i: 0, t: 0, a: 50);
+}

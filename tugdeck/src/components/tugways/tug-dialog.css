@@ -1,0 +1,61 @@
+/**
+ * TugDialog + Sheet + Toast + Alert + Badge + Status + Progress + Banner + Kbd component tokens.
+ *
+ * Token prefix: --tug-dialog-*, --tug-sheet-*, --tug-toast-*, --tug-alert-*,
+ *               --tug-badge-*, --tug-status-*, --tug-progress-*, --tug-spinner,
+ *               --tug-skeleton-*, --tug-emptyState-*, --tug-banner-*, --tug-kbd-*
+ * Drops the "base" segment per CSS reorganization.
+ * No CSS rules yet — tokens only.
+ */
+
+body {
+  /* --- Dialog / Sheet / Toast / Alert --- */
+  --tug-dialog-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-dialog-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-dialog-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-sheet-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-sheet-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-sheet-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-toast-info-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-toast-info-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-toast-success-bg: --tug-color(green, i: 50, t: 50, a: 15);
+  --tug-toast-success-fg: --tug-color(green);
+  --tug-toast-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-toast-warning-fg: --tug-color(yellow);
+  --tug-toast-danger-bg: --tug-color(red, i: 50, t: 50, a: 15);
+  --tug-toast-danger-fg: --tug-color(red);
+  --tug-alert-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-alert-fg: --tug-color(cobalt, i: 3, t: 94);
+
+  /* --- Status / Badge / Progress / Skeleton / Banner --- */
+  --tug-badge-neutral-bg: --tug-color(violet-6, i: 6, t: 17);
+  --tug-badge-neutral-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-badge-accent-bg: --tug-color(orange, i: 50, t: 50, a: 20);
+  --tug-badge-accent-fg: --tug-color(orange);
+  --tug-badge-success-bg: --tug-color(green, i: 50, t: 50, a: 20);
+  --tug-badge-success-fg: --tug-color(green);
+  --tug-badge-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 15);
+  --tug-badge-warning-fg: --tug-color(yellow);
+  --tug-badge-danger-bg: --tug-color(red, i: 50, t: 50, a: 20);
+  --tug-badge-danger-fg: --tug-color(red);
+  --tug-status-success: --tug-color(green);
+  --tug-status-warning: --tug-color(yellow);
+  --tug-status-danger: --tug-color(red);
+  --tug-status-info: --tug-color(cyan);
+  --tug-progress-track: --tug-color(violet-6, i: 6, t: 17);
+  --tug-progress-fill: --tug-color(orange);
+  --tug-spinner: --tug-color(orange);
+  --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);
+  --tug-skeleton-highlight: --tug-color(cobalt+10, i: 7, t: 28);
+  --tug-emptyState-fg: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-emptyState-icon: --tug-color(cobalt, i: 6, t: 30);
+  --tug-banner-info-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
+  --tug-banner-info-fg: --tug-color(cyan);
+  --tug-banner-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-banner-warning-fg: --tug-color(yellow);
+  --tug-banner-danger-bg: --tug-color(red, i: 50, t: 50, a: 12);
+  --tug-banner-danger-fg: --tug-color(red);
+  --tug-kbd-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-kbd-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-kbd-border: --tug-color(cobalt, i: 6, t: 30);
+}

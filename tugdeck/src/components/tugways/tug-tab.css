@@ -1,5 +1,8 @@
 /**
- * TugTabBar styles -- uses --tug-base-* tokens directly.
+ * TugTabBar styles — component token definitions and rules.
+ *
+ * Token prefix: --tug-tab-* (drops the "base" segment per CSS reorganization).
+ * Token values reference --tug-base-* primitives where applicable.
  *
  * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
@@ -22,6 +25,37 @@
  */
 
 /* ============================================================================
+   Component Token Definitions
+   ========================================================================= */
+
+body {
+  --tug-tab-bar-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-tab-bg-rest: transparent;
+  --tug-tab-bg-hover: --tug-color(white, i: 0, t: 100, a: 5);
+  --tug-tab-bg-active: --tug-color(violet, i: 5, t: 12);
+  --tug-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
+  --tug-tab-fg-rest: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-tab-fg-active: --tug-color(cobalt, i: 3, t: 94);
+  --tug-tab-fg-compact: --tug-color(cobalt, i: 5, t: 66);
+  --tug-tab-close-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
+  --tug-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 94);
+  --tug-tab-underline-active: --tug-color(orange);
+  --tug-tab-dropTarget-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
+  --tug-tab-dropTarget-border: --tug-color(cyan);
+  --tug-tab-badge-bg: --tug-color(orange);
+  --tug-tab-badge-fg: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-tab-ghost-bg: --tug-color(white, i: 0, t: 100, a: 4);
+  --tug-tab-ghost-border: --tug-color(white, i: 0, t: 100, a: 8);
+  --tug-tab-insertIndicator: --tug-color(orange);
+  --tug-tab-overflow-trigger-bg: --tug-color(white, i: 0, t: 100, a: 6);
+  --tug-tab-overflow-trigger-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-tab-add-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
+  --tug-tab-add-fg: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-tab-typePicker-bg: --tug-color(violet, i: 5, t: 12);
+  --tug-tab-typePicker-fg: --tug-color(cobalt, i: 5, t: 66);
+}
+
+/* ============================================================================
    Tab Bar Container
    ============================================================================ */
 
@@ -33,7 +67,7 @@
   overflow-x: hidden;
   overflow-y: hidden;
   height: var(--tug-base-chrome-height);
-  background-color: var(--tug-base-tab-bar-bg);
+  background-color: var(--tug-tab-bar-bg);
   border-bottom: 1px solid var(--tug-base-border-default);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
@@ -72,9 +106,9 @@
 
 /* Active tab (Table T01) */
 .tug-tab[data-active="true"] {
-  background-color: var(--tug-base-tab-bg-active);
-  color: var(--tug-base-tab-fg-active);
-  box-shadow: inset 0 -2px 0 0 var(--tug-base-tab-underline-active);
+  background-color: var(--tug-tab-bg-active);
+  color: var(--tug-tab-fg-active);
+  box-shadow: inset 0 -2px 0 0 var(--tug-tab-underline-active);
 }
 
 /* Inactive tab hover (Table T01) */
@@ -244,7 +278,7 @@
   height: var(--tug-base-icon-size-md);
   padding: 0 var(--tug-base-space-xs);
   border-radius: var(--tug-base-radius-lg);
-  background-color: var(--tug-base-tab-badge-bg);
+  background-color: var(--tug-tab-badge-bg);
   color: var(--tug-base-surface-default);
   font-size: var(--tug-base-font-size-2xs);
   font-weight: 600;
@@ -288,7 +322,7 @@
   top: 0;
   width: 2px;
   height: 100%;
-  background-color: var(--tug-base-tab-insertIndicator);
+  background-color: var(--tug-tab-insertIndicator);
   pointer-events: none;
   transition: left var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }

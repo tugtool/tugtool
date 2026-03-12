@@ -1,7 +1,7 @@
 /**
  * CardHeader -- title bar with control buttons and window-shade collapse.
  *
- * Height is driven by --tug-base-chrome-height (defined in tug-tokens.css).
+ * Height is driven by --tug-base-chrome-height (defined in tug-base.css).
  * Icon sizes are CSS-driven via .tugcard-icon and .card-header-btn svg rules.
  *
  * **Authoritative references:**
@@ -25,12 +25,12 @@
  * focus management. Step 7 must verify that pointer capture is released before
  * the popover opens, or switch the close button to a standard click handler.
  *
- * @module components/chrome/card-header
+ * @module components/tugways/card-header
  */
 
 import React, { useCallback } from "react";
 import { icons } from "lucide-react";
-import "./card-header.css";
+import "./tug-card.css";
 
 // ---------------------------------------------------------------------------
 // Constants

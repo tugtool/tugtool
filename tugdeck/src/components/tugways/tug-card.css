@@ -1,14 +1,52 @@
 /**
- * Tugcard styles.
+ * TugCard + CardHeader styles — component token definitions and rules.
  *
- * All colors use --tug-base-* semantic tokens directly.
+ * Token prefix: --tug-card-* (drops the "base" segment per CSS reorganization).
+ * Token values reference --tug-base-* primitives where applicable.
+ *
+ * All colors use --tug-card-* semantic tokens or --tug-base-* base tokens.
  * No hardcoded hex values, no raw Tailwind color classes.
  *
- * Spec S07: Tugcard internal layout (flex column).
- * Step 3 task: header-active/inactive, text, surface, border, radius.
+ * Merged from: tugcard.css + card-header.css
  *
  * [D04] Semantic tokens exclusively
+ * [D07] Window-shade collapse
  */
+
+/* ============================================================================
+   Component Token Definitions
+   ========================================================================= */
+
+body {
+  /* --- Card --- */
+  --tug-card-bg: --tug-color(violet, i: 4, t: 14);
+  --tug-card-border: --tug-color(cobalt, i: 6, t: 30);
+  /* Card shadow tokens — card-specific, not generic elevation */
+  --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
+  --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
+  --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
+
+  /* --- Card Header --- */
+  /* Card header Brio defaults: literal hex values for zero-visual-regression. */
+  --tug-card-header-bg-active: --tug-color(violet-9, i: 4, t: 20);
+  --tug-card-header-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
+  --tug-card-header-bg-collapsed: --tug-color(violet, i: 4, t: 15);
+  --tug-card-header-fg: --tug-color(cobalt, i: 3, t: 94);
+  --tug-card-header-icon-active: --tug-color(cyan);
+  --tug-card-header-icon-inactive: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-card-header-divider: --tug-color(violet-6, i: 6, t: 17);
+  --tug-card-header-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
+  --tug-card-header-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
+  --tug-card-header-button-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-card-header-button-fg-danger: --tug-color(red);
+  --tug-card-header-button-fg-danger-hover: --tug-color(red-light);
+  --tug-card-accessory-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-card-accessory-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-card-findbar-bg: --tug-color(violet-6, i: 4, t: 7);
+  --tug-card-findbar-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-card-findbar-match: --tug-color(yellow, i: 50, t: 50, a: 30);
+  --tug-card-findbar-match-active: --tug-color(orange, i: 50, t: 50, a: 50);
+}
 
 /* ============================================================================
    Tugcard root
@@ -20,7 +58,7 @@
   width: 100%;
   height: 100%;
   background-color: var(--tug-base-surface-default);
-  border: 1px solid var(--tug-base-card-border);
+  border: 1px solid var(--tug-card-border);
   border-radius: var(--tug-base-radius-md);
   overflow: hidden;
 }
@@ -61,11 +99,11 @@
 
 .tugcard--collapsed {
   overflow: hidden;
-  background-color: var(--tug-base-card-header-bg-inactive);
+  background-color: var(--tug-card-header-bg-inactive);
 }
 
 .card-frame[data-focused="true"] .tugcard--collapsed {
-  background-color: var(--tug-base-card-header-bg-active);
+  background-color: var(--tug-card-header-bg-active);
 }
 
 /* ============================================================================
@@ -79,7 +117,7 @@
   height: var(--tug-base-chrome-height);
   min-height: var(--tug-base-chrome-height);
   padding: 0 var(--tug-base-space-md);
-  background-color: var(--tug-base-card-header-bg-inactive);
+  background-color: var(--tug-card-header-bg-inactive);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -103,7 +141,7 @@
  * which is the ancestor of the Tugcard.
  */
 .card-frame[data-focused="true"] .tugcard-header {
-  background-color: var(--tug-base-card-header-bg-active);
+  background-color: var(--tug-card-header-bg-active);
 }
 
 .tugcard-header:active {
@@ -121,7 +159,7 @@
   white-space: nowrap;
   font-size: var(--tug-base-font-size-sm);
   font-weight: 500;
-  color: var(--tug-base-card-header-fg);
+  color: var(--tug-card-header-fg);
   pointer-events: none;
 }
 
@@ -146,11 +184,11 @@
 }
 
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--tug-base-card-header-icon-active);
+  color: var(--tug-card-header-icon-active);
 }
 
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--tug-base-card-header-icon-inactive);
+  color: var(--tug-card-header-icon-inactive);
 }
 
 /* ============================================================================
@@ -160,13 +198,57 @@
 /*
  * Groups the collapse, menu, and close buttons on the right side of the header.
  * CardHeader renders .card-header-btn elements inside this container.
- * Per-button hover styles are in card-header.css (imported by card-header.tsx).
  */
 .card-header-controls {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   margin-left: var(--tug-base-space-xs);
+}
+
+/* ============================================================================
+   CardHeader control buttons
+   ============================================================================ */
+
+.card-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tug-base-icon-size-xl);
+  height: var(--tug-base-icon-size-xl);
+  padding: var(--tug-base-space-2xs);
+  margin: 0;
+  background-color: transparent;
+  background-clip: content-box;
+  border: none;
+  border-radius: var(--tug-base-radius-sm);
+  color: var(--tug-card-header-button-fg);
+  font-size: var(--tug-base-font-size-md);
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+
+  transition: background-color 80ms ease;
+}
+
+/* Lucide SVGs inside control buttons inherit size from the button */
+.card-header-btn svg {
+  width: var(--tug-base-icon-size-sm);
+  height: var(--tug-base-icon-size-sm);
+}
+
+.card-header-btn:hover:not(:disabled) {
+  background-color: var(--tug-card-header-button-bg-hover);
+}
+
+.card-header-btn:active:not(:disabled) {
+  background-color: var(--tug-card-header-button-bg-active);
+}
+
+/* Close button: danger color on hover */
+.card-header-btn-close:hover:not(:disabled) {
+  color: var(--tug-card-header-button-fg-danger-hover);
 }
 
 /* ============================================================================
@@ -180,7 +262,7 @@
 .tugcard-accessory {
   flex-shrink: 0;
   background-color: var(--tug-base-surface-default);
-  border-bottom: 1px solid var(--tug-base-card-border);
+  border-bottom: 1px solid var(--tug-card-border);
 }
 
 .tugcard-accessory:empty {

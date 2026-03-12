@@ -22,10 +22,10 @@
  *
  * Import order (in globals.css):
  *   1. tug-palette.css   — palette variables (this file)
- *   2. tug-tokens.css    — semantic tokens (reference palette vars)
+ *   2. tug-base.css    — semantic tokens (reference palette vars)
  *   3. theme/*.css       — theme overrides (can override per-hue constants)
  *
- * All variables are scoped to `body` to match tug-tokens.css cascade scope.
+ * All variables are scoped to `body` to match tug-base.css cascade scope.
  * Theme files can override individual --tug-{hue}-* constants to tune colors.
  *
  * Per-hue constant names:

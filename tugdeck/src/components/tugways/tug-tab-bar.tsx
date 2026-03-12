@@ -31,7 +31,7 @@ import {
   OVERFLOW_BUTTON_WIDTH,
   type TabMeasurement,
 } from "@/tab-overflow";
-import "./tug-tab-bar.css";
+import "./tug-tab.css";
 
 // ---- Types (Spec S01) ----
 

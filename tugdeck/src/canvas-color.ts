@@ -27,7 +27,7 @@ import type { ThemeName } from "./contexts/theme-provider";
 // Per-theme canvas background TugColor params
 //
 // These mirror the --tug-base-bg-canvas values in each theme's CSS file:
-//   brio     (tug-tokens.css): --tug-color(violet-6, i: 2, t: 5)   [hue-264 → violet-6]
+//   brio     (tug-base.css): --tug-color(violet-6, i: 2, t: 5)   [hue-264 → violet-6]
 //   bluenote (bluenote.css):   --tug-color(blue+9, i: 5, t: 13)    [hue-239 → blue+9]
 //   harmony  (harmony.css):    --tug-color(yellow, i: 7, t: 39)
 // ---------------------------------------------------------------------------
