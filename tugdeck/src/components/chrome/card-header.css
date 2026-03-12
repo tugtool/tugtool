@@ -1,39 +1,16 @@
 /**
- * CardHeader styles -- 2.5D elevation for title bar controls.
+ * CardHeader styles -- flat control buttons with hover highlight.
  *
- * The title bar surface itself remains flat. Only the interactive
- * control buttons (close, collapse, menu) receive 2.5D elevation
- * treatment.
+ * Buttons are flush (no gap in hit area) but hover/active highlights are
+ * visually inset via padding + background-clip: content-box. This means
+ * you can never "miss" a click between buttons, while the highlight squares
+ * appear separated.
  *
- * [D04] 2.5D elevation model: per-component tokens feed from --tug-base-elevation-*
- * Spec S02: elevation CSS pattern
- * Step 3: Card Frame & Title Bar
+ * Order: menu | chevron | close (left to right).
  */
 
 /* ============================================================================
-   Per-Component Token Definitions (Spec S01, Spec S02)
-   Title bar button tokens map from --tug-base-elevation-* base layer.
-   ========================================================================= */
-
-:root {
-  /* Face colors for header control buttons */
-  --tug-card-header-btn-face:        var(--tug-base-elevation-face);
-  --tug-card-header-btn-face-hover:  var(--tug-base-elevation-face-hover);
-  --tug-card-header-btn-face-active: var(--tug-base-elevation-face-active);
-
-  /* Shared highlight (top-edge light reflection) */
-  --tug-card-header-btn-highlight:        var(--tug-base-elevation-highlight);
-  --tug-card-header-btn-highlight-hover:  var(--tug-base-elevation-highlight-hover);
-  --tug-card-header-btn-highlight-active: var(--tug-base-elevation-highlight-active);
-
-  /* Shared shadow (bottom depth) */
-  --tug-card-header-btn-shadow:        var(--tug-base-elevation-shadow);
-  --tug-card-header-btn-shadow-hover:  var(--tug-base-elevation-shadow-hover);
-  --tug-card-header-btn-shadow-active: var(--tug-base-elevation-shadow-active);
-}
-
-/* ============================================================================
-   CardHeader control buttons -- 2.5D elevation (Spec S02)
+   CardHeader control buttons
    ========================================================================= */
 
 .card-header-btn {
@@ -42,9 +19,10 @@
   justify-content: center;
   width: var(--tug-base-icon-size-xl);
   height: var(--tug-base-icon-size-xl);
-  padding: 0;
+  padding: var(--tug-base-space-2xs);
   margin: 0;
-  background-color: var(--tug-card-header-btn-face);
+  background-color: transparent;
+  background-clip: content-box;
   border: none;
   border-radius: var(--tug-base-radius-sm);
   color: var(--tug-base-card-header-button-fg);
@@ -54,15 +32,8 @@
   flex-shrink: 0;
   position: relative;
 
-  /* 2.5D elevation */
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-card-header-btn-highlight),
-    0 1px 3px 0 var(--tug-card-header-btn-shadow);
-
   transition:
-    background-color var(--tug-base-elevation-transition),
-    box-shadow var(--tug-base-elevation-transition),
-    transform var(--tug-base-elevation-transition);
+    background-color var(--tug-base-elevation-transition);
 }
 
 /* Lucide SVGs inside control buttons inherit size from the button */
@@ -72,26 +43,14 @@
 }
 
 .card-header-btn:hover:not(:disabled) {
-  background-color: var(--tug-card-header-btn-face-hover);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-card-header-btn-highlight-hover),
-    0 2px 4px 0 var(--tug-card-header-btn-shadow-hover);
+  background-color: var(--tug-base-card-header-button-bg-hover);
 }
 
 .card-header-btn:active:not(:disabled) {
-  background-color: var(--tug-card-header-btn-face-active);
-  transform: translateY(var(--tug-base-elevation-press-offset));
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-card-header-btn-highlight-active),
-    0 0 0 0 transparent;
+  background-color: var(--tug-base-card-header-button-bg-active);
 }
 
 /* Close button: danger color on hover */
 .card-header-btn-close:hover:not(:disabled) {
   color: var(--tug-base-card-header-button-fg-danger-hover);
-}
-
-/* Spacing between buttons */
-.card-header-btn + .card-header-btn {
-  margin-left: var(--tug-base-space-xs);
 }

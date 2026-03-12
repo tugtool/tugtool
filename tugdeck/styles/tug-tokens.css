@@ -268,8 +268,8 @@ body {
   /* --- Icon Size (plain values) --- */
   --tug-base-icon-size-2xs: 10px;
   --tug-base-icon-size-xs: 12px;
-  --tug-base-icon-size-sm: 14px;
-  --tug-base-icon-size-md: 16px;
+  --tug-base-icon-size-sm: 13px;
+  --tug-base-icon-size-md: 15px;
   --tug-base-icon-size-lg: 20px;
   --tug-base-icon-size-xl: 24px;
 

@@ -225,7 +225,18 @@ export function CardHeader({
 
       {/* Control buttons — icon size controlled by .card-header-btn svg CSS */}
       <div className="card-header-controls" data-testid="card-header-controls">
-        {/* Collapse/expand chevron */}
+        {/* Menu button (leftmost) */}
+        <button
+          type="button"
+          className="card-header-btn card-header-btn-menu"
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Card menu"
+          data-testid="card-header-menu-btn"
+        >
+          {EllipsisIcon && React.createElement(EllipsisIcon)}
+        </button>
+
+        {/* Collapse/expand chevron (middle) */}
         <button
           type="button"
           className="card-header-btn card-header-btn-collapse"
@@ -238,18 +249,7 @@ export function CardHeader({
           {ChevronIcon && React.createElement(ChevronIcon)}
         </button>
 
-        {/* Menu button */}
-        <button
-          type="button"
-          className="card-header-btn card-header-btn-menu"
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label="Card menu"
-          data-testid="card-header-menu-btn"
-        >
-          {EllipsisIcon && React.createElement(EllipsisIcon)}
-        </button>
-
-        {/* Close button */}
+        {/* Close button (rightmost) */}
         {closable && (
           <button
             type="button"

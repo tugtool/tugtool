@@ -28,7 +28,7 @@
  * drag-start and resize-start, and cleared at gesture-end.
  */
 .card-frame {
-  transition: height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard);
+  transition: height var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
 .card-frame[data-gesture="true"] {
