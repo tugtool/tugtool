@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-12T18:18:51Z
+---
+
+## step-9: Replaced 3 hardcoded hex values in .gp-import-error with var(--tug-base-tone-danger-*) per D06
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-8
 date: 2025-03-12T18:13:50Z
 ---
