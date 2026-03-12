@@ -1,5 +1,8 @@
 /**
- * CardHeader -- 28px title bar with 2.5D control buttons and window-shade collapse.
+ * CardHeader -- title bar with 2.5D control buttons and window-shade collapse.
+ *
+ * Height is driven by --tug-base-chrome-height (defined in tug-tokens.css).
+ * Icon sizes are CSS-driven via .tugcard-icon and .card-header-btn svg rules.
  *
  * **Authoritative references:**
  * - design-system-concepts.md [D04] 2.5D elevation model
@@ -9,7 +12,7 @@
  *
  * ## Responsibilities
  *
- * - Render the 28px title bar with title text, optional icon, and control buttons
+ * - Render the title bar with title text, optional icon, and control buttons
  * - Control buttons: close, collapse (chevron), menu (horizontal ellipsis)
  * - Close button: pointer-capture pattern to suppress browser focus/selection side effects
  * - Collapse toggle: ChevronDown (expanded) / ChevronUp (collapsed)
@@ -36,8 +39,11 @@ import "./card-header.css";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Height of the card title bar in pixels. Used for collapsed-height calculation. */
-export const CARD_TITLE_BAR_HEIGHT = 28;
+/**
+ * Height of the card title bar in pixels. Must match --tug-base-chrome-height.
+ * Used for collapsed-height calculation in CardFrame.
+ */
+export const CARD_TITLE_BAR_HEIGHT = 36;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -70,7 +76,7 @@ export interface CardHeaderProps {
 // ---------------------------------------------------------------------------
 
 /**
- * CardHeader -- 28px title bar with collapse, close, and menu controls.
+ * CardHeader -- title bar with collapse, close, and menu controls.
  *
  * Extracted from Tugcard (tugcard.tsx). Tugcard composes this component in
  * its render, passing effectiveMeta fields and callbacks.
@@ -205,10 +211,10 @@ export function CardHeader({
       onDoubleClick={handleHeaderDoubleClick}
       data-testid="tugcard-header"
     >
-      {/* Icon */}
+      {/* Icon — size controlled by .tugcard-icon CSS */}
       {IconComponent && (
         <span className="tugcard-icon" data-testid="tugcard-icon">
-          {React.createElement(IconComponent, { size: 14 })}
+          {React.createElement(IconComponent)}
         </span>
       )}
 
@@ -217,7 +223,7 @@ export function CardHeader({
         {title}
       </span>
 
-      {/* Control buttons */}
+      {/* Control buttons — icon size controlled by .card-header-btn svg CSS */}
       <div className="card-header-controls" data-testid="card-header-controls">
         {/* Collapse/expand chevron */}
         <button
@@ -229,7 +235,7 @@ export function CardHeader({
           aria-expanded={!collapsed}
           data-testid="card-header-collapse-btn"
         >
-          {ChevronIcon && React.createElement(ChevronIcon, { size: 12 })}
+          {ChevronIcon && React.createElement(ChevronIcon)}
         </button>
 
         {/* Menu button */}
@@ -240,7 +246,7 @@ export function CardHeader({
           aria-label="Card menu"
           data-testid="card-header-menu-btn"
         >
-          {EllipsisIcon && React.createElement(EllipsisIcon, { size: 12 })}
+          {EllipsisIcon && React.createElement(EllipsisIcon)}
         </button>
 
         {/* Close button */}

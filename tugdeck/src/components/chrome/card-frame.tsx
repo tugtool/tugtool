@@ -1128,10 +1128,10 @@ export function CardFrame({
   // Render
   // ---------------------------------------------------------------------------
 
-  // When collapsed, the frame height is locked to CARD_TITLE_BAR_HEIGHT (28px) + 2px border.
+  // When collapsed, the frame height is locked to CARD_TITLE_BAR_HEIGHT + 2px border.
   // The card retains its full width for dragging. The stored `size.height` is preserved
   // and restored when the card expands.
-  const COLLAPSED_FRAME_HEIGHT = CARD_TITLE_BAR_HEIGHT + 2; // 28px title bar + 2px border
+  const COLLAPSED_FRAME_HEIGHT = CARD_TITLE_BAR_HEIGHT + 2;
 
   const frameHeight = collapsed ? COLLAPSED_FRAME_HEIGHT : size.height;
 

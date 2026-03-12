@@ -1003,10 +1003,10 @@ export function GalleryTitleBarContent() {
         <div className="cg-section-title">CardHeader — Live Demo</div>
         <div
           style={{
-            border: "1px solid var(--tug-card-border)",
+            border: "1px solid var(--tug-base-card-border)",
             borderRadius: "var(--tug-base-radius-md)",
             overflow: "hidden",
-            background: "var(--tug-card-header-bg-inactive)",
+            background: "var(--tug-base-card-header-bg-inactive)",
           }}
           data-testid="gallery-card-header-demo"
         >

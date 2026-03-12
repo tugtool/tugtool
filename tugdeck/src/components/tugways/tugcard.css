@@ -1,7 +1,7 @@
 /**
  * Tugcard styles.
  *
- * All colors use --tug-card-* and --tug-base-* semantic tokens.
+ * All colors use --tug-base-* semantic tokens directly.
  * No hardcoded hex values, no raw Tailwind color classes.
  *
  * Spec S07: Tugcard internal layout (flex column).
@@ -9,37 +9,6 @@
  *
  * [D04] Semantic tokens exclusively
  */
-
-/* ============================================================================
-   Component Token Definitions
-   ============================================================================ */
-
-body {
-  --tug-card-bg: var(--tug-base-card-bg);
-  --tug-card-border: var(--tug-base-card-border);
-  --tug-card-header-bg-active: var(--tug-base-card-header-bg-active);
-  --tug-card-header-bg-inactive: var(--tug-base-card-header-bg-inactive);
-  --tug-card-header-bg-collapsed: var(--tug-base-card-header-bg-collapsed);
-  --tug-card-header-fg: var(--tug-base-card-header-fg);
-  --tug-card-header-icon-active: var(--tug-base-card-header-icon-active);
-  --tug-card-header-icon-inactive: var(--tug-base-card-header-icon-inactive);
-  --tug-card-header-divider: var(--tug-base-card-header-divider);
-  --tug-card-header-button-bg-hover: var(--tug-base-card-header-button-bg-hover);
-  --tug-card-header-button-bg-active: var(--tug-base-card-header-button-bg-active);
-  --tug-card-header-button-fg: var(--tug-base-card-header-button-fg);
-  --tug-card-header-button-fg-danger: var(--tug-base-card-header-button-fg-danger);
-  --tug-card-header-button-fg-danger-hover: var(--tug-base-card-header-button-fg-danger-hover);
-  --tug-card-content-bg: var(--tug-base-surface-content);
-  --tug-card-accessory-bg: var(--tug-base-card-accessory-bg);
-  --tug-card-accessory-border: var(--tug-base-card-accessory-border);
-  --tug-card-shadow-active: var(--tug-base-card-shadow-active);
-  --tug-card-shadow-inactive: var(--tug-base-card-shadow-inactive);
-  --tug-card-dim-overlay: var(--tug-base-card-dim-overlay);
-  --tug-card-findbar-bg: var(--tug-base-card-findbar-bg);
-  --tug-card-findbar-border: var(--tug-base-card-findbar-border);
-  --tug-card-findbar-match: var(--tug-base-card-findbar-match);
-  --tug-card-findbar-match-active: var(--tug-base-card-findbar-match-active);
-}
 
 /* ============================================================================
    Tugcard root
@@ -51,7 +20,7 @@ body {
   width: 100%;
   height: 100%;
   background-color: var(--tug-base-surface-default);
-  border: 1px solid var(--tug-card-border);
+  border: 1px solid var(--tug-base-card-border);
   border-radius: var(--tug-base-radius-md);
   overflow: hidden;
 }
@@ -62,7 +31,7 @@ body {
 
 /*
  * .tugcard-body wraps the accessory slot and content area.
- * When expanded: flex:1 fills remaining height after the 28px header.
+ * When expanded: flex:1 fills remaining height after the header.
  * When collapsed: height:0 with overflow:hidden collapses the body while the
  * React subtrees stay MOUNTED. Terminal sessions, scroll positions, and form
  * state are preserved. [D07, Rule 4 — appearance via CSS, not React state]
@@ -82,7 +51,7 @@ body {
 /*
  * When collapsed (.tugcard--collapsed), the .tugcard-body collapses to
  * height:0. The React tree stays mounted -- only the CSS box disappears.
- * CardFrame sets the frame height to CARD_TITLE_BAR_HEIGHT (28px) + 2px border
+ * CardFrame sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
  * via inline style when cardState.collapsed is true.
  */
 .tugcard--collapsed .tugcard-body {
@@ -95,17 +64,17 @@ body {
 }
 
 /* ============================================================================
-   CardHeader (28px)
+   CardHeader
    ============================================================================ */
 
 .tugcard-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 8px;
-  background-color: var(--tug-card-header-bg-inactive);
+  height: var(--tug-base-chrome-height);
+  min-height: var(--tug-base-chrome-height);
+  padding: 0 var(--tug-base-space-md);
+  background-color: var(--tug-base-card-header-bg-inactive);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
@@ -129,7 +98,7 @@ body {
  * which is the ancestor of the Tugcard.
  */
 .card-frame[data-focused="true"] .tugcard-header {
-  background-color: var(--tug-card-header-bg-active);
+  background-color: var(--tug-base-card-header-bg-active);
 }
 
 .tugcard-header:active {
@@ -145,9 +114,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--tug-base-font-size-sm);
   font-weight: 500;
-  color: var(--tug-card-header-fg);
+  color: var(--tug-base-card-header-fg);
   pointer-events: none;
 }
 
@@ -159,18 +128,24 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: var(--tug-base-icon-size-md);
+  height: var(--tug-base-icon-size-md);
   flex-shrink: 0;
-  margin-right: 4px;
+  margin-right: var(--tug-base-space-sm);
+}
+
+/* Lucide SVGs inside the icon container inherit size from the container */
+.tugcard-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--tug-card-header-icon-active);
+  color: var(--tug-base-card-header-icon-active);
 }
 
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--tug-card-header-icon-inactive);
+  color: var(--tug-base-card-header-icon-inactive);
 }
 
 /* ============================================================================
@@ -186,7 +161,7 @@ body {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  margin-left: 4px;
+  margin-left: var(--tug-base-space-xs);
 }
 
 /* ============================================================================
@@ -200,7 +175,7 @@ body {
 .tugcard-accessory {
   flex-shrink: 0;
   background-color: var(--tug-base-surface-default);
-  border-bottom: 1px solid var(--tug-card-border);
+  border-bottom: 1px solid var(--tug-base-card-border);
 }
 
 .tugcard-accessory:empty {
@@ -279,5 +254,5 @@ body {
   justify-content: center;
   height: 100%;
   color: var(--tug-base-fg-muted);
-  font-size: 12px;
+  font-size: var(--tug-base-font-size-sm);
 }

@@ -134,7 +134,7 @@ export interface IDeckManagerStore {
    * Toggle the collapsed state of a card.
    *
    * When collapsing: sets `collapsed: true` in CardState. The CardFrame will
-   * render the card at CARD_TITLE_BAR_HEIGHT (28px) height.
+   * render the card at CARD_TITLE_BAR_HEIGHT height.
    * When expanding: sets `collapsed: false` (or removes the field). The CardFrame
    * restores the full `size.height` from CardState.
    *

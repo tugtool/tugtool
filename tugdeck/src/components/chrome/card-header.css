@@ -40,15 +40,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--tug-base-icon-size-xl);
+  height: var(--tug-base-icon-size-xl);
   padding: 0;
   margin: 0;
   background-color: var(--tug-card-header-btn-face);
   border: none;
   border-radius: var(--tug-base-radius-sm);
-  color: var(--tug-card-header-button-fg);
-  font-size: 14px;
+  color: var(--tug-base-card-header-button-fg);
+  font-size: var(--tug-base-font-size-md);
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
@@ -63,6 +63,12 @@
     background-color var(--tug-base-elevation-transition),
     box-shadow var(--tug-base-elevation-transition),
     transform var(--tug-base-elevation-transition);
+}
+
+/* Lucide SVGs inside control buttons inherit size from the button */
+.card-header-btn svg {
+  width: var(--tug-base-icon-size-sm);
+  height: var(--tug-base-icon-size-sm);
 }
 
 .card-header-btn:hover:not(:disabled) {
@@ -82,10 +88,10 @@
 
 /* Close button: danger color on hover */
 .card-header-btn-close:hover:not(:disabled) {
-  color: var(--tug-card-header-button-fg-danger-hover);
+  color: var(--tug-base-card-header-button-fg-danger-hover);
 }
 
 /* Spacing between buttons */
 .card-header-btn + .card-header-btn {
-  margin-left: 4px;
+  margin-left: var(--tug-base-space-xs);
 }

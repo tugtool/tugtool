@@ -69,23 +69,22 @@ const OVERFLOW_BTN_WIDTH = OVERFLOW_BUTTON_WIDTH; // 40
 
 describe("ICON_ONLY_TAB_WIDTH", () => {
   /**
-   * T10a: Assert the constant equals 28 to enforce the CSS dependency chain.
+   * T10a: Assert the constant equals 30 to enforce the CSS dependency chain.
    *
    * CSS dependency chain (tug-tab-bar.css):
-   *   - `.tug-tab` left padding:   8px
-   *   - `.tug-tab-icon` width:    12px
-   *   - `.tug-tab` right padding:  8px
-   *   Total:                      28px
+   *   - `.tug-tab` padding: var(--tug-base-space-md) = 8px each side
+   *   - `.tug-tab-icon` width: var(--tug-base-icon-size-sm) = 14px
+   *   Total:                      30px
    *
    * `.tug-tab-title` and `.tug-tab-close` are hidden with `display: none` in
    * collapsed mode, removing them from flex layout so CSS `gap` contributes 0px.
    * Only `.tug-tab-icon` remains as a flex child.
    *
-   * If this test fails, update ICON_ONLY_TAB_WIDTH and verify the CSS values
-   * still match.
+   * If this test fails, update ICON_ONLY_TAB_WIDTH and verify the CSS token
+   * values still match.
    */
-  it("T10a: equals 28 — 8px left padding + 12px icon + 8px right padding", () => {
-    expect(ICON_ONLY_TAB_WIDTH).toBe(28);
+  it("T10a: equals 30 — 8px left padding + 14px icon + 8px right padding", () => {
+    expect(ICON_ONLY_TAB_WIDTH).toBe(30);
   });
 });
 
@@ -373,17 +372,10 @@ describe("computeOverflow — rightmost inactive tabs overflow first", () => {
     // All inactive overflow; active alone(80) ≤ 92 → NOT edge case.
     // Result: visible=[active], collapsed=[], overflow=[b,c,d].
     // Use a slightly wider container so b remains as collapsed.
-    // Container: 170px. Available overflow = 170 - 28 - 40 = 102px.
-    //   Start: 80 + 28 + 28 + 28 = 164 > 102.
-    //   Remove d(28) → 80+28+28=136>102. Remove c(28) → 80+28=108>102. Remove b(28) → 80≤102. ✓
-    // Still all overflow. Use 175px:
-    // Available overflow = 175 - 28 - 40 = 107px.
-    //   Start: 164 > 107. Remove d → 136 > 107. Remove c → 108 > 107. Remove b → 80 ≤ 107. ✓
-    // Still all overflow. Need overflow = 109+ so 80+28=108 fits.
-    // Available overflow >= 109 → containerWidth - 68 >= 109 → containerWidth >= 177.
-    // Container: 177px. Available overflow = 109px.
-    //   Start: 80 + 28 + 28 + 28 = 164 > 109.
-    //   Remove d(28) → 80+28+28=136>109. Remove c(28) → 80+28=108 ≤ 109. ✓
+    // ICON_ONLY_TAB_WIDTH = 30. Container: 178px.
+    // Available overflow = 178 - 28 - 40 = 110px.
+    //   Start: 80 + 30 + 30 + 30 = 170 > 110.
+    //   Remove d(30) → 80+30+30=140>110. Remove c(30) → 80+30=110 ≤ 110. ✓
     // Result: visible=[active], collapsed=[b], overflow=[c,d].
     const tabs = [
       tabWithIcon("active", 80),
@@ -391,7 +383,7 @@ describe("computeOverflow — rightmost inactive tabs overflow first", () => {
       tabWithIcon("c", 80),
       tabWithIcon("d", 80),
     ];
-    const result = computeOverflow(tabs, 177, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
+    const result = computeOverflow(tabs, 178, "active", OVERFLOW_BTN_WIDTH, ADD_BTN_WIDTH);
     expect(result.stage).toBe("overflow");
     // b is leftmost inactive → should remain collapsed (not overflow)
     expect(result.collapsedIds).toContain("b");

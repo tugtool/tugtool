@@ -219,17 +219,17 @@ body {
   /* --- Typography (plain values; CSS zoom handles scaling) --- */
   --tug-base-font-family-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --tug-base-font-family-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
-  --tug-base-font-size-2xs: 10px;
-  --tug-base-font-size-xs: 11px;
-  --tug-base-font-size-sm: 12px;
+  --tug-base-font-size-2xs: 11px;
+  --tug-base-font-size-xs: 12px;
+  --tug-base-font-size-sm: 13px;
   --tug-base-font-size-md: 14px;
   --tug-base-font-size-lg: 16px;
   --tug-base-font-size-xl: 20px;
   --tug-base-font-size-2xl: 24px;
   /* Taxonomy size-scale line-height tokens (canonical) */
-  --tug-base-line-height-2xs: 14px;
-  --tug-base-line-height-xs: 16px;
-  --tug-base-line-height-sm: 18px;
+  --tug-base-line-height-2xs: 15px;
+  --tug-base-line-height-xs: 17px;
+  --tug-base-line-height-sm: 19px;
   --tug-base-line-height-md: 20px;
   --tug-base-line-height-lg: 24px;
   --tug-base-line-height-xl: 28px;
@@ -261,6 +261,9 @@ body {
   --tug-base-stroke-thin: 1px;
   --tug-base-stroke-medium: 1.5px;
   --tug-base-stroke-thick: 2px;
+
+  /* --- Chrome (card header & tab bar strip height) --- */
+  --tug-base-chrome-height: 36px;
 
   /* --- Icon Size (plain values) --- */
   --tug-base-icon-size-2xs: 10px;

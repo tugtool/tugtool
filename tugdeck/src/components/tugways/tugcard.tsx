@@ -15,7 +15,7 @@
  * ```
  * CardFrame (absolute positioning, drag handles, resize handles)
  *   └─ Tugcard (flex column)
- *        ├─ CardHeader (28px, title + icon + close button)
+ *        ├─ CardHeader (title + icon + close button)
  *        ├─ Accessory slot (TugTabBar when tabs.length > 1, else 0px)
  *        └─ Content area (flex-grow, overflow auto)
  *             └─ children (active tab content or single card content)
@@ -707,7 +707,7 @@ export function Tugcard({
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleCardPointerDown}
     >
-      {/* CardHeader: 28px title bar with 2.5D controls and collapse support */}
+      {/* CardHeader: title bar with 2.5D controls and collapse support */}
       <CardHeader
         title={displayTitle}
         icon={effectiveMeta.icon}

@@ -1,5 +1,5 @@
 /**
- * TugTabBar styles -- tugways-specific CSS using --tug-tab-* and --tug-base-* tokens.
+ * TugTabBar styles -- uses --tug-base-* tokens directly.
  *
  * All colors reference canonical tokens exclusively. No hardcoded
  * hex values, no raw Tailwind color classes. Theme switches update CSS
@@ -22,37 +22,6 @@
  */
 
 /* ============================================================================
-   Component Token Definitions
-   ============================================================================ */
-
-body {
-  --tug-tab-bar-bg: var(--tug-base-tab-bar-bg);
-  --tug-tab-bg-rest: var(--tug-base-tab-bg-rest);
-  --tug-tab-bg-hover: var(--tug-base-tab-bg-hover);
-  --tug-tab-bg-active: var(--tug-base-tab-bg-active);
-  --tug-tab-bg-compact: var(--tug-base-tab-bg-compact);
-  --tug-tab-fg-rest: var(--tug-base-tab-fg-rest);
-  --tug-tab-fg-active: var(--tug-base-tab-fg-active);
-  --tug-tab-fg-compact: var(--tug-base-tab-fg-compact);
-  --tug-tab-close-bg-hover: var(--tug-base-tab-close-bg-hover);
-  --tug-tab-close-fg-hover: var(--tug-base-tab-close-fg-hover);
-  --tug-tab-underline-active: var(--tug-base-tab-underline-active);
-  --tug-tab-dropTarget-bg: var(--tug-base-tab-dropTarget-bg);
-  --tug-tab-dropTarget-border: var(--tug-base-tab-dropTarget-border);
-  --tug-tab-badge-bg: var(--tug-base-tab-badge-bg);
-  --tug-tab-badge-fg: var(--tug-base-tab-badge-fg);
-  --tug-tab-ghost-bg: var(--tug-base-tab-ghost-bg);
-  --tug-tab-ghost-border: var(--tug-base-tab-ghost-border);
-  --tug-tab-insertIndicator: var(--tug-base-tab-insertIndicator);
-  --tug-tab-overflow-trigger-bg: var(--tug-base-tab-overflow-trigger-bg);
-  --tug-tab-overflow-trigger-fg: var(--tug-base-tab-overflow-trigger-fg);
-  --tug-tab-add-bg-hover: var(--tug-base-tab-add-bg-hover);
-  --tug-tab-add-fg: var(--tug-base-tab-add-fg);
-  --tug-tab-typePicker-bg: var(--tug-base-tab-typePicker-bg);
-  --tug-tab-typePicker-fg: var(--tug-base-tab-typePicker-fg);
-}
-
-/* ============================================================================
    Tab Bar Container
    ============================================================================ */
 
@@ -63,8 +32,8 @@ body {
   flex-wrap: nowrap;
   overflow-x: hidden;
   overflow-y: hidden;
-  height: 28px;
-  background-color: var(--tug-tab-bar-bg);
+  height: var(--tug-base-chrome-height);
+  background-color: var(--tug-base-tab-bar-bg);
   border-bottom: 1px solid var(--tug-base-border-default);
   user-select: none;
   /* Required so absolutely-positioned insertion indicator is positioned
@@ -79,8 +48,8 @@ body {
 .tug-tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
+  gap: var(--tug-base-space-xs);
+  padding: 0 var(--tug-base-space-md);
   height: 100%;
   min-width: 0;
   max-width: 160px;
@@ -89,7 +58,7 @@ body {
   border-bottom: 2px solid transparent;
   background-color: transparent;
   color: var(--tug-base-fg-muted);
-  font-size: 0.75rem;
+  font-size: var(--tug-base-font-size-sm);
   font-family: var(--tug-base-font-family-sans);
   cursor: default;
   user-select: none;
@@ -103,9 +72,9 @@ body {
 
 /* Active tab (Table T01) */
 .tug-tab[data-active="true"] {
-  background-color: var(--tug-tab-bg-active);
-  color: var(--tug-tab-fg-active);
-  box-shadow: inset 0 -2px 0 0 var(--tug-tab-underline-active);
+  background-color: var(--tug-base-tab-bg-active);
+  color: var(--tug-base-tab-fg-active);
+  box-shadow: inset 0 -2px 0 0 var(--tug-base-tab-underline-active);
 }
 
 /* Inactive tab hover (Table T01) */
@@ -122,8 +91,8 @@ body {
 
 /* Stage 1 collapse: hide title and close button so only the icon remains.
    Uses display: none (not visibility: hidden) to remove them from flex layout,
-   ensuring CSS gap contributes 0px. Collapsed tab width = padding(8) + icon(12)
-   + padding(8) = 28px = ICON_ONLY_TAB_WIDTH. [D01] */
+   ensuring CSS gap contributes 0px. Collapsed tab width = padding + icon + padding
+   = ICON_ONLY_TAB_WIDTH (see tab-overflow.ts). [D01] */
 .tug-tab[data-overflow="collapsed"] .tug-tab-title {
   display: none;
 }
@@ -145,8 +114,8 @@ body {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
+  width: var(--tug-base-icon-size-sm);
+  height: var(--tug-base-icon-size-sm);
 }
 
 /* ============================================================================
@@ -169,15 +138,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: var(--tug-base-icon-size-md);
+  height: var(--tug-base-icon-size-md);
   padding: 0;
   flex-shrink: 0;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--tug-base-radius-xs);
   background-color: transparent;
   color: inherit;
-  font-size: 0.875rem;
+  font-size: var(--tug-base-font-size-md);
   line-height: 1;
   cursor: default;
   user-select: none;
@@ -210,13 +179,13 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  width: var(--tug-base-chrome-height);
   height: 100%;
   flex-shrink: 0;
   border: none;
   background-color: transparent;
   color: var(--tug-base-fg-muted);
-  font-size: 1rem;
+  font-size: var(--tug-base-font-size-lg);
   line-height: 1;
   /* Shift the + glyph up slightly to correct its optical baseline offset */
   padding-top: 0;
@@ -247,12 +216,12 @@ body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  padding: 0 6px;
+  padding: 0 var(--tug-base-space-sm);
   flex-shrink: 0;
   border: none;
   background-color: transparent;
   color: var(--tug-base-fg-muted);
-  font-size: 0.75rem;
+  font-size: var(--tug-base-font-size-sm);
   font-family: var(--tug-base-font-family-sans);
   cursor: default;
   user-select: none;
@@ -272,12 +241,12 @@ body {
   align-items: center;
   justify-content: center;
   min-width: 18px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background-color: var(--tug-tab-badge-bg);
+  height: var(--tug-base-icon-size-md);
+  padding: 0 var(--tug-base-space-xs);
+  border-radius: var(--tug-base-radius-lg);
+  background-color: var(--tug-base-tab-badge-bg);
   color: var(--tug-base-surface-default);
-  font-size: 0.65rem;
+  font-size: var(--tug-base-font-size-2xs);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -296,16 +265,16 @@ body {
   z-index: 5000;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  height: 28px;
+  gap: var(--tug-base-space-xs);
+  padding: 0 var(--tug-base-space-md);
+  height: var(--tug-base-chrome-height);
   background-color: var(--tug-base-surface-control);
   border: 1px solid var(--tug-base-border-default);
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: var(--tug-base-radius-sm);
+  box-shadow: 0 2px 8px var(--tug-base-shadow-sm);
   opacity: 0.7;
   pointer-events: none;
-  font-size: 0.75rem;
+  font-size: var(--tug-base-font-size-sm);
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
   user-select: none;
@@ -319,7 +288,7 @@ body {
   top: 0;
   width: 2px;
   height: 100%;
-  background-color: var(--tug-tab-insertIndicator);
+  background-color: var(--tug-base-tab-insertIndicator);
   pointer-events: none;
   transition: left var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
@@ -331,10 +300,10 @@ body {
 }
 
 /* Drop-target highlight on single-tab card accessory divs.
-   Reveals a visible drop zone (min-height 28px) for cards with no tab bar.
+   Reveals a visible drop zone for cards with no tab bar.
    [D05, Spec S07] */
 .tugcard-accessory[data-drop-target="true"] {
-  min-height: 28px;
+  min-height: var(--tug-base-chrome-height);
   background-color: var(--tug-base-surface-control);
   border-bottom: 2px solid var(--tug-base-accent-default);
   transition:

@@ -5,14 +5,13 @@
  * All logic is pure and deterministic given the input measurements.
  * See plan Decision [D03] for rationale.
  *
- * **CSS dependency:** ICON_ONLY_TAB_WIDTH = 28 is derived from:
- *   - `.tug-tab` left padding:  8px
- *   - `.tug-tab-icon` width:   12px
- *   - `.tug-tab` right padding: 8px
- *   Total: 28px (gap contributes 0px because `.tug-tab-title` and
+ * **CSS dependency:** ICON_ONLY_TAB_WIDTH = 30 is derived from:
+ *   - `.tug-tab` padding: var(--tug-base-space-md) = 8px each side
+ *   - `.tug-tab-icon` width: var(--tug-base-icon-size-sm) = 14px
+ *   Total: 30px (gap contributes 0px because `.tug-tab-title` and
  *   `.tug-tab-close` are hidden with `display: none` in collapsed mode,
  *   leaving only `.tug-tab-icon` as a flex child).
- * If any of these CSS values change, this constant MUST be updated.
+ * If any of these CSS token values change, this constant MUST be updated.
  *
  * **Authoritative references:**
  * - [D01] DOM measurement for full widths, fixed constant for icon-only
@@ -26,15 +25,16 @@
 /**
  * Fixed width (px) of a tab in icon-only (Stage 1 collapsed) mode.
  *
- * CSS dependency chain: `.tug-tab` padding (8px + 8px) + `.tug-tab-icon`
- * width (12px) = 28px. When `.tug-tab-title` and `.tug-tab-close` are hidden
+ * CSS dependency chain: `.tug-tab` padding (--tug-base-space-md × 2 = 16px)
+ * + `.tug-tab-icon` width (--tug-base-icon-size-sm = 14px) = 30px.
+ * When `.tug-tab-title` and `.tug-tab-close` are hidden
  * via `display: none`, CSS flex `gap` applies 0px between flex children
  * (only one child remains: `.tug-tab-icon`).
  *
- * **Any change here MUST be accompanied by a matching CSS update in
- * `tug-tab-bar.css`.**
+ * **Any change here MUST be accompanied by a matching CSS token update in
+ * tug-tokens.css.**
  */
-export const ICON_ONLY_TAB_WIDTH = 28;
+export const ICON_ONLY_TAB_WIDTH = 30;
 
 /**
  * Estimated width (px) of the overflow dropdown button, used as a bootstrap
