@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-12T18:13:50Z
+---
+
+## step-8: Replaced 12 raw --tug-color() values in tug-card.css with var(--tug-base-*) semantic references per Spec S01
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-7
 date: 2025-03-12T18:09:25Z
 ---

@@ -19,8 +19,8 @@
 
 body {
   /* --- Card --- */
-  --tug-card-bg: --tug-color(violet, i: 4, t: 14);
-  --tug-card-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-card-bg: var(--tug-base-surface-overlay);
+  --tug-card-border: var(--tug-base-border-default);
   /* Card shadow tokens — card-specific, not generic elevation */
   --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
@@ -31,19 +31,19 @@ body {
   --tug-card-header-bg-active: --tug-color(violet-9, i: 4, t: 20);
   --tug-card-header-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
   --tug-card-header-bg-collapsed: --tug-color(violet, i: 4, t: 15);
-  --tug-card-header-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-card-header-icon-active: --tug-color(cyan);
-  --tug-card-header-icon-inactive: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-card-header-divider: --tug-color(violet-6, i: 6, t: 17);
+  --tug-card-header-fg: var(--tug-base-fg-default);
+  --tug-card-header-icon-active: var(--tug-base-icon-active);
+  --tug-card-header-icon-inactive: var(--tug-base-fg-subtle);
+  --tug-card-header-divider: var(--tug-base-divider-default);
   --tug-card-header-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
   --tug-card-header-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
-  --tug-card-header-button-fg: --tug-color(cobalt, i: 5, t: 66);
-  --tug-card-header-button-fg-danger: --tug-color(red);
+  --tug-card-header-button-fg: var(--tug-base-fg-muted);
+  --tug-card-header-button-fg-danger: var(--tug-base-tone-danger);
   --tug-card-header-button-fg-danger-hover: --tug-color(red-light);
-  --tug-card-accessory-bg: --tug-color(violet, i: 5, t: 11);
-  --tug-card-accessory-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-card-findbar-bg: --tug-color(violet-6, i: 4, t: 7);
-  --tug-card-findbar-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-card-accessory-bg: var(--tug-base-surface-sunken);
+  --tug-card-accessory-border: var(--tug-base-border-default);
+  --tug-card-findbar-bg: var(--tug-base-field-bg-focus);
+  --tug-card-findbar-border: var(--tug-base-border-default);
   --tug-card-findbar-match: --tug-color(yellow, i: 50, t: 50, a: 30);
   --tug-card-findbar-match-active: --tug-color(orange, i: 50, t: 50, a: 50);
 }
