@@ -61,6 +61,11 @@
 
 .tugcard--collapsed {
   overflow: hidden;
+  background-color: var(--tug-base-card-header-bg-inactive);
+}
+
+.card-frame[data-focused="true"] .tugcard--collapsed {
+  background-color: var(--tug-base-card-header-bg-active);
 }
 
 /* ============================================================================
