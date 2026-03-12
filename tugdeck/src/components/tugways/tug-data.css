@@ -8,24 +8,24 @@
 
 body {
   /* --- Table / List --- */
-  --tug-table-header-bg: --tug-color(violet, i: 5, t: 11);
-  --tug-table-header-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-table-header-bg: var(--tug-base-surface-sunken);
+  --tug-table-header-fg: var(--tug-base-fg-muted);
   --tug-table-row-bg: transparent;
   --tug-table-row-bg-striped: --tug-color(white, i: 0, t: 100, a: 2);
   --tug-table-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-table-row-bg-selected: --tug-color(orange, i: 50, t: 50, a: 10);
-  --tug-table-row-border: --tug-color(violet, i: 4, t: 15);
-  --tug-table-cell-divider: --tug-color(violet-6, i: 6, t: 17);
-  --tug-table-sortIndicator: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-table-row-bg-selected: var(--tug-base-control-highlighted-bg);
+  --tug-table-row-border: var(--tug-base-divider-muted);
+  --tug-table-cell-divider: var(--tug-base-divider-default);
+  --tug-table-sortIndicator: var(--tug-base-fg-subtle);
   --tug-list-row-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-list-row-selected: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug-list-row-selected: var(--tug-base-control-highlighted-bg);
 
   /* --- Stat / Trend --- */
-  --tug-stat-label: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-stat-value: --tug-color(cobalt, i: 3, t: 94);
-  --tug-stat-trend-positive: --tug-color(green);
-  --tug-stat-trend-negative: --tug-color(red);
-  --tug-stat-trend-neutral: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-stat-label: var(--tug-base-fg-subtle);
+  --tug-stat-value: var(--tug-base-fg-default);
+  --tug-stat-trend-positive: var(--tug-base-tone-positive);
+  --tug-stat-trend-negative: var(--tug-base-tone-danger);
+  --tug-stat-trend-neutral: var(--tug-base-fg-subtle);
 
   /* --- Chart Series (palette var() references — Phase 5d5e) --- */
   --tug-chart-series-warm: --tug-color(orange);
@@ -37,21 +37,21 @@ body {
   --tug-chart-series-orchid: --tug-color(pink);
   --tug-chart-series-coral: --tug-color(coral-muted);
   /* Chart infrastructure tokens */
-  --tug-chart-grid: --tug-color(white, i: 0, t: 100, a: 6);
-  --tug-chart-axis: --tug-color(cobalt, i: 6, t: 30);
-  --tug-chart-tick: --tug-color(cobalt, i: 6, t: 30);
-  --tug-chart-threshold-warning: --tug-color(yellow);
-  --tug-chart-threshold-danger: --tug-color(red);
+  --tug-chart-grid: var(--tug-base-overlay-highlight);
+  --tug-chart-axis: var(--tug-base-border-default);
+  --tug-chart-tick: var(--tug-base-border-default);
+  --tug-chart-threshold-warning: var(--tug-base-tone-warning);
+  --tug-chart-threshold-danger: var(--tug-base-tone-danger);
 
   /* --- Gauge --- */
-  --tug-gauge-track: --tug-color(violet-6, i: 6, t: 17);
-  --tug-gauge-fill: --tug-color(orange);
-  --tug-gauge-needle: --tug-color(cobalt, i: 3, t: 94);
-  --tug-gauge-tick-major: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-gauge-tick-minor: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-gauge-readout: --tug-color(cobalt, i: 3, t: 94);
-  --tug-gauge-threshold-warning: --tug-color(yellow);
-  --tug-gauge-threshold-danger: --tug-color(red);
-  --tug-gauge-unit: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-gauge-annotation: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-gauge-track: var(--tug-base-separator);
+  --tug-gauge-fill: var(--tug-base-accent-default);
+  --tug-gauge-needle: var(--tug-base-fg-default);
+  --tug-gauge-tick-major: var(--tug-base-fg-subtle);
+  --tug-gauge-tick-minor: var(--tug-base-fg-disabled);
+  --tug-gauge-readout: var(--tug-base-fg-default);
+  --tug-gauge-threshold-warning: var(--tug-base-tone-warning);
+  --tug-gauge-threshold-danger: var(--tug-base-tone-danger);
+  --tug-gauge-unit: var(--tug-base-fg-subtle);
+  --tug-gauge-annotation: var(--tug-base-fg-subtle);
 }
