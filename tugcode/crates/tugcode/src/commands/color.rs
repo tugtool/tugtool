@@ -36,33 +36,6 @@ fn oklch_to_linear_srgb(l: f64, c: f64, h_deg: f64) -> (f64, f64, f64) {
     (r, g, bv)
 }
 
-/// Check if OKLCH color is in sRGB gamut.
-fn is_in_srgb_gamut(l: f64, c: f64, h: f64) -> bool {
-    let epsilon = 0.001;
-    let (r, g, b) = oklch_to_linear_srgb(l, c, h);
-    r >= -epsilon
-        && r <= 1.0 + epsilon
-        && g >= -epsilon
-        && g <= 1.0 + epsilon
-        && b >= -epsilon
-        && b <= 1.0 + epsilon
-}
-
-/// Binary search for max chroma at given L and hue. Matches palette-engine.ts findMaxChroma().
-fn find_max_chroma(l: f64, h: f64) -> f64 {
-    let mut lo = 0.0_f64;
-    let mut hi = 0.4_f64;
-    for _ in 0..32 {
-        let mid = (lo + hi) / 2.0;
-        if is_in_srgb_gamut(l, mid, h) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    lo * 0.98
-}
-
 // ---------------------------------------------------------------------------
 // Linear sRGB → OKLCH conversion (forward direction)
 // ---------------------------------------------------------------------------
@@ -143,30 +116,37 @@ fn oklch_to_tug_color(l: f64, c: f64, h: f64) -> TugColorResult {
             closest_hue = name;
         }
     }
-    let hue_name = if closest_diff <= 5.0 {
+    // Find the closest named hue angle for signed offset calculation
+    let closest_angle = palette_data::HUE_FAMILIES
+        .iter()
+        .find(|&&(n, _)| n == closest_hue)
+        .map(|&(_, a)| a)
+        .unwrap_or(0.0);
+    let mut signed_diff = h - closest_angle;
+    if signed_diff > 180.0 {
+        signed_diff -= 360.0;
+    } else if signed_diff < -180.0 {
+        signed_diff += 360.0;
+    }
+    let offset = signed_diff.round() as i32;
+    let hue_name = if offset == 0 {
         closest_hue.to_string()
     } else {
-        format!("hue-{}", h.round() as i32)
+        format!("{}{:+}", closest_hue, offset)
     };
 
-    // Step 2: Get canonical L and peak chroma
-    let (canonical_l, peak_c) = if hue_name.starts_with("hue-") {
-        let cl = 0.77;
-        let pc = find_max_chroma(cl, h) * palette_data::PEAK_C_SCALE;
-        (cl, pc)
-    } else {
-        let cl = palette_data::DEFAULT_CANONICAL_L
-            .iter()
-            .find(|&&(n, _)| n == closest_hue)
-            .map(|&(_, v)| v)
-            .unwrap_or(0.77);
-        let mc = palette_data::MAX_CHROMA_FOR_HUE
-            .iter()
-            .find(|&&(n, _)| n == closest_hue)
-            .map(|&(_, v)| v)
-            .unwrap_or(0.022);
-        (cl, mc * palette_data::PEAK_C_SCALE)
-    };
+    // Step 2: Get canonical L and peak chroma (always from named hue)
+    let canonical_l = palette_data::DEFAULT_CANONICAL_L
+        .iter()
+        .find(|&&(n, _)| n == closest_hue)
+        .map(|&(_, v)| v)
+        .unwrap_or(0.77);
+    let peak_c = palette_data::MAX_CHROMA_FOR_HUE
+        .iter()
+        .find(|&&(n, _)| n == closest_hue)
+        .map(|&(_, v)| v)
+        .unwrap_or(0.022)
+        * palette_data::PEAK_C_SCALE;
 
     // Step 3: Invert tone from L
     let tone_raw = if l <= canonical_l {
