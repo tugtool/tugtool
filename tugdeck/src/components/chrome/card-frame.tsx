@@ -31,7 +31,7 @@ import type { CardState } from "@/layout-tree";
 import { computeSnap, computeResizeSnap, findSharedEdges, computeSets, computeSetHullPolygon } from "@/snap";
 import type { Rect, GuidePosition, SnapResult, SharedEdge } from "@/snap";
 import { animate } from "@/components/tugways/tug-animator";
-import { CARD_TITLE_BAR_HEIGHT } from "../tugways/card-header";
+import { CARD_TITLE_BAR_HEIGHT } from "../tugways/tug-card";
 
 // ---------------------------------------------------------------------------
 // Module-level counter for unique SVG flash filter IDs [Spec S03]

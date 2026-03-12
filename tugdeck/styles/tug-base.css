@@ -154,7 +154,7 @@ body {
   --tug-base-icon-default: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-icon-muted: --tug-color(cobalt+7, i: 7, t: 37);
   --tug-base-icon-disabled: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-base-icon-active: --tug-color(cyan);
+  --tug-base-icon-active: --tug-color(cobalt, i: 100, t: 80);
   --tug-base-icon-onAccent: --tug-color(cobalt-8, i: 3, t: 100);
 
   /* --- Borders / Dividers / Focus --- */

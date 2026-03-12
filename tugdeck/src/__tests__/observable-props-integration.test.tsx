@@ -36,7 +36,7 @@ import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/pr
 import { GALLERY_DEFAULT_TABS, registerGalleryCards } from "@/components/tugways/cards/gallery-card";
 import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
-import { Tugcard } from "@/components/tugways/tugcard";
+import { Tugcard } from "@/components/tugways/tug-card";
 import { _resetForTest } from "@/card-registry";
 import { withDeckManager } from "./mock-deck-manager-store";
 

@@ -1,5 +1,5 @@
 /**
- * CardHeader component unit tests -- Step 3.
+ * CardTitleBar component unit tests -- Step 3.
  *
  * Tests cover:
  * - T-CH01: Clicking chevron collapses card (calls onCollapse)
@@ -21,7 +21,7 @@ import React from "react";
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
-import { CardHeader, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/card-header";
+import { CardTitleBar, CARD_TITLE_BAR_HEIGHT } from "@/components/tugways/tug-card";
 import { CardFrame } from "@/components/chrome/card-frame";
 import type { CardFrameInjectedProps } from "@/components/chrome/card-frame";
 import type { CardState } from "@/layout-tree";
@@ -61,53 +61,53 @@ function makeMockConnection() {
 // T-CH01 / T-CH02: Chevron collapse/expand
 // ---------------------------------------------------------------------------
 
-describe("CardHeader – collapse/expand via chevron", () => {
+describe("CardTitleBar – collapse/expand via chevron", () => {
   afterEach(() => cleanup());
 
   it("T-CH01: calls onCollapse when chevron clicked (expanded state)", () => {
     const onCollapse = mock(() => {});
     const { getByTestId } = render(
-      <CardHeader
+      <CardTitleBar
         title="Test Card"
         collapsed={false}
         onCollapse={onCollapse}
       />
     );
-    const btn = getByTestId("card-header-collapse-btn");
-    act(() => { fireEvent.click(btn); });
+    const button = getByTestId("card-title-bar-collapse-button");
+    act(() => { fireEvent.click(button); });
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
   it("T-CH02: calls onCollapse when chevron clicked (collapsed state)", () => {
     const onCollapse = mock(() => {});
     const { getByTestId } = render(
-      <CardHeader
+      <CardTitleBar
         title="Test Card"
         collapsed={true}
         onCollapse={onCollapse}
       />
     );
-    const btn = getByTestId("card-header-collapse-btn");
-    act(() => { fireEvent.click(btn); });
+    const button = getByTestId("card-title-bar-collapse-button");
+    act(() => { fireEvent.click(button); });
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
   it("collapse button has correct aria-label when expanded", () => {
     const { getByTestId } = render(
-      <CardHeader title="Test" collapsed={false} onCollapse={() => {}} />
+      <CardTitleBar title="Test" collapsed={false} onCollapse={() => {}} />
     );
-    const btn = getByTestId("card-header-collapse-btn");
-    expect(btn.getAttribute("aria-label")).toBe("Collapse card");
-    expect(btn.getAttribute("aria-expanded")).toBe("true");
+    const button = getByTestId("card-title-bar-collapse-button");
+    expect(button.getAttribute("aria-label")).toBe("Collapse card");
+    expect(button.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("collapse button has correct aria-label when collapsed", () => {
     const { getByTestId } = render(
-      <CardHeader title="Test" collapsed={true} onCollapse={() => {}} />
+      <CardTitleBar title="Test" collapsed={true} onCollapse={() => {}} />
     );
-    const btn = getByTestId("card-header-collapse-btn");
-    expect(btn.getAttribute("aria-label")).toBe("Expand card");
-    expect(btn.getAttribute("aria-expanded")).toBe("false");
+    const button = getByTestId("card-title-bar-collapse-button");
+    expect(button.getAttribute("aria-label")).toBe("Expand card");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
@@ -115,13 +115,13 @@ describe("CardHeader – collapse/expand via chevron", () => {
 // T-CH03: Close button fires onClose on confirmed pointer-up-inside
 // ---------------------------------------------------------------------------
 
-describe("CardHeader – close button", () => {
+describe("CardTitleBar – close button", () => {
   afterEach(() => cleanup());
 
   it("T-CH03: close button calls onClose via click (keyboard fallback)", () => {
     const onClose = mock(() => {});
     const { getByTestId } = render(
-      <CardHeader
+      <CardTitleBar
         title="Test"
         collapsed={false}
         onCollapse={() => {}}
@@ -129,56 +129,56 @@ describe("CardHeader – close button", () => {
         onClose={onClose}
       />
     );
-    const btn = getByTestId("tugcard-close-btn");
-    act(() => { fireEvent.click(btn); });
+    const button = getByTestId("tugcard-close-button");
+    act(() => { fireEvent.click(button); });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("T-CH08: close button is hidden when closable=false", () => {
     const { queryByTestId } = render(
-      <CardHeader
+      <CardTitleBar
         title="Test"
         collapsed={false}
         onCollapse={() => {}}
         closable={false}
       />
     );
-    expect(queryByTestId("tugcard-close-btn")).toBeNull();
+    expect(queryByTestId("tugcard-close-button")).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// T-CH04: Double-click on header toggles collapse
+// T-CH04: Double-click on title bar toggles collapse
 // ---------------------------------------------------------------------------
 
-describe("CardHeader – double-click to toggle collapse", () => {
+describe("CardTitleBar – double-click to toggle collapse", () => {
   afterEach(() => cleanup());
 
-  it("T-CH04: double-click on header surface calls onCollapse", () => {
+  it("T-CH04: double-click on title bar surface calls onCollapse", () => {
     const onCollapse = mock(() => {});
     const { getByTestId } = render(
-      <CardHeader title="Test" collapsed={false} onCollapse={onCollapse} />
+      <CardTitleBar title="Test" collapsed={false} onCollapse={onCollapse} />
     );
-    const header = getByTestId("tugcard-header");
-    act(() => { fireEvent.dblClick(header); });
+    const titleBar = getByTestId("tugcard-title-bar");
+    act(() => { fireEvent.dblClick(titleBar); });
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
   it("double-click on collapse button does NOT double-fire onCollapse", () => {
     // The button has its own click handler; double-click on button fires click once,
     // not double-fire. The dblClick event on the button should not also fire the
-    // header's onDoubleClick handler (because closest(".card-header-btn") guard fires).
+    // title bar's onDoubleClick handler (because closest(".card-title-bar-button") guard fires).
     const onCollapse = mock(() => {});
     const { getByTestId } = render(
-      <CardHeader title="Test" collapsed={false} onCollapse={onCollapse} />
+      <CardTitleBar title="Test" collapsed={false} onCollapse={onCollapse} />
     );
-    const btn = getByTestId("card-header-collapse-btn");
+    const button = getByTestId("card-title-bar-collapse-button");
     act(() => {
       // A dblClick fires: click + click + dblClick events
-      fireEvent.click(btn); // first click
-      fireEvent.dblClick(btn); // dblClick on button
+      fireEvent.click(button); // first click
+      fireEvent.dblClick(button); // dblClick on button
     });
-    // The header's dblClick guard skips when target is a button
+    // The title bar's dblClick guard skips when target is a button
     // Only the single click fires the collapse callback
     expect(onCollapse.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
@@ -188,42 +188,42 @@ describe("CardHeader – double-click to toggle collapse", () => {
 // T-CH-DRAG: onDragStart is available when collapsed (collapsed cards can drag)
 // ---------------------------------------------------------------------------
 
-describe("CardHeader – drag is active when collapsed [D07]", () => {
+describe("CardTitleBar – drag is active when collapsed [D07]", () => {
   afterEach(() => cleanup());
 
-  it("T-CH-DRAG: onDragStart prop is passed to CardHeader regardless of collapsed state", () => {
+  it("T-CH-DRAG: onDragStart prop is passed to CardTitleBar regardless of collapsed state", () => {
     // Documents the intent that collapsed cards can still be dragged.
-    // The onDragStart callback must reach CardHeader whether collapsed=true or false.
+    // The onDragStart callback must reach CardTitleBar whether collapsed=true or false.
     // CardFrame injects onDragStart via CardFrameInjectedProps and Tugcard forwards it
-    // to CardHeader unconditionally -- the header is always rendered.
+    // to CardTitleBar unconditionally -- the title bar is always rendered.
     const onDragStart = mock((_e: React.PointerEvent) => {});
     const { getByTestId, rerender } = render(
-      <CardHeader
+      <CardTitleBar
         title="Collapsed Card"
         collapsed={true}
         onCollapse={() => {}}
         onDragStart={onDragStart}
       />
     );
-    // Header is always rendered -- verify it is present when collapsed.
-    const header = getByTestId("tugcard-header");
-    expect(header).not.toBeNull();
+    // Title bar is always rendered -- verify it is present when collapsed.
+    const titleBar = getByTestId("tugcard-title-bar");
+    expect(titleBar).not.toBeNull();
 
-    // Fire a pointerdown on the header surface (not on a button) to trigger onDragStart.
-    act(() => { fireEvent.pointerDown(header); });
+    // Fire a pointerdown on the title bar surface (not on a button) to trigger onDragStart.
+    act(() => { fireEvent.pointerDown(titleBar); });
     expect(onDragStart).toHaveBeenCalledTimes(1);
 
     // Also verify onDragStart is provided when expanded (regression guard).
     rerender(
-      <CardHeader
+      <CardTitleBar
         title="Expanded Card"
         collapsed={false}
         onCollapse={() => {}}
         onDragStart={onDragStart}
       />
     );
-    const headerExpanded = getByTestId("tugcard-header");
-    act(() => { fireEvent.pointerDown(headerExpanded); });
+    const titleBarExpanded = getByTestId("tugcard-title-bar");
+    act(() => { fireEvent.pointerDown(titleBarExpanded); });
     expect(onDragStart).toHaveBeenCalledTimes(2);
   });
 });
@@ -232,19 +232,19 @@ describe("CardHeader – drag is active when collapsed [D07]", () => {
 // T-CH06: Collapsed state data attribute
 // ---------------------------------------------------------------------------
 
-describe("CardHeader – renders title and icon", () => {
+describe("CardTitleBar – renders title and icon", () => {
   afterEach(() => cleanup());
 
   it("renders title text", () => {
     const { getByTestId } = render(
-      <CardHeader title="My Card" collapsed={false} onCollapse={() => {}} />
+      <CardTitleBar title="My Card" collapsed={false} onCollapse={() => {}} />
     );
     expect(getByTestId("tugcard-title").textContent).toBe("My Card");
   });
 
   it("T-CH07: renders icon when icon prop is a valid lucide icon name", () => {
     const { getByTestId } = render(
-      <CardHeader
+      <CardTitleBar
         title="Test"
         icon="Settings"
         collapsed={false}
@@ -256,7 +256,7 @@ describe("CardHeader – renders title and icon", () => {
 
   it("does not render icon when icon prop is undefined", () => {
     const { queryByTestId } = render(
-      <CardHeader title="Test" collapsed={false} onCollapse={() => {}} />
+      <CardTitleBar title="Test" collapsed={false} onCollapse={() => {}} />
     );
     expect(queryByTestId("tugcard-icon")).toBeNull();
   });

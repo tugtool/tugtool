@@ -848,7 +848,7 @@ describe("DeckCanvas – Step 5: multi-tab onClose wires to store.handleCardClos
     });
 
     // Find and click the Tugcard close button (the card-level close, not tab close)
-    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']");
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']");
     expect(closeBtn).not.toBeNull();
 
     act(() => {
@@ -886,7 +886,7 @@ describe("DeckCanvas – onClose wired from store.handleCardClosed via Tugcard",
       ({ container } = renderDeckCanvasWithStore(store));
     });
 
-    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']");
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']");
     expect(closeBtn).not.toBeNull();
 
     act(() => {

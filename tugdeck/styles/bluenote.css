@@ -57,13 +57,13 @@ body {
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 22);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 18);
 
-  /* Card Header */
-  --tug-card-header-bg-active: --tug-color(blue, i: 14, t: 21);
-  --tug-card-header-bg-inactive: --tug-color(blue+6, i: 10, t: 15);
-  --tug-card-header-bg-collapsed: --tug-color(cobalt-9, i: 9, t: 15);
-  --tug-card-header-fg: --tug-color(blue, i: 3, t: 88);
-  --tug-card-header-icon-inactive: --tug-color(blue+7, i: 9, t: 34);
-  --tug-card-header-divider: --tug-color(blue, i: 8, t: 20);
+  /* Card Title Bar */
+  --tug-card-title-bar-bg-active: --tug-color(blue, i: 14, t: 21);
+  --tug-card-title-bar-bg-inactive: --tug-color(blue+6, i: 10, t: 15);
+  --tug-card-title-bar-bg-collapsed: --tug-color(cobalt-9, i: 9, t: 15);
+  --tug-card-title-bar-fg: --tug-color(blue, i: 3, t: 88);
+  --tug-card-title-bar-icon-inactive: --tug-color(blue+7, i: 9, t: 34);
+  --tug-card-title-bar-divider: --tug-color(blue, i: 8, t: 20);
 
   /* Tab Bar */
   --tug-tab-bar-bg: --tug-color(blue+5, i: 5, t: 16);

@@ -95,7 +95,7 @@ const CLASS_TO_COMP_FAMILY: Record<string, string> = {
   "tug-tab-bar": "--tug-tab",
   "tug-tab": "--tug-tab",
   tugcard: "--tug-card",
-  "tugcard-header": "--tug-card",
+  "tugcard-title-bar": "--tug-card",
   "tug-dropdown": "--tug-dropdown",
 };
 
@@ -117,9 +117,9 @@ const COMP_FAMILY_TOKENS: Record<string, string[]> = {
   "--tug-card": [
     "--tug-card-bg",
     "--tug-card-border",
-    "--tug-card-header-bg-active",
-    "--tug-card-header-fg",
-    "--tug-card-header-divider",
+    "--tug-card-title-bar-bg-active",
+    "--tug-card-title-bar-fg",
+    "--tug-card-title-bar-divider",
     "--tug-card-shadow-active",
   ],
   "--tug-dropdown": [
@@ -159,7 +159,7 @@ const BASE_TOKEN_FALLBACKS: Record<string, string[]> = {
     "--tug-base-control-secondary-fg",
     "--tug-tab-active-fg",
     "--tug-tab-rest-fg",
-    "--tug-card-header-fg",
+    "--tug-card-title-bar-fg",
   ],
   "border-color": [
     "--tug-base-border-default",

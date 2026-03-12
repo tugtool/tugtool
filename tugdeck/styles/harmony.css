@@ -86,16 +86,16 @@ body {
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 9);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 8);
 
-  /* Card Header */
-  --tug-card-header-bg-active: --tug-color(gold+6, i: 23, t: 57);
-  --tug-card-header-bg-inactive: --tug-color(yellow-5, i: 8, t: 60);
-  --tug-card-header-bg-collapsed: --tug-color(yellow, i: 9, t: 45);
-  --tug-card-header-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-card-header-icon-inactive: --tug-color(yellow, i: 10, t: 36);
-  --tug-card-header-divider: --tug-color(yellow, i: 7, t: 42);
-  --tug-card-header-button-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-card-header-button-bg-active: --tug-color(black, i: 0, t: 0, a: 10);
-  --tug-card-header-button-fg: --tug-color(blue, i: 9, t: 22);
+  /* Card Title Bar */
+  --tug-card-title-bar-bg-active: --tug-color(gold+6, i: 23, t: 57);
+  --tug-card-title-bar-bg-inactive: --tug-color(yellow-5, i: 8, t: 60);
+  --tug-card-title-bar-bg-collapsed: --tug-color(yellow, i: 9, t: 45);
+  --tug-card-title-bar-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-card-title-bar-icon-inactive: --tug-color(yellow, i: 10, t: 36);
+  --tug-card-title-bar-divider: --tug-color(yellow, i: 7, t: 42);
+  --tug-card-title-bar-button-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-card-title-bar-button-bg-active: --tug-color(black, i: 0, t: 0, a: 10);
+  --tug-card-title-bar-button-fg-rest: --tug-color(blue, i: 9, t: 22);
   --tug-card-accessory-bg: --tug-color(yellow, i: 6, t: 44);
   --tug-card-accessory-border: --tug-color(yellow, i: 9, t: 28);
   --tug-card-findbar-bg: --tug-color(yellow, i: 4, t: 99);

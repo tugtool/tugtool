@@ -1,5 +1,5 @@
 /**
- * TugCard + CardHeader styles — component token definitions and rules.
+ * TugCard + CardTitleBar styles — component token definitions and rules.
  *
  * Token prefix: --tug-card-* (drops the "base" segment per CSS reorganization).
  * Token values reference --tug-base-* primitives where applicable.
@@ -7,7 +7,7 @@
  * All colors use --tug-card-* semantic tokens or --tug-base-* base tokens.
  * No hardcoded hex values, no raw Tailwind color classes.
  *
- * Merged from: tugcard.css + card-header.css
+ * Merged from: tugcard.css + card-title-bar.css
  *
  * [D04] Semantic tokens exclusively
  * [D07] Window-shade collapse
@@ -25,19 +25,25 @@ body {
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
-  /* --- Card Header --- */
-  --tug-card-header-bg-active: --tug-color(violet-9, i: 4, t: 20);
-  --tug-card-header-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
-  --tug-card-header-bg-collapsed: --tug-color(violet, i: 4, t: 15);
-  --tug-card-header-fg: var(--tug-base-fg-default);
-  --tug-card-header-icon-active: var(--tug-base-icon-active);
-  --tug-card-header-icon-inactive: var(--tug-base-fg-subtle);
-  --tug-card-header-divider: var(--tug-base-divider-default);
-  --tug-card-header-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
-  --tug-card-header-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
-  --tug-card-header-button-fg: var(--tug-base-fg-muted);
-  --tug-card-header-button-fg-danger: var(--tug-base-tone-danger);
-  --tug-card-header-button-fg-danger-hover: --tug-color(red-light);
+  /* --- Card Title Bar --- */
+  --tug-card-title-bar-bg-active: --tug-color(violet-9, i: 25, t: 18);
+  --tug-card-title-bar-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
+  --tug-card-title-bar-bg-collapsed: --tug-color(violet, i: 4, t: 15);
+  --tug-card-title-bar-fg: var(--tug-base-fg-default);
+  --tug-card-title-bar-icon-active: var(--tug-base-icon-active);
+  --tug-card-title-bar-icon-inactive: var(--tug-base-fg-subtle);
+  --tug-card-title-bar-icon-hover: var(--tug-base-fg-muted);
+  --tug-card-title-bar-divider: var(--tug-base-divider-default);
+
+  /* Title bar button control states */
+  --tug-card-title-bar-button-fg-rest: var(--tug-base-fg-muted);
+  --tug-card-title-bar-button-fg-hover: var(--tug-base-fg-default);
+  --tug-card-title-bar-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 18);
+  --tug-card-title-bar-button-bg-active: --tug-color(white, i: 0, t: 100, a: 10);
+  --tug-card-title-bar-button-fg-danger: var(--tug-base-tone-danger);
+  --tug-card-title-bar-button-fg-danger-hover: --tug-color(red-light);
+
+  /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-base-surface-sunken);
   --tug-card-accessory-border: var(--tug-base-border-default);
   --tug-card-findbar-bg: var(--tug-base-field-bg-focus);
@@ -48,7 +54,7 @@ body {
 
 /* ============================================================================
    Tugcard root
-   ============================================================================ */
+   ========================================================================= */
 
 .tugcard {
   display: flex;
@@ -62,12 +68,12 @@ body {
 }
 
 /* ============================================================================
-   Tugcard body wrapper -- holds accessory + content below the header [D07]
-   ============================================================================ */
+   Tugcard body wrapper -- holds accessory + content below the title bar [D07]
+   ========================================================================= */
 
 /*
  * .tugcard-body wraps the accessory slot and content area.
- * When expanded: flex:1 fills remaining height after the header.
+ * When expanded: flex:1 fills remaining height after the title bar.
  * When collapsed: height:0 with overflow:hidden collapses the body while the
  * React subtrees stay MOUNTED. Terminal sessions, scroll positions, and form
  * state are preserved. [D07, Rule 4 — appearance via CSS, not React state]
@@ -82,7 +88,7 @@ body {
 
 /* ============================================================================
    Tugcard collapsed state -- title bar only, content CSS-hidden [D07]
-   ============================================================================ */
+   ========================================================================= */
 
 /*
  * When collapsed (.tugcard--collapsed), the .tugcard-body collapses to
@@ -97,58 +103,58 @@ body {
 
 .tugcard--collapsed {
   overflow: hidden;
-  background-color: var(--tug-card-header-bg-inactive);
+  background-color: var(--tug-card-title-bar-bg-inactive);
 }
 
 .card-frame[data-focused="true"] .tugcard--collapsed {
-  background-color: var(--tug-card-header-bg-active);
+  background-color: var(--tug-card-title-bar-bg-active);
 }
 
 /* ============================================================================
-   CardHeader
-   ============================================================================ */
+   Card Title Bar
+   ========================================================================= */
 
-.tugcard-header {
+.tugcard-title-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: var(--tug-base-chrome-height);
   min-height: var(--tug-base-chrome-height);
   padding: 0 var(--tug-base-space-md);
-  background-color: var(--tug-card-header-bg-inactive);
+  background-color: var(--tug-card-title-bar-bg-inactive);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
 }
 
-/* Prevent selection highlight from appearing in the header even when a
+/* Prevent selection highlight from appearing in the title bar even when a
    content-area selection range spans through it (WebKit renders ::selection
    in user-select: none regions that fall within an active range). */
-.tugcard-header ::selection {
+.tugcard-title-bar ::selection {
   background: transparent;
   color: inherit;
 }
-.tugcard-header::selection {
+.tugcard-title-bar::selection {
   background: transparent;
   color: inherit;
 }
 
 /*
- * When the card is focused (active), the header background switches to the
+ * When the card is focused (active), the title bar background switches to the
  * active color. CardFrame sets data-focused="true" on its container div,
  * which is the ancestor of the Tugcard.
  */
-.card-frame[data-focused="true"] .tugcard-header {
-  background-color: var(--tug-card-header-bg-active);
+.card-frame[data-focused="true"] .tugcard-title-bar {
+  background-color: var(--tug-card-title-bar-bg-active);
 }
 
-.tugcard-header:active {
+.tugcard-title-bar:active {
   cursor: grabbing;
 }
 
 /* ============================================================================
-   Header title
-   ============================================================================ */
+   Title bar title
+   ========================================================================= */
 
 .tugcard-title {
   flex: 1;
@@ -157,13 +163,13 @@ body {
   white-space: nowrap;
   font-size: var(--tug-base-font-size-sm);
   font-weight: 500;
-  color: var(--tug-card-header-fg);
+  color: var(--tug-card-title-bar-fg);
   pointer-events: none;
 }
 
 /* ============================================================================
-   Header icon
-   ============================================================================ */
+   Title bar icon
+   ========================================================================= */
 
 .tugcard-icon {
   display: inline-flex;
@@ -182,22 +188,23 @@ body {
 }
 
 .card-frame[data-focused="true"] .tugcard-icon {
-  color: var(--tug-card-header-icon-active);
+  color: var(--tug-card-title-bar-icon-active);
 }
 
 .card-frame[data-focused="false"] .tugcard-icon {
-  color: var(--tug-card-header-icon-inactive);
+  color: var(--tug-card-title-bar-icon-inactive);
 }
 
 /* ============================================================================
-   Header controls group
-   ============================================================================ */
+   Title bar controls group
+   ========================================================================= */
 
 /*
- * Groups the collapse, menu, and close buttons on the right side of the header.
- * CardHeader renders .card-header-btn elements inside this container.
+ * Groups the collapse, menu, and close buttons on the right side of the
+ * title bar. CardTitleBar renders .card-title-bar-button elements inside
+ * this container.
  */
-.card-header-controls {
+.card-title-bar-controls {
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -205,53 +212,55 @@ body {
 }
 
 /* ============================================================================
-   CardHeader control buttons
-   ============================================================================ */
+   Title bar control buttons — follows Control States design
+   ========================================================================= */
 
-.card-header-btn {
+.card-title-bar-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--tug-base-icon-size-xl);
   height: var(--tug-base-icon-size-xl);
-  padding: var(--tug-base-space-2xs);
+  padding: 0;
   margin: 0;
   background-color: transparent;
-  background-clip: content-box;
   border: none;
   border-radius: var(--tug-base-radius-sm);
-  color: var(--tug-card-header-button-fg);
+  color: var(--tug-card-title-bar-button-fg-rest);
   font-size: var(--tug-base-font-size-md);
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
   position: relative;
 
-  transition: background-color 80ms ease;
+  transition: background-color 80ms ease, color 80ms ease;
 }
 
 /* Lucide SVGs inside control buttons inherit size from the button */
-.card-header-btn svg {
-  width: var(--tug-base-icon-size-sm);
-  height: var(--tug-base-icon-size-sm);
+.card-title-bar-button svg {
+  width: var(--tug-base-icon-size-md);
+  height: var(--tug-base-icon-size-md);
 }
 
-.card-header-btn:hover:not(:disabled) {
-  background-color: var(--tug-card-header-button-bg-hover);
+/* hover: brighten icon + show background */
+.card-title-bar-button:hover:not(:disabled) {
+  color: var(--tug-card-title-bar-button-fg-hover);
+  background-color: var(--tug-card-title-bar-button-bg-hover);
 }
 
-.card-header-btn:active:not(:disabled) {
-  background-color: var(--tug-card-header-button-bg-active);
+/* active: pressed background */
+.card-title-bar-button:active:not(:disabled) {
+  background-color: var(--tug-card-title-bar-button-bg-active);
 }
 
 /* Close button: danger color on hover */
-.card-header-btn-close:hover:not(:disabled) {
-  color: var(--tug-card-header-button-fg-danger-hover);
+.card-title-bar-button-close:hover:not(:disabled) {
+  color: var(--tug-card-title-bar-button-fg-danger-hover);
 }
 
 /* ============================================================================
    Accessory slot
-   ============================================================================ */
+   ========================================================================= */
 
 /*
  * Collapses to 0 when null (height:0, overflow:hidden applied via inline style
@@ -269,7 +278,7 @@ body {
 
 /* ============================================================================
    Content area (flex-grow, overflow auto)
-   ============================================================================ */
+   ========================================================================= */
 
 .tugcard-content {
   flex: 1;
@@ -331,7 +340,7 @@ body {
 
 /* ============================================================================
    Loading placeholder (Phase 5 -- feeds not yet wired)
-   ============================================================================ */
+   ========================================================================= */
 
 .tugcard-loading {
   display: flex;

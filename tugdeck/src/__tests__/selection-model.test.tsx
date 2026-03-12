@@ -18,7 +18,7 @@ import React, { useRef } from "react";
 import { describe, it, expect, afterEach, beforeEach, mock } from "bun:test";
 import { render, act, cleanup } from "@testing-library/react";
 
-import { Tugcard } from "@/components/tugways/tugcard";
+import { Tugcard } from "@/components/tugways/tug-card";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { withDeckManager } from "./mock-deck-manager-store";

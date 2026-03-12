@@ -70,7 +70,7 @@ import { animate } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
-import { Tugcard } from "@/components/tugways/tugcard";
+import { Tugcard } from "@/components/tugways/tug-card";
 import { DisconnectBanner } from "./disconnect-banner";
 import { CardFrame, updateSetAppearance } from "./card-frame";
 import { getRegistration } from "@/card-registry";

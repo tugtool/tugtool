@@ -25,7 +25,7 @@ import React, { useState } from "react";
 import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
 import { render, fireEvent, act, cleanup } from "@testing-library/react";
 
-import { Tugcard } from "@/components/tugways/tugcard";
+import { Tugcard } from "@/components/tugways/tug-card";
 import { ResponderChainProvider } from "@/components/tugways/responder-chain-provider";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -145,7 +145,7 @@ describe("Tugcard – close button", () => {
       </Tugcard>
     );
 
-    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']") as HTMLButtonElement;
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']") as HTMLButtonElement;
     expect(closeBtn).not.toBeNull();
 
     act(() => {
@@ -162,7 +162,7 @@ describe("Tugcard – close button", () => {
       </Tugcard>
     );
 
-    const closeBtn = container.querySelector("[data-testid='tugcard-close-btn']");
+    const closeBtn = container.querySelector("[data-testid='tugcard-close-button']");
     expect(closeBtn).toBeNull();
   });
 });
@@ -189,17 +189,17 @@ describe("Tugcard – accessory slot", () => {
     expect(accessoryContent).not.toBeNull();
     expect(accessoryContent?.textContent).toBe("Toolbar");
 
-    // Accessory must be between header and content in DOM order
-    const header = container.querySelector("[data-testid='tugcard-header']");
+    // Accessory must be between title bar and content in DOM order
+    const titleBar = container.querySelector("[data-testid='tugcard-title-bar']");
     const content = container.querySelector("[data-testid='tugcard-content']");
-    expect(header).not.toBeNull();
+    expect(titleBar).not.toBeNull();
     expect(content).not.toBeNull();
 
-    // DOM order check: header -> accessory -> content
+    // DOM order check: title-bar -> accessory -> content
     const allSections = container.querySelectorAll(
-      "[data-testid='tugcard-header'], [data-testid='tugcard-accessory'], [data-testid='tugcard-content']"
+      "[data-testid='tugcard-title-bar'], [data-testid='tugcard-accessory'], [data-testid='tugcard-content']"
     );
-    expect(allSections[0]?.getAttribute("data-testid")).toBe("tugcard-header");
+    expect(allSections[0]?.getAttribute("data-testid")).toBe("tugcard-title-bar");
     expect(allSections[1]?.getAttribute("data-testid")).toBe("tugcard-accessory");
     expect(allSections[2]?.getAttribute("data-testid")).toBe("tugcard-content");
   });

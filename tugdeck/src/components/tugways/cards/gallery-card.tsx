@@ -25,7 +25,7 @@ import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
-import { CardHeader } from "@/components/tugways/card-header";
+import { CardTitleBar } from "@/components/tugways/tug-card";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
 import { GalleryObservablePropsContent } from "./gallery-observable-props-content";
 import { GalleryPaletteContent } from "./gallery-palette-content";
@@ -796,9 +796,9 @@ export function GalleryDefaultButtonContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryTitleBarContent -- interactive demo of CardHeader controls.
+ * GalleryTitleBarContent -- interactive demo of CardTitleBar controls.
  *
- * Shows a CardHeader in isolation (outside a real Tugcard frame) with interactive
+ * Shows a CardTitleBar in isolation (outside a real Tugcard frame) with interactive
  * controls for toggling the collapsed state and selecting the icon.
  *
  * [D07] Window-shade collapse
@@ -824,7 +824,7 @@ export function GalleryTitleBarContent() {
       <div className="cg-section">
         <div className="cg-section-title">Title Bar Demo (Step 3)</div>
         <p className="cg-description">
-          CardHeader in isolation: collapse/expand toggle (chevron), menu (horizontal
+          CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal
           ellipsis), and close buttons.
         </p>
       </div>
@@ -870,19 +870,19 @@ export function GalleryTitleBarContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- Live CardHeader Demo ---- */}
+      {/* ---- Live CardTitleBar Demo ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">CardHeader — Live Demo</div>
+        <div className="cg-section-title">CardTitleBar — Live Demo</div>
         <div
           style={{
             border: "1px solid var(--tug-base-card-border)",
             borderRadius: "var(--tug-base-radius-md)",
             overflow: "hidden",
-            background: "var(--tug-base-card-header-bg-inactive)",
+            background: "var(--tug-card-title-bar-bg-inactive)",
           }}
-          data-testid="gallery-card-header-demo"
+          data-testid="gallery-card-title-bar-demo"
         >
-          <CardHeader
+          <CardTitleBar
             title="Demo Card"
             icon={iconName || undefined}
             closable={closable}
@@ -1075,7 +1075,7 @@ export function registerGalleryCards(): void {
   });
 
   // ---- gallery-title-bar ----
-  // Step 3: CardHeader demo. Shows collapse/expand toggle, menu, close button.
+  // Step 3: CardTitleBar demo. Shows collapse/expand toggle, menu, close button.
   // Demonstrates window-shade collapse behavior. [D07]
   registerCard({
     componentId: "gallery-title-bar",

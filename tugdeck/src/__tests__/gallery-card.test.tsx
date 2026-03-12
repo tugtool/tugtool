@@ -31,7 +31,7 @@ import {
 import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
 import { GalleryPaletteContent } from "@/components/tugways/cards/gallery-palette-content";
 import { ResponderChainContext, ResponderChainManager } from "@/components/tugways/responder-chain";
-import { Tugcard } from "@/components/tugways/tugcard";
+import { Tugcard } from "@/components/tugways/tug-card";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { DeckManager } from "@/deck-manager";

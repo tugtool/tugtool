@@ -15,7 +15,7 @@
  * ```
  * CardFrame (absolute positioning, drag handles, resize handles)
  *   └─ Tugcard (flex column)
- *        ├─ CardHeader (title + icon + close button)
+ *        ├─ CardTitleBar (title + icon + close button)
  *        ├─ Accessory slot (TugTabBar when tabs.length > 1, else 0px)
  *        └─ Content area (flex-grow, overflow auto)
  *             └─ children (active tab content or single card content)
@@ -35,10 +35,31 @@
  * - Call `onDragStart` from the header on pointer-down
  * - Save/restore selection on tab switch using SelectionGuard ([D07])
  *
- * @module components/tugways/tugcard
+ * ## CardTitleBar
+ *
+ * Title bar with control buttons and window-shade collapse.
+ * Height is driven by --tug-base-chrome-height (defined in tug-base.css).
+ * Icon sizes are CSS-driven via .tugcard-icon and .card-title-bar-button svg rules.
+ *
+ * - Control buttons: close, collapse (chevron), menu (horizontal ellipsis)
+ * - Close button: pointer-capture pattern to suppress browser focus/selection side effects
+ * - Collapse toggle: ChevronDown (expanded) / ChevronUp (collapsed)
+ * - Double-click on title bar surface toggles collapse
+ * - Drag: calls onDragStart on pointer-down on title bar surface
+ *
+ * ### Close button pointer-capture note (Step 7)
+ *
+ * The close button uses `setPointerCapture` on `pointerdown` to suppress
+ * browser focus/selection side effects. When Step 7 wraps this button in
+ * `TugConfirmPopover`, the pointer capture may conflict with Radix Popover's
+ * focus management. Step 7 must verify that pointer capture is released before
+ * the popover opens, or switch the close button to a standard click handler.
+ *
+ * @module components/tugways/tug-card
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { icons } from "lucide-react";
 import type { FeedIdValue } from "../../protocol";
 import type { TabItem, TabStateBag } from "../../layout-tree";
 import { selectionGuard } from "./selection-guard";
@@ -54,8 +75,246 @@ import { TugcardPropertyContext } from "./hooks/use-property-store";
 import type { PropertyStore } from "./property-store";
 import { useDeckManager } from "../../deck-manager-context";
 import { type TugcardPersistenceCallbacks, TugcardPersistenceContext } from "./use-tugcard-persistence";
-import { CardHeader } from "./card-header";
 import "./tug-card.css";
+
+// ===========================================================================
+// CardTitleBar
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Height of the card title bar in pixels. Must match --tug-base-chrome-height.
+ * Used for collapsed-height calculation in CardFrame.
+ */
+export const CARD_TITLE_BAR_HEIGHT = 36;
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+/**
+ * Props for the CardTitleBar component.
+ *
+ * **Authoritative reference:** Step 3 Artifacts, CardTitleBar props interface.
+ */
+export interface CardTitleBarProps {
+  /** Display title for the card title bar. */
+  title: string;
+  /** Lucide icon name. Renders the icon via lucide-react lookup when provided. */
+  icon?: string;
+  /** Whether to show the close button. Default: true. */
+  closable?: boolean;
+  /** Whether the card is currently collapsed. */
+  collapsed: boolean;
+  /** Called when the collapse/expand button is clicked or title bar is double-clicked. */
+  onCollapse: () => void;
+  /** Called when the close button fires (pointer-up-inside or keyboard Enter/Space). */
+  onClose?: () => void;
+  /** Called on title bar pointer-down to initiate card drag. */
+  onDragStart?: (event: React.PointerEvent) => void;
+}
+
+// ---------------------------------------------------------------------------
+// CardTitleBar
+// ---------------------------------------------------------------------------
+
+/**
+ * CardTitleBar -- title bar with collapse, close, and menu controls.
+ */
+export function CardTitleBar({
+  title,
+  icon,
+  closable = true,
+  collapsed,
+  onCollapse,
+  onClose,
+  onDragStart,
+}: CardTitleBarProps) {
+  // ---------------------------------------------------------------------------
+  // Title bar drag handler (forwarded from CardFrame via Tugcard)
+  // ---------------------------------------------------------------------------
+
+  const handleTitleBarPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      // Do not initiate drag when clicking a control button.
+      const target = event.target as HTMLElement;
+      if (target.closest(".card-title-bar-button")) return;
+      onDragStart?.(event);
+    },
+    [onDragStart],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Double-click to toggle collapse
+  // ---------------------------------------------------------------------------
+
+  const handleTitleBarDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      // Ignore double-clicks on control buttons.
+      if (target.closest(".card-title-bar-button")) return;
+      onCollapse();
+    },
+    [onCollapse],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Close button -- pointer-capture pattern
+  //
+  // pointerdown: capture the pointer to suppress browser focus/selection side
+  // effects (Mac-like close button behavior). stopPropagation prevents
+  // bring-to-front; preventDefault prevents focus/selection shift.
+  //
+  // pointerup: hit-test against the button bounds; fire onClose only on
+  // confirmed pointer-up-inside.
+  //
+  // click: keyboard fallback (Enter/Space).
+  //
+  // Note for Step 7: pointer capture may conflict with Radix Popover's focus
+  // management. See module-level comment above.
+  // ---------------------------------------------------------------------------
+
+  const handleClosePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation(); // prevent bring-to-front
+      event.preventDefault(); // prevent focus/selection shift
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [],
+  );
+
+  const handleClosePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      const inside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      if (inside) {
+        onClose?.();
+      }
+    },
+    [onClose],
+  );
+
+  const handleCloseClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onClose?.();
+    },
+    [onClose],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Collapse button
+  // ---------------------------------------------------------------------------
+
+  const handleCollapsePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation(); // prevent drag start
+    },
+    [],
+  );
+
+  const handleCollapseClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onCollapse();
+    },
+    [onCollapse],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  // Resolve lucide icon component.
+  const IconComponent =
+    icon && icons[icon as keyof typeof icons]
+      ? icons[icon as keyof typeof icons]
+      : null;
+
+  // Chevron: ChevronDown when expanded (collapsed=false), ChevronUp when collapsed.
+  const ChevronIcon = collapsed
+    ? icons["ChevronUp" as keyof typeof icons]
+    : icons["ChevronDown" as keyof typeof icons];
+
+  // Menu: horizontal ellipsis.
+  const EllipsisIcon = icons["Ellipsis" as keyof typeof icons];
+
+  return (
+    <div
+      className="tugcard-title-bar"
+      onPointerDown={handleTitleBarPointerDown}
+      onDoubleClick={handleTitleBarDoubleClick}
+      data-testid="tugcard-title-bar"
+    >
+      {/* Icon — size controlled by .tugcard-icon CSS */}
+      {IconComponent && (
+        <span className="tugcard-icon" data-testid="tugcard-icon">
+          {React.createElement(IconComponent)}
+        </span>
+      )}
+
+      {/* Title */}
+      <span className="tugcard-title" data-testid="tugcard-title">
+        {title}
+      </span>
+
+      {/* Control buttons — icon size controlled by .card-title-bar-button svg CSS */}
+      <div className="card-title-bar-controls" data-testid="card-title-bar-controls">
+        {/* Menu button (leftmost) */}
+        <button
+          type="button"
+          className="card-title-bar-button card-title-bar-button-menu"
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Card menu"
+          data-testid="card-title-bar-menu-button"
+        >
+          {EllipsisIcon && React.createElement(EllipsisIcon)}
+        </button>
+
+        {/* Collapse/expand chevron (middle) */}
+        <button
+          type="button"
+          className="card-title-bar-button card-title-bar-button-collapse"
+          onPointerDown={handleCollapsePointerDown}
+          onClick={handleCollapseClick}
+          aria-label={collapsed ? "Expand card" : "Collapse card"}
+          aria-expanded={!collapsed}
+          data-testid="card-title-bar-collapse-button"
+        >
+          {ChevronIcon && React.createElement(ChevronIcon)}
+        </button>
+
+        {/* Close button (rightmost) */}
+        {closable && (
+          <button
+            type="button"
+            className="card-title-bar-button card-title-bar-button-close"
+            data-no-activate
+            onPointerDown={handleClosePointerDown}
+            onPointerUp={handleClosePointerUp}
+            onClick={handleCloseClick}
+            aria-label="Close card"
+            data-testid="tugcard-close-button"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// Tugcard
+// ===========================================================================
 
 // ---------------------------------------------------------------------------
 // TugcardDirtyContext — contentchange mechanism
@@ -707,8 +966,8 @@ export function Tugcard({
       data-collapsed={collapsed ? "true" : "false"}
       onPointerDown={handleCardPointerDown}
     >
-      {/* CardHeader: title bar with 2.5D controls and collapse support */}
-      <CardHeader
+      {/* CardTitleBar: title bar with controls and collapse support */}
+      <CardTitleBar
         title={displayTitle}
         icon={effectiveMeta.icon}
         closable={closable}
