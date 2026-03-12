@@ -48,12 +48,12 @@
 
 .gp-import-error {
   font-size: 11px;
-  color: #cc3333;
+  color: var(--tug-base-tone-danger-fg);
   font-family: var(--tug-base-font-family-sans);
   margin-top: 4px;
   padding: 4px 6px;
-  background-color: #fff0f0;
-  border: 1px solid #ffcccc;
+  background-color: var(--tug-base-tone-danger-bg);
+  border: 1px solid var(--tug-base-tone-danger-border);
   border-radius: var(--tug-base-radius-xs);
 }
 

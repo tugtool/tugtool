@@ -9,22 +9,22 @@
 
 body {
   /* --- Dock --- */
-  --tug-dock-bg: --tug-color(violet-6, i: 4, t: 7);
-  --tug-dock-border: --tug-color(violet-6, i: 6, t: 17);
-  --tug-dock-indicator: --tug-color(orange);
-  --tug-dock-menu-caret: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-dock-bg: var(--tug-base-field-bg-focus);
+  --tug-dock-border: var(--tug-base-divider-default);
+  --tug-dock-indicator: var(--tug-base-accent-default);
+  --tug-dock-menu-caret: var(--tug-base-fg-subtle);
   --tug-dock-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
   --tug-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
-  --tug-dock-button-fg: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-dock-button-fg-active: --tug-color(orange);
-  --tug-dock-button-fg-attention: --tug-color(yellow);
-  --tug-dock-button-badge-bg: --tug-color(red);
-  --tug-dock-button-badge-fg: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-dock-button-insertIndicator: --tug-color(cyan);
+  --tug-dock-button-fg: var(--tug-base-fg-subtle);
+  --tug-dock-button-fg-active: var(--tug-base-accent-default);
+  --tug-dock-button-fg-attention: var(--tug-base-tone-warning);
+  --tug-dock-button-badge-bg: var(--tug-base-tone-danger);
+  --tug-dock-button-badge-fg: var(--tug-base-fg-inverse);
+  --tug-dock-button-insertIndicator: var(--tug-base-icon-active);
 
   /* --- Canvas / Grid --- */
   /* --tug-canvas-grid-line: Brio default grid line opacity */
-  --tug-canvas-grid-line: --tug-color(white, i: 0, t: 100, a: 5);
+  --tug-canvas-grid-line: var(--tug-base-highlight-hover);
   --tug-canvas-grid-emphasis: --tug-color(white, i: 0, t: 100, a: 10);
 
   /* --- Snap / Sash / Flash --- */

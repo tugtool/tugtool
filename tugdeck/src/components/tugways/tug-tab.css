@@ -29,30 +29,30 @@
    ========================================================================= */
 
 body {
-  --tug-tab-bar-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-tab-bar-bg: var(--tug-base-surface-sunken);
   --tug-tab-bg-rest: transparent;
-  --tug-tab-bg-hover: --tug-color(white, i: 0, t: 100, a: 5);
-  --tug-tab-bg-active: --tug-color(violet, i: 5, t: 12);
+  --tug-tab-bg-hover: var(--tug-base-highlight-hover);
+  --tug-tab-bg-active: var(--tug-base-surface-default);
   --tug-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tab-fg-rest: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-tab-fg-active: --tug-color(cobalt, i: 3, t: 94);
-  --tug-tab-fg-compact: --tug-color(cobalt, i: 5, t: 66);
+  --tug-tab-fg-rest: var(--tug-base-fg-subtle);
+  --tug-tab-fg-active: var(--tug-base-fg-default);
+  --tug-tab-fg-compact: var(--tug-base-fg-muted);
   --tug-tab-close-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
-  --tug-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 94);
-  --tug-tab-underline-active: --tug-color(orange);
-  --tug-tab-dropTarget-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
-  --tug-tab-dropTarget-border: --tug-color(cyan);
-  --tug-tab-badge-bg: --tug-color(orange);
-  --tug-tab-badge-fg: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-tab-close-fg-hover: var(--tug-base-fg-default);
+  --tug-tab-underline-active: var(--tug-base-accent-default);
+  --tug-tab-dropTarget-bg: var(--tug-base-highlight-preview);
+  --tug-tab-dropTarget-border: var(--tug-base-icon-active);
+  --tug-tab-badge-bg: var(--tug-base-accent-default);
+  --tug-tab-badge-fg: var(--tug-base-fg-inverse);
   --tug-tab-ghost-bg: --tug-color(white, i: 0, t: 100, a: 4);
   --tug-tab-ghost-border: --tug-color(white, i: 0, t: 100, a: 8);
-  --tug-tab-insertIndicator: --tug-color(orange);
-  --tug-tab-overflow-trigger-bg: --tug-color(white, i: 0, t: 100, a: 6);
-  --tug-tab-overflow-trigger-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-tab-insertIndicator: var(--tug-base-accent-default);
+  --tug-tab-overflow-trigger-bg: var(--tug-base-overlay-highlight);
+  --tug-tab-overflow-trigger-fg: var(--tug-base-fg-muted);
   --tug-tab-add-bg-hover: --tug-color(white, i: 0, t: 100, a: 8);
-  --tug-tab-add-fg: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-tab-typePicker-bg: --tug-color(violet, i: 5, t: 12);
-  --tug-tab-typePicker-fg: --tug-color(cobalt, i: 5, t: 66);
+  --tug-tab-add-fg: var(--tug-base-fg-subtle);
+  --tug-tab-typePicker-bg: var(--tug-base-surface-default);
+  --tug-tab-typePicker-fg: var(--tug-base-fg-muted);
 }
 
 /* ============================================================================

@@ -29,12 +29,12 @@ body {
   --tug-syntax-attribute: --tug-color(cyan);
 
   /* --- Terminal --- */
-  --tug-terminal-bg: --tug-color(violet-6, i: 5, t: 6);
-  --tug-terminal-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-terminal-fg-muted: --tug-color(cobalt, i: 5, t: 66);
-  --tug-terminal-cursor: --tug-color(orange);
+  --tug-terminal-bg: var(--tug-base-surface-inset);
+  --tug-terminal-fg: var(--tug-base-fg-default);
+  --tug-terminal-fg-muted: var(--tug-base-fg-muted);
+  --tug-terminal-cursor: var(--tug-base-accent-default);
   --tug-terminal-selection-bg: --tug-color(cyan, i: 50, t: 50, a: 30);
-  --tug-terminal-border: --tug-color(violet-6, i: 6, t: 17);
+  --tug-terminal-border: var(--tug-base-divider-default);
   /* ANSI color palette — palette var() references per Phase 5d5e */
   --tug-terminal-ansi-black: --tug-color(violet, i: 5, t: 12);
   --tug-terminal-ansi-red: --tug-color(red);
@@ -46,44 +46,44 @@ body {
   --tug-terminal-ansi-white: --tug-color(cobalt, i: 3, t: 94);
 
   /* --- Conversation / Chat / Code Block --- */
-  --tug-chat-transcript-bg: --tug-color(violet-6, i: 4, t: 7);
-  --tug-chat-message-user-bg: --tug-color(violet, i: 5, t: 12);
-  --tug-chat-message-assistant-bg: --tug-color(violet, i: 5, t: 11);
+  --tug-chat-transcript-bg: var(--tug-base-field-bg-focus);
+  --tug-chat-message-user-bg: var(--tug-base-surface-default);
+  --tug-chat-message-assistant-bg: var(--tug-base-surface-sunken);
   --tug-chat-message-system-bg: --tug-color(cyan, i: 50, t: 50, a: 7);
-  --tug-chat-message-border: --tug-color(violet-6, i: 6, t: 17);
-  --tug-chat-composer-bg: --tug-color(violet, i: 5, t: 12);
-  --tug-chat-composer-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-chat-attachment-bg: --tug-color(violet, i: 4, t: 14);
-  --tug-chat-attachment-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-chat-attachment-fg: --tug-color(cobalt, i: 5, t: 66);
-  --tug-codeBlock-bg: --tug-color(violet-6, i: 5, t: 8);
-  --tug-codeBlock-border: --tug-color(violet-6, i: 6, t: 17);
-  --tug-codeBlock-header-bg: --tug-color(violet, i: 5, t: 11);
-  --tug-codeBlock-header-fg: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-chat-message-border: var(--tug-base-divider-default);
+  --tug-chat-composer-bg: var(--tug-base-surface-default);
+  --tug-chat-composer-border: var(--tug-base-border-default);
+  --tug-chat-attachment-bg: var(--tug-base-surface-overlay);
+  --tug-chat-attachment-border: var(--tug-base-border-default);
+  --tug-chat-attachment-fg: var(--tug-base-fg-muted);
+  --tug-codeBlock-bg: var(--tug-base-control-secondary-bg-rest);
+  --tug-codeBlock-border: var(--tug-base-divider-default);
+  --tug-codeBlock-header-bg: var(--tug-base-surface-sunken);
+  --tug-codeBlock-header-fg: var(--tug-base-fg-subtle);
 
   /* --- Files / Git / Tree --- */
   --tug-tree-row-bg-hover: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tree-row-bg-selected: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug-tree-row-bg-selected: var(--tug-base-control-highlighted-bg);
   --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
-  --tug-tree-row-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-tree-chevron: --tug-color(cobalt, i: 6, t: 30);
-  --tug-file-status-added: --tug-color(green);
-  --tug-file-status-modified: --tug-color(yellow);
-  --tug-file-status-deleted: --tug-color(red);
-  --tug-file-status-renamed: --tug-color(cyan);
+  --tug-tree-row-fg: var(--tug-base-fg-default);
+  --tug-tree-chevron: var(--tug-base-border-default);
+  --tug-file-status-added: var(--tug-base-tone-positive);
+  --tug-file-status-modified: var(--tug-base-tone-warning);
+  --tug-file-status-deleted: var(--tug-base-tone-danger);
+  --tug-file-status-renamed: var(--tug-base-tone-info);
   --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
-  --tug-diff-addition-fg: --tug-color(green);
+  --tug-diff-addition-fg: var(--tug-base-tone-positive);
   --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
-  --tug-diff-deletion-fg: --tug-color(red);
+  --tug-diff-deletion-fg: var(--tug-base-tone-danger);
 
   /* --- Workflow / Feed Progress --- */
-  --tug-feed-bg: --tug-color(violet-6, i: 4, t: 7);
-  --tug-feed-border: --tug-color(violet-6, i: 6, t: 17);
-  --tug-feed-step-bg: --tug-color(violet, i: 5, t: 11);
-  --tug-feed-step-fg: --tug-color(cobalt, i: 5, t: 66);
-  --tug-feed-step-active: --tug-color(orange);
-  --tug-feed-step-complete: --tug-color(green);
-  --tug-feed-step-error: --tug-color(red);
-  --tug-feed-stream-cursor: --tug-color(orange);
-  --tug-feed-handoff: --tug-color(cyan);
+  --tug-feed-bg: var(--tug-base-field-bg-focus);
+  --tug-feed-border: var(--tug-base-divider-default);
+  --tug-feed-step-bg: var(--tug-base-surface-sunken);
+  --tug-feed-step-fg: var(--tug-base-fg-muted);
+  --tug-feed-step-active: var(--tug-base-accent-default);
+  --tug-feed-step-complete: var(--tug-base-tone-positive);
+  --tug-feed-step-error: var(--tug-base-tone-danger);
+  --tug-feed-stream-cursor: var(--tug-base-accent-default);
+  --tug-feed-handoff: var(--tug-base-tone-info);
 }
