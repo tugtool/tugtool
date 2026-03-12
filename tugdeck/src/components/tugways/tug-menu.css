@@ -112,7 +112,7 @@ body {
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
   box-shadow: var(--tug-base-shadow-sm);
@@ -137,7 +137,7 @@ body {
 
 /*
  * Hover / focus state: use --tug-base-surface-default (main surface) rather than
- * --tug-base-surface-control (which is the same as the content panel background,
+ * --tug-base-control-secondary-bg-rest (which is the same as the content panel background,
  * making hover invisible). --tug-base-surface-default provides visible contrast.
  */
 .tug-dropdown-item:hover:not([data-disabled]),

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-12T16:21:40Z
+---
+
+## step-3: Removed 3 surface-control definitions from tug-base.css, updated all var() call sites across 6 component CSS files, renamed overrides in bluenote.css and harmony.css, resolved duplicate harmony.css entries
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-2
 date: 2025-03-12T16:13:59Z
 ---

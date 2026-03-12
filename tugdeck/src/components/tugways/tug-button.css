@@ -139,7 +139,7 @@
 
 /* Ghost: shows surface on hover */
 .tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 

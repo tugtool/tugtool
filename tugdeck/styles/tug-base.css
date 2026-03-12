@@ -110,7 +110,7 @@ body {
 
   /* Shiki CSS variable bridge tokens (Spec S01) */
   --syntax-foreground: var(--tug-base-fg-default);
-  --syntax-background: var(--tug-base-surface-control);
+  --syntax-background: var(--tug-base-control-secondary-bg-rest);
   --syntax-token-keyword: var(--tug-syntax-keyword);
   --syntax-token-string: var(--tug-syntax-string);
   --syntax-token-comment: var(--tug-syntax-comment);
@@ -133,9 +133,6 @@ body {
   --tug-base-surface-raised: --tug-color(violet-6, i: 5, t: 11);
   --tug-base-surface-overlay: --tug-color(violet, i: 4, t: 14);
   --tug-base-surface-inset: --tug-color(violet-6, i: 5, t: 6);
-  --tug-base-surface-control: --tug-color(violet-6, i: 5, t: 8);
-  --tug-base-surface-control-hover: --tug-color(violet, i: 5, t: 12);
-  --tug-base-surface-control-active: --tug-color(violet, i: 4, t: 14);
   --tug-base-surface-content: --tug-color(violet-6, i: 5, t: 6);
   --tug-base-surface-screen: --tug-color(cobalt+10, i: 7, t: 16);
 

@@ -23,9 +23,9 @@ body {
   --tug-base-surface-raised: --tug-color(blue, i: 5, t: 24);
   --tug-base-surface-overlay: --tug-color(yellow, i: 6, t: 48);
   --tug-base-surface-inset: --tug-color(yellow, i: 4, t: 100);
-  --tug-base-surface-control: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-surface-control-hover: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-surface-control-active: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-control-secondary-bg-rest: --tug-color(yellow, i: 7, t: 51);
+  --tug-base-control-secondary-bg-hover: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-control-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
   --tug-base-surface-content: --tug-color(yellow, i: 4, t: 100);
   --tug-base-surface-screen: --tug-color(blue, i: 4, t: 80);
 
@@ -136,9 +136,6 @@ body {
   --tug-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
 
   /* Control Surfaces */
-  --tug-base-control-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-control-secondary-bg-hover: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-control-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
   --tug-base-control-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
   --tug-base-control-secondary-border: --tug-color(yellow, i: 9, t: 28);
   --tug-base-control-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);

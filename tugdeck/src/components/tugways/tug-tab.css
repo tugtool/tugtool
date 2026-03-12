@@ -113,7 +113,7 @@ body {
 
 /* Inactive tab hover (Table T01) */
 .tug-tab:not([data-active="true"]):hover {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 
@@ -201,7 +201,7 @@ body {
 
 /* Close button hover state */
 .tug-tab-close:hover {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 
@@ -232,7 +232,7 @@ body {
 }
 
 .tug-tab-add:hover {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 
@@ -265,7 +265,7 @@ body {
 }
 
 .tug-tab-overflow-btn:hover {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }
 
@@ -302,7 +302,7 @@ body {
   gap: var(--tug-base-space-xs);
   padding: 0 var(--tug-base-space-md);
   height: var(--tug-base-chrome-height);
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-sm);
   box-shadow: 0 2px 8px var(--tug-base-shadow-sm);
@@ -329,7 +329,7 @@ body {
 
 /* Drop-target highlight on multi-tab card tab bars. [Spec S07] */
 .tug-tab-bar[data-drop-target="true"] {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   border-bottom-color: var(--tug-base-accent-default);
 }
 
@@ -338,7 +338,7 @@ body {
    [D05, Spec S07] */
 .tugcard-accessory[data-drop-target="true"] {
   min-height: var(--tug-base-chrome-height);
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   border-bottom: 2px solid var(--tug-base-accent-default);
   transition:
     min-height var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
@@ -360,7 +360,7 @@ body {
 
 /* Highlight the target tab bar when a card frame is dragged over it. */
 .tug-tab-bar[data-card-drag-target="true"] {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-base-control-secondary-bg-rest);
   border-bottom-color: var(--tug-base-accent-default);
   outline: 2px solid var(--tug-base-accent-default);
   outline-offset: -2px;
