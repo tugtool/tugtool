@@ -93,9 +93,9 @@ dependencies = [
 
 [[package]]
 name = "assert_cmd"
-version = "2.1.2"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c5bcfa8749ac45dd12cb11055aeeb6b27a3895560d60d71e3c23bf979e60514"
+checksum = "9a686bbee5efb88a82df0621b236e74d925f470e5445d3220a5648b892ec99c9"
 dependencies = [
  "anstyle",
  "bstr",
@@ -1257,9 +1257,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.21.3"
+version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "once_cell_polyfill"
@@ -1877,9 +1877,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.26.0"
+version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
  "getrandom 0.4.2",
@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "tugbank"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "tugbank-core"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "rusqlite",
  "serde",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "tugcode"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "anyhow",
  "clap",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "tugrelaunch"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "clap",
  "libc",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "clap",
  "libc",
@@ -2314,7 +2314,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool-core"
-version = "0.7.38"
+version = "0.7.39"
 dependencies = [
  "regex",
  "rusqlite",
