@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-12T16:27:28Z
+---
+
+## step-4: Removed 22 tone-duplicate tokens from tug-dialog.css, collapsed 4 harmony per-component overrides into 2 tone-level overrides (tone-warning-fg, tone-info-fg), updated step8 integration test
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-3
 date: 2025-03-12T16:21:40Z
 ---
