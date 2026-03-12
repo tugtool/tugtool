@@ -1063,17 +1063,17 @@ Phase 7 is split into three sub-phases.
 
 **Note**: Phase 7a is pure TypeScript infrastructure. Phase 7b migrates only programmatic animations to TugAnimator and adds skeletons — CSS-only animations and rAF loops are untouched (Rules 13–14). Phase 7c is the smallest phase — mostly HTML and module wiring. Phase 7d is an internal refactoring only — no component public APIs changed.
 
-### Phase 8: Radix Foundation, 2.5D Visual Identity & Chrome
+### Phase 8: Radix Foundation, Control State Visual Identity & Chrome
 
-**See `roadmap/tugways-phase-8-radix-redesign.md` for the complete Phase 8 plan.**
+**See `.tugtool/tugplan-tugways-phase-8-radix-redesign.md` for the complete Phase 8 plan.**
 
-Phase 8 replaces shadcn with direct Radix primitives, introduces the Tugways 2.5D visual language, builds the full component library, and completes the chrome layer (title bar, alerts, inspectors, dock).
+Phase 8 replaces shadcn with direct Radix primitives, defines a token-driven control state visual language (every control property — bg, fg, border, icon — responds independently to rest/hover/active states), builds the component library, and completes the chrome layer (title bar, alerts, inspectors, dock).
 
 Nine sub-phases:
 - **8a**: Shadcn Excision
-- **8b**: Tugways 2.5D Visual Language
+- **8b**: Control State Visual Language (token-driven states, retronow-inspired aesthetic)
 - **8c**: Card Frame & Title Bar
-- **8d**: Form Controls & Core Display
+- **8d**: Form Controls & Core Display (one component at a time, interactively tuned)
 - **8e**: Navigation, Data Display & Visualization
 - **8f**: Compound Components & Gallery Completion
 - **8g**: Alerts
@@ -1148,7 +1148,7 @@ Responder Chain  Mutation Model                              │
              ▼        ▼            ▼
          Phase 5b2: Phase 5b3: Phase 8: ◄─── (5d1 + 5d2–5d4)
          Tab Drag   Gallery    Radix Foundation,
-         Gestures   Card       2.5D Visual Identity
+         Gestures   Card       Control State Visual Identity
              │        │        & Chrome
              ├────────┤        (see redesign doc:
              ▼        │         8a–8i)
@@ -1203,7 +1203,7 @@ by the store migration. Phases 5b, 5c, 5d1, 6, and 7 can all start as soon as Ph
 completes (Phase 7 also needs Phase 1's motion tokens). Phase 5d1 (Default Button) adds
 `setDefaultButton`/`clearDefaultButton` to the responder chain and wires Enter at stage 2
 of the key pipeline — a prerequisite for Phase 8g's alert, sheet, and popover components,
-which register their default buttons on mount. Phase 8 (Radix Foundation, 2.5D Visual Identity & Chrome)
+which register their default buttons on mount. Phase 8 (Radix Foundation, Control State Visual Identity & Chrome)
 depends on Phase 5d1 for the default button mechanism and Phases 5d2–5d4 for action phases, mutation transactions, and PropertyStore. See `roadmap/tugways-phase-8-radix-redesign.md` for the complete Phase 8 plan (sub-phases 8a–8i). Phase 9
 (Card Rebuild) is the true convergence point: rebuilt cards need feeds (Phase 6) for data,
 motion (Phase 7) for skeleton/transitions, chrome (Phase 8) for title bar and dock, and
@@ -1326,7 +1326,7 @@ The suggested plan sequence:
 37. `tugways-phase-7a-tug-animator` — TugAnimator engine (WAAPI wrapper, completion, cancellation, springs, physics, groups)
 38. `tugways-phase-7b-managed-animations` — migrate programmatic @keyframes to TugAnimator (CSS-only and rAF stay), skeleton loading states
 39. `tugways-phase-7c-startup-continuity` — three-layer flash elimination (inline body, overlay, HMR boundary)
-40. `tugways-phase-8` — see `roadmap/tugways-phase-8-radix-redesign.md` for the complete plan (sub-phases 8a–8i: shadcn excision, 2.5D visual language, card frame & title bar, form controls, navigation & data display, compound components, alerts, inspector panels, dock)
+40. `tugways-phase-8` — see `roadmap/tugways-phase-8-radix-redesign.md` for the complete plan (sub-phases 8a–8i: shadcn excision, control state visual language, card frame & title bar, form controls, navigation & data display, compound components, alerts, inspector panels, dock)
 41. `tugways-phase-9a-terminal` through `tugways-phase-9h-about` — one plan per card; each card can expose PropertyStore for inspector support
 
 ## Resolved Questions
