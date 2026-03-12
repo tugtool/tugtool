@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-12T16:13:59Z
+---
+
+## step-2: Renamed all --tug-base-action-* to --tug-base-control-* across 5 files, deleted redundant action-disabled-* tokens, added ~15 new control tokens (ghost, disabled, icon, selected, highlighted), fixed -fg-rest bug in style-inspector-overlay.ts
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-1
 date: 2025-03-12T16:07:37Z
 ---

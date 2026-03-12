@@ -135,17 +135,14 @@ body {
   --tug-canvas-grid-line: --tug-color(black, i: 0, t: 0, a: 6);
   --tug-canvas-grid-emphasis: --tug-color(black, i: 0, t: 0, a: 12);
 
-  /* Actions */
-  --tug-base-action-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
-  --tug-base-action-secondary-bg-hover: --tug-color(yellow, i: 6, t: 74);
-  --tug-base-action-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-action-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
-  --tug-base-action-secondary-border: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-action-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
-  --tug-base-action-ghost-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-action-disabled-bg: --tug-color(yellow, i: 7, t: 51);
-  --tug-base-action-disabled-fg: --tug-color(blue, i: 8, t: 44);
-  --tug-base-action-disabled-border: --tug-color(yellow, i: 5, t: 46);
+  /* Control Surfaces */
+  --tug-base-control-secondary-bg-rest: --tug-color(yellow, i: 4, t: 99);
+  --tug-base-control-secondary-bg-hover: --tug-color(yellow, i: 6, t: 74);
+  --tug-base-control-secondary-bg-active: --tug-color(yellow, i: 6, t: 48);
+  --tug-base-control-secondary-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-control-secondary-border: --tug-color(yellow, i: 9, t: 28);
+  --tug-base-control-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
+  --tug-base-control-ghost-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Disabled controls */
   --tug-base-control-disabled-bg: --tug-color(yellow, i: 6, t: 74);
