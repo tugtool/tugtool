@@ -247,6 +247,9 @@ export function CardTitleBar({
   // Menu: horizontal ellipsis.
   const EllipsisIcon = icons["Ellipsis" as keyof typeof icons];
 
+  // Close: X icon.
+  const XIcon = icons["X" as keyof typeof icons];
+
   return (
     <div
       className="tugcard-title-bar"
@@ -304,7 +307,7 @@ export function CardTitleBar({
             aria-label="Close card"
             data-testid="tugcard-close-button"
           >
-            ×
+            {XIcon && React.createElement(XIcon)}
           </button>
         )}
       </div>
