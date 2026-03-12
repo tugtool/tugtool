@@ -21,26 +21,26 @@
 
 body {
   /* --- Menu / Popover / Tooltip --- */
-  --tug-menu-bg: --tug-color(violet, i: 4, t: 14);
-  --tug-menu-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-menu-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-menu-shadow: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 60);
-  --tug-menu-item-bg-hover: --tug-color(white, i: 0, t: 100, a: 7);
-  --tug-menu-item-bg-selected: --tug-color(orange, i: 50, t: 50, a: 15);
-  --tug-menu-item-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-menu-item-fg-disabled: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-menu-item-fg-danger: --tug-color(red);
-  --tug-menu-item-meta: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-menu-item-shortcut: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-menu-item-icon: --tug-color(cobalt, i: 5, t: 66);
-  --tug-menu-item-icon-danger: --tug-color(red);
-  --tug-menu-item-chevron: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-popover-bg: --tug-color(violet, i: 4, t: 14);
-  --tug-popover-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-popover-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-tooltip-bg: --tug-color(cobalt+10, i: 7, t: 16);
-  --tug-tooltip-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-tooltip-border: --tug-color(cobalt, i: 6, t: 30);
+  --tug-menu-bg: var(--tug-base-surface-overlay);
+  --tug-menu-fg: var(--tug-base-fg-default);
+  --tug-menu-border: var(--tug-base-border-default);
+  --tug-menu-shadow: var(--tug-base-shadow-overlay);
+  --tug-menu-item-bg-hover: var(--tug-base-control-ghost-bg-hover);
+  --tug-menu-item-bg-selected: var(--tug-base-accent-subtle);
+  --tug-menu-item-fg: var(--tug-base-fg-default);
+  --tug-menu-item-fg-disabled: var(--tug-base-fg-disabled);
+  --tug-menu-item-fg-danger: var(--tug-base-tone-danger);
+  --tug-menu-item-meta: var(--tug-base-fg-subtle);
+  --tug-menu-item-shortcut: var(--tug-base-fg-subtle);
+  --tug-menu-item-icon: var(--tug-base-fg-muted);
+  --tug-menu-item-icon-danger: var(--tug-base-tone-danger);
+  --tug-menu-item-chevron: var(--tug-base-fg-subtle);
+  --tug-popover-bg: var(--tug-base-surface-overlay);
+  --tug-popover-fg: var(--tug-base-fg-default);
+  --tug-popover-border: var(--tug-base-border-default);
+  --tug-tooltip-bg: var(--tug-base-surface-screen);
+  --tug-tooltip-fg: var(--tug-base-fg-default);
+  --tug-tooltip-border: var(--tug-base-border-default);
 
   /* --tug-dropdown-* aliases: map to --tug-menu-* tokens */
   --tug-dropdown-bg: var(--tug-menu-bg);

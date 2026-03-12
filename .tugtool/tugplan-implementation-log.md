@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-12T18:04:59Z
+---
+
+## step-6: Replaced 20 raw --tug-color() values in tug-menu.css with var(--tug-base-*) semantic references per Spec S01, including shadow composite
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-migration.md
+
+---
+
+---
 step: step-5
 date: 2025-03-12T18:00:24Z
 ---
