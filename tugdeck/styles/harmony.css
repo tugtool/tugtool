@@ -140,6 +140,9 @@ body {
   --tug-base-control-secondary-border: --tug-color(yellow, i: 9, t: 28);
   --tug-base-control-ghost-bg-hover: --tug-color(black, i: 0, t: 0, a: 6);
   --tug-base-control-ghost-fg: --tug-color(blue, i: 9, t: 22);
+  /* selected/highlighted fg: Brio default (cobalt, i:3, t:94) is near-white — invisible on Harmony's light bg */
+  --tug-base-control-selected-fg: --tug-color(blue+5, i: 8, t: 13);
+  --tug-base-control-highlighted-fg: --tug-color(blue+5, i: 8, t: 13);
 
   /* Disabled controls */
   --tug-base-control-disabled-bg: --tug-color(yellow, i: 6, t: 74);

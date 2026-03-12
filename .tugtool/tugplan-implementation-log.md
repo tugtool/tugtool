@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-12T16:36:38Z
+---
+
+## step-6: Verified all theme overrides in harmony.css and bluenote.css, added control-selected-fg and control-highlighted-fg overrides for Harmony light theme visibility
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-5
 date: 2025-03-12T16:31:16Z
 ---
