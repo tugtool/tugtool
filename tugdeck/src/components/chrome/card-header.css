@@ -32,8 +32,7 @@
   flex-shrink: 0;
   position: relative;
 
-  transition:
-    background-color var(--tug-base-elevation-transition);
+  transition: background-color 80ms ease;
 }
 
 /* Lucide SVGs inside control buttons inherit size from the button */

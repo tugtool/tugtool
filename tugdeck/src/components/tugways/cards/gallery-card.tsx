@@ -73,7 +73,6 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-cascade-inspector", title: "Cascade Inspector",    closable: true },
   { id: "template", componentId: "gallery-animator",          title: "TugAnimator",          closable: true },
   { id: "template", componentId: "gallery-skeleton",          title: "TugSkeleton",          closable: true },
-  { id: "template", componentId: "gallery-elevation",         title: "2.5D States",          closable: true },
   { id: "template", componentId: "gallery-title-bar",         title: "Title Bar",            closable: true },
 ];
 
@@ -793,141 +792,15 @@ export function GalleryDefaultButtonContent() {
 }
 
 // ---------------------------------------------------------------------------
-// Gallery2p5DContent
-// ---------------------------------------------------------------------------
-
-/**
- * Gallery2p5DContent -- 2.5D Visual Language interactive demo.
- *
- * Shows TugButton across all four variants in rest, hover, active, focused,
- * and disabled states, demonstrating the elevation model (highlight + shadow
- * + translateY press-offset). Theme-switch to see how Brio, Bluenote, and
- * Harmony each express the same 2.5D geometry.
- *
- * [D04] 2.5D elevation model, Spec S02 elevation CSS pattern
- */
-export function Gallery2p5DContent() {
-  return (
-    <div className="cg-content" data-testid="gallery-2p5d-content">
-
-      {/* ---- Overview ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">2.5D Visual Language</div>
-        <p className="cg-description">
-          Controls float above the canvas with a top-edge light reflection (highlight)
-          and a soft bottom shadow. On press, the shadow collapses and the control
-          translates down 1px. Switch themes with the dock menu to see how Brio,
-          Bluenote, and Harmony express the same elevation geometry.
-        </p>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Secondary variant (default 2.5D face) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Secondary — elevation face (default)</div>
-        <p className="cg-description">
-          Face color from <code>--tug-base-elevation-face</code>. Hover raises the
-          shadow; press collapses it and translates the button down 1px.
-        </p>
-        <div className="cg-variant-row">
-          <TugButton variant="secondary" size="sm">Small</TugButton>
-          <TugButton variant="secondary" size="md">Medium</TugButton>
-          <TugButton variant="secondary" size="lg">Large</TugButton>
-          <TugButton variant="secondary" size="md" disabled>Disabled</TugButton>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Primary variant (accent-cool fill + elevation shadow) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Primary — accent fill with elevation</div>
-        <p className="cg-description">
-          Accent-cool face with shared highlight and shadow geometry.
-          Press translates the button down and collapses the shadow.
-        </p>
-        <div className="cg-variant-row">
-          <TugButton variant="primary" size="sm">Small</TugButton>
-          <TugButton variant="primary" size="md">Medium</TugButton>
-          <TugButton variant="primary" size="lg">Large</TugButton>
-          <TugButton variant="primary" size="md" disabled>Disabled</TugButton>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Destructive variant (danger fill + elevation shadow) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Destructive — danger fill with elevation</div>
-        <p className="cg-description">
-          Danger-red face with shared highlight and shadow geometry.
-        </p>
-        <div className="cg-variant-row">
-          <TugButton variant="destructive" size="sm">Small</TugButton>
-          <TugButton variant="destructive" size="md">Medium</TugButton>
-          <TugButton variant="destructive" size="lg">Large</TugButton>
-          <TugButton variant="destructive" size="md" disabled>Disabled</TugButton>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Ghost variant (flat — no elevation) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Ghost — flat (no elevation)</div>
-        <p className="cg-description">
-          Ghost buttons intentionally have no elevation — they appear flat and
-          only gain a surface fill on hover. Contrast with the variants above.
-        </p>
-        <div className="cg-variant-row">
-          <TugButton variant="ghost" size="sm">Small</TugButton>
-          <TugButton variant="ghost" size="md">Medium</TugButton>
-          <TugButton variant="ghost" size="lg">Large</TugButton>
-          <TugButton variant="ghost" size="md" disabled>Disabled</TugButton>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Token documentation ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Elevation token structure (Spec S01, S02)</div>
-        <p className="cg-description">
-          All elevation is expressed through three token tiers:
-        </p>
-        <ol style={{ paddingLeft: "1.5rem", fontSize: "12px", lineHeight: "1.8", color: "var(--tug-base-fg-muted)" }}>
-          <li><code>--tug-base-elevation-*</code> — base layer (per-theme in tug-tokens, bluenote, harmony)</li>
-          <li><code>--tug-button-*</code> — component layer (maps from base, defined in tug-button.css)</li>
-          <li>CSS rules (<code>.tug-button</code>, <code>:hover</code>, <code>:active</code>, <code>:disabled</code>)</li>
-        </ol>
-        <p className="cg-description" style={{ marginTop: "0.5rem" }}>
-          <strong>Control vs. content rule:</strong> Only interactive controls (buttons, inputs,
-          switches, sliders) get elevation. Content areas, cards, separators, and badges stay flat.
-        </p>
-        <p className="cg-description" style={{ marginTop: "0.5rem" }}>
-          <strong>Gradient decision [Q01]:</strong> No gradients. The shadow+highlight geometry
-          provides sufficient 2.5D depth without gradients. This keeps all theme tokens
-          as solid colors (no per-theme gradient values needed).
-        </p>
-      </div>
-
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // GalleryTitleBarContent
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryTitleBarContent -- interactive demo of CardHeader with 2.5D controls.
+ * GalleryTitleBarContent -- interactive demo of CardHeader controls.
  *
  * Shows a CardHeader in isolation (outside a real Tugcard frame) with interactive
- * controls for toggling the collapsed state and selecting the icon. Demonstrates
- * the 2.5D elevation on close, collapse, and menu buttons across all three themes.
+ * controls for toggling the collapsed state and selecting the icon.
  *
- * [D04] 2.5D elevation model
  * [D07] Window-shade collapse
  * Step 3: Card Frame & Title Bar
  */
@@ -952,8 +825,7 @@ export function GalleryTitleBarContent() {
         <div className="cg-section-title">Title Bar Demo (Step 3)</div>
         <p className="cg-description">
           CardHeader in isolation: collapse/expand toggle (chevron), menu (horizontal
-          ellipsis), and close buttons. All three buttons use 2.5D elevation.
-          The title bar surface itself is flat.
+          ellipsis), and close buttons.
         </p>
       </div>
 
@@ -1051,21 +923,6 @@ export function GalleryTitleBarContent() {
         </div>
       </div>
 
-      <div className="cg-divider" />
-
-      {/* ---- 2.5D Elevation Documentation ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">2.5D Elevation — Title Bar Controls</div>
-        <p className="cg-description">
-          The close, collapse (chevron), and menu (horizontal ellipsis) buttons use
-          the same 2.5D elevation pattern as TugButton. The title bar surface stays
-          flat — only the controls are elevated.
-        </p>
-        <p className="cg-description" style={{ marginTop: "0.5rem" }}>
-          Switch themes with the dock menu to see Brio, Bluenote, and Harmony
-          express the same elevation geometry.
-        </p>
-      </div>
     </div>
   );
 }
@@ -1217,21 +1074,9 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
   });
 
-  // ---- gallery-elevation ----
-  // 2.5D Visual Language reference demo (Step 2). Shows all four TugButton
-  // variants in elevation states and documents the token structure and
-  // "no-gradients" decision for Q01. [D04] Spec S02
-  registerCard({
-    componentId: "gallery-elevation",
-    contentFactory: (_cardId) => <Gallery2p5DContent />,
-    defaultMeta: { title: "2.5D States", icon: "Layers", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-  });
-
   // ---- gallery-title-bar ----
-  // Step 3: CardHeader demo. Shows collapse/expand toggle, menu, close button
-  // with 2.5D elevation. Demonstrates window-shade collapse behavior. [D04, D07]
+  // Step 3: CardHeader demo. Shows collapse/expand toggle, menu, close button.
+  // Demonstrates window-shade collapse behavior. [D07]
   registerCard({
     componentId: "gallery-title-bar",
     contentFactory: (_cardId) => <GalleryTitleBarContent />,

@@ -357,13 +357,12 @@ describe("TugButton – disabled state", () => {
 });
 
 // ============================================================================
-// 2.5D Elevation model (Step 2)
+// Variant CSS classes
 // ============================================================================
 
-describe("TugButton – 2.5D elevation (Spec S02)", () => {
-  it("secondary variant renders with tug-button class for elevation CSS", () => {
+describe("TugButton – variant CSS classes", () => {
+  it("secondary variant renders with tug-button class", () => {
     const btn = renderButton({ variant: "secondary", children: "Save" });
-    // The .tug-button class is the elevation hook; CSS applies box-shadow via tokens
     expect(btn.className).toContain("tug-button");
     expect(btn.className).toContain("tug-button-secondary");
   });
@@ -380,33 +379,27 @@ describe("TugButton – 2.5D elevation (Spec S02)", () => {
     expect(btn.className).toContain("tug-button-destructive");
   });
 
-  it("ghost variant renders with tug-button-ghost class (no elevation)", () => {
+  it("ghost variant renders with tug-button-ghost class", () => {
     const btn = renderButton({ variant: "ghost", children: "Cancel" });
     expect(btn.className).toContain("tug-button");
     expect(btn.className).toContain("tug-button-ghost");
-    // Ghost has no bordered class — no elevation border
     expect(btn.className).not.toContain("tug-button-bordered");
   });
 
-  it("disabled button has disabled attribute (no hover/active elevation)", () => {
+  it("disabled button has disabled attribute", () => {
     const btn = renderButton({ disabled: true, children: "Disabled" });
-    // HTML disabled attr means no hover/active states — elevation suppressed
     expect(btn.disabled).toBe(true);
     expect(btn.className).toContain("tug-button");
   });
 
   it("disabled button still has tug-button class", () => {
     const btn = renderButton({ disabled: true, variant: "secondary", children: "Disabled" });
-    // The :disabled CSS rule applies box-shadow: none via the stylesheet
     expect(btn.className).toContain("tug-button");
     expect(btn.className).toContain("tug-button-secondary");
   });
 
-  it("aria-disabled chain-action button has no active elevation (has aria-disabled class suppression)", () => {
-    // aria-disabled buttons also get box-shadow: none via CSS
-    // We verify the aria-disabled attribute is set when chain is active but not handled
+  it("aria-disabled chain-action button has correct attribute", () => {
     const btn = renderButton({ disabled: false, variant: "secondary", children: "Active" });
-    // Not chain-disabled by default — no aria-disabled
     expect(btn.getAttribute("aria-disabled")).toBeNull();
   });
 });

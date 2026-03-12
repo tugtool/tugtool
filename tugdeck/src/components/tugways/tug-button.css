@@ -6,33 +6,7 @@
  * variables at the DOM level -- TugButton re-paints without React re-renders.
  *
  * [D04] Semantic tokens exclusively
- * [D04] 2.5D elevation model: per-component tokens feed from --tug-base-elevation-*
- * Spec S01 (token naming), Spec S02 (elevation CSS pattern)
  */
-
-/* ============================================================================
-   Per-Component Token Definitions (Spec S01, Spec S02)
-   Per-component tokens map from --tug-base-elevation-* for the secondary variant.
-   Primary and destructive variants override face tokens with their accent colors
-   but share the same highlight and shadow geometry from the base layer.
-   ========================================================================= */
-
-:root {
-  /* Secondary (default): face pulls from elevation face tokens */
-  --tug-button-face:        var(--tug-base-elevation-face);
-  --tug-button-face-hover:  var(--tug-base-elevation-face-hover);
-  --tug-button-face-active: var(--tug-base-elevation-face-active);
-
-  /* Shared highlight (top-edge light reflection): all variants */
-  --tug-button-highlight:        var(--tug-base-elevation-highlight);
-  --tug-button-highlight-hover:  var(--tug-base-elevation-highlight-hover);
-  --tug-button-highlight-active: var(--tug-base-elevation-highlight-active);
-
-  /* Shared shadow (bottom depth): all variants */
-  --tug-button-shadow:        var(--tug-base-elevation-shadow);
-  --tug-button-shadow-hover:  var(--tug-base-elevation-shadow-hover);
-  --tug-button-shadow-active: var(--tug-base-elevation-shadow-active);
-}
 
 /* ============================================================================
    Base Button
@@ -54,31 +28,16 @@
   color: var(--tug-base-fg-default);
   position: relative;
 
-  /* 2.5D elevation: secondary variant defaults (Spec S02) */
-  background-color: var(--tug-button-face);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight),
-    0 1px 3px 0 var(--tug-button-shadow);
-  transition: background-color var(--tug-base-elevation-transition),
-    box-shadow var(--tug-base-elevation-transition),
-    border-color var(--tug-base-elevation-transition),
-    filter var(--tug-base-elevation-transition),
-    transform var(--tug-base-elevation-transition);
+  background-color: var(--tug-base-action-secondary-bg-rest);
+  transition: background-color 80ms ease, filter 80ms ease;
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-button-face-hover);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-hover),
-    0 2px 4px 0 var(--tug-button-shadow-hover);
+  background-color: var(--tug-base-action-secondary-bg-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-button-face-active);
-  transform: translateY(var(--tug-base-elevation-press-offset));
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-active),
-    0 0px 1px 0 var(--tug-button-shadow-active);
+  background-color: var(--tug-base-action-secondary-bg-active);
 }
 
 .tug-button:focus-visible {
@@ -89,8 +48,6 @@
 .tug-button:disabled {
   pointer-events: none;
   opacity: 0.5;
-  /* Disabled: no shadow/highlight (flat appearance) */
-  box-shadow: none;
 }
 
 .tug-button svg {
@@ -138,21 +95,16 @@
 }
 
 /* ============================================================================
-   Variant Face Colors (2.5D: each variant overrides the face color)
-   The shared highlight and shadow tokens apply to all variants.
+   Variant Face Colors
    ========================================================================= */
 
 /* Primary variant: accent-cool fill with inverse text */
 .tug-button-primary {
   background-color: var(--tug-base-accent-cool-default);
   color: var(--tug-base-fg-inverse);
-  /* Primary: slightly reduced highlight — accent is already bright */
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight),
-    0 1px 3px 0 var(--tug-button-shadow);
 }
 
-/* Secondary variant: inherits face from --tug-button-face (base elevation) */
+/* Secondary variant: uses base action tokens */
 .tug-button-secondary {
   color: var(--tug-base-fg-default);
 }
@@ -160,7 +112,6 @@
 /* Ghost variant: no background in rest state */
 .tug-button-ghost {
   background-color: transparent;
-  box-shadow: none;
   color: var(--tug-base-fg-default);
 }
 
@@ -168,9 +119,6 @@
 .tug-button-destructive {
   background-color: var(--tug-base-accent-danger);
   color: var(--tug-base-fg-inverse);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight),
-    0 1px 3px 0 var(--tug-button-shadow);
 }
 
 /* Destructive variant: red-tinted border to communicate caution */
@@ -179,64 +127,45 @@
 }
 
 /* ============================================================================
-   Hover States (2.5D: hover deepens shadow, brightens highlight)
-   Base .tug-button hover handles secondary. Overrides here for other variants.
+   Hover States
    [aria-disabled='true'] guard: chain-action disabled buttons stay visually inert.
    ========================================================================= */
 
-/* Primary: brightness filter on hover (preserves accent hue while adding depth) */
+/* Primary: brightness filter on hover */
 .tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.15);
   border-color: var(--tug-base-border-muted);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-hover),
-    0 2px 4px 0 var(--tug-button-shadow-hover);
 }
 
-/* Ghost: shows surface on hover — flat, no elevation */
+/* Ghost: shows surface on hover */
 .tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-surface-control);
   color: var(--tug-base-fg-default);
-  box-shadow: none;
 }
 
 /* Destructive: brightness filter on hover */
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.15);
   border-color: var(--tug-base-accent-danger);
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-hover),
-    0 2px 4px 0 var(--tug-button-shadow-hover);
 }
 
 /* ============================================================================
-   Pressed / Active States (2.5D: shadow collapses, button translates down)
-   Base .tug-button active handles secondary. Overrides here for other variants.
+   Pressed / Active States
    ========================================================================= */
 
-/* Primary: darken on press, shadow collapses */
+/* Primary: darken on press */
 .tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.9);
-  transform: translateY(var(--tug-base-elevation-press-offset));
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-active),
-    0 0px 1px 0 var(--tug-button-shadow-active);
 }
 
-/* Ghost: subtle fill on press — flat, no translateY */
+/* Ghost: subtle fill on press */
 .tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-surface-default);
-  transform: none;
-  box-shadow: none;
 }
 
-/* Destructive: darken on press, shadow collapses */
+/* Destructive: darken on press */
 .tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(0.9);
-  transform: translateY(var(--tug-base-elevation-press-offset));
-  box-shadow:
-    inset 0 1px 0 0 var(--tug-button-highlight-active),
-    0 0px 1px 0 var(--tug-button-shadow-active);
 }
 
 /* ============================================================================
@@ -251,7 +180,6 @@
  *   - reduced opacity
  *   - cursor: not-allowed
  *   - pointer-events: none to suppress browser hover state flicker
- *   - box-shadow: none (flat appearance, no 2.5D elevation when disabled)
  *
  * Hover and active rules above already exclude [aria-disabled='true'] via
  * :not([aria-disabled='true']) guards, so no extra override rules are needed.
@@ -263,7 +191,6 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
-  box-shadow: none;
 }
 
 /* ============================================================================

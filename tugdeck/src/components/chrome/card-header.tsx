@@ -1,13 +1,11 @@
 /**
- * CardHeader -- title bar with 2.5D control buttons and window-shade collapse.
+ * CardHeader -- title bar with control buttons and window-shade collapse.
  *
  * Height is driven by --tug-base-chrome-height (defined in tug-tokens.css).
  * Icon sizes are CSS-driven via .tugcard-icon and .card-header-btn svg rules.
  *
  * **Authoritative references:**
- * - design-system-concepts.md [D04] 2.5D elevation model
  * - design-system-concepts.md [D07] Window-shade collapse
- * - Spec S02: elevation CSS pattern
  * - Step 3: Card Frame & Title Bar
  *
  * ## Responsibilities
@@ -18,7 +16,6 @@
  * - Collapse toggle: ChevronDown (expanded) / ChevronUp (collapsed)
  * - Double-click on header surface toggles collapse
  * - Drag: calls onDragStart on pointer-down on header surface
- * - 2.5D elevation on all three control buttons; header surface stays flat
  *
  * ## Close button pointer-capture note (Step 7)
  *

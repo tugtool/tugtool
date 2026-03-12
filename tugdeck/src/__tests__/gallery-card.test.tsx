@@ -120,11 +120,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with fifteen entries", () => {
+  it("gallery-buttons has defaultTabs with fourteen entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(15);
+    expect(reg!.defaultTabs!.length).toBe(14);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -148,7 +148,6 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-cascade-inspector",
       "gallery-animator",
       "gallery-skeleton",
-      "gallery-elevation",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -163,8 +162,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has fifteen entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(15);
+  it("has fourteen entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(14);
   });
 
   it("entries have the correct componentIds", () => {
@@ -210,7 +209,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates fifteen-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates fourteen-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -225,13 +224,13 @@ describe("DeckManager.addCard('gallery-buttons') creates fifteen-tab gallery car
     cleanup();
   });
 
-  it("creates a card with fifteen tabs, each with a distinct componentId", () => {
+  it("creates a card with fourteen tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(15);
+    expect(card.tabs.length).toBe(14);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -247,7 +246,6 @@ describe("DeckManager.addCard('gallery-buttons') creates fifteen-tab gallery car
     expect(componentIds).toContain("gallery-cascade-inspector");
     expect(componentIds).toContain("gallery-animator");
     expect(componentIds).toContain("gallery-skeleton");
-    expect(componentIds).toContain("gallery-elevation");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -271,7 +269,7 @@ describe("DeckManager.addCard('gallery-buttons') creates fifteen-tab gallery car
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(15);
+    expect(new Set(ids).size).toBe(14);
   });
 });
 

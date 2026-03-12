@@ -160,7 +160,7 @@
 /*
  * Groups the collapse, menu, and close buttons on the right side of the header.
  * CardHeader renders .card-header-btn elements inside this container.
- * Per-button 2.5D elevation styles are in card-header.css (imported by card-header.tsx).
+ * Per-button hover styles are in card-header.css (imported by card-header.tsx).
  */
 .card-header-controls {
   display: flex;
