@@ -327,41 +327,75 @@ body {
   --tug-base-control-disabled-shadow: none;
 
   /* --- Control Surface Tokens --- */
-  --tug-base-control-primary-bg-rest: --tug-color(orange);
-  --tug-base-control-primary-bg-hover: --tug-color(orange-intense);
-  --tug-base-control-primary-bg-active: --tug-color(orange-dark);
+  /* States lighten progressively: rest (darkest) → hover → active (lightest) */
+  /* Each variant defines: bg, fg, border, icon × rest/hover/active + bg-disabled */
+
+  /* Primary */
+  --tug-base-control-primary-bg-rest: --tug-color(blue-dark);
+  --tug-base-control-primary-bg-hover: --tug-color(blue, i: 55, t: 40);
+  --tug-base-control-primary-bg-active: --tug-color(blue-intense);
   --tug-base-control-primary-bg-disabled: var(--tug-base-control-disabled-bg);
-  --tug-base-control-primary-fg: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-control-primary-border: transparent;
-  --tug-base-control-primary-icon: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-control-secondary-bg-rest: --tug-color(violet-6, i: 5, t: 8);
-  --tug-base-control-secondary-bg-hover: --tug-color(violet, i: 5, t: 12);
-  --tug-base-control-secondary-bg-active: --tug-color(violet, i: 4, t: 14);
+  --tug-base-control-primary-fg-rest: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-primary-fg-hover: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-primary-fg-active: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-primary-border-rest: --tug-color(blue);
+  --tug-base-control-primary-border-hover: --tug-color(blue, i: 60, t: 50);
+  --tug-base-control-primary-border-active: --tug-color(blue-intense);
+  --tug-base-control-primary-icon-rest: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-primary-icon-hover: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-primary-icon-active: --tug-color(cobalt-8, i: 3, t: 100);
+
+  /* Secondary */
+  --tug-base-control-secondary-bg-rest: --tug-color(violet, i: 15, t: 8);
+  --tug-base-control-secondary-bg-hover: --tug-color(violet, i: 30, t: 25);
+  --tug-base-control-secondary-bg-active: --tug-color(violet, i: 50, t: 15);
   --tug-base-control-secondary-bg-disabled: var(--tug-base-control-disabled-bg);
-  --tug-base-control-secondary-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-base-control-secondary-border: --tug-color(cobalt, i: 6, t: 30);
-  --tug-base-control-secondary-icon: --tug-color(cobalt, i: 5, t: 66);
+  --tug-base-control-secondary-fg-rest: --tug-color(cobalt, i: 3, t: 94);
+  --tug-base-control-secondary-fg-hover: --tug-color(cobalt, i: 3, t: 100);
+  --tug-base-control-secondary-fg-active: --tug-color(cobalt, i: 3, t: 100);
+  --tug-base-control-secondary-border-rest: --tug-color(cobalt, i: 10, t: 30);
+  --tug-base-control-secondary-border-hover: --tug-color(cobalt, i: 15, t: 40);
+  --tug-base-control-secondary-border-active: --tug-color(cobalt, i: 20, t: 50);
+  --tug-base-control-secondary-icon-rest: --tug-color(cobalt, i: 5, t: 66);
+  --tug-base-control-secondary-icon-hover: --tug-color(cobalt, i: 5, t: 80);
+  --tug-base-control-secondary-icon-active: --tug-color(cobalt, i: 5, t: 94);
+
+  /* Ghost */
   --tug-base-control-ghost-bg-rest: transparent;
-  --tug-base-control-ghost-bg-hover: --tug-color(white, i: 0, t: 100, a: 7);
-  --tug-base-control-ghost-bg-active: var(--tug-base-surface-default);
-  --tug-base-control-ghost-fg: --tug-color(cobalt, i: 5, t: 66);
-  --tug-base-control-ghost-border: transparent;
-  --tug-base-control-ghost-icon: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-control-destructive-bg-rest: --tug-color(red);
-  --tug-base-control-destructive-bg-hover: --tug-color(red-intense);
-  --tug-base-control-destructive-bg-active: --tug-color(red-dark);
+  --tug-base-control-ghost-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
+  --tug-base-control-ghost-bg-active: --tug-color(white, i: 0, t: 100, a: 20);
+  --tug-base-control-ghost-fg-rest: --tug-color(cobalt, i: 5, t: 66);
+  --tug-base-control-ghost-fg-hover: --tug-color(cobalt, i: 15, t: 80);
+  --tug-base-control-ghost-fg-active: --tug-color(cobalt, i: 35, t: 94);
+  --tug-base-control-ghost-border-rest: transparent;
+  --tug-base-control-ghost-border-hover: --tug-color(cobalt, i: 20, t: 60);
+  --tug-base-control-ghost-border-active: --tug-color(cobalt, i: 20, t: 60);
+  --tug-base-control-ghost-icon-rest: --tug-color(cobalt+7, i: 7, t: 37);
+  --tug-base-control-ghost-icon-hover: --tug-color(cobalt+7, i: 7, t: 65);
+  --tug-base-control-ghost-icon-active: --tug-color(cobalt+7, i: 27, t: 80);
+
+  /* Destructive */
+  --tug-base-control-destructive-bg-rest: --tug-color(red-dark);
+  --tug-base-control-destructive-bg-hover: --tug-color(red, i: 55, t: 40);
+  --tug-base-control-destructive-bg-active: --tug-color(red-intense);
   --tug-base-control-destructive-bg-disabled: var(--tug-base-control-disabled-bg);
-  --tug-base-control-destructive-fg: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-control-destructive-border: transparent;
-  --tug-base-control-destructive-icon: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-control-selected-bg: --tug-color(orange, i: 50, t: 50, a: 18);
-  --tug-base-control-selected-bg-hover: --tug-color(orange, i: 50, t: 50, a: 24);
+  --tug-base-control-destructive-fg-rest: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-destructive-fg-hover: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-destructive-fg-active: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-destructive-border-rest: --tug-color(red, i: 30, t: 40);
+  --tug-base-control-destructive-border-hover: --tug-color(red, i: 40, t: 50);
+  --tug-base-control-destructive-border-active: --tug-color(red-intense);
+  --tug-base-control-destructive-icon-rest: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-destructive-icon-hover: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-destructive-icon-active: --tug-color(cobalt-8, i: 3, t: 100);
+  --tug-base-control-selected-bg: --tug-color(blue, i: 50, t: 50, a: 18);
+  --tug-base-control-selected-bg-hover: --tug-color(blue, i: 50, t: 50, a: 24);
   --tug-base-control-selected-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-base-control-selected-border: --tug-color(orange);
-  --tug-base-control-selected-disabled-bg: --tug-color(orange, i: 50, t: 50, a: 10);
-  --tug-base-control-highlighted-bg: --tug-color(orange, i: 50, t: 50, a: 10);
+  --tug-base-control-selected-border: --tug-color(blue);
+  --tug-base-control-selected-disabled-bg: --tug-color(blue, i: 50, t: 50, a: 10);
+  --tug-base-control-highlighted-bg: --tug-color(blue, i: 50, t: 50, a: 10);
   --tug-base-control-highlighted-fg: --tug-color(cobalt, i: 3, t: 94);
-  --tug-base-control-highlighted-border: --tug-color(orange, i: 50, t: 50, a: 25);
+  --tug-base-control-highlighted-border: --tug-color(blue, i: 50, t: 50, a: 25);
 
   /* --- Generic Field Tokens --- */
   --tug-base-field-bg-rest: --tug-color(violet-6, i: 5, t: 8);

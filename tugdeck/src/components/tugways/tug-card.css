@@ -26,7 +26,7 @@ body {
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: --tug-color(violet-9, i: 22, t: 18);
+  --tug-card-title-bar-bg-active: --tug-color(violet-9, i: 12, t: 18);
   --tug-card-title-bar-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
   --tug-card-title-bar-bg-collapsed: --tug-color(violet, i: 4, t: 15);
   --tug-card-title-bar-fg: var(--tug-base-fg-default);
@@ -34,14 +34,6 @@ body {
   --tug-card-title-bar-icon-inactive: var(--tug-base-fg-subtle);
   --tug-card-title-bar-icon-hover: var(--tug-base-fg-muted);
   --tug-card-title-bar-divider: var(--tug-base-divider-default);
-
-  /* Title bar button control states */
-  --tug-card-title-bar-button-fg-rest: var(--tug-base-fg-muted);
-  --tug-card-title-bar-button-fg-hover: var(--tug-base-fg-default);
-  --tug-card-title-bar-button-bg-hover: --tug-color(white, i: 0, t: 100, a: 18);
-  --tug-card-title-bar-button-bg-active: --tug-color(white, i: 0, t: 100, a: 10);
-  --tug-card-title-bar-button-fg-danger: var(--tug-base-tone-danger);
-  --tug-card-title-bar-button-fg-danger-hover: --tug-color(red-light);
 
   /* --- Card Accessory / Findbar --- */
   --tug-card-accessory-bg: var(--tug-base-surface-sunken);
@@ -201,7 +193,7 @@ body {
 
 /*
  * Groups the collapse, menu, and close buttons on the right side of the
- * title bar. CardTitleBar renders .card-title-bar-button elements inside
+ * title bar. CardTitleBar renders .tug-button ghost icon buttons inside
  * this container.
  */
 .card-title-bar-controls {
@@ -209,53 +201,6 @@ body {
   align-items: center;
   flex-shrink: 0;
   margin-left: var(--tug-base-space-xs);
-}
-
-/* ============================================================================
-   Title bar control buttons — follows Control States design
-   ========================================================================= */
-
-.card-title-bar-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tug-base-icon-size-xl);
-  height: var(--tug-base-icon-size-xl);
-  padding: 0;
-  margin: 0;
-  background-color: transparent;
-  border: none;
-  border-radius: var(--tug-base-radius-sm);
-  color: var(--tug-card-title-bar-button-fg-rest);
-  font-size: var(--tug-base-font-size-md);
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  position: relative;
-
-  transition: background-color 80ms ease, color 80ms ease;
-}
-
-/* Lucide SVGs inside control buttons inherit size from the button */
-.card-title-bar-button svg {
-  width: var(--tug-base-icon-size-md);
-  height: var(--tug-base-icon-size-md);
-}
-
-/* hover: brighten icon + show background */
-.card-title-bar-button:hover:not(:disabled) {
-  color: var(--tug-card-title-bar-button-fg-hover);
-  background-color: var(--tug-card-title-bar-button-bg-hover);
-}
-
-/* active: pressed background */
-.card-title-bar-button:active:not(:disabled) {
-  background-color: var(--tug-card-title-bar-button-bg-active);
-}
-
-/* Close button: danger color on hover */
-.card-title-bar-button-close:hover:not(:disabled) {
-  color: var(--tug-card-title-bar-button-fg-danger-hover);
 }
 
 /* ============================================================================

@@ -39,7 +39,7 @@
  *
  * Title bar with control buttons and window-shade collapse.
  * Height is driven by --tug-base-chrome-height (defined in tug-base.css).
- * Icon sizes are CSS-driven via .tugcard-icon and .card-title-bar-button svg rules.
+ * Icon sizes are CSS-driven via .tugcard-icon and .tug-button svg rules.
  *
  * - Control buttons: close, collapse (chevron), menu (horizontal ellipsis)
  * - Close button: pointer-capture pattern to suppress browser focus/selection side effects
@@ -141,7 +141,7 @@ export function CardTitleBar({
     (event: React.PointerEvent<HTMLDivElement>) => {
       // Do not initiate drag when clicking a control button.
       const target = event.target as HTMLElement;
-      if (target.closest(".card-title-bar-button")) return;
+      if (target.closest(".tug-button")) return;
       onDragStart?.(event);
     },
     [onDragStart],
@@ -155,7 +155,7 @@ export function CardTitleBar({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       // Ignore double-clicks on control buttons.
-      if (target.closest(".card-title-bar-button")) return;
+      if (target.closest(".tug-button")) return;
       onCollapse();
     },
     [onCollapse],
@@ -269,12 +269,12 @@ export function CardTitleBar({
         {title}
       </span>
 
-      {/* Control buttons — icon size controlled by .card-title-bar-button svg CSS */}
+      {/* Control buttons — ghost icon buttons */}
       <div className="card-title-bar-controls" data-testid="card-title-bar-controls">
         {/* Menu button (leftmost) */}
         <button
           type="button"
-          className="card-title-bar-button card-title-bar-button-menu"
+          className="tug-button tug-button-ghost tug-button-icon-sm"
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Card menu"
           data-testid="card-title-bar-menu-button"
@@ -285,7 +285,7 @@ export function CardTitleBar({
         {/* Collapse/expand chevron (middle) */}
         <button
           type="button"
-          className="card-title-bar-button card-title-bar-button-collapse"
+          className="tug-button tug-button-ghost tug-button-icon-sm"
           onPointerDown={handleCollapsePointerDown}
           onClick={handleCollapseClick}
           aria-label={collapsed ? "Expand card" : "Collapse card"}
@@ -299,7 +299,7 @@ export function CardTitleBar({
         {closable && (
           <button
             type="button"
-            className="card-title-bar-button card-title-bar-button-close"
+            className="tug-button tug-button-ghost tug-button-icon-sm"
             data-no-activate
             onPointerDown={handleClosePointerDown}
             onPointerUp={handleClosePointerUp}

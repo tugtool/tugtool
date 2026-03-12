@@ -133,10 +133,10 @@ const ROUNDED_MAP: Record<TugButtonRounded, string> = {
   full: "9999px",  // pill
 };
 
-/** Size-proportional default: each button size maps to a radius token */
+/** Size-proportional default: all sizes default to pill shape */
 const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
-  sm: "sm",
-  md: "md",
+  sm: "lg",
+  md: "lg",
   lg: "lg",
 };
 
@@ -333,8 +333,6 @@ export function TugButton({
     sizeClass,
     // Variant class for hover/active/transition styles
     variantClass,
-    // Border for non-ghost variants
-    variant !== "ghost" && "tug-button-bordered",
     // Icon subtype size classes (square aspect ratio per Table T03)
     subtype === "icon" && size === "sm" && "tug-button-icon-sm",
     subtype === "icon" && size === "md" && "tug-button-icon-md",

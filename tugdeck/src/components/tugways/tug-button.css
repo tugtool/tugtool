@@ -5,6 +5,9 @@
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugButton re-paints without React re-renders.
  *
+ * Retronow-inspired: pill shape, all-caps labels, progressive lightening
+ * through rest → hover → active control states.
+ *
  * [D04] Semantic tokens exclusively
  */
 
@@ -18,26 +21,32 @@
   justify-content: center;
   gap: 0.5rem;
   white-space: nowrap;
-  border-radius: var(--tug-base-radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
   font-family: inherit;
-  line-height: inherit;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
-  border: none;
-  color: var(--tug-base-fg-default);
   position: relative;
 
   background-color: var(--tug-base-control-secondary-bg-rest);
-  transition: background-color 80ms ease, filter 80ms ease;
+  color: var(--tug-base-control-secondary-fg-rest);
+  border: 1px solid var(--tug-base-control-secondary-border-rest);
+  transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-control-secondary-bg-hover);
+  color: var(--tug-base-control-secondary-fg-hover);
+  border-color: var(--tug-base-control-secondary-border-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug-base-control-secondary-bg-active);
+  color: var(--tug-base-control-secondary-fg-active);
+  border-color: var(--tug-base-control-secondary-border-active);
 }
 
 .tug-button:focus-visible {
@@ -47,7 +56,7 @@
 
 .tug-button:disabled {
   pointer-events: none;
-  opacity: 0.5;
+  opacity: var(--tug-base-control-disabled-opacity);
 }
 
 .tug-button svg {
@@ -55,6 +64,15 @@
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
+  color: var(--tug-base-control-secondary-icon-rest);
+}
+
+.tug-button:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-secondary-icon-hover);
+}
+
+.tug-button:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-secondary-icon-active);
 }
 
 /* ============================================================================
@@ -62,110 +80,132 @@
    ========================================================================= */
 
 .tug-button-size-sm {
-  height: 2.25rem; /* 36px */
-  padding: 0 0.75rem;
+  height: 1.75rem; /* 28px */
+  padding: 0 1rem;
 }
 
 .tug-button-size-md {
-  height: 2.5rem; /* 40px */
-  padding: 0.5rem 1rem;
+  height: 2rem; /* 32px */
+  padding: 0 1.25rem;
 }
 
 .tug-button-size-lg {
-  height: 2.75rem; /* 44px */
-  padding: 0 2rem;
+  height: 2.25rem; /* 36px */
+  padding: 0 1.75rem;
 }
 
 /* ============================================================================
-   Variant Borders
+   Variant: Primary
    ========================================================================= */
 
-/*
- * Non-ghost variants include a subtle border for definition against panel
- * backgrounds. Ghost variant intentionally has no visible border but uses
- * a transparent one to preserve layout consistency.
- */
-.tug-button-bordered {
-  border: 1px solid var(--tug-base-border-default);
-}
-
-/* Ghost variant: transparent border for layout consistency */
-.tug-button-ghost {
-  border: 1px solid transparent;
-}
-
-/* ============================================================================
-   Variant Face Colors
-   ========================================================================= */
-
-/* Primary variant: accent-cool fill with inverse text */
 .tug-button-primary {
-  background-color: var(--tug-base-accent-cool-default);
-  color: var(--tug-base-fg-inverse);
+  background-color: var(--tug-base-control-primary-bg-rest);
+  color: var(--tug-base-control-primary-fg-rest);
+  border-color: var(--tug-base-control-primary-border-rest);
 }
 
-/* Secondary variant: uses base action tokens */
+.tug-button-primary svg {
+  color: var(--tug-base-control-primary-icon-rest);
+}
+
+.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-primary-bg-hover);
+  color: var(--tug-base-control-primary-fg-hover);
+  border-color: var(--tug-base-control-primary-border-hover);
+}
+
+.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-primary-icon-hover);
+}
+
+.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-primary-bg-active);
+  color: var(--tug-base-control-primary-fg-active);
+  border-color: var(--tug-base-control-primary-border-active);
+}
+
+.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-primary-icon-active);
+}
+
+/* ============================================================================
+   Variant: Secondary (default — inherits base .tug-button styles)
+   ========================================================================= */
+
 .tug-button-secondary {
-  color: var(--tug-base-fg-default);
+  color: var(--tug-base-control-secondary-fg-rest);
 }
 
-/* Ghost variant: no background in rest state */
+.tug-button-secondary svg {
+  color: var(--tug-base-control-secondary-icon-rest);
+}
+
+/* ============================================================================
+   Variant: Ghost
+   ========================================================================= */
+
 .tug-button-ghost {
-  background-color: transparent;
-  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-ghost-bg-rest);
+  color: var(--tug-base-control-ghost-fg-rest);
+  border-color: var(--tug-base-control-ghost-border-rest);
 }
 
-/* Destructive variant: danger red fill with inverse text */
+.tug-button-ghost svg {
+  color: var(--tug-base-control-ghost-icon-rest);
+}
+
+.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-bg-hover);
+  color: var(--tug-base-control-ghost-fg-hover);
+  border-color: var(--tug-base-control-ghost-border-hover);
+}
+
+.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-icon-hover);
+}
+
+.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-bg-active);
+  color: var(--tug-base-control-ghost-fg-active);
+  border-color: var(--tug-base-control-ghost-border-active);
+}
+
+.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-icon-active);
+}
+
+/* ============================================================================
+   Variant: Destructive
+   ========================================================================= */
+
 .tug-button-destructive {
   background-color: var(--tug-base-control-destructive-bg-rest);
-  color: var(--tug-base-fg-inverse);
+  color: var(--tug-base-control-destructive-fg-rest);
+  border-color: var(--tug-base-control-destructive-border-rest);
 }
 
-/* Destructive variant: red-tinted border to communicate caution */
-.tug-button-destructive.tug-button-bordered {
-  border-color: var(--tug-base-control-destructive-border);
+.tug-button-destructive svg {
+  color: var(--tug-base-control-destructive-icon-rest);
 }
 
-/* ============================================================================
-   Hover States
-   [aria-disabled='true'] guard: chain-action disabled buttons stay visually inert.
-   ========================================================================= */
-
-/* Primary: brightness filter on hover */
-.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(1.15);
-  border-color: var(--tug-base-border-muted);
-}
-
-/* Ghost: shows surface on hover */
-.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-secondary-bg-rest);
-  color: var(--tug-base-fg-default);
-}
-
-/* Destructive: brightness filter on hover */
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(1.15);
-  border-color: var(--tug-base-control-destructive-bg-rest); /* uses -bg-rest to preserve red border on hover */
+  background-color: var(--tug-base-control-destructive-bg-hover);
+  color: var(--tug-base-control-destructive-fg-hover);
+  border-color: var(--tug-base-control-destructive-border-hover);
 }
 
-/* ============================================================================
-   Pressed / Active States
-   ========================================================================= */
-
-/* Primary: darken on press */
-.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(0.9);
+.tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-destructive-icon-hover);
 }
 
-/* Ghost: subtle fill on press */
-.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-surface-default);
-}
-
-/* Destructive: darken on press */
 .tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(0.9);
+  background-color: var(--tug-base-control-destructive-bg-active);
+  color: var(--tug-base-control-destructive-fg-active);
+  border-color: var(--tug-base-control-destructive-border-active);
+}
+
+.tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-destructive-icon-active);
 }
 
 /* ============================================================================
@@ -188,34 +228,34 @@
 [aria-disabled="true"].tug-button-secondary,
 [aria-disabled="true"].tug-button-ghost,
 [aria-disabled="true"].tug-button-destructive {
-  opacity: 0.5;
+  opacity: var(--tug-base-control-disabled-opacity);
   cursor: not-allowed;
   pointer-events: none;
 }
 
 /* ============================================================================
-   Icon Subtype: Square Aspect Ratio
+   Icon Subtype: Square Aspect Ratio (pill circle for icon-only)
    ========================================================================= */
 
 /*
  * Icon subtype buttons use square aspect ratio.
- * All three sizes are explicitly defined.
+ * With border-radius: 999px they become circles.
  */
 .tug-button-icon-sm {
-  width: 2.25rem; /* 36px */
-  height: 2.25rem;
+  width: 1.75rem; /* 28px */
+  height: 1.75rem;
   padding: 0;
 }
 
 .tug-button-icon-md {
-  width: 2.5rem; /* 40px */
-  height: 2.5rem;
+  width: 2rem; /* 32px */
+  height: 2rem;
   padding: 0;
 }
 
 .tug-button-icon-lg {
-  width: 2.75rem; /* 44px */
-  height: 2.75rem;
+  width: 2.25rem; /* 36px */
+  height: 2.25rem;
   padding: 0;
 }
 

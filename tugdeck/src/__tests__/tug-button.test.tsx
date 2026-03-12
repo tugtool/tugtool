@@ -250,25 +250,21 @@ describe("TugButton – variants", () => {
   it("primary variant: applies tug-button-primary variant class", () => {
     const btn = renderButton({ variant: "primary", children: "Primary" });
     expect(btn.className).toContain("tug-button-primary");
-    expect(btn.className).toContain("tug-button-bordered");
   });
 
   it("secondary variant: applies tug-button-secondary variant class", () => {
     const btn = renderButton({ variant: "secondary", children: "Secondary" });
     expect(btn.className).toContain("tug-button-secondary");
-    expect(btn.className).toContain("tug-button-bordered");
   });
 
   it("ghost variant: applies tug-button-ghost class, no border", () => {
     const btn = renderButton({ variant: "ghost", children: "Ghost" });
     expect(btn.className).toContain("tug-button-ghost");
-    expect(btn.className).not.toContain("tug-button-bordered");
   });
 
   it("destructive variant: applies tug-button-destructive variant class", () => {
     const btn = renderButton({ variant: "destructive", children: "Delete" });
     expect(btn.className).toContain("tug-button-destructive");
-    expect(btn.className).toContain("tug-button-bordered");
   });
 });
 
@@ -383,7 +379,6 @@ describe("TugButton – variant CSS classes", () => {
     const btn = renderButton({ variant: "ghost", children: "Cancel" });
     expect(btn.className).toContain("tug-button");
     expect(btn.className).toContain("tug-button-ghost");
-    expect(btn.className).not.toContain("tug-button-bordered");
   });
 
   it("disabled button has disabled attribute", () => {
