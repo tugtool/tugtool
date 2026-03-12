@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-12T16:40:54Z
+---
+
+## step-7: Final verification: all grep checks pass (zero old token refs, 20 tone tokens, 42 control tokens), typecheck clean, 1358 tests pass. Manual visual inspection deferred.
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-6
 date: 2025-03-12T16:36:38Z
 ---
