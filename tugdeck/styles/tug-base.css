@@ -266,10 +266,6 @@ body {
   --tug-base-accent-muted: --tug-color(orange-muted);
   --tug-base-accent-subtle: --tug-color(orange, i: 50, t: 50, a: 15);
   --tug-base-accent-cool-default: --tug-color(cobalt-intense);
-  --tug-base-accent-positive: --tug-color(green-intense);
-  --tug-base-accent-warning: --tug-color(yellow-intense);
-  --tug-base-accent-danger: --tug-color(red);
-  --tug-base-accent-info: --tug-color(cyan-intense);
 
   /* Accent-derived interaction tokens */
   --tug-base-accent-bg-subtle: --tug-color(orange, i: 50, t: 50, a: 12);

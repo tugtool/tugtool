@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-12T16:31:16Z
+---
+
+## step-5: Removed accent-positive/warning/danger/info from tug-base.css, migrated tug-button.css destructive variant to control-destructive-* tokens, migrated disconnect-banner.tsx to tone-warning
+
+**Files changed:**
+- .tugtool/tugplan-semantic-token-vocabulary.md
+
+---
+
+---
 step: step-4
 date: 2025-03-12T16:27:28Z
 ---

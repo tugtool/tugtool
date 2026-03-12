@@ -117,13 +117,13 @@
 
 /* Destructive variant: danger red fill with inverse text */
 .tug-button-destructive {
-  background-color: var(--tug-base-accent-danger);
+  background-color: var(--tug-base-control-destructive-bg-rest);
   color: var(--tug-base-fg-inverse);
 }
 
 /* Destructive variant: red-tinted border to communicate caution */
 .tug-button-destructive.tug-button-bordered {
-  border-color: var(--tug-base-accent-danger);
+  border-color: var(--tug-base-control-destructive-border);
 }
 
 /* ============================================================================
@@ -146,7 +146,7 @@
 /* Destructive: brightness filter on hover */
 .tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
   filter: brightness(1.15);
-  border-color: var(--tug-base-accent-danger);
+  border-color: var(--tug-base-control-destructive-bg-rest); /* uses -bg-rest to preserve red border on hover */
 }
 
 /* ============================================================================
