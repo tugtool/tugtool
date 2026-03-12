@@ -21,13 +21,11 @@ body {
   /* --- Card --- */
   --tug-card-bg: var(--tug-base-surface-overlay);
   --tug-card-border: var(--tug-base-border-default);
-  /* Card shadow tokens — card-specific, not generic elevation */
   --tug-card-shadow-active: 0 2px 8px --tug-color(black, i: 0, t: 0, a: 40);
   --tug-card-shadow-inactive: 0 1px 4px --tug-color(black, i: 0, t: 0, a: 20);
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
   /* --- Card Header --- */
-  /* Card header Brio defaults: literal hex values for zero-visual-regression. */
   --tug-card-header-bg-active: --tug-color(violet-9, i: 4, t: 20);
   --tug-card-header-bg-inactive: --tug-color(violet-9, i: 4, t: 15);
   --tug-card-header-bg-collapsed: --tug-color(violet, i: 4, t: 15);

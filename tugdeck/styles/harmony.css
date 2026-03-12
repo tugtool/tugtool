@@ -57,13 +57,9 @@ body {
 
   /* Elevation */
   --tug-base-shadow-xs: --tug-color(black, i: 0, t: 0, a: 8);
-  --tug-base-shadow-sm: --tug-color(black, i: 0, t: 0, a: 24);
   --tug-base-shadow-md: --tug-color(black, i: 0, t: 0, a: 30);
   --tug-base-shadow-lg: --tug-color(black, i: 0, t: 0, a: 36);
   --tug-base-shadow-xl: --tug-color(black, i: 0, t: 0, a: 44);
-  /* shadow-card-active and shadow-card-inactive are NOT overridden per D10 —
-     they use var(--tug-base-shadow-sm) which is overridden above, so the
-     compound token resolves correctly for Harmony without a per-theme override. */
   --tug-base-shadow-overlay: 0 4px 16px --tug-color(black, i: 0, t: 0, a: 24);
   --tug-base-overlay-dim: --tug-color(black, i: 0, t: 0, a: 20);
   --tug-base-overlay-scrim: --tug-color(black, i: 0, t: 0, a: 32);

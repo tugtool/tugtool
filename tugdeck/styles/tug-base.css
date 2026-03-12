@@ -171,9 +171,7 @@ body {
   --tug-base-focus-ring-offset: --tug-color(violet-6, i: 4, t: 7);
 
   /* --- Elevation / Overlay --- */
-  /* --tug-base-shadow-sm: Brio default shadow opacity */
   --tug-base-shadow-xs: --tug-color(black, i: 0, t: 0, a: 20);
-  --tug-base-shadow-sm: --tug-color(black, i: 0, t: 0, a: 50);
   --tug-base-shadow-md: --tug-color(black, i: 0, t: 0, a: 60);
   --tug-base-shadow-lg: --tug-color(black, i: 0, t: 0, a: 70);
   --tug-base-shadow-xl: --tug-color(black, i: 0, t: 0, a: 80);

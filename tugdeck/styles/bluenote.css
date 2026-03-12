@@ -46,9 +46,6 @@ body {
   --tug-base-border-inverse: --tug-color(blue, i: 3, t: 88);
   --tug-base-focus-ring-offset: --tug-color(blue+9, i: 5, t: 13);
 
-  /* Elevation */
-  --tug-base-shadow-sm: --tug-color(black, i: 0, t: 0, a: 44);
-
   /* Selection */
   --tug-base-selection-bg-inactive: --tug-color(blue, i: 10, t: 33, a: 30);
   --tug-base-selection-fg: --tug-color(blue, i: 3, t: 88);

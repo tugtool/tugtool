@@ -115,7 +115,6 @@ body {
   background-color: var(--tug-base-control-secondary-bg-rest);
   border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
-  box-shadow: var(--tug-base-shadow-sm);
   color: var(--tug-dropdown-fg);
   /* High z-index so the portal-rendered dropdown renders above all cards */
   z-index: 200;

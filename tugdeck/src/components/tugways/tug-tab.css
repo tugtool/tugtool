@@ -305,7 +305,6 @@ body {
   background-color: var(--tug-base-control-secondary-bg-rest);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-sm);
-  box-shadow: 0 2px 8px var(--tug-base-shadow-sm);
   opacity: 0.7;
   pointer-events: none;
   font-size: var(--tug-base-font-size-sm);
