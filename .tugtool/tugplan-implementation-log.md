@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-13T00:17:50Z
+---
+
+## step-1: Created fg-bg-pairing-map.ts with typed FG_BG_PAIRING_MAP constant declaring all foreground/background token pairings with contrast roles from Table T01. Added theme-accessibility.test.ts with completeness tests ensuring every chromatic fg and bg token appears in at least one pairing.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-10
 date: 2025-03-12T18:25:19Z
 ---
