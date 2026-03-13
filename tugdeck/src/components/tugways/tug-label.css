@@ -1,0 +1,121 @@
+/**
+ * TugLabel styles -- tugways-specific CSS using --tug-base-field-* tokens.
+ *
+ * All colors reference canonical tokens exclusively. Theme switches update
+ * CSS variables at the DOM level -- TugLabel re-paints without React re-renders.
+ *
+ * Features:
+ *   - Multiline text wrapping up to maxLines
+ *   - Ellipsis truncation (start, middle handled in JS; end via -webkit-line-clamp)
+ *   - Optional leading icon with configurable color
+ *   - Required indicator
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Base Label
+   ========================================================================= */
+
+.tug-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--tug-base-field-label);
+  cursor: default;
+}
+
+/* When associated with a form control, use pointer cursor */
+.tug-label[for] {
+  cursor: pointer;
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-label-size-sm {
+  font-size: 0.75rem;
+}
+
+.tug-label-size-md {
+  font-size: 0.8125rem;
+}
+
+.tug-label-size-lg {
+  font-size: 0.875rem;
+}
+
+/* ============================================================================
+   Icon
+   ========================================================================= */
+
+.tug-label-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* Nudge icon down slightly to align with first line of text */
+  margin-top: 0.1em;
+}
+
+.tug-label-icon svg {
+  width: 1em;
+  height: 1em;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   Text Container
+   ========================================================================= */
+
+.tug-label-text {
+  min-width: 0;
+  /* Allow text to wrap by default */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ---- End Ellipsis (CSS-native via -webkit-line-clamp) ---- */
+
+.tug-label-ellipsis-end {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* -webkit-line-clamp set via inline style (--tug-label-max-lines) */
+  -webkit-line-clamp: var(--tug-label-max-lines);
+}
+
+/* ---- Start / Middle Ellipsis ---- */
+/* These modes are handled in JS by truncating the text content.
+   CSS just ensures single-line overflow is hidden. */
+
+.tug-label-ellipsis-start,
+.tug-label-ellipsis-middle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: var(--tug-label-max-lines);
+}
+
+/* ============================================================================
+   Required Indicator
+   ========================================================================= */
+
+.tug-label-required {
+  color: var(--tug-base-field-required);
+  margin-left: 0.125rem;
+}
+
+/* ============================================================================
+   Disabled State
+   ========================================================================= */
+
+.tug-label-disabled {
+  opacity: var(--tug-base-control-disabled-opacity);
+  cursor: not-allowed;
+}
