@@ -36,6 +36,7 @@ import { GallerySkeletonContent } from "./gallery-skeleton-content";
 import { GalleryInputContent } from "./gallery-input-content";
 import { GalleryLabelContent } from "./gallery-label-content";
 import { GalleryMarqueeContent } from "./gallery-marquee-content";
+import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -80,6 +81,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-input",              title: "TugInput",             closable: true },
   { id: "template", componentId: "gallery-label",              title: "TugLabel",             closable: true },
   { id: "template", componentId: "gallery-marquee",            title: "TugMarquee",           closable: true },
+  { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1117,6 +1119,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-marquee",
     contentFactory: (_cardId) => <GalleryMarqueeContent />,
     defaultMeta: { title: "TugMarquee", icon: "MoveHorizontal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-checkbox ----
+  // Step 4, Component 3: TugCheckbox — Radix Checkbox wrapper with toggle tokens.
+  registerCard({
+    componentId: "gallery-checkbox",
+    contentFactory: (_cardId) => <GalleryCheckboxContent />,
+    defaultMeta: { title: "TugCheckbox", icon: "CheckSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

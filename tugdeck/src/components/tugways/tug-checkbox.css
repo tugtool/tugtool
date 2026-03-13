@@ -1,0 +1,167 @@
+/**
+ * TugCheckbox styles -- tugways-specific CSS using --tug-base-* tokens.
+ *
+ * All colors reference canonical tokens exclusively. Theme switches update
+ * CSS variables at the DOM level -- TugCheckbox re-paints without React
+ * re-renders.
+ *
+ * States: unchecked, checked, indeterminate (mixed), disabled.
+ * Uses --tug-base-toggle-track-* for the box and --tug-base-checkmark for
+ * the indicator.
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Checkbox Root (the clickable box)
+   ========================================================================= */
+
+.tug-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--tug-base-toggle-track-off);
+  border-radius: 0.25rem; /* 4px */
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 80ms ease, border-color 80ms ease;
+  padding: 0;
+  font-family: inherit;
+}
+
+/* ---- Size variants ---- */
+
+.tug-checkbox-size-sm {
+  width: 0.875rem;  /* 14px */
+  height: 0.875rem;
+}
+
+.tug-checkbox-size-md {
+  width: 1rem;      /* 16px */
+  height: 1rem;
+}
+
+.tug-checkbox-size-lg {
+  width: 1.25rem;   /* 20px */
+  height: 1.25rem;
+}
+
+/* ---- Hover (unchecked) ---- */
+
+.tug-checkbox:hover:not(:disabled):not([data-disabled]) {
+  border-color: var(--tug-base-toggle-track-mixed);
+}
+
+/* ---- Checked ---- */
+
+.tug-checkbox[data-state="checked"] {
+  background-color: var(--tug-base-toggle-track-on);
+  border-color: var(--tug-base-toggle-track-on);
+}
+
+.tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-base-toggle-track-on);
+  border-color: var(--tug-base-toggle-track-on);
+}
+
+/* ---- Indeterminate (mixed) ---- */
+
+.tug-checkbox[data-state="indeterminate"] {
+  background-color: var(--tug-base-toggle-track-mixed);
+  border-color: var(--tug-base-toggle-track-mixed);
+}
+
+/* ---- Disabled ---- */
+
+.tug-checkbox:disabled,
+.tug-checkbox[data-disabled] {
+  background-color: var(--tug-base-toggle-track-disabled);
+  border-color: var(--tug-base-toggle-track-disabled);
+  cursor: not-allowed;
+  opacity: var(--tug-base-control-disabled-opacity);
+}
+
+/* ---- Focus ---- */
+
+.tug-checkbox:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Indicator (check / dash icon)
+   ========================================================================= */
+
+.tug-checkbox-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tug-base-checkmark);
+}
+
+.tug-checkbox[data-state="indeterminate"] .tug-checkbox-indicator {
+  color: var(--tug-base-checkmark-mixed);
+}
+
+.tug-checkbox-indicator svg {
+  pointer-events: none;
+}
+
+/* Icon sizes matched to checkbox sizes */
+.tug-checkbox-size-sm .tug-checkbox-indicator svg {
+  width: 0.625rem;  /* 10px */
+  height: 0.625rem;
+}
+
+.tug-checkbox-size-md .tug-checkbox-indicator svg {
+  width: 0.75rem;   /* 12px */
+  height: 0.75rem;
+}
+
+.tug-checkbox-size-lg .tug-checkbox-indicator svg {
+  width: 0.875rem;  /* 14px */
+  height: 0.875rem;
+}
+
+/* ============================================================================
+   Wrapper (checkbox + label layout)
+   ========================================================================= */
+
+.tug-checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.tug-checkbox-wrapper-disabled {
+  cursor: not-allowed;
+}
+
+.tug-checkbox-label {
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--tug-base-field-label);
+  user-select: none;
+}
+
+.tug-checkbox-wrapper-disabled .tug-checkbox-label {
+  opacity: var(--tug-base-control-disabled-opacity);
+}
+
+/* Label size variants */
+.tug-checkbox-label-sm {
+  font-size: 0.75rem;
+}
+
+.tug-checkbox-label-md {
+  font-size: 0.8125rem;
+}
+
+.tug-checkbox-label-lg {
+  font-size: 0.875rem;
+}
