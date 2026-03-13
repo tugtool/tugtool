@@ -52,6 +52,8 @@ export interface TugBadgeProps {
   size?: TugBadgeSize;
   /** Badge label content (required). */
   children: React.ReactNode;
+  /** Lucide icon node rendered before the label */
+  icon?: React.ReactNode;
   /** Additional CSS class names. */
   className?: string;
 }
@@ -73,6 +75,7 @@ export function TugBadge({
   role = "action",
   size = "sm",
   children,
+  icon,
   className,
 }: TugBadgeProps) {
   const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
@@ -80,6 +83,7 @@ export function TugBadge({
 
   return (
     <span className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}>
+      {icon && <span className="tug-badge-icon">{icon}</span>}
       {children}
     </span>
   );

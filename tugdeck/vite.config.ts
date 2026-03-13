@@ -3,6 +3,7 @@ import type { Plugin as VitePlugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import fs from "fs";
+import { execSync } from "child_process";
 // postcss-tug-color expands --tug-color(color, i: intensity, t: tone) to oklch() at build time.
 import postcssTugColor from "./postcss-tug-color";
 
@@ -37,6 +38,40 @@ function paletteHotReload(): VitePlugin {
   };
 }
 
+/**
+ * Vite plugin: regenerate control tokens when theme-derivation-engine.ts changes.
+ *
+ * The derivation engine is the single source of truth for control tokens.
+ * When it changes, we re-run generate-tug-control-tokens.ts to update the
+ * generated section of tug-base.css, then CSS HMR picks up the change.
+ *
+ * Uses Vite's built-in watcher via handleHotUpdate (no separate fs.watchFile).
+ * Also runs once at buildStart to ensure tug-base.css is in sync.
+ */
+function controlTokenHotReload(): VitePlugin {
+  const scriptPath = path.resolve(__dirname, "scripts/generate-tug-control-tokens.ts");
+
+  function regenerate() {
+    try {
+      execSync(`bun run ${scriptPath}`, { cwd: __dirname, stdio: "pipe" });
+    } catch (e) {
+      console.error("[control-token-hot-reload] generation failed:", (e as Error).message);
+    }
+  }
+
+  return {
+    name: "control-token-hot-reload",
+    buildStart() {
+      regenerate();
+    },
+    handleHotUpdate({ file }) {
+      if (file.endsWith("theme-derivation-engine.ts")) {
+        regenerate();
+      }
+    },
+  };
+}
+
 export default defineConfig(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
   const proxyConfig = {
@@ -45,7 +80,7 @@ export default defineConfig(() => {
     "/api": { target: `http://localhost:${tugcastPort}` },
   };
   return {
-    plugins: [react(), paletteHotReload()],
+    plugins: [react(), paletteHotReload(), controlTokenHotReload()],
     css: {
       postcss: {
         plugins: [postcssTugColor()],

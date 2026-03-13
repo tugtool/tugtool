@@ -34,6 +34,20 @@
 }
 
 /* ============================================================================
+   Icon Support
+   ========================================================================= */
+
+.tug-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tug-badge-icon svg {
+  color: currentColor;
+}
+
+/* ============================================================================
    Size Variants (Spec S07)
    ========================================================================= */
 
@@ -41,18 +55,36 @@
   height: 1.25rem;   /* 20px */
   padding: 0 0.5rem;
   font-size: 0.625rem; /* 10px */
+  gap: 0.1875rem; /* 3px */
+}
+
+.tug-badge-size-sm .tug-badge-icon svg {
+  width: 0.625rem;  /* 10px — matches font-size */
+  height: 0.625rem;
 }
 
 .tug-badge-size-md {
   height: 1.5rem;    /* 24px */
   padding: 0 0.625rem;
   font-size: 0.6875rem; /* 11px */
+  gap: 0.25rem; /* 4px */
+}
+
+.tug-badge-size-md .tug-badge-icon svg {
+  width: 0.6875rem;  /* 11px — matches font-size */
+  height: 0.6875rem;
 }
 
 .tug-badge-size-lg {
   height: 1.75rem;   /* 28px */
   padding: 0 0.75rem;
   font-size: 0.75rem; /* 12px */
+  gap: 0.25rem; /* 4px */
+}
+
+.tug-badge-size-lg .tug-badge-icon svg {
+  width: 0.75rem;  /* 12px — matches font-size */
+  height: 0.75rem;
 }
 
 /* ============================================================================

@@ -1068,6 +1068,13 @@ export function GalleryBadgeContent() {
             </TugBadge>
           ))}
         </div>
+        <div className="cg-variant-row" style={{ marginTop: "0.5rem" }}>
+          {ALL_BADGE_SIZES.map((size) => (
+            <TugBadge key={`icon-${size}`} emphasis={previewEmphasis} role={previewRole} size={size} icon={<Star />}>
+              {previewEmphasis}-{previewRole}
+            </TugBadge>
+          ))}
+        </div>
       </div>
 
       <div className="cg-divider" />
@@ -1076,18 +1083,36 @@ export function GalleryBadgeContent() {
       <div className="cg-section">
         <div className="cg-section-title">TugBadge — Full Matrix (all emphasis × role × sizes)</div>
         <div className="cg-matrix">
-          {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
-            <div key={`${emphasis}-${role}`} className="cg-variant-row">
-              <div className="cg-variant-label">{emphasis}-{role}</div>
-              <div className="cg-size-group">
-                {ALL_BADGE_SIZES.map((size) => (
-                  <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
-                    {role}
-                  </TugBadge>
-                ))}
+          <div className="cg-subtype-block">
+            <div className="cg-subtype-label">text only</div>
+            {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
+              <div key={`${emphasis}-${role}`} className="cg-variant-row">
+                <div className="cg-variant-label">{emphasis}-{role}</div>
+                <div className="cg-size-group">
+                  {ALL_BADGE_SIZES.map((size) => (
+                    <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
+                      {role}
+                    </TugBadge>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="cg-subtype-block">
+            <div className="cg-subtype-label">icon + text</div>
+            {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
+              <div key={`${emphasis}-${role}`} className="cg-variant-row">
+                <div className="cg-variant-label">{emphasis}-{role}</div>
+                <div className="cg-size-group">
+                  {ALL_BADGE_SIZES.map((size) => (
+                    <TugBadge key={size} emphasis={emphasis} role={role} size={size} icon={<Star />}>
+                      {role}
+                    </TugBadge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

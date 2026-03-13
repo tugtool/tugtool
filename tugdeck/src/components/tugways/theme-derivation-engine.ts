@@ -1115,8 +1115,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-danger-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, 30, Math.round(filledBgDarkTone + 10), 100, dangerName);
-  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, 40, 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-border-active", destructiveHue, dangerAngle, 90, filledBgActiveTone, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1254,15 +1254,27 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setHighlight("--tug-base-control-ghost-action-bg-hover", 10);
     setHighlight("--tug-base-control-ghost-action-bg-active", 20);
   }
-  setChromatic("--tug-base-control-ghost-action-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  setChromatic("--tug-base-control-ghost-action-fg-hover", txtRefW, txtAngleW, isLight ? 9 : 15, isLight ? 15 : 80);
-  setChromatic("--tug-base-control-ghost-action-fg-active", txtRefW, txtAngleW, isLight ? 9 : 35, isLight ? 10 : 94);
+  if (isLight) {
+    setChromatic("--tug-base-control-ghost-action-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+    setChromatic("--tug-base-control-ghost-action-fg-hover", txtRefW, txtAngleW, 9, 15);
+    setChromatic("--tug-base-control-ghost-action-fg-active", txtRefW, txtAngleW, 9, 10);
+  } else {
+    setChromatic("--tug-base-control-ghost-action-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-action-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-action-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  }
   setStructural("--tug-base-control-ghost-action-border-rest", "transparent");
   setChromatic("--tug-base-control-ghost-action-border-hover", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
   setChromatic("--tug-base-control-ghost-action-border-active", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
-  setChromatic("--tug-base-control-ghost-action-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  setChromatic("--tug-base-control-ghost-action-icon-hover", txtRefW, txtAngleW, txtISubtle, isLight ? 22 : 80);
-  setChromatic("--tug-base-control-ghost-action-icon-active", txtRefW, txtAngleW, isLight ? 27 : 27, isLight ? 13 : 94);
+  if (isLight) {
+    setChromatic("--tug-base-control-ghost-action-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+    setChromatic("--tug-base-control-ghost-action-icon-hover", txtRefW, txtAngleW, txtISubtle, 22);
+    setChromatic("--tug-base-control-ghost-action-icon-active", txtRefW, txtAngleW, 27, 13);
+  } else {
+    setChromatic("--tug-base-control-ghost-action-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-action-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-action-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  }
 
   // --- Ghost Danger (subtle destructive — danger/red fg, transparent bg) ---
   // Same transparent-bg approach as ghost-action but fg/icon from tone-danger-fg.
