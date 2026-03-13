@@ -1,0 +1,113 @@
+/**
+ * TugInput styles -- tugways-specific CSS using --tug-base-field-* tokens.
+ *
+ * All colors reference canonical tokens exclusively. No hardcoded hex values.
+ * Theme switches update CSS variables at the DOM level -- TugInput re-paints
+ * without React re-renders.
+ *
+ * States: rest → hover → focus, plus disabled, readOnly, and validation
+ * (invalid, valid, warning).
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Base Input
+   ========================================================================= */
+
+.tug-input {
+  display: block;
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+
+  background-color: var(--tug-base-field-bg-rest);
+  color: var(--tug-base-field-fg);
+  border: 1px solid var(--tug-base-field-border-rest);
+  border-radius: 0.375rem; /* 6px — matches tug-button md */
+  transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+
+.tug-input::placeholder {
+  color: var(--tug-base-field-placeholder);
+}
+
+/* ---- Hover ---- */
+
+.tug-input:hover:not(:disabled):not(:read-only):not(:focus) {
+  background-color: var(--tug-base-field-bg-hover);
+  border-color: var(--tug-base-field-border-hover);
+}
+
+/* ---- Focus ---- */
+
+.tug-input:focus {
+  background-color: var(--tug-base-field-bg-focus);
+  border-color: var(--tug-base-field-border-focus);
+  outline: none;
+}
+
+/* ---- Disabled ---- */
+
+.tug-input:disabled {
+  background-color: var(--tug-base-field-bg-disabled);
+  color: var(--tug-base-field-fg-disabled);
+  border-color: var(--tug-base-field-border-disabled);
+  cursor: not-allowed;
+  opacity: var(--tug-base-control-disabled-opacity);
+}
+
+/* ---- Read-only ---- */
+
+.tug-input:read-only:not(:disabled) {
+  background-color: var(--tug-base-field-bg-readOnly);
+  color: var(--tug-base-field-fg-readOnly);
+  border-color: var(--tug-base-field-border-readOnly);
+  cursor: default;
+}
+
+/* ============================================================================
+   Size Variants
+   ========================================================================= */
+
+.tug-input-size-sm {
+  height: 1.75rem; /* 28px — matches tug-button sm */
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+}
+
+.tug-input-size-md {
+  height: 2rem; /* 32px — matches tug-button md */
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.tug-input-size-lg {
+  height: 2.25rem; /* 36px — matches tug-button lg */
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* ============================================================================
+   Validation States
+   ========================================================================= */
+
+/*
+ * Validation border colors override rest/hover but NOT focus.
+ * When focused, the focus border takes precedence (user is actively editing).
+ */
+
+.tug-input-invalid:not(:focus) {
+  border-color: var(--tug-base-field-border-invalid);
+}
+
+.tug-input-valid:not(:focus) {
+  border-color: var(--tug-base-field-border-valid);
+}
+
+.tug-input-warning:not(:focus) {
+  border-color: var(--tug-base-field-warning);
+}

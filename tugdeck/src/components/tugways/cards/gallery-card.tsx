@@ -33,6 +33,7 @@ import { GalleryScaleTimingContent } from "./gallery-scale-timing-content";
 import { GalleryCascadeInspectorContent } from "./gallery-cascade-inspector-content";
 import { GalleryAnimatorContent } from "./gallery-animator-content";
 import { GallerySkeletonContent } from "./gallery-skeleton-content";
+import { GalleryInputContent } from "./gallery-input-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -74,6 +75,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-animator",          title: "TugAnimator",          closable: true },
   { id: "template", componentId: "gallery-skeleton",          title: "TugSkeleton",          closable: true },
   { id: "template", componentId: "gallery-title-bar",         title: "Title Bar",            closable: true },
+  { id: "template", componentId: "gallery-input",              title: "TugInput",             closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1081,6 +1083,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-title-bar",
     contentFactory: (_cardId) => <GalleryTitleBarContent />,
     defaultMeta: { title: "Title Bar", icon: "PanelTop", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-input ----
+  // Step 4, Component 1: TugInput — native input wrapper with field tokens.
+  registerCard({
+    componentId: "gallery-input",
+    contentFactory: (_cardId) => <GalleryInputContent />,
+    defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
