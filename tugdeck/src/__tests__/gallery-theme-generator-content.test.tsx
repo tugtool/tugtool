@@ -2,7 +2,7 @@
  * gallery-theme-generator-content tests — Steps 6 and 10.
  *
  * Tests cover:
- * - T6.1: GALLERY_DEFAULT_TABS has 15 entries
+ * - T6.1: GALLERY_DEFAULT_TABS has 20 entries
  * - T6.2: gallery-theme-generator componentId is registered
  * - T6.3: GalleryThemeGeneratorContent renders without errors
  * - T6.4: Mode toggle switches recipe mode between "dark" and "light"
@@ -140,27 +140,27 @@ function unexpectedFailures(results: ReturnType<typeof validateThemeContrast>) {
 }
 
 // ---------------------------------------------------------------------------
-// T6.1: GALLERY_DEFAULT_TABS has 15 entries
+// T6.1: GALLERY_DEFAULT_TABS has 20 entries
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS – fifteen entries (T6.1)", () => {
-  it("has 15 entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(15);
+  it("has 20 entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
   });
 
-  it("includes gallery-theme-generator as the 15th entry", () => {
+  it("includes gallery-theme-generator as the 20th entry", () => {
     const componentIds = GALLERY_DEFAULT_TABS.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-theme-generator");
-    expect(componentIds[14]).toBe("gallery-theme-generator");
+    expect(componentIds[19]).toBe("gallery-theme-generator");
   });
 
-  it("15th entry has title 'Theme Generator'", () => {
-    const last = GALLERY_DEFAULT_TABS[14];
+  it("20th entry has title 'Theme Generator'", () => {
+    const last = GALLERY_DEFAULT_TABS[19];
     expect(last.title).toBe("Theme Generator");
   });
 
-  it("15th entry is closable", () => {
-    const last = GALLERY_DEFAULT_TABS[14];
+  it("20th entry is closable", () => {
+    const last = GALLERY_DEFAULT_TABS[19];
     expect(last.closable).toBe(true);
   });
 });
@@ -196,11 +196,11 @@ describe("registerGalleryCards – gallery-theme-generator (T6.2)", () => {
     expect(reg!.defaultTabs).toBeUndefined();
   });
 
-  it("gallery-buttons defaultTabs has 15 entries after registration", () => {
+  it("gallery-buttons defaultTabs has 20 entries after registration", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(15);
+    expect(reg!.defaultTabs!.length).toBe(20);
   });
 });
 
@@ -358,9 +358,9 @@ const CHM_NOVEL_RECIPE = {
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 264 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 267 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(264);
+    expect(Object.keys(output.tokens).length).toBe(267);
   });
 
   it("all token keys start with --tug-base-", () => {
@@ -447,16 +447,16 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
 });
 
 // ---------------------------------------------------------------------------
-// T10.3 + exit criteria: gallery tab 15 and existing-tab regression check
+// T10.3 + exit criteria: gallery tab 20 and existing-tab regression check
 // ---------------------------------------------------------------------------
 
-describe("T10.3 – gallery card tab 15 and existing-tab regression", () => {
-  it("GALLERY_DEFAULT_TABS has exactly 15 entries (no regressions, no extras)", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(15);
+describe("T10.3 – gallery card tab 20 and existing-tab regression", () => {
+  it("GALLERY_DEFAULT_TABS has exactly 20 entries (no regressions, no extras)", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
   });
 
-  it("tab 15 (index 14) is gallery-theme-generator with title 'Theme Generator'", () => {
-    const tab = GALLERY_DEFAULT_TABS[14];
+  it("tab 20 (index 14) is gallery-theme-generator with title 'Theme Generator'", () => {
+    const tab = GALLERY_DEFAULT_TABS[19];
     expect(tab.componentId).toBe("gallery-theme-generator");
     expect(tab.title).toBe("Theme Generator");
   });
@@ -484,7 +484,7 @@ describe("T10.3 – gallery card tab 15 and existing-tab regression", () => {
     }
   });
 
-  it("all 15 tabs have closable: true", () => {
+  it("all 20 tabs have closable: true", () => {
     for (const tab of GALLERY_DEFAULT_TABS) {
       expect(tab.closable).toBe(true);
     }
