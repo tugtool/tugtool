@@ -278,7 +278,27 @@ body {
      === C. Semantic Tones
      ====================================================================== */
 
-  /* --- Semantic Tones --- */
+  /* --- Semantic Tones (7 families × 5 tokens = 35 tone tokens) --- */
+  --tug-base-tone-accent: --tug-color(orange);
+  --tug-base-tone-accent-bg: --tug-color(orange, i: 50, t: 50, a: 15);
+  --tug-base-tone-accent-fg: --tug-color(orange);
+  --tug-base-tone-accent-border: --tug-color(orange);
+  --tug-base-tone-accent-icon: --tug-color(orange);
+  --tug-base-tone-active: --tug-color(blue);
+  --tug-base-tone-active-bg: --tug-color(blue, i: 50, t: 50, a: 15);
+  --tug-base-tone-active-fg: --tug-color(blue);
+  --tug-base-tone-active-border: --tug-color(blue);
+  --tug-base-tone-active-icon: --tug-color(blue);
+  --tug-base-tone-agent: --tug-color(violet);
+  --tug-base-tone-agent-bg: --tug-color(violet, i: 50, t: 50, a: 15);
+  --tug-base-tone-agent-fg: --tug-color(violet);
+  --tug-base-tone-agent-border: --tug-color(violet);
+  --tug-base-tone-agent-icon: --tug-color(violet);
+  --tug-base-tone-data: --tug-color(teal);
+  --tug-base-tone-data-bg: --tug-color(teal, i: 50, t: 50, a: 15);
+  --tug-base-tone-data-fg: --tug-color(teal);
+  --tug-base-tone-data-border: --tug-color(teal);
+  --tug-base-tone-data-icon: --tug-color(teal);
   --tug-base-tone-success: --tug-color(green);
   --tug-base-tone-success-bg: --tug-color(green, i: 50, t: 50, a: 15);
   --tug-base-tone-success-fg: --tug-color(green);
@@ -294,11 +314,6 @@ body {
   --tug-base-tone-danger-fg: --tug-color(red);
   --tug-base-tone-danger-border: --tug-color(red);
   --tug-base-tone-danger-icon: --tug-color(red);
-  --tug-base-tone-info: --tug-color(cyan);
-  --tug-base-tone-info-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
-  --tug-base-tone-info-fg: --tug-color(cyan);
-  --tug-base-tone-info-border: --tug-color(cyan);
-  --tug-base-tone-info-icon: --tug-color(cyan);
 
   /* ======================================================================
      === D. Selection / Highlight / Preview

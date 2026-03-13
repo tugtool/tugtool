@@ -218,8 +218,6 @@ body {
   /* Tone overrides — contrast-critical per [D06]; darker values needed on Harmony's light backgrounds */
   /* caution-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
   --tug-base-tone-caution-fg: --tug-color(yellow, i: 46, t: 27);
-  /* info-fg: darker cyan needed for contrast on light bg */
-  --tug-base-tone-info-fg: --tug-color(blue, i: 42, t: 40);
 
   /* Progress / Skeleton */
   --tug-progress-track: --tug-color(yellow, i: 5, t: 46);

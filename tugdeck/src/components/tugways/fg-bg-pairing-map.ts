@@ -524,12 +524,42 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-info-fg",
-    bg: "--tug-base-tone-info-bg",
+    fg: "--tug-base-tone-accent-fg",
+    bg: "--tug-base-tone-accent-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-info-fg",
+    fg: "--tug-base-tone-accent-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-fg",
+    bg: "--tug-base-tone-active-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-fg",
+    bg: "--tug-base-tone-agent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-fg",
+    bg: "--tug-base-tone-data-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
@@ -537,6 +567,46 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // =========================================================================
   // Semantic tone — icon tokens on surfaces and tone backgrounds
   // =========================================================================
+  {
+    fg: "--tug-base-tone-accent-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-accent-icon",
+    bg: "--tug-base-tone-accent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-icon",
+    bg: "--tug-base-tone-active-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-icon",
+    bg: "--tug-base-tone-agent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-icon",
+    bg: "--tug-base-tone-data-bg",
+    role: "ui-component",
+  },
   {
     fg: "--tug-base-tone-success-icon",
     bg: "--tug-base-surface-default",
@@ -565,16 +635,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   {
     fg: "--tug-base-tone-danger-icon",
     bg: "--tug-base-tone-danger-bg",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-tone-info-icon",
-    bg: "--tug-base-surface-default",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-tone-info-icon",
-    bg: "--tug-base-tone-info-bg",
     role: "ui-component",
   },
 

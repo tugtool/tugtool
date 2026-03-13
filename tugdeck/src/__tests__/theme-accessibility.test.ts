@@ -140,10 +140,13 @@ function extractChromaticTokens(css: string): {
         name.includes("-surface") ||
         name.includes("selection-bg") ||
         name.includes("avatar-bg") ||
+        name.includes("tone-accent-bg") ||
+        name.includes("tone-active-bg") ||
+        name.includes("tone-agent-bg") ||
+        name.includes("tone-data-bg") ||
         name.includes("tone-success-bg") ||
         name.includes("tone-caution-bg") ||
         name.includes("tone-danger-bg") ||
-        name.includes("tone-info-bg") ||
         name.includes("accent-bg") ||
         name.includes("accent-default") ||
         name.includes("accent-strong") ||

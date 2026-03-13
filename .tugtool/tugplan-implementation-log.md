@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-13T17:33:02Z
+---
+
+## step-2: Removed 5 tone-info tokens, redirected consumers to active hue. Renamed ThemeRecipe primary to active, added agent/data fields. Added 20 new tokens across 4 tone families (accent, active, agent, data). Token count: 267→282.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
 step: step-1
 date: 2025-03-13T17:17:34Z
 ---
