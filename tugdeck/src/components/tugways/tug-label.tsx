@@ -148,15 +148,24 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       computeTruncation();
     }, [computeTruncation]);
 
-    // Observe resize to recompute truncation when container width changes
+    // Observe resize to recompute truncation when container width changes.
+    // Debounce via rAF to avoid "ResizeObserver loop completed with
+    // undelivered notifications".
     useLayoutEffect(() => {
       if (!needsJSTruncation || !textRef.current) return;
 
+      let rafId = 0;
       const observer = new ResizeObserver(() => {
-        computeTruncation();
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          computeTruncation();
+        });
       });
       observer.observe(textRef.current);
-      return () => observer.disconnect();
+      return () => {
+        cancelAnimationFrame(rafId);
+        observer.disconnect();
+      };
     }, [needsJSTruncation, computeTruncation]);
 
     // Determine which text to display
