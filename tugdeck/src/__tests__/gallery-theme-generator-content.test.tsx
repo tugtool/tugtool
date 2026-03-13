@@ -62,10 +62,10 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-filled-accent-fg-active",
   "--tug-base-control-filled-accent-icon-hover",
   "--tug-base-control-filled-accent-icon-active",
-  "--tug-base-control-filled-active-fg-hover",
-  "--tug-base-control-filled-active-fg-active",
-  "--tug-base-control-filled-active-icon-hover",
-  "--tug-base-control-filled-active-icon-active",
+  "--tug-base-control-filled-action-fg-hover",
+  "--tug-base-control-filled-action-fg-active",
+  "--tug-base-control-filled-action-icon-hover",
+  "--tug-base-control-filled-action-icon-active",
   "--tug-base-control-filled-agent-fg-hover",
   "--tug-base-control-filled-agent-fg-active",
   "--tug-base-control-filled-agent-icon-hover",
@@ -379,9 +379,9 @@ const CHM_NOVEL_RECIPE = {
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 283 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 295 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(283);
+    expect(Object.keys(output.tokens).length).toBe(319);
   });
 
   it("all token keys start with --tug-base-", () => {

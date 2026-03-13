@@ -278,7 +278,7 @@ function DurationTokensDemo() {
             key={token}
             subtype="push"
             emphasis={activeToken === token ? "filled" : "outlined"}
-            role="active"
+            role="action"
             size="sm"
             onClick={() => playToken(token)}
           >

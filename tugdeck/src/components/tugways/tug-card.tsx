@@ -274,7 +274,7 @@ export function CardTitleBar({
         {/* Menu button (leftmost) */}
         <button
           type="button"
-          className="tug-button tug-button-ghost tug-button-icon-sm"
+          className="tug-button tug-button-ghost-action tug-button-icon-sm"
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Card menu"
           data-testid="card-title-bar-menu-button"
@@ -285,7 +285,7 @@ export function CardTitleBar({
         {/* Collapse/expand chevron (middle) */}
         <button
           type="button"
-          className="tug-button tug-button-ghost tug-button-icon-sm"
+          className="tug-button tug-button-ghost-action tug-button-icon-sm"
           onPointerDown={handleCollapsePointerDown}
           onClick={handleCollapseClick}
           aria-label={collapsed ? "Expand card" : "Collapse card"}
@@ -299,7 +299,7 @@ export function CardTitleBar({
         {closable && (
           <button
             type="button"
-            className="tug-button tug-button-ghost tug-button-icon-sm"
+            className="tug-button tug-button-ghost-action tug-button-icon-sm"
             data-no-activate
             onPointerDown={handleClosePointerDown}
             onPointerUp={handleClosePointerUp}

@@ -57,12 +57,12 @@ import "./gallery-card.css";
 /** All Table T01 emphasis x role combinations for the full matrix [D02, Table T01] */
 const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = [
   { emphasis: "filled",   role: "accent"  },
-  { emphasis: "filled",   role: "active"  },
+  { emphasis: "filled",   role: "action"  },
   { emphasis: "filled",   role: "danger"  },
   { emphasis: "filled",   role: "agent"   },
-  { emphasis: "outlined", role: "active"  },
+  { emphasis: "outlined", role: "action"  },
   { emphasis: "outlined", role: "agent"   },
-  { emphasis: "ghost",    role: "active"  },
+  { emphasis: "ghost",    role: "action"  },
   { emphasis: "ghost",    role: "danger"  },
 ];
 const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
@@ -183,7 +183,7 @@ function SubtypeButton({
  */
 export function GalleryButtonsContent() {
   const [previewEmphasis, setPreviewEmphasis] = useState<TugButtonEmphasis>("outlined");
-  const [previewRole, setPreviewRole] = useState<TugButtonRole>("active");
+  const [previewRole, setPreviewRole] = useState<TugButtonRole>("action");
   const [previewSize, setPreviewSize] = useState<TugButtonSize>("md");
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -981,21 +981,21 @@ export function GalleryTitleBarContent() {
 /** All emphasis x role combinations for the TugBadge showcase matrix [D06, Spec S06] */
 const ALL_BADGE_COMBOS: Array<{ emphasis: TugBadgeEmphasis; role: TugBadgeRole }> = [
   { emphasis: "filled",   role: "accent"   },
-  { emphasis: "filled",   role: "active"   },
+  { emphasis: "filled",   role: "action"   },
   { emphasis: "filled",   role: "agent"    },
   { emphasis: "filled",   role: "data"     },
   { emphasis: "filled",   role: "danger"   },
   { emphasis: "filled",   role: "success"  },
   { emphasis: "filled",   role: "caution"  },
   { emphasis: "outlined", role: "accent"   },
-  { emphasis: "outlined", role: "active"   },
+  { emphasis: "outlined", role: "action"   },
   { emphasis: "outlined", role: "agent"    },
   { emphasis: "outlined", role: "data"     },
   { emphasis: "outlined", role: "danger"   },
   { emphasis: "outlined", role: "success"  },
   { emphasis: "outlined", role: "caution"  },
   { emphasis: "ghost",    role: "accent"   },
-  { emphasis: "ghost",    role: "active"   },
+  { emphasis: "ghost",    role: "action"   },
   { emphasis: "ghost",    role: "agent"    },
   { emphasis: "ghost",    role: "data"     },
   { emphasis: "ghost",    role: "danger"   },
@@ -1014,7 +1014,7 @@ const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
  */
 export function GalleryBadgeContent() {
   const [previewEmphasis, setPreviewEmphasis] = useState<TugBadgeEmphasis>("filled");
-  const [previewRole, setPreviewRole] = useState<TugBadgeRole>("active");
+  const [previewRole, setPreviewRole] = useState<TugBadgeRole>("action");
 
   return (
     <div className="cg-content" data-testid="gallery-badge-content">

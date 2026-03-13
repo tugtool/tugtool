@@ -6,7 +6,7 @@
  *
  * Emphasis x Role API [D06, Spec S06]:
  *   `emphasis` controls visual weight (filled/outlined/ghost), default: "filled"
- *   `role`     controls color domain (accent/active/agent/data/danger/success/caution), default: "active"
+ *   `role`     controls color domain (accent/action/agent/data/danger/success/caution), default: "action"
  *   Compound CSS class: tug-badge-{emphasis}-{role}
  *
  * Token strategy (Spec S08, S09):
@@ -30,7 +30,7 @@ export type TugBadgeEmphasis = "filled" | "outlined" | "ghost";
 /** TugBadge role values — controls color domain (Spec S06); includes all 7 roles */
 export type TugBadgeRole =
   | "accent"
-  | "active"
+  | "action"
   | "agent"
   | "data"
   | "danger"
@@ -46,7 +46,7 @@ export type TugBadgeSize = "sm" | "md" | "lg";
 export interface TugBadgeProps {
   /** Visual weight. Default: "filled". Controls filled/outlined/ghost styling. */
   emphasis?: TugBadgeEmphasis;
-  /** Color domain. Default: "active". Controls the hue family. */
+  /** Color domain. Default: "action". Controls the hue family. */
   role?: TugBadgeRole;
   /** Badge size. Default: "sm". */
   size?: TugBadgeSize;
@@ -65,12 +65,12 @@ export interface TugBadgeProps {
  * no hover or active states. Styling is entirely CSS custom property driven.
  *
  * emphasis: "filled" | "outlined" | "ghost" (default: "filled")
- * role:     "accent" | "active" | "agent" | "data" | "danger" | "success" | "caution" (default: "active")
+ * role:     "accent" | "action" | "agent" | "data" | "danger" | "success" | "caution" (default: "action")
  * size:     "sm" | "md" | "lg" (default: "sm")
  */
 export function TugBadge({
   emphasis = "filled",
-  role = "active",
+  role = "action",
   size = "sm",
   children,
   className,

@@ -208,8 +208,8 @@ describe("pairing-map", () => {
       // selection-bg-inactive is decorative / no chromatic fg over it
       "--tug-base-selection-bg-inactive",
       // ghost hover/active are semi-transparent (effectively overlays over parent surface)
-      "--tug-base-control-ghost-active-bg-hover",
-      "--tug-base-control-ghost-active-bg-active",
+      "--tug-base-control-ghost-action-bg-hover",
+      "--tug-base-control-ghost-action-bg-active",
       "--tug-base-control-ghost-danger-bg-hover",
       "--tug-base-control-ghost-danger-bg-active",
       // selected-bg-hover is a slightly more opaque version of selected-bg

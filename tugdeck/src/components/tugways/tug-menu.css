@@ -25,7 +25,7 @@ body {
   --tug-menu-fg: var(--tug-base-fg-default);
   --tug-menu-border: var(--tug-base-border-default);
   --tug-menu-shadow: var(--tug-base-shadow-overlay);
-  --tug-menu-item-bg-hover: var(--tug-base-control-ghost-active-bg-hover);
+  --tug-menu-item-bg-hover: var(--tug-base-control-ghost-action-bg-hover);
   --tug-menu-item-bg-selected: var(--tug-base-accent-subtle);
   --tug-menu-item-fg: var(--tug-base-fg-default);
   --tug-menu-item-fg-disabled: var(--tug-base-fg-disabled);
@@ -113,16 +113,16 @@ body {
  * matching macOS menu bar behavior.
  */
 
-/* outlined-active (default emphasis x role) */
-.tug-button-outlined-active[data-state="open"],
+/* outlined-action (default emphasis x role) */
+.tug-button-outlined-action[data-state="open"],
 .tug-button[data-state="open"] {
-  background-color: var(--tug-base-control-outlined-active-bg-active);
-  color: var(--tug-base-control-outlined-active-fg-active);
-  border-color: var(--tug-base-control-outlined-active-border-active);
+  background-color: var(--tug-base-control-outlined-action-bg-active);
+  color: var(--tug-base-control-outlined-action-fg-active);
+  border-color: var(--tug-base-control-outlined-action-border-active);
 }
-.tug-button-outlined-active[data-state="open"] svg,
+.tug-button-outlined-action[data-state="open"] svg,
 .tug-button[data-state="open"] svg {
-  color: var(--tug-base-control-outlined-active-icon-active);
+  color: var(--tug-base-control-outlined-action-icon-active);
 }
 
 /* filled-accent: Primary CTA (brand orange/accent) */
@@ -135,14 +135,14 @@ body {
   color: var(--tug-base-control-filled-accent-icon-active);
 }
 
-/* ghost-active: Link-like action (neutral) */
-.tug-button-ghost-active[data-state="open"] {
-  background-color: var(--tug-base-control-ghost-active-bg-active);
-  color: var(--tug-base-control-ghost-active-fg-active);
-  border-color: var(--tug-base-control-ghost-active-border-active);
+/* ghost-action: Link-like action (neutral) */
+.tug-button-ghost-action[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-action-bg-active);
+  color: var(--tug-base-control-ghost-action-fg-active);
+  border-color: var(--tug-base-control-ghost-action-border-active);
 }
-.tug-button-ghost-active[data-state="open"] svg {
-  color: var(--tug-base-control-ghost-active-icon-active);
+.tug-button-ghost-action[data-state="open"] svg {
+  color: var(--tug-base-control-ghost-action-icon-active);
 }
 
 /* filled-danger: Destructive action */

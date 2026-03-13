@@ -36,9 +36,9 @@ describe("TugBadge – default render", () => {
     expect(badge).not.toBeNull();
   });
 
-  it("default props produce tug-badge-filled-active and tug-badge-size-sm classes", () => {
+  it("default props produce tug-badge-filled-action and tug-badge-size-sm classes", () => {
     const badge = renderBadge({ children: "Tag" });
-    expect(badge.className).toContain("tug-badge-filled-active");
+    expect(badge.className).toContain("tug-badge-filled-action");
     expect(badge.className).toContain("tug-badge-size-sm");
   });
 
@@ -82,7 +82,7 @@ describe("TugBadge – sizes", () => {
 describe("TugBadge – filled emphasis", () => {
   const filledCases: Array<[TugBadgeRole, string]> = [
     ["accent",  "tug-badge-filled-accent"],
-    ["active",  "tug-badge-filled-active"],
+    ["action",  "tug-badge-filled-action"],
     ["agent",   "tug-badge-filled-agent"],
     ["data",    "tug-badge-filled-data"],
     ["danger",  "tug-badge-filled-danger"],
@@ -105,7 +105,7 @@ describe("TugBadge – filled emphasis", () => {
 describe("TugBadge – outlined emphasis", () => {
   const outlinedCases: Array<[TugBadgeRole, string]> = [
     ["accent",  "tug-badge-outlined-accent"],
-    ["active",  "tug-badge-outlined-active"],
+    ["action",  "tug-badge-outlined-action"],
     ["agent",   "tug-badge-outlined-agent"],
     ["data",    "tug-badge-outlined-data"],
     ["danger",  "tug-badge-outlined-danger"],
@@ -128,7 +128,7 @@ describe("TugBadge – outlined emphasis", () => {
 describe("TugBadge – ghost emphasis", () => {
   const ghostCases: Array<[TugBadgeRole, string]> = [
     ["accent",  "tug-badge-ghost-accent"],
-    ["active",  "tug-badge-ghost-active"],
+    ["action",  "tug-badge-ghost-action"],
     ["agent",   "tug-badge-ghost-agent"],
     ["data",    "tug-badge-ghost-data"],
     ["danger",  "tug-badge-ghost-danger"],

@@ -239,19 +239,19 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 283 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 295 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(283);
+    expect(Object.keys(output.tokens).length).toBe(319);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 283 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 295 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(283);
-    expect(Object.keys(harmony.tokens).length).toBe(283);
+    expect(Object.keys(brio.tokens).length).toBe(319);
+    expect(Object.keys(harmony.tokens).length).toBe(319);
   });
 
   // -------------------------------------------------------------------------
@@ -261,19 +261,22 @@ describe("derivation-engine", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     const emphases = ["filled", "outlined", "ghost"] as const;
-    const roles = ["accent", "active", "agent", "data", "danger"] as const;
+    const roles = ["accent", "action", "agent", "data", "danger"] as const;
     const properties = ["bg", "fg", "border", "icon"] as const;
     const states = ["rest", "hover", "active"] as const;
 
     // Table T01: 8 specific combinations
     const T01_COMBOS: Array<[(typeof emphases)[number], (typeof roles)[number]]> = [
       ["filled", "accent"],
-      ["filled", "active"],
+      ["filled", "action"],
       ["filled", "danger"],
       ["filled", "agent"],
-      ["outlined", "active"],
+      ["filled", "data"],
+      ["filled", "success"],
+      ["filled", "caution"],
+      ["outlined", "action"],
       ["outlined", "agent"],
-      ["ghost", "active"],
+      ["ghost", "action"],
       ["ghost", "danger"],
     ];
 
@@ -290,9 +293,9 @@ describe("derivation-engine", () => {
     }
 
     expect(missingTokens).toEqual([]);
-    // 8 combos × 4 props × 3 states = 96 tokens
+    // 11 combos × 4 props × 3 states = 132 tokens
     const controlTokenCount = T01_COMBOS.length * properties.length * states.length;
-    expect(controlTokenCount).toBe(96);
+    expect(controlTokenCount).toBe(132);
   });
 
   // -------------------------------------------------------------------------
@@ -301,7 +304,7 @@ describe("derivation-engine", () => {
   it("T2.1d: --tug-base-surface-control alias is present in deriveTheme output", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     expect(output.tokens["--tug-base-surface-control"]).toBe(
-      "var(--tug-base-control-outlined-active-bg-rest)",
+      "var(--tug-base-control-outlined-action-bg-rest)",
     );
   });
 
@@ -311,7 +314,7 @@ describe("derivation-engine", () => {
   it("T2.1e: control token names match emphasis x role pattern", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     const controlPattern =
-      /^--tug-base-control-(filled|outlined|ghost)-(accent|active|agent|data|danger)-(bg|fg|border|icon)-(rest|hover|active)$/;
+      /^--tug-base-control-(filled|outlined|ghost)-(accent|action|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/;
 
     const controlTokens = Object.keys(output.tokens).filter(
       (k) => k.startsWith("--tug-base-control-") && k.match(/(filled|outlined|ghost)/),
@@ -319,7 +322,7 @@ describe("derivation-engine", () => {
 
     const badTokens = controlTokens.filter((t) => !controlPattern.test(t));
     expect(badTokens).toEqual([]);
-    expect(controlTokens.length).toBeGreaterThanOrEqual(96);
+    expect(controlTokens.length).toBeGreaterThanOrEqual(132);
   });
 
   // -------------------------------------------------------------------------
@@ -519,8 +522,8 @@ describe("derivation-engine", () => {
 
     // Structural tokens (transparent/none/var()) must NOT be in resolved
     const STRUCTURAL = [
-      "--tug-base-control-ghost-active-bg-rest",
-      "--tug-base-control-ghost-active-border-rest",
+      "--tug-base-control-ghost-action-bg-rest",
+      "--tug-base-control-ghost-action-border-rest",
       "--tug-base-control-ghost-danger-bg-rest",
       "--tug-base-control-ghost-danger-border-rest",
       "--tug-base-control-disabled-opacity",
@@ -619,10 +622,10 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-filled-accent-fg-active",
   "--tug-base-control-filled-accent-icon-hover",
   "--tug-base-control-filled-accent-icon-active",
-  "--tug-base-control-filled-active-fg-hover",
-  "--tug-base-control-filled-active-fg-active",
-  "--tug-base-control-filled-active-icon-hover",
-  "--tug-base-control-filled-active-icon-active",
+  "--tug-base-control-filled-action-fg-hover",
+  "--tug-base-control-filled-action-fg-active",
+  "--tug-base-control-filled-action-icon-hover",
+  "--tug-base-control-filled-action-icon-active",
   "--tug-base-control-filled-danger-fg-hover",
   "--tug-base-control-filled-danger-fg-active",
   "--tug-base-control-filled-danger-icon-hover",
@@ -631,7 +634,27 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-filled-agent-fg-active",
   "--tug-base-control-filled-agent-icon-hover",
   "--tug-base-control-filled-agent-icon-active",
-  // C2 — outlined-agent: violet bg at signalI reduces default text contrast in dark mode
+  // C1d — filled-data: teal bg with light text has same contrast constraint as other filled roles
+  "--tug-base-control-filled-data-fg-hover",
+  "--tug-base-control-filled-data-fg-active",
+  "--tug-base-control-filled-data-icon-hover",
+  "--tug-base-control-filled-data-icon-active",
+  // C1e — filled-success: green bg with light text has same contrast constraint as other filled roles
+  "--tug-base-control-filled-success-fg-hover",
+  "--tug-base-control-filled-success-fg-active",
+  "--tug-base-control-filled-success-icon-hover",
+  "--tug-base-control-filled-success-icon-active",
+  // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
+  "--tug-base-control-filled-caution-fg-hover",
+  "--tug-base-control-filled-caution-fg-active",
+  "--tug-base-control-filled-caution-icon-hover",
+  "--tug-base-control-filled-caution-icon-active",
+  // C2 — outlined-action/agent: transparent bg means fg/icon contrast is against parent surface,
+  // not the semi-transparent hover/active tint
+  "--tug-base-control-outlined-action-fg-hover",
+  "--tug-base-control-outlined-action-fg-active",
+  "--tug-base-control-outlined-action-icon-hover",
+  "--tug-base-control-outlined-action-icon-active",
   "--tug-base-control-outlined-agent-fg-rest",
   "--tug-base-control-outlined-agent-fg-hover",
   "--tug-base-control-outlined-agent-fg-active",

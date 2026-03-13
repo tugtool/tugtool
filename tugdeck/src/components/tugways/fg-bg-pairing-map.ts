@@ -327,33 +327,33 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // Control — Filled Active (button labels + icons on filled active bg)
   // =========================================================================
   {
-    fg: "--tug-base-control-filled-active-fg-rest",
-    bg: "--tug-base-control-filled-active-bg-rest",
+    fg: "--tug-base-control-filled-action-fg-rest",
+    bg: "--tug-base-control-filled-action-bg-rest",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-filled-active-fg-hover",
-    bg: "--tug-base-control-filled-active-bg-hover",
+    fg: "--tug-base-control-filled-action-fg-hover",
+    bg: "--tug-base-control-filled-action-bg-hover",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-filled-active-fg-active",
-    bg: "--tug-base-control-filled-active-bg-active",
+    fg: "--tug-base-control-filled-action-fg-active",
+    bg: "--tug-base-control-filled-action-bg-active",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-filled-active-icon-rest",
-    bg: "--tug-base-control-filled-active-bg-rest",
+    fg: "--tug-base-control-filled-action-icon-rest",
+    bg: "--tug-base-control-filled-action-bg-rest",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-filled-active-icon-hover",
-    bg: "--tug-base-control-filled-active-bg-hover",
+    fg: "--tug-base-control-filled-action-icon-hover",
+    bg: "--tug-base-control-filled-action-bg-hover",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-filled-active-icon-active",
-    bg: "--tug-base-control-filled-active-bg-active",
+    fg: "--tug-base-control-filled-action-icon-active",
+    bg: "--tug-base-control-filled-action-bg-active",
     role: "ui-component",
   },
 
@@ -426,36 +426,138 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   },
 
   // =========================================================================
-  // Control — Outlined Active (default button style [D04])
+  // Control — Filled Data (data/teal bg with light text)
   // =========================================================================
   {
-    fg: "--tug-base-control-outlined-active-fg-rest",
-    bg: "--tug-base-control-outlined-active-bg-rest",
+    fg: "--tug-base-control-filled-data-fg-rest",
+    bg: "--tug-base-control-filled-data-bg-rest",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-outlined-active-fg-hover",
-    bg: "--tug-base-control-outlined-active-bg-hover",
+    fg: "--tug-base-control-filled-data-fg-hover",
+    bg: "--tug-base-control-filled-data-bg-hover",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-outlined-active-fg-active",
-    bg: "--tug-base-control-outlined-active-bg-active",
+    fg: "--tug-base-control-filled-data-fg-active",
+    bg: "--tug-base-control-filled-data-bg-active",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-outlined-active-icon-rest",
-    bg: "--tug-base-control-outlined-active-bg-rest",
+    fg: "--tug-base-control-filled-data-icon-rest",
+    bg: "--tug-base-control-filled-data-bg-rest",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-outlined-active-icon-hover",
-    bg: "--tug-base-control-outlined-active-bg-hover",
+    fg: "--tug-base-control-filled-data-icon-hover",
+    bg: "--tug-base-control-filled-data-bg-hover",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-outlined-active-icon-active",
-    bg: "--tug-base-control-outlined-active-bg-active",
+    fg: "--tug-base-control-filled-data-icon-active",
+    bg: "--tug-base-control-filled-data-bg-active",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Control — Filled Success (success/green bg with light text)
+  // =========================================================================
+  {
+    fg: "--tug-base-control-filled-success-fg-rest",
+    bg: "--tug-base-control-filled-success-bg-rest",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-success-fg-hover",
+    bg: "--tug-base-control-filled-success-bg-hover",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-success-fg-active",
+    bg: "--tug-base-control-filled-success-bg-active",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-success-icon-rest",
+    bg: "--tug-base-control-filled-success-bg-rest",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-filled-success-icon-hover",
+    bg: "--tug-base-control-filled-success-bg-hover",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-filled-success-icon-active",
+    bg: "--tug-base-control-filled-success-bg-active",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Control — Filled Caution (caution/yellow bg with light text)
+  // =========================================================================
+  {
+    fg: "--tug-base-control-filled-caution-fg-rest",
+    bg: "--tug-base-control-filled-caution-bg-rest",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-caution-fg-hover",
+    bg: "--tug-base-control-filled-caution-bg-hover",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-caution-fg-active",
+    bg: "--tug-base-control-filled-caution-bg-active",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-filled-caution-icon-rest",
+    bg: "--tug-base-control-filled-caution-bg-rest",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-filled-caution-icon-hover",
+    bg: "--tug-base-control-filled-caution-bg-hover",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-filled-caution-icon-active",
+    bg: "--tug-base-control-filled-caution-bg-active",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Control — Outlined Action (default button style [D04])
+  // =========================================================================
+  {
+    fg: "--tug-base-control-outlined-action-fg-rest",
+    bg: "--tug-base-control-outlined-action-bg-rest",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-action-fg-hover",
+    bg: "--tug-base-control-outlined-action-bg-hover",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-action-fg-active",
+    bg: "--tug-base-control-outlined-action-bg-active",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-action-icon-rest",
+    bg: "--tug-base-control-outlined-action-bg-rest",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-outlined-action-icon-hover",
+    bg: "--tug-base-control-outlined-action-bg-hover",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-outlined-action-icon-active",
+    bg: "--tug-base-control-outlined-action-bg-active",
     role: "ui-component",
   },
 
@@ -498,32 +600,32 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // Ghost bg-rest is transparent; effective background is the parent surface.
   // =========================================================================
   {
-    fg: "--tug-base-control-ghost-active-fg-rest",
+    fg: "--tug-base-control-ghost-action-fg-rest",
     bg: "--tug-base-surface-default",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-ghost-active-fg-hover",
+    fg: "--tug-base-control-ghost-action-fg-hover",
     bg: "--tug-base-surface-default",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-ghost-active-fg-active",
+    fg: "--tug-base-control-ghost-action-fg-active",
     bg: "--tug-base-surface-default",
     role: "large-text",
   },
   {
-    fg: "--tug-base-control-ghost-active-icon-rest",
+    fg: "--tug-base-control-ghost-action-icon-rest",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-ghost-active-icon-hover",
+    fg: "--tug-base-control-ghost-action-icon-hover",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-control-ghost-active-icon-active",
+    fg: "--tug-base-control-ghost-action-icon-active",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
@@ -859,7 +961,7 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   },
   {
     fg: "--tug-base-checkmark-mixed",
-    bg: "--tug-base-control-outlined-active-bg-rest",
+    bg: "--tug-base-control-outlined-action-bg-rest",
     role: "ui-component",
   },
   {

@@ -14,7 +14,7 @@
  *
  * Emphasis x Role API [D02, D03, D04, Spec S01, Spec S02]:
  *   `emphasis` controls visual weight (filled/outlined/ghost), default: "outlined"
- *   `role` controls color domain (accent/active/agent/data/danger), default: "active"
+ *   `role` controls color domain (accent/action/agent/data/danger), default: "active"
  *   Compound CSS class: tug-button-{emphasis}-{role}
  *
  * [D01] TugButton wraps Radix Slot for asChild polymorphism (no shadcn)
@@ -46,7 +46,7 @@ export type TugButtonState = "on" | "off" | "mixed";
 export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 
 /** TugButton role values — controls color domain (Spec S01) [D02] */
-export type TugButtonRole = "accent" | "active" | "agent" | "data" | "danger";
+export type TugButtonRole = "accent" | "action" | "agent" | "data" | "danger";
 
 /** TugButton size names (Spec S01) */
 export type TugButtonSize = "sm" | "md" | "lg";
@@ -65,7 +65,7 @@ export interface TugButtonProps {
   subtype?: TugButtonSubtype;
   /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
   emphasis?: TugButtonEmphasis;
-  /** Color domain. Default: "active". Controls accent/active/agent/data/danger hue. [D02, Spec S01] */
+  /** Color domain. Default: "action". Controls accent/action/agent/data/danger hue. [D02, Spec S01] */
   role?: TugButtonRole;
   /** Size variant. Default: "md" */
   size?: TugButtonSize;
@@ -180,7 +180,7 @@ function Spinner() {
 export function TugButton({
   subtype = "push",
   emphasis = "outlined",
-  role = "active",
+  role = "action",
   size = "md",
   onClick,
   action,

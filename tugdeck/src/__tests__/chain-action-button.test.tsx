@@ -312,9 +312,9 @@ describe("chain-action TugButton – CSS disabled rules", () => {
     const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBe("true");
-    // CSS [aria-disabled='true'].tug-button-outlined-active applies opacity/cursor;
+    // CSS [aria-disabled='true'].tug-button-outlined-action applies opacity/cursor;
     // verify the class is present so the rule can match.
-    expect(btn.className).toContain("tug-button-outlined-active");
+    expect(btn.className).toContain("tug-button-outlined-action");
   });
 
   it("enabled chain-action button does NOT have aria-disabled", () => {
