@@ -231,7 +231,8 @@ body {
     color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
-.tug-tab-add:hover {
+.tug-tab-add:hover,
+.tug-tab-add[data-state="open"] {
   background-color: var(--tug-base-control-secondary-bg-rest);
   color: var(--tug-base-fg-default);
 }

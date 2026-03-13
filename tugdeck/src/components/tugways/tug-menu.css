@@ -103,6 +103,59 @@ body {
 }
 
 /* ============================================================================
+   Dropdown Trigger — highlighted while menu is open
+   ============================================================================ */
+
+/*
+ * Radix sets data-state="open" on the trigger for the entire lifetime of the
+ * menu, including the blink animation after selection. Cleared on dismiss.
+ * We apply the active-state control tokens so the trigger stays lit up,
+ * matching macOS menu bar behavior.
+ */
+
+/* Secondary (default variant) */
+.tug-button-secondary[data-state="open"],
+.tug-button[data-state="open"] {
+  background-color: var(--tug-base-control-secondary-bg-active);
+  color: var(--tug-base-control-secondary-fg-active);
+  border-color: var(--tug-base-control-secondary-border-active);
+}
+.tug-button-secondary[data-state="open"] svg,
+.tug-button[data-state="open"] svg {
+  color: var(--tug-base-control-secondary-icon-active);
+}
+
+/* Primary */
+.tug-button-primary[data-state="open"] {
+  background-color: var(--tug-base-control-primary-bg-active);
+  color: var(--tug-base-control-primary-fg-active);
+  border-color: var(--tug-base-control-primary-border-active);
+}
+.tug-button-primary[data-state="open"] svg {
+  color: var(--tug-base-control-primary-icon-active);
+}
+
+/* Ghost */
+.tug-button-ghost[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-bg-active);
+  color: var(--tug-base-control-ghost-fg-active);
+  border-color: var(--tug-base-control-ghost-border-active);
+}
+.tug-button-ghost[data-state="open"] svg {
+  color: var(--tug-base-control-ghost-icon-active);
+}
+
+/* Destructive */
+.tug-button-destructive[data-state="open"] {
+  background-color: var(--tug-base-control-destructive-bg-active);
+  color: var(--tug-base-control-destructive-fg-active);
+  border-color: var(--tug-base-control-destructive-border-active);
+}
+.tug-button-destructive[data-state="open"] svg {
+  color: var(--tug-base-control-destructive-icon-active);
+}
+
+/* ============================================================================
    Dropdown Content Panel
    ============================================================================ */
 
@@ -116,6 +169,7 @@ body {
   border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
   color: var(--tug-dropdown-fg);
+  padding: 0.25rem;
   /* High z-index so the portal-rendered dropdown renders above all cards */
   z-index: 200;
 }
@@ -132,6 +186,8 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
 }
 
 /*

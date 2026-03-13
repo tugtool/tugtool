@@ -210,7 +210,8 @@
   user-select: none;
 }
 
-.cg-demo-trigger:hover {
+.cg-demo-trigger:hover,
+.cg-demo-trigger[data-state="open"] {
   background-color: var(--tug-base-surface-default);
 }
 

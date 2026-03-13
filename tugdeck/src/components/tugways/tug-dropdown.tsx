@@ -10,7 +10,7 @@
  * - (#s04-tug-dropdown-props, #d01-radix-direct)
  */
 
-import React, { useRef } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import "./tug-menu.css";
@@ -66,9 +66,21 @@ export interface TugDropdownProps {
  * - animate().finished resolves when the blink completes; the callback fires and
  *   Escape is dispatched so Radix closes the menu — no React state involved.
  */
+/** Side offset between trigger and dropdown content, in ems. */
+const SIDE_OFFSET_EM = 0.25;
+
 export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
+
+  // Resolve em-based offset to pixels from the trigger's font size.
+  const [sideOffsetPx, setSideOffsetPx] = useState(3); // sensible fallback
+  const triggerRef = useCallback((node: HTMLElement | null) => {
+    if (node) {
+      const fontSize = parseFloat(getComputedStyle(node).fontSize) || 13;
+      setSideOffsetPx(Math.round(SIDE_OFFSET_EM * fontSize));
+    }
+  }, []);
 
   function handleItemSelect(id: string, event: Event) {
     // Prevent Radix from immediately closing the menu.
@@ -134,9 +146,9 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
   return (
     <DropdownMenuPrimitive.Root>
-      <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>
+      <DropdownMenuPrimitive.Trigger asChild ref={triggerRef}>{trigger}</DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal>
-        <DropdownMenuPrimitive.Content className="tug-dropdown-content" align="start" sideOffset={4}>
+        <DropdownMenuPrimitive.Content className="tug-dropdown-content" align="start" sideOffset={sideOffsetPx}>
           {items.map((item) => (
             <DropdownMenuPrimitive.Item
               key={item.id}
