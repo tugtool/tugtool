@@ -50,7 +50,7 @@
 /* ---- Hover (unchecked) ---- */
 
 .tug-checkbox:hover:not(:disabled):not([data-disabled]) {
-  border-color: var(--tug-base-toggle-track-mixed);
+  border-color: var(--tug-base-toggle-track-off-hover);
 }
 
 /* ---- Checked ---- */
@@ -61,8 +61,8 @@
 }
 
 .tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-base-toggle-track-on);
-  border-color: var(--tug-base-toggle-track-on);
+  background-color: var(--tug-base-toggle-track-on-hover);
+  border-color: var(--tug-base-toggle-track-on-hover);
 }
 
 /* ---- Indeterminate (mixed) ---- */
@@ -70,6 +70,11 @@
 .tug-checkbox[data-state="indeterminate"] {
   background-color: var(--tug-base-toggle-track-mixed);
   border-color: var(--tug-base-toggle-track-mixed);
+}
+
+.tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-base-toggle-track-mixed-hover);
+  border-color: var(--tug-base-toggle-track-mixed-hover);
 }
 
 /* ---- Disabled ---- */

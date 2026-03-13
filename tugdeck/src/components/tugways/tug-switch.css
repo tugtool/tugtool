@@ -46,7 +46,7 @@
 /* ---- Hover (unchecked) ---- */
 
 .tug-switch:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-base-toggle-track-mixed);
+  background-color: var(--tug-base-toggle-track-off-hover);
 }
 
 /* ---- Checked (on) ---- */
@@ -56,7 +56,7 @@
 }
 
 .tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
-  background-color: var(--tug-base-toggle-track-on);
+  background-color: var(--tug-base-toggle-track-on-hover);
 }
 
 /* ---- Disabled ---- */
