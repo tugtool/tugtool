@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-13T01:29:08Z
+---
+
+## step-2: Created theme-derivation-engine.ts with ThemeRecipe/ThemeOutput interfaces, EXAMPLE_RECIPES, deriveTheme() with ~55 role formulas, per-tier hue offsets, warmth/surfaceContrast/signalVividity mood knobs. Added golden tests comparing Bluenote (~30 overrides) and Harmony (~94 overrides) at OKLCH delta <0.02.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-1
 date: 2025-03-13T00:17:50Z
 ---
