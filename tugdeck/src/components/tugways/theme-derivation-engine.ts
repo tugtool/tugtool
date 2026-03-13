@@ -1,18 +1,25 @@
 /**
  * Theme Derivation Engine — Tugways Theme Generator
  *
- * Derives complete 264-token `--tug-base-*` themes from a compact `ThemeRecipe`.
+ * Derives complete 349-token `--tug-base-*` themes from a compact `ThemeRecipe`.
  * Each call to `deriveTheme()` returns:
- *   - `tokens`: all 264 token values as `--tug-color()` strings (for CSS export)
+ *   - `tokens`: all 349 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
  * The derivation follows ~55 role formulas extracted from the three hand-authored
  * themes (Brio, Bluenote, Harmony). Mood knobs (`surfaceContrast`, `signalVividity`,
  * `warmth`) modulate tone spreads and intensity levels.
  *
+ * Control tokens use the emphasis x role system (Table T01):
+ *   8 combinations × 4 properties × 3 states = 96 control tokens
+ *   Plus 1 surface-control alias = 97 new control tokens
+ *   (replaces old 4-variant system: 48 tokens + 3 disabled aliases = 51 tokens)
+ *   Net change: +46 tokens (97 - 51)
+ *
  * [D01] Export format — tokens map matches bluenote.css / harmony.css structure
+ * [D02] Emphasis x role token naming: --tug-base-control-{emphasis}-{role}-{property}-{state}
  * [D04] ThemeRecipe interface from proposal
- * [D08] Scope: --tug-base-* tokens only (264 tokens)
+ * [D08] Scope: --tug-base-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
  * @module components/tugways/theme-derivation-engine
@@ -1033,108 +1040,200 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setInvariant("--tug-base-control-disabled-opacity", "0.5");
   setStructural("--tug-base-control-disabled-shadow", "none");
 
-  // --- Primary ---
-  // Primary: based on primary hue, dark/hover/active gradient
-  const activeDarkTone = isLight ? 30 : 20;
-  const activeHoverTone = isLight ? 40 : 40;
-  const activeActiveTone = isLight ? 50 : 50;
-  const activeFgTone = isLight ? 100 : 100;
+  // --- Emphasis x Role Control Tokens (Table T01) [D02] ---
+  // 8 combinations × 4 properties × 3 states = 96 tokens
+  // Pattern: --tug-base-control-{emphasis}-{role}-{property}-{state}
+  //
+  // Filled emphasis: solid colored bg derived from role's canonical hue.
+  //   bg: role hue at dark tone (rest) → hover → intense (active)
+  //   fg: near-white (light text on dark colored bg)
+  //   border: role hue at signalI
+  //   icon: same as fg
+  //
+  // Outlined emphasis [D05]: medium emphasis; border carries role color; bg subtle.
+  //   bg: role tone-{role}-bg equivalent (atmosphere-tinted, very subtle)
+  //   fg: default text
+  //   border: role tone-{role}-border equivalent
+  //   icon: role tone-{role}-icon equivalent
+  //
+  // Ghost emphasis: transparent bg; fg carries role color.
+  //   bg: transparent (rest) / subtle alpha (hover/active)
+  //   fg: tone-{role}-fg equivalent
+  //   border: transparent (rest) / subtle at hover/active
+  //   icon: same as fg
 
-  setChromatic("--tug-base-control-primary-bg-rest", activeRef, activeAngle, 50, activeDarkTone, 100, activeName);
-  setChromatic("--tug-base-control-primary-bg-hover", activeRef, activeAngle, 55, activeHoverTone, 100, activeName);
-  setChromatic("--tug-base-control-primary-bg-active", activeRef, activeAngle, 90, activeActiveTone, 100, activeName);
-  setStructural("--tug-base-control-primary-bg-disabled", "var(--tug-base-control-disabled-bg)");
-  // Primary fg: near-white text on primary dark bg
-  setChromatic("--tug-base-control-primary-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-primary-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-primary-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  // Primary border: primary hue, slight variation
-  setChromatic("--tug-base-control-primary-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-primary-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
-  setChromatic("--tug-base-control-primary-border-active", activeRef, activeAngle, 90, activeActiveTone, 100, activeName);
-  // Primary icon: same as fg
-  setChromatic("--tug-base-control-primary-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-primary-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-primary-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  // Shared tone constants for filled emphasis (same across roles)
+  const filledBgDarkTone = isLight ? 30 : 20;
+  const filledBgHoverTone = isLight ? 40 : 40;
+  const filledBgActiveTone = isLight ? 50 : 50;
+  const filledFgTone = 100; // near-white on colored bg
 
-  // --- Secondary ---
-  // Secondary: atmosphere hue, subtle variation.
-  // Dark mode: per-tier hue angles matching Bluenote's pattern:
-  //   rest: atmRefW (blue+9), i=atmI=5, t=darkSurfaceInset+2
-  //   hover: surfDefaultRef (blue+5), i=atmI=5, t=darkSurfaceRaised+1
-  //   active: surfOverlayRef (blue+6), i=atmI+2=7, t=darkSurfaceOverlay
-  const secBgRestTone = isLight ? 51 : Math.round(darkSurfaceInset + 2);
-  const secBgHoverTone = isLight ? 99 : Math.round(darkSurfaceRaised + 1);
-  const secBgActiveTone = isLight ? 48 : Math.round(darkSurfaceOverlay);
+  // Accent hue ref (used in setChromatic)
+  const accentRef = formatHueRef(accentName, accentAngle);
 
+  // Agent hue ref (data not in Table T01 combinations)
+  const agentRef = formatHueRef(agentName, agentAngle);
+
+  // Outlined bg tones: same as secondary bg (atmosphere-tinted surface)
+  const outlinedBgRestTone = isLight ? 51 : Math.round(darkSurfaceInset + 2);
+  const outlinedBgHoverTone = isLight ? 99 : Math.round(darkSurfaceRaised + 1);
+  const outlinedBgActiveTone = isLight ? 48 : Math.round(darkSurfaceOverlay);
+
+  // --- Filled Accent (CTA — brand orange/accent hue) ---
+  setChromatic("--tug-base-control-filled-accent-bg-rest", accentHue, accentAngle, 50, filledBgDarkTone, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-bg-hover", accentHue, accentAngle, 55, filledBgHoverTone, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-bg-active", accentHue, accentAngle, 90, filledBgActiveTone, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-accent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-accent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-accent-border-rest", accentHue, accentAngle, signalI, 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 10), 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-active", accentHue, accentAngle, 90, filledBgActiveTone, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-accent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-accent-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+
+  // --- Filled Active (standard interactive — active/blue hue) ---
+  // Same solid-bg formula as old control-primary: preserves old blue filled button appearance
+  setChromatic("--tug-base-control-filled-active-bg-rest", activeRef, activeAngle, 50, filledBgDarkTone, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-bg-hover", activeRef, activeAngle, 55, filledBgHoverTone, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-bg-active", activeRef, activeAngle, 90, filledBgActiveTone, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-active-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-active-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-active-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-border-active", activeRef, activeAngle, 90, filledBgActiveTone, 100, activeName);
+  setChromatic("--tug-base-control-filled-active-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-active-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-active-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+
+  // --- Filled Danger (destructive action — red/danger hue) ---
+  setChromatic("--tug-base-control-filled-danger-bg-rest", destructiveHue, dangerAngle, 50, filledBgDarkTone, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-bg-hover", destructiveHue, dangerAngle, 55, filledBgHoverTone, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-bg-active", destructiveHue, dangerAngle, 90, filledBgActiveTone, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-danger-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-danger-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, 30, Math.round(filledBgDarkTone + 10), 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, 40, 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-active", destructiveHue, dangerAngle, 90, filledBgActiveTone, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-danger-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-danger-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+
+  // --- Filled Agent (AI action — violet/agent hue) ---
+  // Same solid-bg formula as filled-active but with agentRef/agentAngle (violet).
+  // fg uses light text (txtRefW at near-max tone) since agent is a dark-bg role.
+  setChromatic("--tug-base-control-filled-agent-bg-rest", agentRef, agentAngle, 50, filledBgDarkTone, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-bg-hover", agentRef, agentAngle, 55, filledBgHoverTone, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-bg-active", agentRef, agentAngle, 90, filledBgActiveTone, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-agent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-agent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-active", agentRef, agentAngle, 90, filledBgActiveTone, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-agent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  setChromatic("--tug-base-control-filled-agent-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+
+  // --- Outlined Active (secondary action — atmosphere-tinted surface) [D05] ---
+  // This is the default button style (emphasis="outlined" role="active") [D04].
+  // Preserves old secondary button appearance using atmosphere hue.
   if (isLight) {
-    setChromatic("--tug-base-control-secondary-bg-rest", atmRefW, atmAngleW, 7, secBgRestTone, 100, atmNameW);
-    setChromatic("--tug-base-control-secondary-bg-hover", atmRefW, atmAngleW, 4, secBgHoverTone, 100, atmNameW);
-    setChromatic("--tug-base-control-secondary-bg-active", atmRefW, atmAngleW, 6, secBgActiveTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-bg-rest", atmRefW, atmAngleW, 7, outlinedBgRestTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-bg-hover", atmRefW, atmAngleW, 4, outlinedBgHoverTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-bg-active", atmRefW, atmAngleW, 6, outlinedBgActiveTone, 100, atmNameW);
   } else {
-    // Dark mode: use per-tier hue angles + atmI to match Bluenote overrides
-    setChromatic("--tug-base-control-secondary-bg-rest", atmRefW, atmAngleW, atmI, secBgRestTone, 100, atmNameW);
-    setChromatic("--tug-base-control-secondary-bg-hover", surfDefaultRef, surfDefaultAngle, atmI, secBgHoverTone, 100, surfDefaultName);
-    setChromatic("--tug-base-control-secondary-bg-active", surfOverlayRef, surfOverlayAngle, atmI + 2, secBgActiveTone, 100, surfOverlayName);
+    setChromatic("--tug-base-control-outlined-active-bg-rest", atmRefW, atmAngleW, atmI, outlinedBgRestTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-bg-hover", surfDefaultRef, surfDefaultAngle, atmI, outlinedBgHoverTone, 100, surfDefaultName);
+    setChromatic("--tug-base-control-outlined-active-bg-active", surfOverlayRef, surfOverlayAngle, atmI + 2, outlinedBgActiveTone, 100, surfOverlayName);
   }
-  setStructural("--tug-base-control-secondary-bg-disabled", "var(--tug-base-control-disabled-bg)");
-  // Secondary fg: default text
-  setChromatic("--tug-base-control-secondary-fg-rest", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-control-secondary-fg-hover", txtRefW, txtAngleW, txtI, isLight ? 10 : 100);
-  setChromatic("--tug-base-control-secondary-fg-active", txtRefW, txtAngleW, txtI, isLight ? 8 : 100);
-  // Secondary border: in light mode uses atmosphere hue (Harmony: yellow); dark uses text hue.
-  // Light mode tone offsets: +7/+12 (Harmony: t:35, t:40) instead of +5/+10.
+  setChromatic("--tug-base-control-outlined-active-fg-rest", txtRefW, txtAngleW, txtI, fgDefaultTone);
+  setChromatic("--tug-base-control-outlined-active-fg-hover", txtRefW, txtAngleW, txtI, isLight ? 10 : 100);
+  setChromatic("--tug-base-control-outlined-active-fg-active", txtRefW, txtAngleW, txtI, isLight ? 8 : 100);
   if (isLight) {
-    setChromatic("--tug-base-control-secondary-border-rest", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
-    setChromatic("--tug-base-control-secondary-border-hover", atmRefW, atmAngleW, 12, Math.round(fgPlaceholderTone + 7), 100, atmNameW);
-    setChromatic("--tug-base-control-secondary-border-active", atmRefW, atmAngleW, 15, Math.round(fgPlaceholderTone + 12), 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-border-rest", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-border-hover", atmRefW, atmAngleW, 12, Math.round(fgPlaceholderTone + 7), 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-active-border-active", atmRefW, atmAngleW, 15, Math.round(fgPlaceholderTone + 12), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-control-secondary-border-rest", txtRefW, txtAngleW, 10, fgPlaceholderTone);
-    setChromatic("--tug-base-control-secondary-border-hover", txtRefW, txtAngleW, 15, Math.round(fgPlaceholderTone + 5));
-    setChromatic("--tug-base-control-secondary-border-active", txtRefW, txtAngleW, 20, Math.round(fgPlaceholderTone + 10));
+    setChromatic("--tug-base-control-outlined-active-border-rest", txtRefW, txtAngleW, 10, fgPlaceholderTone);
+    setChromatic("--tug-base-control-outlined-active-border-hover", txtRefW, txtAngleW, 15, Math.round(fgPlaceholderTone + 5));
+    setChromatic("--tug-base-control-outlined-active-border-active", txtRefW, txtAngleW, 20, Math.round(fgPlaceholderTone + 10));
   }
-  // Secondary icon: text hue at muted/default
-  setChromatic("--tug-base-control-secondary-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  setChromatic("--tug-base-control-secondary-icon-hover", txtRefW, txtAngleW, txtISubtle, isLight ? 22 : 80);
-  setChromatic("--tug-base-control-secondary-icon-active", txtRefW, txtAngleW, txtISubtle, isLight ? 13 : 94);
+  setChromatic("--tug-base-control-outlined-active-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  setChromatic("--tug-base-control-outlined-active-icon-hover", txtRefW, txtAngleW, txtISubtle, isLight ? 22 : 80);
+  setChromatic("--tug-base-control-outlined-active-icon-active", txtRefW, txtAngleW, txtISubtle, isLight ? 13 : 94);
 
-  // --- Ghost ---
-  setStructural("--tug-base-control-ghost-bg-rest", "transparent");
+  // --- Outlined Agent (AI secondary action — agent/violet hue) [D05] ---
+  // Same border/bg approach as outlined-active but with agentRef/agentAngle.
+  // border from tone-agent-border, bg from tone-agent-bg, fg from default text.
   if (isLight) {
-    setShadow("--tug-base-control-ghost-bg-hover", 6);
-    setShadow("--tug-base-control-ghost-bg-active", 12);
+    setChromatic("--tug-base-control-outlined-agent-bg-rest", atmRefW, atmAngleW, 7, outlinedBgRestTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-agent-bg-hover", atmRefW, atmAngleW, 4, outlinedBgHoverTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-agent-bg-active", atmRefW, atmAngleW, 6, outlinedBgActiveTone, 100, atmNameW);
   } else {
-    setHighlight("--tug-base-control-ghost-bg-hover", 10);
-    setHighlight("--tug-base-control-ghost-bg-active", 20);
+    setChromatic("--tug-base-control-outlined-agent-bg-rest", agentRef, agentAngle, signalI, 50, 15, agentName);
+    setChromatic("--tug-base-control-outlined-agent-bg-hover", agentRef, agentAngle, signalI, 50, 22, agentName);
+    setChromatic("--tug-base-control-outlined-agent-bg-active", agentRef, agentAngle, signalI, 50, 30, agentName);
   }
-  setChromatic("--tug-base-control-ghost-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  setChromatic("--tug-base-control-ghost-fg-hover", txtRefW, txtAngleW, isLight ? 9 : 15, isLight ? 15 : 80);
-  setChromatic("--tug-base-control-ghost-fg-active", txtRefW, txtAngleW, isLight ? 9 : 35, isLight ? 10 : 94);
-  setStructural("--tug-base-control-ghost-border-rest", "transparent");
-  setChromatic("--tug-base-control-ghost-border-hover", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
-  setChromatic("--tug-base-control-ghost-border-active", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
-  setChromatic("--tug-base-control-ghost-icon-rest", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-  setChromatic("--tug-base-control-ghost-icon-hover", txtRefW, txtAngleW, txtISubtle, isLight ? 22 : 65);
-  setChromatic("--tug-base-control-ghost-icon-active", txtRefW, txtAngleW, isLight ? 27 : 27, isLight ? 13 : 80);
+  setChromatic("--tug-base-control-outlined-agent-fg-rest", txtRefW, txtAngleW, txtI, fgDefaultTone);
+  setChromatic("--tug-base-control-outlined-agent-fg-hover", txtRefW, txtAngleW, txtI, isLight ? 10 : 100);
+  setChromatic("--tug-base-control-outlined-agent-fg-active", txtRefW, txtAngleW, txtI, isLight ? 8 : 100);
+  setChromatic("--tug-base-control-outlined-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-active", agentRef, agentAngle, Math.min(90, signalI + 20), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-icon-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-icon-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-icon-active", agentRef, agentAngle, Math.min(90, signalI + 20), 50, 100, agentName);
 
-  // --- Destructive ---
-  const destrDarkTone = isLight ? 30 : 20;
-  const destrHoverTone = isLight ? 40 : 40;
-  const destrActiveTone = isLight ? 50 : 50;
+  // --- Ghost Active (link-like action — no role color in bg/border) ---
+  // Preserves old ghost button appearance using neutral text hue.
+  setStructural("--tug-base-control-ghost-active-bg-rest", "transparent");
+  if (isLight) {
+    setShadow("--tug-base-control-ghost-active-bg-hover", 6);
+    setShadow("--tug-base-control-ghost-active-bg-active", 12);
+  } else {
+    setHighlight("--tug-base-control-ghost-active-bg-hover", 10);
+    setHighlight("--tug-base-control-ghost-active-bg-active", 20);
+  }
+  setChromatic("--tug-base-control-ghost-active-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  setChromatic("--tug-base-control-ghost-active-fg-hover", txtRefW, txtAngleW, isLight ? 9 : 15, isLight ? 15 : 80);
+  setChromatic("--tug-base-control-ghost-active-fg-active", txtRefW, txtAngleW, isLight ? 9 : 35, isLight ? 10 : 94);
+  setStructural("--tug-base-control-ghost-active-border-rest", "transparent");
+  setChromatic("--tug-base-control-ghost-active-border-hover", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
+  setChromatic("--tug-base-control-ghost-active-border-active", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
+  setChromatic("--tug-base-control-ghost-active-icon-rest", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
+  setChromatic("--tug-base-control-ghost-active-icon-hover", txtRefW, txtAngleW, txtISubtle, isLight ? 22 : 65);
+  setChromatic("--tug-base-control-ghost-active-icon-active", txtRefW, txtAngleW, isLight ? 27 : 27, isLight ? 13 : 80);
 
-  setChromatic("--tug-base-control-destructive-bg-rest", destructiveHue, dangerAngle, 50, destrDarkTone, 100, dangerName);
-  setChromatic("--tug-base-control-destructive-bg-hover", destructiveHue, dangerAngle, 55, destrHoverTone, 100, dangerName);
-  setChromatic("--tug-base-control-destructive-bg-active", destructiveHue, dangerAngle, 90, destrActiveTone, 100, dangerName);
-  setStructural("--tug-base-control-destructive-bg-disabled", "var(--tug-base-control-disabled-bg)");
-  setChromatic("--tug-base-control-destructive-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-destructive-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-destructive-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-destructive-border-rest", destructiveHue, dangerAngle, 30, Math.round(destrDarkTone + 10), 100, dangerName);
-  setChromatic("--tug-base-control-destructive-border-hover", destructiveHue, dangerAngle, 40, 50, 100, dangerName);
-  setChromatic("--tug-base-control-destructive-border-active", destructiveHue, dangerAngle, 90, destrActiveTone, 100, dangerName);
-  setChromatic("--tug-base-control-destructive-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-destructive-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
-  setChromatic("--tug-base-control-destructive-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  // --- Ghost Danger (subtle destructive — danger/red fg, transparent bg) ---
+  // Same transparent-bg approach as ghost-active but fg/icon from tone-danger-fg.
+  // Hover bg uses danger-tinted subtle alpha.
+  setStructural("--tug-base-control-ghost-danger-bg-rest", "transparent");
+  if (isLight) {
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 8, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 15, dangerName);
+  } else {
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 10, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 20, dangerName);
+  }
+  setChromatic("--tug-base-control-ghost-danger-fg-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+  setStructural("--tug-base-control-ghost-danger-border-rest", "transparent");
+  setChromatic("--tug-base-control-ghost-danger-border-hover", destructiveHue, dangerAngle, signalI, 50, 40, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-border-active", destructiveHue, dangerAngle, signalI, 50, 60, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+
+  // --- Surface Control Alias [D08] ---
+  // Semantic alias: non-button consumers (tabs, code blocks, menus) use this
+  // instead of the raw outlined-active bg token. Decouples surface intent from
+  // button emphasis x role naming.
+  setStructural("--tug-base-surface-control", "var(--tug-base-control-outlined-active-bg-rest)");
 
   // --- Selected / Highlighted ---
   setChromatic("--tug-base-control-selected-bg", activeRef, activeAngle, signalI, 50, 18, activeName);

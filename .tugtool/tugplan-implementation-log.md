@@ -9,6 +9,114 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-13T21:29:21Z
+---
+
+## step-9: Final integration checkpoint: all 1533 tests pass, zero old token/variant references in non-archived code, TugBadge component verified, gallery showcases full matrix, theme overrides consistent. Reworded one CSS comment in tug-menu.css to remove old token name.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-8
+date: 2025-03-13T21:22:43Z
+---
+
+## step-8: Renamed old control token names in bluenote.css (3 tokens) and harmony.css (13 tokens) to emphasis x role names. control-secondary-bg-rest became surface-control per D08. Zero old token references remain in any theme override file. All 1533 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-7
+date: 2025-03-13T21:17:00Z
+---
+
+## step-7: Added GalleryBadgeContent component showing all 21 emphasis x role combinations across 3 sizes. Registered gallery-badge tab (21st gallery section). Updated tab counts in 4 test files. All 1533 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-6
+date: 2025-03-13T21:03:59Z
+---
+
+## step-6: Created TugBadge component (tug-badge.tsx, tug-badge.css, tug-badge.test.tsx). Supports 21 emphasis x role combinations across 3 tiers (8 T01, 7 non-T01, 6 signal-only) and 3 sizes (sm/md/lg). 30 new tests, all 1529 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-5
+date: 2025-03-13T20:57:12Z
+---
+
+## step-5: Integration checkpoint: all 1499 tests pass, zero old token references in tugdeck/src, TugButtonVariant fully removed. Theme override files (harmony.css, bluenote.css) deferred to step-8.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-4
+date: 2025-03-13T20:51:42Z
+---
+
+## step-4: Replaced control-secondary-bg-rest with surface-control in 7 CSS files (tug-tab, tug-menu, tug-code, tug-inspector, gallery-card, gallery-theme-generator-content, gallery-palette-content). Rewrote tug-menu.css data-state open blocks to use new emphasis-role class names. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-3
+date: 2025-03-13T20:44:53Z
+---
+
+## step-3: Removed TugButtonVariant type, added TugButtonEmphasis and TugButtonRole. Updated CSS to 8 emphasis x role blocks. Migrated all call sites in gallery-card, gallery-cascade-inspector, gallery-animator, gallery-scale-timing. Updated tug-button and chain-action-button tests. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-2
+date: 2025-03-13T20:31:21Z
+---
+
+## step-2: Replaced old 4-variant control token pairings with 8 emphasis x role pairings in fg-bg-pairing-map.ts. Updated style-inspector-overlay.ts, theme-accessibility.test.ts, and gallery-theme-generator-content.test.tsx to use new token names. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
+step: step-1
+date: 2025-03-13T20:19:50Z
+---
+
+## step-1: Replaced 4-variant control token generation (primary/secondary/ghost/destructive) with 8 emphasis x role combinations per Table T01. Added --tug-base-surface-control alias. Updated tug-base.css fallbacks. Dropped 3 per-variant bg-disabled aliases. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-5
 date: 2025-03-13T18:04:04Z
 ---

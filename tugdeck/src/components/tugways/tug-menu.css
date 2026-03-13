@@ -25,7 +25,7 @@ body {
   --tug-menu-fg: var(--tug-base-fg-default);
   --tug-menu-border: var(--tug-base-border-default);
   --tug-menu-shadow: var(--tug-base-shadow-overlay);
-  --tug-menu-item-bg-hover: var(--tug-base-control-ghost-bg-hover);
+  --tug-menu-item-bg-hover: var(--tug-base-control-ghost-active-bg-hover);
   --tug-menu-item-bg-selected: var(--tug-base-accent-subtle);
   --tug-menu-item-fg: var(--tug-base-fg-default);
   --tug-menu-item-fg-disabled: var(--tug-base-fg-disabled);
@@ -113,46 +113,46 @@ body {
  * matching macOS menu bar behavior.
  */
 
-/* Secondary (default variant) */
-.tug-button-secondary[data-state="open"],
+/* outlined-active (default emphasis x role) */
+.tug-button-outlined-active[data-state="open"],
 .tug-button[data-state="open"] {
-  background-color: var(--tug-base-control-secondary-bg-active);
-  color: var(--tug-base-control-secondary-fg-active);
-  border-color: var(--tug-base-control-secondary-border-active);
+  background-color: var(--tug-base-control-outlined-active-bg-active);
+  color: var(--tug-base-control-outlined-active-fg-active);
+  border-color: var(--tug-base-control-outlined-active-border-active);
 }
-.tug-button-secondary[data-state="open"] svg,
+.tug-button-outlined-active[data-state="open"] svg,
 .tug-button[data-state="open"] svg {
-  color: var(--tug-base-control-secondary-icon-active);
+  color: var(--tug-base-control-outlined-active-icon-active);
 }
 
-/* Primary */
-.tug-button-primary[data-state="open"] {
-  background-color: var(--tug-base-control-primary-bg-active);
-  color: var(--tug-base-control-primary-fg-active);
-  border-color: var(--tug-base-control-primary-border-active);
+/* filled-accent: Primary CTA (brand orange/accent) */
+.tug-button-filled-accent[data-state="open"] {
+  background-color: var(--tug-base-control-filled-accent-bg-active);
+  color: var(--tug-base-control-filled-accent-fg-active);
+  border-color: var(--tug-base-control-filled-accent-border-active);
 }
-.tug-button-primary[data-state="open"] svg {
-  color: var(--tug-base-control-primary-icon-active);
-}
-
-/* Ghost */
-.tug-button-ghost[data-state="open"] {
-  background-color: var(--tug-base-control-ghost-bg-active);
-  color: var(--tug-base-control-ghost-fg-active);
-  border-color: var(--tug-base-control-ghost-border-active);
-}
-.tug-button-ghost[data-state="open"] svg {
-  color: var(--tug-base-control-ghost-icon-active);
+.tug-button-filled-accent[data-state="open"] svg {
+  color: var(--tug-base-control-filled-accent-icon-active);
 }
 
-/* Destructive */
-.tug-button-destructive[data-state="open"] {
-  background-color: var(--tug-base-control-destructive-bg-active);
-  color: var(--tug-base-control-destructive-fg-active);
-  border-color: var(--tug-base-control-destructive-border-active);
+/* ghost-active: Link-like action (neutral) */
+.tug-button-ghost-active[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-active-bg-active);
+  color: var(--tug-base-control-ghost-active-fg-active);
+  border-color: var(--tug-base-control-ghost-active-border-active);
 }
-.tug-button-destructive[data-state="open"] svg {
-  color: var(--tug-base-control-destructive-icon-active);
+.tug-button-ghost-active[data-state="open"] svg {
+  color: var(--tug-base-control-ghost-active-icon-active);
+}
+
+/* filled-danger: Destructive action */
+.tug-button-filled-danger[data-state="open"] {
+  background-color: var(--tug-base-control-filled-danger-bg-active);
+  color: var(--tug-base-control-filled-danger-fg-active);
+  border-color: var(--tug-base-control-filled-danger-border-active);
+}
+.tug-button-filled-danger[data-state="open"] svg {
+  color: var(--tug-base-control-filled-danger-icon-active);
 }
 
 /* ============================================================================
@@ -165,7 +165,7 @@ body {
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
-  background-color: var(--tug-base-control-secondary-bg-rest);
+  background-color: var(--tug-base-surface-control);
   border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
   color: var(--tug-dropdown-fg);
@@ -192,8 +192,8 @@ body {
 
 /*
  * Hover / focus state: use --tug-base-surface-default (main surface) rather than
- * --tug-base-control-secondary-bg-rest (which is the same as the content panel background,
- * making hover invisible). --tug-base-surface-default provides visible contrast.
+ * the deprecated secondary control surface token (which matches the content panel
+ * background, making hover invisible). --tug-base-surface-default provides visible contrast.
  */
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {

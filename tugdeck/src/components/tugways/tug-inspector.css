@@ -12,7 +12,7 @@ body {
   --tug-inspector-panel-bg: var(--tug-base-surface-sunken);
   --tug-inspector-panel-border: var(--tug-base-divider-default);
   --tug-inspector-panel-bg-pinned: var(--tug-base-surface-default);
-  --tug-inspector-section-bg: var(--tug-base-control-secondary-bg-rest);
+  --tug-inspector-section-bg: var(--tug-base-surface-control);
   --tug-inspector-field-bg: var(--tug-base-field-bg-focus);
   --tug-inspector-field-border: var(--tug-base-divider-default);
   --tug-inspector-field-readOnly: var(--tug-base-surface-sunken);

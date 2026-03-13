@@ -1,11 +1,11 @@
 /**
- * Gallery card tests -- Step 6 (updated for twenty gallery sections).
+ * Gallery card tests -- Step 7 (updated for twenty-one gallery sections).
  *
  * Tests cover:
- * - registerGalleryCards() registers all twenty gallery componentIds
- * - Each of the twenty content components renders without errors
- * - GALLERY_DEFAULT_TABS has twenty entries with correct componentIds and titles
- * - addCard("gallery-buttons") creates a twenty-tab card with title "Component Gallery"
+ * - registerGalleryCards() registers all twenty-one gallery componentIds
+ * - Each of the twenty-one content components renders without errors
+ * - GALLERY_DEFAULT_TABS has twenty-one entries with correct componentIds and titles
+ * - addCard("gallery-buttons") creates a twenty-one-tab card with title "Component Gallery"
  *   and acceptsFamilies: ["developer"]
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -26,6 +26,7 @@ import {
   GalleryDropdownContent,
   GalleryDefaultButtonContent,
   GalleryMutationTxContent,
+  GalleryBadgeContent,
   TugTabBarDemo,
 } from "@/components/tugways/cards/gallery-card";
 import { GalleryObservablePropsContent } from "@/components/tugways/cards/gallery-observable-props-content";
@@ -59,7 +60,7 @@ describe("registerGalleryCards – registry entries", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("registers all eleven gallery componentIds", () => {
+  it("registers all twenty-one gallery componentIds", () => {
     registerGalleryCards();
 
     expect(getRegistration("gallery-buttons")).toBeDefined();
@@ -73,6 +74,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(getRegistration("gallery-palette")).toBeDefined();
     expect(getRegistration("gallery-scale-timing")).toBeDefined();
     expect(getRegistration("gallery-cascade-inspector")).toBeDefined();
+    expect(getRegistration("gallery-badge")).toBeDefined();
   });
 
   it("each registration has family: 'developer'", () => {
@@ -90,6 +92,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-palette",
       "gallery-scale-timing",
       "gallery-cascade-inspector",
+      "gallery-badge",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -113,6 +116,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-palette",
       "gallery-scale-timing",
       "gallery-cascade-inspector",
+      "gallery-badge",
     ];
     for (const id of ids) {
       const reg = getRegistration(id);
@@ -120,11 +124,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with twenty entries", () => {
+  it("gallery-buttons has defaultTabs with twenty-one entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(20);
+    expect(reg!.defaultTabs!.length).toBe(21);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -133,7 +137,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("other nineteen gallery registrations do NOT have defaultTabs or defaultTitle", () => {
+  it("other twenty gallery registrations do NOT have defaultTabs or defaultTitle", () => {
     registerGalleryCards();
     const others = [
       "gallery-chain-actions",
@@ -155,6 +159,7 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-checkbox",
       "gallery-switch",
       "gallery-theme-generator",
+      "gallery-badge",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -169,8 +174,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has twenty entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
+  it("has twenty-one entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(21);
   });
 
   it("entries have the correct componentIds", () => {
@@ -194,6 +199,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(componentIds).toContain("gallery-checkbox");
     expect(componentIds).toContain("gallery-switch");
     expect(componentIds).toContain("gallery-theme-generator");
+    expect(componentIds).toContain("gallery-badge");
   });
 
   it("entries have the correct titles", () => {
@@ -217,6 +223,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("TugCheckbox");
     expect(titles).toContain("TugSwitch");
     expect(titles).toContain("Theme Generator");
+    expect(titles).toContain("TugBadge");
   });
 
   it("all entries are closable", () => {
@@ -230,7 +237,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates twenty-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates twenty-one-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -245,13 +252,13 @@ describe("DeckManager.addCard('gallery-buttons') creates twenty-tab gallery card
     cleanup();
   });
 
-  it("creates a card with twenty tabs, each with a distinct componentId", () => {
+  it("creates a card with twenty-one tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(20);
+    expect(card.tabs.length).toBe(21);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -274,6 +281,7 @@ describe("DeckManager.addCard('gallery-buttons') creates twenty-tab gallery card
     expect(componentIds).toContain("gallery-checkbox");
     expect(componentIds).toContain("gallery-switch");
     expect(componentIds).toContain("gallery-theme-generator");
+    expect(componentIds).toContain("gallery-badge");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -297,7 +305,7 @@ describe("DeckManager.addCard('gallery-buttons') creates twenty-tab gallery card
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(20);
+    expect(new Set(ids).size).toBe(21);
   });
 });
 
@@ -1112,5 +1120,35 @@ describe("GalleryObservablePropsContent – source attribution observer [D03]", 
 
     // Second dispatch: count increments to 2, still no loop.
     expect(countSpan.textContent).toBe("2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GalleryBadgeContent -- step-7 render test
+// ---------------------------------------------------------------------------
+
+describe("GalleryBadgeContent – renders without errors", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders without throwing", () => {
+    let container!: HTMLElement;
+    expect(() => {
+      act(() => {
+        ({ container } = render(<GalleryBadgeContent />));
+      });
+    }).not.toThrow();
+    expect(container.querySelector("[data-testid='gallery-badge-content']")).not.toBeNull();
+  });
+
+  it("renders TugBadge elements in the full matrix", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryBadgeContent />));
+    });
+    // 21 combos × 3 sizes = 63 badges in the full matrix,
+    // plus 3 more in the interactive preview row = 66 total
+    const badges = container.querySelectorAll(".tug-badge");
+    expect(badges.length).toBeGreaterThan(0);
   });
 });

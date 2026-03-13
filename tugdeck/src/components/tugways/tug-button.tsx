@@ -12,6 +12,11 @@
  *   - When `action` is undefined or no ResponderChainProvider is in the tree,
  *     TugButton falls through to direct-action mode (existing onClick behavior).
  *
+ * Emphasis x Role API [D02, D03, D04, Spec S01, Spec S02]:
+ *   `emphasis` controls visual weight (filled/outlined/ghost), default: "outlined"
+ *   `role` controls color domain (accent/active/agent/data/danger), default: "active"
+ *   Compound CSS class: tug-button-{emphasis}-{role}
+ *
  * [D01] TugButton wraps Radix Slot for asChild polymorphism (no shadcn)
  * [D05] Two-level action validation drives chain-action enabled state
  * [D06] Chain-action TugButton uses useSyncExternalStore for validation
@@ -37,8 +42,11 @@ const NOOP_SNAPSHOT = (): number => 0;
 /** Three-state button state values */
 export type TugButtonState = "on" | "off" | "mixed";
 
-/** TugButton variant names (Spec S01) */
-export type TugButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
+/** TugButton emphasis values — controls visual weight (Spec S01) [D02] */
+export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
+
+/** TugButton role values — controls color domain (Spec S01) [D02] */
+export type TugButtonRole = "accent" | "active" | "agent" | "data" | "danger";
 
 /** TugButton size names (Spec S01) */
 export type TugButtonSize = "sm" | "md" | "lg";
@@ -55,8 +63,10 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 export interface TugButtonProps {
   /** Button rendering subtype. Default: "push" */
   subtype?: TugButtonSubtype;
-  /** Color/style variant. Default: "secondary" */
-  variant?: TugButtonVariant;
+  /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
+  emphasis?: TugButtonEmphasis;
+  /** Color domain. Default: "active". Controls accent/active/agent/data/danger hue. [D02, Spec S01] */
+  role?: TugButtonRole;
   /** Size variant. Default: "md" */
   size?: TugButtonSize;
 
@@ -158,15 +168,19 @@ function Spinner() {
 /**
  * TugButton -- tugways button component.
  *
- * Supports four subtypes (push, icon, icon-text, three-state), four variants
- * (primary, secondary, ghost, destructive), three sizes (sm, md, lg),
+ * Supports four subtypes (push, icon, icon-text, three-state), three sizes (sm, md, lg),
  * loading state, direct-action mode (onClick), and chain-action mode (action).
+ *
+ * Styling is controlled by the emphasis x role system [D02, D03, D04]:
+ *   emphasis: "filled" | "outlined" | "ghost" (default: "outlined")
+ *   role:     "accent" | "active" | "agent" | "data" | "danger" (default: "active")
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  */
 export function TugButton({
   subtype = "push",
-  variant = "secondary",
+  emphasis = "outlined",
+  role = "active",
   size = "md",
   onClick,
   action,
@@ -323,16 +337,16 @@ export function TugButton({
   // Use aria-disabled (not HTML disabled) so the button stays in the tab order.
   const ariaDisabled = isChainDisabled ? "true" : undefined;
 
-  // CSS class composition
-  const variantClass = `tug-button-${variant}`;
+  // CSS class composition — compound emphasis-role class [D03, Spec S02]
+  const emphasisRoleClass = `tug-button-${emphasis}-${role}`;
   const sizeClass = `tug-button-size-${size}`;
   const buttonClassName = cn(
     // Base tug-button class
     "tug-button",
     // Size class
     sizeClass,
-    // Variant class for hover/active/transition styles
-    variantClass,
+    // Emphasis x role compound class for hover/active/transition styles [D03]
+    emphasisRoleClass,
     // Icon subtype size classes (square aspect ratio per Table T03)
     subtype === "icon" && size === "sm" && "tug-button-icon-sm",
     subtype === "icon" && size === "md" && "tug-button-icon-md",
