@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-13T03:25:06Z
+---
+
+## step-10: Added end-to-end integration tests with novel recipe (amber/sand, mood knobs 70/80/65). Tests cover T-ACC-1 (WCAG AA contrast), T-ACC-2 (CSS postcss round-trip), T-ACC-3 (CVD protanopia flagging). Gallery tab regression tests verify all 15 tabs. Full suite: 1498 pass / 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-9
 date: 2025-03-13T03:12:24Z
 ---
