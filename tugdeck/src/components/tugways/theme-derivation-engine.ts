@@ -1213,11 +1213,14 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Toggle track: atmosphere (off) or accent (on)
   const toggleTrackOffTone = Math.round(dividerTone);
   setChromatic("--tug-base-toggle-track-off", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
+  setChromatic("--tug-base-toggle-track-off-hover", atmRefW, atmAngleW, Math.min(atmIBorder + 4, 100), Math.min(toggleTrackOffTone + 8, 100));
   setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 50, 100, accentName);
+  setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), isLight ? 40 : 45, 100, accentName);
   // toggle-track-disabled: light mode uses overlay tone (Harmony: yellow, i:6, t:48)
   const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceSunken);
   setChromatic("--tug-base-toggle-track-disabled", atmRefW, atmAngleW, isLight ? 6 : atmI, toggleDisabledTone, 100, atmNameW);
   setChromatic("--tug-base-toggle-track-mixed", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
+  setChromatic("--tug-base-toggle-track-mixed-hover", txtRefW, txtAngleW, Math.min(txtISubtle + 5, 100), Math.min(fgSubtleTone + 6, 100));
 
   // Thumb: near-white (text inverse) in dark mode; white in light mode
   if (isLight) {

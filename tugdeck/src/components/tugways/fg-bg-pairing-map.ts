@@ -659,7 +659,17 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   },
   {
     fg: "--tug-base-toggle-thumb",
+    bg: "--tug-base-toggle-track-on-hover",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-toggle-thumb",
     bg: "--tug-base-toggle-track-off",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-toggle-thumb",
+    bg: "--tug-base-toggle-track-off-hover",
     role: "ui-component",
   },
   {
@@ -675,6 +685,11 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   {
     fg: "--tug-base-toggle-icon-mixed",
     bg: "--tug-base-toggle-track-mixed",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-toggle-icon-mixed",
+    bg: "--tug-base-toggle-track-mixed-hover",
     role: "ui-component",
   },
 

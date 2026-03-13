@@ -2,7 +2,7 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 264 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 267 entries
  * - T2.2: Bluenote golden test (override subset comparison at OKLCH level)
  * - T2.3: Harmony golden test (override subset comparison at OKLCH level)
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
@@ -243,19 +243,19 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 264 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 267 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(264);
+    expect(Object.keys(output.tokens).length).toBe(267);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 264 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 267 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(264);
-    expect(Object.keys(harmony.tokens).length).toBe(264);
+    expect(Object.keys(brio.tokens).length).toBe(267);
+    expect(Object.keys(harmony.tokens).length).toBe(267);
   });
 
   // -------------------------------------------------------------------------
