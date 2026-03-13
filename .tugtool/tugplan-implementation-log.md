@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-13T02:43:48Z
+---
+
+## step-7: Added ContrastDashboard section to gallery-theme-generator-content with WCAG ratio, APCA Lc, and pass/fail badges for all fg/bg pairs. Summary bar shows N/M pairs passing WCAG AA. Tests T7.1-T7.3 for row count, body-text pass, and summary format.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-6
 date: 2025-03-13T02:34:54Z
 ---

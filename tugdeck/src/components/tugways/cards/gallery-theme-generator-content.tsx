@@ -3,11 +3,12 @@
  *
  * Interactive tool for deriving complete 264-token --tug-base-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, mode toggle,
- * three mood sliders, and a scrollable token preview grid.
+ * three mood sliders, token preview grid, and contrast dashboard.
  *
  * Wires controls to `deriveTheme()` with 150ms debounce on slider changes.
- * Token preview renders all 264 tokens with name, value string, and a color
- * swatch derived from the resolved OKLCH map.
+ * Runs `validateThemeContrast()` on every derived output to populate the
+ * contrast dashboard. Token preview renders all 264 tokens with name,
+ * value string, and a color swatch derived from the resolved OKLCH map.
  *
  * Rules of Tugways compliance:
  *   - Appearance changes through CSS custom properties on the preview container,
@@ -17,19 +18,27 @@
  *   - No root.render() after initial mount. [D40, D42]
  *
  * **Authoritative references:** [D04] ThemeRecipe, [D06] Gallery tab pattern,
- * Spec S01, (#constraints, #internal-architecture)
+ * [D07] Contrast thresholds, [D03] Pairing map, Spec S01, Spec S02,
+ * (#constraints, #internal-architecture)
  *
  * @module components/tugways/cards/gallery-theme-generator-content
  */
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { HUE_FAMILIES, tugColor, DEFAULT_CANONICAL_L } from "@/components/tugways/palette-engine";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { HUE_FAMILIES, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
   type ThemeRecipe,
   type ThemeOutput,
+  type ContrastResult,
 } from "@/components/tugways/theme-derivation-engine";
+import {
+  validateThemeContrast,
+  WCAG_CONTRAST_THRESHOLDS,
+  APCA_LC_THRESHOLDS,
+} from "@/components/tugways/theme-accessibility";
+import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -184,6 +193,179 @@ function TokenPreview({ output }: { output: ThemeOutput }) {
 }
 
 // ---------------------------------------------------------------------------
+// ContrastDashboard — fg/bg pair grid with badges and summary bar
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine the badge variant for a ContrastResult row.
+ *
+ * - "decorative" role → always "decorative" (no minimum requirement)
+ * - wcagPass true → "pass"
+ * - wcagRatio within 0.5 of threshold → "marginal"
+ * - otherwise → "fail"
+ *
+ * Per [D07]: badge is driven by WCAG 2.x only; APCA is informational.
+ */
+function badgeVariant(
+  result: ContrastResult,
+): "pass" | "marginal" | "fail" | "decorative" {
+  if (result.role === "decorative") return "decorative";
+  if (result.wcagPass) return "pass";
+  const threshold = WCAG_CONTRAST_THRESHOLDS[result.role] ?? 1.0;
+  if (result.wcagRatio >= threshold - 0.5) return "marginal";
+  return "fail";
+}
+
+/**
+ * Render the short APCA Lc label for a result row (informational, per [D07]).
+ */
+function apcaLabel(result: ContrastResult): string {
+  return `Lc ${result.apcaLc.toFixed(1)}`;
+}
+
+/**
+ * Convert a resolved-map entry to an oklch() CSS string for swatch rendering.
+ * Returns "transparent" for tokens not in the resolved map.
+ */
+function resolvedSwatchColor(
+  resolved: ThemeOutput["resolved"],
+  tokenName: string,
+): string {
+  const r = resolved[tokenName];
+  if (!r) return "transparent";
+  return oklchToHex(r.L, r.C, r.h);
+}
+
+/**
+ * ContrastDashboard — scrollable grid of all fg/bg pairs from FG_BG_PAIRING_MAP.
+ *
+ * Renders:
+ *   - Summary bar: "N/M pairs pass WCAG AA"
+ *   - Grid row per pair: fg swatch, bg swatch, fg token name, bg token name,
+ *     WCAG ratio, APCA Lc (informational), pass/fail badge
+ *
+ * Badge color-coding per [D07]:
+ *   - Green (pass)     : wcagPass = true
+ *   - Yellow (marginal): failing but within 0.5 of threshold
+ *   - Red (fail)       : failing by more than 0.5
+ *   - Neutral          : role = "decorative" (no minimum)
+ *
+ * Lazy rendering: `content-visibility: auto` on each swatch handles off-screen
+ * pairs without a JS virtual list, keeping the implementation simple.
+ */
+function ContrastDashboard({
+  output,
+  contrastResults,
+}: {
+  output: ThemeOutput;
+  contrastResults: ContrastResult[];
+}) {
+  const passCount = contrastResults.filter((r) => r.role !== "decorative" && r.wcagPass).length;
+  const checkedCount = contrastResults.filter((r) => r.role !== "decorative").length;
+
+  let summaryClass = "gtg-dash-summary-count";
+  if (checkedCount > 0) {
+    if (passCount === checkedCount) {
+      summaryClass += " gtg-dash-summary-count--all-pass";
+    } else if (passCount >= checkedCount / 2) {
+      summaryClass += " gtg-dash-summary-count--partial";
+    } else {
+      summaryClass += " gtg-dash-summary-count--fail";
+    }
+  }
+
+  return (
+    <div data-testid="gtg-contrast-dashboard">
+      {/* Summary bar */}
+      <div className="gtg-dash-summary" data-testid="gtg-dash-summary">
+        <span className={summaryClass} data-testid="gtg-dash-summary-count">
+          {passCount}/{checkedCount}
+        </span>
+        <span>pairs pass WCAG AA</span>
+        <span style={{ color: "var(--tug-base-fg-muted)", marginLeft: "4px" }}>
+          ({contrastResults.length} total pairs, {contrastResults.length - checkedCount} decorative)
+        </span>
+      </div>
+
+      {/* Pair grid */}
+      <div className="gtg-dash-grid" data-testid="gtg-dash-grid">
+        {/* Column headers */}
+        <div className="gtg-dash-col-header">
+          <span title="Foreground color swatch">FG</span>
+          <span title="Background color swatch">BG</span>
+          <span>Foreground token</span>
+          <span>Background token</span>
+          <span>WCAG 2.x</span>
+          <span>APCA Lc</span>
+          <span>Badge</span>
+        </div>
+
+        {/* Data rows */}
+        {contrastResults.map((result, idx) => {
+          const variant = badgeVariant(result);
+          const fgSwatchColor = resolvedSwatchColor(output.resolved, result.fg);
+          const bgSwatchColor = resolvedSwatchColor(output.resolved, result.bg);
+          const threshold = WCAG_CONTRAST_THRESHOLDS[result.role] ?? 1.0;
+          const apcaThreshold = APCA_LC_THRESHOLDS[result.role] ?? 15;
+
+          return (
+            <React.Fragment key={idx}>
+              <div
+                className="gtg-dash-swatch"
+                style={{ backgroundColor: fgSwatchColor }}
+                title={result.fg}
+                data-testid="gtg-dash-fg-swatch"
+              />
+              <div
+                className="gtg-dash-swatch"
+                style={{ backgroundColor: bgSwatchColor }}
+                title={result.bg}
+                data-testid="gtg-dash-bg-swatch"
+              />
+              <span
+                className="gtg-dash-token-name"
+                title={result.fg}
+                data-testid="gtg-dash-fg-name"
+              >
+                {result.fg}
+              </span>
+              <span
+                className="gtg-dash-token-name"
+                title={result.bg}
+                data-testid="gtg-dash-bg-name"
+              >
+                {result.bg}
+              </span>
+              <span
+                className="gtg-dash-ratio"
+                title={`Threshold: ${threshold}:1`}
+                data-testid="gtg-dash-wcag-ratio"
+              >
+                {result.wcagRatio.toFixed(2)}:1
+              </span>
+              <span
+                className="gtg-dash-ratio"
+                title={`APCA threshold: Lc ${apcaThreshold} (informational)`}
+                data-testid="gtg-dash-apca-lc"
+              >
+                {apcaLabel(result)}
+              </span>
+              <span
+                className={`gtg-dash-badge gtg-dash-badge--${variant}`}
+                data-testid="gtg-dash-badge"
+                data-variant={variant}
+              >
+                {variant === "pass" ? "Pass" : variant === "marginal" ? "Marginal" : variant === "decorative" ? "Decorative" : "Fail"}
+              </span>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
 // ---------------------------------------------------------------------------
 
@@ -192,9 +374,12 @@ function TokenPreview({ output }: { output: ThemeOutput }) {
  *
  * Manages local recipe state (mode, atmosphere, text hue, mood knobs).
  * Calls `deriveTheme()` on every recipe change, debounced 150ms for sliders.
- * Renders mode toggle, hue selectors, mood sliders, and token preview.
+ * Runs `validateThemeContrast()` on each derived output to populate the contrast
+ * dashboard. Renders mode toggle, hue selectors, mood sliders, token preview,
+ * and contrast dashboard.
  *
- * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe.
+ * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe,
+ * [D07] Contrast thresholds, [D03] Pairing map.
  */
 export function GalleryThemeGeneratorContent() {
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
@@ -210,6 +395,13 @@ export function GalleryThemeGeneratorContent() {
 
   // The derived theme output — updated whenever recipe changes.
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
+
+  // Contrast results — derived from themeOutput via validateThemeContrast().
+  // Computed with useMemo to avoid redundant runs on unrelated re-renders.
+  const contrastResults = useMemo(
+    () => validateThemeContrast(themeOutput.resolved, FG_BG_PAIRING_MAP),
+    [themeOutput],
+  );
 
   // Slider debounce timer ref.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -414,6 +606,14 @@ export function GalleryThemeGeneratorContent() {
           Token Preview ({Object.keys(themeOutput.tokens).length} tokens)
         </div>
         <TokenPreview output={themeOutput} />
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Contrast dashboard ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Contrast Dashboard</div>
+        <ContrastDashboard output={themeOutput} contrastResults={contrastResults} />
       </div>
 
     </div>

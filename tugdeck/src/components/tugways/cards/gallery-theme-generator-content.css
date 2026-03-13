@@ -248,3 +248,146 @@
   border-color: var(--tug-base-accent-default);
   color: var(--tug-base-accent-fg);
 }
+
+/* ============================================================================
+   Contrast dashboard
+   ========================================================================= */
+
+/* Summary bar — "N/M pairs pass WCAG AA" */
+.gtg-dash-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  padding: 6px 10px;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  user-select: none;
+}
+
+.gtg-dash-summary-count {
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-mono, monospace);
+}
+
+.gtg-dash-summary-count--all-pass {
+  color: var(--tug-base-tone-positive-fg);
+}
+
+.gtg-dash-summary-count--partial {
+  color: var(--tug-base-tone-warning-fg);
+}
+
+.gtg-dash-summary-count--fail {
+  color: var(--tug-base-tone-danger-fg);
+}
+
+/* Scrollable grid container */
+.gtg-dash-grid {
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 2px 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 8px;
+  background-color: var(--tug-base-surface-default);
+}
+
+/* Column header row */
+.gtg-dash-col-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug-base-border-default);
+  user-select: none;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 0 8px;
+  align-items: end;
+}
+
+/* Swatch cells (fg and bg) */
+.gtg-dash-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  align-self: center;
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+/* Token name cells */
+.gtg-dash-token-name {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+  padding: 2px 0;
+}
+
+/* Numeric contrast value cells */
+.gtg-dash-ratio {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-subtle);
+  align-self: center;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+/* Pass/fail badge */
+.gtg-dash-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-sans);
+  letter-spacing: 0.04em;
+  border-radius: var(--tug-base-radius-xs);
+  padding: 2px 6px;
+  user-select: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* Green — pass both thresholds */
+.gtg-dash-badge--pass {
+  background-color: var(--tug-base-tone-positive-bg);
+  color: var(--tug-base-tone-positive-fg);
+  border: 1px solid var(--tug-base-tone-positive-border);
+}
+
+/* Yellow — marginal (within 0.5 of threshold) */
+.gtg-dash-badge--marginal {
+  background-color: var(--tug-base-tone-warning-bg);
+  color: var(--tug-base-tone-warning-fg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+}
+
+/* Red — fail */
+.gtg-dash-badge--fail {
+  background-color: var(--tug-base-tone-danger-bg);
+  color: var(--tug-base-tone-danger-fg);
+  border: 1px solid var(--tug-base-tone-danger-border);
+}
+
+/* Decorative — no requirement, shown as neutral */
+.gtg-dash-badge--decorative {
+  background-color: var(--tug-base-surface-raised);
+  color: var(--tug-base-fg-muted);
+  border: 1px solid var(--tug-base-border-default);
+}
