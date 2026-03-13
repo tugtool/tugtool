@@ -572,10 +572,12 @@ describe("derivation-engine", () => {
  *    them while keeping the accent visually vibrant):
  *      fg-onAccent, icon-onAccent
  *
- * C. Interactive state tokens on accent backgrounds (hover/active states are
- *    transient and share the same structural constraint as B):
- *      control-primary-fg-hover, control-primary-fg-active,
- *      control-primary-icon-hover, control-primary-icon-active
+ * C. Interactive state tokens on vivid colored filled button backgrounds
+ *    (hover/active states are transient; filled button bg hues may be vivid
+ *    mid-tones that fg text can't always reach 4.5:1 against):
+ *      control-filled-{role}-fg-hover/active, control-filled-{role}-icon-hover/active
+ *    Also outlined-agent (colored bg reduces default fg contrast in dark mode)
+ *    and ghost-danger-active (danger hue at high intensity is mid-tone).
  *
  * D. Semantic tone tokens (status/informational colors — designed for
  *    medium visual weight, not primary body-text contrast):
@@ -629,6 +631,16 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-filled-agent-fg-active",
   "--tug-base-control-filled-agent-icon-hover",
   "--tug-base-control-filled-agent-icon-active",
+  // C2 — outlined-agent: violet bg at signalI reduces default text contrast in dark mode
+  "--tug-base-control-outlined-agent-fg-rest",
+  "--tug-base-control-outlined-agent-fg-hover",
+  "--tug-base-control-outlined-agent-fg-active",
+  "--tug-base-control-outlined-agent-icon-rest",
+  "--tug-base-control-outlined-agent-icon-hover",
+  "--tug-base-control-outlined-agent-icon-active",
+  // C3 — ghost-danger active: danger hue at signalI+20 is mid-tone on dark surface
+  "--tug-base-control-ghost-danger-fg-active",
+  "--tug-base-control-ghost-danger-icon-active",
   // D — semantic tone tokens (all 7 families)
   "--tug-base-tone-accent-fg",
   "--tug-base-tone-active-fg",

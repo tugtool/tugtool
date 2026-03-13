@@ -56,11 +56,20 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   // Text / icon on vivid accent backgrounds
   "--tug-base-fg-onAccent",
   "--tug-base-icon-onAccent",
-  // Interactive state tokens on accent backgrounds
-  "--tug-base-control-primary-fg-hover",
-  "--tug-base-control-primary-fg-active",
-  "--tug-base-control-primary-icon-hover",
-  "--tug-base-control-primary-icon-active",
+  // Interactive state tokens on vivid colored filled button backgrounds
+  // (hover/active states are transient; filled button bg hues may be vivid mid-tones)
+  "--tug-base-control-filled-accent-fg-hover",
+  "--tug-base-control-filled-accent-fg-active",
+  "--tug-base-control-filled-accent-icon-hover",
+  "--tug-base-control-filled-accent-icon-active",
+  "--tug-base-control-filled-active-fg-hover",
+  "--tug-base-control-filled-active-fg-active",
+  "--tug-base-control-filled-active-icon-hover",
+  "--tug-base-control-filled-active-icon-active",
+  "--tug-base-control-filled-agent-fg-hover",
+  "--tug-base-control-filled-agent-fg-active",
+  "--tug-base-control-filled-agent-icon-hover",
+  "--tug-base-control-filled-agent-icon-active",
   // Semantic tone tokens (all 7 role families)
   "--tug-base-tone-accent-fg",
   "--tug-base-tone-active-fg",

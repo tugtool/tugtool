@@ -133,9 +133,6 @@ function extractChromaticTokens(css: string): {
         name.includes("tone-danger-bg") ||
         name.includes("accent-default") ||
         name.includes("accent-cool") ||
-        name.includes("control-primary-bg") ||
-        name.includes("control-secondary-bg") ||
-        name.includes("control-destructive-bg") ||
         name.includes("control-disabled-bg") ||
         name.includes("control-selected-bg") ||
         name.includes("control-highlighted-bg") ||
@@ -196,11 +193,8 @@ describe("pairing-map", () => {
     // or are semi-transparent overlays primarily used for layering, not direct
     // fg-over-bg pairings. These are expected to be absent from the map.
     const EXCLUDED_BG_TOKENS = new Set([
-      // disabled bgs use var() references (structural pass-through); pairings
-      // are covered via control-disabled-bg directly
-      "--tug-base-control-primary-bg-disabled",
-      "--tug-base-control-secondary-bg-disabled",
-      "--tug-base-control-destructive-bg-disabled",
+      // selected-disabled-bg uses var() reference (structural pass-through);
+      // pairings are covered via control-disabled-bg directly
       "--tug-base-control-selected-disabled-bg",
       // semi-transparent overlays / highlights — not direct surface pairings
       // (these are additive overlays layered on top of surfaces)
@@ -213,9 +207,11 @@ describe("pairing-map", () => {
       "--tug-base-accent-subtle",
       // selection-bg-inactive is decorative / no chromatic fg over it
       "--tug-base-selection-bg-inactive",
-      // ghost hover/active are semi-transparent whites (effectively overlays)
-      "--tug-base-control-ghost-bg-hover",
-      "--tug-base-control-ghost-bg-active",
+      // ghost hover/active are semi-transparent (effectively overlays over parent surface)
+      "--tug-base-control-ghost-active-bg-hover",
+      "--tug-base-control-ghost-active-bg-active",
+      "--tug-base-control-ghost-danger-bg-hover",
+      "--tug-base-control-ghost-danger-bg-active",
       // selected-bg-hover is a slightly more opaque version of selected-bg
       "--tug-base-control-selected-bg-hover",
       // field-bg-disabled paired via field-fg-disabled

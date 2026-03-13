@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-13T20:31:21Z
+---
+
+## step-2: Replaced old 4-variant control token pairings with 8 emphasis x role pairings in fg-bg-pairing-map.ts. Updated style-inspector-overlay.ts, theme-accessibility.test.ts, and gallery-theme-generator-content.test.tsx to use new token names. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-1
 date: 2025-03-13T20:19:50Z
 ---
