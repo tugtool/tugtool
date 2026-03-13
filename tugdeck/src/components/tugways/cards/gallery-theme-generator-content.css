@@ -578,3 +578,63 @@
   font-size: 10px;
   color: var(--tug-base-tone-warning-fg);
 }
+
+/* ============================================================================
+   Export / Import panel
+   ========================================================================= */
+
+.gtg-export-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Row of export buttons */
+.gtg-export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Row for import button + error message */
+.gtg-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Hidden file input — triggered programmatically by the Import button */
+.gtg-import-file-input {
+  display: none;
+}
+
+/* Shared button style for Export CSS / Export Recipe JSON / Import Recipe */
+.gtg-export-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-secondary-bg-rest);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-export-btn:hover {
+  background-color: var(--tug-base-surface-default);
+}
+
+/* Inline error message shown when import validation fails */
+.gtg-import-error {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-tone-danger-fg);
+  background-color: var(--tug-base-tone-danger-bg);
+  border: 1px solid var(--tug-base-tone-danger-border);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 3px 8px;
+}

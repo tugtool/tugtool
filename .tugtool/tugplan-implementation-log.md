@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-13T03:12:24Z
+---
+
+## step-9: Added generateCssExport for CSS file export in bluenote/harmony format, recipe JSON export/import with schema validation, Blob+objectURL download pattern. Recipe name preserved through UI state. FileReader/Blob/URL stubs added to test setup. 40 export/import tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-8
 date: 2025-03-13T02:54:43Z
 ---

@@ -53,6 +53,33 @@ if (!existingNav || typeof existingNav.userAgent !== "string") {
 (global as any).DOMParser = happyWindow.DOMParser;
 (global as any).getComputedStyle = happyWindow.getComputedStyle.bind(happyWindow);
 
+// FileReader is provided by happy-dom but not exported to global by default.
+if (typeof (global as any).FileReader === "undefined") {
+  (global as any).FileReader = (happyWindow as any).FileReader ?? happyWindow.FileReader;
+}
+
+// File is provided by bun/happy-dom; ensure it's available.
+if (typeof (global as any).File === "undefined" && (happyWindow as any).File) {
+  (global as any).File = (happyWindow as any).File;
+}
+
+// Blob is provided by bun; ensure it's available.
+if (typeof (global as any).Blob === "undefined" && (happyWindow as any).Blob) {
+  (global as any).Blob = (happyWindow as any).Blob;
+}
+
+// URL.createObjectURL / revokeObjectURL are not provided by happy-dom.
+// Provide minimal stubs so components using Blob download don't crash.
+if (typeof (global as any).URL === "undefined") {
+  (global as any).URL = {};
+}
+if (typeof (global as any).URL.createObjectURL !== "function") {
+  (global as any).URL.createObjectURL = () => "blob:mock-url";
+}
+if (typeof (global as any).URL.revokeObjectURL !== "function") {
+  (global as any).URL.revokeObjectURL = () => {};
+}
+
 // ResizeObserver is not provided by happy-dom
 (global as any).ResizeObserver = class ResizeObserver {
   observe() {}
