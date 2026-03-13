@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-13T20:19:50Z
+---
+
+## step-1: Replaced 4-variant control token generation (primary/secondary/ghost/destructive) with 8 emphasis x role combinations per Table T01. Added --tug-base-surface-control alias. Updated tug-base.css fallbacks. Dropped 3 per-variant bg-disabled aliases. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-5
 date: 2025-03-13T18:04:04Z
 ---

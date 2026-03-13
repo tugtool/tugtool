@@ -239,19 +239,87 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 237 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 283 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(237);
+    expect(Object.keys(output.tokens).length).toBe(283);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 237 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 283 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(237);
-    expect(Object.keys(harmony.tokens).length).toBe(237);
+    expect(Object.keys(brio.tokens).length).toBe(283);
+    expect(Object.keys(harmony.tokens).length).toBe(283);
+  });
+
+  // -------------------------------------------------------------------------
+  // T2.1c: All 96 emphasis x role control tokens present (Table T01)
+  // -------------------------------------------------------------------------
+  it("T2.1c: all 96 emphasis x role control tokens present in deriveTheme output", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    const emphases = ["filled", "outlined", "ghost"] as const;
+    const roles = ["accent", "active", "agent", "data", "danger"] as const;
+    const properties = ["bg", "fg", "border", "icon"] as const;
+    const states = ["rest", "hover", "active"] as const;
+
+    // Table T01: 8 specific combinations
+    const T01_COMBOS: Array<[(typeof emphases)[number], (typeof roles)[number]]> = [
+      ["filled", "accent"],
+      ["filled", "active"],
+      ["filled", "danger"],
+      ["filled", "agent"],
+      ["outlined", "active"],
+      ["outlined", "agent"],
+      ["ghost", "active"],
+      ["ghost", "danger"],
+    ];
+
+    const missingTokens: string[] = [];
+    for (const [emphasis, role] of T01_COMBOS) {
+      for (const property of properties) {
+        for (const state of states) {
+          const tokenName = `--tug-base-control-${emphasis}-${role}-${property}-${state}`;
+          if (output.tokens[tokenName] === undefined) {
+            missingTokens.push(tokenName);
+          }
+        }
+      }
+    }
+
+    expect(missingTokens).toEqual([]);
+    // 8 combos × 4 props × 3 states = 96 tokens
+    const controlTokenCount = T01_COMBOS.length * properties.length * states.length;
+    expect(controlTokenCount).toBe(96);
+  });
+
+  // -------------------------------------------------------------------------
+  // T2.1d: --tug-base-surface-control alias present [D08]
+  // -------------------------------------------------------------------------
+  it("T2.1d: --tug-base-surface-control alias is present in deriveTheme output", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    expect(output.tokens["--tug-base-surface-control"]).toBe(
+      "var(--tug-base-control-outlined-active-bg-rest)",
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // T2.1e: Token names match --tug-base-control-{emphasis}-{role}-{property}-{state} pattern [D02]
+  // -------------------------------------------------------------------------
+  it("T2.1e: control token names match emphasis x role pattern", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const controlPattern =
+      /^--tug-base-control-(filled|outlined|ghost)-(accent|active|agent|data|danger)-(bg|fg|border|icon)-(rest|hover|active)$/;
+
+    const controlTokens = Object.keys(output.tokens).filter(
+      (k) => k.startsWith("--tug-base-control-") && k.match(/(filled|outlined|ghost)/),
+    );
+
+    const badTokens = controlTokens.filter((t) => !controlPattern.test(t));
+    expect(badTokens).toEqual([]);
+    expect(controlTokens.length).toBeGreaterThanOrEqual(96);
   });
 
   // -------------------------------------------------------------------------
@@ -451,14 +519,14 @@ describe("derivation-engine", () => {
 
     // Structural tokens (transparent/none/var()) must NOT be in resolved
     const STRUCTURAL = [
-      "--tug-base-control-ghost-bg-rest",
-      "--tug-base-control-ghost-border-rest",
+      "--tug-base-control-ghost-active-bg-rest",
+      "--tug-base-control-ghost-active-border-rest",
+      "--tug-base-control-ghost-danger-bg-rest",
+      "--tug-base-control-ghost-danger-border-rest",
       "--tug-base-control-disabled-opacity",
       "--tug-base-control-disabled-shadow",
       "--tug-base-scrollbar-track",
-      "--tug-base-control-primary-bg-disabled",
-      "--tug-base-control-secondary-bg-disabled",
-      "--tug-base-control-destructive-bg-disabled",
+      "--tug-base-surface-control",
     ];
     for (const token of STRUCTURAL) {
       expect(output.resolved[token]).toBeUndefined();
@@ -543,11 +611,24 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   // B — text/icon on vivid accent bg
   "--tug-base-fg-onAccent",
   "--tug-base-icon-onAccent",
-  // C — interactive state tokens on accent
-  "--tug-base-control-primary-fg-hover",
-  "--tug-base-control-primary-fg-active",
-  "--tug-base-control-primary-icon-hover",
-  "--tug-base-control-primary-icon-active",
+  // C — interactive state tokens on vivid colored filled buttons
+  // (hover/active states are transient; filled button bg hues may be vivid mid-tones)
+  "--tug-base-control-filled-accent-fg-hover",
+  "--tug-base-control-filled-accent-fg-active",
+  "--tug-base-control-filled-accent-icon-hover",
+  "--tug-base-control-filled-accent-icon-active",
+  "--tug-base-control-filled-active-fg-hover",
+  "--tug-base-control-filled-active-fg-active",
+  "--tug-base-control-filled-active-icon-hover",
+  "--tug-base-control-filled-active-icon-active",
+  "--tug-base-control-filled-danger-fg-hover",
+  "--tug-base-control-filled-danger-fg-active",
+  "--tug-base-control-filled-danger-icon-hover",
+  "--tug-base-control-filled-danger-icon-active",
+  "--tug-base-control-filled-agent-fg-hover",
+  "--tug-base-control-filled-agent-fg-active",
+  "--tug-base-control-filled-agent-icon-hover",
+  "--tug-base-control-filled-agent-icon-active",
   // D — semantic tone tokens (all 7 families)
   "--tug-base-tone-accent-fg",
   "--tug-base-tone-active-fg",
