@@ -1,6 +1,7 @@
 /**
  * Theme accessibility tests — pairing map completeness, validity,
- * WCAG contrast calculations, APCA Lc, validation, and auto-adjustment.
+ * WCAG contrast calculations, APCA Lc, validation, auto-adjustment,
+ * and CVD simulation.
  *
  * Covers:
  * - T1.1: FG_BG_PAIRING_MAP contains entries for all chromatic fg tokens
@@ -13,8 +14,13 @@
  * - T3.5: validateThemeContrast against Brio — all body-text pairs pass 4.5:1
  * - T3.6: autoAdjustContrast most-restrictive-bg strategy
  * - T3.7: autoAdjustContrast returns unfixable list when token cannot reach threshold
+ * - T5.1: simulateCVD with pure gray returns nearly unchanged values for all types
+ * - T5.2: Protanopia simulation of pure red significantly reduces the R channel
+ * - T5.3: checkCVDDistinguishability flags green/red pair under protanopia + deuteranopia
+ * - T5.4: Achromatopsia matrix produces identical R, G, B channels
+ * - T5.5: severity=0.0 returns input unchanged; severity=1.0 matches full matrix
  *
- * Run with: cd tugdeck && bun test -- --grep "pairing-map|theme-accessibility"
+ * Run with: cd tugdeck && bun test -- --grep "pairing-map|theme-accessibility|cvd-simulation"
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
  */
@@ -30,13 +36,18 @@ import {
   computeApcaLc,
   validateThemeContrast,
   autoAdjustContrast,
+  simulateCVD,
+  simulateCVDFromOKLCH,
+  simulateCVDForHex,
+  checkCVDDistinguishability,
+  CVD_MATRICES,
 } from "@/components/tugways/theme-accessibility";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
   type ResolvedColor,
 } from "@/components/tugways/theme-derivation-engine";
-import { oklchToHex } from "@/components/tugways/palette-engine";
+import { oklchToHex, oklchToLinearSRGB } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
 // CSS parsing helpers
@@ -594,5 +605,211 @@ describe("theme-accessibility", () => {
     // The returned maps must be well-formed objects
     expect(typeof result.tokens).toBe("object");
     expect(typeof result.resolved).toBe("object");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: cvd-simulation — Machado matrices and distinguishability
+// ---------------------------------------------------------------------------
+
+describe("cvd-simulation", () => {
+  // -------------------------------------------------------------------------
+  // T5.1: simulateCVD with pure gray returns nearly unchanged values for all types
+  //
+  // A neutral gray has equal R, G, B channels. Because the Machado matrices
+  // are designed for chromatic signals, applying them to an achromatic input
+  // should leave the result nearly unchanged (each row sums to ~1.0).
+  // -------------------------------------------------------------------------
+  it("T5.1: simulateCVD with pure gray returns nearly unchanged values for all types", () => {
+    // Mid-gray in linear sRGB: equal channels, R=G=B=0.5
+    const gray = { r: 0.5, g: 0.5, b: 0.5 };
+    const TOLERANCE = 0.01;
+
+    for (const type of ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"] as const) {
+      const result = simulateCVD(gray, type);
+      // For a neutral gray, each row of the matrix sums to ~1, so the result
+      // should be approximately equal across channels and close to the input.
+      expect(Math.abs(result.r - gray.r)).toBeLessThan(TOLERANCE);
+      expect(Math.abs(result.g - gray.g)).toBeLessThan(TOLERANCE);
+      expect(Math.abs(result.b - gray.b)).toBeLessThan(TOLERANCE);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T5.2: Protanopia simulation of pure red significantly reduces the R channel
+  //
+  // Protanopia removes L-cone sensitivity (red channel). Simulating a pure red
+  // (#ff0000, linear R=1.0, G=0, B=0) should produce a result where R is
+  // substantially reduced and G increases.
+  // -------------------------------------------------------------------------
+  it("T5.2: protanopia simulation of pure red significantly reduces the R channel", () => {
+    // Pure red in linear sRGB
+    const pureRed = { r: 1.0, g: 0.0, b: 0.0 };
+    const result = simulateCVD(pureRed, "protanopia");
+
+    // Protanopia matrix row 0: [0.152286, 1.052583, -0.204868]
+    // Applied to [1, 0, 0]: R' = 0.152286, G' = 0.114503, B' = -0.003882 → clamped to 0
+    // R' should be well below 1.0 (the input R channel)
+    expect(result.r).toBeLessThan(0.5);
+
+    // Also verify via simulateCVDForHex for consistency
+    const simHex = simulateCVDForHex("#ff0000", "protanopia");
+    const rOut = parseInt(simHex.slice(1, 3), 16);
+    // Output R byte should be far less than 255
+    expect(rOut).toBeLessThan(128);
+  });
+
+  // -------------------------------------------------------------------------
+  // T5.3: checkCVDDistinguishability flags a red/yellow-green pair under
+  //       protanopia and deuteranopia
+  //
+  // Both protanopia (L-cone deficiency) and deuteranopia (M-cone deficiency)
+  // collapse red-orange vs yellow-green hues toward the same apparent brightness.
+  // The test uses:
+  //   "red":          OKLCH L=0.45, C=0.10, h=25°  (orange-red)
+  //   "yellow-green": OKLCH L=0.45, C=0.10, h=100° (yellow-green)
+  //
+  // Both colours have identical lightness (L=0.45) and chroma (C=0.10) but
+  // differ only in hue. Under protanopia and deuteranopia their simulated
+  // luminances converge to within the 0.05 threshold.
+  //
+  // Probe-verified deltas:
+  //   protanopia:   ≈ 0.021  (below 0.05 ✓)
+  //   deuteranopia: ≈ 0.001  (below 0.05 ✓)
+  // -------------------------------------------------------------------------
+  it("T5.3: checkCVDDistinguishability flags red/yellow-green pair under protanopia and deuteranopia", () => {
+    const redToken   = "--test-destructive";
+    const greenToken = "--test-positive";
+
+    const resolved: Record<string, ResolvedColor> = {
+      // Orange-red hue (h=25°) — same L and C as the yellow-green token
+      [redToken]:   { L: 0.45, C: 0.10, h: 25,  alpha: 1 },
+      // Yellow-green hue (h=100°) — distinct in normal vision but collapses
+      // toward same luminance as the red under protanopia + deuteranopia
+      [greenToken]: { L: 0.45, C: 0.10, h: 100, alpha: 1 },
+    };
+
+    const warnings = checkCVDDistinguishability(resolved, [[redToken, greenToken]]);
+
+    // Extract the CVD types that fired for this pair
+    const flaggedTypes = new Set(warnings.map((w) => w.type));
+
+    expect(flaggedTypes.has("protanopia")).toBe(true);
+    expect(flaggedTypes.has("deuteranopia")).toBe(true);
+
+    // Each warning must reference the correct token pair and carry non-empty messages
+    for (const w of warnings) {
+      expect(w.tokenPair).toEqual([redToken, greenToken]);
+      expect(w.description.length).toBeGreaterThan(0);
+      expect(w.suggestion.length).toBeGreaterThan(0);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // T5.4: Achromatopsia matrix produces identical R, G, B channels (grayscale)
+  //
+  // The achromatopsia matrix has identical rows, so all three output channels
+  // must equal the same luminance value.
+  // -------------------------------------------------------------------------
+  it("T5.4: achromatopsia matrix produces identical R, G, B channels", () => {
+    // Test several different chromatic colours
+    const testColors = [
+      { r: 0.8, g: 0.2, b: 0.1 },   // reddish
+      { r: 0.1, g: 0.7, b: 0.3 },   // greenish
+      { r: 0.2, g: 0.3, b: 0.9 },   // bluish
+      { r: 0.5, g: 0.5, b: 0.0 },   // yellow
+    ];
+
+    for (const color of testColors) {
+      const result = simulateCVD(color, "achromatopsia");
+      // All three channels must be identical (within floating-point precision)
+      expect(result.r).toBeCloseTo(result.g, 10);
+      expect(result.g).toBeCloseTo(result.b, 10);
+    }
+
+    // Also verify via the hex path: a chromatic colour should become a neutral gray
+    const redHex = simulateCVDForHex("#cc3311", "achromatopsia");
+    const rByte = parseInt(redHex.slice(1, 3), 16);
+    const gByte = parseInt(redHex.slice(3, 5), 16);
+    const bByte = parseInt(redHex.slice(5, 7), 16);
+    expect(rByte).toBe(gByte);
+    expect(gByte).toBe(bByte);
+  });
+
+  // -------------------------------------------------------------------------
+  // T5.5: severity=0.0 returns input unchanged; severity=1.0 matches full matrix
+  //
+  // At severity=0: output must equal input (identity).
+  // At severity=1: output must equal the direct matrix application.
+  // -------------------------------------------------------------------------
+  it("T5.5: severity=0.0 returns input unchanged; severity=1.0 matches full matrix", () => {
+    const input = { r: 0.8, g: 0.2, b: 0.05 }; // reddish input
+
+    for (const type of ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"] as const) {
+      // severity=0 → identity
+      const atZero = simulateCVD(input, type, 0.0);
+      expect(atZero.r).toBeCloseTo(input.r, 10);
+      expect(atZero.g).toBeCloseTo(input.g, 10);
+      expect(atZero.b).toBeCloseTo(input.b, 10);
+
+      // severity=1 → full matrix result (simulateCVD at default severity)
+      const atOne = simulateCVD(input, type, 1.0);
+      const atDefault = simulateCVD(input, type);
+      expect(atOne.r).toBeCloseTo(atDefault.r, 10);
+      expect(atOne.g).toBeCloseTo(atDefault.g, 10);
+      expect(atOne.b).toBeCloseTo(atDefault.b, 10);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Additional: simulateCVDFromOKLCH matches hex path for same colour
+  // -------------------------------------------------------------------------
+  it("simulateCVDFromOKLCH produces consistent output with simulateCVDForHex", () => {
+    // Use a vivid blue: L=0.5, C=0.2, h=264 (violet/blue region)
+    const L = 0.5, C = 0.2, h = 264;
+    const hex = oklchToHex(L, C, h);
+
+    for (const type of ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"] as const) {
+      const fromOklch = simulateCVDFromOKLCH(L, C, h, type);
+      const fromHex = simulateCVDForHex(hex, type);
+
+      // Decode fromHex back to linear sRGB for comparison
+      const rGamma = parseInt(fromHex.slice(1, 3), 16) / 255;
+      const gGamma = parseInt(fromHex.slice(3, 5), 16) / 255;
+      const bGamma = parseInt(fromHex.slice(5, 7), 16) / 255;
+      // gamma-decode
+      const linR = rGamma <= 0.04045 ? rGamma / 12.92 : Math.pow((rGamma + 0.055) / 1.055, 2.4);
+      const linG = gGamma <= 0.04045 ? gGamma / 12.92 : Math.pow((gGamma + 0.055) / 1.055, 2.4);
+      const linB = bGamma <= 0.04045 ? bGamma / 12.92 : Math.pow((bGamma + 0.055) / 1.055, 2.4);
+
+      // fromOklch is in linear sRGB; both paths start from the same OKLCH→hex→linear chain.
+      // Allow a small rounding tolerance from the hex quantisation (±1/255 ≈ 0.004).
+      expect(Math.abs(fromOklch.r - linR)).toBeLessThan(0.005);
+      expect(Math.abs(fromOklch.g - linG)).toBeLessThan(0.005);
+      expect(Math.abs(fromOklch.b - linB)).toBeLessThan(0.005);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Additional: CVD_MATRICES has all four expected types
+  // -------------------------------------------------------------------------
+  it("CVD_MATRICES contains all four types with 3×3 row-major structure", () => {
+    const types: Array<keyof typeof CVD_MATRICES> = [
+      "protanopia",
+      "deuteranopia",
+      "tritanopia",
+      "achromatopsia",
+    ];
+    for (const type of types) {
+      const matrix = CVD_MATRICES[type];
+      expect(matrix.length).toBe(3);
+      for (const row of matrix) {
+        expect(row.length).toBe(3);
+        for (const val of row) {
+          expect(typeof val).toBe("number");
+          expect(isFinite(val)).toBe(true);
+        }
+      }
+    }
   });
 });

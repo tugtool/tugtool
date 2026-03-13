@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-13T02:18:39Z
+---
+
+## step-5: Added CVD simulation to theme-accessibility.ts: CVD_MATRICES (Machado et al. 2009 Table T02), simulateCVD/simulateCVDFromOKLCH/simulateCVDForHex, checkCVDDistinguishability for semantic token pairs, CVD_SEMANTIC_PAIRS. Removed dead bumpResolvedL code. Added T5.1-T5.5 CVD tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-4
 date: 2025-03-13T02:03:24Z
 ---

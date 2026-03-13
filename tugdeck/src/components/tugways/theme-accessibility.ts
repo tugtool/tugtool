@@ -3,9 +3,11 @@
  *
  * Provides WCAG 2.x contrast ratio calculation, APCA Lc calculation,
  * theme contrast validation against the authoritative pairing map,
- * and automatic contrast adjustment via tone-bumping.
+ * automatic contrast adjustment via tone-bumping, and CVD simulation
+ * using Machado et al. 2009 matrices.
  *
  * References:
+ *   [D05] CVD simulation matrices (Machado et al. 2009), Table T02
  *   [D07] Contrast thresholds follow WCAG 2.x as normative, APCA as informational
  *   [D03] Authoritative fg/bg pairing map
  *   [D09] Dual output: string tokens + resolved OKLCH map
@@ -15,8 +17,8 @@
  * @module components/tugways/theme-accessibility
  */
 
-import { oklchToHex, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
-import type { ResolvedColor, ContrastResult } from "./theme-derivation-engine";
+import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
+import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
 import type { FgBgPairing } from "./fg-bg-pairing-map";
 
 // ---------------------------------------------------------------------------
@@ -394,15 +396,6 @@ function rebuildTugColorToken(hueRef: string, intensity: number, tone: number): 
 }
 
 /**
- * Compute a new ResolvedColor by bumping the lightness of an existing resolved
- * OKLCH color by `deltaL` (clamped to [0, 1]).
- */
-function bumpResolvedL(color: ResolvedColor, deltaL: number): ResolvedColor {
-  const newL = Math.max(0, Math.min(1, color.L + deltaL));
-  return { ...color, L: newL };
-}
-
-/**
  * Resolve the base hue name from a hue reference string.
  *
  * For bare names like "violet" returns "violet".
@@ -572,17 +565,293 @@ export function _lToTone(L: number, hueName: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// CVD types — re-exported here for use by the CVD module (Step 5)
+// CVD types
 // ---------------------------------------------------------------------------
 
+/** Color vision deficiency simulation type. */
 export type CVDType = "protanopia" | "deuteranopia" | "tritanopia" | "achromatopsia";
+
+// ---------------------------------------------------------------------------
+// CVD simulation — Machado et al. 2009 matrices (Table T02)
+// ---------------------------------------------------------------------------
+
+/**
+ * A 3×3 matrix stored in row-major order: [row0, row1, row2]
+ * where each row is [col0, col1, col2].
+ */
+type Matrix3x3 = [
+  [number, number, number],
+  [number, number, number],
+  [number, number, number],
+];
+
+/**
+ * CVD simulation matrices at severity=1.0 from Machado et al. 2009.
+ *
+ * Applied in linear sRGB space. Each matrix maps [R, G, B] input to a
+ * simulated [R', G', B'] that approximates how a person with the given
+ * deficiency would perceive the colour.
+ *
+ * Source: Table T02 in the plan / Machado, Oliveira & Fernandes (2009)
+ * "A Physiologically-based Model for Simulation of Color Vision Deficiency".
+ */
+export const CVD_MATRICES: Record<CVDType, Matrix3x3> = {
+  protanopia: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deuteranopia: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.011820, 0.042940, 0.968881],
+  ],
+  tritanopia: [
+    [1.255528, -0.076749, -0.178779],
+    [-0.078411, 0.930809, 0.147602],
+    [0.004733, 0.691367, 0.303900],
+  ],
+  achromatopsia: [
+    [0.2126, 0.7152, 0.0722],
+    [0.2126, 0.7152, 0.0722],
+    [0.2126, 0.7152, 0.0722],
+  ],
+};
+
+/**
+ * Apply a 3×3 matrix to a linear-sRGB triplet.
+ */
+function applyMatrix3x3(
+  m: Matrix3x3,
+  rgb: { r: number; g: number; b: number },
+): { r: number; g: number; b: number } {
+  return {
+    r: m[0][0] * rgb.r + m[0][1] * rgb.g + m[0][2] * rgb.b,
+    g: m[1][0] * rgb.r + m[1][1] * rgb.g + m[1][2] * rgb.b,
+    b: m[2][0] * rgb.r + m[2][1] * rgb.g + m[2][2] * rgb.b,
+  };
+}
+
+/**
+ * Simulate colour vision deficiency by applying a Machado et al. 2009
+ * matrix to a linear-sRGB triplet.
+ *
+ * The `severity` parameter (0.0–1.0, default 1.0) interpolates between the
+ * identity (severity=0, input unchanged) and the full deficiency matrix
+ * (severity=1). Values outside [0, 1] are clamped.
+ *
+ * Output channels are clamped to [0, 1] after the matrix multiplication.
+ *
+ * @param linearRGB - Input colour in linear sRGB {r, g, b} ∈ [0, 1]
+ * @param type      - CVD type from CVDType
+ * @param severity  - Simulation severity, 0.0–1.0 (default 1.0)
+ * @returns Simulated linear sRGB {r, g, b}, clamped to [0, 1]
+ */
+export function simulateCVD(
+  linearRGB: { r: number; g: number; b: number },
+  type: CVDType,
+  severity = 1.0,
+): { r: number; g: number; b: number } {
+  const s = Math.max(0, Math.min(1, severity));
+  const matrix = CVD_MATRICES[type];
+  const transformed = applyMatrix3x3(matrix, linearRGB);
+
+  // Interpolate between input (s=0) and full simulation (s=1)
+  const r = (1 - s) * linearRGB.r + s * transformed.r;
+  const g = (1 - s) * linearRGB.g + s * transformed.g;
+  const b = (1 - s) * linearRGB.b + s * transformed.b;
+
+  return {
+    r: Math.max(0, Math.min(1, r)),
+    g: Math.max(0, Math.min(1, g)),
+    b: Math.max(0, Math.min(1, b)),
+  };
+}
+
+/**
+ * Simulate colour vision deficiency for an OKLCH colour.
+ *
+ * Primary entry point for the theme pipeline per [D09]: accepts resolved
+ * OKLCH values directly from `deriveTheme().resolved`, converts to linear
+ * sRGB via `oklchToLinearSRGB()`, applies the CVD matrix, and returns
+ * simulated linear sRGB clamped to [0, 1].
+ *
+ * @param L        - OKLCH lightness
+ * @param C        - OKLCH chroma
+ * @param h        - OKLCH hue angle (degrees)
+ * @param type     - CVD type
+ * @param severity - Simulation severity, 0.0–1.0 (default 1.0)
+ * @returns Simulated linear sRGB {r, g, b}, clamped to [0, 1]
+ */
+export function simulateCVDFromOKLCH(
+  L: number,
+  C: number,
+  h: number,
+  type: CVDType,
+  severity = 1.0,
+): { r: number; g: number; b: number } {
+  const linearRGB = oklchToLinearSRGB(L, C, h);
+  return simulateCVD(linearRGB, type, severity);
+}
+
+/**
+ * Apply sRGB gamma encoding (IEC 61966-2-1) to a single linear channel.
+ */
+function linearToSrgbGamma(c: number): number {
+  return c >= 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
+}
+
+/**
+ * Simulate colour vision deficiency for a hex colour and return the result
+ * as a hex string.
+ *
+ * Convenience wrapper for standalone use outside the theme pipeline:
+ *   hex → linearise sRGB → apply CVD matrix → gamma-encode → hex
+ *
+ * @param hex      - Input colour as #rrggbb
+ * @param type     - CVD type
+ * @param severity - Simulation severity, 0.0–1.0 (default 1.0)
+ * @returns Simulated colour as #rrggbb
+ */
+export function simulateCVDForHex(
+  hex: string,
+  type: CVDType,
+  severity = 1.0,
+): string {
+  // hex → gamma-decoded linear sRGB
+  const rGamma = parseInt(hex.slice(1, 3), 16) / 255;
+  const gGamma = parseInt(hex.slice(3, 5), 16) / 255;
+  const bGamma = parseInt(hex.slice(5, 7), 16) / 255;
+  const linearRGB = {
+    r: srgbChannelToLinear(rGamma),
+    g: srgbChannelToLinear(gGamma),
+    b: srgbChannelToLinear(bGamma),
+  };
+
+  // Apply CVD matrix
+  const simLinear = simulateCVD(linearRGB, type, severity);
+
+  // Gamma-encode and convert to hex
+  const rOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(simLinear.r))) * 255);
+  const gOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(simLinear.g))) * 255);
+  const bOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(simLinear.b))) * 255);
+
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(rOut)}${toHex(gOut)}${toHex(bOut)}`;
+}
+
+// ---------------------------------------------------------------------------
+// CVD distinguishability check
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum lightness delta (in simulated linear sRGB space) below which a
+ * semantic token pair is considered indistinguishable under a given CVD type.
+ *
+ * Computed as |Y1 - Y2| where Y = 0.2126R + 0.7152G + 0.0722B
+ * on the simulated linear-sRGB outputs.
+ *
+ * A delta below this threshold means the two colours appear nearly the same
+ * lightness to a person with that deficiency, making them hard to distinguish
+ * even if their hues differ in normal vision.
+ */
+const CVD_LIGHTNESS_DELTA_THRESHOLD = 0.05;
+
+/**
+ * The four CVD types enumerated for iteration.
+ */
+const ALL_CVD_TYPES: CVDType[] = [
+  "protanopia",
+  "deuteranopia",
+  "tritanopia",
+  "achromatopsia",
+];
+
+/**
+ * Authoritative semantic token pairs to check for CVD distinguishability.
+ *
+ * Each pair [tokenA, tokenB] represents two colours that convey different
+ * semantic meaning and must remain visually distinguishable under CVD.
+ *
+ * Pairs are defined as [positive/warning, positive/destructive, primary/destructive,
+ * accent/atmosphere] following the plan spec.
+ */
+export const CVD_SEMANTIC_PAIRS: [string, string][] = [
+  // Status signals: positive (green-family) vs warning (yellow-family)
+  ["--tug-base-tone-positive", "--tug-base-tone-warning"],
+  // Status signals: positive (green) vs danger/destructive (red-family)
+  ["--tug-base-tone-positive", "--tug-base-tone-danger"],
+  // Primary action vs destructive action (button colours)
+  ["--tug-base-accent-default", "--tug-base-tone-danger"],
+  // Accent vs atmosphere (theme identity colours)
+  ["--tug-base-accent-default", "--tug-base-bg-app"],
+];
+
+/**
+ * Check whether semantic token pairs remain distinguishable under each CVD type.
+ *
+ * Consumes the resolved OKLCH map from `deriveTheme()` per [D09].
+ * For each CVD type, simulates both tokens in a pair via `simulateCVDFromOKLCH`
+ * and measures the luminance delta of the simulated outputs.
+ *
+ * A warning is emitted if the luminance delta drops below
+ * `CVD_LIGHTNESS_DELTA_THRESHOLD` (0.05), indicating the pair becomes
+ * difficult to distinguish.
+ *
+ * Pairs where either token is absent from the resolved map are silently skipped.
+ *
+ * @param resolved      - OKLCH map from `deriveTheme()` output [D09]
+ * @param semanticPairs - Array of [tokenA, tokenB] pairs to evaluate
+ * @returns Array of CVDWarning entries for indistinguishable pairs
+ */
+export function checkCVDDistinguishability(
+  resolved: Record<string, ResolvedColor>,
+  semanticPairs: [string, string][],
+): CVDWarning[] {
+  const warnings: CVDWarning[] = [];
+
+  for (const cvdType of ALL_CVD_TYPES) {
+    for (const [tokenA, tokenB] of semanticPairs) {
+      const colorA = resolved[tokenA];
+      const colorB = resolved[tokenB];
+
+      // Skip pairs where either token is absent (non-chromatic / structural)
+      if (!colorA || !colorB) continue;
+
+      // Simulate both colours under the current CVD type
+      const simA = simulateCVDFromOKLCH(colorA.L, colorA.C, colorA.h, cvdType);
+      const simB = simulateCVDFromOKLCH(colorB.L, colorB.C, colorB.h, cvdType);
+
+      // Compute luminance of each simulated colour (WCAG relative luminance formula)
+      const lumA = 0.2126 * simA.r + 0.7152 * simA.g + 0.0722 * simA.b;
+      const lumB = 0.2126 * simB.r + 0.7152 * simB.g + 0.0722 * simB.b;
+      const delta = Math.abs(lumA - lumB);
+
+      if (delta < CVD_LIGHTNESS_DELTA_THRESHOLD) {
+        warnings.push({
+          type: cvdType,
+          tokenPair: [tokenA, tokenB],
+          description:
+            `Under ${cvdType}, "${tokenA}" and "${tokenB}" have a simulated ` +
+            `luminance delta of ${delta.toFixed(4)}, below the threshold of ` +
+            `${CVD_LIGHTNESS_DELTA_THRESHOLD}. They may appear indistinguishable.`,
+          suggestion:
+            `Increase lightness separation between the two tokens, or choose ` +
+            `hues that remain distinguishable under ${cvdType} simulation.`,
+        });
+      }
+    }
+  }
+
+  return warnings;
+}
 
 // ---------------------------------------------------------------------------
 // Utility: oklchToHex re-export for consumers of this module
 // ---------------------------------------------------------------------------
 
 export { oklchToHex } from "./palette-engine";
-export type { ResolvedColor, ContrastResult } from "./theme-derivation-engine";
+export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
 // Expose WCAG_APCA_THRESHOLDS for informational display [D07]
