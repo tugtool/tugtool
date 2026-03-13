@@ -192,8 +192,8 @@ body {
 
 /*
  * Hover / focus state: use --tug-base-surface-default (main surface) rather than
- * --tug-base-control-secondary-bg-rest (which is the same as the content panel background,
- * making hover invisible). --tug-base-surface-default provides visible contrast.
+ * the deprecated secondary control surface token (which matches the content panel
+ * background, making hover invisible). --tug-base-surface-default provides visible contrast.
  */
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {

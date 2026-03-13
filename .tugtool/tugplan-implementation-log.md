@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-13T21:29:21Z
+---
+
+## step-9: Final integration checkpoint: all 1533 tests pass, zero old token/variant references in non-archived code, TugBadge component verified, gallery showcases full matrix, theme overrides consistent. Reworded one CSS comment in tug-menu.css to remove old token name.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-8
 date: 2025-03-13T21:22:43Z
 ---
