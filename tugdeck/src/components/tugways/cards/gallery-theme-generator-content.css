@@ -1,0 +1,640 @@
+/**
+ * Gallery Theme Generator Content styles.
+ *
+ * Styles for the Theme Generator gallery card UI: seed selectors, mood sliders,
+ * token preview grid. Builds on the cg-* class patterns from gallery-card.css.
+ * All color tokens use --tug-base-* semantic tokens exclusively.
+ *
+ * Rules of Tugways: appearance through CSS custom properties, not React state.
+ * [D08, D09]
+ */
+
+/* ============================================================================
+   Content wrapper
+   ========================================================================= */
+
+.gtg-content {
+  /* Inherits .cg-content scroll, padding, flex-column, gap */
+}
+
+/* ============================================================================
+   Mode toggle (dark / light two-state button group)
+   ========================================================================= */
+
+.gtg-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.gtg-mode-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  background-color: var(--tug-base-surface-default);
+  border: none;
+  padding: 5px 14px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 80ms ease, color 80ms ease;
+}
+
+.gtg-mode-btn:hover {
+  background-color: var(--tug-base-surface-raised);
+  color: var(--tug-base-fg-default);
+}
+
+.gtg-mode-btn--active {
+  background-color: var(--tug-base-accent-default);
+  color: var(--tug-base-accent-fg);
+}
+
+.gtg-mode-btn--active:hover {
+  background-color: var(--tug-base-accent-default);
+  color: var(--tug-base-accent-fg);
+}
+
+/* ============================================================================
+   Hue swatch selector strip (atmosphere hue + text hue)
+   ========================================================================= */
+
+.gtg-hue-strip {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.gtg-hue-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.gtg-hue-swatch {
+  width: 24px;
+  height: 32px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  transition: outline-offset 60ms ease;
+}
+
+.gtg-hue-swatch:hover {
+  border-color: var(--tug-base-border-default);
+}
+
+.gtg-hue-item--selected .gtg-hue-swatch {
+  outline: 2px solid var(--tug-base-accent-default);
+  outline-offset: 1px;
+}
+
+.gtg-hue-label {
+  font-size: 9px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  text-align: center;
+  width: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Mood sliders
+   ========================================================================= */
+
+.gtg-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gtg-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gtg-slider-label {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  width: 128px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.gtg-slider-input {
+  flex: 1;
+  min-width: 80px;
+  max-width: 260px;
+  accent-color: var(--tug-base-accent-default);
+}
+
+.gtg-slider-value {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-muted);
+  width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Token preview grid
+   ========================================================================= */
+
+.gtg-token-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px minmax(120px, 1fr);
+  gap: 2px 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 8px;
+  background-color: var(--tug-base-surface-default);
+}
+
+.gtg-token-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug-base-border-default);
+  user-select: none;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 40px minmax(120px, 1fr);
+  gap: 0 10px;
+}
+
+.gtg-token-row {
+  display: contents;
+}
+
+.gtg-token-name {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-muted);
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.gtg-token-swatch {
+  width: 24px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  align-self: center;
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+.gtg-token-value {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-subtle);
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ============================================================================
+   Recipe preset buttons
+   ========================================================================= */
+
+.gtg-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gtg-preset-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-secondary-bg-rest);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-preset-btn:hover {
+  background-color: var(--tug-base-surface-default);
+}
+
+.gtg-preset-btn--active {
+  background-color: var(--tug-base-accent-subtle);
+  border-color: var(--tug-base-accent-default);
+  color: var(--tug-base-accent-fg);
+}
+
+/* ============================================================================
+   Contrast dashboard
+   ========================================================================= */
+
+/* Summary bar — "N/M pairs pass WCAG AA" */
+.gtg-dash-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  padding: 6px 10px;
+  background-color: var(--tug-base-surface-default);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  user-select: none;
+}
+
+.gtg-dash-summary-count {
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-mono, monospace);
+}
+
+.gtg-dash-summary-count--all-pass {
+  color: var(--tug-base-tone-positive-fg);
+}
+
+.gtg-dash-summary-count--partial {
+  color: var(--tug-base-tone-warning-fg);
+}
+
+.gtg-dash-summary-count--fail {
+  color: var(--tug-base-tone-danger-fg);
+}
+
+/* Scrollable grid container */
+.gtg-dash-grid {
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 2px 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 8px;
+  background-color: var(--tug-base-surface-default);
+}
+
+/* Column header row */
+.gtg-dash-col-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug-base-border-default);
+  user-select: none;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 0 8px;
+  align-items: end;
+}
+
+/* Swatch cells (fg and bg) */
+.gtg-dash-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  align-self: center;
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+/* Token name cells */
+.gtg-dash-token-name {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+  padding: 2px 0;
+}
+
+/* Numeric contrast value cells */
+.gtg-dash-ratio {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-subtle);
+  align-self: center;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+/* Pass/fail badge */
+.gtg-dash-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-sans);
+  letter-spacing: 0.04em;
+  border-radius: var(--tug-base-radius-xs);
+  padding: 2px 6px;
+  user-select: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* Green — pass both thresholds */
+.gtg-dash-badge--pass {
+  background-color: var(--tug-base-tone-positive-bg);
+  color: var(--tug-base-tone-positive-fg);
+  border: 1px solid var(--tug-base-tone-positive-border);
+}
+
+/* Yellow — marginal (within 0.5 of threshold) */
+.gtg-dash-badge--marginal {
+  background-color: var(--tug-base-tone-warning-bg);
+  color: var(--tug-base-tone-warning-fg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+}
+
+/* Red — fail */
+.gtg-dash-badge--fail {
+  background-color: var(--tug-base-tone-danger-bg);
+  color: var(--tug-base-tone-danger-fg);
+  border: 1px solid var(--tug-base-tone-danger-border);
+}
+
+/* Decorative — no requirement, shown as neutral */
+.gtg-dash-badge--decorative {
+  background-color: var(--tug-base-surface-raised);
+  color: var(--tug-base-fg-muted);
+  border: 1px solid var(--tug-base-border-default);
+}
+
+/* ============================================================================
+   CVD preview strip
+   ========================================================================= */
+
+.gtg-cvd-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 8px;
+  background-color: var(--tug-base-surface-default);
+  overflow-x: auto;
+}
+
+/* Column header row */
+.gtg-cvd-col-headers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug-base-border-default);
+}
+
+.gtg-cvd-token-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  width: 80px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Each CVD type row */
+.gtg-cvd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* Label cell (type name + optional warning badge) */
+.gtg-cvd-type-label-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.gtg-cvd-type-label {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-cvd-warn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background-color: var(--tug-base-tone-warning-bg);
+  color: var(--tug-base-tone-warning-fg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+/* Pair of swatches for one semantic token (original + simulated) */
+.gtg-cvd-swatch-pair {
+  display: flex;
+  gap: 2px;
+  width: 80px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+.gtg-cvd-swatch {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+.gtg-cvd-swatch--missing {
+  background-color: var(--tug-base-surface-raised);
+  opacity: 0.4;
+}
+
+/* ============================================================================
+   Auto-fix panel
+   ========================================================================= */
+
+.gtg-autofix-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gtg-autofix-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gtg-autofix-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-secondary-bg-rest);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-autofix-btn:hover:not(:disabled) {
+  background-color: var(--tug-base-surface-default);
+}
+
+.gtg-autofix-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gtg-autofix-result {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+}
+
+/* CVD hue-shift suggestions list */
+.gtg-autofix-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background-color: var(--tug-base-tone-warning-bg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+  border-radius: var(--tug-base-radius-sm);
+}
+
+.gtg-autofix-suggestions-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-tone-warning-fg);
+  user-select: none;
+}
+
+.gtg-autofix-suggestion-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gtg-autofix-suggestion-item {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  line-height: 1.4;
+}
+
+.gtg-autofix-suggestion-type {
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--tug-base-tone-warning-fg);
+}
+
+/* ============================================================================
+   Export / Import panel
+   ========================================================================= */
+
+.gtg-export-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Row of export buttons */
+.gtg-export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Row for import button + error message */
+.gtg-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Hidden file input — triggered programmatically by the Import button */
+.gtg-import-file-input {
+  display: none;
+}
+
+/* Shared button style for Export CSS / Export Recipe JSON / Import Recipe */
+.gtg-export-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-secondary-bg-rest);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-export-btn:hover {
+  background-color: var(--tug-base-surface-default);
+}
+
+/* Inline error message shown when import validation fails */
+.gtg-import-error {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-tone-danger-fg);
+  background-color: var(--tug-base-tone-danger-bg);
+  border: 1px solid var(--tug-base-tone-danger-border);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 3px 8px;
+}

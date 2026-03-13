@@ -413,11 +413,11 @@ describe("tug-color-parser: preset syntax", () => {
     expect(v.alpha).toBe(100);
   });
 
-  it("--tug-color(orange-muted) uses muted preset defaults: i=45, t=40", () => {
+  it("--tug-color(orange-muted) uses muted preset defaults: i=50, t=42", () => {
     const v = expectOkWithPresets("orange-muted");
     expect(v.color).toEqual({ name: "orange", offset: 0, preset: "muted" });
-    expect(v.intensity).toBe(45);
-    expect(v.tone).toBe(40);
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(42);
   });
 
   it("--tug-color(blue-light) uses light preset defaults: i=20, t=85", () => {
@@ -452,8 +452,8 @@ describe("tug-color-parser: preset syntax", () => {
   it("preset with explicit alpha override: --tug-color(orange-muted, a: 50)", () => {
     const v = expectOkWithPresets("orange-muted, a: 50");
     expect(v.color.preset).toBe("muted");
-    expect(v.intensity).toBe(45); // from preset
-    expect(v.tone).toBe(40);     // from preset
+    expect(v.intensity).toBe(50); // from preset
+    expect(v.tone).toBe(42);     // from preset
     expect(v.alpha).toBe(50);    // explicit override
   });
 
@@ -468,7 +468,7 @@ describe("tug-color-parser: preset syntax", () => {
     const v = expectOkWithPresets("green-muted, i: 40");
     expect(v.color.preset).toBe("muted");
     expect(v.intensity).toBe(40); // explicit override
-    expect(v.tone).toBe(40);      // from preset
+    expect(v.tone).toBe(42);      // from preset
   });
 
   it("unknown preset errors: --tug-color(red-foo) should error", () => {
@@ -486,8 +486,8 @@ describe("tug-color-parser: preset syntax", () => {
   it("labeled color with preset: --tug-color(c: orange-muted, a: 50)", () => {
     const v = expectOkWithPresets("c: orange-muted, a: 50");
     expect(v.color.preset).toBe("muted");
-    expect(v.intensity).toBe(45);
-    expect(v.tone).toBe(40);
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(42);
     expect(v.alpha).toBe(50);
   });
 });

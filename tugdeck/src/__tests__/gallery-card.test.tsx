@@ -1,11 +1,11 @@
 /**
- * Gallery card tests -- Step 7 (updated for eleven gallery sections in Phase 5d5f).
+ * Gallery card tests -- Step 6 (updated for twenty gallery sections).
  *
  * Tests cover:
- * - registerGalleryCards() registers all eleven gallery componentIds
- * - Each of the eleven content components renders without errors
- * - GALLERY_DEFAULT_TABS has eleven entries with correct componentIds and titles
- * - addCard("gallery-buttons") creates an eleven-tab card with title "Component Gallery"
+ * - registerGalleryCards() registers all twenty gallery componentIds
+ * - Each of the twenty content components renders without errors
+ * - GALLERY_DEFAULT_TABS has twenty entries with correct componentIds and titles
+ * - addCard("gallery-buttons") creates a twenty-tab card with title "Component Gallery"
  *   and acceptsFamilies: ["developer"]
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
@@ -120,11 +120,11 @@ describe("registerGalleryCards – registry entries", () => {
     }
   });
 
-  it("gallery-buttons has defaultTabs with fourteen entries", () => {
+  it("gallery-buttons has defaultTabs with twenty entries", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(14);
+    expect(reg!.defaultTabs!.length).toBe(20);
   });
 
   it("gallery-buttons has defaultTitle: 'Component Gallery'", () => {
@@ -133,7 +133,7 @@ describe("registerGalleryCards – registry entries", () => {
     expect(reg!.defaultTitle).toBe("Component Gallery");
   });
 
-  it("other thirteen gallery registrations do NOT have defaultTabs or defaultTitle", () => {
+  it("other nineteen gallery registrations do NOT have defaultTabs or defaultTitle", () => {
     registerGalleryCards();
     const others = [
       "gallery-chain-actions",
@@ -148,6 +148,13 @@ describe("registerGalleryCards – registry entries", () => {
       "gallery-cascade-inspector",
       "gallery-animator",
       "gallery-skeleton",
+      "gallery-title-bar",
+      "gallery-input",
+      "gallery-label",
+      "gallery-marquee",
+      "gallery-checkbox",
+      "gallery-switch",
+      "gallery-theme-generator",
     ];
     for (const id of others) {
       const reg = getRegistration(id);
@@ -162,8 +169,8 @@ describe("registerGalleryCards – registry entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("GALLERY_DEFAULT_TABS", () => {
-  it("has fourteen entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(14);
+  it("has twenty entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
   });
 
   it("entries have the correct componentIds", () => {
@@ -180,6 +187,13 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(componentIds).toContain("gallery-scale-timing");
     expect(componentIds).toContain("gallery-cascade-inspector");
     expect(componentIds).toContain("gallery-skeleton");
+    expect(componentIds).toContain("gallery-title-bar");
+    expect(componentIds).toContain("gallery-input");
+    expect(componentIds).toContain("gallery-label");
+    expect(componentIds).toContain("gallery-marquee");
+    expect(componentIds).toContain("gallery-checkbox");
+    expect(componentIds).toContain("gallery-switch");
+    expect(componentIds).toContain("gallery-theme-generator");
   });
 
   it("entries have the correct titles", () => {
@@ -196,6 +210,13 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("Scale & Timing");
     expect(titles).toContain("Cascade Inspector");
     expect(titles).toContain("TugSkeleton");
+    expect(titles).toContain("Title Bar");
+    expect(titles).toContain("TugInput");
+    expect(titles).toContain("TugLabel");
+    expect(titles).toContain("TugMarquee");
+    expect(titles).toContain("TugCheckbox");
+    expect(titles).toContain("TugSwitch");
+    expect(titles).toContain("Theme Generator");
   });
 
   it("all entries are closable", () => {
@@ -209,7 +230,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 // addCard("gallery-buttons") integration
 // ---------------------------------------------------------------------------
 
-describe("DeckManager.addCard('gallery-buttons') creates fourteen-tab gallery card", () => {
+describe("DeckManager.addCard('gallery-buttons') creates twenty-tab gallery card", () => {
   let manager: DeckManager;
 
   beforeEach(() => {
@@ -224,13 +245,13 @@ describe("DeckManager.addCard('gallery-buttons') creates fourteen-tab gallery ca
     cleanup();
   });
 
-  it("creates a card with fourteen tabs, each with a distinct componentId", () => {
+  it("creates a card with twenty tabs, each with a distinct componentId", () => {
     const cardId = manager.addCard("gallery-buttons");
     expect(cardId).not.toBeNull();
 
     const card = manager.getDeckState().cards.find((c) => c.id === cardId)!;
     expect(card).toBeDefined();
-    expect(card.tabs.length).toBe(14);
+    expect(card.tabs.length).toBe(20);
 
     const componentIds = card.tabs.map((t) => t.componentId);
     expect(componentIds).toContain("gallery-buttons");
@@ -246,6 +267,13 @@ describe("DeckManager.addCard('gallery-buttons') creates fourteen-tab gallery ca
     expect(componentIds).toContain("gallery-cascade-inspector");
     expect(componentIds).toContain("gallery-animator");
     expect(componentIds).toContain("gallery-skeleton");
+    expect(componentIds).toContain("gallery-title-bar");
+    expect(componentIds).toContain("gallery-input");
+    expect(componentIds).toContain("gallery-label");
+    expect(componentIds).toContain("gallery-marquee");
+    expect(componentIds).toContain("gallery-checkbox");
+    expect(componentIds).toContain("gallery-switch");
+    expect(componentIds).toContain("gallery-theme-generator");
   });
 
   it("card.title is 'Component Gallery'", () => {
@@ -269,7 +297,7 @@ describe("DeckManager.addCard('gallery-buttons') creates fourteen-tab gallery ca
     }
     // All tab IDs must be unique
     const ids = card.tabs.map((t) => t.id);
-    expect(new Set(ids).size).toBe(14);
+    expect(new Set(ids).size).toBe(20);
   });
 });
 

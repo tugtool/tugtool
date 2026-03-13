@@ -207,8 +207,8 @@ describe("TUG_COLOR_PRESETS", () => {
   it("intense: intensity=90, tone=50", () => {
     expect(TUG_COLOR_PRESETS["intense"]).toEqual({ intensity: 90, tone: 50 });
   });
-  it("muted: intensity=45, tone=40", () => {
-    expect(TUG_COLOR_PRESETS["muted"]).toEqual({ intensity: 45, tone: 40 });
+  it("muted: intensity=50, tone=42", () => {
+    expect(TUG_COLOR_PRESETS["muted"]).toEqual({ intensity: 50, tone: 42 });
   });
 });
 

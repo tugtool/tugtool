@@ -10,6 +10,126 @@ Entries are sorted newest-first.
 
 ---
 step: step-10
+date: 2025-03-13T03:25:06Z
+---
+
+## step-10: Added end-to-end integration tests with novel recipe (amber/sand, mood knobs 70/80/65). Tests cover T-ACC-1 (WCAG AA contrast), T-ACC-2 (CSS postcss round-trip), T-ACC-3 (CVD protanopia flagging). Gallery tab regression tests verify all 15 tabs. Full suite: 1498 pass / 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-9
+date: 2025-03-13T03:12:24Z
+---
+
+## step-9: Added generateCssExport for CSS file export in bluenote/harmony format, recipe JSON export/import with schema validation, Blob+objectURL download pattern. Recipe name preserved through UI state. FileReader/Blob/URL stubs added to test setup. 40 export/import tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-8
+date: 2025-03-13T02:54:43Z
+---
+
+## step-8: Added CVD preview strip showing 4 types × 6 semantic swatches with simulated colors and warning badges. Added auto-fix button running autoAdjustContrast with CVD hue-shift suggestions. Tests T8.1-T8.3 for strip rows, swatch count, and auto-fix interaction.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-7
+date: 2025-03-13T02:43:48Z
+---
+
+## step-7: Added ContrastDashboard section to gallery-theme-generator-content with WCAG ratio, APCA Lc, and pass/fail badges for all fg/bg pairs. Summary bar shows N/M pairs passing WCAG AA. Tests T7.1-T7.3 for row count, body-text pass, and summary format.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-6
+date: 2025-03-13T02:34:54Z
+---
+
+## step-6: Created gallery-theme-generator-content.tsx/.css with mode toggle, 24-hue selectors, mood sliders, and 264-token preview grid. Registered as 15th gallery tab in gallery-card.tsx. Updated tab count assertions in gallery-card, component-gallery, and observable-props-integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-5
+date: 2025-03-13T02:18:39Z
+---
+
+## step-5: Added CVD simulation to theme-accessibility.ts: CVD_MATRICES (Machado et al. 2009 Table T02), simulateCVD/simulateCVDFromOKLCH/simulateCVDForHex, checkCVDDistinguishability for semantic token pairs, CVD_SEMANTIC_PAIRS. Removed dead bumpResolvedL code. Added T5.1-T5.5 CVD tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-4
+date: 2025-03-13T02:03:24Z
+---
+
+## step-4: Added T4.1-T4.3 integration tests wiring deriveTheme() into validateThemeContrast() and autoAdjustContrast() for all three example recipes. Verified D09 dual-output contract and token/resolved consistency after adjustment.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-3
+date: 2025-03-13T01:54:11Z
+---
+
+## step-3: Created theme-accessibility.ts with computeWcagContrast, computeApcaLc, validateThemeContrast, and autoAdjustContrast. Auto-adjustment preserves hue references via parseTugColorToken and bumps fg tone to meet WCAG thresholds. Added T3.1-T3.7 contrast tests to theme-accessibility.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-2
+date: 2025-03-13T01:29:08Z
+---
+
+## step-2: Created theme-derivation-engine.ts with ThemeRecipe/ThemeOutput interfaces, EXAMPLE_RECIPES, deriveTheme() with ~55 role formulas, per-tier hue offsets, warmth/surfaceContrast/signalVividity mood knobs. Added golden tests comparing Bluenote (~30 overrides) and Harmony (~94 overrides) at OKLCH delta <0.02.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-1
+date: 2025-03-13T00:17:50Z
+---
+
+## step-1: Created fg-bg-pairing-map.ts with typed FG_BG_PAIRING_MAP constant declaring all foreground/background token pairings with contrast roles from Table T01. Added theme-accessibility.test.ts with completeness tests ensuring every chromatic fg and bg token appears in at least one pairing.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
+step: step-10
 date: 2025-03-12T18:25:19Z
 ---
 

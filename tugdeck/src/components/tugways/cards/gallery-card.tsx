@@ -1,11 +1,11 @@
 /**
  * Gallery card registrations and content components.
  *
- * Converts the Component Gallery from a floating panel into ten separately
+ * Converts the Component Gallery from a floating panel into twenty separately
  * registered card types, each with its own `componentId` in the "developer"
  * family. The `gallery-buttons` entry is the gallery's entry-point componentId:
  * it carries `defaultTabs` and `defaultTitle` so that `addCard("gallery-buttons")`
- * creates a ten-tab card titled "Component Gallery".
+ * creates a twenty-tab card titled "Component Gallery".
  *
  * **Authoritative references:**
  * - [D01] Seven separate componentIds for gallery sections
@@ -38,6 +38,7 @@ import { GalleryLabelContent } from "./gallery-label-content";
 import { GalleryMarqueeContent } from "./gallery-marquee-content";
 import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { GallerySwitchContent } from "./gallery-switch-content";
+import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -59,7 +60,7 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-st
  * Default tab templates for the gallery host card.
  *
  * Only `gallery-buttons` uses these — passed as `defaultTabs` so that
- * `addCard("gallery-buttons")` creates a fourteen-tab card. Template `id` values
+ * `addCard("gallery-buttons")` creates a twenty-tab card. Template `id` values
  * are placeholders: `DeckManager.addCard` replaces them with fresh UUIDs.
  *
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
@@ -84,6 +85,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-marquee",            title: "TugMarquee",           closable: true },
   { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
+  { id: "template", componentId: "gallery-theme-generator",   title: "Theme Generator",      closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -942,7 +944,7 @@ export function GalleryTitleBarContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * Register all fourteen gallery card types in the global card registry.
+ * Register all twenty gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -953,7 +955,7 @@ export function GalleryTitleBarContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates thirteen-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
@@ -1141,6 +1143,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-switch",
     contentFactory: (_cardId) => <GallerySwitchContent />,
     defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-theme-generator ----
+  // Theme Generator: derives complete 264-token themes from seed colors + mood
+  // parameters. Uses theme-derivation-engine + theme-accessibility modules. [D04]
+  registerCard({
+    componentId: "gallery-theme-generator",
+    contentFactory: (_cardId) => <GalleryThemeGeneratorContent />,
+    defaultMeta: { title: "Theme Generator", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });
