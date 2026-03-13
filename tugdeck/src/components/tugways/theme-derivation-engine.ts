@@ -44,8 +44,8 @@ export interface ThemeRecipe {
   accent?: string;
   primary?: string;
   destructive?: string;
-  positive?: string;
-  warning?: string;
+  success?: string;
+  caution?: string;
   info?: string;
   surfaceContrast?: number; // 0-100, default 50
   signalVividity?: number; // 0-100, default 50
@@ -354,8 +354,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const primaryRef = formatHueRef(primaryName, primaryAngle);
 
   const destructiveHue = recipe.destructive ?? "red";
-  const positiveHue = recipe.positive ?? "green";
-  const warningHue = recipe.warning ?? "yellow";
+  const successHue = recipe.success ?? "green";
+  const cautionHue = recipe.caution ?? "yellow";
   const infoHue = recipe.info ?? "cyan";
 
   const isLight = recipe.mode === "light";
@@ -739,8 +739,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-fg-onDanger", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone, 100, txtNameW);
   }
 
-  // fg-onWarning: dark text on yellow/warning (yellow is bright, needs dark text in both modes)
-  setChromatic("--tug-base-fg-onWarning", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
+  // fg-onCaution: dark text on yellow/caution (yellow is bright, needs dark text in both modes)
+  setChromatic("--tug-base-fg-onCaution", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
   setChromatic("--tug-base-fg-onSuccess", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
 
   // --- Icon ---
@@ -954,26 +954,26 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // C. Semantic Tones
   // =========================================================================
 
-  const positiveAngle = resolveHueAngle(positiveHue);
-  const positiveName = closestHueName(positiveAngle);
-  const warningAngle = resolveHueAngle(warningHue);
-  const warningName = closestHueName(warningAngle);
+  const successAngle = resolveHueAngle(successHue);
+  const successName = closestHueName(successAngle);
+  const cautionAngle = resolveHueAngle(cautionHue);
+  const cautionName = closestHueName(cautionAngle);
   const dangerAngle = resolveHueAngle(destructiveHue);
   const dangerName = closestHueName(dangerAngle);
   const infoAngle = resolveHueAngle(infoHue);
   const infoName = closestHueName(infoAngle);
 
-  setChromatic("--tug-base-tone-positive", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-bg", positiveHue, positiveAngle, signalI, 50, 15, positiveName);
-  setChromatic("--tug-base-tone-positive-fg", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-border", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-icon", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-tone-success", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-bg", successHue, successAngle, signalI, 50, 15, successName);
+  setChromatic("--tug-base-tone-success-fg", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-border", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-icon", successHue, successAngle, signalI, 50, 100, successName);
 
-  setChromatic("--tug-base-tone-warning", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-bg", warningHue, warningAngle, signalI, 50, 12, warningName);
-  setChromatic("--tug-base-tone-warning-fg", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-border", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-icon", warningHue, warningAngle, signalI, 50, 100, warningName);
+  setChromatic("--tug-base-tone-caution", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-bg", cautionHue, cautionAngle, signalI, 50, 12, cautionName);
+  setChromatic("--tug-base-tone-caution-fg", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-border", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-icon", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
 
   setChromatic("--tug-base-tone-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-tone-danger-bg", destructiveHue, dangerAngle, signalI, 50, 15, dangerName);
@@ -1183,7 +1183,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   }
   setChromatic("--tug-base-field-border-focus", infoHue, infoAngle, signalI, 50, 100, infoName);
   setChromatic("--tug-base-field-border-invalid", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-border-valid", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-field-border-valid", successHue, successAngle, signalI, 50, 100, successName);
   setChromatic("--tug-base-field-border-disabled", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
   setChromatic("--tug-base-field-border-readOnly", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
 
@@ -1203,11 +1203,11 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-field-counter", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
   }
   setChromatic("--tug-base-field-limit", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-dirty", warningHue, warningAngle, signalI, 50, 100, warningName);
+  setChromatic("--tug-base-field-dirty", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
   setChromatic("--tug-base-field-readOnly", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
   setChromatic("--tug-base-field-error", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-warning", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-field-success", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-field-warning", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-field-success", successHue, successAngle, signalI, 50, 100, successName);
 
   // --- Toggle / Range Tokens ---
   // Toggle track: atmosphere (off) or accent (on)

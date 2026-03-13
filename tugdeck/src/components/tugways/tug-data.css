@@ -23,7 +23,7 @@ body {
   /* --- Stat / Trend --- */
   --tug-stat-label: var(--tug-base-fg-subtle);
   --tug-stat-value: var(--tug-base-fg-default);
-  --tug-stat-trend-positive: var(--tug-base-tone-positive);
+  --tug-stat-trend-positive: var(--tug-base-tone-success);
   --tug-stat-trend-negative: var(--tug-base-tone-danger);
   --tug-stat-trend-neutral: var(--tug-base-fg-subtle);
 
@@ -40,7 +40,7 @@ body {
   --tug-chart-grid: var(--tug-base-overlay-highlight);
   --tug-chart-axis: var(--tug-base-border-default);
   --tug-chart-tick: var(--tug-base-border-default);
-  --tug-chart-threshold-warning: var(--tug-base-tone-warning);
+  --tug-chart-threshold-warning: var(--tug-base-tone-caution);
   --tug-chart-threshold-danger: var(--tug-base-tone-danger);
 
   /* --- Gauge --- */
@@ -50,7 +50,7 @@ body {
   --tug-gauge-tick-major: var(--tug-base-fg-subtle);
   --tug-gauge-tick-minor: var(--tug-base-fg-disabled);
   --tug-gauge-readout: var(--tug-base-fg-default);
-  --tug-gauge-threshold-warning: var(--tug-base-tone-warning);
+  --tug-gauge-threshold-warning: var(--tug-base-tone-caution);
   --tug-gauge-threshold-danger: var(--tug-base-tone-danger);
   --tug-gauge-unit: var(--tug-base-fg-subtle);
   --tug-gauge-annotation: var(--tug-base-fg-subtle);

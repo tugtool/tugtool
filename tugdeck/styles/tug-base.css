@@ -147,7 +147,7 @@ body {
   --tug-base-fg-link-hover: --tug-color(cyan-light);
   --tug-base-fg-onAccent: --tug-color(cobalt-8, i: 3, t: 100);
   --tug-base-fg-onDanger: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-fg-onWarning: --tug-color(violet-6, i: 4, t: 7);
+  --tug-base-fg-onCaution: --tug-color(violet-6, i: 4, t: 7);
   --tug-base-fg-onSuccess: --tug-color(violet-6, i: 4, t: 7);
 
   /* --- Icon --- */
@@ -279,16 +279,16 @@ body {
      ====================================================================== */
 
   /* --- Semantic Tones --- */
-  --tug-base-tone-positive: --tug-color(green);
-  --tug-base-tone-positive-bg: --tug-color(green, i: 50, t: 50, a: 15);
-  --tug-base-tone-positive-fg: --tug-color(green);
-  --tug-base-tone-positive-border: --tug-color(green);
-  --tug-base-tone-positive-icon: --tug-color(green);
-  --tug-base-tone-warning: --tug-color(yellow);
-  --tug-base-tone-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
-  --tug-base-tone-warning-fg: --tug-color(yellow);
-  --tug-base-tone-warning-border: --tug-color(yellow);
-  --tug-base-tone-warning-icon: --tug-color(yellow);
+  --tug-base-tone-success: --tug-color(green);
+  --tug-base-tone-success-bg: --tug-color(green, i: 50, t: 50, a: 15);
+  --tug-base-tone-success-fg: --tug-color(green);
+  --tug-base-tone-success-border: --tug-color(green);
+  --tug-base-tone-success-icon: --tug-color(green);
+  --tug-base-tone-caution: --tug-color(yellow);
+  --tug-base-tone-caution-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-base-tone-caution-fg: --tug-color(yellow);
+  --tug-base-tone-caution-border: --tug-color(yellow);
+  --tug-base-tone-caution-icon: --tug-color(yellow);
   --tug-base-tone-danger: --tug-color(red);
   --tug-base-tone-danger-bg: --tug-color(red, i: 50, t: 50, a: 15);
   --tug-base-tone-danger-fg: --tug-color(red);

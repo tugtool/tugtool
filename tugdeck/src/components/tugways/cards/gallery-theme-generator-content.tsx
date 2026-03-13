@@ -390,12 +390,12 @@ const CVD_TYPE_LABELS: Record<CVDType, string> = {
 
 /**
  * The six semantic token names shown in each CVD row.
- * Ordered: accent, positive, warning, destructive, primary, info.
+ * Ordered: accent, success, caution, destructive, primary, info.
  */
 const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
   { token: "--tug-base-accent-default",           label: "Accent" },
-  { token: "--tug-base-tone-positive",             label: "Positive" },
-  { token: "--tug-base-tone-warning",              label: "Warning" },
+  { token: "--tug-base-tone-success",              label: "Success" },
+  { token: "--tug-base-tone-caution",              label: "Caution" },
   { token: "--tug-base-tone-danger",               label: "Danger" },
   { token: "--tug-base-control-primary-bg-rest",   label: "Primary" },
   { token: "--tug-base-tone-info",                 label: "Info" },

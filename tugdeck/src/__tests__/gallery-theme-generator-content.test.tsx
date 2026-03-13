@@ -62,12 +62,12 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-primary-icon-hover",
   "--tug-base-control-primary-icon-active",
   // Semantic tone tokens (status / informational colors)
-  "--tug-base-tone-positive-fg",
-  "--tug-base-tone-warning-fg",
+  "--tug-base-tone-success-fg",
+  "--tug-base-tone-caution-fg",
   "--tug-base-tone-danger-fg",
   "--tug-base-tone-info-fg",
-  "--tug-base-tone-positive-icon",
-  "--tug-base-tone-warning-icon",
+  "--tug-base-tone-success-icon",
+  "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
   "--tug-base-tone-info-icon",
   // UI control indicators (form elements / state indicators)
@@ -549,12 +549,12 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     // Core assertion: the module must emit at least one protanopia warning.
     expect(protanopiaWarnings.length).toBeGreaterThan(0);
 
-    // The warning must reference the positive token (green is the problematic color
+    // The warning must reference the success token (green is the problematic color
     // under protanopia in the semantic pair set).
-    const positiveWarning = protanopiaWarnings.find((w) =>
-      w.tokenPair.some((t: string) => t.includes("positive")),
+    const successWarning = protanopiaWarnings.find((w) =>
+      w.tokenPair.some((t: string) => t.includes("success")),
     );
-    expect(positiveWarning).toBeDefined();
+    expect(successWarning).toBeDefined();
   });
 
   it("checkCVDDistinguishability result has correct structure for all warnings", () => {

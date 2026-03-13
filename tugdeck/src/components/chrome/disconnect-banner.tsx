@@ -62,7 +62,7 @@ export function DisconnectBanner({ connection }: DisconnectBannerProps) {
         left: 0,
         right: 0,
         zIndex: 9999,
-        backgroundColor: "var(--tug-base-tone-warning, #f59e0b)",
+        backgroundColor: "var(--tug-base-tone-caution, #f59e0b)",
         color: "var(--tug-base-surface-default, #1a1a1a)",
         textAlign: "center",
         padding: "6px 12px",

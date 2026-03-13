@@ -38,7 +38,7 @@ body {
   --tug-base-fg-placeholder: --tug-color(yellow, i: 9, t: 28);
   --tug-base-fg-onAccent: var(--tug-white);
   --tug-base-fg-onDanger: var(--tug-white);
-  --tug-base-fg-onWarning: --tug-color(violet-6, i: 4, t: 7);
+  --tug-base-fg-onCaution: --tug-color(violet-6, i: 4, t: 7);
   --tug-base-fg-onSuccess: --tug-color(violet-6, i: 4, t: 7);
 
   /* Icon */
@@ -216,8 +216,8 @@ body {
   --tug-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Tone overrides — contrast-critical per [D06]; darker values needed on Harmony's light backgrounds */
-  /* warning-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
-  --tug-base-tone-warning-fg: --tug-color(yellow, i: 46, t: 27);
+  /* caution-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
+  --tug-base-tone-caution-fg: --tug-color(yellow, i: 46, t: 27);
   /* info-fg: darker cyan needed for contrast on light bg */
   --tug-base-tone-info-fg: --tug-color(blue, i: 42, t: 40);
 

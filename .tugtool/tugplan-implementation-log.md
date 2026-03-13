@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-13T17:17:34Z
+---
+
+## step-1: Renamed all tone-positive tokens to tone-success, tone-warning to tone-caution, and fg-onWarning to fg-onCaution across 15 files including CSS, TypeScript source, and tests.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
 step: step-10
 date: 2025-03-13T03:25:06Z
 ---

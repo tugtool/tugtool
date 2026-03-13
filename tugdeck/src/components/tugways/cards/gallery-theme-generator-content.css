@@ -274,11 +274,11 @@
 }
 
 .gtg-dash-summary-count--all-pass {
-  color: var(--tug-base-tone-positive-fg);
+  color: var(--tug-base-tone-success-fg);
 }
 
 .gtg-dash-summary-count--partial {
-  color: var(--tug-base-tone-warning-fg);
+  color: var(--tug-base-tone-caution-fg);
 }
 
 .gtg-dash-summary-count--fail {
@@ -366,16 +366,16 @@
 
 /* Green — pass both thresholds */
 .gtg-dash-badge--pass {
-  background-color: var(--tug-base-tone-positive-bg);
-  color: var(--tug-base-tone-positive-fg);
-  border: 1px solid var(--tug-base-tone-positive-border);
+  background-color: var(--tug-base-tone-success-bg);
+  color: var(--tug-base-tone-success-fg);
+  border: 1px solid var(--tug-base-tone-success-border);
 }
 
 /* Yellow — marginal (within 0.5 of threshold) */
 .gtg-dash-badge--marginal {
-  background-color: var(--tug-base-tone-warning-bg);
-  color: var(--tug-base-tone-warning-fg);
-  border: 1px solid var(--tug-base-tone-warning-border);
+  background-color: var(--tug-base-tone-caution-bg);
+  color: var(--tug-base-tone-caution-fg);
+  border: 1px solid var(--tug-base-tone-caution-border);
 }
 
 /* Red — fail */
@@ -462,9 +462,9 @@
   border-radius: 50%;
   font-size: 9px;
   font-weight: 700;
-  background-color: var(--tug-base-tone-warning-bg);
-  color: var(--tug-base-tone-warning-fg);
-  border: 1px solid var(--tug-base-tone-warning-border);
+  background-color: var(--tug-base-tone-caution-bg);
+  color: var(--tug-base-tone-caution-fg);
+  border: 1px solid var(--tug-base-tone-caution-border);
   cursor: default;
   flex-shrink: 0;
 }
@@ -543,8 +543,8 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  background-color: var(--tug-base-tone-warning-bg);
-  border: 1px solid var(--tug-base-tone-warning-border);
+  background-color: var(--tug-base-tone-caution-bg);
+  border: 1px solid var(--tug-base-tone-caution-border);
   border-radius: var(--tug-base-radius-sm);
 }
 
@@ -553,7 +553,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tug-base-tone-warning-fg);
+  color: var(--tug-base-tone-caution-fg);
   user-select: none;
 }
 
@@ -576,7 +576,7 @@
   font-weight: 600;
   font-family: var(--tug-base-font-family-mono, monospace);
   font-size: 10px;
-  color: var(--tug-base-tone-warning-fg);
+  color: var(--tug-base-tone-caution-fg);
 }
 
 /* ============================================================================

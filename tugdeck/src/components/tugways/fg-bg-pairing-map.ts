@@ -222,13 +222,13 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "large-text",
   },
   {
-    fg: "--tug-base-fg-onWarning",
-    bg: "--tug-base-tone-warning",
+    fg: "--tug-base-fg-onCaution",
+    bg: "--tug-base-tone-caution",
     role: "large-text",
   },
   {
     fg: "--tug-base-fg-onSuccess",
-    bg: "--tug-base-tone-positive",
+    bg: "--tug-base-tone-success",
     role: "large-text",
   },
 
@@ -494,22 +494,22 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // Semantic tone — foreground text on tone backgrounds
   // =========================================================================
   {
-    fg: "--tug-base-tone-positive-fg",
-    bg: "--tug-base-tone-positive-bg",
+    fg: "--tug-base-tone-success-fg",
+    bg: "--tug-base-tone-success-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-positive-fg",
+    fg: "--tug-base-tone-success-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-fg",
-    bg: "--tug-base-tone-warning-bg",
+    fg: "--tug-base-tone-caution-fg",
+    bg: "--tug-base-tone-caution-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-fg",
+    fg: "--tug-base-tone-caution-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
@@ -538,23 +538,23 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // Semantic tone — icon tokens on surfaces and tone backgrounds
   // =========================================================================
   {
-    fg: "--tug-base-tone-positive-icon",
+    fg: "--tug-base-tone-success-icon",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-positive-icon",
-    bg: "--tug-base-tone-positive-bg",
+    fg: "--tug-base-tone-success-icon",
+    bg: "--tug-base-tone-success-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-icon",
+    fg: "--tug-base-tone-caution-icon",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-icon",
-    bg: "--tug-base-tone-warning-bg",
+    fg: "--tug-base-tone-caution-icon",
+    bg: "--tug-base-tone-caution-bg",
     role: "ui-component",
   },
   {

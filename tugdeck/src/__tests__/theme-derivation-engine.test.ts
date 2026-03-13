@@ -319,8 +319,8 @@ describe("derivation-engine", () => {
   // Threshold: delta < 0.02 at <10% count tolerance.
   //
   // Rationale for 10% (not 5%): Harmony contains [D06] contrast-critical overrides
-  // (accent-muted/subtle using the "flame" hue, tone-warning-fg/tone-info-fg adjusted
-  // for WCAG contrast on light backgrounds) plus theme-specific quirks (fg-onWarning
+  // (accent-muted/subtle using the "flame" hue, tone-caution-fg/tone-info-fg adjusted
+  // for WCAG contrast on light backgrounds) plus theme-specific quirks (fg-onCaution
   // uses violet-6, field-readOnly repeats the Brio cobalt default) that the derivation
   // engine cannot derive from the recipe alone. These tokens are intentionally outside
   // engine scope — they will be addressed by the Layer 2 auto-adjustment in Step 3 and
@@ -515,8 +515,8 @@ describe("derivation-engine", () => {
  *
  * D. Semantic tone tokens (status/informational colors — designed for
  *    medium visual weight, not primary body-text contrast):
- *      tone-positive-fg, tone-warning-fg, tone-danger-fg, tone-info-fg,
- *      tone-positive-icon, tone-warning-icon, tone-danger-icon, tone-info-icon
+ *      tone-success-fg, tone-caution-fg, tone-danger-fg, tone-info-fg,
+ *      tone-success-icon, tone-caution-icon, tone-danger-icon, tone-info-icon
  *
  * E. UI control indicators (form elements / state indicators — small, decorative
  *    or same-plane as their background; WCAG non-text threshold applies but
@@ -551,12 +551,12 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-primary-icon-hover",
   "--tug-base-control-primary-icon-active",
   // D — semantic tone tokens
-  "--tug-base-tone-positive-fg",
-  "--tug-base-tone-warning-fg",
+  "--tug-base-tone-success-fg",
+  "--tug-base-tone-caution-fg",
   "--tug-base-tone-danger-fg",
   "--tug-base-tone-info-fg",
-  "--tug-base-tone-positive-icon",
-  "--tug-base-tone-warning-icon",
+  "--tug-base-tone-success-icon",
+  "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
   "--tug-base-tone-info-icon",
   // E — UI control indicators
