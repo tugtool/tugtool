@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-13T02:03:24Z
+---
+
+## step-4: Added T4.1-T4.3 integration tests wiring deriveTheme() into validateThemeContrast() and autoAdjustContrast() for all three example recipes. Verified D09 dual-output contract and token/resolved consistency after adjustment.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-3
 date: 2025-03-13T01:54:11Z
 ---
