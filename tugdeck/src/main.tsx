@@ -13,7 +13,6 @@ import {
 } from "./contexts/theme-provider";
 import { registerHelloCard } from "./components/tugways/cards/hello-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-card";
-import { registerPocCards } from "./components/tugways/cards/poc-seven-role-cards";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initStyleInspector } from "./components/tugways/style-inspector-overlay";
 import { selectionGuard } from "./components/tugways/selection-guard";
@@ -68,7 +67,6 @@ if (!container) {
   // registered in Phase 9.
   registerHelloCard();
   registerGalleryCards();
-  registerPocCards();
 
   // Initialize the cascade inspector in dev mode only. The cleanup function is
   // intentionally not called during normal app lifetime (same pattern as
