@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-13T01:54:11Z
+---
+
+## step-3: Created theme-accessibility.ts with computeWcagContrast, computeApcaLc, validateThemeContrast, and autoAdjustContrast. Auto-adjustment preserves hue references via parseTugColorToken and bumps fg tone to meet WCAG thresholds. Added T3.1-T3.7 contrast tests to theme-accessibility.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-2
 date: 2025-03-13T01:29:08Z
 ---
