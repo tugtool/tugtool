@@ -502,9 +502,9 @@ describe("Task 6: setProperty action works via dispatchTo (console-equivalent)",
 // Gallery tab position: eighth tab
 // ---------------------------------------------------------------------------
 
-describe("Gallery tab 'Observable Props' is the eighth tab (of twenty total)", () => {
-  it("GALLERY_DEFAULT_TABS has exactly twenty entries", () => {
-    expect(GALLERY_DEFAULT_TABS).toHaveLength(20);
+describe("Gallery tab 'Observable Props' is the eighth tab (of twenty-one total)", () => {
+  it("GALLERY_DEFAULT_TABS has exactly twenty-one entries", () => {
+    expect(GALLERY_DEFAULT_TABS).toHaveLength(21);
   });
 
   it("the eighth tab has componentId 'gallery-observable-props' and title 'Observable Props'", () => {

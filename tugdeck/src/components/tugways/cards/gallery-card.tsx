@@ -41,6 +41,8 @@ import { GallerySwitchContent } from "./gallery-switch-content";
 import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
+import { TugBadge } from "@/components/tugways/tug-badge";
+import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
@@ -96,6 +98,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
   { id: "template", componentId: "gallery-theme-generator",   title: "Theme Generator",      closable: true },
+  { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -972,11 +975,132 @@ export function GalleryTitleBarContent() {
 }
 
 // ---------------------------------------------------------------------------
+// GalleryBadgeContent
+// ---------------------------------------------------------------------------
+
+/** All emphasis x role combinations for the TugBadge showcase matrix [D06, Spec S06] */
+const ALL_BADGE_COMBOS: Array<{ emphasis: TugBadgeEmphasis; role: TugBadgeRole }> = [
+  { emphasis: "filled",   role: "accent"   },
+  { emphasis: "filled",   role: "active"   },
+  { emphasis: "filled",   role: "agent"    },
+  { emphasis: "filled",   role: "data"     },
+  { emphasis: "filled",   role: "danger"   },
+  { emphasis: "filled",   role: "success"  },
+  { emphasis: "filled",   role: "caution"  },
+  { emphasis: "outlined", role: "accent"   },
+  { emphasis: "outlined", role: "active"   },
+  { emphasis: "outlined", role: "agent"    },
+  { emphasis: "outlined", role: "data"     },
+  { emphasis: "outlined", role: "danger"   },
+  { emphasis: "outlined", role: "success"  },
+  { emphasis: "outlined", role: "caution"  },
+  { emphasis: "ghost",    role: "accent"   },
+  { emphasis: "ghost",    role: "active"   },
+  { emphasis: "ghost",    role: "agent"    },
+  { emphasis: "ghost",    role: "data"     },
+  { emphasis: "ghost",    role: "danger"   },
+  { emphasis: "ghost",    role: "success"  },
+  { emphasis: "ghost",    role: "caution"  },
+];
+const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
+
+/**
+ * GalleryBadgeContent -- TugBadge showcase gallery tab.
+ *
+ * Renders the full emphasis x role matrix (3 emphasis × 7 roles = 21 combinations)
+ * at all three sizes, with an interactive preview control section.
+ *
+ * **Authoritative reference:** [D06] TugBadge API, Spec S06, S07, S08, S09.
+ */
+export function GalleryBadgeContent() {
+  const [previewEmphasis, setPreviewEmphasis] = useState<TugBadgeEmphasis>("filled");
+  const [previewRole, setPreviewRole] = useState<TugBadgeRole>("active");
+
+  return (
+    <div className="cg-content" data-testid="gallery-badge-content">
+
+      {/* ---- Interactive Preview Controls ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Preview Controls</div>
+        <div className="cg-controls">
+          <div className="cg-control-group">
+            <label className="cg-control-label" htmlFor="cg-badge-emphasis-select">
+              Emphasis
+            </label>
+            <select
+              id="cg-badge-emphasis-select"
+              className="cg-control-select"
+              value={previewEmphasis}
+              onChange={(e) => setPreviewEmphasis(e.target.value as TugBadgeEmphasis)}
+            >
+              {(["filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div className="cg-control-group">
+            <label className="cg-control-label" htmlFor="cg-badge-role-select">
+              Role
+            </label>
+            <select
+              id="cg-badge-role-select"
+              className="cg-control-select"
+              value={previewRole}
+              onChange={(e) => setPreviewRole(e.target.value as TugBadgeRole)}
+            >
+              {(["accent", "active", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Interactive Preview ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugBadge — Interactive Preview</div>
+        <div className="cg-variant-row">
+          {ALL_BADGE_SIZES.map((size) => (
+            <TugBadge key={size} emphasis={previewEmphasis} role={previewRole} size={size}>
+              {previewEmphasis}-{previewRole}
+            </TugBadge>
+          ))}
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Full Matrix ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">TugBadge — Full Matrix (all emphasis × role × sizes)</div>
+        <div className="cg-matrix">
+          {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
+            <div key={`${emphasis}-${role}`} className="cg-variant-row">
+              <div className="cg-variant-label">{emphasis}-{role}</div>
+              <div className="cg-size-group">
+                {ALL_BADGE_SIZES.map((size) => (
+                  <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
+                    {role}
+                  </TugBadge>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // registerGalleryCards
 // ---------------------------------------------------------------------------
 
 /**
- * Register all twenty gallery card types in the global card registry.
+ * Register all twenty-one gallery card types in the global card registry.
  *
  * Must be called before `DeckManager.addCard("gallery-buttons")` is invoked.
  * In `main.tsx`, call this before constructing the DeckManager.
@@ -987,7 +1111,7 @@ export function GalleryTitleBarContent() {
  * - `closable: true` -- gallery tabs can be closed and re-added via [+]
  *
  * Only `gallery-buttons` has `defaultTabs` and `defaultTitle`:
- * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-tab gallery card
+ * - `defaultTabs: GALLERY_DEFAULT_TABS` -- creates twenty-one-tab gallery card
  * - `defaultTitle: "Component Gallery"` -- card header prefix
  *
  * **Authoritative reference:** Spec S03 (#s03-gallery-registrations), [D06]
@@ -1186,6 +1310,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-theme-generator",
     contentFactory: (_cardId) => <GalleryThemeGeneratorContent />,
     defaultMeta: { title: "Theme Generator", icon: "Paintbrush", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-badge ----
+  // TugBadge showcase: full emphasis x role matrix (3 × 7 = 21 combinations)
+  // at all three sizes, with interactive preview controls. [D06]
+  registerCard({
+    componentId: "gallery-badge",
+    contentFactory: (_cardId) => <GalleryBadgeContent />,
+    defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

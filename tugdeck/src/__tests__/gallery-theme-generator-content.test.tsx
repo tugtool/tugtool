@@ -155,12 +155,12 @@ function unexpectedFailures(results: ReturnType<typeof validateThemeContrast>) {
 }
 
 // ---------------------------------------------------------------------------
-// T6.1: GALLERY_DEFAULT_TABS has 20 entries
+// T6.1: GALLERY_DEFAULT_TABS has 21 entries
 // ---------------------------------------------------------------------------
 
-describe("GALLERY_DEFAULT_TABS – fifteen entries (T6.1)", () => {
-  it("has 20 entries", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
+describe("GALLERY_DEFAULT_TABS – twenty-one entries (T6.1)", () => {
+  it("has 21 entries", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(21);
   });
 
   it("includes gallery-theme-generator as the 20th entry", () => {
@@ -170,13 +170,19 @@ describe("GALLERY_DEFAULT_TABS – fifteen entries (T6.1)", () => {
   });
 
   it("20th entry has title 'Theme Generator'", () => {
-    const last = GALLERY_DEFAULT_TABS[19];
-    expect(last.title).toBe("Theme Generator");
+    const tab = GALLERY_DEFAULT_TABS[19];
+    expect(tab.title).toBe("Theme Generator");
   });
 
   it("20th entry is closable", () => {
-    const last = GALLERY_DEFAULT_TABS[19];
-    expect(last.closable).toBe(true);
+    const tab = GALLERY_DEFAULT_TABS[19];
+    expect(tab.closable).toBe(true);
+  });
+
+  it("includes gallery-badge as the 21st entry", () => {
+    const componentIds = GALLERY_DEFAULT_TABS.map((t) => t.componentId);
+    expect(componentIds).toContain("gallery-badge");
+    expect(componentIds[20]).toBe("gallery-badge");
   });
 });
 
@@ -211,11 +217,11 @@ describe("registerGalleryCards – gallery-theme-generator (T6.2)", () => {
     expect(reg!.defaultTabs).toBeUndefined();
   });
 
-  it("gallery-buttons defaultTabs has 20 entries after registration", () => {
+  it("gallery-buttons defaultTabs has 21 entries after registration", () => {
     registerGalleryCards();
     const reg = getRegistration("gallery-buttons");
     expect(reg!.defaultTabs).toBeDefined();
-    expect(reg!.defaultTabs!.length).toBe(20);
+    expect(reg!.defaultTabs!.length).toBe(21);
   });
 });
 
@@ -462,18 +468,24 @@ describe("T10.3 – novel recipe end-to-end: derive → validate → export → 
 });
 
 // ---------------------------------------------------------------------------
-// T10.3 + exit criteria: gallery tab 20 and existing-tab regression check
+// T10.3 + exit criteria: gallery tab 21 and existing-tab regression check
 // ---------------------------------------------------------------------------
 
-describe("T10.3 – gallery card tab 20 and existing-tab regression", () => {
-  it("GALLERY_DEFAULT_TABS has exactly 20 entries (no regressions, no extras)", () => {
-    expect(GALLERY_DEFAULT_TABS.length).toBe(20);
+describe("T10.3 – gallery card tab 21 and existing-tab regression", () => {
+  it("GALLERY_DEFAULT_TABS has exactly 21 entries (no regressions, no extras)", () => {
+    expect(GALLERY_DEFAULT_TABS.length).toBe(21);
   });
 
-  it("tab 20 (index 14) is gallery-theme-generator with title 'Theme Generator'", () => {
+  it("tab 20 (index 19) is gallery-theme-generator with title 'Theme Generator'", () => {
     const tab = GALLERY_DEFAULT_TABS[19];
     expect(tab.componentId).toBe("gallery-theme-generator");
     expect(tab.title).toBe("Theme Generator");
+  });
+
+  it("tab 21 (index 20) is gallery-badge with title 'TugBadge'", () => {
+    const tab = GALLERY_DEFAULT_TABS[20];
+    expect(tab.componentId).toBe("gallery-badge");
+    expect(tab.title).toBe("TugBadge");
   });
 
   it("all 14 pre-existing tabs are present at their original positions", () => {
