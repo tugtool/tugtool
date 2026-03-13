@@ -318,17 +318,17 @@ describe("DeckManager.addCard – cascade positioning", () => {
     const c2 = cards.find((c) => c.id === id2)!;
     const c3 = cards.find((c) => c.id === id3)!;
 
-    // First card: cascade index 0 → position (0, 0)
-    expect(c1.position.x).toBe(0);
-    expect(c1.position.y).toBe(0);
+    // First card: cascade index 0 → position (10, 10) (CASCADE_ORIGIN offset)
+    expect(c1.position.x).toBe(10);
+    expect(c1.position.y).toBe(10);
 
-    // Second card: cascade index 1 → position (30, 30)
-    expect(c2.position.x).toBe(30);
-    expect(c2.position.y).toBe(30);
+    // Second card: cascade index 1 → position (40, 40)
+    expect(c2.position.x).toBe(40);
+    expect(c2.position.y).toBe(40);
 
-    // Third card: cascade index 2 → position (60, 60)
-    expect(c3.position.x).toBe(60);
-    expect(c3.position.y).toBe(60);
+    // Third card: cascade index 2 → position (70, 70)
+    expect(c3.position.x).toBe(70);
+    expect(c3.position.y).toBe(70);
   });
 
   it("resets cascade index when cascaded position would overflow canvas bounds", () => {
@@ -337,7 +337,7 @@ describe("DeckManager.addCard – cascade positioning", () => {
     // Add enough cards to guarantee a cascade reset.
     // Canvas width fallback is 800 (clientWidth=0 in happy-dom worker).
     // Default card width=400. Overflow: x + 400 > 800 → x > 400.
-    // At step 30: index 14 → x=30*14=420 > 400 → first reset → position (0,0).
+    // At step 30: index 14 → x=10+30*14=430 > 400 → first reset → position (10,10).
     const NUM_CARDS = 20;
     for (let i = 0; i < NUM_CARDS; i++) {
       manager.addCard("hello");
@@ -352,9 +352,9 @@ describe("DeckManager.addCard – cascade positioning", () => {
     for (let i = 1; i < cards.length; i++) {
       if (cards[i].position.x < cards[i - 1].position.x) {
         foundReset = true;
-        // The position after reset must be 0.
-        expect(cards[i].position.x).toBe(0);
-        expect(cards[i].position.y).toBe(0);
+        // The position after reset must be CASCADE_ORIGIN (10).
+        expect(cards[i].position.x).toBe(10);
+        expect(cards[i].position.y).toBe(10);
         break;
       }
     }

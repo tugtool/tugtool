@@ -249,11 +249,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         relaunchMenuItem = relaunchItem
         devMenu.addItem(NSMenuItem(title: "Reset Everything", action: #selector(resetEverything(_:)), keyEquivalent: "r", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Open Web Inspector", action: #selector(openWebInspector(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(openWebInspector(_:)), keyEquivalent: "c", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem.separator())
-        devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: ""))
-        devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: ""))
-        devMenu.addItem(NSMenuItem(title: "Show 7-Role POC", action: #selector(showSevenRolePoc(_:)), keyEquivalent: ""))
+        devMenu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
+        devMenu.addItem(NSMenuItem(title: "Show Test Card", action: #selector(showTestCard(_:)), keyEquivalent: "t", modifierMask: [.command, .option]))
         devMenu.addItem(NSMenuItem(title: "Add Tab", action: #selector(addTab(_:)), keyEquivalent: ""))
 
         // Source tree display item
@@ -351,10 +350,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showTestCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "hello"])
-    }
-
-    @objc private func showSevenRolePoc(_ sender: Any) {
-        sendControl("show-seven-role-poc")
     }
 
     @objc private func addTab(_ sender: Any) {

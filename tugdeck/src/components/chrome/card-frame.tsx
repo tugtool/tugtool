@@ -792,6 +792,7 @@ export function CardFrame({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const frame: HTMLDivElement = frameRef.current!;
 
+      const pid = event.nativeEvent.pointerId;
       frame.setPointerCapture(event.nativeEvent.pointerId);
 
       // Disable height transition during resize. [D07, chrome.css]
@@ -1570,10 +1571,12 @@ function resizeDelta(
       }
     }
     // Clamp left edge: prevent card from going left of canvas left.
+    // Preserve the current right edge (left + width) so resize deltas are
+    // not discarded when the card starts inside the padding zone.
     if (left < CANVAS_PADDING) {
+      const rightEdge = left + width;
       left = CANVAS_PADDING;
-      width = startLeft + startW - left;
-      if (width < minSize.width) width = minSize.width;
+      width = Math.max(minSize.width, rightEdge - left);
     }
 
     // Clamp bottom edge: prevent card from extending past canvas bottom.
@@ -1590,10 +1593,11 @@ function resizeDelta(
       }
     }
     // Clamp top edge: prevent card from going above canvas top.
+    // Preserve the current bottom edge so resize deltas are not discarded.
     if (top < CANVAS_PADDING) {
+      const bottomEdge = top + height;
       top = CANVAS_PADDING;
-      height = startTop + startH - top;
-      if (height < minSize.height) height = minSize.height;
+      height = Math.max(minSize.height, bottomEdge - top);
     }
   }
 

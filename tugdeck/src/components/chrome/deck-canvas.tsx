@@ -283,6 +283,7 @@ export function DeckCanvas({ connection }: DeckCanvasProps) {
           const newId = store.addCard("gallery-buttons");
           if (newId) {
             galleryCardIdRef.current = newId;
+            setDeselected(false);
             manager.makeFirstResponder(newId);
           }
         }

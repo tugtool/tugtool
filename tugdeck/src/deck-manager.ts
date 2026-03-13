@@ -902,12 +902,15 @@ export class DeckManager implements IDeckManagerStore {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
 
-    const x = CASCADE_STEP * this.cascadeIndex;
-    const y = CASCADE_STEP * this.cascadeIndex;
+    // Start cascade offset from the canvas edge so the first card has breathing
+    // room and is never placed inside the resize-clamping padding zone.
+    const CASCADE_ORIGIN = 10;
+    const x = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
+    const y = CASCADE_ORIGIN + CASCADE_STEP * this.cascadeIndex;
 
     if (x + DEFAULT_CARD_WIDTH > canvasWidth || y + DEFAULT_CARD_HEIGHT > canvasHeight) {
       this.cascadeIndex = 0;
-      return { x: 0, y: 0 };
+      return { x: CASCADE_ORIGIN, y: CASCADE_ORIGIN };
     }
 
     this.cascadeIndex += 1;
