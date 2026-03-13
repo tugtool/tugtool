@@ -391,3 +391,190 @@
   color: var(--tug-base-fg-muted);
   border: 1px solid var(--tug-base-border-default);
 }
+
+/* ============================================================================
+   CVD preview strip
+   ========================================================================= */
+
+.gtg-cvd-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 8px;
+  background-color: var(--tug-base-surface-default);
+  overflow-x: auto;
+}
+
+/* Column header row */
+.gtg-cvd-col-headers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug-base-border-default);
+}
+
+.gtg-cvd-token-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  width: 80px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Each CVD type row */
+.gtg-cvd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* Label cell (type name + optional warning badge) */
+.gtg-cvd-type-label-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.gtg-cvd-type-label {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-cvd-warn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background-color: var(--tug-base-tone-warning-bg);
+  color: var(--tug-base-tone-warning-fg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+/* Pair of swatches for one semantic token (original + simulated) */
+.gtg-cvd-swatch-pair {
+  display: flex;
+  gap: 2px;
+  width: 80px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+.gtg-cvd-swatch {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+.gtg-cvd-swatch--missing {
+  background-color: var(--tug-base-surface-raised);
+  opacity: 0.4;
+}
+
+/* ============================================================================
+   Auto-fix panel
+   ========================================================================= */
+
+.gtg-autofix-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gtg-autofix-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gtg-autofix-btn {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-control-secondary-bg-rest);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-autofix-btn:hover:not(:disabled) {
+  background-color: var(--tug-base-surface-default);
+}
+
+.gtg-autofix-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gtg-autofix-result {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+}
+
+/* CVD hue-shift suggestions list */
+.gtg-autofix-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background-color: var(--tug-base-tone-warning-bg);
+  border: 1px solid var(--tug-base-tone-warning-border);
+  border-radius: var(--tug-base-radius-sm);
+}
+
+.gtg-autofix-suggestions-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-tone-warning-fg);
+  user-select: none;
+}
+
+.gtg-autofix-suggestion-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gtg-autofix-suggestion-item {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  line-height: 1.4;
+}
+
+.gtg-autofix-suggestion-type {
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--tug-base-tone-warning-fg);
+}

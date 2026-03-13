@@ -3,22 +3,24 @@
  *
  * Interactive tool for deriving complete 264-token --tug-base-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, mode toggle,
- * three mood sliders, token preview grid, and contrast dashboard.
+ * three mood sliders, token preview grid, contrast dashboard, CVD preview
+ * strip, and auto-fix.
  *
  * Wires controls to `deriveTheme()` with 150ms debounce on slider changes.
- * Runs `validateThemeContrast()` on every derived output to populate the
- * contrast dashboard. Token preview renders all 264 tokens with name,
- * value string, and a color swatch derived from the resolved OKLCH map.
+ * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on every
+ * derived output. The Auto-fix button runs `autoAdjustContrast()` on contrast
+ * failures and displays CVD hue-shift suggestions for confusable pairs.
  *
  * Rules of Tugways compliance:
  *   - Appearance changes through CSS custom properties on the preview container,
  *     not React state. [D08, D09]
- *   - useState only for recipe parameters (local component state, not external
+ *   - useState only for recipe parameters and local UI state (not external
  *     store). [D40]
  *   - No root.render() after initial mount. [D40, D42]
  *
- * **Authoritative references:** [D04] ThemeRecipe, [D06] Gallery tab pattern,
- * [D07] Contrast thresholds, [D03] Pairing map, Spec S01, Spec S02,
+ * **Authoritative references:** [D04] ThemeRecipe, [D05] CVD matrices,
+ * [D06] Gallery tab pattern, [D07] Contrast thresholds, [D03] Pairing map,
+ * [D02] Native contrast fix, Spec S01, Spec S02,
  * (#constraints, #internal-architecture)
  *
  * @module components/tugways/cards/gallery-theme-generator-content
@@ -32,11 +34,17 @@ import {
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
+  type CVDWarning,
 } from "@/components/tugways/theme-derivation-engine";
 import {
   validateThemeContrast,
+  autoAdjustContrast,
+  checkCVDDistinguishability,
+  CVD_SEMANTIC_PAIRS,
+  simulateCVDFromOKLCH,
   WCAG_CONTRAST_THRESHOLDS,
   APCA_LC_THRESHOLDS,
+  type CVDType,
 } from "@/components/tugways/theme-accessibility";
 import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
 import "./gallery-theme-generator-content.css";
@@ -366,6 +374,264 @@ function ContrastDashboard({
 }
 
 // ---------------------------------------------------------------------------
+// CVD preview strip constants and helpers
+// ---------------------------------------------------------------------------
+
+/** All four CVD types rendered in the preview strip. */
+const CVD_TYPES: CVDType[] = ["protanopia", "deuteranopia", "tritanopia", "achromatopsia"];
+
+/** Human-readable labels for each CVD type. */
+const CVD_TYPE_LABELS: Record<CVDType, string> = {
+  protanopia: "Protanopia",
+  deuteranopia: "Deuteranopia",
+  tritanopia: "Tritanopia",
+  achromatopsia: "Achromatopsia",
+};
+
+/**
+ * The six semantic token names shown in each CVD row.
+ * Ordered: accent, positive, warning, destructive, primary, info.
+ */
+const CVD_SEMANTIC_TOKENS: Array<{ token: string; label: string }> = [
+  { token: "--tug-base-accent-default",           label: "Accent" },
+  { token: "--tug-base-tone-positive",             label: "Positive" },
+  { token: "--tug-base-tone-warning",              label: "Warning" },
+  { token: "--tug-base-tone-danger",               label: "Danger" },
+  { token: "--tug-base-control-primary-bg-rest",   label: "Primary" },
+  { token: "--tug-base-tone-info",                 label: "Info" },
+];
+
+/**
+ * Convert a linear-sRGB triplet to a CSS hex string for swatch display.
+ * Gamma-encodes using the IEC 61966-2-1 formula.
+ */
+function linearSrgbToHex(linear: { r: number; g: number; b: number }): string {
+  const enc = (c: number) => {
+    const clamped = Math.max(0, Math.min(1, c));
+    const gamma = clamped >= 0.0031308
+      ? 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055
+      : 12.92 * clamped;
+    return Math.round(Math.max(0, Math.min(1, gamma)) * 255);
+  };
+  const r = enc(linear.r).toString(16).padStart(2, "0");
+  const g = enc(linear.g).toString(16).padStart(2, "0");
+  const b = enc(linear.b).toString(16).padStart(2, "0");
+  return `#${r}${g}${b}`;
+}
+
+// ---------------------------------------------------------------------------
+// CvdPreviewStrip — 4-row simulation table
+// ---------------------------------------------------------------------------
+
+/**
+ * CvdPreviewStrip — renders 4 rows (one per CVD type), each with 6 simulated
+ * semantic color swatches alongside their original colours for comparison.
+ *
+ * Each row shows:
+ *   - CVD type label
+ *   - For each semantic token: original swatch + simulated swatch side-by-side
+ *
+ * A warning badge appears next to the type label when that type has any
+ * indistinguishable pair warnings in `cvdWarnings`.
+ *
+ * Appearance: swatch colors set via inline style (DOM mutation). [D08, D09]
+ */
+function CvdPreviewStrip({
+  output,
+  cvdWarnings,
+}: {
+  output: ThemeOutput;
+  cvdWarnings: CVDWarning[];
+}) {
+  // Build a set of CVD types that have at least one warning for quick lookup.
+  const warnedTypes = useMemo(() => {
+    const types = new Set<string>();
+    for (const w of cvdWarnings) {
+      types.add(w.type);
+    }
+    return types;
+  }, [cvdWarnings]);
+
+  return (
+    <div className="gtg-cvd-strip" data-testid="gtg-cvd-strip">
+      {/* Column headers */}
+      <div className="gtg-cvd-col-headers">
+        <div className="gtg-cvd-type-label-cell" />
+        {CVD_SEMANTIC_TOKENS.map(({ label }) => (
+          <div key={label} className="gtg-cvd-token-header" title={label}>
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* One row per CVD type */}
+      {CVD_TYPES.map((cvdType) => {
+        const hasWarning = warnedTypes.has(cvdType);
+        return (
+          <div
+            key={cvdType}
+            className="gtg-cvd-row"
+            data-testid="gtg-cvd-row"
+            data-cvd-type={cvdType}
+          >
+            {/* Type label + optional warning badge */}
+            <div className="gtg-cvd-type-label-cell">
+              <span className="gtg-cvd-type-label">{CVD_TYPE_LABELS[cvdType]}</span>
+              {hasWarning && (
+                <span
+                  className="gtg-cvd-warn-badge"
+                  title="One or more semantic pairs may be indistinguishable under this CVD type"
+                  data-testid="gtg-cvd-warn-badge"
+                >
+                  !
+                </span>
+              )}
+            </div>
+
+            {/* Swatch pairs for each semantic token */}
+            {CVD_SEMANTIC_TOKENS.map(({ token, label }) => {
+              const resolved = output.resolved[token];
+              if (!resolved) {
+                return (
+                  <div key={token} className="gtg-cvd-swatch-pair">
+                    <div className="gtg-cvd-swatch gtg-cvd-swatch--missing" title="N/A" />
+                    <div className="gtg-cvd-swatch gtg-cvd-swatch--missing" title="N/A" />
+                  </div>
+                );
+              }
+
+              // Original color as hex
+              const origHex = oklchToHex(resolved.L, resolved.C, resolved.h);
+
+              // Simulated: OKLCH → linear sRGB (via CVD matrix) → gamma-encode to hex
+              const simLinear = simulateCVDFromOKLCH(resolved.L, resolved.C, resolved.h, cvdType);
+              const simHex = linearSrgbToHex(simLinear);
+
+              return (
+                <div key={token} className="gtg-cvd-swatch-pair" title={`${label}: ${origHex} → ${simHex}`}>
+                  <div
+                    className="gtg-cvd-swatch"
+                    style={{ backgroundColor: origHex }}
+                    title={`Original: ${origHex}`}
+                    data-testid="gtg-cvd-orig-swatch"
+                  />
+                  <div
+                    className="gtg-cvd-swatch"
+                    style={{ backgroundColor: simHex }}
+                    title={`Simulated (${cvdType}): ${simHex}`}
+                    data-testid="gtg-cvd-sim-swatch"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AutoFixPanel — auto-fix button + CVD suggestions
+// ---------------------------------------------------------------------------
+
+/**
+ * AutoFixPanel — renders the Auto-fix button and, after a fix has been run,
+ * shows:
+ *   - A summary of how many tokens were adjusted
+ *   - Any tokens that could not be fixed (unfixable list)
+ *   - CVD hue-shift suggestions from the warning set
+ *
+ * The button triggers `autoAdjustContrast` on the current contrast failures
+ * and passes the updated output up via `onFixApplied`.
+ */
+function AutoFixPanel({
+  output,
+  contrastResults,
+  cvdWarnings,
+  onFixApplied,
+}: {
+  output: ThemeOutput;
+  contrastResults: ContrastResult[];
+  cvdWarnings: CVDWarning[];
+  onFixApplied: (updated: Pick<ThemeOutput, "tokens" | "resolved">) => void;
+}) {
+  const [lastFixResult, setLastFixResult] = useState<{
+    adjustedCount: number;
+    unfixable: string[];
+  } | null>(null);
+
+  const failures = useMemo(
+    () => contrastResults.filter((r) => !r.wcagPass && r.role !== "decorative"),
+    [contrastResults],
+  );
+
+  const handleAutoFix = useCallback(() => {
+    const result = autoAdjustContrast(output.tokens, output.resolved, failures);
+    const adjustedCount = Object.keys(result.tokens).filter(
+      (k) => result.tokens[k] !== output.tokens[k],
+    ).length;
+    setLastFixResult({ adjustedCount, unfixable: result.unfixable });
+    onFixApplied({ tokens: result.tokens, resolved: result.resolved });
+  }, [output, failures, onFixApplied]);
+
+  // Unique CVD suggestions (de-duped by suggestion text)
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return cvdWarnings.filter((w) => {
+      if (seen.has(w.suggestion)) return false;
+      seen.add(w.suggestion);
+      return true;
+    });
+  }, [cvdWarnings]);
+
+  return (
+    <div className="gtg-autofix-panel" data-testid="gtg-autofix-panel">
+      <div className="gtg-autofix-row">
+        <button
+          type="button"
+          className="gtg-autofix-btn"
+          onClick={handleAutoFix}
+          disabled={failures.length === 0}
+          data-testid="gtg-autofix-btn"
+          title={
+            failures.length === 0
+              ? "No contrast failures to fix"
+              : `Fix ${failures.length} contrast failure${failures.length !== 1 ? "s" : ""}`
+          }
+        >
+          Auto-fix ({failures.length} {failures.length === 1 ? "failure" : "failures"})
+        </button>
+        {lastFixResult !== null && (
+          <span className="gtg-autofix-result" data-testid="gtg-autofix-result">
+            {lastFixResult.adjustedCount} token{lastFixResult.adjustedCount !== 1 ? "s" : ""} adjusted
+            {lastFixResult.unfixable.length > 0
+              ? `, ${lastFixResult.unfixable.length} unfixable`
+              : ""}
+          </span>
+        )}
+      </div>
+
+      {/* CVD hue-shift suggestions */}
+      {suggestions.length > 0 && (
+        <div className="gtg-autofix-suggestions" data-testid="gtg-cvd-suggestions">
+          <div className="gtg-autofix-suggestions-title">CVD hue-shift suggestions</div>
+          <ul className="gtg-autofix-suggestion-list">
+            {suggestions.map((w, idx) => (
+              <li key={idx} className="gtg-autofix-suggestion-item" data-testid="gtg-cvd-suggestion-item">
+                <span className="gtg-autofix-suggestion-type">{w.type}</span>
+                {" — "}
+                {w.suggestion}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
 // ---------------------------------------------------------------------------
 
@@ -374,12 +640,13 @@ function ContrastDashboard({
  *
  * Manages local recipe state (mode, atmosphere, text hue, mood knobs).
  * Calls `deriveTheme()` on every recipe change, debounced 150ms for sliders.
- * Runs `validateThemeContrast()` on each derived output to populate the contrast
- * dashboard. Renders mode toggle, hue selectors, mood sliders, token preview,
- * and contrast dashboard.
+ * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on each
+ * derived output to populate the contrast dashboard and CVD strip.
+ * The Auto-fix button runs `autoAdjustContrast()` on failures.
  *
  * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe,
- * [D07] Contrast thresholds, [D03] Pairing map.
+ * [D07] Contrast thresholds, [D03] Pairing map, [D05] CVD matrices,
+ * [D02] Native contrast fix.
  */
 export function GalleryThemeGeneratorContent() {
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
@@ -393,13 +660,19 @@ export function GalleryThemeGeneratorContent() {
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
-  // The derived theme output — updated whenever recipe changes.
+  // The derived theme output — updated whenever recipe changes or auto-fix runs.
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
 
   // Contrast results — derived from themeOutput via validateThemeContrast().
   // Computed with useMemo to avoid redundant runs on unrelated re-renders.
   const contrastResults = useMemo(
     () => validateThemeContrast(themeOutput.resolved, FG_BG_PAIRING_MAP),
+    [themeOutput],
+  );
+
+  // CVD distinguishability warnings — computed from the resolved map.
+  const cvdWarnings = useMemo<CVDWarning[]>(
+    () => checkCVDDistinguishability(themeOutput.resolved, CVD_SEMANTIC_PAIRS),
     [themeOutput],
   );
 
@@ -471,6 +744,17 @@ export function GalleryThemeGeneratorContent() {
       }, 150);
     },
     [runDerive],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Auto-fix handler — merges adjusted tokens/resolved into themeOutput
+  // ---------------------------------------------------------------------------
+
+  const handleFixApplied = useCallback(
+    (updated: Pick<ThemeOutput, "tokens" | "resolved">) => {
+      setThemeOutput((prev) => ({ ...prev, ...updated }));
+    },
+    [],
   );
 
   // ---------------------------------------------------------------------------
@@ -614,6 +898,27 @@ export function GalleryThemeGeneratorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Contrast Dashboard</div>
         <ContrastDashboard output={themeOutput} contrastResults={contrastResults} />
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- CVD preview strip ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Color Vision Deficiency Preview</div>
+        <CvdPreviewStrip output={themeOutput} cvdWarnings={cvdWarnings} />
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Auto-fix ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Auto-fix</div>
+        <AutoFixPanel
+          output={themeOutput}
+          contrastResults={contrastResults}
+          cvdWarnings={cvdWarnings}
+          onFixApplied={handleFixApplied}
+        />
       </div>
 
     </div>

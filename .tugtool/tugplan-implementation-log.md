@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-13T02:54:43Z
+---
+
+## step-8: Added CVD preview strip showing 4 types × 6 semantic swatches with simulated colors and warning badges. Added auto-fix button running autoAdjustContrast with CVD hue-shift suggestions. Tests T8.1-T8.3 for strip rows, swatch count, and auto-fix interaction.
+
+**Files changed:**
+- .tugtool/tugplan-theme-generator.md
+
+---
+
+---
 step: step-7
 date: 2025-03-13T02:43:48Z
 ---
