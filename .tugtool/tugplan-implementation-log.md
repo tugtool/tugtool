@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-13T20:57:12Z
+---
+
+## step-5: Integration checkpoint: all 1499 tests pass, zero old token references in tugdeck/src, TugButtonVariant fully removed. Theme override files (harmony.css, bluenote.css) deferred to step-8.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-4
 date: 2025-03-13T20:51:42Z
 ---
