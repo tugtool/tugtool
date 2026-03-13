@@ -56,7 +56,7 @@ body {
   --tug-chat-attachment-bg: var(--tug-base-surface-overlay);
   --tug-chat-attachment-border: var(--tug-base-border-default);
   --tug-chat-attachment-fg: var(--tug-base-fg-muted);
-  --tug-codeBlock-bg: var(--tug-base-control-secondary-bg-rest);
+  --tug-codeBlock-bg: var(--tug-base-surface-control);
   --tug-codeBlock-border: var(--tug-base-divider-default);
   --tug-codeBlock-header-bg: var(--tug-base-surface-sunken);
   --tug-codeBlock-header-fg: var(--tug-base-fg-subtle);

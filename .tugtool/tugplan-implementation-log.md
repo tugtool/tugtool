@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-13T20:51:42Z
+---
+
+## step-4: Replaced control-secondary-bg-rest with surface-control in 7 CSS files (tug-tab, tug-menu, tug-code, tug-inspector, gallery-card, gallery-theme-generator-content, gallery-palette-content). Rewrote tug-menu.css data-state open blocks to use new emphasis-role class names. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-3
 date: 2025-03-13T20:44:53Z
 ---

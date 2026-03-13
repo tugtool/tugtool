@@ -29,7 +29,7 @@
   font-size: 11px;
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-control-secondary-bg-rest);
+  background-color: var(--tug-base-surface-control);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-xs);
   padding: 4px 10px;

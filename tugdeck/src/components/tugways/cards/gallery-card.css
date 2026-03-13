@@ -73,7 +73,7 @@
   font-size: 12px;
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-control-secondary-bg-rest);
+  background-color: var(--tug-base-surface-control);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-xs);
   padding: 2px 6px;
@@ -202,7 +202,7 @@
   font-size: 12px;
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-control-secondary-bg-rest);
+  background-color: var(--tug-base-surface-control);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-sm);
   padding: 5px 12px;
@@ -271,7 +271,7 @@
   padding: 2px;
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-xs);
-  background: var(--tug-base-control-secondary-bg-rest);
+  background: var(--tug-base-surface-control);
   cursor: pointer;
 }
 
@@ -612,7 +612,7 @@
   min-width: 0;
   height: 24px;
   border-radius: var(--tug-base-radius-xs);
-  background-color: var(--tug-base-control-secondary-bg-rest);
+  background-color: var(--tug-base-surface-control);
   overflow: hidden;
 }
 
