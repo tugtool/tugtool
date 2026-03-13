@@ -205,10 +205,10 @@ function PhysicsCurvesDemo() {
         </div>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={playAll}>
+        <TugButton subtype="push" size="sm" onClick={playAll}>
           Play All
         </TugButton>
-        <TugButton subtype="push" variant="ghost" size="sm" onClick={resetAll}>
+        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={resetAll}>
           Reset
         </TugButton>
         <PercentSlider value={pct} onChange={setPct} />
@@ -277,7 +277,8 @@ function DurationTokensDemo() {
           <TugButton
             key={token}
             subtype="push"
-            variant={activeToken === token ? "primary" : "secondary"}
+            emphasis={activeToken === token ? "filled" : "outlined"}
+            role="active"
             size="sm"
             onClick={() => playToken(token)}
           >
@@ -286,7 +287,7 @@ function DurationTokensDemo() {
         ))}
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="ghost" size="sm" onClick={reset}>
+        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugButton>
         <PercentSlider value={pct} onChange={setPct} />
@@ -376,21 +377,21 @@ function CancelModesDemo() {
         <div ref={boxRef} className="cg-anim-cancel-box" />
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="primary" size="sm" onClick={startAnimation}>
+        <TugButton subtype="push" emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
           Start
         </TugButton>
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={() => cancelWith("snap-to-end")}>
+        <TugButton subtype="push" size="sm" onClick={() => cancelWith("snap-to-end")}>
           Snap to End
         </TugButton>
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={() => cancelWith("hold-at-current")}>
+        <TugButton subtype="push" size="sm" onClick={() => cancelWith("hold-at-current")}>
           Hold at Current
         </TugButton>
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={() => cancelWith("reverse-from-current")}>
+        <TugButton subtype="push" size="sm" onClick={() => cancelWith("reverse-from-current")}>
           Reverse
         </TugButton>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="ghost" size="sm" onClick={reset}>
+        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugButton>
         <PercentSlider value={pct} onChange={setPct} />
@@ -473,18 +474,18 @@ function NamedSlotsDemo() {
         <div ref={boxRef} className="cg-anim-slot-box" />
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={animateToRight}>
+        <TugButton subtype="push" size="sm" onClick={animateToRight}>
           &rarr; Right (slot-demo)
         </TugButton>
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={animateToLeft}>
+        <TugButton subtype="push" size="sm" onClick={animateToLeft}>
           &larr; Left (slot-demo)
         </TugButton>
-        <TugButton subtype="push" variant="ghost" size="sm" onClick={animateDifferentKey}>
+        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={animateDifferentKey}>
           Fade (opacity-slot)
         </TugButton>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" variant="ghost" size="sm" onClick={reset}>
+        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
           Reset
         </TugButton>
         <PercentSlider value={pct} onChange={setPct} />

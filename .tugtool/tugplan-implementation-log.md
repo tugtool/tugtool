@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-13T20:44:53Z
+---
+
+## step-3: Removed TugButtonVariant type, added TugButtonEmphasis and TugButtonRole. Updated CSS to 8 emphasis x role blocks. Migrated all call sites in gallery-card, gallery-cascade-inspector, gallery-animator, gallery-scale-timing. Updated tug-button and chain-action-button tests. All 1499 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-2
 date: 2025-03-13T20:31:21Z
 ---

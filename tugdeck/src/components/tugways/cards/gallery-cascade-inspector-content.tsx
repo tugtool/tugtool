@@ -108,22 +108,22 @@ export function GalleryCascadeInspectorContent() {
           (b) TugButton — two-layer chain (no comp token)
         </div>
         <p className="cg-description">
-          <code>--tug-base-control-primary-bg-rest</code> → palette variable.
+          <code>--tug-base-control-filled-accent-bg-rest</code> → palette variable.
           TugButton CSS references <code>--tug-base-*</code> directly — no{" "}
           <code>--tug-button-*</code> tokens are wired yet.
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-button">
-          <TugButton subtype="push" variant="primary" size="md">
-            Primary Button
+          <TugButton subtype="push" emphasis="filled" role="accent" size="md">
+            Filled Accent
           </TugButton>
-          <TugButton subtype="push" variant="secondary" size="md">
-            Secondary Button
+          <TugButton subtype="push" size="md">
+            Outlined Active
           </TugButton>
-          <TugButton subtype="push" variant="ghost" size="md">
-            Ghost Button
+          <TugButton subtype="push" emphasis="ghost" size="md">
+            Ghost Active
           </TugButton>
-          <TugButton subtype="push" variant="destructive" size="md">
-            Destructive
+          <TugButton subtype="push" emphasis="filled" role="danger" size="md">
+            Filled Danger
           </TugButton>
         </div>
       </div>

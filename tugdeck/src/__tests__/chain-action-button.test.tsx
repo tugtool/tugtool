@@ -307,14 +307,14 @@ describe("chain-action TugButton – CSS disabled rules", () => {
     expect(btn.disabled).toBe(false); // stays in tab order
   });
 
-  it("aria-disabled='true' button has tug-button variant class (CSS rules target it)", () => {
+  it("aria-disabled='true' button has tug-button emphasis-role class (CSS rules target it)", () => {
     const { manager } = makeManagerWithAction("copy", false);
-    const { container } = renderWithManager(manager, { action: "copy", variant: "secondary", children: "Copy" });
+    const { container } = renderWithManager(manager, { action: "copy", children: "Copy" });
     const btn = container.querySelector("button")!;
     expect(btn.getAttribute("aria-disabled")).toBe("true");
-    // CSS [aria-disabled='true'].tug-button-secondary applies opacity/cursor;
+    // CSS [aria-disabled='true'].tug-button-outlined-active applies opacity/cursor;
     // verify the class is present so the rule can match.
-    expect(btn.className).toContain("tug-button-secondary");
+    expect(btn.className).toContain("tug-button-outlined-active");
   });
 
   it("enabled chain-action button does NOT have aria-disabled", () => {

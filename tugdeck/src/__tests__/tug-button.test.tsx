@@ -1,10 +1,10 @@
 /**
- * TugButton unit tests -- Step 1.
+ * TugButton unit tests.
  *
  * Tests cover:
- * - Default render (push, secondary, md)
+ * - Default render (push, outlined active, md)
  * - All four subtypes: push, icon, icon-text, three-state
- * - All four variants: primary, secondary, ghost, destructive
+ * - Emphasis x role system: default class, all 8 Table T01 combinations
  * - All three sizes: sm, md, lg
  * - Icon subtype square aspect ratio class
  * - Three-state: aria-pressed matches state prop
@@ -40,7 +40,7 @@ describe("TugButton – default render", () => {
     expect(btn).not.toBeNull();
   });
 
-  it("renders with default props (push, secondary, md)", () => {
+  it("renders with default props (push, outlined active, md)", () => {
     const btn = renderButton({ children: "Click me" });
     expect(btn).not.toBeNull();
     expect(btn.textContent).toContain("Click me");
@@ -243,28 +243,53 @@ describe("TugButton – three-state subtype", () => {
 });
 
 // ============================================================================
-// Variant CSS classes
+// Emphasis x Role CSS classes (Spec S02, [D03])
 // ============================================================================
 
-describe("TugButton – variants", () => {
-  it("primary variant: applies tug-button-primary variant class", () => {
-    const btn = renderButton({ variant: "primary", children: "Primary" });
-    expect(btn.className).toContain("tug-button-primary");
+describe("TugButton – emphasis x role", () => {
+  it("default (no props): applies tug-button-outlined-active class [D04]", () => {
+    const btn = renderButton({ children: "Default" });
+    expect(btn.className).toContain("tug-button-outlined-active");
   });
 
-  it("secondary variant: applies tug-button-secondary variant class", () => {
-    const btn = renderButton({ variant: "secondary", children: "Secondary" });
-    expect(btn.className).toContain("tug-button-secondary");
+  it("emphasis=filled role=accent: applies tug-button-filled-accent class", () => {
+    const btn = renderButton({ emphasis: "filled", role: "accent", children: "CTA" });
+    expect(btn.className).toContain("tug-button-filled-accent");
   });
 
-  it("ghost variant: applies tug-button-ghost class, no border", () => {
-    const btn = renderButton({ variant: "ghost", children: "Ghost" });
-    expect(btn.className).toContain("tug-button-ghost");
+  it("emphasis=filled role=active: applies tug-button-filled-active class", () => {
+    const btn = renderButton({ emphasis: "filled", role: "active", children: "Active" });
+    expect(btn.className).toContain("tug-button-filled-active");
   });
 
-  it("destructive variant: applies tug-button-destructive variant class", () => {
-    const btn = renderButton({ variant: "destructive", children: "Delete" });
-    expect(btn.className).toContain("tug-button-destructive");
+  it("emphasis=filled role=danger: applies tug-button-filled-danger class", () => {
+    const btn = renderButton({ emphasis: "filled", role: "danger", children: "Delete" });
+    expect(btn.className).toContain("tug-button-filled-danger");
+  });
+
+  it("emphasis=filled role=agent: applies tug-button-filled-agent class", () => {
+    const btn = renderButton({ emphasis: "filled", role: "agent", children: "AI" });
+    expect(btn.className).toContain("tug-button-filled-agent");
+  });
+
+  it("emphasis=outlined role=active: applies tug-button-outlined-active class", () => {
+    const btn = renderButton({ emphasis: "outlined", role: "active", children: "Secondary" });
+    expect(btn.className).toContain("tug-button-outlined-active");
+  });
+
+  it("emphasis=outlined role=agent: applies tug-button-outlined-agent class", () => {
+    const btn = renderButton({ emphasis: "outlined", role: "agent", children: "AI Sec" });
+    expect(btn.className).toContain("tug-button-outlined-agent");
+  });
+
+  it("emphasis=ghost role=active: applies tug-button-ghost-active class", () => {
+    const btn = renderButton({ emphasis: "ghost", role: "active", children: "Ghost" });
+    expect(btn.className).toContain("tug-button-ghost-active");
+  });
+
+  it("emphasis=ghost role=danger: applies tug-button-ghost-danger class", () => {
+    const btn = renderButton({ emphasis: "ghost", role: "danger", children: "Subtle Delete" });
+    expect(btn.className).toContain("tug-button-ghost-danger");
   });
 });
 
@@ -353,48 +378,18 @@ describe("TugButton – disabled state", () => {
 });
 
 // ============================================================================
-// Variant CSS classes
+// aria-disabled (chain-action-independent direct-action check)
 // ============================================================================
 
-describe("TugButton – variant CSS classes", () => {
-  it("secondary variant renders with tug-button class", () => {
-    const btn = renderButton({ variant: "secondary", children: "Save" });
-    expect(btn.className).toContain("tug-button");
-    expect(btn.className).toContain("tug-button-secondary");
-  });
-
-  it("primary variant renders with tug-button-primary class", () => {
-    const btn = renderButton({ variant: "primary", children: "Confirm" });
-    expect(btn.className).toContain("tug-button");
-    expect(btn.className).toContain("tug-button-primary");
-  });
-
-  it("destructive variant renders with tug-button-destructive class", () => {
-    const btn = renderButton({ variant: "destructive", children: "Delete" });
-    expect(btn.className).toContain("tug-button");
-    expect(btn.className).toContain("tug-button-destructive");
-  });
-
-  it("ghost variant renders with tug-button-ghost class", () => {
-    const btn = renderButton({ variant: "ghost", children: "Cancel" });
-    expect(btn.className).toContain("tug-button");
-    expect(btn.className).toContain("tug-button-ghost");
-  });
-
-  it("disabled button has disabled attribute", () => {
-    const btn = renderButton({ disabled: true, children: "Disabled" });
-    expect(btn.disabled).toBe(true);
-    expect(btn.className).toContain("tug-button");
-  });
-
-  it("disabled button still has tug-button class", () => {
-    const btn = renderButton({ disabled: true, variant: "secondary", children: "Disabled" });
-    expect(btn.className).toContain("tug-button");
-    expect(btn.className).toContain("tug-button-secondary");
-  });
-
-  it("aria-disabled chain-action button has correct attribute", () => {
-    const btn = renderButton({ disabled: false, variant: "secondary", children: "Active" });
+describe("TugButton – aria-disabled in direct-action mode", () => {
+  it("direct-action button does not set aria-disabled by default", () => {
+    const btn = renderButton({ children: "Active" });
     expect(btn.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("disabled button still carries tug-button base class", () => {
+    const btn = renderButton({ disabled: true, children: "Disabled" });
+    expect(btn.className).toContain("tug-button");
+    expect(btn.disabled).toBe(true);
   });
 });

@@ -244,27 +244,26 @@ export function GalleryScaleTimingContent() {
         <div className="cg-section-title">Live Preview</div>
         <div className="cg-st-preview" data-testid="st-preview">
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" variant="primary" size="md">Primary</TugButton>
-            <TugButton subtype="push" variant="secondary" size="md">Secondary</TugButton>
-            <TugButton subtype="push" variant="ghost" size="md">Ghost</TugButton>
-            <TugButton subtype="push" variant="destructive" size="md">Destructive</TugButton>
+            <TugButton subtype="push" emphasis="filled" role="accent" size="md">Filled Accent</TugButton>
+            <TugButton subtype="push" size="md">Outlined Active</TugButton>
+            <TugButton subtype="push" emphasis="ghost" size="md">Ghost Active</TugButton>
+            <TugButton subtype="push" emphasis="filled" role="danger" size="md">Filled Danger</TugButton>
           </div>
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" variant="primary" size="sm">Small</TugButton>
-            <TugButton subtype="push" variant="secondary" size="sm">Small</TugButton>
+            <TugButton subtype="push" emphasis="filled" role="accent" size="sm">Small</TugButton>
+            <TugButton subtype="push" size="sm">Small</TugButton>
             <TugButton
               subtype="icon"
-              variant="secondary"
               size="md"
               icon={<Star size={14} />}
               aria-label="Icon button"
             />
-            <TugButton subtype="icon-text" variant="secondary" size="md" icon={<Star size={14} />}>
+            <TugButton subtype="icon-text" size="md" icon={<Star size={14} />}>
               Icon + Text
             </TugButton>
           </div>
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" variant="secondary" size="md" loading>Loading</TugButton>
+            <TugButton subtype="push" size="md" loading>Loading</TugButton>
           </div>
 
           {/* ---- Petals Spinner ---- */}
@@ -296,7 +295,7 @@ export function GalleryScaleTimingContent() {
 
       {/* ---- Reset ---- */}
       <div className="cg-section">
-        <TugButton subtype="push" variant="secondary" size="sm" onClick={handleReset}>
+        <TugButton subtype="push" size="sm" onClick={handleReset}>
           Reset All to Defaults
         </TugButton>
       </div>

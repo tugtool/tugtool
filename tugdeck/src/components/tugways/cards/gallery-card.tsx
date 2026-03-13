@@ -40,7 +40,7 @@ import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { GallerySwitchContent } from "./gallery-switch-content";
 import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
 import { TugButton } from "@/components/tugways/tug-button";
-import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
+import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
@@ -52,7 +52,17 @@ import "./gallery-card.css";
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALL_VARIANTS: TugButtonVariant[] = ["primary", "secondary", "ghost", "destructive"];
+/** All Table T01 emphasis x role combinations for the full matrix [D02, Table T01] */
+const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = [
+  { emphasis: "filled",   role: "accent"  },
+  { emphasis: "filled",   role: "active"  },
+  { emphasis: "filled",   role: "danger"  },
+  { emphasis: "filled",   role: "agent"   },
+  { emphasis: "outlined", role: "active"  },
+  { emphasis: "outlined", role: "agent"   },
+  { emphasis: "ghost",    role: "active"  },
+  { emphasis: "ghost",    role: "danger"  },
+];
 const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
 const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-state"];
 
@@ -98,19 +108,22 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
  */
 function SubtypeButton({
   subtype,
-  variant,
+  emphasis,
+  role,
   size,
 }: {
   subtype: TugButtonSubtype;
-  variant: TugButtonVariant;
+  emphasis: TugButtonEmphasis;
+  role: TugButtonRole;
   size: TugButtonSize;
 }) {
   const sizeLabel = size;
+  const comboLabel = `${emphasis}-${role}`;
 
   switch (subtype) {
     case "push":
       return (
-        <TugButton subtype="push" variant={variant} size={size}>
+        <TugButton subtype="push" emphasis={emphasis} role={role} size={size}>
           {sizeLabel}
         </TugButton>
       );
@@ -119,10 +132,11 @@ function SubtypeButton({
       return (
         <TugButton
           subtype="icon"
-          variant={variant}
+          emphasis={emphasis}
+          role={role}
           size={size}
           icon={<Star size={12} />}
-          aria-label={`Icon ${variant} ${size}`}
+          aria-label={`Icon ${comboLabel} ${size}`}
         />
       );
 
@@ -130,7 +144,8 @@ function SubtypeButton({
       return (
         <TugButton
           subtype="icon-text"
-          variant={variant}
+          emphasis={emphasis}
+          role={role}
           size={size}
           icon={<Star size={12} />}
         >
@@ -140,7 +155,7 @@ function SubtypeButton({
 
     case "three-state":
       return (
-        <TugButton subtype="three-state" variant={variant} size={size}>
+        <TugButton subtype="three-state" emphasis={emphasis} role={role} size={size}>
           {sizeLabel}
         </TugButton>
       );
@@ -164,7 +179,8 @@ function SubtypeButton({
  * **Authoritative reference:** [D01] gallery-buttons componentId.
  */
 export function GalleryButtonsContent() {
-  const [previewVariant, setPreviewVariant] = useState<TugButtonVariant>("secondary");
+  const [previewEmphasis, setPreviewEmphasis] = useState<TugButtonEmphasis>("outlined");
+  const [previewRole, setPreviewRole] = useState<TugButtonRole>("active");
   const [previewSize, setPreviewSize] = useState<TugButtonSize>("md");
   const [previewDisabled, setPreviewDisabled] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -176,16 +192,33 @@ export function GalleryButtonsContent() {
         <div className="cg-section-title">Preview Controls</div>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-variant-select">
-              Variant
+            <label className="cg-control-label" htmlFor="cg-emphasis-select">
+              Emphasis
             </label>
             <select
-              id="cg-variant-select"
+              id="cg-emphasis-select"
               className="cg-control-select"
-              value={previewVariant}
-              onChange={(e) => setPreviewVariant(e.target.value as TugButtonVariant)}
+              value={previewEmphasis}
+              onChange={(e) => setPreviewEmphasis(e.target.value as TugButtonEmphasis)}
             >
-              {ALL_VARIANTS.map((v) => (
+              {(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="cg-control-group">
+            <label className="cg-control-label" htmlFor="cg-role-select">
+              Role
+            </label>
+            <select
+              id="cg-role-select"
+              className="cg-control-select"
+              value={previewRole}
+              onChange={(e) => setPreviewRole(e.target.value as TugButtonRole)}
+            >
+              {(["accent", "active", "agent", "data", "danger"] as TugButtonRole[]).map((v) => (
                 <option key={v} value={v}>
                   {v}
                 </option>
@@ -247,7 +280,8 @@ export function GalleryButtonsContent() {
         <div className="cg-variant-row">
           <TugButton
             subtype="push"
-            variant={previewVariant}
+            emphasis={previewEmphasis}
+            role={previewRole}
             size={previewSize}
             disabled={previewDisabled}
             loading={previewLoading}
@@ -256,7 +290,8 @@ export function GalleryButtonsContent() {
           </TugButton>
           <TugButton
             subtype="icon"
-            variant={previewVariant}
+            emphasis={previewEmphasis}
+            role={previewRole}
             size={previewSize}
             disabled={previewDisabled}
             loading={previewLoading}
@@ -265,7 +300,8 @@ export function GalleryButtonsContent() {
           />
           <TugButton
             subtype="icon-text"
-            variant={previewVariant}
+            emphasis={previewEmphasis}
+            role={previewRole}
             size={previewSize}
             disabled={previewDisabled}
             loading={previewLoading}
@@ -275,7 +311,8 @@ export function GalleryButtonsContent() {
           </TugButton>
           <TugButton
             subtype="three-state"
-            variant={previewVariant}
+            emphasis={previewEmphasis}
+            role={previewRole}
             size={previewSize}
             disabled={previewDisabled}
             loading={previewLoading}
@@ -289,20 +326,21 @@ export function GalleryButtonsContent() {
 
       {/* ---- Full Matrix ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugButton — Full Matrix (all subtypes × variants × sizes)</div>
+        <div className="cg-section-title">TugButton — Full Matrix (all subtypes × emphasis x role × sizes)</div>
         <div className="cg-matrix">
           {ALL_SUBTYPES.map((subtype) => (
             <div key={subtype} className="cg-subtype-block">
               <div className="cg-subtype-label">subtype: {subtype}</div>
-              {ALL_VARIANTS.map((variant) => (
-                <div key={variant} className="cg-variant-row">
-                  <div className="cg-variant-label">{variant}</div>
+              {ALL_COMBOS.map(({ emphasis, role }) => (
+                <div key={`${emphasis}-${role}`} className="cg-variant-row">
+                  <div className="cg-variant-label">{emphasis}-{role}</div>
                   <div className="cg-size-group">
                     {ALL_SIZES.map((size) => (
                       <SubtypeButton
                         key={size}
                         subtype={subtype}
-                        variant={variant}
+                        emphasis={emphasis}
+                        role={role}
                         size={size}
                       />
                     ))}
@@ -383,7 +421,6 @@ function ActionEventDemo() {
       <div className="cg-variant-row">
         <TugButton
           subtype="push"
-          variant="secondary"
           size="md"
           onClick={handleDispatch}
         >
@@ -474,7 +511,6 @@ export function MutationModelDemo() {
       <div className="cg-variant-row">
         <TugButton
           subtype="push"
-          variant="secondary"
           size="sm"
           onClick={() => setVarOn((v) => !v)}
         >
@@ -482,7 +518,6 @@ export function MutationModelDemo() {
         </TugButton>
         <TugButton
           subtype="push"
-          variant="secondary"
           size="sm"
           onClick={() => setClassOn((v) => !v)}
         >
@@ -490,7 +525,6 @@ export function MutationModelDemo() {
         </TugButton>
         <TugButton
           subtype="push"
-          variant="secondary"
           size="sm"
           onClick={() => setStyleOn((v) => !v)}
         >
@@ -629,7 +663,6 @@ export function TugTabBarDemo() {
       <div className="cg-demo-controls">
         <TugButton
           subtype="push"
-          variant="secondary"
           size="sm"
           onClick={handleAddFive}
         >
@@ -776,8 +809,7 @@ export function GalleryDefaultButtonContent() {
         <div className="cg-variant-row">
           <TugButton
             subtype="push"
-            variant="secondary"
-            size="md"
+              size="md"
             onClick={() => setLastAction("Cancel clicked")}
           >
             Cancel
@@ -785,7 +817,8 @@ export function GalleryDefaultButtonContent() {
           <span ref={confirmContainerRef}>
             <TugButton
               subtype="push"
-              variant="primary"
+              emphasis="filled"
+              role="accent"
               size="md"
               onClick={() => setLastAction("Confirm clicked")}
             >
@@ -926,8 +959,7 @@ export function GalleryTitleBarContent() {
         <div style={{ marginTop: "8px" }}>
           <TugButton
             subtype="push"
-            variant="secondary"
-            size="sm"
+              size="sm"
             onClick={handleCollapse}
           >
             {collapsed ? "Expand" : "Collapse"}

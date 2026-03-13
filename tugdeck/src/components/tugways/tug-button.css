@@ -8,6 +8,15 @@
  * Retronow-inspired: pill shape, all-caps labels, progressive lightening
  * through rest → hover → active control states.
  *
+ * Emphasis x role system [D02, D03, D04]:
+ *   Compound CSS class: .tug-button-{emphasis}-{role}
+ *   8 combinations per Table T01 (Spec S04)
+ *
+ * Dialog/alert semantic mapping (Spec S05):
+ *   Default/affirmative  → emphasis="filled"   role="accent"
+ *   Cancel               → emphasis="outlined"  role="active"  (default)
+ *   Destructive          → emphasis="filled"    role="danger"
+ *
  * [D04] Semantic tokens exclusively
  */
 
@@ -31,22 +40,23 @@
   cursor: pointer;
   position: relative;
 
-  background-color: var(--tug-base-control-secondary-bg-rest);
-  color: var(--tug-base-control-secondary-fg-rest);
-  border: 1px solid var(--tug-base-control-secondary-border-rest);
+  /* Default: outlined-active [D04] */
+  background-color: var(--tug-base-control-outlined-active-bg-rest);
+  color: var(--tug-base-control-outlined-active-fg-rest);
+  border: 1px solid var(--tug-base-control-outlined-active-border-rest);
   transition: background-color 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-secondary-bg-hover);
-  color: var(--tug-base-control-secondary-fg-hover);
-  border-color: var(--tug-base-control-secondary-border-hover);
+  background-color: var(--tug-base-control-outlined-active-bg-hover);
+  color: var(--tug-base-control-outlined-active-fg-hover);
+  border-color: var(--tug-base-control-outlined-active-border-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-secondary-bg-active);
-  color: var(--tug-base-control-secondary-fg-active);
-  border-color: var(--tug-base-control-secondary-border-active);
+  background-color: var(--tug-base-control-outlined-active-bg-active);
+  color: var(--tug-base-control-outlined-active-fg-active);
+  border-color: var(--tug-base-control-outlined-active-border-active);
 }
 
 .tug-button:focus-visible {
@@ -64,15 +74,15 @@
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
-  color: var(--tug-base-control-secondary-icon-rest);
+  color: var(--tug-base-control-outlined-active-icon-rest);
 }
 
 .tug-button:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-secondary-icon-hover);
+  color: var(--tug-base-control-outlined-active-icon-hover);
 }
 
 .tug-button:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-secondary-icon-active);
+  color: var(--tug-base-control-outlined-active-icon-active);
 }
 
 /* ============================================================================
@@ -95,117 +105,245 @@
 }
 
 /* ============================================================================
-   Variant: Primary
+   Emphasis x Role Variants (Table T01, Spec S04) [D02, D03]
+   Compound class: .tug-button-{emphasis}-{role}
    ========================================================================= */
 
-.tug-button-primary {
-  background-color: var(--tug-base-control-primary-bg-rest);
-  color: var(--tug-base-control-primary-fg-rest);
-  border-color: var(--tug-base-control-primary-border-rest);
+/* --- filled-accent: Primary CTA (brand orange/accent) --- */
+
+.tug-button-filled-accent {
+  background-color: var(--tug-base-control-filled-accent-bg-rest);
+  color: var(--tug-base-control-filled-accent-fg-rest);
+  border-color: var(--tug-base-control-filled-accent-border-rest);
 }
 
-.tug-button-primary svg {
-  color: var(--tug-base-control-primary-icon-rest);
+.tug-button-filled-accent svg {
+  color: var(--tug-base-control-filled-accent-icon-rest);
 }
 
-.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-primary-bg-hover);
-  color: var(--tug-base-control-primary-fg-hover);
-  border-color: var(--tug-base-control-primary-border-hover);
+.tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-accent-bg-hover);
+  color: var(--tug-base-control-filled-accent-fg-hover);
+  border-color: var(--tug-base-control-filled-accent-border-hover);
 }
 
-.tug-button-primary:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-primary-icon-hover);
+.tug-button-filled-accent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-accent-icon-hover);
 }
 
-.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-primary-bg-active);
-  color: var(--tug-base-control-primary-fg-active);
-  border-color: var(--tug-base-control-primary-border-active);
+.tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-accent-bg-active);
+  color: var(--tug-base-control-filled-accent-fg-active);
+  border-color: var(--tug-base-control-filled-accent-border-active);
 }
 
-.tug-button-primary:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-primary-icon-active);
+.tug-button-filled-accent:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-accent-icon-active);
 }
 
-/* ============================================================================
-   Variant: Secondary (default — inherits base .tug-button styles)
-   ========================================================================= */
+/* --- filled-active: Standard interactive (blue/active) --- */
 
-.tug-button-secondary {
-  color: var(--tug-base-control-secondary-fg-rest);
+.tug-button-filled-active {
+  background-color: var(--tug-base-control-filled-active-bg-rest);
+  color: var(--tug-base-control-filled-active-fg-rest);
+  border-color: var(--tug-base-control-filled-active-border-rest);
 }
 
-.tug-button-secondary svg {
-  color: var(--tug-base-control-secondary-icon-rest);
+.tug-button-filled-active svg {
+  color: var(--tug-base-control-filled-active-icon-rest);
 }
 
-/* ============================================================================
-   Variant: Ghost
-   ========================================================================= */
-
-.tug-button-ghost {
-  background-color: var(--tug-base-control-ghost-bg-rest);
-  color: var(--tug-base-control-ghost-fg-rest);
-  border-color: var(--tug-base-control-ghost-border-rest);
+.tug-button-filled-active:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-active-bg-hover);
+  color: var(--tug-base-control-filled-active-fg-hover);
+  border-color: var(--tug-base-control-filled-active-border-hover);
 }
 
-.tug-button-ghost svg {
-  color: var(--tug-base-control-ghost-icon-rest);
+.tug-button-filled-active:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-active-icon-hover);
 }
 
-.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-bg-hover);
-  color: var(--tug-base-control-ghost-fg-hover);
-  border-color: var(--tug-base-control-ghost-border-hover);
+.tug-button-filled-active:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-active-bg-active);
+  color: var(--tug-base-control-filled-active-fg-active);
+  border-color: var(--tug-base-control-filled-active-border-active);
 }
 
-.tug-button-ghost:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-icon-hover);
+.tug-button-filled-active:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-active-icon-active);
 }
 
-.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-ghost-bg-active);
-  color: var(--tug-base-control-ghost-fg-active);
-  border-color: var(--tug-base-control-ghost-border-active);
+/* --- filled-danger: Destructive action (red/danger) --- */
+
+.tug-button-filled-danger {
+  background-color: var(--tug-base-control-filled-danger-bg-rest);
+  color: var(--tug-base-control-filled-danger-fg-rest);
+  border-color: var(--tug-base-control-filled-danger-border-rest);
 }
 
-.tug-button-ghost:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-ghost-icon-active);
+.tug-button-filled-danger svg {
+  color: var(--tug-base-control-filled-danger-icon-rest);
 }
 
-/* ============================================================================
-   Variant: Destructive
-   ========================================================================= */
-
-.tug-button-destructive {
-  background-color: var(--tug-base-control-destructive-bg-rest);
-  color: var(--tug-base-control-destructive-fg-rest);
-  border-color: var(--tug-base-control-destructive-border-rest);
+.tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-danger-bg-hover);
+  color: var(--tug-base-control-filled-danger-fg-hover);
+  border-color: var(--tug-base-control-filled-danger-border-hover);
 }
 
-.tug-button-destructive svg {
-  color: var(--tug-base-control-destructive-icon-rest);
+.tug-button-filled-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-danger-icon-hover);
 }
 
-.tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-destructive-bg-hover);
-  color: var(--tug-base-control-destructive-fg-hover);
-  border-color: var(--tug-base-control-destructive-border-hover);
+.tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-danger-bg-active);
+  color: var(--tug-base-control-filled-danger-fg-active);
+  border-color: var(--tug-base-control-filled-danger-border-active);
 }
 
-.tug-button-destructive:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-destructive-icon-hover);
+.tug-button-filled-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-danger-icon-active);
 }
 
-.tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-destructive-bg-active);
-  color: var(--tug-base-control-destructive-fg-active);
-  border-color: var(--tug-base-control-destructive-border-active);
+/* --- filled-agent: AI action (violet/agent) --- */
+
+.tug-button-filled-agent {
+  background-color: var(--tug-base-control-filled-agent-bg-rest);
+  color: var(--tug-base-control-filled-agent-fg-rest);
+  border-color: var(--tug-base-control-filled-agent-border-rest);
 }
 
-.tug-button-destructive:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-destructive-icon-active);
+.tug-button-filled-agent svg {
+  color: var(--tug-base-control-filled-agent-icon-rest);
+}
+
+.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-agent-bg-hover);
+  color: var(--tug-base-control-filled-agent-fg-hover);
+  border-color: var(--tug-base-control-filled-agent-border-hover);
+}
+
+.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-agent-icon-hover);
+}
+
+.tug-button-filled-agent:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-filled-agent-bg-active);
+  color: var(--tug-base-control-filled-agent-fg-active);
+  border-color: var(--tug-base-control-filled-agent-border-active);
+}
+
+.tug-button-filled-agent:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-filled-agent-icon-active);
+}
+
+/* --- outlined-active: Secondary action (default style) [D04] --- */
+
+.tug-button-outlined-active {
+  /* Inherits base .tug-button outlined-active tokens; explicit for compound class specificity */
+  background-color: var(--tug-base-control-outlined-active-bg-rest);
+  color: var(--tug-base-control-outlined-active-fg-rest);
+  border-color: var(--tug-base-control-outlined-active-border-rest);
+}
+
+.tug-button-outlined-active svg {
+  color: var(--tug-base-control-outlined-active-icon-rest);
+}
+
+/* --- outlined-agent: AI secondary action (violet/agent border) --- */
+
+.tug-button-outlined-agent {
+  background-color: var(--tug-base-control-outlined-agent-bg-rest);
+  color: var(--tug-base-control-outlined-agent-fg-rest);
+  border-color: var(--tug-base-control-outlined-agent-border-rest);
+}
+
+.tug-button-outlined-agent svg {
+  color: var(--tug-base-control-outlined-agent-icon-rest);
+}
+
+.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-outlined-agent-bg-hover);
+  color: var(--tug-base-control-outlined-agent-fg-hover);
+  border-color: var(--tug-base-control-outlined-agent-border-hover);
+}
+
+.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-outlined-agent-icon-hover);
+}
+
+.tug-button-outlined-agent:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-outlined-agent-bg-active);
+  color: var(--tug-base-control-outlined-agent-fg-active);
+  border-color: var(--tug-base-control-outlined-agent-border-active);
+}
+
+.tug-button-outlined-agent:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-outlined-agent-icon-active);
+}
+
+/* --- ghost-active: Link-like action (neutral) --- */
+
+.tug-button-ghost-active {
+  background-color: var(--tug-base-control-ghost-active-bg-rest);
+  color: var(--tug-base-control-ghost-active-fg-rest);
+  border-color: var(--tug-base-control-ghost-active-border-rest);
+}
+
+.tug-button-ghost-active svg {
+  color: var(--tug-base-control-ghost-active-icon-rest);
+}
+
+.tug-button-ghost-active:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-active-bg-hover);
+  color: var(--tug-base-control-ghost-active-fg-hover);
+  border-color: var(--tug-base-control-ghost-active-border-hover);
+}
+
+.tug-button-ghost-active:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-active-icon-hover);
+}
+
+.tug-button-ghost-active:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-active-bg-active);
+  color: var(--tug-base-control-ghost-active-fg-active);
+  border-color: var(--tug-base-control-ghost-active-border-active);
+}
+
+.tug-button-ghost-active:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-active-icon-active);
+}
+
+/* --- ghost-danger: Subtle destructive (danger fg, transparent bg) --- */
+
+.tug-button-ghost-danger {
+  background-color: var(--tug-base-control-ghost-danger-bg-rest);
+  color: var(--tug-base-control-ghost-danger-fg-rest);
+  border-color: var(--tug-base-control-ghost-danger-border-rest);
+}
+
+.tug-button-ghost-danger svg {
+  color: var(--tug-base-control-ghost-danger-icon-rest);
+}
+
+.tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-danger-bg-hover);
+  color: var(--tug-base-control-ghost-danger-fg-hover);
+  border-color: var(--tug-base-control-ghost-danger-border-hover);
+}
+
+.tug-button-ghost-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-danger-icon-hover);
+}
+
+.tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-danger-bg-active);
+  color: var(--tug-base-control-ghost-danger-fg-active);
+  border-color: var(--tug-base-control-ghost-danger-border-active);
+}
+
+.tug-button-ghost-danger:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-danger-icon-active);
 }
 
 /* ============================================================================
@@ -224,10 +362,14 @@
  * Hover and active rules above already exclude [aria-disabled='true'] via
  * :not([aria-disabled='true']) guards, so no extra override rules are needed.
  */
-[aria-disabled="true"].tug-button-primary,
-[aria-disabled="true"].tug-button-secondary,
-[aria-disabled="true"].tug-button-ghost,
-[aria-disabled="true"].tug-button-destructive {
+[aria-disabled="true"].tug-button-filled-accent,
+[aria-disabled="true"].tug-button-filled-active,
+[aria-disabled="true"].tug-button-filled-danger,
+[aria-disabled="true"].tug-button-filled-agent,
+[aria-disabled="true"].tug-button-outlined-active,
+[aria-disabled="true"].tug-button-outlined-agent,
+[aria-disabled="true"].tug-button-ghost-active,
+[aria-disabled="true"].tug-button-ghost-danger {
   opacity: var(--tug-base-control-disabled-opacity);
   cursor: not-allowed;
   pointer-events: none;
