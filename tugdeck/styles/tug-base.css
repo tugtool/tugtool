@@ -147,7 +147,7 @@ body {
   --tug-base-fg-link-hover: --tug-color(cyan-light);
   --tug-base-fg-onAccent: --tug-color(cobalt-8, i: 3, t: 100);
   --tug-base-fg-onDanger: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-fg-onWarning: --tug-color(violet-6, i: 4, t: 7);
+  --tug-base-fg-onCaution: --tug-color(violet-6, i: 4, t: 7);
   --tug-base-fg-onSuccess: --tug-color(violet-6, i: 4, t: 7);
 
   /* --- Icon --- */
@@ -166,10 +166,6 @@ body {
   --tug-base-border-danger: --tug-color(red);
   --tug-base-divider-default: --tug-color(violet-6, i: 6, t: 17);
   --tug-base-divider-muted: --tug-color(violet, i: 4, t: 15);
-  --tug-base-focus-ring-default: --tug-color(cyan);
-  --tug-base-focus-ring-danger: --tug-color(red);
-  --tug-base-focus-ring-offset: --tug-color(violet-6, i: 4, t: 7);
-
   /* --- Elevation / Overlay --- */
   --tug-base-shadow-xs: --tug-color(black, i: 0, t: 0, a: 20);
   --tug-base-shadow-md: --tug-color(black, i: 0, t: 0, a: 60);
@@ -220,12 +216,6 @@ body {
   --tug-base-radius-xl: 12px;
   --tug-base-radius-2xl: 16px;
 
-  /* --- Stroke (plain values) --- */
-  --tug-base-stroke-hairline: 0.5px;
-  --tug-base-stroke-thin: 1px;
-  --tug-base-stroke-medium: 1.5px;
-  --tug-base-stroke-thick: 2px;
-
   /* --- Chrome (card header & tab bar strip height) --- */
   --tug-base-chrome-height: 36px;
 
@@ -244,61 +234,55 @@ body {
   --tug-base-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --tug-base-motion-easing-enter: cubic-bezier(0, 0, 0, 1);
   --tug-base-motion-easing-exit: cubic-bezier(0.2, 0, 1, 1);
-  /* Motion pattern shorthand tokens (transition shorthand values) */
-  --tug-base-motion-pattern-fade-enter: opacity var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter);
-  --tug-base-motion-pattern-fade-exit: opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit);
-  --tug-base-motion-pattern-overlay-enter: opacity var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter), transform var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter);
-  --tug-base-motion-pattern-overlay-exit: opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit), transform var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit);
-  --tug-base-motion-pattern-collapse: height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard);
-  --tug-base-motion-pattern-expand: height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard);
-  --tug-base-motion-pattern-crossfade: opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
-  --tug-base-motion-pattern-startup-reveal: opacity var(--tug-base-motion-duration-slow) var(--tug-base-motion-easing-enter);
-
   /* ======================================================================
      === B. Accent System (palette var() references — Phase 5d5e)
      ====================================================================== */
 
   /* Core accent tokens — Brio defaults */
   --tug-base-accent-default: --tug-color(orange);
-  --tug-base-accent-strong: --tug-color(orange-intense);
-  --tug-base-accent-muted: --tug-color(orange-muted);
   --tug-base-accent-subtle: --tug-color(orange, i: 50, t: 50, a: 15);
   --tug-base-accent-cool-default: --tug-color(cobalt-intense);
-
-  /* Accent-derived interaction tokens */
-  --tug-base-accent-bg-subtle: --tug-color(orange, i: 50, t: 50, a: 12);
-  --tug-base-accent-bg-emphasis: --tug-color(orange, i: 50, t: 50, a: 24);
-  --tug-base-accent-border: --tug-color(orange);
-  --tug-base-accent-border-hover: --tug-color(orange-intense);
-  --tug-base-accent-underline-active: --tug-color(orange);
-  --tug-base-accent-guide: --tug-color(orange, i: 50, t: 50, a: 50);
-  --tug-base-accent-flash: --tug-color(orange, i: 50, t: 50, a: 40);
 
   /* ======================================================================
      === C. Semantic Tones
      ====================================================================== */
 
-  /* --- Semantic Tones --- */
-  --tug-base-tone-positive: --tug-color(green);
-  --tug-base-tone-positive-bg: --tug-color(green, i: 50, t: 50, a: 15);
-  --tug-base-tone-positive-fg: --tug-color(green);
-  --tug-base-tone-positive-border: --tug-color(green);
-  --tug-base-tone-positive-icon: --tug-color(green);
-  --tug-base-tone-warning: --tug-color(yellow);
-  --tug-base-tone-warning-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
-  --tug-base-tone-warning-fg: --tug-color(yellow);
-  --tug-base-tone-warning-border: --tug-color(yellow);
-  --tug-base-tone-warning-icon: --tug-color(yellow);
+  /* --- Semantic Tones (7 families × 5 tokens = 35 tone tokens) --- */
+  --tug-base-tone-accent: --tug-color(orange);
+  --tug-base-tone-accent-bg: --tug-color(orange, i: 50, t: 50, a: 15);
+  --tug-base-tone-accent-fg: --tug-color(orange);
+  --tug-base-tone-accent-border: --tug-color(orange);
+  --tug-base-tone-accent-icon: --tug-color(orange);
+  --tug-base-tone-active: --tug-color(blue);
+  --tug-base-tone-active-bg: --tug-color(blue, i: 50, t: 50, a: 15);
+  --tug-base-tone-active-fg: --tug-color(blue);
+  --tug-base-tone-active-border: --tug-color(blue);
+  --tug-base-tone-active-icon: --tug-color(blue);
+  --tug-base-tone-agent: --tug-color(violet);
+  --tug-base-tone-agent-bg: --tug-color(violet, i: 50, t: 50, a: 15);
+  --tug-base-tone-agent-fg: --tug-color(violet);
+  --tug-base-tone-agent-border: --tug-color(violet);
+  --tug-base-tone-agent-icon: --tug-color(violet);
+  --tug-base-tone-data: --tug-color(teal);
+  --tug-base-tone-data-bg: --tug-color(teal, i: 50, t: 50, a: 15);
+  --tug-base-tone-data-fg: --tug-color(teal);
+  --tug-base-tone-data-border: --tug-color(teal);
+  --tug-base-tone-data-icon: --tug-color(teal);
+  --tug-base-tone-success: --tug-color(green);
+  --tug-base-tone-success-bg: --tug-color(green, i: 50, t: 50, a: 15);
+  --tug-base-tone-success-fg: --tug-color(green);
+  --tug-base-tone-success-border: --tug-color(green);
+  --tug-base-tone-success-icon: --tug-color(green);
+  --tug-base-tone-caution: --tug-color(yellow);
+  --tug-base-tone-caution-bg: --tug-color(yellow, i: 50, t: 50, a: 12);
+  --tug-base-tone-caution-fg: --tug-color(yellow);
+  --tug-base-tone-caution-border: --tug-color(yellow);
+  --tug-base-tone-caution-icon: --tug-color(yellow);
   --tug-base-tone-danger: --tug-color(red);
   --tug-base-tone-danger-bg: --tug-color(red, i: 50, t: 50, a: 15);
   --tug-base-tone-danger-fg: --tug-color(red);
   --tug-base-tone-danger-border: --tug-color(red);
   --tug-base-tone-danger-icon: --tug-color(red);
-  --tug-base-tone-info: --tug-color(cyan);
-  --tug-base-tone-info-bg: --tug-color(cyan, i: 50, t: 50, a: 12);
-  --tug-base-tone-info-fg: --tug-color(cyan);
-  --tug-base-tone-info-border: --tug-color(cyan);
-  --tug-base-tone-info-icon: --tug-color(cyan);
 
   /* ======================================================================
      === D. Selection / Highlight / Preview
@@ -414,14 +398,8 @@ body {
   --tug-base-field-border-valid: --tug-color(green);
   --tug-base-field-border-disabled: --tug-color(violet-6, i: 6, t: 17);
   --tug-base-field-border-readOnly: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-field-helper: --tug-color(cobalt+7, i: 7, t: 37);
   --tug-base-field-label: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-field-required: --tug-color(red);
-  --tug-base-field-meta: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-field-counter: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-field-limit: --tug-color(red);
-  --tug-base-field-dirty: --tug-color(yellow);
-  --tug-base-field-readOnly: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-field-error: --tug-color(red);
   --tug-base-field-warning: --tug-color(yellow);
   --tug-base-field-success: --tug-color(green);
@@ -443,24 +421,8 @@ body {
   --tug-base-checkmark: --tug-color(cobalt-8, i: 3, t: 100);
   --tug-base-checkmark-mixed: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-radio-dot: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-range-track: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-range-fill: --tug-color(orange);
-  --tug-base-range-thumb: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-range-thumb-disabled: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-base-range-tick: --tug-color(cobalt, i: 6, t: 30);
-  --tug-base-range-scrub-active: --tug-color(orange, i: 50, t: 50, a: 30);
-  --tug-base-range-label: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-range-annotation: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-range-value: --tug-color(cobalt, i: 3, t: 94);
-
-  /* --- Scroll Area / Separator / Avatar --- */
-  --tug-base-scrollbar-track: transparent;
-  --tug-base-scrollbar-thumb: --tug-color(cobalt, i: 6, t: 30);
-  --tug-base-scrollbar-thumb-hover: --tug-color(cobalt+7, i: 7, t: 37);
+  /* --- Separator --- */
   --tug-base-separator: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-avatar-bg: --tug-color(cobalt+10, i: 7, t: 16);
-  --tug-base-avatar-fg: --tug-color(cobalt, i: 5, t: 66);
-  --tug-base-avatar-ring: --tug-color(cobalt, i: 6, t: 30);
 }
 
 /* ============================================================================

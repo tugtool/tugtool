@@ -38,7 +38,7 @@ body {
   --tug-base-fg-placeholder: --tug-color(yellow, i: 9, t: 28);
   --tug-base-fg-onAccent: var(--tug-white);
   --tug-base-fg-onDanger: var(--tug-white);
-  --tug-base-fg-onWarning: --tug-color(violet-6, i: 4, t: 7);
+  --tug-base-fg-onCaution: --tug-color(violet-6, i: 4, t: 7);
   --tug-base-fg-onSuccess: --tug-color(violet-6, i: 4, t: 7);
 
   /* Icon */
@@ -53,8 +53,6 @@ body {
   --tug-base-border-inverse: --tug-color(blue+5, i: 8, t: 13);
   --tug-base-divider-default: --tug-color(yellow, i: 5, t: 46);
   --tug-base-divider-muted: --tug-color(yellow, i: 5, t: 48);
-  --tug-base-focus-ring-offset: --tug-color(yellow, i: 4, t: 99);
-
   /* Elevation */
   --tug-base-shadow-xs: --tug-color(black, i: 0, t: 0, a: 8);
   --tug-base-shadow-md: --tug-color(black, i: 0, t: 0, a: 30);
@@ -66,10 +64,8 @@ body {
   --tug-base-overlay-highlight: --tug-color(white, i: 0, t: 100, a: 50);
 
   /* Accent — contrast-critical overrides per [D06]
-     accent-muted: --tug-color(flame, i: 45, t: 38) is darker orange needed for muted text on light backgrounds.
      accent-subtle: Harmony-specific rgba with adjusted opacity for light bg.
      All other accent tokens resolve from palette. */
-  --tug-base-accent-muted: --tug-color(flame, i: 45, t: 38);
   --tug-base-accent-subtle: --tug-color(flame, i: 55, t: 49, a: 15);
 
   /* Selection */
@@ -163,22 +159,16 @@ body {
   --tug-base-field-border-hover: --tug-color(yellow-5, i: 7, t: 24);
   --tug-base-field-border-disabled: --tug-color(yellow, i: 5, t: 46);
   --tug-base-field-border-readOnly: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-field-helper: --tug-color(yellow, i: 9, t: 28);
   --tug-base-field-label: --tug-color(blue, i: 9, t: 22);
-  --tug-base-field-meta: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-field-readOnly: --tug-color(cobalt, i: 5, t: 66);
-  --tug-base-field-counter: --tug-color(cobalt+7, i: 7, t: 37);
   /* field-warning: --tug-color(yellow, i: 62, t: 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
      which may be too bright on white field backgrounds. Keep as override. */
   --tug-base-field-warning: --tug-color(yellow, i: 62, t: 58);
 
-  /* Toggles / Range */
+  /* Toggles */
   --tug-base-toggle-track-off: --tug-color(yellow, i: 5, t: 46);
   --tug-base-toggle-track-disabled: --tug-color(yellow, i: 6, t: 48);
   --tug-base-toggle-thumb: var(--tug-white);
   --tug-base-toggle-thumb-disabled: --tug-color(blue, i: 8, t: 44);
-  --tug-base-range-track: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-range-tick: --tug-color(yellow, i: 9, t: 28);
 
   /* Menus / Overlays */
   --tug-menu-bg: --tug-color(yellow, i: 4, t: 99);
@@ -216,10 +206,8 @@ body {
   --tug-badge-neutral-fg: --tug-color(blue, i: 9, t: 22);
 
   /* Tone overrides — contrast-critical per [D06]; darker values needed on Harmony's light backgrounds */
-  /* warning-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
-  --tug-base-tone-warning-fg: --tug-color(yellow, i: 46, t: 27);
-  /* info-fg: darker cyan needed for contrast on light bg */
-  --tug-base-tone-info-fg: --tug-color(blue, i: 42, t: 40);
+  /* caution-fg: darker value (i: 46, t: 27) from badge/banner covers 2 of 3 consumers; adequate for toast */
+  --tug-base-tone-caution-fg: --tug-color(yellow, i: 46, t: 27);
 
   /* Progress / Skeleton */
   --tug-progress-track: --tug-color(yellow, i: 5, t: 46);
@@ -233,15 +221,8 @@ body {
   --tug-kbd-fg: --tug-color(blue, i: 9, t: 22);
   --tug-kbd-border: --tug-color(yellow, i: 9, t: 28);
 
-  /* Scrollbar */
-  --tug-base-scrollbar-thumb: --tug-color(yellow, i: 9, t: 28);
-  --tug-base-scrollbar-thumb-hover: --tug-color(yellow-5, i: 7, t: 24);
-
-  /* Separator / Avatar */
+  /* Separator */
   --tug-base-separator: --tug-color(yellow, i: 5, t: 46);
-  --tug-base-avatar-bg: --tug-color(yellow, i: 6, t: 48);
-  --tug-base-avatar-fg: --tug-color(blue, i: 9, t: 22);
-  --tug-base-avatar-ring: --tug-color(yellow, i: 9, t: 28);
 
   /* Tables / Lists */
   --tug-table-header-bg: --tug-color(yellow, i: 6, t: 74);

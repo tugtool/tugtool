@@ -9,6 +9,66 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-13T18:04:04Z
+---
+
+## step-5: Deleted poc-seven-role.css and poc-seven-role-cards.tsx. Removed POC imports and registrations from css-imports.ts, main.tsx, and action-dispatch.ts.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
+step: step-4
+date: 2025-03-13T18:00:09Z
+---
+
+## step-4: Fixed accent-fg bug: replaced 3 occurrences of undefined var(--tug-base-accent-fg) with var(--tug-base-fg-onAccent) in gallery-theme-generator-content.css. Conservative pixel audit found no replacements meeting semantic-intent threshold.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
+step: step-3
+date: 2025-03-13T17:55:01Z
+---
+
+## step-3: Removed 45 unused tokens across 9 groups: accent interaction (9), avatar (3), range (9), scrollbar (3), focus ring (3), motion patterns (8), stroke widths (4), field tokens (6). Token count: 282→237.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
+step: step-2
+date: 2025-03-13T17:33:02Z
+---
+
+## step-2: Removed 5 tone-info tokens, redirected consumers to active hue. Renamed ThemeRecipe primary to active, added agent/data fields. Added 20 new tokens across 4 tone families (accent, active, agent, data). Token count: 267→282.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
+step: step-1
+date: 2025-03-13T17:17:34Z
+---
+
+## step-1: Renamed all tone-positive tokens to tone-success, tone-warning to tone-caution, and fg-onWarning to fg-onCaution across 15 files including CSS, TypeScript source, and tests.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
 step: step-10
 date: 2025-03-13T03:25:06Z
 ---

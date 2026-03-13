@@ -2,7 +2,7 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 267 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 237 entries
  * - T2.2: Bluenote golden test (override subset comparison at OKLCH level)
  * - T2.3: Harmony golden test (override subset comparison at OKLCH level)
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
@@ -222,10 +222,6 @@ const INVARIANT_TOKENS: Record<string, string> = {
   "--tug-base-radius-lg": "8px",
   "--tug-base-radius-xl": "12px",
   "--tug-base-radius-2xl": "16px",
-  "--tug-base-stroke-hairline": "0.5px",
-  "--tug-base-stroke-thin": "1px",
-  "--tug-base-stroke-medium": "1.5px",
-  "--tug-base-stroke-thick": "2px",
   "--tug-base-chrome-height": "36px",
   "--tug-base-icon-size-2xs": "10px",
   "--tug-base-icon-size-xs": "12px",
@@ -243,19 +239,19 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 267 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 237 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(267);
+    expect(Object.keys(output.tokens).length).toBe(237);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 267 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 237 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(267);
-    expect(Object.keys(harmony.tokens).length).toBe(267);
+    expect(Object.keys(brio.tokens).length).toBe(237);
+    expect(Object.keys(harmony.tokens).length).toBe(237);
   });
 
   // -------------------------------------------------------------------------
@@ -319,8 +315,8 @@ describe("derivation-engine", () => {
   // Threshold: delta < 0.02 at <10% count tolerance.
   //
   // Rationale for 10% (not 5%): Harmony contains [D06] contrast-critical overrides
-  // (accent-muted/subtle using the "flame" hue, tone-warning-fg/tone-info-fg adjusted
-  // for WCAG contrast on light backgrounds) plus theme-specific quirks (fg-onWarning
+  // (accent-subtle using the "flame" hue, tone-caution-fg adjusted
+  // for WCAG contrast on light backgrounds) plus theme-specific quirks (fg-onCaution
   // uses violet-6, field-readOnly repeats the Brio cobalt default) that the derivation
   // engine cannot derive from the recipe alone. These tokens are intentionally outside
   // engine scope — they will be addressed by the Layer 2 auto-adjustment in Step 3 and
@@ -515,8 +511,10 @@ describe("derivation-engine", () => {
  *
  * D. Semantic tone tokens (status/informational colors — designed for
  *    medium visual weight, not primary body-text contrast):
- *      tone-positive-fg, tone-warning-fg, tone-danger-fg, tone-info-fg,
- *      tone-positive-icon, tone-warning-icon, tone-danger-icon, tone-info-icon
+ *      tone-accent-fg, tone-active-fg, tone-agent-fg, tone-data-fg,
+ *      tone-success-fg, tone-caution-fg, tone-danger-fg,
+ *      tone-accent-icon, tone-active-icon, tone-agent-icon, tone-data-icon,
+ *      tone-success-icon, tone-caution-icon, tone-danger-icon
  *
  * E. UI control indicators (form elements / state indicators — small, decorative
  *    or same-plane as their background; WCAG non-text threshold applies but
@@ -550,15 +548,21 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-primary-fg-active",
   "--tug-base-control-primary-icon-hover",
   "--tug-base-control-primary-icon-active",
-  // D — semantic tone tokens
-  "--tug-base-tone-positive-fg",
-  "--tug-base-tone-warning-fg",
+  // D — semantic tone tokens (all 7 families)
+  "--tug-base-tone-accent-fg",
+  "--tug-base-tone-active-fg",
+  "--tug-base-tone-agent-fg",
+  "--tug-base-tone-data-fg",
+  "--tug-base-tone-success-fg",
+  "--tug-base-tone-caution-fg",
   "--tug-base-tone-danger-fg",
-  "--tug-base-tone-info-fg",
-  "--tug-base-tone-positive-icon",
-  "--tug-base-tone-warning-icon",
+  "--tug-base-tone-accent-icon",
+  "--tug-base-tone-active-icon",
+  "--tug-base-tone-agent-icon",
+  "--tug-base-tone-data-icon",
+  "--tug-base-tone-success-icon",
+  "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
-  "--tug-base-tone-info-icon",
   // E — UI control indicators
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",

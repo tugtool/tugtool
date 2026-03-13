@@ -61,15 +61,21 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-primary-fg-active",
   "--tug-base-control-primary-icon-hover",
   "--tug-base-control-primary-icon-active",
-  // Semantic tone tokens (status / informational colors)
-  "--tug-base-tone-positive-fg",
-  "--tug-base-tone-warning-fg",
+  // Semantic tone tokens (all 7 role families)
+  "--tug-base-tone-accent-fg",
+  "--tug-base-tone-active-fg",
+  "--tug-base-tone-agent-fg",
+  "--tug-base-tone-data-fg",
+  "--tug-base-tone-success-fg",
+  "--tug-base-tone-caution-fg",
   "--tug-base-tone-danger-fg",
-  "--tug-base-tone-info-fg",
-  "--tug-base-tone-positive-icon",
-  "--tug-base-tone-warning-icon",
+  "--tug-base-tone-accent-icon",
+  "--tug-base-tone-active-icon",
+  "--tug-base-tone-agent-icon",
+  "--tug-base-tone-data-icon",
+  "--tug-base-tone-success-icon",
+  "--tug-base-tone-caution-icon",
   "--tug-base-tone-danger-icon",
-  "--tug-base-tone-info-icon",
   // UI control indicators (form elements / state indicators)
   "--tug-base-accent-default",
   "--tug-base-toggle-thumb",
@@ -351,16 +357,16 @@ const CHM_NOVEL_RECIPE = {
   atmosphere: { hue: "amber" },
   text: { hue: "sand" },
   accent: "flame",
-  primary: "cobalt",
+  active: "cobalt",
   surfaceContrast: 70,
   signalVividity: 80,
   warmth: 65,
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 267 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 237 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(267);
+    expect(Object.keys(output.tokens).length).toBe(237);
   });
 
   it("all token keys start with --tug-base-", () => {
@@ -549,12 +555,12 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     // Core assertion: the module must emit at least one protanopia warning.
     expect(protanopiaWarnings.length).toBeGreaterThan(0);
 
-    // The warning must reference the positive token (green is the problematic color
+    // The warning must reference the success token (green is the problematic color
     // under protanopia in the semantic pair set).
-    const positiveWarning = protanopiaWarnings.find((w) =>
-      w.tokenPair.some((t: string) => t.includes("positive")),
+    const successWarning = protanopiaWarnings.find((w) =>
+      w.tokenPair.some((t: string) => t.includes("success")),
     );
-    expect(positiveWarning).toBeDefined();
+    expect(successWarning).toBeDefined();
   });
 
   it("checkCVDDistinguishability result has correct structure for all warnings", () => {

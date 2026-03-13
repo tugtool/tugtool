@@ -42,11 +42,12 @@ export interface ThemeRecipe {
   atmosphere: { hue: string; offset?: number };
   text: { hue: string; offset?: number };
   accent?: string;
-  primary?: string;
+  active?: string;
   destructive?: string;
-  positive?: string;
-  warning?: string;
-  info?: string;
+  success?: string;
+  caution?: string;
+  agent?: string;
+  data?: string;
   surfaceContrast?: number; // 0-100, default 50
   signalVividity?: number; // 0-100, default 50
   warmth?: number; // 0-100, default 50
@@ -319,7 +320,7 @@ function resolvedEntryAlpha(
 // ---------------------------------------------------------------------------
 
 /**
- * Derive a complete 264-token `--tug-base-*` theme from a `ThemeRecipe`.
+ * Derive a complete `--tug-base-*` theme from a `ThemeRecipe`.
  *
  * Returns `ThemeOutput` with:
  *   - `tokens`: every `--tug-base-*` token as a `--tug-color()` string or
@@ -329,8 +330,13 @@ function resolvedEntryAlpha(
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in Step 3/5)
  *
  * Role formulas are extracted from Brio (tug-base.css), Bluenote (bluenote.css),
- * and Harmony (harmony.css). Each formula maps (atmosphere, text, accent, primary,
+ * and Harmony (harmony.css). Each formula maps (atmosphere, text, accent, active,
  * semantic seeds + mood knobs + mode) to a specific token value.
+ *
+ * Step 2: adds 4 new tone families (accent, active, agent, data — 20 tokens) and
+ * removes the info family (5 tokens). Count after Step 2: ~238.
+ * Step 3: removes accent-muted (1 token, unused per audit).
+ * Count after Step 3: 237.
  */
 export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
@@ -348,15 +354,16 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const accentAngle = resolveHueAngle(accentHue);
   const accentName = closestHueName(accentAngle);
 
-  const primaryHue = recipe.primary ?? "blue";
-  const primaryAngle = resolveHueAngle(primaryHue);
-  const primaryName = closestHueName(primaryAngle);
-  const primaryRef = formatHueRef(primaryName, primaryAngle);
+  const activeHue = recipe.active ?? "blue";
+  const activeAngle = resolveHueAngle(activeHue);
+  const activeName = closestHueName(activeAngle);
+  const activeRef = formatHueRef(activeName, activeAngle);
 
   const destructiveHue = recipe.destructive ?? "red";
-  const positiveHue = recipe.positive ?? "green";
-  const warningHue = recipe.warning ?? "yellow";
-  const infoHue = recipe.info ?? "cyan";
+  const successHue = recipe.success ?? "green";
+  const cautionHue = recipe.caution ?? "yellow";
+  const agentHue = recipe.agent ?? "violet";
+  const dataHue = recipe.data ?? "teal";
 
   const isLight = recipe.mode === "light";
 
@@ -725,9 +732,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-fg-placeholder", fgPlaceholderRef, fgPlaceholderAngle, txtISubtle, fgPlaceholderTone, 100, fgPlaceholderName);
   }
 
-  // fg-link: info hue (cyan by default), canonical
-  setChromatic("--tug-base-fg-link", infoHue, resolveHueAngle(infoHue), signalI, 50);
-  setChromatic("--tug-base-fg-link-hover", infoHue, resolveHueAngle(infoHue), Math.min(90, signalI + 20), 55);
+  // fg-link: active hue (blue by default), per [D06]
+  setChromatic("--tug-base-fg-link", activeHue, resolveHueAngle(activeHue), signalI, 50);
+  setChromatic("--tug-base-fg-link-hover", activeHue, resolveHueAngle(activeHue), Math.min(90, signalI + 20), 55);
 
   // fg-onAccent: text over accent background (need high contrast)
   // In dark mode: near-white over accent; in light mode: near-white over accent (accent is dark enough)
@@ -739,8 +746,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-fg-onDanger", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone, 100, txtNameW);
   }
 
-  // fg-onWarning: dark text on yellow/warning (yellow is bright, needs dark text in both modes)
-  setChromatic("--tug-base-fg-onWarning", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
+  // fg-onCaution: dark text on yellow/caution (yellow is bright, needs dark text in both modes)
+  setChromatic("--tug-base-fg-onCaution", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
   setChromatic("--tug-base-fg-onSuccess", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
 
   // --- Icon ---
@@ -814,11 +821,6 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-divider-default", atmRefW, atmAngleW, atmI, Math.round(dividerTone), 100, atmNameW);
   setChromatic("--tug-base-divider-muted", atmRefW, atmAngleW, atmI, Math.round(dividerTone + 2), 100, atmNameW);
 
-  // focus ring: info hue (cyan), danger, offset = deep surface
-  setChromatic("--tug-base-focus-ring-default", infoHue, resolveHueAngle(infoHue), signalI, 50);
-  setChromatic("--tug-base-focus-ring-danger", destructiveHue, resolveHueAngle(destructiveHue), signalI, 50);
-  setChromatic("--tug-base-focus-ring-offset", atmRefW, atmAngleW, atmI, Math.round(isLight ? 99 : darkBgApp), 100, atmNameW);
-
   // --- Elevation / Overlay ---
   // Shadows are always black-based with alpha; overlays black or white
   // In dark mode: higher alpha shadows. In light mode: lower alpha.
@@ -888,12 +890,6 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setInvariant("--tug-base-radius-xl", "12px");
   setInvariant("--tug-base-radius-2xl", "16px");
 
-  // --- Stroke (invariant) ---
-  setInvariant("--tug-base-stroke-hairline", "0.5px");
-  setInvariant("--tug-base-stroke-thin", "1px");
-  setInvariant("--tug-base-stroke-medium", "1.5px");
-  setInvariant("--tug-base-stroke-thick", "2px");
-
   // --- Chrome (invariant) ---
   setInvariant("--tug-base-chrome-height", "36px");
 
@@ -916,64 +912,66 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setInvariant("--tug-base-motion-easing-standard", "cubic-bezier(0.2, 0, 0, 1)");
   setInvariant("--tug-base-motion-easing-enter", "cubic-bezier(0, 0, 0, 1)");
   setInvariant("--tug-base-motion-easing-exit", "cubic-bezier(0.2, 0, 1, 1)");
-  setInvariant("--tug-base-motion-pattern-fade-enter", "opacity var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter)");
-  setInvariant("--tug-base-motion-pattern-fade-exit", "opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit)");
-  setInvariant("--tug-base-motion-pattern-overlay-enter", "opacity var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter), transform var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-enter)");
-  setInvariant("--tug-base-motion-pattern-overlay-exit", "opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit), transform var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-exit)");
-  setInvariant("--tug-base-motion-pattern-collapse", "height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard)");
-  setInvariant("--tug-base-motion-pattern-expand", "height var(--tug-base-motion-duration-moderate) var(--tug-base-motion-easing-standard)");
-  setInvariant("--tug-base-motion-pattern-crossfade", "opacity var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard)");
-  setInvariant("--tug-base-motion-pattern-startup-reveal", "opacity var(--tug-base-motion-duration-slow) var(--tug-base-motion-easing-enter)");
-
   // =========================================================================
   // B. Accent System
   // =========================================================================
 
   setChromatic("--tug-base-accent-default", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-accent-strong", accentHue, accentAngle, Math.min(90, signalI + 20), 50, 100, accentName);
-  // accent-muted: in light mode needs a darker tone to maintain contrast on light backgrounds [D06]
-  // Dark mode: lighter/muted version (standard). Light mode: darker version (contrast-critical).
-  const accentMutedTone = isLight ? 38 : 50;
-  const accentMutedI = isLight ? Math.max(10, signalI - 5) : Math.max(10, signalI - 20);
-  setChromatic("--tug-base-accent-muted", accentHue, accentAngle, accentMutedI, accentMutedTone, 100, accentName);
   setChromatic("--tug-base-accent-subtle", accentHue, accentAngle, signalI, 50, 15, accentName);
 
-  // accent-cool: primary hue at intense level
-  setChromatic("--tug-base-accent-cool-default", primaryHue, primaryAngle, Math.min(90, signalI + 20), 50, 100, primaryName);
-
-  // Accent-derived interaction tokens
-  setChromatic("--tug-base-accent-bg-subtle", accentHue, accentAngle, signalI, 50, 12, accentName);
-  setChromatic("--tug-base-accent-bg-emphasis", accentHue, accentAngle, signalI, 50, 24, accentName);
-  setChromatic("--tug-base-accent-border", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 20), 50, 100, accentName);
-  setChromatic("--tug-base-accent-underline-active", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-accent-guide", accentHue, accentAngle, signalI, 50, 50, accentName);
-  setChromatic("--tug-base-accent-flash", accentHue, accentAngle, signalI, 50, 40, accentName);
+  // accent-cool: active hue at intense level
+  setChromatic("--tug-base-accent-cool-default", activeHue, activeAngle, Math.min(90, signalI + 20), 50, 100, activeName);
 
   // =========================================================================
   // C. Semantic Tones
   // =========================================================================
 
-  const positiveAngle = resolveHueAngle(positiveHue);
-  const positiveName = closestHueName(positiveAngle);
-  const warningAngle = resolveHueAngle(warningHue);
-  const warningName = closestHueName(warningAngle);
+  const successAngle = resolveHueAngle(successHue);
+  const successName = closestHueName(successAngle);
+  const cautionAngle = resolveHueAngle(cautionHue);
+  const cautionName = closestHueName(cautionAngle);
   const dangerAngle = resolveHueAngle(destructiveHue);
   const dangerName = closestHueName(dangerAngle);
-  const infoAngle = resolveHueAngle(infoHue);
-  const infoName = closestHueName(infoAngle);
+  const agentAngle = resolveHueAngle(agentHue);
+  const agentName = closestHueName(agentAngle);
+  const dataAngle = resolveHueAngle(dataHue);
+  const dataName = closestHueName(dataAngle);
 
-  setChromatic("--tug-base-tone-positive", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-bg", positiveHue, positiveAngle, signalI, 50, 15, positiveName);
-  setChromatic("--tug-base-tone-positive-fg", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-border", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
-  setChromatic("--tug-base-tone-positive-icon", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-tone-accent", accentHue, accentAngle, signalI, 50, 100, accentName);
+  setChromatic("--tug-base-tone-accent-bg", accentHue, accentAngle, signalI, 50, 15, accentName);
+  setChromatic("--tug-base-tone-accent-fg", accentHue, accentAngle, signalI, 50, 100, accentName);
+  setChromatic("--tug-base-tone-accent-border", accentHue, accentAngle, signalI, 50, 100, accentName);
+  setChromatic("--tug-base-tone-accent-icon", accentHue, accentAngle, signalI, 50, 100, accentName);
 
-  setChromatic("--tug-base-tone-warning", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-bg", warningHue, warningAngle, signalI, 50, 12, warningName);
-  setChromatic("--tug-base-tone-warning-fg", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-border", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-tone-warning-icon", warningHue, warningAngle, signalI, 50, 100, warningName);
+  setChromatic("--tug-base-tone-active", activeHue, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-tone-active-bg", activeHue, activeAngle, signalI, 50, 15, activeName);
+  setChromatic("--tug-base-tone-active-fg", activeHue, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-tone-active-border", activeHue, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-tone-active-icon", activeHue, activeAngle, signalI, 50, 100, activeName);
+
+  setChromatic("--tug-base-tone-agent", agentHue, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-tone-agent-bg", agentHue, agentAngle, signalI, 50, 15, agentName);
+  setChromatic("--tug-base-tone-agent-fg", agentHue, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-tone-agent-border", agentHue, agentAngle, signalI, 50, 100, agentName);
+  setChromatic("--tug-base-tone-agent-icon", agentHue, agentAngle, signalI, 50, 100, agentName);
+
+  setChromatic("--tug-base-tone-data", dataHue, dataAngle, signalI, 50, 100, dataName);
+  setChromatic("--tug-base-tone-data-bg", dataHue, dataAngle, signalI, 50, 15, dataName);
+  setChromatic("--tug-base-tone-data-fg", dataHue, dataAngle, signalI, 50, 100, dataName);
+  setChromatic("--tug-base-tone-data-border", dataHue, dataAngle, signalI, 50, 100, dataName);
+  setChromatic("--tug-base-tone-data-icon", dataHue, dataAngle, signalI, 50, 100, dataName);
+
+  setChromatic("--tug-base-tone-success", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-bg", successHue, successAngle, signalI, 50, 15, successName);
+  setChromatic("--tug-base-tone-success-fg", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-border", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-tone-success-icon", successHue, successAngle, signalI, 50, 100, successName);
+
+  setChromatic("--tug-base-tone-caution", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-bg", cautionHue, cautionAngle, signalI, 50, 12, cautionName);
+  setChromatic("--tug-base-tone-caution-fg", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-border", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-tone-caution-icon", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
 
   setChromatic("--tug-base-tone-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-tone-danger-bg", destructiveHue, dangerAngle, signalI, 50, 15, dangerName);
@@ -981,18 +979,12 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-tone-danger-border", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-tone-danger-icon", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
 
-  setChromatic("--tug-base-tone-info", infoHue, infoAngle, signalI, 50, 100, infoName);
-  setChromatic("--tug-base-tone-info-bg", infoHue, infoAngle, signalI, 50, 12, infoName);
-  setChromatic("--tug-base-tone-info-fg", infoHue, infoAngle, signalI, 50, 100, infoName);
-  setChromatic("--tug-base-tone-info-border", infoHue, infoAngle, signalI, 50, 100, infoName);
-  setChromatic("--tug-base-tone-info-icon", infoHue, infoAngle, signalI, 50, 100, infoName);
-
   // =========================================================================
   // D. Selection / Highlight / Preview
   // =========================================================================
 
-  // selection-bg: primary/info hue with moderate alpha
-  setChromatic("--tug-base-selection-bg", infoHue, infoAngle, signalI, 50, 40, infoName);
+  // selection-bg: active hue (blue) with moderate alpha — per [D06]
+  setChromatic("--tug-base-selection-bg", activeHue, activeAngle, signalI, 50, 40, activeName);
   // selection-bg-inactive: muted tint of text hue (Brio: yellow/i:0/t:30/a:25, Bluenote: blue/i:10/t:33/a:30)
   // In dark mode, use text hue at low intensity. In light mode, use atmosphere warm tint.
   // selection-bg-inactive:
@@ -1014,16 +1006,16 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // highlights: white or black semi-transparent overlays depending on mode
   if (isLight) {
     setShadow("--tug-base-highlight-hover", 4);
-    setChromatic("--tug-base-highlight-dropTarget", infoHue, infoAngle, signalI, 50, 18, infoName);
-    setChromatic("--tug-base-highlight-preview", infoHue, infoAngle, signalI, 50, 12, infoName);
-    setChromatic("--tug-base-highlight-inspectorTarget", infoHue, infoAngle, signalI, 50, 22, infoName);
-    setChromatic("--tug-base-highlight-snapGuide", infoHue, infoAngle, signalI, 50, 50, infoName);
+    setChromatic("--tug-base-highlight-dropTarget", activeHue, activeAngle, signalI, 50, 18, activeName);
+    setChromatic("--tug-base-highlight-preview", activeHue, activeAngle, signalI, 50, 12, activeName);
+    setChromatic("--tug-base-highlight-inspectorTarget", activeHue, activeAngle, signalI, 50, 22, activeName);
+    setChromatic("--tug-base-highlight-snapGuide", activeHue, activeAngle, signalI, 50, 50, activeName);
   } else {
     setHighlight("--tug-base-highlight-hover", 5);
-    setChromatic("--tug-base-highlight-dropTarget", infoHue, infoAngle, signalI, 50, 18, infoName);
-    setChromatic("--tug-base-highlight-preview", infoHue, infoAngle, signalI, 50, 12, infoName);
-    setChromatic("--tug-base-highlight-inspectorTarget", infoHue, infoAngle, signalI, 50, 22, infoName);
-    setChromatic("--tug-base-highlight-snapGuide", infoHue, infoAngle, signalI, 50, 50, infoName);
+    setChromatic("--tug-base-highlight-dropTarget", activeHue, activeAngle, signalI, 50, 18, activeName);
+    setChromatic("--tug-base-highlight-preview", activeHue, activeAngle, signalI, 50, 12, activeName);
+    setChromatic("--tug-base-highlight-inspectorTarget", activeHue, activeAngle, signalI, 50, 22, activeName);
+    setChromatic("--tug-base-highlight-snapGuide", activeHue, activeAngle, signalI, 50, 50, activeName);
   }
   setChromatic("--tug-base-highlight-flash", accentHue, accentAngle, signalI, 50, 35, accentName);
 
@@ -1043,27 +1035,27 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // --- Primary ---
   // Primary: based on primary hue, dark/hover/active gradient
-  const primaryDarkTone = isLight ? 30 : 20;
-  const primaryHoverTone = isLight ? 40 : 40;
-  const primaryActiveTone = isLight ? 50 : 50;
-  const primaryFgTone = isLight ? 100 : 100;
+  const activeDarkTone = isLight ? 30 : 20;
+  const activeHoverTone = isLight ? 40 : 40;
+  const activeActiveTone = isLight ? 50 : 50;
+  const activeFgTone = isLight ? 100 : 100;
 
-  setChromatic("--tug-base-control-primary-bg-rest", primaryRef, primaryAngle, 50, primaryDarkTone, 100, primaryName);
-  setChromatic("--tug-base-control-primary-bg-hover", primaryRef, primaryAngle, 55, primaryHoverTone, 100, primaryName);
-  setChromatic("--tug-base-control-primary-bg-active", primaryRef, primaryAngle, 90, primaryActiveTone, 100, primaryName);
+  setChromatic("--tug-base-control-primary-bg-rest", activeRef, activeAngle, 50, activeDarkTone, 100, activeName);
+  setChromatic("--tug-base-control-primary-bg-hover", activeRef, activeAngle, 55, activeHoverTone, 100, activeName);
+  setChromatic("--tug-base-control-primary-bg-active", activeRef, activeAngle, 90, activeActiveTone, 100, activeName);
   setStructural("--tug-base-control-primary-bg-disabled", "var(--tug-base-control-disabled-bg)");
   // Primary fg: near-white text on primary dark bg
-  setChromatic("--tug-base-control-primary-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-primary-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-primary-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
+  setChromatic("--tug-base-control-primary-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-primary-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-primary-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
   // Primary border: primary hue, slight variation
-  setChromatic("--tug-base-control-primary-border-rest", primaryRef, primaryAngle, signalI, 50, 100, primaryName);
-  setChromatic("--tug-base-control-primary-border-hover", primaryRef, primaryAngle, Math.min(90, signalI + 10), 50, 100, primaryName);
-  setChromatic("--tug-base-control-primary-border-active", primaryRef, primaryAngle, 90, primaryActiveTone, 100, primaryName);
+  setChromatic("--tug-base-control-primary-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-control-primary-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
+  setChromatic("--tug-base-control-primary-border-active", activeRef, activeAngle, 90, activeActiveTone, 100, activeName);
   // Primary icon: same as fg
-  setChromatic("--tug-base-control-primary-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-primary-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-primary-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
+  setChromatic("--tug-base-control-primary-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-primary-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-primary-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
 
   // --- Secondary ---
   // Secondary: atmosphere hue, subtle variation.
@@ -1134,25 +1126,25 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-destructive-bg-hover", destructiveHue, dangerAngle, 55, destrHoverTone, 100, dangerName);
   setChromatic("--tug-base-control-destructive-bg-active", destructiveHue, dangerAngle, 90, destrActiveTone, 100, dangerName);
   setStructural("--tug-base-control-destructive-bg-disabled", "var(--tug-base-control-disabled-bg)");
-  setChromatic("--tug-base-control-destructive-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-destructive-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-destructive-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
+  setChromatic("--tug-base-control-destructive-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-destructive-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-destructive-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
   setChromatic("--tug-base-control-destructive-border-rest", destructiveHue, dangerAngle, 30, Math.round(destrDarkTone + 10), 100, dangerName);
   setChromatic("--tug-base-control-destructive-border-hover", destructiveHue, dangerAngle, 40, 50, 100, dangerName);
   setChromatic("--tug-base-control-destructive-border-active", destructiveHue, dangerAngle, 90, destrActiveTone, 100, dangerName);
-  setChromatic("--tug-base-control-destructive-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-destructive-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
-  setChromatic("--tug-base-control-destructive-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), primaryFgTone);
+  setChromatic("--tug-base-control-destructive-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-destructive-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
+  setChromatic("--tug-base-control-destructive-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), activeFgTone);
 
   // --- Selected / Highlighted ---
-  setChromatic("--tug-base-control-selected-bg", primaryRef, primaryAngle, signalI, 50, 18, primaryName);
-  setChromatic("--tug-base-control-selected-bg-hover", primaryRef, primaryAngle, signalI, 50, 24, primaryName);
+  setChromatic("--tug-base-control-selected-bg", activeRef, activeAngle, signalI, 50, 18, activeName);
+  setChromatic("--tug-base-control-selected-bg-hover", activeRef, activeAngle, signalI, 50, 24, activeName);
   setChromatic("--tug-base-control-selected-fg", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-control-selected-border", primaryRef, primaryAngle, signalI, 50, 100, primaryName);
-  setChromatic("--tug-base-control-selected-disabled-bg", primaryRef, primaryAngle, signalI, 50, 10, primaryName);
-  setChromatic("--tug-base-control-highlighted-bg", primaryRef, primaryAngle, signalI, 50, 10, primaryName);
+  setChromatic("--tug-base-control-selected-border", activeRef, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-control-selected-disabled-bg", activeRef, activeAngle, signalI, 50, 10, activeName);
+  setChromatic("--tug-base-control-highlighted-bg", activeRef, activeAngle, signalI, 50, 10, activeName);
   setChromatic("--tug-base-control-highlighted-fg", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-control-highlighted-border", primaryRef, primaryAngle, signalI, 50, 25, primaryName);
+  setChromatic("--tug-base-control-highlighted-border", activeRef, activeAngle, signalI, 50, 25, activeName);
 
   // --- Generic Field Tokens ---
   const fieldBgRestTone = isLight ? 51 : 8;
@@ -1181,33 +1173,22 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-field-border-rest", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
     setChromatic("--tug-base-field-border-hover", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
   }
-  setChromatic("--tug-base-field-border-focus", infoHue, infoAngle, signalI, 50, 100, infoName);
+  setChromatic("--tug-base-field-border-focus", activeHue, activeAngle, signalI, 50, 100, activeName);
   setChromatic("--tug-base-field-border-invalid", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-border-valid", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-field-border-valid", successHue, successAngle, signalI, 50, 100, successName);
   setChromatic("--tug-base-field-border-disabled", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
   setChromatic("--tug-base-field-border-readOnly", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
 
-  // field-helper, field-meta: in light mode use atmosphere hue at placeholder tone.
-  // Harmony: yellow, i:9, t:28 (= fgPlaceholderTone, not fgSubtleTone).
   if (isLight) {
-    setChromatic("--tug-base-field-helper", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
     setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
     setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-    setChromatic("--tug-base-field-meta", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
-    setChromatic("--tug-base-field-counter", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
   } else {
-    setChromatic("--tug-base-field-helper", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
     setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
     setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-    setChromatic("--tug-base-field-meta", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-    setChromatic("--tug-base-field-counter", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
   }
-  setChromatic("--tug-base-field-limit", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-dirty", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-field-readOnly", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
   setChromatic("--tug-base-field-error", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-warning", warningHue, warningAngle, signalI, 50, 100, warningName);
-  setChromatic("--tug-base-field-success", positiveHue, positiveAngle, signalI, 50, 100, positiveName);
+  setChromatic("--tug-base-field-warning", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-field-success", successHue, successAngle, signalI, 50, 100, successName);
 
   // --- Toggle / Range Tokens ---
   // Toggle track: atmosphere (off) or accent (on)
@@ -1242,48 +1223,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   }
   setChromatic("--tug-base-checkmark-mixed", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
 
-  // Range
-  setChromatic("--tug-base-range-track", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
-  setChromatic("--tug-base-range-fill", accentHue, accentAngle, signalI, 50, 100, accentName);
-  if (isLight) {
-    setWhite("--tug-base-range-thumb");
-  } else {
-    setChromatic("--tug-base-range-thumb", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone);
-  }
-  setChromatic("--tug-base-range-thumb-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
-  // range-tick: in light mode uses atmosphere hue (Harmony: yellow i:9 t:28)
-  if (isLight) {
-    setChromatic("--tug-base-range-tick", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
-  } else {
-    setChromatic("--tug-base-range-tick", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
-  }
-  setChromatic("--tug-base-range-scrub-active", accentHue, accentAngle, signalI, 50, 30, accentName);
-  setChromatic("--tug-base-range-label", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-  setChromatic("--tug-base-range-annotation", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-  setChromatic("--tug-base-range-value", txtRefW, txtAngleW, txtI, fgDefaultTone);
-
-  // --- Scroll Area / Separator / Avatar ---
-  setStructural("--tug-base-scrollbar-track", "transparent");
-  // scrollbar-thumb: in light mode uses atmosphere hue (Harmony: yellow i:9 t:28)
-  if (isLight) {
-    setChromatic("--tug-base-scrollbar-thumb", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
-    // scrollbar-thumb-hover: Harmony uses yellow-5 (same as border-strong)
-    setChromatic("--tug-base-scrollbar-thumb-hover", borderStrongHueRef, borderStrongHueAngle, borderIStrong, borderStrongTone, 100, borderStrongHueName);
-  } else {
-    setChromatic("--tug-base-scrollbar-thumb", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
-    setChromatic("--tug-base-scrollbar-thumb-hover", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-  }
+  // --- Separator ---
   setChromatic("--tug-base-separator", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
-  // avatar-bg: light mode uses overlay tone (t:48 = darkSurfaceOverlay), not screen tone (t:80).
-  const avatarBgTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceScreen);
-  setChromatic("--tug-base-avatar-bg", atmRefW, atmAngleW, isLight ? 6 : atmI, avatarBgTone, 100, atmNameW);
-  setChromatic("--tug-base-avatar-fg", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  // avatar-ring: in light mode uses atmosphere hue (Harmony: yellow i:9 t:28)
-  if (isLight) {
-    setChromatic("--tug-base-avatar-ring", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
-  } else {
-    setChromatic("--tug-base-avatar-ring", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
-  }
 
   // =========================================================================
   // Return ThemeOutput

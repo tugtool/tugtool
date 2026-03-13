@@ -84,23 +84,23 @@ describe("cvd-preview – T8.2: each row shows correct number of swatches", () =
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("each CVD row contains 6 original swatches", () => {
+  it("each CVD row contains 7 original swatches", () => {
     const container = renderComponent();
     const rows = container.querySelectorAll("[data-testid='gtg-cvd-row']");
     expect(rows.length).toBe(4);
     for (const row of Array.from(rows)) {
       const origSwatches = row.querySelectorAll("[data-testid='gtg-cvd-orig-swatch']");
-      expect(origSwatches.length).toBe(6);
+      expect(origSwatches.length).toBe(7);
     }
   });
 
-  it("each CVD row contains 6 simulated swatches", () => {
+  it("each CVD row contains 7 simulated swatches", () => {
     const container = renderComponent();
     const rows = container.querySelectorAll("[data-testid='gtg-cvd-row']");
     expect(rows.length).toBe(4);
     for (const row of Array.from(rows)) {
       const simSwatches = row.querySelectorAll("[data-testid='gtg-cvd-sim-swatch']");
-      expect(simSwatches.length).toBe(6);
+      expect(simSwatches.length).toBe(7);
     }
   });
 
@@ -116,10 +116,10 @@ describe("cvd-preview – T8.2: each row shows correct number of swatches", () =
     expect(firstSimSwatch!.style.backgroundColor).not.toBe("");
   });
 
-  it("total simulated swatches across all rows = 4 × 6 = 24", () => {
+  it("total simulated swatches across all rows = 4 × 7 = 28", () => {
     const container = renderComponent();
     const all = container.querySelectorAll("[data-testid='gtg-cvd-sim-swatch']");
-    expect(all.length).toBe(24);
+    expect(all.length).toBe(28);
   });
 });
 

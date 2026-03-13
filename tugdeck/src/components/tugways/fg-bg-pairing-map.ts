@@ -212,23 +212,18 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "large-text",
   },
   {
-    fg: "--tug-base-fg-onAccent",
-    bg: "--tug-base-accent-strong",
-    role: "large-text",
-  },
-  {
     fg: "--tug-base-fg-onDanger",
     bg: "--tug-base-tone-danger",
     role: "large-text",
   },
   {
-    fg: "--tug-base-fg-onWarning",
-    bg: "--tug-base-tone-warning",
+    fg: "--tug-base-fg-onCaution",
+    bg: "--tug-base-tone-caution",
     role: "large-text",
   },
   {
     fg: "--tug-base-fg-onSuccess",
-    bg: "--tug-base-tone-positive",
+    bg: "--tug-base-tone-success",
     role: "large-text",
   },
 
@@ -294,12 +289,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     bg: "--tug-base-accent-default",
     role: "ui-component",
   },
-  {
-    fg: "--tug-base-icon-onAccent",
-    bg: "--tug-base-accent-strong",
-    role: "ui-component",
-  },
-
   // =========================================================================
   // Control — Primary variant (button labels + icons on primary bg)
   // =========================================================================
@@ -484,32 +473,26 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     bg: "--tug-base-surface-default",
     role: "body-text",
   },
-  {
-    fg: "--tug-base-field-helper",
-    bg: "--tug-base-surface-default",
-    role: "body-text",
-  },
-
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
   // =========================================================================
   {
-    fg: "--tug-base-tone-positive-fg",
-    bg: "--tug-base-tone-positive-bg",
+    fg: "--tug-base-tone-success-fg",
+    bg: "--tug-base-tone-success-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-positive-fg",
+    fg: "--tug-base-tone-success-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-fg",
-    bg: "--tug-base-tone-warning-bg",
+    fg: "--tug-base-tone-caution-fg",
+    bg: "--tug-base-tone-caution-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-fg",
+    fg: "--tug-base-tone-caution-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
@@ -524,12 +507,42 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-info-fg",
-    bg: "--tug-base-tone-info-bg",
+    fg: "--tug-base-tone-accent-fg",
+    bg: "--tug-base-tone-accent-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-info-fg",
+    fg: "--tug-base-tone-accent-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-fg",
+    bg: "--tug-base-tone-active-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-active-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-fg",
+    bg: "--tug-base-tone-agent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-fg",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-fg",
+    bg: "--tug-base-tone-data-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-fg",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
@@ -538,23 +551,63 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   // Semantic tone — icon tokens on surfaces and tone backgrounds
   // =========================================================================
   {
-    fg: "--tug-base-tone-positive-icon",
+    fg: "--tug-base-tone-accent-icon",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-positive-icon",
-    bg: "--tug-base-tone-positive-bg",
+    fg: "--tug-base-tone-accent-icon",
+    bg: "--tug-base-tone-accent-bg",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-icon",
+    fg: "--tug-base-tone-active-icon",
     bg: "--tug-base-surface-default",
     role: "ui-component",
   },
   {
-    fg: "--tug-base-tone-warning-icon",
-    bg: "--tug-base-tone-warning-bg",
+    fg: "--tug-base-tone-active-icon",
+    bg: "--tug-base-tone-active-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-agent-icon",
+    bg: "--tug-base-tone-agent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-data-icon",
+    bg: "--tug-base-tone-data-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-success-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-success-icon",
+    bg: "--tug-base-tone-success-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-caution-icon",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-tone-caution-icon",
+    bg: "--tug-base-tone-caution-bg",
     role: "ui-component",
   },
   {
@@ -565,16 +618,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   {
     fg: "--tug-base-tone-danger-icon",
     bg: "--tug-base-tone-danger-bg",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-tone-info-icon",
-    bg: "--tug-base-surface-default",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-tone-info-icon",
-    bg: "--tug-base-tone-info-bg",
     role: "ui-component",
   },
 
@@ -592,11 +635,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
   {
-    fg: "--tug-base-accent-default",
-    bg: "--tug-base-accent-bg-subtle",
-    role: "ui-component",
-  },
-  {
     fg: "--tug-base-accent-cool-default",
     bg: "--tug-base-surface-default",
     role: "ui-component",
@@ -609,29 +647,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     fg: "--tug-base-selection-fg",
     bg: "--tug-base-selection-bg",
     role: "body-text",
-  },
-
-  // =========================================================================
-  // Avatar — text on avatar background
-  // =========================================================================
-  {
-    fg: "--tug-base-avatar-fg",
-    bg: "--tug-base-avatar-bg",
-    role: "ui-component",
-  },
-
-  // =========================================================================
-  // Scrollbar — thumb on track (decorative)
-  // =========================================================================
-  {
-    fg: "--tug-base-scrollbar-thumb",
-    bg: "--tug-base-bg-app",
-    role: "decorative",
-  },
-  {
-    fg: "--tug-base-scrollbar-thumb-hover",
-    bg: "--tug-base-bg-app",
-    role: "decorative",
   },
 
   // =========================================================================
@@ -722,32 +737,4 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
 
-  // =========================================================================
-  // Range — thumb and value label over track/fill and surface
-  // =========================================================================
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-range-fill",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-range-track",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-surface-default",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb-disabled",
-    bg: "--tug-base-surface-default",
-    role: "decorative",
-  },
-  {
-    fg: "--tug-base-range-value",
-    bg: "--tug-base-surface-default",
-    role: "body-text",
-  },
 ];

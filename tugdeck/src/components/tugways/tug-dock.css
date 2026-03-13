@@ -17,7 +17,7 @@ body {
   --tug-dock-button-bg-active: --tug-color(white, i: 0, t: 100, a: 12);
   --tug-dock-button-fg: var(--tug-base-fg-subtle);
   --tug-dock-button-fg-active: var(--tug-base-accent-default);
-  --tug-dock-button-fg-attention: var(--tug-base-tone-warning);
+  --tug-dock-button-fg-attention: var(--tug-base-tone-caution);
   --tug-dock-button-badge-bg: var(--tug-base-tone-danger);
   --tug-dock-button-badge-fg: var(--tug-base-fg-inverse);
   --tug-dock-button-insertIndicator: var(--tug-base-icon-active);

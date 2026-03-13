@@ -101,10 +101,7 @@ function extractChromaticTokens(css: string): {
       name.includes("-icon") ||
       name.includes("checkmark") ||
       name.includes("radio-dot") ||
-      name.includes("range-thumb") ||
-      name.includes("range-value") ||
-      name.includes("toggle-thumb") ||
-      name.includes("-scrollbar-thumb");
+      name.includes("toggle-thumb");
 
     // Classify as bg: only tokens that are truly backgrounds/surfaces.
     // Exclude tokens that end in -fg, -icon, -border, -label, etc.
@@ -116,38 +113,25 @@ function extractChromaticTokens(css: string): {
       !name.endsWith("-ring") &&
       !name.endsWith("-dot") &&
       !name.endsWith("-thumb") &&
-      !name.endsWith("-value") &&
-      !name.endsWith("-tick") &&
-      !name.endsWith("-annotation") &&
       !name.endsWith("-shortcut") &&
-      !name.endsWith("-meta") &&
-      !name.endsWith("-counter") &&
-      !name.endsWith("-limit") &&
-      !name.endsWith("-dirty") &&
       !name.endsWith("-required") &&
       !name.endsWith("-error") &&
       !name.endsWith("-warning") &&
-      !name.endsWith("-success") &&
-      !name.endsWith("-helper") &&
-      !name.endsWith("-readOnly") &&
-      !name.endsWith("-focus-ring-default") &&
-      !name.endsWith("-focus-ring-danger") &&
-      !name.endsWith("-focus-ring-offset");
+      !name.endsWith("-success");
 
     const isBg =
       isNotFgOrBorder &&
       (name.includes("-bg") ||
         name.includes("-surface") ||
         name.includes("selection-bg") ||
-        name.includes("avatar-bg") ||
-        name.includes("tone-positive-bg") ||
-        name.includes("tone-warning-bg") ||
+        name.includes("tone-accent-bg") ||
+        name.includes("tone-active-bg") ||
+        name.includes("tone-agent-bg") ||
+        name.includes("tone-data-bg") ||
+        name.includes("tone-success-bg") ||
+        name.includes("tone-caution-bg") ||
         name.includes("tone-danger-bg") ||
-        name.includes("tone-info-bg") ||
-        name.includes("accent-bg") ||
         name.includes("accent-default") ||
-        name.includes("accent-strong") ||
-        name.includes("accent-muted") ||
         name.includes("accent-cool") ||
         name.includes("control-primary-bg") ||
         name.includes("control-secondary-bg") ||
@@ -156,10 +140,7 @@ function extractChromaticTokens(css: string): {
         name.includes("control-selected-bg") ||
         name.includes("control-highlighted-bg") ||
         name.includes("field-bg") ||
-        name.includes("toggle-track") ||
-        name.includes("range-track") ||
-        name.includes("range-fill") ||
-        name.includes("range-scrub"));
+        name.includes("toggle-track"));
 
     if (isFg) fgTokens.add(name);
     if (isBg) bgTokens.add(name);
@@ -229,15 +210,9 @@ describe("pairing-map", () => {
       "--tug-base-highlight-inspectorTarget",
       "--tug-base-highlight-snapGuide",
       "--tug-base-highlight-flash",
-      "--tug-base-accent-bg-emphasis",
-      "--tug-base-accent-bg-subtle",
       "--tug-base-accent-subtle",
-      "--tug-base-accent-guide",
-      "--tug-base-accent-flash",
       // selection-bg-inactive is decorative / no chromatic fg over it
       "--tug-base-selection-bg-inactive",
-      // range-scrub is a semi-transparent overlay, not a direct surface
-      "--tug-base-range-scrub-active",
       // ghost hover/active are semi-transparent whites (effectively overlays)
       "--tug-base-control-ghost-bg-hover",
       "--tug-base-control-ghost-bg-active",
@@ -245,8 +220,6 @@ describe("pairing-map", () => {
       "--tug-base-control-selected-bg-hover",
       // field-bg-disabled paired via field-fg-disabled
       "--tug-base-field-bg-disabled",
-      // accent-muted is used as a decorative accent color, not a bg surface
-      "--tug-base-accent-muted",
       // accent-cool-default is used as a focus ring / accent UI element
       "--tug-base-accent-cool-default",
     ]);
@@ -434,7 +407,6 @@ describe("theme-accessibility", () => {
   //                                     (selection bg is a translucent accent tint;
   //                                      combined stack passes in real rendering)
   //   --tug-base-control-highlighted-fg — same as selected, highlighted tint
-  //   --tug-base-field-helper      — form field helper / description text (secondary)
   //   --tug-base-selection-fg      — text-selection overlay fg (rendered over
   //                                  selection-bg translucent tint; stack passes)
   //   --tug-base-fg-link           — link fg on surface-overlay (overlay surface is
@@ -454,7 +426,6 @@ describe("theme-accessibility", () => {
       "--tug-base-fg-link-hover",
       "--tug-base-control-selected-fg",
       "--tug-base-control-highlighted-fg",
-      "--tug-base-field-helper",
       "--tug-base-selection-fg",
       "--tug-base-fg-link",
     ]);

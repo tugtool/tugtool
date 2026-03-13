@@ -67,12 +67,12 @@ body {
   --tug-tree-row-bg-current: --tug-color(cyan, i: 50, t: 50, a: 10);
   --tug-tree-row-fg: var(--tug-base-fg-default);
   --tug-tree-chevron: var(--tug-base-border-default);
-  --tug-file-status-added: var(--tug-base-tone-positive);
-  --tug-file-status-modified: var(--tug-base-tone-warning);
+  --tug-file-status-added: var(--tug-base-tone-success);
+  --tug-file-status-modified: var(--tug-base-tone-caution);
   --tug-file-status-deleted: var(--tug-base-tone-danger);
-  --tug-file-status-renamed: var(--tug-base-tone-info);
+  --tug-file-status-renamed: var(--tug-base-tone-active);
   --tug-diff-addition-bg: --tug-color(green, i: 50, t: 50, a: 12);
-  --tug-diff-addition-fg: var(--tug-base-tone-positive);
+  --tug-diff-addition-fg: var(--tug-base-tone-success);
   --tug-diff-deletion-bg: --tug-color(red, i: 50, t: 50, a: 12);
   --tug-diff-deletion-fg: var(--tug-base-tone-danger);
 
@@ -82,8 +82,8 @@ body {
   --tug-feed-step-bg: var(--tug-base-surface-sunken);
   --tug-feed-step-fg: var(--tug-base-fg-muted);
   --tug-feed-step-active: var(--tug-base-accent-default);
-  --tug-feed-step-complete: var(--tug-base-tone-positive);
+  --tug-feed-step-complete: var(--tug-base-tone-success);
   --tug-feed-step-error: var(--tug-base-tone-danger);
   --tug-feed-stream-cursor: var(--tug-base-accent-default);
-  --tug-feed-handoff: var(--tug-base-tone-info);
+  --tug-feed-handoff: var(--tug-base-tone-active);
 }

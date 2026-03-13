@@ -44,8 +44,6 @@ body {
   --tug-base-border-muted: --tug-color(blue+7, i: 7, t: 37);
   --tug-base-border-strong: --tug-color(blue, i: 8, t: 43);
   --tug-base-border-inverse: --tug-color(blue, i: 3, t: 88);
-  --tug-base-focus-ring-offset: --tug-color(blue+9, i: 5, t: 13);
-
   /* Selection */
   --tug-base-selection-bg-inactive: --tug-color(blue, i: 10, t: 33, a: 30);
   --tug-base-selection-fg: --tug-color(blue, i: 3, t: 88);
@@ -91,10 +89,6 @@ body {
   --tug-dialog-border: --tug-color(blue+8, i: 8, t: 29);
   --tug-sheet-bg: --tug-color(blue+6, i: 7, t: 19);
   --tug-sheet-border: --tug-color(blue+8, i: 8, t: 29);
-
-  /* Scrollbar */
-  --tug-base-scrollbar-thumb: --tug-color(blue+8, i: 8, t: 29);
-  --tug-base-scrollbar-thumb-hover: --tug-color(blue+7, i: 7, t: 37);
 
   /* Terminal */
   --tug-terminal-bg: --tug-color(blue+5, i: 5, t: 13);
