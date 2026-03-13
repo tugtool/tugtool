@@ -17,6 +17,7 @@ import type { TugConnection } from "./connection";
 import type { DeckManager } from "./deck-manager";
 import type { ResponderChainManager } from "./components/tugways/responder-chain";
 import { FeedId } from "./protocol";
+import { POC_CARD_IDS } from "./components/tugways/cards/poc-seven-role-cards";
 
 /** Handler function for an action */
 export type ActionHandler = (payload: Record<string, unknown>) => void;
@@ -217,6 +218,13 @@ export function initActionDispatch(
       return;
     }
     deckManager.addCard(component);
+  });
+
+  // show-seven-role-poc: Create all 5 POC cards demonstrating the 7-role color system.
+  registerAction("show-seven-role-poc", () => {
+    for (const id of POC_CARD_IDS) {
+      deckManager.addCard(id);
+    }
   });
 
   // add-tab: Add a new tab to the focused card via the responder chain.

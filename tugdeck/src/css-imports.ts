@@ -7,6 +7,7 @@
  */
 import "./globals.css";
 import "../styles/chrome.css";
+import "../styles/poc-seven-role.css";
 import "@xterm/xterm/css/xterm.css";
 
 if (import.meta.hot) {
