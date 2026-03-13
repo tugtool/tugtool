@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-13T18:00:09Z
+---
+
+## step-4: Fixed accent-fg bug: replaced 3 occurrences of undefined var(--tug-base-accent-fg) with var(--tug-base-fg-onAccent) in gallery-theme-generator-content.css. Conservative pixel audit found no replacements meeting semantic-intent threshold.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
 step: step-3
 date: 2025-03-13T17:55:01Z
 ---

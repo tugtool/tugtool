@@ -51,12 +51,12 @@
 
 .gtg-mode-btn--active {
   background-color: var(--tug-base-accent-default);
-  color: var(--tug-base-accent-fg);
+  color: var(--tug-base-fg-onAccent);
 }
 
 .gtg-mode-btn--active:hover {
   background-color: var(--tug-base-accent-default);
-  color: var(--tug-base-accent-fg);
+  color: var(--tug-base-fg-onAccent);
 }
 
 /* ============================================================================
@@ -246,7 +246,7 @@
 .gtg-preset-btn--active {
   background-color: var(--tug-base-accent-subtle);
   border-color: var(--tug-base-accent-default);
-  color: var(--tug-base-accent-fg);
+  color: var(--tug-base-fg-onAccent);
 }
 
 /* ============================================================================
