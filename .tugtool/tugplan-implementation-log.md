@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-13T21:22:43Z
+---
+
+## step-8: Renamed old control token names in bluenote.css (3 tokens) and harmony.css (13 tokens) to emphasis x role names. control-secondary-bg-rest became surface-control per D08. Zero old token references remain in any theme override file. All 1533 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-7
 date: 2025-03-13T21:17:00Z
 ---

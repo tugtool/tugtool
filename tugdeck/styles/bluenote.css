@@ -20,9 +20,9 @@ body {
   --tug-base-surface-raised: --tug-color(blue+5, i: 5, t: 17);
   --tug-base-surface-overlay: --tug-color(blue+6, i: 7, t: 19);
   --tug-base-surface-inset: --tug-color(blue+5, i: 5, t: 13);
-  --tug-base-control-secondary-bg-rest: --tug-color(blue+9, i: 5, t: 15);
-  --tug-base-control-secondary-bg-hover: --tug-color(blue+5, i: 5, t: 18);
-  --tug-base-control-secondary-bg-active: --tug-color(blue+6, i: 7, t: 19);
+  --tug-base-surface-control: --tug-color(blue+9, i: 5, t: 15);
+  --tug-base-control-outlined-active-bg-hover: --tug-color(blue+5, i: 5, t: 18);
+  --tug-base-control-outlined-active-bg-active: --tug-color(blue+6, i: 7, t: 19);
   --tug-base-surface-content: --tug-color(blue+5, i: 5, t: 13);
   --tug-base-surface-screen: --tug-color(blue+10, i: 8, t: 29);
 
