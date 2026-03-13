@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-13T17:55:01Z
+---
+
+## step-3: Removed 45 unused tokens across 9 groups: accent interaction (9), avatar (3), range (9), scrollbar (3), focus ring (3), motion patterns (8), stroke widths (4), field tokens (6). Token count: 282→237.
+
+**Files changed:**
+- .tugtool/tugplan-seven-role-tone-families.md
+
+---
+
+---
 step: step-2
 date: 2025-03-13T17:33:02Z
 ---

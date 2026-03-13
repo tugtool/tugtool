@@ -2,7 +2,7 @@
  * Theme Derivation Engine tests.
  *
  * Covers:
- * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 267 entries
+ * - T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces 237 entries
  * - T2.2: Bluenote golden test (override subset comparison at OKLCH level)
  * - T2.3: Harmony golden test (override subset comparison at OKLCH level)
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
@@ -222,10 +222,6 @@ const INVARIANT_TOKENS: Record<string, string> = {
   "--tug-base-radius-lg": "8px",
   "--tug-base-radius-xl": "12px",
   "--tug-base-radius-2xl": "16px",
-  "--tug-base-stroke-hairline": "0.5px",
-  "--tug-base-stroke-thin": "1px",
-  "--tug-base-stroke-medium": "1.5px",
-  "--tug-base-stroke-thick": "2px",
   "--tug-base-chrome-height": "36px",
   "--tug-base-icon-size-2xs": "10px",
   "--tug-base-icon-size-xs": "12px",
@@ -243,19 +239,19 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 282 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 237 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(282);
+    expect(Object.keys(output.tokens).length).toBe(237);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 282 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 237 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(282);
-    expect(Object.keys(harmony.tokens).length).toBe(282);
+    expect(Object.keys(brio.tokens).length).toBe(237);
+    expect(Object.keys(harmony.tokens).length).toBe(237);
   });
 
   // -------------------------------------------------------------------------
@@ -319,7 +315,7 @@ describe("derivation-engine", () => {
   // Threshold: delta < 0.02 at <10% count tolerance.
   //
   // Rationale for 10% (not 5%): Harmony contains [D06] contrast-critical overrides
-  // (accent-muted/subtle using the "flame" hue, tone-caution-fg adjusted
+  // (accent-subtle using the "flame" hue, tone-caution-fg adjusted
   // for WCAG contrast on light backgrounds) plus theme-specific quirks (fg-onCaution
   // uses violet-6, field-readOnly repeats the Brio cobalt default) that the derivation
   // engine cannot derive from the recipe alone. These tokens are intentionally outside

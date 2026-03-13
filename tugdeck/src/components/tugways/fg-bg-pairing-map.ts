@@ -212,11 +212,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "large-text",
   },
   {
-    fg: "--tug-base-fg-onAccent",
-    bg: "--tug-base-accent-strong",
-    role: "large-text",
-  },
-  {
     fg: "--tug-base-fg-onDanger",
     bg: "--tug-base-tone-danger",
     role: "large-text",
@@ -294,12 +289,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     bg: "--tug-base-accent-default",
     role: "ui-component",
   },
-  {
-    fg: "--tug-base-icon-onAccent",
-    bg: "--tug-base-accent-strong",
-    role: "ui-component",
-  },
-
   // =========================================================================
   // Control — Primary variant (button labels + icons on primary bg)
   // =========================================================================
@@ -484,12 +473,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     bg: "--tug-base-surface-default",
     role: "body-text",
   },
-  {
-    fg: "--tug-base-field-helper",
-    bg: "--tug-base-surface-default",
-    role: "body-text",
-  },
-
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
   // =========================================================================
@@ -652,11 +635,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
   {
-    fg: "--tug-base-accent-default",
-    bg: "--tug-base-accent-bg-subtle",
-    role: "ui-component",
-  },
-  {
     fg: "--tug-base-accent-cool-default",
     bg: "--tug-base-surface-default",
     role: "ui-component",
@@ -669,29 +647,6 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     fg: "--tug-base-selection-fg",
     bg: "--tug-base-selection-bg",
     role: "body-text",
-  },
-
-  // =========================================================================
-  // Avatar — text on avatar background
-  // =========================================================================
-  {
-    fg: "--tug-base-avatar-fg",
-    bg: "--tug-base-avatar-bg",
-    role: "ui-component",
-  },
-
-  // =========================================================================
-  // Scrollbar — thumb on track (decorative)
-  // =========================================================================
-  {
-    fg: "--tug-base-scrollbar-thumb",
-    bg: "--tug-base-bg-app",
-    role: "decorative",
-  },
-  {
-    fg: "--tug-base-scrollbar-thumb-hover",
-    bg: "--tug-base-bg-app",
-    role: "decorative",
   },
 
   // =========================================================================
@@ -782,32 +737,4 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
 
-  // =========================================================================
-  // Range — thumb and value label over track/fill and surface
-  // =========================================================================
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-range-fill",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-range-track",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb",
-    bg: "--tug-base-surface-default",
-    role: "ui-component",
-  },
-  {
-    fg: "--tug-base-range-thumb-disabled",
-    bg: "--tug-base-surface-default",
-    role: "decorative",
-  },
-  {
-    fg: "--tug-base-range-value",
-    bg: "--tug-base-surface-default",
-    role: "body-text",
-  },
 ];
