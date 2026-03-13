@@ -1,0 +1,242 @@
+/**
+ * TugBadge styles — tugways-specific CSS using --tug-base-* tokens.
+ *
+ * All colors reference canonical tokens exclusively. No hardcoded hex values.
+ *
+ * Emphasis x role system (Spec S08, S09):
+ *   Compound CSS class: .tug-badge-{emphasis}-{role}
+ *
+ *   Tier 1 — 8 Table T01 combos: use --tug-base-control-{emphasis}-{role}-*-rest tokens
+ *   Tier 2 — success, caution: derive from tone families and fg-on{Role} tokens
+ *   Non-T01 — 7 remaining combos: derive from tone families per Spec S09
+ *
+ * Badges are display-only (no hover/active states). Only rest-state styling.
+ *
+ * Spec S06, S07, S08, S09
+ */
+
+/* ============================================================================
+   Base Badge
+   ========================================================================= */
+
+.tug-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* ============================================================================
+   Size Variants (Spec S07)
+   ========================================================================= */
+
+.tug-badge-size-sm {
+  height: 1.25rem;   /* 20px */
+  padding: 0 0.5rem;
+  font-size: 0.625rem; /* 10px */
+}
+
+.tug-badge-size-md {
+  height: 1.5rem;    /* 24px */
+  padding: 0 0.625rem;
+  font-size: 0.6875rem; /* 11px */
+}
+
+.tug-badge-size-lg {
+  height: 1.75rem;   /* 28px */
+  padding: 0 0.75rem;
+  font-size: 0.75rem; /* 12px */
+}
+
+/* ============================================================================
+   Tier 1: Table T01 emphasis x role combinations
+   Uses --tug-base-control-{emphasis}-{role}-*-rest tokens directly (Spec S08)
+   ========================================================================= */
+
+/* --- filled-accent --- */
+
+.tug-badge-filled-accent {
+  background-color: var(--tug-base-control-filled-accent-bg-rest);
+  color: var(--tug-base-control-filled-accent-fg-rest);
+  border-color: var(--tug-base-control-filled-accent-border-rest);
+}
+
+/* --- filled-active --- */
+
+.tug-badge-filled-active {
+  background-color: var(--tug-base-control-filled-active-bg-rest);
+  color: var(--tug-base-control-filled-active-fg-rest);
+  border-color: var(--tug-base-control-filled-active-border-rest);
+}
+
+/* --- filled-danger --- */
+
+.tug-badge-filled-danger {
+  background-color: var(--tug-base-control-filled-danger-bg-rest);
+  color: var(--tug-base-control-filled-danger-fg-rest);
+  border-color: var(--tug-base-control-filled-danger-border-rest);
+}
+
+/* --- filled-agent --- */
+
+.tug-badge-filled-agent {
+  background-color: var(--tug-base-control-filled-agent-bg-rest);
+  color: var(--tug-base-control-filled-agent-fg-rest);
+  border-color: var(--tug-base-control-filled-agent-border-rest);
+}
+
+/* --- outlined-active --- */
+
+.tug-badge-outlined-active {
+  background-color: var(--tug-base-control-outlined-active-bg-rest);
+  color: var(--tug-base-control-outlined-active-fg-rest);
+  border-color: var(--tug-base-control-outlined-active-border-rest);
+}
+
+/* --- outlined-agent --- */
+
+.tug-badge-outlined-agent {
+  background-color: var(--tug-base-control-outlined-agent-bg-rest);
+  color: var(--tug-base-control-outlined-agent-fg-rest);
+  border-color: var(--tug-base-control-outlined-agent-border-rest);
+}
+
+/* --- ghost-active --- */
+
+.tug-badge-ghost-active {
+  background-color: var(--tug-base-control-ghost-active-bg-rest);
+  color: var(--tug-base-control-ghost-active-fg-rest);
+  border-color: var(--tug-base-control-ghost-active-border-rest);
+}
+
+/* --- ghost-danger --- */
+
+.tug-badge-ghost-danger {
+  background-color: var(--tug-base-control-ghost-danger-bg-rest);
+  color: var(--tug-base-control-ghost-danger-fg-rest);
+  border-color: var(--tug-base-control-ghost-danger-border-rest);
+}
+
+/* ============================================================================
+   Non-Table-T01 combinations (Spec S09)
+   Derived from tone families — 7 combinations not in control token set
+   ========================================================================= */
+
+/* --- outlined-accent (Spec S09) --- */
+
+.tug-badge-outlined-accent {
+  background-color: var(--tug-base-tone-accent-bg);
+  color: var(--tug-base-fg-default);
+  border-color: var(--tug-base-tone-accent-border);
+}
+
+/* --- outlined-danger (Spec S09) --- */
+
+.tug-badge-outlined-danger {
+  background-color: var(--tug-base-tone-danger-bg);
+  color: var(--tug-base-fg-default);
+  border-color: var(--tug-base-tone-danger-border);
+}
+
+/* --- outlined-data (Spec S09) --- */
+
+.tug-badge-outlined-data {
+  background-color: var(--tug-base-tone-data-bg);
+  color: var(--tug-base-fg-default);
+  border-color: var(--tug-base-tone-data-border);
+}
+
+/* --- ghost-accent (Spec S09) --- */
+
+.tug-badge-ghost-accent {
+  background-color: transparent;
+  color: var(--tug-base-tone-accent-fg);
+  border-color: transparent;
+}
+
+/* --- ghost-agent (Spec S09) --- */
+
+.tug-badge-ghost-agent {
+  background-color: transparent;
+  color: var(--tug-base-tone-agent-fg);
+  border-color: transparent;
+}
+
+/* --- ghost-data (Spec S09) --- */
+
+.tug-badge-ghost-data {
+  background-color: transparent;
+  color: var(--tug-base-tone-data-fg);
+  border-color: transparent;
+}
+
+/* --- filled-data (Spec S09) ---
+ * Uses fg-onAccent (light text) because data/teal is a dark-bg role in dark mode.
+ * TODO: replace with fg-onData if that token is added in the future.
+ */
+
+.tug-badge-filled-data {
+  background-color: var(--tug-base-tone-data);
+  color: var(--tug-base-fg-onAccent);
+  border-color: var(--tug-base-tone-data);
+}
+
+/* ============================================================================
+   Tier 2: Signal-only roles (success, caution) (Spec S08)
+   Derived from tone families and fg-on{Role} tokens — no control tokens exist
+   ========================================================================= */
+
+/* --- filled-success --- */
+
+.tug-badge-filled-success {
+  background-color: var(--tug-base-tone-success);
+  color: var(--tug-base-fg-onSuccess);
+  border-color: var(--tug-base-tone-success);
+}
+
+/* --- outlined-success --- */
+
+.tug-badge-outlined-success {
+  background-color: var(--tug-base-tone-success-bg);
+  color: var(--tug-base-fg-default);
+  border-color: var(--tug-base-tone-success-border);
+}
+
+/* --- ghost-success --- */
+
+.tug-badge-ghost-success {
+  background-color: transparent;
+  color: var(--tug-base-tone-success-fg);
+  border-color: transparent;
+}
+
+/* --- filled-caution --- */
+
+.tug-badge-filled-caution {
+  background-color: var(--tug-base-tone-caution);
+  color: var(--tug-base-fg-onCaution);
+  border-color: var(--tug-base-tone-caution);
+}
+
+/* --- outlined-caution --- */
+
+.tug-badge-outlined-caution {
+  background-color: var(--tug-base-tone-caution-bg);
+  color: var(--tug-base-fg-default);
+  border-color: var(--tug-base-tone-caution-border);
+}
+
+/* --- ghost-caution --- */
+
+.tug-badge-ghost-caution {
+  background-color: transparent;
+  color: var(--tug-base-tone-caution-fg);
+  border-color: transparent;
+}

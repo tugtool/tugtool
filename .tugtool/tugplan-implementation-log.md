@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-13T21:03:59Z
+---
+
+## step-6: Created TugBadge component (tug-badge.tsx, tug-badge.css, tug-badge.test.tsx). Supports 21 emphasis x role combinations across 3 tiers (8 T01, 7 non-T01, 6 signal-only) and 3 sizes (sm/md/lg). 30 new tests, all 1529 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-emphasis-role.md
+
+---
+
+---
 step: step-5
 date: 2025-03-13T20:57:12Z
 ---
