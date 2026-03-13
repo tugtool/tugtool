@@ -96,7 +96,7 @@ lines.push(` *   canonical  intensity=50, tone=50   The crayon color — referen
 lines.push(` *   light      intensity=20, tone=85   Background-safe, airy`);
 lines.push(` *   dark       intensity=50, tone=20   Contrast text, dark surfaces`);
 lines.push(` *   intense    intensity=90, tone=50   Pops, draws attention`);
-lines.push(` *   muted      intensity=20, tone=50   Subdued, secondary`);
+lines.push(` *   muted      intensity=45, tone=40   Subdued, secondary`);
 lines.push(` *`);
 lines.push(` * Import order (in globals.css):`);
 lines.push(` *   1. tug-palette.css   — palette variables (this file)`);
@@ -156,7 +156,7 @@ lines.push(`   *`);
 lines.push(`   * Each preset uses literal intensity/tone numbers in the calc()+clamp() formula.`);
 lines.push(`   * Five presets: canonical (intensity=50,tone=50), light (intensity=20,tone=85),`);
 lines.push(`   *               dark (intensity=50,tone=20), intense (intensity=90,tone=50),`);
-lines.push(`   *               muted (intensity=20,tone=50)`);
+lines.push(`   *               muted (intensity=45,tone=40)`);
 lines.push(`   *`);
 lines.push(`   * Formula for L (piecewise via clamp):`);
 lines.push(`   *   L = var(--tug-l-dark)`);

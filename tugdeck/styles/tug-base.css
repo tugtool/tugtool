@@ -428,7 +428,7 @@ body {
 
   /* --- Toggle / Range Tokens --- */
   --tug-base-toggle-track-off: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-toggle-track-on: --tug-color(orange);
+  --tug-base-toggle-track-on: --tug-color(orange-muted);
   --tug-base-toggle-track-disabled: --tug-color(violet, i: 5, t: 11);
   --tug-base-toggle-track-mixed: --tug-color(cobalt+7, i: 7, t: 37);
   --tug-base-toggle-thumb: --tug-color(cobalt-8, i: 3, t: 100);

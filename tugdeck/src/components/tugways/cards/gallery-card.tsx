@@ -37,6 +37,7 @@ import { GalleryInputContent } from "./gallery-input-content";
 import { GalleryLabelContent } from "./gallery-label-content";
 import { GalleryMarqueeContent } from "./gallery-marquee-content";
 import { GalleryCheckboxContent } from "./gallery-checkbox-content";
+import { GallerySwitchContent } from "./gallery-switch-content";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonVariant, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -82,6 +83,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-label",              title: "TugLabel",             closable: true },
   { id: "template", componentId: "gallery-marquee",            title: "TugMarquee",           closable: true },
   { id: "template", componentId: "gallery-checkbox",           title: "TugCheckbox",          closable: true },
+  { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1129,6 +1131,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-checkbox",
     contentFactory: (_cardId) => <GalleryCheckboxContent />,
     defaultMeta: { title: "TugCheckbox", icon: "CheckSquare", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+  });
+
+  // ---- gallery-switch ----
+  // Step 4, Component 4: TugSwitch — Radix Switch wrapper with toggle track/thumb tokens.
+  registerCard({
+    componentId: "gallery-switch",
+    contentFactory: (_cardId) => <GallerySwitchContent />,
+    defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

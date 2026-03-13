@@ -19,7 +19,7 @@
  *   light      intensity=20, tone=85   Background-safe, airy
  *   dark       intensity=50, tone=20   Contrast text, dark surfaces
  *   intense    intensity=90, tone=50   Pops, draws attention
- *   muted      intensity=20, tone=50   Subdued, secondary
+ *   muted      intensity=45, tone=40   Subdued, secondary
  *
  * @module components/tugways/palette-engine
  */
@@ -311,7 +311,7 @@ export const TUG_COLOR_PRESETS: Record<string, { intensity: number; tone: number
   light:     { intensity: 20, tone: 85 },
   dark:      { intensity: 50, tone: 20 },
   intense:   { intensity: 90, tone: 50 },
-  muted:     { intensity: 20, tone: 50 },
+  muted:     { intensity: 50, tone: 42 },
 };
 
 // ---------------------------------------------------------------------------

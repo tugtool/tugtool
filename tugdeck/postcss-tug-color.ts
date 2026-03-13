@@ -40,6 +40,8 @@
  */
 
 import type { Plugin } from "postcss";
+import fs from "fs";
+import path from "path";
 import {
   HUE_FAMILIES,
   DEFAULT_CANONICAL_L,
@@ -63,11 +65,40 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// Known presets map (for parseTugColor preset syntax validation)
+// Known presets — auto-refresh from palette-engine.ts on mtime change
 // ---------------------------------------------------------------------------
 
-const KNOWN_PRESETS: ReadonlyMap<string, { intensity: number; tone: number }> =
+const PALETTE_ENGINE_PATH = path.resolve(
+  __dirname,
+  "src/components/tugways/palette-engine.ts",
+);
+
+let knownPresets: ReadonlyMap<string, { intensity: number; tone: number }> =
   new Map(Object.entries(TUG_COLOR_PRESETS));
+let lastMtime = 0;
+
+/** Re-read presets from the source file if it has changed since last check. */
+function refreshPresets(): ReadonlyMap<string, { intensity: number; tone: number }> {
+  try {
+    const mtime = fs.statSync(PALETTE_ENGINE_PATH).mtimeMs;
+    if (mtime === lastMtime) return knownPresets;
+    lastMtime = mtime;
+
+    const src = fs.readFileSync(PALETTE_ENGINE_PATH, "utf-8");
+    const presets: Record<string, { intensity: number; tone: number }> = {};
+    const re = /(\w+):\s*\{\s*intensity:\s*(\d+),\s*tone:\s*(\d+)\s*\}/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      presets[m[1]] = { intensity: Number(m[2]), tone: Number(m[3]) };
+    }
+    if (Object.keys(presets).length > 0) {
+      knownPresets = new Map(Object.entries(presets));
+    }
+  } catch {
+    // File read failed — keep existing presets.
+  }
+  return knownPresets;
+}
 
 // ---------------------------------------------------------------------------
 // Formatting helper (matches tugColor() precision convention)
@@ -183,7 +214,7 @@ export default function postcssTugColor(): Plugin {
       let result = decl.value;
       for (let i = calls.length - 1; i >= 0; i--) {
         const call = calls[i];
-        const parseResult = parseTugColor(call.inner, KNOWN_HUES, KNOWN_PRESETS);
+        const parseResult = parseTugColor(call.inner, KNOWN_HUES, refreshPresets());
 
         if (!parseResult.ok) {
           for (const err of parseResult.errors) {

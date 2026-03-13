@@ -1,0 +1,168 @@
+/**
+ * TugSwitch styles -- tugways-specific CSS using --tug-base-* tokens.
+ *
+ * All colors reference canonical tokens exclusively. Theme switches update
+ * CSS variables at the DOM level -- TugSwitch re-paints without React
+ * re-renders.
+ *
+ * States: unchecked (off), checked (on), disabled.
+ * Uses --tug-base-toggle-track-* for the track and --tug-base-toggle-thumb
+ * for the thumb.
+ *
+ * [D04] Semantic tokens exclusively
+ */
+
+/* ============================================================================
+   Switch Root (the track)
+   ========================================================================= */
+
+.tug-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9999px;
+  background-color: var(--tug-base-toggle-track-off);
+  cursor: pointer;
+  padding: 2px;
+  transition: background-color 80ms ease;
+  font-family: inherit;
+  /* No explicit height — track wraps the thumb + padding, guaranteeing centering. */
+}
+
+/* ---- Size variants (width only — height is thumb + 2*padding) ---- */
+
+.tug-switch-size-sm {
+  width: 1.75rem;   /* 28px */
+}
+
+.tug-switch-size-md {
+  width: 2.25rem;   /* 36px */
+}
+
+.tug-switch-size-lg {
+  width: 2.75rem;   /* 44px */
+}
+
+/* ---- Hover (unchecked) ---- */
+
+.tug-switch:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-base-toggle-track-mixed);
+}
+
+/* ---- Checked (on) ---- */
+
+.tug-switch[data-state="checked"] {
+  background-color: var(--tug-base-toggle-track-on);
+}
+
+.tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-base-toggle-track-on);
+}
+
+/* ---- Disabled ---- */
+
+.tug-switch:disabled,
+.tug-switch[data-disabled] {
+  background-color: var(--tug-base-toggle-track-disabled);
+  cursor: not-allowed;
+  opacity: var(--tug-base-control-disabled-opacity);
+}
+
+/* ---- Focus ---- */
+
+.tug-switch:focus-visible {
+  outline: 2px solid var(--tug-base-accent-cool-default);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Thumb (the sliding circle)
+   ========================================================================= */
+
+.tug-switch-thumb {
+  display: block;
+  border-radius: 9999px;
+  background-color: var(--tug-base-toggle-thumb);
+  transition: transform 100ms ease;
+  align-self: center;
+}
+
+/* Thumb sizes — diameter = track height - 2*padding(2px) - visual margin */
+
+.tug-switch-size-sm .tug-switch-thumb {
+  width: 0.75rem;   /* 12px */
+  height: 0.75rem;
+}
+
+.tug-switch-size-md .tug-switch-thumb {
+  width: 1rem;      /* 16px */
+  height: 1rem;
+}
+
+.tug-switch-size-lg .tug-switch-thumb {
+  width: 1.25rem;   /* 20px */
+  height: 1.25rem;
+}
+
+/* Thumb slide to the right when checked */
+
+.tug-switch-size-sm .tug-switch-thumb[data-state="checked"] {
+  transform: translateX(0.75rem);  /* 12px = track width - thumb - 2*padding */
+}
+
+.tug-switch-size-md .tug-switch-thumb[data-state="checked"] {
+  transform: translateX(1rem);     /* 16px */
+}
+
+.tug-switch-size-lg .tug-switch-thumb[data-state="checked"] {
+  transform: translateX(1.25rem);  /* 20px */
+}
+
+/* Disabled thumb */
+
+.tug-switch:disabled .tug-switch-thumb,
+.tug-switch[data-disabled] .tug-switch-thumb {
+  background-color: var(--tug-base-toggle-thumb-disabled);
+}
+
+/* ============================================================================
+   Wrapper (switch + label layout)
+   ========================================================================= */
+
+.tug-switch-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.tug-switch-wrapper-disabled {
+  cursor: not-allowed;
+}
+
+.tug-switch-label {
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--tug-base-field-label);
+  user-select: none;
+}
+
+.tug-switch-wrapper-disabled .tug-switch-label {
+  opacity: var(--tug-base-control-disabled-opacity);
+}
+
+/* Label size variants */
+.tug-switch-label-sm {
+  font-size: 0.75rem;
+}
+
+.tug-switch-label-md {
+  font-size: 0.8125rem;
+}
+
+.tug-switch-label-lg {
+  font-size: 0.875rem;
+}
