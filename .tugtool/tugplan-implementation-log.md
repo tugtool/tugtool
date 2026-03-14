@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-14T01:09:52Z
+---
+
+## step-5: Added Role Variants sections to gallery-checkbox-content.tsx and gallery-switch-content.tsx showing all 7 roles in checked state for visual inspection. Integration checkpoint verified: all 1549 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-4
 date: 2025-03-14T01:05:07Z
 ---
