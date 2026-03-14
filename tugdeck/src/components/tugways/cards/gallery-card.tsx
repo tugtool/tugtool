@@ -23,7 +23,7 @@ import React, { useState, useRef, useLayoutEffect } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { Star } from "lucide-react";
+import { ChevronDown, Star } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { CardTitleBar } from "@/components/tugways/tug-card";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
@@ -199,9 +199,9 @@ export function GalleryButtonsContent() {
             <span className="cg-control-label">Emphasis</span>
             <TugDropdown
               trigger={
-                <button type="button" className="cg-dropdown-trigger">
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
                   {previewEmphasis}
-                </button>
+                </TugButton>
               }
               items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
                 id: v,
@@ -214,9 +214,9 @@ export function GalleryButtonsContent() {
             <span className="cg-control-label">Role</span>
             <TugDropdown
               trigger={
-                <button type="button" className="cg-dropdown-trigger">
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
                   {previewRole}
-                </button>
+                </TugButton>
               }
               items={(["accent", "action", "agent", "data", "danger"] as TugButtonRole[]).map((v) => ({
                 id: v,
@@ -230,9 +230,9 @@ export function GalleryButtonsContent() {
             <span className="cg-control-label">Size</span>
             <TugDropdown
               trigger={
-                <button type="button" className="cg-dropdown-trigger">
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
                   {previewSize}
-                </button>
+                </TugButton>
               }
               items={ALL_SIZES.map((s) => ({
                 id: s,
@@ -1011,34 +1011,34 @@ export function GalleryBadgeContent() {
         <div className="cg-section-title">Preview Controls</div>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-badge-emphasis-select">
-              Emphasis
-            </label>
-            <select
-              id="cg-badge-emphasis-select"
-              className="cg-control-select"
-              value={previewEmphasis}
-              onChange={(e) => setPreviewEmphasis(e.target.value as TugBadgeEmphasis)}
-            >
-              {(["filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+            <span className="cg-control-label">Emphasis</span>
+            <TugDropdown
+              trigger={
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
+                  {previewEmphasis}
+                </TugButton>
+              }
+              items={(["filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => ({
+                id: v,
+                label: v,
+              }))}
+              onSelect={(id) => setPreviewEmphasis(id as TugBadgeEmphasis)}
+            />
           </div>
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-badge-role-select">
-              Role
-            </label>
-            <select
-              id="cg-badge-role-select"
-              className="cg-control-select"
-              value={previewRole}
-              onChange={(e) => setPreviewRole(e.target.value as TugBadgeRole)}
-            >
-              {(["accent", "active", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+            <span className="cg-control-label">Role</span>
+            <TugDropdown
+              trigger={
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
+                  {previewRole}
+                </TugButton>
+              }
+              items={(["accent", "action", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => ({
+                id: v,
+                label: v,
+              }))}
+              onSelect={(id) => setPreviewRole(id as TugBadgeRole)}
+            />
           </div>
         </div>
       </div>

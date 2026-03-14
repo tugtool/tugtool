@@ -60,7 +60,7 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 /**
  * TugButton props interface -- Phase 3 (Spec S01, S04).
  */
-export interface TugButtonProps {
+export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "role" | "onClick" | "children"> {
   /** Button rendering subtype. Default: "push" */
   subtype?: TugButtonSubtype;
   /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
@@ -111,6 +111,9 @@ export interface TugButtonProps {
 
   /** Lucide icon node for "icon" and "icon-text" subtypes */
   icon?: React.ReactNode;
+
+  /** Trailing icon rendered after label text (e.g. ChevronDown for dropdown triggers) */
+  trailingIcon?: React.ReactNode;
 
   /** Current state for "three-state" subtype. Default: "off" */
   state?: TugButtonState;
@@ -177,7 +180,7 @@ function Spinner() {
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  */
-export function TugButton({
+export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(function TugButton({
   subtype = "push",
   emphasis = "outlined",
   role = "action",
@@ -189,13 +192,15 @@ export function TugButton({
   loading = false,
   children,
   icon,
+  trailingIcon,
   state = "off",
   onStateChange,
   rounded,
   "aria-label": ariaLabel,
   className,
   asChild = false,
-}: TugButtonProps) {
+  ...rest
+}, forwardedRef) {
   // Three-state subtype internal state management
   const [internalState, setInternalState] = useState<TugButtonState>(state);
 
@@ -384,6 +389,7 @@ export function TugButton({
           <span className="tug-button-icon-text">
             {icon}
             {children}
+            {trailingIcon && <span className="tug-button-trailing-icon" aria-hidden="true">{trailingIcon}</span>}
           </span>
         );
 
@@ -397,7 +403,12 @@ export function TugButton({
 
       case "push":
       default:
-        return children;
+        return (
+          <>
+            {children}
+            {trailingIcon && <span className="tug-button-trailing-icon" aria-hidden="true">{trailingIcon}</span>}
+          </>
+        );
     }
   }
 
@@ -406,6 +417,7 @@ export function TugButton({
 
   return (
     <Comp
+      ref={forwardedRef}
       disabled={disabled}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
@@ -414,8 +426,9 @@ export function TugButton({
       onClick={handleClick}
       className={buttonClassName}
       style={{ borderRadius: resolvedRadius }}
+      {...rest}
     >
       {renderContent()}
     </Comp>
   );
-}
+});

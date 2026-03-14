@@ -91,12 +91,12 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
     const target = event.currentTarget as HTMLElement;
 
-    // Read the computed surface color for WAAPI keyframes.
+    // Read the computed accent-subtle color for WAAPI blink keyframes.
     // getPropertyValue() returns a string with leading whitespace per CSS spec;
     // .trim() is required. WAAPI cannot interpolate CSS variable references
     // directly, so we must resolve to a concrete color value. [D01]
-    const surfaceDefault = getComputedStyle(target)
-      .getPropertyValue("--tug-base-surface-default")
+    const accentSubtle = getComputedStyle(target)
+      .getPropertyValue("--tug-base-accent-subtle")
       .trim() || "transparent";
 
     // Read the standard easing value at runtime — WAAPI does not resolve
@@ -108,14 +108,14 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
     // Double-blink keyframes: highlight → transparent → highlight → highlight.
     // Reproduces the Mac-style menu selection blink. [D01]
     const blinkKeyframes = [
-      { backgroundColor: surfaceDefault },
+      { backgroundColor: accentSubtle },
       { backgroundColor: "transparent" },
-      { backgroundColor: surfaceDefault },
-      { backgroundColor: surfaceDefault },
+      { backgroundColor: accentSubtle },
+      { backgroundColor: accentSubtle },
     ];
 
     // Drive blink via TugAnimator; sequence menu close on animate().finished.
-    // moderate = 200ms. blinkingRef is reset inside .finished.then() so the
+    // slow = 350ms. blinkingRef is reset inside .finished.then() so the
     // trigger (which persists after menu close) can accept new selections. [D01]
     //
     // .catch() handles WAAPI rejection (e.g. element removed from DOM before
@@ -124,7 +124,7 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
     // the menu. Without this guard, blinkingRef would stay true permanently
     // and all subsequent selections would be silently swallowed.
     animate(target, blinkKeyframes, {
-      duration: "--tug-base-motion-duration-moderate",
+      duration: "--tug-base-motion-duration-slow",
       easing,
     }).finished.then(() => {
       blinkingRef.current = false;

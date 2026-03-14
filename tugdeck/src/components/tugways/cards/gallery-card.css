@@ -92,21 +92,6 @@
   cursor: pointer;
 }
 
-.cg-dropdown-trigger {
-  font-size: 12px;
-  font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-default);
-  background-color: var(--tug-base-surface-control);
-  border: 1px solid var(--tug-base-border-default);
-  border-radius: var(--tug-base-radius-xs);
-  padding: 2px 8px;
-  cursor: pointer;
-  outline: none;
-}
-
-.cg-dropdown-trigger:focus {
-  border-color: var(--tug-base-accent-cool-default);
-}
 
 /* ============================================================================
    Button Grid (full matrix: subtype x variant x size)
