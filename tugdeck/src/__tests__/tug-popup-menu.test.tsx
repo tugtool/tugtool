@@ -50,6 +50,7 @@ function renderPopupMenu(onSelect = mock(() => {})) {
 }
 
 afterEach(() => {
+  cleanup();
   (global as any).__waapi_mock__.reset();
 });
 

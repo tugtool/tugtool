@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-14T19:27:02Z
+---
+
+## audit-fix: Audit fix: Added cleanup() to top-level afterEach in tug-popup-menu.test.tsx to prevent DOM pollution cascading to subsequent test files.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-9
 date: 2025-03-14T19:10:25Z
 ---
