@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-14T15:54:06Z
+---
+
+## step-5: Added T17-T20 tests for TugTabBar TugDropdown migration: [+] button via TugDropdown, overflow button happy-dom limitation, close button bare per D08. 21 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-button-hierarchy-refactor.md
+
+---
+
+---
 step: step-4
 date: 2025-03-14T15:47:26Z
 ---
