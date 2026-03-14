@@ -5,6 +5,7 @@
  * - Basic render: TugDropdown mounts without errors; trigger is present
  * - Blink-then-select logic: animate() is called; onSelect fires after .finished
  * - Re-entrant guard: second call during blink is ignored
+ * - Trigger structure: TugDropdown renders a TugButton with ChevronDown trailing icon
  *
  * NOTE on Radix portal rendering in happy-dom:
  * Radix DropdownMenuContent renders into a portal at document.body. happy-dom
@@ -39,7 +40,7 @@ const ITEMS: TugDropdownItem[] = [
 function renderDropdown(onSelect = mock(() => {})) {
   return render(
     <TugDropdown
-      trigger={<button>Open</button>}
+      label="Open"
       items={ITEMS}
       onSelect={onSelect}
     />
@@ -183,5 +184,49 @@ describe("TugDropdown – blink-then-select logic", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
 
     document.body.removeChild(target);
+  });
+});
+
+// ============================================================================
+// Trigger structure: TugButton with ChevronDown (T12–T16)
+// ============================================================================
+
+describe("TugDropdown – trigger structure", () => {
+  it("T12: renders a TugButton as its trigger (has .tug-button class)", () => {
+    const { container } = renderDropdown();
+    const btn = container.querySelector(".tug-button");
+    expect(btn).not.toBeNull();
+  });
+
+  it("T13: trigger shows the label text", () => {
+    const { container } = renderDropdown();
+    const btn = container.querySelector(".tug-button");
+    expect(btn?.textContent).toContain("Open");
+  });
+
+  it("T14: trigger includes ChevronDown trailing icon (.tug-button-trailing-icon present)", () => {
+    const { container } = renderDropdown();
+    const trailingIcon = container.querySelector(".tug-button-trailing-icon");
+    expect(trailingIcon).not.toBeNull();
+  });
+
+  it("T15: TugDropdown with icon prop uses icon-text subtype (has .tug-button-icon-text class)", () => {
+    const icon = <span data-testid="leading-icon">*</span>;
+    const { container } = render(
+      <TugDropdown
+        label="With Icon"
+        icon={icon}
+        items={ITEMS}
+        onSelect={mock(() => {})}
+      />
+    );
+    const iconTextWrapper = container.querySelector(".tug-button-icon-text");
+    expect(iconTextWrapper).not.toBeNull();
+  });
+
+  it("T16: TugDropdown without icon prop uses text subtype (no .tug-button-icon-text class)", () => {
+    const { container } = renderDropdown();
+    const iconTextWrapper = container.querySelector(".tug-button-icon-text");
+    expect(iconTextWrapper).toBeNull();
   });
 });

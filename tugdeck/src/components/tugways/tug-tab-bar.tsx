@@ -522,16 +522,12 @@ export function TugTabBar({
           Placed between the last visible tab and the [+] button. */}
       {overflowTabs.length > 0 && (
         <TugDropdown
-          trigger={
-            <button
-              type="button"
-              className="tug-tab-overflow-btn"
-              aria-label={`${overflowTabs.length} more tabs`}
-              data-testid="tug-tab-overflow-btn"
-            >
-              <span className="tug-tab-overflow-badge">+{overflowTabs.length}</span>
-            </button>
-          }
+          label={<span className="tug-tab-overflow-badge">+{overflowTabs.length}</span>}
+          emphasis="ghost"
+          size="sm"
+          className="tug-tab-overflow-btn"
+          aria-label={`${overflowTabs.length} more tabs`}
+          data-testid="tug-tab-overflow-btn"
           items={overflowDropdownItems}
           onSelect={handleOverflowSelect}
         />
@@ -539,16 +535,12 @@ export function TugTabBar({
 
       {/* [+] type picker button -- always rightmost [D08] */}
       <TugDropdown
-        trigger={
-          <button
-            type="button"
-            className="tug-tab-add"
-            aria-label="Add tab"
-            data-testid="tug-tab-add"
-          >
-            +
-          </button>
-        }
+        label="+"
+        emphasis="ghost"
+        size="sm"
+        className="tug-tab-add"
+        aria-label="Add tab"
+        data-testid="tug-tab-add"
         items={typePickerItems}
         onSelect={handleTypeSelect}
       />

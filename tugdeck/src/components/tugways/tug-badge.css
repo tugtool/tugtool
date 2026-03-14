@@ -24,13 +24,12 @@
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  font-weight: 600;
+  font-weight: 500;
   font-family: inherit;
   line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   white-space: nowrap;
   border: 1px solid transparent;
+  cursor: default;
 }
 
 /* ============================================================================
