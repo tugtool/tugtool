@@ -77,7 +77,7 @@ const ALL_SUBTYPES: TugButtonSubtype[] = ["text", "icon", "icon-text"];
  * **Authoritative reference:** Spec S04 (#s04-gallery-default-tabs)
  */
 export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
-  { id: "template", componentId: "gallery-buttons",           title: "TugButton",            closable: true },
+  { id: "template", componentId: "gallery-buttons",           title: "TugPushButton",         closable: true },
   { id: "template", componentId: "gallery-chain-actions",     title: "Chain Actions",        closable: true },
   { id: "template", componentId: "gallery-mutation",          title: "Mutation Model",       closable: true },
   { id: "template", componentId: "gallery-tabbar",            title: "TugTabBar",            closable: true },
@@ -144,7 +144,7 @@ function SubtypeButton({
 
     case "icon-text":
       return (
-        <TugButton
+        <TugPushButton
           subtype="icon-text"
           emphasis={emphasis}
           role={role}
@@ -152,7 +152,7 @@ function SubtypeButton({
           icon={<Star size={12} />}
         >
           {sizeLabel}
-        </TugButton>
+        </TugPushButton>
       );
 
     default:
@@ -254,7 +254,7 @@ export function GalleryButtonsContent() {
 
       {/* ---- Interactive Preview ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugButton — Interactive Preview</div>
+        <div className="cg-section-title">TugPushButton — Interactive Preview</div>
         <div className="cg-variant-row">
           <TugPushButton
             emphasis={previewEmphasis}
@@ -275,7 +275,7 @@ export function GalleryButtonsContent() {
             icon={<Star size={14} />}
             aria-label="Icon button"
           />
-          <TugButton
+          <TugPushButton
             subtype="icon-text"
             emphasis={previewEmphasis}
             role={previewRole}
@@ -285,7 +285,7 @@ export function GalleryButtonsContent() {
             icon={<Star size={14} />}
           >
             Icon + Text
-          </TugButton>
+          </TugPushButton>
         </div>
       </div>
 
@@ -293,7 +293,7 @@ export function GalleryButtonsContent() {
 
       {/* ---- Full Matrix ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">TugButton — Full Matrix (all subtypes × emphasis x role × sizes)</div>
+        <div className="cg-section-title">TugPushButton — Full Matrix (all subtypes × emphasis x role × sizes)</div>
         <div className="cg-matrix">
           {ALL_SUBTYPES.map((subtype) => (
             <div key={subtype} className="cg-subtype-block">
@@ -1101,7 +1101,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-buttons",
     contentFactory: (_cardId) => <GalleryButtonsContent />,
-    defaultMeta: { title: "TugButton", icon: "MousePointerClick", closable: true },
+    defaultMeta: { title: "TugPushButton", icon: "MousePointerClick", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     defaultTabs: GALLERY_DEFAULT_TABS,
