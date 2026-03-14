@@ -13,6 +13,10 @@
  * CSS class names `tug-dropdown-content` and `tug-dropdown-item` are
  * preserved intentionally to avoid a CSS rename sweep. [D05]
  *
+ * TugDropdown owns its trigger button internally. Callers pass label,
+ * emphasis, role, size, and icon props instead of a trigger ReactNode.
+ * TugDropdown renders a TugButton with a ChevronDown trailing icon.
+ *
  * **Authoritative references:**
  * - [D02] TugPopupMenu takes a single ReactNode trigger prop
  * - [D05] Preserve CSS class names from TugDropdown
