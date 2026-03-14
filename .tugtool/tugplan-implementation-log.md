@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-14T18:32:27Z
+---
+
+## step-4: Created TugPopupButton as thin composition of TugPopupMenu + TugButton. Fixed visual identity: outlined/option/rounded=none/ChevronDown. Props: label, items, onSelect, size, className, aria-label. Added 11-test file covering trigger structure and prop passthrough.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-3
 date: 2025-03-14T18:28:03Z
 ---
