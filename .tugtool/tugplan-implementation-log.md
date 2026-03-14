@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-14T18:52:59Z
+---
+
+## step-6: Replaced TugDropdown in tug-tab-bar.tsx with TugPopupMenu + TugButton ghost-option triggers for [+] and overflow buttons. Removed trailing-icon hiding CSS hack. Updated comments and test descriptions. Added trailing-icon absence tests. 23 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-5
 date: 2025-03-14T18:45:00Z
 ---

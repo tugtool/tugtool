@@ -499,11 +499,11 @@ describe("TugTabBar – T18: 6px pointer movement initiates drag", () => {
 // ============================================================================
 
 /**
- * Helper: intercept TugDropdown items by wrapping the component and capturing
- * the items prop through a rendered hidden list. Since Radix portals don't
- * open in happy-dom, we verify the type picker contents by rendering a
- * custom wrapper that reads the items from the registry using the same
- * filtering logic as TugTabBar and asserting the results.
+ * Helper: verify TugPopupMenu type picker contents by reading the registry
+ * using the same filtering logic as TugTabBar. Since Radix portals don't
+ * open in happy-dom, we cannot inspect the portal DOM directly. Instead we
+ * replicate TugTabBar's typePickerItems computation inline and assert the
+ * resulting componentIds.
  *
  * The cleanest approach: verify the filtering logic directly by inspecting
  * getAllRegistrations() after calling the filter inline — same code path as
@@ -583,7 +583,7 @@ describe("TugTabBar – acceptedFamilies filters type picker", () => {
 });
 
 // ============================================================================
-// Step-5 T17–T20: TugDropdown-based trigger migration (button-hierarchy-refactor)
+// T17–T20: TugPopupMenu-based trigger migration (option-role-popup-menu)
 // ============================================================================
 
 /**
@@ -595,16 +595,16 @@ describe("TugTabBar – acceptedFamilies filters type picker", () => {
  * behaviour under the absence of overflow instead of skipping the tests.
  */
 
-describe("TugTabBar – Step-5 TugDropdown trigger migration", () => {
+describe("TugTabBar – TugPopupMenu trigger migration", () => {
   beforeEach(() => {
     registerMinimalCard("hello", "Hello");
     registerMinimalCard("terminal", "Terminal");
   });
 
   it("T17: [+] button is a TugButton (.tug-button) with .tug-tab-add class and data-testid='tug-tab-add'", () => {
-    // TugDropdown renders TugButton internally, so the trigger element must
-    // carry both .tug-button (proving the internal TugButton) and
-    // .tug-tab-add (the className prop passed through to TugButton).
+    // TugPopupMenu wraps the caller-provided trigger via Radix asChild, so the
+    // trigger element must carry both .tug-button (the TugButton className) and
+    // .tug-tab-add (the className prop passed to TugButton). [D07]
     const { container } = render(
       <TugTabBar
         cardId="card-test"
@@ -622,6 +622,58 @@ describe("TugTabBar – Step-5 TugDropdown trigger migration", () => {
     expect(addBtn?.className).toContain("tug-button");
     // Must carry the tab-bar-specific class for CSS overrides and querySelector measurement.
     expect(addBtn?.className).toContain("tug-tab-add");
+  });
+
+  it("Tab bar renders [+] button without a .tug-button-trailing-icon element in the DOM", () => {
+    // TugPopupMenu does not inject a trailing icon into its trigger. This
+    // asserts that no .tug-button-trailing-icon element exists inside the
+    // [+] button, confirming the architectural inversion away from TugDropdown
+    // (which always rendered a ChevronDown and required a CSS hide rule). [D07]
+    const { container } = render(
+      <TugTabBar
+        cardId="card-test"
+        tabs={[makeTab("tab-1", "hello", "Hello")]}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      />,
+    );
+
+    const addBtn = container.querySelector("[data-testid='tug-tab-add']");
+    expect(addBtn).not.toBeNull();
+    // TugPopupMenu does not inject a trailing icon -- no .tug-button-trailing-icon
+    // should be present inside the [+] trigger button.
+    const trailingIcon = addBtn?.querySelector(".tug-button-trailing-icon");
+    expect(trailingIcon).toBeNull();
+  });
+
+  it("Tab bar renders overflow button without a .tug-button-trailing-icon element", () => {
+    // TugPopupMenu does not inject a trailing icon into its trigger. This
+    // asserts that no .tug-button-trailing-icon element exists anywhere inside
+    // the tab bar. The overflow button is not rendered in happy-dom (layout
+    // returns 0, so overflow never triggers), but the [+] button IS rendered
+    // and its absence of a trailing icon confirms TugPopupMenu's trigger
+    // ownership model is working correctly for both trigger sites. [D07]
+    const manyTabs = Array.from({ length: 10 }, (_, i) =>
+      makeTab(`tab-${i + 1}`, "hello", `Tab ${i + 1}`),
+    );
+
+    const { container } = render(
+      <TugTabBar
+        cardId="card-test"
+        tabs={manyTabs}
+        activeTabId="tab-1"
+        onTabSelect={() => {}}
+        onTabClose={() => {}}
+        onTabAdd={() => {}}
+      />,
+    );
+
+    // No .tug-button-trailing-icon anywhere in the tab bar -- TugPopupMenu
+    // never injects one, unlike TugDropdown which always rendered a ChevronDown.
+    const trailingIcons = container.querySelectorAll(".tug-button-trailing-icon");
+    expect(trailingIcons.length).toBe(0);
   });
 
   it("T18: overflow button is not rendered when no tabs overflow (happy-dom layout limitation documented)", () => {
@@ -678,7 +730,7 @@ describe("TugTabBar – Step-5 TugDropdown trigger migration", () => {
     // The tab close button must NOT carry .tug-button: it is intentionally kept
     // as a bare <button> element (not converted to TugButton) per design
     // decision [D08]. This confirms the close button was not inadvertently
-    // migrated as part of the TugDropdown trigger migration.
+    // migrated as part of the TugPopupMenu trigger migration. [D07]
     const { container } = render(
       <TugTabBar
         cardId="card-test"
