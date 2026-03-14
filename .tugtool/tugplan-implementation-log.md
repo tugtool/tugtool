@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-14T19:06:04Z
+---
+
+## step-8: Added option to TugCheckboxRole and TugSwitchRole as independent type unions. Changed default role from accent to option. Restructured role logic into three branches: option (fg-muted tokens), other non-accent (tone-map), accent (no injection). Updated 18 tests.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-7
 date: 2025-03-14T18:58:27Z
 ---
