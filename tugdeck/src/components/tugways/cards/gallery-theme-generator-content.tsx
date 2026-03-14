@@ -919,6 +919,16 @@ export function GalleryThemeGeneratorContent() {
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
+  // Role hue state — one per role in the 7-role system. [D05, Step 6]
+  // Note: recipe field "destructive" maps to the "danger" role in the UI.
+  const [accentHue, setAccentHue] = useState<string>(DEFAULT_RECIPE.accent ?? "orange");
+  const [activeHue, setActiveHue] = useState<string>(DEFAULT_RECIPE.active ?? "blue");
+  const [agentHue, setAgentHue] = useState<string>(DEFAULT_RECIPE.agent ?? "violet");
+  const [dataHue, setDataHue] = useState<string>(DEFAULT_RECIPE.data ?? "teal");
+  const [successHue, setSuccessHue] = useState<string>(DEFAULT_RECIPE.success ?? "green");
+  const [cautionHue, setCautionHue] = useState<string>(DEFAULT_RECIPE.caution ?? "yellow");
+  const [dangerHue, setDangerHue] = useState<string>(DEFAULT_RECIPE.destructive ?? "red");
+
   // The derived theme output — updated whenever recipe changes or auto-fix runs.
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
 
@@ -953,6 +963,13 @@ export function GalleryThemeGeneratorContent() {
       sc: number,
       sv: number,
       w: number,
+      accent: string,
+      active: string,
+      agent: string,
+      data: string,
+      success: string,
+      caution: string,
+      danger: string,
     ) => {
       const recipe: ThemeRecipe = {
         name: n,
@@ -962,6 +979,13 @@ export function GalleryThemeGeneratorContent() {
         surfaceContrast: sc,
         signalVividity: sv,
         warmth: w,
+        accent,
+        active,
+        agent,
+        data,
+        success,
+        caution,
+        destructive: danger,
       };
       setThemeOutput(deriveTheme(recipe));
     },
@@ -978,9 +1002,9 @@ export function GalleryThemeGeneratorContent() {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth);
+    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, atmosphereHue, textHue]);
+  }, [mode, atmosphereHue, textHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
 
   /**
    * Debounced re-derive for slider changes (150ms delay).
@@ -998,6 +1022,13 @@ export function GalleryThemeGeneratorContent() {
       sc: number,
       sv: number,
       w: number,
+      accent: string,
+      active: string,
+      agent: string,
+      data: string,
+      success: string,
+      caution: string,
+      danger: string,
     ) => {
       setter(newValue);
       if (debounceRef.current !== null) {
@@ -1005,7 +1036,7 @@ export function GalleryThemeGeneratorContent() {
       }
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
-        runDerive(n, m, atm, txt, sc, sv, w);
+        runDerive(n, m, atm, txt, sc, sv, w, accent, active, agent, data, success, caution, danger);
       }, 150);
     },
     [runDerive],
@@ -1036,6 +1067,13 @@ export function GalleryThemeGeneratorContent() {
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalVividity(r.signalVividity ?? 50);
       setWarmth(r.warmth ?? 50);
+      setAccentHue(r.accent ?? "orange");
+      setActiveHue(r.active ?? "blue");
+      setAgentHue(r.agent ?? "violet");
+      setDataHue(r.data ?? "teal");
+      setSuccessHue(r.success ?? "green");
+      setCautionHue(r.caution ?? "yellow");
+      setDangerHue(r.destructive ?? "red");
       setThemeOutput(deriveTheme(r));
     },
     [],
@@ -1060,8 +1098,15 @@ export function GalleryThemeGeneratorContent() {
       surfaceContrast,
       signalVividity,
       warmth,
+      accent: accentHue,
+      active: activeHue,
+      agent: agentHue,
+      data: dataHue,
+      success: successHue,
+      caution: cautionHue,
+      destructive: dangerHue,
     }),
-    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth],
+    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
   );
 
   /**
@@ -1078,6 +1123,13 @@ export function GalleryThemeGeneratorContent() {
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalVividity(r.signalVividity ?? 50);
       setWarmth(r.warmth ?? 50);
+      setAccentHue(r.accent ?? "orange");
+      setActiveHue(r.active ?? "blue");
+      setAgentHue(r.agent ?? "violet");
+      setDataHue(r.data ?? "teal");
+      setSuccessHue(r.success ?? "green");
+      setCautionHue(r.caution ?? "yellow");
+      setDangerHue(r.destructive ?? "red");
       setThemeOutput(deriveTheme(r));
     },
     [],
@@ -1159,6 +1211,57 @@ export function GalleryThemeGeneratorContent() {
 
       <div className="cg-divider" />
 
+      {/* ---- Role hue selectors ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Role Hues</div>
+        <div className="gtg-role-hues" data-testid="gtg-role-hues">
+          <HueSelector
+            label="Accent"
+            selectedHue={accentHue}
+            onSelect={setAccentHue}
+            testId="gtg-role-hue-accent"
+          />
+          <HueSelector
+            label="Action"
+            selectedHue={activeHue}
+            onSelect={setActiveHue}
+            testId="gtg-role-hue-action"
+          />
+          <HueSelector
+            label="Agent"
+            selectedHue={agentHue}
+            onSelect={setAgentHue}
+            testId="gtg-role-hue-agent"
+          />
+          <HueSelector
+            label="Data"
+            selectedHue={dataHue}
+            onSelect={setDataHue}
+            testId="gtg-role-hue-data"
+          />
+          <HueSelector
+            label="Success"
+            selectedHue={successHue}
+            onSelect={setSuccessHue}
+            testId="gtg-role-hue-success"
+          />
+          <HueSelector
+            label="Caution"
+            selectedHue={cautionHue}
+            onSelect={setCautionHue}
+            testId="gtg-role-hue-caution"
+          />
+          <HueSelector
+            label="Danger"
+            selectedHue={dangerHue}
+            onSelect={setDangerHue}
+            testId="gtg-role-hue-danger"
+          />
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
       {/* ---- Mood sliders ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Mood</div>
@@ -1167,7 +1270,7 @@ export function GalleryThemeGeneratorContent() {
             label="Surface Contrast"
             value={surfaceContrast}
             onChange={(v) =>
-              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalVividity, warmth)
+              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-surface-contrast"
           />
@@ -1175,7 +1278,7 @@ export function GalleryThemeGeneratorContent() {
             label="Signal Vividity"
             value={signalVividity}
             onChange={(v) =>
-              handleSliderChange(setSignalVividity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth)
+              handleSliderChange(setSignalVividity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-signal-vividity"
           />
@@ -1183,7 +1286,7 @@ export function GalleryThemeGeneratorContent() {
             label="Warmth"
             value={warmth}
             onChange={(v) =>
-              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, v)
+              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-warmth"
           />

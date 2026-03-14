@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-14T01:19:19Z
+---
+
+## step-6: Added 7 HueSelector strips for role hues (accent, active, agent, data, success, caution, danger) to the theme generator. Extended runDerive, currentRecipe, handleRecipeImported, and loadPreset with role hue fields. Added CSS layout and 4 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-5
 date: 2025-03-14T01:09:52Z
 ---
