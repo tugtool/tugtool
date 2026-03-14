@@ -913,9 +913,9 @@ const BUTTON_EMPHASES: TugButtonEmphasis[] = ["filled", "outlined", "ghost"];
 const BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "ghost"];
 
 /**
- * TugButton supports 5 roles; TugBadge supports all 7. [D02]
+ * TugButton supports 4 roles; TugBadge supports all 7. [D02]
  */
-const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "agent", "data", "danger"];
+const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "data", "danger"];
 const BADGE_ROLES: TugBadgeRole[] = [
   "accent", "action", "agent", "data", "success", "caution", "danger",
 ];

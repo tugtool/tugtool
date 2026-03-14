@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-14T16:00:49Z
+---
+
+## step-6: Integration checkpoint: 1567 tests pass, TypeScript clean, zero deprecated patterns. Fixed pre-existing gallery-theme-generator test count and JSDoc after agent role removal.
+
+**Files changed:**
+- .tugtool/tugplan-button-hierarchy-refactor.md
+
+---
+
+---
 step: step-5
 date: 2025-03-14T15:54:06Z
 ---
