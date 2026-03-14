@@ -23,7 +23,7 @@ import React, { useState, useRef, useLayoutEffect } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
-import { ChevronDown, Star } from "lucide-react";
+import { Star, ChevronDown } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { CardTitleBar } from "@/components/tugways/tug-card";
 import { GalleryMutationTxContent } from "./gallery-mutation-tx-content";
@@ -1033,7 +1033,7 @@ export function GalleryBadgeContent() {
                   {previewRole}
                 </TugButton>
               }
-              items={(["accent", "action", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => ({
+              items={(["accent", "active", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => ({
                 id: v,
                 label: v,
               }))}

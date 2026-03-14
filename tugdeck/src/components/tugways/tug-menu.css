@@ -167,8 +167,8 @@ body {
 .tug-dropdown-content {
   background-color: var(--tug-dropdown-bg);
   border: 1px solid var(--tug-dropdown-border);
-  border-radius: var(--tug-base-radius-xs);
   box-shadow: var(--tug-dropdown-shadow);
+  border-radius: var(--tug-base-radius-xs);
   color: var(--tug-dropdown-fg);
   padding: 0.25rem;
   /* High z-index so the portal-rendered dropdown renders above all cards */
@@ -192,8 +192,7 @@ body {
 }
 
 /*
- * Hover / focus state: use the accent-subtle token for visible contrast
- * against the overlay background.
+ * Hover / focus state: use the accent-subtle token for visible contrast against the overlay background.
  */
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {

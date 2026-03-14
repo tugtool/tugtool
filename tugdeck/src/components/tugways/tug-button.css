@@ -468,7 +468,10 @@
   gap: 0.375rem;
 }
 
-/* Trailing icon (e.g. chevron-down for dropdown triggers) */
+/* ============================================================================
+   Trailing Icon (dropdown chevron, etc.)
+   ========================================================================= */
+
 .tug-button-trailing-icon {
   display: inline-flex;
   align-items: center;

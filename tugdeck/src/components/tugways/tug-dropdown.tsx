@@ -91,7 +91,7 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
     const target = event.currentTarget as HTMLElement;
 
-    // Read the computed accent-subtle color for WAAPI blink keyframes.
+    // Read the computed accent-subtle color for WAAPI keyframes.
     // getPropertyValue() returns a string with leading whitespace per CSS spec;
     // .trim() is required. WAAPI cannot interpolate CSS variable references
     // directly, so we must resolve to a concrete color value. [D01]

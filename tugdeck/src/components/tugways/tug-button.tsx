@@ -59,8 +59,15 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
 /**
  * TugButton props interface -- Phase 3 (Spec S01, S04).
+ *
+ * Extends ButtonHTMLAttributes so that Radix composition (asChild pattern)
+ * can merge arbitrary props (data-state, aria-expanded, onPointerDown, ref,
+ * etc.) onto the underlying DOM button element. We omit:
+ *   - 'role': TugButton redefines it as TugButtonRole (not the HTML aria role)
+ *   - 'onClick': TugButton redefines it as () => void (not the React MouseEvent handler)
+ *   - 'children': TugButton redefines it as React.ReactNode (same type but explicit)
  */
-export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "role" | "onClick" | "children"> {
+export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onClick' | 'children'> {
   /** Button rendering subtype. Default: "push" */
   subtype?: TugButtonSubtype;
   /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
@@ -112,7 +119,10 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   /** Lucide icon node for "icon" and "icon-text" subtypes */
   icon?: React.ReactNode;
 
-  /** Trailing icon rendered after label text (e.g. ChevronDown for dropdown triggers) */
+  /**
+   * Trailing icon node rendered after the label text in "push" and "icon-text" subtypes.
+   * Useful for dropdown triggers that show a ChevronDown indicator.
+   */
   trailingIcon?: React.ReactNode;
 
   /** Current state for "three-state" subtype. Default: "off" */
@@ -179,6 +189,9 @@ function Spinner() {
  *   role:     "accent" | "active" | "agent" | "data" | "danger" (default: "active")
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
+ *
+ * Implemented as React.forwardRef so that refs from Radix composition (asChild)
+ * reach the underlying DOM button element.
  */
 export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(function TugButton({
   subtype = "push",
@@ -200,7 +213,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   className,
   asChild = false,
   ...rest
-}, forwardedRef) {
+}: TugButtonProps, ref) {
   // Three-state subtype internal state management
   const [internalState, setInternalState] = useState<TugButtonState>(state);
 
@@ -389,7 +402,11 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
           <span className="tug-button-icon-text">
             {icon}
             {children}
-            {trailingIcon && <span className="tug-button-trailing-icon" aria-hidden="true">{trailingIcon}</span>}
+            {trailingIcon && (
+              <span className="tug-button-trailing-icon" aria-hidden="true">
+                {trailingIcon}
+              </span>
+            )}
           </span>
         );
 
@@ -406,7 +423,11 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
         return (
           <>
             {children}
-            {trailingIcon && <span className="tug-button-trailing-icon" aria-hidden="true">{trailingIcon}</span>}
+            {trailingIcon && (
+              <span className="tug-button-trailing-icon" aria-hidden="true">
+                {trailingIcon}
+              </span>
+            )}
           </>
         );
     }
@@ -417,7 +438,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   return (
     <Comp
-      ref={forwardedRef}
+      ref={ref}
       disabled={disabled}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}

@@ -393,3 +393,70 @@ describe("TugButton – aria-disabled in direct-action mode", () => {
     expect(btn.disabled).toBe(true);
   });
 });
+
+// ============================================================================
+// forwardRef: ref forwarding
+// ============================================================================
+
+describe("TugButton – forwardRef", () => {
+  it("forwards a ref to the underlying button element", () => {
+    let capturedRef: HTMLButtonElement | null = null;
+    const { container } = render(
+      <TugButton ref={(el) => { capturedRef = el; }}>Ref Test</TugButton>
+    );
+    const btn = container.querySelector("button");
+    expect(capturedRef).not.toBeNull();
+    expect(capturedRef).toBe(btn);
+  });
+});
+
+// ============================================================================
+// rest props: Radix-merged props reach the DOM
+// ============================================================================
+
+describe("TugButton – rest props (Radix composition)", () => {
+  it("passes arbitrary data attributes to the DOM button", () => {
+    const btn = renderButton({ children: "Open", "data-state": "open" } as Parameters<typeof TugButton>[0]);
+    expect(btn.getAttribute("data-state")).toBe("open");
+  });
+
+  it("passes aria-expanded to the DOM button", () => {
+    const btn = renderButton({ children: "Open", "aria-expanded": true } as Parameters<typeof TugButton>[0]);
+    expect(btn.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+// ============================================================================
+// trailingIcon prop
+// ============================================================================
+
+describe("TugButton – trailingIcon prop", () => {
+  it("renders trailingIcon in push subtype when provided", () => {
+    const trailing = <span data-testid="trailing-chevron">v</span>;
+    const { container } = render(
+      <TugButton subtype="push" trailingIcon={trailing}>Open</TugButton>
+    );
+    const wrapper = container.querySelector(".tug-button-trailing-icon");
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.querySelector("[data-testid='trailing-chevron']")).not.toBeNull();
+  });
+
+  it("renders trailingIcon in icon-text subtype when provided", () => {
+    const icon = <span data-testid="leading-icon">*</span>;
+    const trailing = <span data-testid="trailing-chevron">v</span>;
+    const { container } = render(
+      <TugButton subtype="icon-text" icon={icon} trailingIcon={trailing}>Open</TugButton>
+    );
+    const wrapper = container.querySelector(".tug-button-trailing-icon");
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.querySelector("[data-testid='trailing-chevron']")).not.toBeNull();
+  });
+
+  it("does NOT render .tug-button-trailing-icon when trailingIcon is not provided", () => {
+    const { container } = render(
+      <TugButton subtype="push">Save</TugButton>
+    );
+    const wrapper = container.querySelector(".tug-button-trailing-icon");
+    expect(wrapper).toBeNull();
+  });
+});
