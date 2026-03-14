@@ -112,6 +112,18 @@ if (typeof (global as any).requestAnimationFrame !== "function") {
   };
 }
 
+// happy-dom's SelectorParser uses `this.window.SyntaxError` to construct
+// parse errors during querySelectorAll / getComputedStyle CSS sheet processing.
+// The happy-dom Window instance does not expose SyntaxError as an own property,
+// so `this.window.SyntaxError` resolves to undefined and crashes with:
+//   "TypeError: undefined is not a constructor (evaluating 'new this.window.SyntaxError')"
+// Patching it to the global SyntaxError restores the expected behavior so that
+// querySelector/querySelectorAll work, and Radix UI's getComputedStyle calls
+// (via react-remove-scroll-bar's getStyleSheets path) no longer crash.
+if (!(happyWindow as any).SyntaxError) {
+  (happyWindow as any).SyntaxError = SyntaxError;
+}
+
 // Signal to React 19 that we are in an act() environment
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;
 

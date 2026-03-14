@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-14T18:28:03Z
+---
+
+## step-3: Created TugPopupMenu component as headless extraction from TugDropdown. Accepts trigger ReactNode prop, copies blink animation logic, preserves tug-dropdown CSS class names per D05, uses fixed 3px sideOffset. Added test file with 11 tests including item-class verification. Fixed setup-rtl.ts SyntaxError patch for happy-dom querySelector.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-2
 date: 2025-03-14T18:14:27Z
 ---
