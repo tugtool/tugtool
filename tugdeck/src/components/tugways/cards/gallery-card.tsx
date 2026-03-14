@@ -46,6 +46,7 @@ import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useCSSVar, useDOMClass, useDOMStyle } from "@/components/tugways/hooks";
 import type { TabItem } from "@/layout-tree";
 import "./gallery-card.css";
@@ -195,82 +196,68 @@ export function GalleryButtonsContent() {
         <div className="cg-section-title">Preview Controls</div>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-emphasis-select">
-              Emphasis
-            </label>
-            <select
-              id="cg-emphasis-select"
-              className="cg-control-select"
-              value={previewEmphasis}
-              onChange={(e) => setPreviewEmphasis(e.target.value as TugButtonEmphasis)}
-            >
-              {(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <span className="cg-control-label">Emphasis</span>
+            <TugDropdown
+              trigger={
+                <button type="button" className="cg-dropdown-trigger">
+                  {previewEmphasis}
+                </button>
+              }
+              items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
+                id: v,
+                label: v,
+              }))}
+              onSelect={(id) => setPreviewEmphasis(id as TugButtonEmphasis)}
+            />
           </div>
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-role-select">
-              Role
-            </label>
-            <select
-              id="cg-role-select"
-              className="cg-control-select"
-              value={previewRole}
-              onChange={(e) => setPreviewRole(e.target.value as TugButtonRole)}
-            >
-              {(["accent", "active", "agent", "data", "danger"] as TugButtonRole[]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <span className="cg-control-label">Role</span>
+            <TugDropdown
+              trigger={
+                <button type="button" className="cg-dropdown-trigger">
+                  {previewRole}
+                </button>
+              }
+              items={(["accent", "action", "agent", "data", "danger"] as TugButtonRole[]).map((v) => ({
+                id: v,
+                label: v,
+              }))}
+              onSelect={(id) => setPreviewRole(id as TugButtonRole)}
+            />
           </div>
 
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-size-select">
-              Size
-            </label>
-            <select
-              id="cg-size-select"
-              className="cg-control-select"
-              value={previewSize}
-              onChange={(e) => setPreviewSize(e.target.value as TugButtonSize)}
-            >
-              {ALL_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <span className="cg-control-label">Size</span>
+            <TugDropdown
+              trigger={
+                <button type="button" className="cg-dropdown-trigger">
+                  {previewSize}
+                </button>
+              }
+              items={ALL_SIZES.map((s) => ({
+                id: s,
+                label: s,
+              }))}
+              onSelect={(id) => setPreviewSize(id as TugButtonSize)}
+            />
           </div>
 
           <div className="cg-control-group">
-            <input
-              id="cg-disabled-check"
-              type="checkbox"
-              className="cg-control-checkbox"
+            <TugCheckbox
               checked={previewDisabled}
-              onChange={(e) => setPreviewDisabled(e.target.checked)}
+              onCheckedChange={(checked) => setPreviewDisabled(checked === true)}
+              label="Disabled"
+              size="sm"
             />
-            <label className="cg-control-label" htmlFor="cg-disabled-check">
-              Disabled
-            </label>
           </div>
 
           <div className="cg-control-group">
-            <input
-              id="cg-loading-check"
-              type="checkbox"
-              className="cg-control-checkbox"
+            <TugCheckbox
               checked={previewLoading}
-              onChange={(e) => setPreviewLoading(e.target.checked)}
+              onCheckedChange={(checked) => setPreviewLoading(checked === true)}
+              label="Loading"
+              size="sm"
             />
-            <label className="cg-control-label" htmlFor="cg-loading-check">
-              Loading
-            </label>
           </div>
         </div>
       </div>

@@ -165,7 +165,7 @@ body {
  * conflicts with CardFrame are not an issue.
  */
 .tug-dropdown-content {
-  background-color: var(--tug-base-surface-control);
+  background-color: var(--tug-dropdown-bg);
   border: 1px solid var(--tug-dropdown-border);
   border-radius: var(--tug-base-radius-md);
   color: var(--tug-dropdown-fg);
