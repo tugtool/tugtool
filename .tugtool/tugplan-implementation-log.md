@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-03-14T19:47:24Z
+---
+
+## audit-fix: Audit fix: Patched setup-rtl.ts Window.prototype.SyntaxError for all instances. Added happy-dom SelectorParser.js instance method forwarding to fix getSelectorGroups crash. Added 12 option fg/icon pairings to fg-bg-pairing-map.ts. Added 4 option bg tokens to accessibility exclusion list. Full suite: 1585 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
+step: audit-fix
 date: 2025-03-14T19:27:02Z
 ---
 
