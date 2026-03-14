@@ -39,17 +39,17 @@ function paletteHotReload(): VitePlugin {
 }
 
 /**
- * Vite plugin: regenerate control tokens when theme-derivation-engine.ts changes.
+ * Vite plugin: regenerate tokens when theme-derivation-engine.ts changes.
  *
- * The derivation engine is the single source of truth for control tokens.
- * When it changes, we re-run generate-tug-control-tokens.ts to update the
+ * The derivation engine is the single source of truth for all --tug-base-* tokens.
+ * When it changes, we re-run generate-tug-tokens.ts to update the
  * generated section of tug-base.css, then CSS HMR picks up the change.
  *
  * Uses Vite's built-in watcher via handleHotUpdate (no separate fs.watchFile).
  * Also runs once at buildStart to ensure tug-base.css is in sync.
  */
 function controlTokenHotReload(): VitePlugin {
-  const scriptPath = path.resolve(__dirname, "scripts/generate-tug-control-tokens.ts");
+  const scriptPath = path.resolve(__dirname, "scripts/generate-tug-tokens.ts");
 
   function regenerate() {
     try {

@@ -7,7 +7,8 @@
     "build": "vite build",
     "check": "bunx tsc --noEmit",
     "dev": "vite",
-    "generate:control-tokens": "bun run scripts/generate-tug-control-tokens.ts",
+    "generate:tokens": "bun run scripts/generate-tug-tokens.ts",
+    "generate:control-tokens": "bun run scripts/generate-tug-tokens.ts",
     "generate:palette": "bun run scripts/generate-tug-palette.ts",
     "test": "bun test"
   },
