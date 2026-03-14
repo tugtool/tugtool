@@ -491,16 +491,16 @@ body {
   --tug-base-field-placeholder: --tug-color(cobalt, i: 6, t: 30);
   --tug-base-field-border-rest: --tug-color(cobalt, i: 6, t: 30);
   --tug-base-field-border-hover: --tug-color(cobalt+7, i: 7, t: 37);
-  --tug-base-field-border-focus: --tug-color(cyan);
-  --tug-base-field-border-invalid: --tug-color(red);
-  --tug-base-field-border-valid: --tug-color(green);
+  --tug-base-field-border-active: --tug-color(cyan);
+  --tug-base-field-border-danger: --tug-color(red);
+  --tug-base-field-border-success: --tug-color(green);
   --tug-base-field-border-disabled: --tug-color(violet-6, i: 6, t: 17);
   --tug-base-field-border-readOnly: --tug-color(violet-6, i: 6, t: 17);
   --tug-base-field-label: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-field-required: --tug-color(red);
-  --tug-base-field-error: --tug-color(red);
-  --tug-base-field-warning: --tug-color(yellow);
-  --tug-base-field-success: --tug-color(green);
+  --tug-base-field-tone-danger: --tug-color(red);
+  --tug-base-field-tone-caution: --tug-color(yellow);
+  --tug-base-field-tone-success: --tug-color(green);
 
   /* --- Toggle / Range Tokens ---
    * Two-axis model: value (off/on/mixed) × interaction (rest/hover).

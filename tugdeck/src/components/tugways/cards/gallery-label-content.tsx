@@ -70,13 +70,13 @@ export function GalleryLabelContent() {
           <TugLabel icon={<Info />} iconColor="var(--tug-base-accent-cool-default)">
             Accent-colored icon
           </TugLabel>
-          <TugLabel icon={<AlertTriangle />} iconColor="var(--tug-base-field-warning)">
+          <TugLabel icon={<AlertTriangle />} iconColor="var(--tug-base-field-tone-caution)">
             Warning-colored icon
           </TugLabel>
-          <TugLabel icon={<Star />} iconColor="var(--tug-base-field-error)">
+          <TugLabel icon={<Star />} iconColor="var(--tug-base-field-tone-danger)">
             Error-colored icon
           </TugLabel>
-          <TugLabel icon={<Folder />} iconColor="var(--tug-base-field-success)">
+          <TugLabel icon={<Folder />} iconColor="var(--tug-base-field-tone-success)">
             Success-colored icon
           </TugLabel>
         </div>

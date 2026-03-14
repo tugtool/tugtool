@@ -46,7 +46,7 @@
 
 .tug-input:focus {
   background-color: var(--tug-base-field-bg-focus);
-  border-color: var(--tug-base-field-border-focus);
+  border-color: var(--tug-base-field-border-active);
   outline: none;
 }
 
@@ -101,13 +101,13 @@
  */
 
 .tug-input-invalid:not(:focus) {
-  border-color: var(--tug-base-field-border-invalid);
+  border-color: var(--tug-base-field-border-danger);
 }
 
 .tug-input-valid:not(:focus) {
-  border-color: var(--tug-base-field-border-valid);
+  border-color: var(--tug-base-field-border-success);
 }
 
 .tug-input-warning:not(:focus) {
-  border-color: var(--tug-base-field-warning);
+  border-color: var(--tug-base-field-tone-caution);
 }

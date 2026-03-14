@@ -243,7 +243,7 @@ describe("Step 8: D06 contrast-critical overrides in harmony.css are correct", (
 
   const d06Expected: Array<{ token: string; tugColor: string }> = [
     { token: "--tug-base-tone-caution-fg",  tugColor: "--tug-color(yellow, i: 46, t: 27)" },
-    { token: "--tug-base-field-warning",   tugColor: "--tug-color(yellow, i: 62, t: 58)" },
+    { token: "--tug-base-field-tone-caution",   tugColor: "--tug-color(yellow, i: 62, t: 58)" },
   ];
 
   for (const { token, tugColor } of d06Expected) {

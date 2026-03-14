@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-14T00:51:17Z
+---
+
+## step-1: Renamed 6 field validation tokens: field-border-focus→active, field-border-invalid→danger, field-border-valid→success, field-error→tone-danger, field-warning→tone-caution, field-success→tone-success across derivation engine, CSS, gallery components, and tests
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-9
 date: 2025-03-13T21:29:21Z
 ---

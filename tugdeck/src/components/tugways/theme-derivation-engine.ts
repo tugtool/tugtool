@@ -1340,9 +1340,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-field-border-rest", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
     setChromatic("--tug-base-field-border-hover", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
   }
-  setChromatic("--tug-base-field-border-focus", activeHue, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-field-border-invalid", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-border-valid", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-field-border-active", activeHue, activeAngle, signalI, 50, 100, activeName);
+  setChromatic("--tug-base-field-border-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
+  setChromatic("--tug-base-field-border-success", successHue, successAngle, signalI, 50, 100, successName);
   setChromatic("--tug-base-field-border-disabled", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
   setChromatic("--tug-base-field-border-readOnly", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
 
@@ -1353,9 +1353,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
     setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   }
-  setChromatic("--tug-base-field-error", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-field-warning", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
-  setChromatic("--tug-base-field-success", successHue, successAngle, signalI, 50, 100, successName);
+  setChromatic("--tug-base-field-tone-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
+  setChromatic("--tug-base-field-tone-caution", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
+  setChromatic("--tug-base-field-tone-success", successHue, successAngle, signalI, 50, 100, successName);
 
   // --- Toggle / Range Tokens ---
   // Toggle track: atmosphere (off) or accent (on)

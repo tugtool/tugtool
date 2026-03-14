@@ -152,9 +152,9 @@ body {
   --tug-base-field-border-disabled: --tug-color(yellow, i: 5, t: 46);
   --tug-base-field-border-readOnly: --tug-color(yellow, i: 5, t: 46);
   --tug-base-field-label: --tug-color(blue, i: 9, t: 22);
-  /* field-warning: --tug-color(yellow, i: 62, t: 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
+  /* field-tone-caution: --tug-color(yellow, i: 62, t: 58) is a Harmony-specific shade; palette --tug-yellow has L=0.901
      which may be too bright on white field backgrounds. Keep as override. */
-  --tug-base-field-warning: --tug-color(yellow, i: 62, t: 58);
+  --tug-base-field-tone-caution: --tug-color(yellow, i: 62, t: 58);
 
   /* Toggles */
   --tug-base-toggle-track-off: --tug-color(yellow, i: 5, t: 46);
