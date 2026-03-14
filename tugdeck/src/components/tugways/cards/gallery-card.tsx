@@ -60,9 +60,7 @@ const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = 
   { emphasis: "filled",   role: "accent"  },
   { emphasis: "filled",   role: "action"  },
   { emphasis: "filled",   role: "danger"  },
-  { emphasis: "filled",   role: "agent"   },
   { emphasis: "outlined", role: "action"  },
-  { emphasis: "outlined", role: "agent"   },
   { emphasis: "ghost",    role: "action"  },
   { emphasis: "ghost",    role: "danger"  },
 ];

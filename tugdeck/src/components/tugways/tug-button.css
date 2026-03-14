@@ -60,8 +60,7 @@
 }
 
 .tug-button:focus-visible {
-  outline: 2px solid var(--tug-base-accent-cool-default);
-  outline-offset: 2px;
+  outline: none;
 }
 
 .tug-button:disabled {
@@ -205,38 +204,6 @@
   color: var(--tug-base-control-filled-danger-icon-active);
 }
 
-/* --- filled-agent: AI action (violet/agent) --- */
-
-.tug-button-filled-agent {
-  background-color: var(--tug-base-control-filled-agent-bg-rest);
-  color: var(--tug-base-control-filled-agent-fg-rest);
-  border-color: var(--tug-base-control-filled-agent-border-rest);
-}
-
-.tug-button-filled-agent svg {
-  color: var(--tug-base-control-filled-agent-icon-rest);
-}
-
-.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-agent-bg-hover);
-  color: var(--tug-base-control-filled-agent-fg-hover);
-  border-color: var(--tug-base-control-filled-agent-border-hover);
-}
-
-.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-agent-icon-hover);
-}
-
-.tug-button-filled-agent:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-filled-agent-bg-active);
-  color: var(--tug-base-control-filled-agent-fg-active);
-  border-color: var(--tug-base-control-filled-agent-border-active);
-}
-
-.tug-button-filled-agent:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-filled-agent-icon-active);
-}
-
 /* --- outlined-action: Secondary action (default style) [D04] --- */
 
 .tug-button-outlined-action {
@@ -248,38 +215,6 @@
 
 .tug-button-outlined-action svg {
   color: var(--tug-base-control-outlined-action-icon-rest);
-}
-
-/* --- outlined-agent: AI secondary action (violet/agent border) --- */
-
-.tug-button-outlined-agent {
-  background-color: var(--tug-base-control-outlined-agent-bg-rest);
-  color: var(--tug-base-control-outlined-agent-fg-rest);
-  border-color: var(--tug-base-control-outlined-agent-border-rest);
-}
-
-.tug-button-outlined-agent svg {
-  color: var(--tug-base-control-outlined-agent-icon-rest);
-}
-
-.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-agent-bg-hover);
-  color: var(--tug-base-control-outlined-agent-fg-hover);
-  border-color: var(--tug-base-control-outlined-agent-border-hover);
-}
-
-.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-agent-icon-hover);
-}
-
-.tug-button-outlined-agent:active:not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug-base-control-outlined-agent-bg-active);
-  color: var(--tug-base-control-outlined-agent-fg-active);
-  border-color: var(--tug-base-control-outlined-agent-border-active);
-}
-
-.tug-button-outlined-agent:active:not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug-base-control-outlined-agent-icon-active);
 }
 
 /* --- ghost-action: Link-like action (neutral) --- */
@@ -365,9 +300,7 @@
 [aria-disabled="true"].tug-button-filled-accent,
 [aria-disabled="true"].tug-button-filled-action,
 [aria-disabled="true"].tug-button-filled-danger,
-[aria-disabled="true"].tug-button-filled-agent,
 [aria-disabled="true"].tug-button-outlined-action,
-[aria-disabled="true"].tug-button-outlined-agent,
 [aria-disabled="true"].tug-button-ghost-action,
 [aria-disabled="true"].tug-button-ghost-danger {
   opacity: var(--tug-base-control-disabled-opacity);

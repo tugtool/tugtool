@@ -267,19 +267,9 @@ describe("TugButton – emphasis x role", () => {
     expect(btn.className).toContain("tug-button-filled-danger");
   });
 
-  it("emphasis=filled role=agent: applies tug-button-filled-agent class", () => {
-    const btn = renderButton({ emphasis: "filled", role: "agent", children: "AI" });
-    expect(btn.className).toContain("tug-button-filled-agent");
-  });
-
   it("emphasis=outlined role=active: applies tug-button-outlined-action class", () => {
     const btn = renderButton({ emphasis: "outlined", role: "action", children: "Secondary" });
     expect(btn.className).toContain("tug-button-outlined-action");
-  });
-
-  it("emphasis=outlined role=agent: applies tug-button-outlined-agent class", () => {
-    const btn = renderButton({ emphasis: "outlined", role: "agent", children: "AI Sec" });
-    expect(btn.className).toContain("tug-button-outlined-agent");
   });
 
   it("emphasis=ghost role=active: applies tug-button-ghost-action class", () => {
