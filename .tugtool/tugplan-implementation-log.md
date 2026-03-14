@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-14T01:29:09Z
+---
+
+## step-8: Final integration checkpoint: all 1559 tests pass, zero old/removed token references remain, all success criteria met across all 8 plan steps.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-7
 date: 2025-03-14T01:26:01Z
 ---
