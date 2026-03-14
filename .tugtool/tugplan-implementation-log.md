@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-14T18:14:27Z
+---
+
+## step-2: Added option to TugButtonRole type union. Added outlined-option and ghost-option CSS variant rules with rest/hover/active states. Added disabled selectors. Added data-state=open rules for option variants in tug-menu.css and removed broad fallback selector per D03.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-1
 date: 2025-03-14T18:08:14Z
 ---
