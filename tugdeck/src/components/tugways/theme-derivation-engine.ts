@@ -1034,9 +1034,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // tune them. The tab bar sits on surface-sunken; active tab should clearly
   // stand out as "raised" above inactive tabs.
 
-  // tab-bg-active: raised surface for the selected tab — sits above sunken bar
-  // Light mode: high tone (bright) for contrast with dark text on light surface.
-  // Dark mode: surface-raised tone for clear lift above sunken bar.
+  // tab-bg-active: base token for active tab background. Component CSS
+  // (tug-tab.css) overrides this with --tug-card-title-bar-bg-active to
+  // visually merge the active tab with the card title bar above it.
   if (isLight) {
     setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
   } else {
