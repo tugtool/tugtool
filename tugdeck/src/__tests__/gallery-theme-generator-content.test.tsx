@@ -51,7 +51,6 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-fg-link",
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
-  "--tug-base-field-helper",
   "--tug-base-selection-fg",
   // Text / icon on vivid accent backgrounds
   "--tug-base-fg-onAccent",

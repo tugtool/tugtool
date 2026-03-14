@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-14T00:54:28Z
+---
+
+## step-2: Removed field-helper references from 3 test files (contrast-dashboard, gallery-theme-generator-content, theme-derivation-engine). Other 4 unused tokens (field-meta, field-counter, field-limit, field-dirty) were already absent.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-1
 date: 2025-03-14T00:51:17Z
 ---

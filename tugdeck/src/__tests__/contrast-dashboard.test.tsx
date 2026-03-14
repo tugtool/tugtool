@@ -93,7 +93,6 @@ describe("contrast-dashboard – T7.2: Brio body-text pairs pass", () => {
     "--tug-base-fg-link-hover",
     "--tug-base-control-selected-fg",
     "--tug-base-control-highlighted-fg",
-    "--tug-base-field-helper",
     "--tug-base-selection-fg",
     "--tug-base-fg-link",
   ]);
