@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-14T01:05:07Z
+---
+
+## step-4: Added optional role prop to TugSwitch mirroring TugCheckbox pattern. ROLE_TONE_MAP, inline CSS custom property injection for --tug-toggle-on-color and --tug-toggle-on-hover-color, data-role attribute. CSS updated with var() fallback and split hover rules (background-color only, no border). 8 new tests added.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-3
 date: 2025-03-14T01:00:11Z
 ---
