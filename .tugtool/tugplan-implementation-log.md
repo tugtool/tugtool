@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-14T18:08:14Z
+---
+
+## step-1: Added outlined-option and ghost-option token generation blocks to theme-derivation-engine.ts with neutral text hue borders. Updated generate-tug-control-tokens.ts to recognize option role. Regenerated tug-base.css with 24 new tokens. Updated tests for new token counts (343 total, 156 emphasis-role).
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-6
 date: 2025-03-14T16:00:49Z
 ---

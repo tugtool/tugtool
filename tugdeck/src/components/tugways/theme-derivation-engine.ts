@@ -11,10 +11,11 @@
  * `warmth`) modulate tone spreads and intensity levels.
  *
  * Control tokens use the emphasis x role system (Table T01):
- *   8 combinations × 4 properties × 3 states = 96 control tokens
- *   Plus 1 surface-control alias = 97 new control tokens
+ *   13 combinations × 4 properties × 3 states = 156 emphasis-role control tokens
+ *   (11 original combinations + 2 new: outlined-option, ghost-option)
+ *   Plus 1 surface-control alias = 157 control tokens total
  *   (replaces old 4-variant system: 48 tokens + 3 disabled aliases = 51 tokens)
- *   Net change: +46 tokens (97 - 51)
+ *   Net change: +106 tokens (157 - 51)
  *
  * [D01] Export format — tokens map matches bluenote.css / harmony.css structure
  * [D02] Emphasis x role token naming: --tug-base-control-{emphasis}-{role}-{property}-{state}
@@ -1296,6 +1297,70 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
   setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+
+  // --- Outlined Option (calm configuration control — neutral muted border, no action-blue chroma) ---
+  // [D01] Option role uses neutral fg-muted formulas: border from txtRefW at txtISubtle/fgMutedTone,
+  // fg same as outlined-action, bg same as outlined-action, icon same as outlined-action.
+  setStructural("--tug-base-control-outlined-option-bg-rest", "transparent");
+  if (isLight) {
+    setChromatic("--tug-base-control-outlined-option-bg-hover", atmRefW, atmAngleW, 4, outlinedBgHoverTone, 100, atmNameW);
+    setChromatic("--tug-base-control-outlined-option-bg-active", atmRefW, atmAngleW, 6, outlinedBgActiveTone, 100, atmNameW);
+  } else {
+    setHighlight("--tug-base-control-outlined-option-bg-hover", 10);
+    setHighlight("--tug-base-control-outlined-option-bg-active", 20);
+  }
+  if (isLight) {
+    setChromatic("--tug-base-control-outlined-option-fg-rest", txtRefW, txtAngleW, txtI, fgDefaultTone);
+    setChromatic("--tug-base-control-outlined-option-fg-hover", txtRefW, txtAngleW, txtI, 10);
+    setChromatic("--tug-base-control-outlined-option-fg-active", txtRefW, txtAngleW, txtI, 8);
+    setChromatic("--tug-base-control-outlined-option-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+    setChromatic("--tug-base-control-outlined-option-icon-hover", txtRefW, txtAngleW, txtISubtle, 22);
+    setChromatic("--tug-base-control-outlined-option-icon-active", txtRefW, txtAngleW, txtISubtle, 13);
+  } else {
+    // White text/icons in dark mode
+    setChromatic("--tug-base-control-outlined-option-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-outlined-option-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-outlined-option-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-outlined-option-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-outlined-option-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-outlined-option-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  }
+  // Border: neutral text hue at muted intensity — no action-blue chroma (distinguishes from outlined-action)
+  setChromatic("--tug-base-control-outlined-option-border-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  setChromatic("--tug-base-control-outlined-option-border-hover", txtRefW, txtAngleW, Math.min(90, txtISubtle + 2), isLight ? fgMutedTone - 3 : fgMutedTone + 5);
+  setChromatic("--tug-base-control-outlined-option-border-active", txtRefW, txtAngleW, Math.min(90, txtISubtle + 4), isLight ? fgMutedTone - 6 : fgMutedTone + 10);
+
+  // --- Ghost Option (ultra-calm configuration control — transparent border at rest, fg-muted text) ---
+  // [D01] Ghost-option: same bg hover/active as ghost-action but fg-muted at rest (calmer than ghost-action).
+  setStructural("--tug-base-control-ghost-option-bg-rest", "transparent");
+  if (isLight) {
+    setShadow("--tug-base-control-ghost-option-bg-hover", 6);
+    setShadow("--tug-base-control-ghost-option-bg-active", 12);
+  } else {
+    setHighlight("--tug-base-control-ghost-option-bg-hover", 10);
+    setHighlight("--tug-base-control-ghost-option-bg-active", 20);
+  }
+  if (isLight) {
+    setChromatic("--tug-base-control-ghost-option-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+    setChromatic("--tug-base-control-ghost-option-fg-hover", txtRefW, txtAngleW, 9, 15);
+    setChromatic("--tug-base-control-ghost-option-fg-active", txtRefW, txtAngleW, 9, 10);
+  } else {
+    setChromatic("--tug-base-control-ghost-option-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-option-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-option-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  }
+  setStructural("--tug-base-control-ghost-option-border-rest", "transparent");
+  setChromatic("--tug-base-control-ghost-option-border-hover", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
+  setChromatic("--tug-base-control-ghost-option-border-active", txtRefW, txtAngleW, isLight ? 10 : 20, isLight ? 35 : 60);
+  if (isLight) {
+    setChromatic("--tug-base-control-ghost-option-icon-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+    setChromatic("--tug-base-control-ghost-option-icon-hover", txtRefW, txtAngleW, txtISubtle, 22);
+    setChromatic("--tug-base-control-ghost-option-icon-active", txtRefW, txtAngleW, 27, 13);
+  } else {
+    setChromatic("--tug-base-control-ghost-option-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-option-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+    setChromatic("--tug-base-control-ghost-option-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
+  }
 
   // --- Surface Control Alias [D08] ---
   // Semantic alias: non-button consumers (tabs, code blocks, menus) use this
