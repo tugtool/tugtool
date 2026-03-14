@@ -661,7 +661,7 @@ function simpleHash(str: string): string {
 /**
  * Generate the CSS export string for a theme output.
  *
- * Produces a complete CSS file in the same format as bluenote.css / harmony.css:
+ * Produces a complete CSS file in the same format as tug-base.css overrides:
  * - Header comment with @theme-name, @theme-description, date, recipe hash
  * - `body { }` block with all `--tug-base-*` overrides as `--tug-color()` values
  *
@@ -761,7 +761,7 @@ function triggerDownload(content: string, filename: string, mimeType: string): v
 
 /**
  * ExportImportPanel renders:
- *   - "Export CSS" button: downloads a complete theme CSS file in bluenote.css format
+ *   - "Export CSS" button: downloads a complete theme CSS file as --tug-base-* overrides
  *   - "Export Recipe JSON" button: downloads the current recipe as formatted JSON
  *   - "Import Recipe" button: opens a file picker to load a JSON recipe
  *

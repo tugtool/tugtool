@@ -59,20 +59,6 @@ describe("theme-export – T9.1: exported CSS has body block with --tug-base-* t
     expect(matches!.length).toBeGreaterThan(50);
   });
 
-  it("bluenote recipe: generated CSS has a body {} block", () => {
-    const recipe = EXAMPLE_RECIPES.bluenote;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("body {");
-  });
-
-  it("harmony recipe: generated CSS has a body {} block", () => {
-    const recipe = EXAMPLE_RECIPES.harmony;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    expect(css).toContain("body {");
-  });
-
   it("body block contains at least 50 --tug-base-* token entries", () => {
     const recipe = EXAMPLE_RECIPES.brio;
     const output = deriveTheme(recipe);
@@ -140,21 +126,6 @@ describe("theme-export – T9.2: exported CSS has only --tug-color() values for 
     }
   });
 
-  it("bluenote recipe: all chromatic token values use --tug-color() notation", () => {
-    const recipe = EXAMPLE_RECIPES.bluenote;
-    const output = deriveTheme(recipe);
-    const css = generateCssExport(output, recipe);
-    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
-    expect(bodyMatch).not.toBeNull();
-    const body = bodyMatch![1];
-    const lines = body.split("\n").map((l) => l.trim()).filter((l) => l.includes(":") && l.startsWith("--tug-base-"));
-    for (const line of lines) {
-      const valueMatch = line.match(/:\s*(.+?);?\s*$/);
-      expect(valueMatch).not.toBeNull();
-      expect(valueMatch![1].trim()).toMatch(/^--tug-color\(/);
-    }
-  });
-
   it("no raw oklch() values appear in the body block", () => {
     const recipe = EXAMPLE_RECIPES.brio;
     const output = deriveTheme(recipe);
@@ -190,15 +161,15 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
   afterEach(() => { _resetForTest(); cleanup(); });
 
   it("JSON.stringify(recipe) -> JSON.parse -> JSON.stringify produces identical JSON", () => {
-    const recipe = EXAMPLE_RECIPES.bluenote;
+    const recipe = EXAMPLE_RECIPES.brio;
     const json1 = JSON.stringify(recipe, null, 2);
     const parsed = JSON.parse(json1) as typeof recipe;
     const json2 = JSON.stringify(parsed, null, 2);
     expect(json1).toBe(json2);
   });
 
-  it("import bluenote recipe: re-exported JSON matches original", () => {
-    const recipe = EXAMPLE_RECIPES.bluenote;
+  it("import brio recipe: re-exported JSON matches original", () => {
+    const recipe = EXAMPLE_RECIPES.brio;
     const exported = JSON.stringify(recipe, null, 2);
     const reimported = JSON.parse(exported);
     const reexported = JSON.stringify(reimported, null, 2);
@@ -230,14 +201,6 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
 
   it("validateRecipeJson accepts a valid brio recipe", () => {
     expect(validateRecipeJson(EXAMPLE_RECIPES.brio)).toBeNull();
-  });
-
-  it("validateRecipeJson accepts a valid bluenote recipe", () => {
-    expect(validateRecipeJson(EXAMPLE_RECIPES.bluenote)).toBeNull();
-  });
-
-  it("validateRecipeJson accepts a valid harmony recipe", () => {
-    expect(validateRecipeJson(EXAMPLE_RECIPES.harmony)).toBeNull();
   });
 
   it("Import Recipe button renders in the component", () => {

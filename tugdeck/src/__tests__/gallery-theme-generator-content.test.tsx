@@ -362,7 +362,7 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
 
 /**
  * The novel "CHM mood" recipe used for T10.3 and T-ACC-1.
- * Not one of the three example recipes (brio / bluenote / harmony).
+ * Not the brio example recipe — a custom recipe for acceptance testing.
  * Uses the CHM acceptance-test parameters from the plan exit criteria.
  */
 const CHM_NOVEL_RECIPE = {

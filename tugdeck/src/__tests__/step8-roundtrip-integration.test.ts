@@ -1,7 +1,7 @@
 /**
  * Step 8 integration: round-trip verification across all converted theme tokens.
  *
- * For every --tug-color() call in tug-base.css, bluenote.css, and harmony.css:
+ * For every --tug-color() call in tug-base.css:
  * 1. Expand via the PostCSS plugin to get an oklch() string.
  * 2. Run oklchToTugColor() on the expanded oklch.
  * 3. Re-expand the recovered --tug-color() call via the plugin.
@@ -10,7 +10,7 @@
  * Also verifies:
  * - tug-palette.css is unmodified (no --tug-color() calls).
  * - brio.css is unmodified (no --tug-color() calls).
- * - Zero standalone hex values remain in the three theme file body{} blocks.
+ * - Zero standalone hex values remain in tug-base.css body{} block.
  */
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
@@ -104,16 +104,6 @@ describe("Step 8: zero standalone hex values in theme files", () => {
     const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
     expect(extractStandaloneHex(css)).toHaveLength(0);
   });
-
-  it("bluenote.css has no standalone hex values", () => {
-    const css = readFileSync(join(STYLES_DIR, "bluenote.css"), "utf8");
-    expect(extractStandaloneHex(css)).toHaveLength(0);
-  });
-
-  it("harmony.css has no standalone hex values", () => {
-    const css = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
-    expect(extractStandaloneHex(css)).toHaveLength(0);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -121,7 +111,7 @@ describe("Step 8: zero standalone hex values in theme files", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
-  const themeFiles = ["tug-base.css", "bluenote.css", "harmony.css"];
+  const themeFiles = ["tug-base.css"];
 
   for (const file of themeFiles) {
     it(`${file}: every --tug-color() call expands to a parseable oklch()`, () => {
@@ -151,7 +141,7 @@ describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () => {
-  const themeFiles = ["tug-base.css", "bluenote.css", "harmony.css"];
+  const themeFiles = ["tug-base.css"];
 
   for (const file of themeFiles) {
     it(`${file}: round-trip stays within delta-E < 0.02 for all tokens`, () => {
@@ -210,67 +200,5 @@ describe("Step 8: --tug-color() calls are fully expanded in theme files", () => 
     });
     expect(remaining).toHaveLength(0);
   });
-
-  it("bluenote.css: processing through plugin produces zero --tug-color() in declaration values", () => {
-    const css = readFileSync(join(STYLES_DIR, "bluenote.css"), "utf8");
-    const result = expandTugColorInCSS(css);
-    const root = postcss.parse(result);
-    const remaining: string[] = [];
-    root.walkDecls((decl) => {
-      if (decl.value.includes("--tug-color(")) remaining.push(`${decl.prop}: ${decl.value}`);
-    });
-    expect(remaining).toHaveLength(0);
-  });
-
-  it("harmony.css: processing through plugin produces zero --tug-color() in declaration values", () => {
-    const css = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
-    const result = expandTugColorInCSS(css);
-    const root = postcss.parse(result);
-    const remaining: string[] = [];
-    root.walkDecls((decl) => {
-      if (decl.value.includes("--tug-color(")) remaining.push(`${decl.prop}: ${decl.value}`);
-    });
-    expect(remaining).toHaveLength(0);
-  });
 });
 
-// ---------------------------------------------------------------------------
-// D06 contrast-critical override verification
-// ---------------------------------------------------------------------------
-
-describe("Step 8: D06 contrast-critical overrides in harmony.css are correct", () => {
-  const harmonyCss = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
-
-  const d06Expected: Array<{ token: string; tugColor: string }> = [
-    { token: "--tug-base-tone-caution-fg",  tugColor: "--tug-color(yellow, i: 46, t: 27)" },
-    { token: "--tug-base-field-tone-caution",   tugColor: "--tug-color(yellow, i: 62, t: 58)" },
-  ];
-
-  for (const { token, tugColor } of d06Expected) {
-    it(`${token} equals ${tugColor}`, () => {
-      const pattern = new RegExp(`${token.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&")}:\\s*(--tug-color\\([^)]+\\))`);
-      const m = harmonyCss.match(pattern);
-      expect(m).not.toBeNull();
-      // Normalise whitespace for comparison
-      const actual = m![1].replace(/\s+/g, " ").trim();
-      const expected = tugColor.replace(/\s+/g, " ").trim();
-      expect(actual).toBe(expected);
-    });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// #ffffff → var(--tug-white) in harmony.css
-// ---------------------------------------------------------------------------
-
-describe("Step 8: #ffffff converted to var(--tug-white) in harmony.css", () => {
-  const harmonyCss = readFileSync(join(STYLES_DIR, "harmony.css"), "utf8");
-
-  it("contains at least one var(--tug-white) declaration", () => {
-    expect(harmonyCss).toContain("var(--tug-white)");
-  });
-
-  it("contains no standalone #ffffff declarations", () => {
-    expect(extractStandaloneHex(harmonyCss).filter(h => h.toLowerCase() === "#ffffff")).toHaveLength(0);
-  });
-});

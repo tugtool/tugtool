@@ -1,13 +1,13 @@
 /**
- * canvas-color.ts — Compute the canvas background hex for each theme.
+ * canvas-color.ts — Compute the canvas background hex for Brio.
  *
  * Uses the palette engine (same source of truth as PostCSS and tug-palette.css)
- * to convert each theme's --tug-base-bg-canvas TugColor value to a hex string.
+ * to convert Brio's --tug-base-bg-canvas TugColor value to a hex string.
  * This feeds the Swift bridge so the native window background matches the
  * web content on cold start.
  *
- * When a theme's canvas color changes in its CSS file, update the TugColor params
- * here to match. There are only three themes — this is easy to keep in sync.
+ * When the canvas color changes in tug-base.css, update the TugColor params
+ * here to match.
  */
 
 import {
@@ -24,20 +24,16 @@ import {
 import type { ThemeName } from "./contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
-// Per-theme canvas background TugColor params
+// Canvas background TugColor params
 //
-// These mirror the --tug-base-bg-canvas values in each theme's CSS file:
-//   brio     (tug-base.css): --tug-color(violet-6, i: 2, t: 5)   [hue-264 → violet-6]
-//   bluenote (bluenote.css):   --tug-color(blue+9, i: 5, t: 13)    [hue-239 → blue+9]
-//   harmony  (harmony.css):    --tug-color(yellow, i: 7, t: 39)
+// Mirrors the --tug-base-bg-canvas value in tug-base.css:
+//   brio (tug-base.css): --tug-color(violet-6, i: 2, t: 5)   [hue-264 → violet-6]
 // ---------------------------------------------------------------------------
 
 type TugColorParams = { hue: string; offset: number; intensity: number; tone: number };
 
 const CANVAS_COLORS: Record<ThemeName, TugColorParams> = {
-  brio:     { hue: "violet", offset: -6, intensity: 2,  tone: 5 },
-  bluenote: { hue: "blue",   offset: +9, intensity: 5,  tone: 13 },
-  harmony:  { hue: "yellow", offset:  0, intensity: 7,  tone: 39 },
+  brio: { hue: "violet", offset: -6, intensity: 2, tone: 5 },
 };
 
 /**

@@ -17,7 +17,7 @@
  *   (replaces old 4-variant system: 48 tokens + 3 disabled aliases = 51 tokens)
  *   Net change: +106 tokens (157 - 51)
  *
- * [D01] Export format — tokens map matches bluenote.css / harmony.css structure
+ * [D01] Export format — tokens map matches tug-base.css override structure
  * [D02] Emphasis x role token naming: --tug-base-control-{emphasis}-{role}-{property}-{state}
  * [D04] ThemeRecipe interface from proposal
  * [D08] Scope: --tug-base-* tokens only
@@ -109,12 +109,12 @@ export interface ThemeOutput {
 }
 
 // ---------------------------------------------------------------------------
-// EXAMPLE_RECIPES — three reference recipes from the proposal
+// EXAMPLE_RECIPES — reference recipe
 // ---------------------------------------------------------------------------
 
 /**
- * Reference recipes for Brio (default dark), Bluenote (cool dark),
- * and Harmony (warm light). From roadmap/theme-generator-proposal.md [D04].
+ * Reference recipe for Brio (default dark).
+ * From roadmap/theme-generator-proposal.md [D04].
  */
 export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
@@ -122,18 +122,6 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     mode: "dark",
     atmosphere: { hue: "violet", offset: -6 },
     text: { hue: "cobalt" },
-  },
-  bluenote: {
-    name: "bluenote",
-    mode: "dark",
-    atmosphere: { hue: "blue", offset: 9 },
-    text: { hue: "blue" },
-  },
-  harmony: {
-    name: "harmony",
-    mode: "light",
-    atmosphere: { hue: "yellow" },
-    text: { hue: "blue", offset: 5 },
   },
 };
 
@@ -337,9 +325,9 @@ function resolvedEntryAlpha(
  *     and CVD simulation); structural and invariant tokens are absent [D09]
  *   - `contrastResults` / `cvdWarnings`: empty arrays (populated in Step 3/5)
  *
- * Role formulas are extracted from Brio (tug-base.css), Bluenote (bluenote.css),
- * and Harmony (harmony.css). Each formula maps (atmosphere, text, accent, active,
- * semantic seeds + mood knobs + mode) to a specific token value.
+ * Role formulas are extracted from Brio (tug-base.css). Each formula maps
+ * (atmosphere, text, accent, active, semantic seeds + mood knobs + mode)
+ * to a specific token value.
  *
  * Step 2: adds 4 new tone families (accent, active, agent, data — 20 tokens) and
  * removes the info family (5 tokens). Count after Step 2: ~238.

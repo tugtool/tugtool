@@ -3,15 +3,8 @@
  *
  * Architecture: stylesheet injection (not body classes).
  *
- * Brio is the default theme; its palette is defined as body {} defaults in
- * tug-base.css. Bluenote and Harmony are applied by injecting a
- * <style id="tug-theme-override" data-theme="..."> element as the last child
- * of <head>, ensuring it cascades over tug-base.css. Reverting to Brio removes
- * the element entirely so tug-base.css defaults take over.
- *
- * Cascade ordering invariant: the injected <style> is always appended as the
- * last child of <head>. Never insert it elsewhere — earlier position could
- * lose to tug-base.css in the cascade.
+ * Brio is the sole theme; its palette is defined as body {} defaults in
+ * tug-base.css. The theme provider maintains context for future extensibility.
  *
  * Spec S02 (#s02-injection-contract), Spec S03 (#s03-theme-provider),
  * [D03] Stylesheet injection, [D08] TugThemeProvider
@@ -27,14 +20,12 @@ import React, {
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
 import { canvasColorHex } from "../canvas-color";
-import bluenoteCSS from "../../styles/bluenote.css?inline";
-import harmonyCSS from "../../styles/harmony.css?inline";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThemeName = "brio" | "bluenote" | "harmony";
+export type ThemeName = "brio";
 
 interface ThemeContextValue {
   theme: ThemeName;
@@ -48,8 +39,6 @@ interface ThemeContextValue {
 /** CSS string for each non-Brio theme. Brio uses tug-base.css defaults. */
 const themeCSSMap: Record<ThemeName, string | null> = {
   brio: null,
-  bluenote: bluenoteCSS,
-  harmony: harmonyCSS,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,9 +102,8 @@ export function sendCanvasColor(theme: ThemeName): void {
 /**
  * Apply the initial theme via stylesheet injection before React mounts.
  *
- * For Brio, this is a no-op (tug-base.css defaults are already active).
- * For Bluenote or Harmony, injects the theme's CSS string as the override
- * element so the correct colors are visible before the first React render.
+ * For Brio (the only theme), this is a no-op (tug-base.css defaults are
+ * already active).
  */
 export function applyInitialTheme(themeName: ThemeName): void {
   const cssText = themeCSSMap[themeName];
@@ -180,16 +168,9 @@ export function TugThemeProvider({
     setThemeRef.current = setTheme;
   });
 
-  // Apply initial theme on mount (main.tsx may have already injected it before
-  // React mounted; this is idempotent — injectThemeCSS replaces in-place).
+  // Apply initial theme on mount. Brio is always active via tug-base.css defaults.
+  // Sync canvas color to Swift bridge on mount.
   useEffect(() => {
-    if (initialTheme !== "brio") {
-      const cssText = themeCSSMap[initialTheme];
-      if (cssText) {
-        injectThemeCSS(initialTheme, cssText);
-      }
-    }
-    // Sync canvas color to Swift bridge after initial injection.
     sendCanvasColor(initialTheme);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

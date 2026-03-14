@@ -170,7 +170,7 @@ export function initActionDispatch(
   // set-theme: Switch the active theme via TugThemeProvider
   registerAction("set-theme", (payload) => {
     const theme = payload.theme;
-    if (typeof theme !== "string" || !["brio", "bluenote", "harmony"].includes(theme)) {
+    if (typeof theme !== "string" || !["brio"].includes(theme)) {
       console.warn("set-theme: invalid theme", payload);
       return;
     }

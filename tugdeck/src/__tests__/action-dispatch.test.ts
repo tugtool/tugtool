@@ -292,13 +292,13 @@ describe("initActionDispatch: set-theme", () => {
     const received: string[] = [];
     registerThemeSetter((theme) => received.push(theme));
 
-    dispatchAction({ action: "set-theme", theme: "bluenote" });
+    dispatchAction({ action: "set-theme", theme: "brio" });
 
     expect(received.length).toBe(1);
-    expect(received[0]).toBe("bluenote");
+    expect(received[0]).toBe("brio");
   });
 
-  it("calls the setter for each valid theme name", () => {
+  it("calls the setter for the valid theme name brio", () => {
     const conn = createMockConnection();
     const deck = createMockDeckManager();
     initActionDispatch(conn as any, deck as any);
@@ -307,10 +307,8 @@ describe("initActionDispatch: set-theme", () => {
     registerThemeSetter((theme) => received.push(theme));
 
     dispatchAction({ action: "set-theme", theme: "brio" });
-    dispatchAction({ action: "set-theme", theme: "bluenote" });
-    dispatchAction({ action: "set-theme", theme: "harmony" });
 
-    expect(received).toEqual(["brio", "bluenote", "harmony"]);
+    expect(received).toEqual(["brio"]);
   });
 
   it("warns and does not throw when theme is invalid", () => {
@@ -339,7 +337,7 @@ describe("initActionDispatch: set-theme", () => {
     initActionDispatch(conn as any, deck as any);
 
     // No registerThemeSetter call — themeSetterRef is null after _resetForTest
-    expect(() => dispatchAction({ action: "set-theme", theme: "harmony" })).not.toThrow();
+    expect(() => dispatchAction({ action: "set-theme", theme: "brio" })).not.toThrow();
   });
 
   it("uses the latest setter after re-registration", () => {
@@ -352,10 +350,10 @@ describe("initActionDispatch: set-theme", () => {
     registerThemeSetter((theme) => first.push(theme));
     registerThemeSetter((theme) => second.push(theme));
 
-    dispatchAction({ action: "set-theme", theme: "harmony" });
+    dispatchAction({ action: "set-theme", theme: "brio" });
 
     expect(first.length).toBe(0);
-    expect(second).toEqual(["harmony"]);
+    expect(second).toEqual(["brio"]);
   });
 });
 
