@@ -35,7 +35,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const EMPHASIS_ORDER = ["filled", "outlined", "ghost"];
-const ROLE_ORDER = ["accent", "action", "danger", "agent", "data", "success", "caution"];
+const ROLE_ORDER = ["accent", "action", "option", "danger", "agent", "data", "success", "caution"];
 const PROPERTY_ORDER = ["bg", "fg", "border", "icon"];
 const STATE_ORDER = ["rest", "hover", "active"];
 
@@ -49,7 +49,7 @@ const output = deriveTheme(EXAMPLE_RECIPES.brio);
 // We extract all emphasis×role tokens (filled, outlined, ghost) but NOT
 // disabled, selected, highlighted, or surface-control (those are separate).
 const EMPHASIS_ROLE_PATTERN =
-  /^--tug-base-control-(filled|outlined|ghost)-(accent|action|agent|data|danger|success|caution)-/;
+  /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-/;
 
 const controlEntries = Object.entries(output.tokens)
   .filter(([name]) => EMPHASIS_ROLE_PATTERN.test(name))
@@ -83,7 +83,7 @@ function parseControlToken(name: string): {
   state: string;
 } | null {
   const m = name.match(
-    /^--tug-base-control-(filled|outlined|ghost)-(accent|action|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/,
+    /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/,
   );
   if (!m) return null;
   return { emphasis: m[1], role: m[2], property: m[3], state: m[4] };

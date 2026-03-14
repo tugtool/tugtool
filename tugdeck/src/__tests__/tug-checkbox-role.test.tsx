@@ -1,14 +1,15 @@
 /**
- * TugCheckbox role prop tests — Step 3.
+ * TugCheckbox role prop tests.
  *
  * Tests cover:
  * - role="danger" injects --tug-toggle-on-color and sets data-role
  * - role="action" maps to tone-active via ROLE_TONE_MAP
- * - no role prop: no inline style injected, no data-role attribute
- * - role="accent" (default): no inline style injected, no data-role attribute
+ * - no role prop: injects option-role fg-muted style and sets data-role="option" (new default)
+ * - role="option": injects --tug-toggle-on-color: var(--tug-base-fg-muted) and sets data-role="option"
+ * - role="accent" (explicit): no inline style injected, no data-role attribute
  *
  * [D03] Selection control role via inline CSS custom property injection
- * [D04] Role prop type is the 7-role union from TugBadgeRole
+ * [D06] TugCheckbox and TugSwitch default to role='option'
  * [Spec S01] Inline CSS Custom Property Injection
  */
 import "./setup-rtl";
@@ -54,20 +55,43 @@ describe("TugCheckbox role prop", () => {
     );
   });
 
-  it("no role prop: does NOT inject inline style", () => {
+  it("no role prop: injects option-role style (--tug-toggle-on-color: var(--tug-base-fg-muted))", () => {
+    // With option as the default role, omitting the role prop now DOES inject
+    // inline style using fg-muted (neutral/achromatic). [D06]
     const { getByRole } = render(<TugCheckbox aria-label="test" />);
     const checkbox = getByRole("checkbox");
-    expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe("");
-    expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe("");
+    expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
+      "var(--tug-base-fg-muted)",
+    );
+    expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
+      "var(--tug-base-fg-subtle)",
+    );
   });
 
-  it("no role prop: does NOT set data-role attribute", () => {
+  it('no role prop: sets data-role="option" (option is the new default)', () => {
+    // With option as the default role, omitting the role prop now sets
+    // data-role="option" on the checkbox element. [D06]
     const { getByRole } = render(<TugCheckbox aria-label="test" />);
     const checkbox = getByRole("checkbox");
-    expect(checkbox.getAttribute("data-role")).toBeNull();
+    expect(checkbox.getAttribute("data-role")).toBe("option");
   });
 
-  it('role="accent": does NOT inject inline style (accent is the default)', () => {
+  it('role="option": injects --tug-toggle-on-color: var(--tug-base-fg-muted)', () => {
+    // The option role uses fg-muted directly rather than a --tug-base-tone-*
+    // token. This is intentional: option is neutral/achromatic and does not
+    // have a dedicated signal hue in the tone system. [D06]
+    const { getByRole } = render(<TugCheckbox role="option" aria-label="test" />);
+    const checkbox = getByRole("checkbox");
+    expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe(
+      "var(--tug-base-fg-muted)",
+    );
+    expect(checkbox.style.getPropertyValue("--tug-toggle-on-hover-color")).toBe(
+      "var(--tug-base-fg-subtle)",
+    );
+    expect(checkbox.getAttribute("data-role")).toBe("option");
+  });
+
+  it('role="accent": does NOT inject inline style (accent falls back to CSS default token)', () => {
     const { getByRole } = render(<TugCheckbox role="accent" aria-label="test" />);
     const checkbox = getByRole("checkbox");
     expect(checkbox.style.getPropertyValue("--tug-toggle-on-color")).toBe("");

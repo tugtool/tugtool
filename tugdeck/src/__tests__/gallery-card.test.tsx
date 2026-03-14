@@ -208,7 +208,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
     expect(titles).toContain("Chain Actions");
     expect(titles).toContain("Mutation Model");
     expect(titles).toContain("TugTabBar");
-    expect(titles).toContain("TugDropdown");
+    expect(titles).toContain("TugPopupButton");
     expect(titles).toContain("Default Button");
     expect(titles).toContain("Mutation Transactions");
     expect(titles).toContain("Observable Props");
@@ -967,7 +967,7 @@ describe("GalleryObservablePropsContent – inspector controls dispatch setPrope
   });
 
   it("changing the font family dispatches setProperty and updates the target element", () => {
-    // Font family control is now a TugDropdown (no testid on the trigger).
+    // Font family control is now a TugPopupButton (no testid on the trigger).
     // Exercise the full round-trip via dispatchTo directly.
     const { container, manager } = renderInTugcard();
 

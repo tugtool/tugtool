@@ -40,7 +40,7 @@ import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
-import { TugDropdown } from "@/components/tugways/tug-dropdown";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -362,10 +362,8 @@ export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
           <label className="cg-control-label">
             {DEMO_SCHEMA[2].label}
           </label>
-          <TugDropdown
+          <TugPopupButton
             label={fontFamily}
-            emphasis="ghost"
-            role="action"
             size="sm"
             items={FONT_FAMILY_OPTIONS.map((ff) => ({ id: ff, label: ff }))}
             onSelect={handleFontFamilySelect}

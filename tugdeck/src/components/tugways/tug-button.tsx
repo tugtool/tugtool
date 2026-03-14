@@ -46,7 +46,7 @@ const NOOP_SNAPSHOT = (): number => 0;
 export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 
 /** TugButton role values — controls color domain (Spec S01) [D02] */
-export type TugButtonRole = "accent" | "action" | "data" | "danger";
+export type TugButtonRole = "accent" | "action" | "data" | "danger" | "option";
 
 /** TugButton size names (Spec S01) */
 export type TugButtonSize = "sm" | "md" | "lg";

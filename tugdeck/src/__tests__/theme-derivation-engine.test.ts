@@ -239,33 +239,33 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 295 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 343 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(319);
+    expect(Object.keys(output.tokens).length).toBe(343);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 295 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 343 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(319);
-    expect(Object.keys(harmony.tokens).length).toBe(319);
+    expect(Object.keys(brio.tokens).length).toBe(343);
+    expect(Object.keys(harmony.tokens).length).toBe(343);
   });
 
   // -------------------------------------------------------------------------
-  // T2.1c: All 96 emphasis x role control tokens present (Table T01)
+  // T2.1c: All emphasis x role control tokens present (Table T01 + option role)
   // -------------------------------------------------------------------------
-  it("T2.1c: all 96 emphasis x role control tokens present in deriveTheme output", () => {
+  it("T2.1c: all emphasis x role control tokens present in deriveTheme output", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     const emphases = ["filled", "outlined", "ghost"] as const;
-    const roles = ["accent", "action", "agent", "data", "danger"] as const;
+    const roles = ["accent", "action", "option", "agent", "data", "danger"] as const;
     const properties = ["bg", "fg", "border", "icon"] as const;
     const states = ["rest", "hover", "active"] as const;
 
-    // Table T01: 8 specific combinations
+    // Table T01: 13 specific combinations (11 original + 2 new option-role combos)
     const T01_COMBOS: Array<[(typeof emphases)[number], (typeof roles)[number]]> = [
       ["filled", "accent"],
       ["filled", "action"],
@@ -276,8 +276,10 @@ describe("derivation-engine", () => {
       ["filled", "caution"],
       ["outlined", "action"],
       ["outlined", "agent"],
+      ["outlined", "option"],
       ["ghost", "action"],
       ["ghost", "danger"],
+      ["ghost", "option"],
     ];
 
     const missingTokens: string[] = [];
@@ -293,9 +295,9 @@ describe("derivation-engine", () => {
     }
 
     expect(missingTokens).toEqual([]);
-    // 11 combos × 4 props × 3 states = 132 tokens
+    // 13 combos × 4 props × 3 states = 156 tokens
     const controlTokenCount = T01_COMBOS.length * properties.length * states.length;
-    expect(controlTokenCount).toBe(132);
+    expect(controlTokenCount).toBe(156);
   });
 
   // -------------------------------------------------------------------------
@@ -314,7 +316,7 @@ describe("derivation-engine", () => {
   it("T2.1e: control token names match emphasis x role pattern", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
     const controlPattern =
-      /^--tug-base-control-(filled|outlined|ghost)-(accent|action|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/;
+      /^--tug-base-control-(filled|outlined|ghost)-(accent|action|option|agent|data|danger|success|caution)-(bg|fg|border|icon)-(rest|hover|active)$/;
 
     const controlTokens = Object.keys(output.tokens).filter(
       (k) => k.startsWith("--tug-base-control-") && k.match(/(filled|outlined|ghost)/),

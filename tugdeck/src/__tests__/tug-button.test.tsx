@@ -174,6 +174,16 @@ describe("TugButton – emphasis x role", () => {
     const btn = renderButton({ emphasis: "ghost", role: "danger", children: "Subtle Delete" });
     expect(btn.className).toContain("tug-button-ghost-danger");
   });
+
+  it("emphasis=outlined role=option: applies tug-button-outlined-option class", () => {
+    const btn = renderButton({ emphasis: "outlined", role: "option", children: "Popup" });
+    expect(btn.className).toContain("tug-button-outlined-option");
+  });
+
+  it("emphasis=ghost role=option: applies tug-button-ghost-option class", () => {
+    const btn = renderButton({ emphasis: "ghost", role: "option", children: "Tab Trigger" });
+    expect(btn.className).toContain("tug-button-ghost-option");
+  });
 });
 
 // ============================================================================

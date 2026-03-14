@@ -665,6 +665,77 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
   },
 
   // =========================================================================
+  // Control — Outlined Option (fg/icon over surface-default; bg-rest transparent)
+  // The option role uses a transparent bg-rest so fg/icon are checked against
+  // the parent surface. bg-hover/active are semi-transparent overlays (excluded).
+  // =========================================================================
+  {
+    fg: "--tug-base-control-outlined-option-fg-rest",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-option-fg-hover",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-option-fg-active",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-outlined-option-icon-rest",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-outlined-option-icon-hover",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-outlined-option-icon-active",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Control — Ghost Option (fg/icon over surface-default; bg-rest transparent)
+  // Same pattern as ghost-action: transparent bg-rest, semi-transparent hover/active.
+  // =========================================================================
+  {
+    fg: "--tug-base-control-ghost-option-fg-rest",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-ghost-option-fg-hover",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-ghost-option-fg-active",
+    bg: "--tug-base-surface-default",
+    role: "large-text",
+  },
+  {
+    fg: "--tug-base-control-ghost-option-icon-rest",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-ghost-option-icon-hover",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-control-ghost-option-icon-active",
+    bg: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+
+  // =========================================================================
   // Control — Selected / Highlighted states
   // =========================================================================
   {

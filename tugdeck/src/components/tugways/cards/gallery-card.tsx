@@ -44,8 +44,8 @@ import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
-import { TugDropdown } from "@/components/tugways/tug-dropdown";
-import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useCSSVar, useDOMClass, useDOMStyle } from "@/components/tugways/hooks";
 import type { TabItem } from "@/layout-tree";
@@ -81,7 +81,7 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-chain-actions",     title: "Chain Actions",        closable: true },
   { id: "template", componentId: "gallery-mutation",          title: "Mutation Model",       closable: true },
   { id: "template", componentId: "gallery-tabbar",            title: "TugTabBar",            closable: true },
-  { id: "template", componentId: "gallery-dropdown",          title: "TugDropdown",          closable: true },
+  { id: "template", componentId: "gallery-dropdown",          title: "TugPopupButton",       closable: true },
   { id: "template", componentId: "gallery-default-button",    title: "Default Button",       closable: true },
   { id: "template", componentId: "gallery-mutation-tx",       title: "Mutation Transactions", closable: true },
   { id: "template", componentId: "gallery-observable-props",  title: "Observable Props",     closable: true },
@@ -188,10 +188,8 @@ export function GalleryButtonsContent() {
         <div className="cg-controls">
           <div className="cg-control-group">
             <span className="cg-control-label">Emphasis</span>
-            <TugDropdown
+            <TugPopupButton
               label={previewEmphasis}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
                 id: v,
@@ -202,10 +200,8 @@ export function GalleryButtonsContent() {
           </div>
           <div className="cg-control-group">
             <span className="cg-control-label">Role</span>
-            <TugDropdown
+            <TugPopupButton
               label={previewRole}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={(["accent", "action", "agent", "data", "danger"] as TugButtonRole[]).map((v) => ({
                 id: v,
@@ -217,10 +213,8 @@ export function GalleryButtonsContent() {
 
           <div className="cg-control-group">
             <span className="cg-control-label">Size</span>
-            <TugDropdown
+            <TugPopupButton
               label={previewSize}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={ALL_SIZES.map((s) => ({
                 id: s,
@@ -667,32 +661,30 @@ export function GalleryTabBarContent() {
 }
 
 // ---------------------------------------------------------------------------
-// TugDropdownDemo (re-exported for backward compatibility)
+// TugPopupButtonDemo
 // ---------------------------------------------------------------------------
 
-/** Sample items for the TugDropdown gallery demo. Module-scope to avoid recreation. */
-const DEMO_DROPDOWN_ITEMS: TugDropdownItem[] = [
+/** Sample items for the TugPopupButton gallery demo. Module-scope to avoid recreation. */
+const DEMO_POPUP_BUTTON_ITEMS: TugPopupMenuItem[] = [
   { id: "option-alpha", label: "Alpha",            icon: <Star size={12} /> },
   { id: "option-beta",  label: "Beta",             icon: <Star size={12} /> },
   { id: "option-gamma", label: "Gamma (disabled)", disabled: true },
 ];
 
 /**
- * TugDropdownDemo -- standalone TugDropdown demo.
+ * TugPopupButtonDemo -- standalone TugPopupButton demo.
  *
- * Renders a TugDropdown with sample items. Selecting an item updates status text.
+ * Renders a TugPopupButton with sample items. Selecting an item updates status text.
  */
-export function TugDropdownDemo() {
+export function TugPopupButtonDemo() {
   const [lastSelected, setLastSelected] = useState<string | null>(null);
 
   return (
-    <div className="cg-dropdown-demo">
-      <TugDropdown
-        label="Open Dropdown"
-        emphasis="ghost"
-        role="action"
+    <div className="cg-popup-button-demo">
+      <TugPopupButton
+        label="Open Menu"
         size="sm"
-        items={DEMO_DROPDOWN_ITEMS}
+        items={DEMO_POPUP_BUTTON_ITEMS}
         onSelect={(id) => setLastSelected(id)}
       />
       {lastSelected !== null && (
@@ -709,7 +701,7 @@ export function TugDropdownDemo() {
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryDropdownContent -- TugDropdown demo wrapped for gallery card tab.
+ * GalleryDropdownContent -- TugPopupButton demo wrapped for gallery card tab.
  *
  * **Authoritative reference:** [D01] gallery-dropdown componentId.
  */
@@ -717,8 +709,8 @@ export function GalleryDropdownContent() {
   return (
     <div className="cg-content" data-testid="gallery-dropdown-content">
       <div className="cg-section">
-        <div className="cg-section-title">TugDropdown</div>
-        <TugDropdownDemo />
+        <div className="cg-section-title">TugPopupButton</div>
+        <TugPopupButtonDemo />
       </div>
     </div>
   );
@@ -843,10 +835,8 @@ export function GalleryTitleBarContent() {
             <label className="cg-control-label">
               Icon
             </label>
-            <TugDropdown
+            <TugPopupButton
               label={iconName || "None"}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={[
                 { id: "", label: "None" },
@@ -982,10 +972,8 @@ export function GalleryBadgeContent() {
         <div className="cg-controls">
           <div className="cg-control-group">
             <span className="cg-control-label">Emphasis</span>
-            <TugDropdown
+            <TugPopupButton
               label={previewEmphasis}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={(["filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => ({
                 id: v,
@@ -996,10 +984,8 @@ export function GalleryBadgeContent() {
           </div>
           <div className="cg-control-group">
             <span className="cg-control-label">Role</span>
-            <TugDropdown
+            <TugPopupButton
               label={previewRole}
-              emphasis="ghost"
-              role="action"
               size="sm"
               items={(["accent", "active", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => ({
                 id: v,
@@ -1139,7 +1125,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-dropdown",
     contentFactory: (_cardId) => <GalleryDropdownContent />,
-    defaultMeta: { title: "TugDropdown", icon: "ChevronDown", closable: true },
+    defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
   });

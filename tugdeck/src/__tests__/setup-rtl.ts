@@ -112,6 +112,35 @@ if (typeof (global as any).requestAnimationFrame !== "function") {
   };
 }
 
+// happy-dom's internal DOM classes (HTMLElement, SelectorParser, etc.) use
+// `this[PropertySymbol.window].SyntaxError` to construct parse errors during
+// querySelectorAll / getComputedStyle / contentEditable processing.
+//
+// The VMGlobalPropertyScript that initialises window globals runs in a Node vm
+// context where globalThis.SyntaxError is undefined under bun, so window.SyntaxError
+// ends up undefined. The result is a crash:
+//   "TypeError: undefined is not a constructor (evaluating 'new this.window.SyntaxError')"
+//
+// Fix: patch Window.prototype so every Window instance — including those created
+// internally by happy-dom for portals, iframes, and cloned documents — inherits
+// the real SyntaxError. We use Object.defineProperty to avoid accidentally
+// overwriting a writable own property on the prototype with a simple assignment.
+const WindowProto = Object.getPrototypeOf(happyWindow) as Record<string, unknown>;
+if (!WindowProto["SyntaxError"]) {
+  Object.defineProperty(WindowProto, "SyntaxError", {
+    value: globalThis.SyntaxError,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+}
+// Also patch the instance's own undefined property so the value is visible
+// immediately without traversing the prototype chain (the VM script sets it
+// as an own enumerable property with value undefined).
+if (!(happyWindow as any).SyntaxError) {
+  (happyWindow as any).SyntaxError = globalThis.SyntaxError;
+}
+
 // Signal to React 19 that we are in an act() environment
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;
 

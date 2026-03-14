@@ -280,6 +280,70 @@
   color: var(--tug-base-control-ghost-danger-icon-active);
 }
 
+/* --- outlined-option: Calm configuration control (neutral muted border) --- */
+
+.tug-button-outlined-option {
+  background-color: var(--tug-base-control-outlined-option-bg-rest);
+  color: var(--tug-base-control-outlined-option-fg-rest);
+  border-color: var(--tug-base-control-outlined-option-border-rest);
+}
+
+.tug-button-outlined-option svg {
+  color: var(--tug-base-control-outlined-option-icon-rest);
+}
+
+.tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-outlined-option-bg-hover);
+  color: var(--tug-base-control-outlined-option-fg-hover);
+  border-color: var(--tug-base-control-outlined-option-border-hover);
+}
+
+.tug-button-outlined-option:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-outlined-option-icon-hover);
+}
+
+.tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-outlined-option-bg-active);
+  color: var(--tug-base-control-outlined-option-fg-active);
+  border-color: var(--tug-base-control-outlined-option-border-active);
+}
+
+.tug-button-outlined-option:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-outlined-option-icon-active);
+}
+
+/* --- ghost-option: Ultra-calm configuration control (transparent border at rest) --- */
+
+.tug-button-ghost-option {
+  background-color: var(--tug-base-control-ghost-option-bg-rest);
+  color: var(--tug-base-control-ghost-option-fg-rest);
+  border-color: var(--tug-base-control-ghost-option-border-rest);
+}
+
+.tug-button-ghost-option svg {
+  color: var(--tug-base-control-ghost-option-icon-rest);
+}
+
+.tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-option-bg-hover);
+  color: var(--tug-base-control-ghost-option-fg-hover);
+  border-color: var(--tug-base-control-ghost-option-border-hover);
+}
+
+.tug-button-ghost-option:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-option-icon-hover);
+}
+
+.tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug-base-control-ghost-option-bg-active);
+  color: var(--tug-base-control-ghost-option-fg-active);
+  border-color: var(--tug-base-control-ghost-option-border-active);
+}
+
+.tug-button-ghost-option:active:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug-base-control-ghost-option-icon-active);
+}
+
 /* ============================================================================
    Chain-Action Disabled State ([aria-disabled='true'])
    ========================================================================= */
@@ -300,8 +364,10 @@
 [aria-disabled="true"].tug-button-filled-action,
 [aria-disabled="true"].tug-button-filled-danger,
 [aria-disabled="true"].tug-button-outlined-action,
+[aria-disabled="true"].tug-button-outlined-option,
 [aria-disabled="true"].tug-button-ghost-action,
-[aria-disabled="true"].tug-button-ghost-danger {
+[aria-disabled="true"].tug-button-ghost-danger,
+[aria-disabled="true"].tug-button-ghost-option {
   opacity: var(--tug-base-control-disabled-opacity);
   cursor: not-allowed;
   pointer-events: none;

@@ -22,8 +22,9 @@ import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { icons } from "lucide-react";
 import type { TabItem } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
-import { TugDropdown } from "./tug-dropdown";
-import type { TugDropdownItem } from "./tug-dropdown";
+import { TugButton } from "./tug-button";
+import { TugPopupMenu } from "./tug-popup-menu";
+import type { TugPopupMenuItem } from "./tug-popup-menu";
 import { tabDragCoordinator, exceedsDragThreshold } from "@/tab-drag-coordinator";
 import {
   computeOverflow,
@@ -334,7 +335,7 @@ function useTabOverflow(
  *
  * Renders each tab as a button with an optional icon and title.
  * The active tab has `data-active="true"` set for CSS targeting (Table T01).
- * A [+] button at the end opens a TugDropdown type picker listing all
+ * A [+] button at the end opens a TugPopupMenu type picker listing all
  * registered card types; selecting one calls `onTabAdd(componentId)`.
  *
  * Overflow handling is provided by the `useTabOverflow` hook, which attaches
@@ -377,7 +378,7 @@ export function TugTabBar({
   // filtered by family. A registration with no `family` field is treated as
   // "standard" (default family). Only registrations whose family is in
   // effectiveFamilies are shown.
-  const typePickerItems: TugDropdownItem[] = Array.from(getAllRegistrations().values())
+  const typePickerItems: TugPopupMenuItem[] = Array.from(getAllRegistrations().values())
     .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"))
     .map((reg) => ({
       id: reg.componentId,
@@ -385,8 +386,8 @@ export function TugTabBar({
       icon: renderIcon(reg.defaultMeta.icon),
     }));
 
-  // Build overflow dropdown items from overflowTabs (icon + label each). [D06]
-  const overflowDropdownItems: TugDropdownItem[] = overflowTabs.map((tab) => {
+  // Build overflow dropdown items from overflowTabs (icon + label each). [D07]
+  const overflowDropdownItems: TugPopupMenuItem[] = overflowTabs.map((tab) => {
     const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
     return {
       id: tab.id,
@@ -518,29 +519,43 @@ export function TugTabBar({
         );
       })}
 
-      {/* Overflow dropdown button -- rendered only when tabs overflow [D06, D08].
-          Placed between the last visible tab and the [+] button. */}
+      {/* Overflow popup menu -- rendered only when tabs overflow [D07, D08].
+          Placed between the last visible tab and the [+] button.
+          Trigger is a ghost-option TugButton with no chevron. [D07] */}
       {overflowTabs.length > 0 && (
-        <TugDropdown
-          label={<span className="tug-tab-overflow-badge">+{overflowTabs.length}</span>}
-          emphasis="ghost"
-          size="sm"
-          className="tug-tab-overflow-btn"
-          aria-label={`${overflowTabs.length} more tabs`}
-          data-testid="tug-tab-overflow-btn"
+        <TugPopupMenu
+          trigger={
+            <TugButton
+              emphasis="ghost"
+              role="option"
+              size="sm"
+              className="tug-tab-overflow-btn"
+              aria-label={`${overflowTabs.length} more tabs`}
+              data-testid="tug-tab-overflow-btn"
+            >
+              <span className="tug-tab-overflow-badge">+{overflowTabs.length}</span>
+            </TugButton>
+          }
           items={overflowDropdownItems}
           onSelect={handleOverflowSelect}
         />
       )}
 
-      {/* [+] type picker button -- always rightmost [D08] */}
-      <TugDropdown
-        label="+"
-        emphasis="ghost"
-        size="sm"
-        className="tug-tab-add"
-        aria-label="Add tab"
-        data-testid="tug-tab-add"
+      {/* [+] type picker button -- always rightmost [D07, D08].
+          Trigger is a ghost-option TugButton with no chevron. [D07] */}
+      <TugPopupMenu
+        trigger={
+          <TugButton
+            emphasis="ghost"
+            role="option"
+            size="sm"
+            className="tug-tab-add"
+            aria-label="Add tab"
+            data-testid="tug-tab-add"
+          >
+            +
+          </TugButton>
+        }
         items={typePickerItems}
         onSelect={handleTypeSelect}
       />

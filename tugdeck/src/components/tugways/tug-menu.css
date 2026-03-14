@@ -113,16 +113,32 @@ body {
  * matching macOS menu bar behavior.
  */
 
+/*
+ * Each emphasis-role combination gets its own explicit open-state compound selector.
+ * [D03] The broad .tug-button[data-state="open"] fallback is intentionally removed:
+ * it applied outlined-action active colors to any TugButton regardless of its
+ * actual emphasis/role, causing ghost-option tab bar triggers to get incorrect
+ * blue highlighting.
+ */
+
 /* outlined-action (default emphasis x role) */
-.tug-button-outlined-action[data-state="open"],
-.tug-button[data-state="open"] {
+.tug-button-outlined-action[data-state="open"] {
   background-color: var(--tug-base-control-outlined-action-bg-active);
   color: var(--tug-base-control-outlined-action-fg-active);
   border-color: var(--tug-base-control-outlined-action-border-active);
 }
-.tug-button-outlined-action[data-state="open"] svg,
-.tug-button[data-state="open"] svg {
+.tug-button-outlined-action[data-state="open"] svg {
   color: var(--tug-base-control-outlined-action-icon-active);
+}
+
+/* outlined-option: Calm configuration control */
+.tug-button-outlined-option[data-state="open"] {
+  background-color: var(--tug-base-control-outlined-option-bg-active);
+  color: var(--tug-base-control-outlined-option-fg-active);
+  border-color: var(--tug-base-control-outlined-option-border-active);
+}
+.tug-button-outlined-option[data-state="open"] svg {
+  color: var(--tug-base-control-outlined-option-icon-active);
 }
 
 /* filled-accent: Primary CTA (brand orange/accent) */
@@ -143,6 +159,16 @@ body {
 }
 .tug-button-ghost-action[data-state="open"] svg {
   color: var(--tug-base-control-ghost-action-icon-active);
+}
+
+/* ghost-option: Ultra-calm configuration control */
+.tug-button-ghost-option[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-option-bg-active);
+  color: var(--tug-base-control-ghost-option-fg-active);
+  border-color: var(--tug-base-control-ghost-option-border-active);
+}
+.tug-button-ghost-option[data-state="open"] svg {
+  color: var(--tug-base-control-ghost-option-icon-active);
 }
 
 /* filled-danger: Destructive action */

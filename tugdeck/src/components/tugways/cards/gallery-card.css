@@ -188,17 +188,17 @@
 }
 
 /* ============================================================================
-   TugDropdown Demo (Phase 5b)
+   TugPopupButton Demo
    ========================================================================= */
 
-.cg-dropdown-demo {
+.cg-popup-button-demo {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
 }
 
-/* Trigger button for the TugDropdown demo -- styled to match the gallery aesthetic */
+/* Trigger button for the TugPopupButton demo -- styled to match the gallery aesthetic */
 .cg-demo-trigger {
   font-size: 12px;
   font-family: var(--tug-base-font-family-sans);

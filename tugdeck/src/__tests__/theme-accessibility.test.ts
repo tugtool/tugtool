@@ -212,6 +212,11 @@ describe("pairing-map", () => {
       "--tug-base-control-ghost-action-bg-active",
       "--tug-base-control-ghost-danger-bg-hover",
       "--tug-base-control-ghost-danger-bg-active",
+      // option role hover/active are semi-transparent overlays (same as ghost pattern)
+      "--tug-base-control-outlined-option-bg-hover",
+      "--tug-base-control-outlined-option-bg-active",
+      "--tug-base-control-ghost-option-bg-hover",
+      "--tug-base-control-ghost-option-bg-active",
       // selected-bg-hover is a slightly more opaque version of selected-bg
       "--tug-base-control-selected-bg-hover",
       // field-bg-disabled paired via field-fg-disabled
