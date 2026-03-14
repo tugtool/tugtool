@@ -25,7 +25,7 @@
 
 import React, { useState } from "react";
 import { Star } from "lucide-react";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
 
@@ -113,18 +113,18 @@ export function GalleryCascadeInspectorContent() {
           <code>--tug-button-*</code> tokens are wired yet.
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-button">
-          <TugButton subtype="push" emphasis="filled" role="accent" size="md">
+          <TugPushButton emphasis="filled" role="accent" size="md">
             Filled Accent
-          </TugButton>
-          <TugButton subtype="push" size="md">
+          </TugPushButton>
+          <TugPushButton size="md">
             Outlined Active
-          </TugButton>
-          <TugButton subtype="push" emphasis="ghost" size="md">
+          </TugPushButton>
+          <TugPushButton emphasis="ghost" size="md">
             Ghost Active
-          </TugButton>
-          <TugButton subtype="push" emphasis="filled" role="danger" size="md">
+          </TugPushButton>
+          <TugPushButton emphasis="filled" role="danger" size="md">
             Filled Danger
-          </TugButton>
+          </TugPushButton>
         </div>
       </div>
 

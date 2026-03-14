@@ -39,7 +39,7 @@ import { GalleryMarqueeContent } from "./gallery-marquee-content";
 import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { GallerySwitchContent } from "./gallery-switch-content";
 import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
@@ -65,7 +65,7 @@ const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRole }> = 
   { emphasis: "ghost",    role: "danger"  },
 ];
 const ALL_SIZES: TugButtonSize[] = ["sm", "md", "lg"];
-const ALL_SUBTYPES: TugButtonSubtype[] = ["push", "icon", "icon-text", "three-state"];
+const ALL_SUBTYPES: TugButtonSubtype[] = ["text", "icon", "icon-text"];
 
 /**
  * Default tab templates for the gallery host card.
@@ -123,11 +123,11 @@ function SubtypeButton({
   const comboLabel = `${emphasis}-${role}`;
 
   switch (subtype) {
-    case "push":
+    case "text":
       return (
-        <TugButton subtype="push" emphasis={emphasis} role={role} size={size}>
+        <TugPushButton emphasis={emphasis} role={role} size={size}>
           {sizeLabel}
-        </TugButton>
+        </TugPushButton>
       );
 
     case "icon":
@@ -151,13 +151,6 @@ function SubtypeButton({
           size={size}
           icon={<Star size={12} />}
         >
-          {sizeLabel}
-        </TugButton>
-      );
-
-    case "three-state":
-      return (
-        <TugButton subtype="three-state" emphasis={emphasis} role={role} size={size}>
           {sizeLabel}
         </TugButton>
       );
@@ -266,8 +259,7 @@ export function GalleryButtonsContent() {
       <div className="cg-section">
         <div className="cg-section-title">TugButton — Interactive Preview</div>
         <div className="cg-variant-row">
-          <TugButton
-            subtype="push"
+          <TugPushButton
             emphasis={previewEmphasis}
             role={previewRole}
             size={previewSize}
@@ -275,7 +267,7 @@ export function GalleryButtonsContent() {
             loading={previewLoading}
           >
             Push
-          </TugButton>
+          </TugPushButton>
           <TugButton
             subtype="icon"
             emphasis={previewEmphasis}
@@ -296,16 +288,6 @@ export function GalleryButtonsContent() {
             icon={<Star size={14} />}
           >
             Icon + Text
-          </TugButton>
-          <TugButton
-            subtype="three-state"
-            emphasis={previewEmphasis}
-            role={previewRole}
-            size={previewSize}
-            disabled={previewDisabled}
-            loading={previewLoading}
-          >
-            Toggle
           </TugButton>
         </div>
       </div>
@@ -407,13 +389,12 @@ function ActionEventDemo() {
         <code>ActionEvent</code> and displays its fields below.
       </p>
       <div className="cg-variant-row">
-        <TugButton
-          subtype="push"
+        <TugPushButton
           size="md"
           onClick={handleDispatch}
         >
           Dispatch demoAction
-        </TugButton>
+        </TugPushButton>
       </div>
       <div className="cg-demo-status" data-testid="action-event-demo-status">
         {lastEventText !== null ? lastEventText : "No event received"}
@@ -497,27 +478,24 @@ export function MutationModelDemo() {
         aria-label="Mutation model demo box"
       />
       <div className="cg-variant-row">
-        <TugButton
-          subtype="push"
+        <TugPushButton
           size="sm"
           onClick={() => setVarOn((v) => !v)}
         >
           Toggle CSS Var
-        </TugButton>
-        <TugButton
-          subtype="push"
+        </TugPushButton>
+        <TugPushButton
           size="sm"
           onClick={() => setClassOn((v) => !v)}
         >
           Toggle Class
-        </TugButton>
-        <TugButton
-          subtype="push"
+        </TugPushButton>
+        <TugPushButton
           size="sm"
           onClick={() => setStyleOn((v) => !v)}
         >
           Toggle Style
-        </TugButton>
+        </TugPushButton>
       </div>
     </div>
   );
@@ -649,13 +627,12 @@ export function TugTabBarDemo() {
         onOverflowChange={handleOverflowChange}
       />
       <div className="cg-demo-controls">
-        <TugButton
-          subtype="push"
+        <TugPushButton
           size="sm"
           onClick={handleAddFive}
         >
           Add 5 tabs
-        </TugButton>
+        </TugPushButton>
       </div>
       <div className="cg-demo-status" data-testid="demo-overflow-status">
         Overflow stage: <code data-testid="demo-overflow-stage">{overflowStage}</code>
@@ -795,23 +772,21 @@ export function GalleryDefaultButtonContent() {
           Click outside the buttons, then press Enter to activate the default button.
         </p>
         <div className="cg-variant-row">
-          <TugButton
-            subtype="push"
-              size="md"
+          <TugPushButton
+            size="md"
             onClick={() => setLastAction("Cancel clicked")}
           >
             Cancel
-          </TugButton>
+          </TugPushButton>
           <span ref={confirmContainerRef}>
-            <TugButton
-              subtype="push"
+            <TugPushButton
               emphasis="filled"
               role="accent"
               size="md"
               onClick={() => setLastAction("Confirm clicked")}
             >
               Confirm
-            </TugButton>
+            </TugPushButton>
           </span>
         </div>
         {lastAction !== null && (
@@ -948,13 +923,12 @@ export function GalleryTitleBarContent() {
         )}
 
         <div style={{ marginTop: "8px" }}>
-          <TugButton
-            subtype="push"
-              size="sm"
+          <TugPushButton
+            size="sm"
             onClick={handleCollapse}
           >
             {collapsed ? "Expand" : "Collapse"}
-          </TugButton>
+          </TugPushButton>
         </div>
       </div>
 

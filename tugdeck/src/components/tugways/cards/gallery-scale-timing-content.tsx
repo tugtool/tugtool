@@ -16,7 +16,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import { getTugZoom, getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
 import { Star } from "lucide-react";
 
@@ -244,14 +244,14 @@ export function GalleryScaleTimingContent() {
         <div className="cg-section-title">Live Preview</div>
         <div className="cg-st-preview" data-testid="st-preview">
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" emphasis="filled" role="accent" size="md">Filled Accent</TugButton>
-            <TugButton subtype="push" size="md">Outlined Active</TugButton>
-            <TugButton subtype="push" emphasis="ghost" size="md">Ghost Active</TugButton>
-            <TugButton subtype="push" emphasis="filled" role="danger" size="md">Filled Danger</TugButton>
+            <TugPushButton emphasis="filled" role="accent" size="md">Filled Accent</TugPushButton>
+            <TugPushButton size="md">Outlined Active</TugPushButton>
+            <TugPushButton emphasis="ghost" size="md">Ghost Active</TugPushButton>
+            <TugPushButton emphasis="filled" role="danger" size="md">Filled Danger</TugPushButton>
           </div>
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" emphasis="filled" role="accent" size="sm">Small</TugButton>
-            <TugButton subtype="push" size="sm">Small</TugButton>
+            <TugPushButton emphasis="filled" role="accent" size="sm">Small</TugPushButton>
+            <TugPushButton size="sm">Small</TugPushButton>
             <TugButton
               subtype="icon"
               size="md"
@@ -263,7 +263,7 @@ export function GalleryScaleTimingContent() {
             </TugButton>
           </div>
           <div className="cg-st-preview-row">
-            <TugButton subtype="push" size="md" loading>Loading</TugButton>
+            <TugPushButton size="md" loading>Loading</TugPushButton>
           </div>
 
           {/* ---- Petals Spinner ---- */}
@@ -295,9 +295,9 @@ export function GalleryScaleTimingContent() {
 
       {/* ---- Reset ---- */}
       <div className="cg-section">
-        <TugButton subtype="push" size="sm" onClick={handleReset}>
+        <TugPushButton size="sm" onClick={handleReset}>
           Reset All to Defaults
-        </TugButton>
+        </TugPushButton>
       </div>
 
     </div>
