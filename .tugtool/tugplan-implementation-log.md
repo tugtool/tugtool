@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-14T19:10:25Z
+---
+
+## step-9: Integration checkpoint verification: 24 option tokens generated, zero tug-dropdown imports, broad fallback removed, style inspector preserved, build clean, all tests pass across 9 steps.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-8
 date: 2025-03-14T19:06:04Z
 ---
