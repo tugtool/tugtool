@@ -125,7 +125,7 @@ export function GalleryMarqueeContent() {
           <TugMarquee icon={<Music />} iconColor="var(--tug-base-accent-default)">
             {SONG_TEXT}
           </TugMarquee>
-          <TugMarquee icon={<Radio />} iconColor="var(--tug-base-field-success)">
+          <TugMarquee icon={<Radio />} iconColor="var(--tug-base-field-tone-success)">
             {MEDIUM_TEXT}
           </TugMarquee>
           <TugMarquee icon={<Folder />}>

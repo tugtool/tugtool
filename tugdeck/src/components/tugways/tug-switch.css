@@ -52,11 +52,17 @@
 /* ---- Checked (on) ---- */
 
 .tug-switch[data-state="checked"] {
-  background-color: var(--tug-base-toggle-track-on);
+  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
 }
 
-.tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
+/* Default hover (no role) — uses pre-computed hover token [Spec S02] */
+.tug-switch[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
   background-color: var(--tug-base-toggle-track-on-hover);
+}
+
+/* Role hover — uses injected color-mix value [Spec S02] */
+.tug-switch[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-toggle-on-hover-color);
 }
 
 /* ---- Disabled ---- */

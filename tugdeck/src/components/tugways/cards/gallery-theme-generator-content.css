@@ -108,6 +108,108 @@
 }
 
 /* ============================================================================
+   Emphasis x Role Preview — button, badge, and selection control matrix [Step 7]
+   ========================================================================= */
+
+/* Outer container for all three subsections */
+.gtg-erp {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Each subsection (buttons / badges / selection controls) */
+.gtg-erp-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Subsection title — lighter than cg-section-title */
+.gtg-erp-subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+}
+
+/*
+ * Grid for emphasis rows × role columns.
+ * --gtg-erp-cols is set inline from JS (5 for buttons, 7 for badges).
+ * First column is the row-label column; remaining columns are role cells.
+ */
+.gtg-erp-grid {
+  display: grid;
+  grid-template-columns: 64px repeat(var(--gtg-erp-cols, 5), minmax(72px, 1fr));
+  gap: 6px;
+  overflow-x: auto;
+}
+
+/* Empty top-left corner cell */
+.gtg-erp-corner {
+  /* intentionally empty */
+}
+
+/* Column header (role name) */
+.gtg-erp-col-label {
+  font-size: 9px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  text-align: center;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-self: end;
+  padding-bottom: 2px;
+}
+
+/* Row header (emphasis name) */
+.gtg-erp-row-label {
+  font-size: 9px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* Individual cell — centers the component */
+.gtg-erp-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Selection controls row: one cell per role */
+.gtg-erp-selection-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  overflow-x: auto;
+}
+
+/* Each selection cell: role label + checkbox + switch stacked */
+.gtg-erp-selection-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================================================
+   Role hue selectors — 7 HueSelector strips, one per role [D05, Step 6]
+   ========================================================================= */
+
+.gtg-role-hues {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ============================================================================
    Mood sliders
    ========================================================================= */
 

@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-14T01:29:09Z
+---
+
+## step-8: Final integration checkpoint: all 1559 tests pass, zero old/removed token references remain, all success criteria met across all 8 plan steps.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-7
+date: 2025-03-14T01:26:01Z
+---
+
+## step-7: Added Emphasis x Role Preview section with button grid (3x5=15), badge grid (3x7=21), and selection controls row (7 roles with checkbox+switch). CSS grid layout with row/column labels. 6 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-6
+date: 2025-03-14T01:19:19Z
+---
+
+## step-6: Added 7 HueSelector strips for role hues (accent, active, agent, data, success, caution, danger) to the theme generator. Extended runDerive, currentRecipe, handleRecipeImported, and loadPreset with role hue fields. Added CSS layout and 4 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-5
+date: 2025-03-14T01:09:52Z
+---
+
+## step-5: Added Role Variants sections to gallery-checkbox-content.tsx and gallery-switch-content.tsx showing all 7 roles in checked state for visual inspection. Integration checkpoint verified: all 1549 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-4
+date: 2025-03-14T01:05:07Z
+---
+
+## step-4: Added optional role prop to TugSwitch mirroring TugCheckbox pattern. ROLE_TONE_MAP, inline CSS custom property injection for --tug-toggle-on-color and --tug-toggle-on-hover-color, data-role attribute. CSS updated with var() fallback and split hover rules (background-color only, no border). 8 new tests added.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-3
+date: 2025-03-14T01:00:11Z
+---
+
+## step-3: Added optional role prop to TugCheckbox using inline CSS custom property injection. ROLE_TONE_MAP resolves role names to tone suffixes, injects --tug-toggle-on-color and --tug-toggle-on-hover-color, sets data-role attribute. CSS updated with var() fallback pattern and split hover rules. 8 new tests added.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-2
+date: 2025-03-14T00:54:28Z
+---
+
+## step-2: Removed field-helper references from 3 test files (contrast-dashboard, gallery-theme-generator-content, theme-derivation-engine). Other 4 unused tokens (field-meta, field-counter, field-limit, field-dirty) were already absent.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
+step: step-1
+date: 2025-03-14T00:51:17Z
+---
+
+## step-1: Renamed 6 field validation tokens: field-border-focus→active, field-border-invalid→danger, field-border-valid→success, field-error→tone-danger, field-warning→tone-caution, field-success→tone-success across derivation engine, CSS, gallery components, and tests
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-9
 date: 2025-03-13T21:29:21Z
 ---

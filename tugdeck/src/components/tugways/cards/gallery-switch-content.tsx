@@ -11,13 +11,23 @@
 
 import React, { useState } from "react";
 import { TugSwitch } from "@/components/tugways/tug-switch";
-import type { TugSwitchSize } from "@/components/tugways/tug-switch";
+import type { TugSwitchRole, TugSwitchSize } from "@/components/tugways/tug-switch";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const ALL_SIZES: TugSwitchSize[] = ["sm", "md", "lg"];
+
+const ALL_ROLES: TugSwitchRole[] = [
+  "accent",
+  "action",
+  "agent",
+  "data",
+  "success",
+  "caution",
+  "danger",
+];
 
 // ---------------------------------------------------------------------------
 // GallerySwitchContent
@@ -92,6 +102,23 @@ export function GallerySwitchContent() {
           <TugSwitch label="Auto-save" defaultChecked />
           <TugSwitch label="Sound effects" />
           <TugSwitch label="Notifications" defaultChecked />
+        </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Role Variants ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Role Variants</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {ALL_ROLES.map((role) => (
+            <TugSwitch
+              key={role}
+              role={role}
+              checked
+              label={role}
+            />
+          ))}
         </div>
       </div>
 

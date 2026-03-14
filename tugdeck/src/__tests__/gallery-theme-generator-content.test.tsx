@@ -51,7 +51,6 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-fg-link",
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
-  "--tug-base-field-helper",
   "--tug-base-selection-fg",
   // Text / icon on vivid accent backgrounds
   "--tug-base-fg-onAccent",
@@ -621,5 +620,186 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
 
     // Must emit at least one protanopia warning for a green/red recipe.
     expect(protanopiaWarnings.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 6: Role hue selectors
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders the role hues section with 7 hue strips", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleHues = container.querySelector("[data-testid='gtg-role-hues']");
+    expect(roleHues).not.toBeNull();
+    const strips = roleHues!.querySelectorAll(".gtg-hue-strip");
+    expect(strips.length).toBe(7);
+  });
+
+  it("each role hue strip has 24 swatches", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleIds = [
+      "gtg-role-hue-accent",
+      "gtg-role-hue-action",
+      "gtg-role-hue-agent",
+      "gtg-role-hue-data",
+      "gtg-role-hue-success",
+      "gtg-role-hue-caution",
+      "gtg-role-hue-danger",
+    ];
+    for (const id of roleIds) {
+      const strip = container.querySelector(`[data-testid='${id}']`);
+      expect(strip).not.toBeNull();
+      const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
+      expect(swatches.length).toBe(24);
+    }
+  });
+
+  it("default role hues match the Brio recipe defaults", () => {
+    // Brio recipe has no explicit role hues, so all fall back to engine defaults:
+    // accent=orange, active=blue, agent=violet, data=teal, success=green,
+    // caution=yellow, destructive/danger=red.
+    // Verify by deriving with explicit defaults and comparing to unset (implicit) output.
+    const explicit = deriveTheme({
+      name: "brio",
+      mode: "dark",
+      atmosphere: { hue: "violet", offset: -6 },
+      text: { hue: "cobalt" },
+      accent: "orange",
+      active: "blue",
+      agent: "violet",
+      data: "teal",
+      success: "green",
+      caution: "yellow",
+      destructive: "red",
+    });
+    const implicit = deriveTheme(EXAMPLE_RECIPES.brio);
+    // tone tokens should match between explicit defaults and recipe defaults
+    const roleTokens = [
+      "--tug-base-tone-accent",
+      "--tug-base-tone-active",
+      "--tug-base-tone-agent",
+      "--tug-base-tone-data",
+      "--tug-base-tone-success",
+      "--tug-base-tone-caution",
+      "--tug-base-tone-danger",
+    ];
+    for (const token of roleTokens) {
+      expect(explicit.tokens[token]).toBe(implicit.tokens[token]);
+    }
+  });
+
+  it("changing a role hue updates the derived theme output", () => {
+    // Derive with default danger=red, then with danger=pink — tone-danger token must differ.
+    const withRed = deriveTheme({
+      name: "test",
+      mode: "dark",
+      atmosphere: { hue: "violet" },
+      text: { hue: "cobalt" },
+      destructive: "red",
+    });
+    const withPink = deriveTheme({
+      name: "test",
+      mode: "dark",
+      atmosphere: { hue: "violet" },
+      text: { hue: "cobalt" },
+      destructive: "pink",
+    });
+    expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
+      withPink.tokens["--tug-base-tone-danger"],
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 7: Emphasis x Role Preview section
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders the emphasis x role preview section", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const section = container.querySelector("[data-testid='gtg-emphasis-role-preview']");
+    expect(section).not.toBeNull();
+  });
+
+  it("renders the button grid with 3 emphasis rows × 5 roles = 15 button cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const grid = container.querySelector("[data-testid='gtg-erp-button-grid']");
+    expect(grid).not.toBeNull();
+    // 15 cells, each containing a tug-button
+    const buttons = grid!.querySelectorAll(".tug-button");
+    expect(buttons.length).toBe(15);
+  });
+
+  it("renders the badge grid with 3 emphasis rows × 7 roles = 21 badge cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const grid = container.querySelector("[data-testid='gtg-erp-badge-grid']");
+    expect(grid).not.toBeNull();
+    const badges = grid!.querySelectorAll(".tug-badge");
+    expect(badges.length).toBe(21);
+  });
+
+  it("renders the selection controls row with 7 role cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const row = container.querySelector("[data-testid='gtg-erp-selection-row']");
+    expect(row).not.toBeNull();
+    const cells = row!.querySelectorAll(".gtg-erp-selection-cell");
+    expect(cells.length).toBe(7);
+  });
+
+  it("each selection cell contains a checkbox and a switch", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const row = container.querySelector("[data-testid='gtg-erp-selection-row']");
+    const cells = row!.querySelectorAll(".gtg-erp-selection-cell");
+    for (const cell of Array.from(cells)) {
+      expect(cell.querySelector(".tug-checkbox")).not.toBeNull();
+      expect(cell.querySelector(".tug-switch")).not.toBeNull();
+    }
+  });
+
+  it("preview section updates derived token output when a role hue changes", () => {
+    // Verify that switching danger hue from red to pink changes the tone-danger token.
+    // This is a unit-level assertion on deriveTheme() since the live preview update
+    // is a CSS cascade effect invisible to JSDOM.
+    const withRed = deriveTheme({
+      name: "test", mode: "dark",
+      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      destructive: "red",
+    });
+    const withPink = deriveTheme({
+      name: "test", mode: "dark",
+      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      destructive: "pink",
+    });
+    expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
+      withPink.tokens["--tug-base-tone-danger"],
+    );
   });
 });

@@ -568,7 +568,7 @@ describe("derivation-engine", () => {
  * A. Secondary/tertiary text hierarchy (same as T3.5 exceptions):
  *      fg-subtle, fg-placeholder, fg-link-hover, fg-link,
  *      control-selected-fg, control-highlighted-fg,
- *      field-helper, selection-fg
+ *      selection-fg
  *
  * B. Text/icon on accent or vivid colored backgrounds (design constraint —
  *    accent hues are vivid mid-tone; white fg cannot always reach 4.5:1 against
@@ -611,7 +611,6 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-fg-link",
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
-  "--tug-base-field-helper",
   "--tug-base-selection-fg",
   // B — text/icon on vivid accent bg
   "--tug-base-fg-onAccent",

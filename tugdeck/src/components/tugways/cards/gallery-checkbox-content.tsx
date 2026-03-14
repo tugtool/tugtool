@@ -11,13 +11,23 @@
 
 import React, { useState } from "react";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import type { TugCheckboxSize, TugCheckedState } from "@/components/tugways/tug-checkbox";
+import type { TugCheckboxRole, TugCheckboxSize, TugCheckedState } from "@/components/tugways/tug-checkbox";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const ALL_SIZES: TugCheckboxSize[] = ["sm", "md", "lg"];
+
+const ALL_ROLES: TugCheckboxRole[] = [
+  "accent",
+  "action",
+  "agent",
+  "data",
+  "success",
+  "caution",
+  "danger",
+];
 
 // ---------------------------------------------------------------------------
 // GalleryCheckboxContent
@@ -111,6 +121,23 @@ export function GalleryCheckboxContent() {
             <TugCheckbox label="Slack notifications" defaultChecked />
           </div>
         </fieldset>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Role Variants ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Role Variants</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {ALL_ROLES.map((role) => (
+            <TugCheckbox
+              key={role}
+              role={role}
+              checked
+              label={role}
+            />
+          ))}
+        </div>
       </div>
 
     </div>
