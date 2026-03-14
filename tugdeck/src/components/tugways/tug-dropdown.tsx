@@ -91,27 +91,31 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
     const target = event.currentTarget as HTMLElement;
 
-    // Read the computed accent-subtle color for WAAPI keyframes.
+    // Read the computed filled-action colors for WAAPI keyframes.
     // getPropertyValue() returns a string with leading whitespace per CSS spec;
     // .trim() is required. WAAPI cannot interpolate CSS variable references
-    // directly, so we must resolve to a concrete color value. [D01]
-    const accentSubtle = getComputedStyle(target)
-      .getPropertyValue("--tug-base-accent-subtle")
+    // directly, so we must resolve to concrete color values. [D01]
+    const computed = getComputedStyle(target);
+    const blinkBg = computed
+      .getPropertyValue("--tug-base-control-filled-action-bg-active")
       .trim() || "transparent";
+    const blinkFg = computed
+      .getPropertyValue("--tug-base-control-filled-action-fg-active")
+      .trim() || "inherit";
 
     // Read the standard easing value at runtime — WAAPI does not resolve
     // var() references in easing strings. [D01]
-    const easing = getComputedStyle(target)
+    const easing = computed
       .getPropertyValue("--tug-base-motion-easing-standard")
       .trim() || "cubic-bezier(0.2, 0, 0, 1)";
 
     // Double-blink keyframes: highlight → transparent → highlight → highlight.
-    // Reproduces the Mac-style menu selection blink. [D01]
+    // Uses filled-action colors for strong visual feedback. [D01]
     const blinkKeyframes = [
-      { backgroundColor: accentSubtle },
-      { backgroundColor: "transparent" },
-      { backgroundColor: accentSubtle },
-      { backgroundColor: accentSubtle },
+      { backgroundColor: blinkBg, color: blinkFg },
+      { backgroundColor: "transparent", color: "inherit" },
+      { backgroundColor: blinkBg, color: blinkFg },
+      { backgroundColor: blinkBg, color: blinkFg },
     ];
 
     // Drive blink via TugAnimator; sequence menu close on animate().finished.

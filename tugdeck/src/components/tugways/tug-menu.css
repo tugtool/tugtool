@@ -192,12 +192,13 @@ body {
 }
 
 /*
- * Hover / focus state: use the accent-subtle token for visible contrast against the overlay background.
+ * Hover / focus state: filled-action style for strong visual feedback.
  */
 .tug-dropdown-item:hover:not([data-disabled]),
 .tug-dropdown-item[data-highlighted]:not([data-disabled]) {
-  background-color: var(--tug-dropdown-item-bg-hover);
-  color: var(--tug-dropdown-fg);
+  background-color: var(--tug-base-control-filled-action-bg-hover);
+  color: var(--tug-base-control-filled-action-fg-hover);
+  outline: none;
 }
 
 /* Disabled items: reduced opacity, no pointer interaction */
