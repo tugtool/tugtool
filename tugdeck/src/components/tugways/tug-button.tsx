@@ -453,3 +453,43 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     </Comp>
   );
 });
+
+// ---- TugPushButton ----
+
+/**
+ * TugPushButtonProps -- same as TugButtonProps, but without `subtype`.
+ *
+ * TugPushButton always uses the "text" (formerly "push") subtype default and
+ * adds uppercase / letter-spacing styling via the .tug-push-button CSS class.
+ * Callers do not set subtype -- it is an implementation detail of this wrapper.
+ *
+ * [D02] TugPushButton wrapper for standalone action buttons
+ * Spec S02, S03
+ */
+export interface TugPushButtonProps extends Omit<TugButtonProps, "subtype"> {}
+
+/**
+ * TugPushButton -- uppercase standalone action button.
+ *
+ * A thin wrapper around TugButton that adds the `.tug-push-button` CSS class,
+ * which applies `text-transform: uppercase` and `letter-spacing: 0.06em`.
+ * All other TugButton props pass through unchanged.
+ *
+ * Use TugPushButton for standalone action buttons (e.g., "Save", "Cancel").
+ * Use TugButton directly for controls where mixed-case text is appropriate
+ * (e.g., dropdown triggers, tab bar controls).
+ *
+ * [D02] Separates uppercase design choice from button infrastructure
+ * Spec S02, S03
+ */
+export const TugPushButton = React.forwardRef<HTMLButtonElement, TugPushButtonProps>(
+  function TugPushButton({ className, ...props }: TugPushButtonProps, ref) {
+    return (
+      <TugButton
+        ref={ref}
+        className={cn("tug-push-button", className)}
+        {...props}
+      />
+    );
+  }
+);

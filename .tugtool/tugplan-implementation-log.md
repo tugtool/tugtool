@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-14T15:21:08Z
+---
+
+## step-2: Added TugPushButton component with TugPushButtonProps (Omit<TugButtonProps, subtype>) and cn() class merge for .tug-push-button styling
+
+**Files changed:**
+- .tugtool/tugplan-button-hierarchy-refactor.md
+
+---
+
+---
 step: step-1
 date: 2025-03-14T15:17:54Z
 ---
