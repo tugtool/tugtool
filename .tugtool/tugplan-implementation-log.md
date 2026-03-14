@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-14T18:58:27Z
+---
+
+## step-7: Deleted tug-dropdown.tsx and tug-dropdown.test.tsx. All call sites migrated in steps 5-6. Test coverage replicated in tug-popup-menu.test.tsx and tug-popup-button.test.tsx. Zero functional imports of tug-dropdown remain.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-6
 date: 2025-03-14T18:52:59Z
 ---
