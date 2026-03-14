@@ -286,6 +286,9 @@
   background-color: var(--tug-base-control-outlined-option-bg-rest);
   color: var(--tug-base-control-outlined-option-fg-rest);
   border-color: var(--tug-base-control-outlined-option-border-rest);
+  /* Left padding aligns button label with menu item text:
+     menu content padding (0.25rem) + item padding-left (0.5rem) = 0.75rem */
+  padding-left: 0.75rem;
 }
 
 .tug-button-outlined-option svg {

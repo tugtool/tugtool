@@ -108,7 +108,7 @@ export function TugPopupMenu({
   items,
   onSelect,
   align = "start",
-  sideOffset = 3,
+  sideOffset = 0,
   "data-testid": dataTestId,
 }: TugPopupMenuProps) {
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.

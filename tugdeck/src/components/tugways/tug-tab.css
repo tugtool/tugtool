@@ -231,7 +231,11 @@ body {
   cursor: default;
 }
 
-/* Old hover rules removed per [D10] -- TugButton ghost-option hover applies naturally. */
+/* Open-state: let ghost-option active tokens show through when the menu is open. */
+.tug-tab-bar .tug-tab-add[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-option-bg-active);
+  color: var(--tug-base-control-ghost-option-fg-active);
+}
 
 /* ============================================================================
    Overflow Popup Menu Button
@@ -259,7 +263,11 @@ body {
   cursor: default;
 }
 
-/* Old hover rule removed per [D10] -- TugButton ghost-option hover applies naturally. */
+/* Open-state: let ghost-option active tokens show through when the menu is open. */
+.tug-tab-bar .tug-tab-overflow-btn[data-state="open"] {
+  background-color: var(--tug-base-control-ghost-option-bg-active);
+  color: var(--tug-base-control-ghost-option-fg-active);
+}
 
 /* Badge showing the count of overflow tabs (e.g., "+3"). */
 .tug-tab-overflow-badge {
