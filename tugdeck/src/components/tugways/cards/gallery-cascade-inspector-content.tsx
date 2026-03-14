@@ -4,7 +4,7 @@
  * Interactive demo tab for the StyleInspectorOverlay cascade inspector.
  * Provides a set of sample elements that exercise all token chain depths:
  *
- *   (a) TugDropdown -- full three-layer chain: --tug-dropdown-* -> --tug-base-* -> palette
+ *   (a) TugPopupButton -- full three-layer chain: --tug-dropdown-* -> --tug-base-* -> palette
  *   (b) TugButton -- two-layer chain: --tug-base-* -> palette (no comp token)
  *   (c) Colored div using --tug-base-accent-default -- base -> palette chain
  *   (d) Div using --tug-base-surface-raised -- non-chromatic base token, terminal hex
@@ -26,15 +26,15 @@
 import React, { useState } from "react";
 import { Star } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-button";
-import { TugDropdown } from "@/components/tugways/tug-dropdown";
-import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Sample items for the TugDropdown demo within the Cascade Inspector tab. */
-const INSPECTOR_DEMO_ITEMS: TugDropdownItem[] = [
+/** Sample items for the TugPopupButton demo within the Cascade Inspector tab. */
+const INSPECTOR_DEMO_ITEMS: TugPopupMenuItem[] = [
   { id: "item-alpha", label: "Alpha", icon: <Star size={12} /> },
   { id: "item-beta", label: "Beta", icon: <Star size={12} /> },
   { id: "item-gamma", label: "Gamma (disabled)", disabled: true },
@@ -73,20 +73,18 @@ export function GalleryCascadeInspectorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- (a) TugDropdown: three-layer chain --tug-dropdown-* -> --tug-base-* -> palette ---- */}
+      {/* ---- (a) TugPopupButton: three-layer chain --tug-dropdown-* -> --tug-base-* -> palette ---- */}
       <div className="cg-section">
         <div className="cg-section-title">
-          (a) TugDropdown — three-layer chain
+          (a) TugPopupButton — three-layer chain
         </div>
         <p className="cg-description">
           <code>--tug-dropdown-*</code> →{" "}
           <code>--tug-base-*</code> → palette variable
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
-          <TugDropdown
-            label="Open Dropdown"
-            emphasis="ghost"
-            role="action"
+          <TugPopupButton
+            label="Open Menu"
             size="sm"
             items={INSPECTOR_DEMO_ITEMS}
             onSelect={(id) => setDropdownSelected(id)}

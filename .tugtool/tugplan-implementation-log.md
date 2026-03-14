@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-14T18:45:00Z
+---
+
+## step-5: Migrated all TugDropdown call sites in gallery files to TugPopupButton. Updated imports, renamed demo component, updated tab title, CSS class names, and test assertions. Zero TugDropdown imports remain in cards/.
+
+**Files changed:**
+- .tugtool/tugplan-option-role-popup-menu.md
+
+---
+
+---
 step: step-4
 date: 2025-03-14T18:32:27Z
 ---
