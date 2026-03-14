@@ -223,6 +223,9 @@ describe("pairing-map", () => {
       "--tug-base-field-bg-disabled",
       // accent-cool-default is used as a focus ring / accent UI element
       "--tug-base-accent-cool-default",
+      // tab-bg-hover and tab-close-bg-hover are semi-transparent overlays
+      "--tug-base-tab-bg-hover",
+      "--tug-base-tab-close-bg-hover",
     ]);
 
     const missingBgTokens: string[] = [];

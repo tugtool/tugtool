@@ -1046,4 +1046,30 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
 
+  // --- Tab Chrome ---
+  // tab-fg-rest over tab bar background (surface-sunken)
+  {
+    fg: "--tug-base-tab-fg-rest",
+    bg: "--tug-base-surface-sunken",
+    role: "body-text",
+  },
+  // tab-fg-active over active tab background
+  {
+    fg: "--tug-base-tab-fg-active",
+    bg: "--tug-base-tab-bg-active",
+    role: "body-text",
+  },
+  // tab-fg-hover over hover highlight (semi-transparent, pair with sunken)
+  {
+    fg: "--tug-base-tab-fg-hover",
+    bg: "--tug-base-surface-sunken",
+    role: "body-text",
+  },
+  // close button hover fg over close bg hover
+  {
+    fg: "--tug-base-tab-close-fg-hover",
+    bg: "--tug-base-surface-sunken",
+    role: "ui-component",
+  },
+
 ];

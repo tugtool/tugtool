@@ -496,6 +496,19 @@ body {
   --tug-base-control-ghost-danger-icon-active: --tug-color(red, i: 75);
   /* @generated:control-tokens:end */
 
+  /* @generated:chrome-tokens:begin — do not edit. Source: theme-derivation-engine.ts */
+  /* Regenerate: bun run generate:control-tokens                                      */
+
+  /* Tab Chrome */
+  --tug-base-tab-bg-active: --tug-color(violet+5, i: 5, t: 18);
+  --tug-base-tab-bg-hover: --tug-color(white, a: 8);
+  --tug-base-tab-close-bg-hover: --tug-color(white, a: 12);
+  --tug-base-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 90);
+  --tug-base-tab-fg-active: --tug-color(cobalt, i: 3, t: 90);
+  --tug-base-tab-fg-hover: --tug-color(cobalt, i: 3, t: 90);
+  --tug-base-tab-fg-rest: --tug-color(cobalt, i: 7);
+  /* @generated:chrome-tokens:end */
+
   /* Surface Control Alias [D08] — semantic alias for non-button surface consumers */
   --tug-base-surface-control: var(--tug-base-control-outlined-action-bg-rest);
   --tug-base-control-selected-bg: --tug-color(blue, i: 50, t: 50, a: 18);

@@ -239,19 +239,19 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 343 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.bluenote) produces token map with 350 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.bluenote);
-    expect(Object.keys(output.tokens).length).toBe(343);
+    expect(Object.keys(output.tokens).length).toBe(350);
   });
 
   // -------------------------------------------------------------------------
   // T2.1b: Same count for other recipes
   // -------------------------------------------------------------------------
-  it("T2.1b: deriveTheme produces 343 tokens for brio and harmony", () => {
+  it("T2.1b: deriveTheme produces 350 tokens for brio and harmony", () => {
     const brio = deriveTheme(EXAMPLE_RECIPES.brio);
     const harmony = deriveTheme(EXAMPLE_RECIPES.harmony);
-    expect(Object.keys(brio.tokens).length).toBe(343);
-    expect(Object.keys(harmony.tokens).length).toBe(343);
+    expect(Object.keys(brio.tokens).length).toBe(350);
+    expect(Object.keys(harmony.tokens).length).toBe(350);
   });
 
   // -------------------------------------------------------------------------

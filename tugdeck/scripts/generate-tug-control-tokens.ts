@@ -125,39 +125,83 @@ function capitalize(s: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Chrome tokens: --tug-base-tab-* (tab bar chrome)
+// ---------------------------------------------------------------------------
+
+const CHROME_TOKEN_PATTERN = /^--tug-base-tab-/;
+
+const chromeEntries = Object.entries(output.tokens)
+  .filter(([name]) => CHROME_TOKEN_PATTERN.test(name))
+  .sort(([a], [b]) => a.localeCompare(b));
+
+const chromeLines: string[] = [];
+chromeLines.push(
+  `  /* @generated:chrome-tokens:begin — do not edit. Source: theme-derivation-engine.ts */`,
+);
+chromeLines.push(
+  `  /* Regenerate: bun run generate:control-tokens                                      */`,
+);
+
+if (chromeEntries.length > 0) {
+  chromeLines.push(``);
+  chromeLines.push(`  /* Tab Chrome */`);
+  for (const [name, value] of chromeEntries) {
+    chromeLines.push(`  ${name}: ${value};`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Splice into tug-base.css
 // ---------------------------------------------------------------------------
 
 const tugdeckDir = path.resolve(import.meta.dir, "..");
 const cssPath = path.join(tugdeckDir, "styles", "tug-base.css");
-const css = await Bun.file(cssPath).text();
+let css = await Bun.file(cssPath).text();
 
-const BEGIN_MARKER = "/* @generated:control-tokens:begin";
-const END_MARKER = "/* @generated:control-tokens:end */";
+// --- Control tokens ---
+const CONTROL_BEGIN = "/* @generated:control-tokens:begin";
+const CONTROL_END = "/* @generated:control-tokens:end */";
 
-const beginIdx = css.indexOf(BEGIN_MARKER);
-const endIdx = css.indexOf(END_MARKER);
+const controlBeginIdx = css.indexOf(CONTROL_BEGIN);
+const controlEndIdx = css.indexOf(CONTROL_END);
 
-if (beginIdx === -1 || endIdx === -1) {
+if (controlBeginIdx === -1 || controlEndIdx === -1) {
   console.error(
-    `[generate-tug-control-tokens] ERROR: marker comments not found in ${cssPath}`,
+    `[generate-tug-control-tokens] ERROR: control-tokens markers not found in ${cssPath}`,
   );
-  console.error(`  Expected: ${BEGIN_MARKER}`);
-  console.error(`  Expected: ${END_MARKER}`);
   process.exit(1);
 }
 
-// Find the start of the line containing BEGIN_MARKER
-const lineStart = css.lastIndexOf("\n", beginIdx) + 1;
+const controlLineStart = css.lastIndexOf("\n", controlBeginIdx) + 1;
+const controlBefore = css.slice(0, controlLineStart);
+const controlAfter = css.slice(controlEndIdx);
+const controlGenerated = lines.join("\n") + "\n  ";
+css = controlBefore + controlGenerated + controlAfter;
 
-const before = css.slice(0, lineStart);
-const after = css.slice(endIdx);
+// --- Chrome tokens ---
+const CHROME_BEGIN = "/* @generated:chrome-tokens:begin";
+const CHROME_END = "/* @generated:chrome-tokens:end */";
 
-const generated = lines.join("\n") + "\n  ";
+const chromeBeginIdx = css.indexOf(CHROME_BEGIN);
+const chromeEndIdx = css.indexOf(CHROME_END);
 
-await Bun.write(cssPath, before + generated + after);
+if (chromeBeginIdx === -1 || chromeEndIdx === -1) {
+  console.error(
+    `[generate-tug-control-tokens] ERROR: chrome-tokens markers not found in ${cssPath}`,
+  );
+  process.exit(1);
+}
+
+const chromeLineStart = css.lastIndexOf("\n", chromeBeginIdx) + 1;
+const chromeBefore = css.slice(0, chromeLineStart);
+const chromeAfter = css.slice(chromeEndIdx);
+const chromeGenerated = chromeLines.join("\n") + "\n  ";
+css = chromeBefore + chromeGenerated + chromeAfter;
+
+await Bun.write(cssPath, css);
 
 const tokenCount = controlEntries.length;
+const chromeCount = chromeEntries.length;
 console.log(
-  `[generate-tug-control-tokens] wrote ${tokenCount} control tokens to ${cssPath}`,
+  `[generate-tug-control-tokens] wrote ${tokenCount} control tokens + ${chromeCount} chrome tokens to ${cssPath}`,
 );

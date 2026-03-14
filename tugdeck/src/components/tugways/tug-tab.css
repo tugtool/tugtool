@@ -31,14 +31,15 @@
 body {
   --tug-tab-bar-bg: var(--tug-base-surface-sunken);
   --tug-tab-bg-rest: transparent;
-  --tug-tab-bg-hover: var(--tug-base-highlight-hover);
-  --tug-tab-bg-active: var(--tug-base-surface-default);
+  --tug-tab-bg-hover: var(--tug-base-tab-bg-hover);
+  --tug-tab-bg-active: var(--tug-base-tab-bg-active);
   --tug-tab-bg-compact: --tug-color(white, i: 0, t: 100, a: 4);
-  --tug-tab-fg-rest: var(--tug-base-fg-subtle);
-  --tug-tab-fg-active: var(--tug-base-fg-default);
+  --tug-tab-fg-rest: var(--tug-base-tab-fg-rest);
+  --tug-tab-fg-hover: var(--tug-base-tab-fg-hover);
+  --tug-tab-fg-active: var(--tug-base-tab-fg-active);
   --tug-tab-fg-compact: var(--tug-base-fg-muted);
-  --tug-tab-close-bg-hover: --tug-color(white, i: 0, t: 100, a: 10);
-  --tug-tab-close-fg-hover: var(--tug-base-fg-default);
+  --tug-tab-close-bg-hover: var(--tug-base-tab-close-bg-hover);
+  --tug-tab-close-fg-hover: var(--tug-base-tab-close-fg-hover);
   --tug-tab-underline-active: var(--tug-base-accent-default);
   --tug-tab-dropTarget-bg: var(--tug-base-highlight-preview);
   --tug-tab-dropTarget-border: var(--tug-base-icon-active);
@@ -91,7 +92,7 @@ body {
   border: none;
   border-bottom: 2px solid transparent;
   background-color: transparent;
-  color: var(--tug-base-fg-muted);
+  color: var(--tug-tab-fg-rest);
   font-size: var(--tug-base-font-size-sm);
   font-family: var(--tug-base-font-family-sans);
   cursor: default;
@@ -113,8 +114,8 @@ body {
 
 /* Inactive tab hover (Table T01) */
 .tug-tab:not([data-active="true"]):hover {
-  background-color: var(--tug-base-surface-control);
-  color: var(--tug-base-fg-default);
+  background-color: var(--tug-tab-bg-hover);
+  color: var(--tug-tab-fg-hover);
 }
 
 /* ============================================================================
@@ -201,8 +202,8 @@ body {
 
 /* Close button hover state */
 .tug-tab-close:hover {
-  background-color: var(--tug-base-surface-control);
-  color: var(--tug-base-fg-default);
+  background-color: var(--tug-tab-close-bg-hover);
+  color: var(--tug-tab-close-fg-hover);
 }
 
 /* ============================================================================
@@ -222,7 +223,7 @@ body {
   width: var(--tug-base-chrome-height);
   height: 100%;
   flex-shrink: 0;
-  padding: 0 0 5px 0;
+  padding: 0 0 2px 0;
   border: none;
   border-radius: 0 !important;
   background-color: transparent;

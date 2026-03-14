@@ -1,7 +1,7 @@
 /**
  * Theme Derivation Engine — Tugways Theme Generator
  *
- * Derives complete 349-token `--tug-base-*` themes from a compact `ThemeRecipe`.
+ * Derives complete 350-token `--tug-base-*` themes from a compact `ThemeRecipe`.
  * Each call to `deriveTheme()` returns:
  *   - `tokens`: all 349 token values as `--tug-color()` strings (for CSS export)
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
@@ -1026,6 +1026,48 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-highlight-snapGuide", activeHue, activeAngle, signalI, 50, 50, activeName);
   }
   setChromatic("--tug-base-highlight-flash", accentHue, accentAngle, signalI, 50, 35, accentName);
+
+  // =========================================================================
+  // D2. Tab Chrome
+  // =========================================================================
+  // Derived tab tokens that flow through the theme system so every theme can
+  // tune them. The tab bar sits on surface-sunken; active tab should clearly
+  // stand out as "raised" above inactive tabs.
+
+  // tab-bg-active: raised surface for the selected tab — sits above sunken bar
+  // Light mode: high tone (bright) for contrast with dark text on light surface.
+  // Dark mode: surface-raised tone for clear lift above sunken bar.
+  if (isLight) {
+    setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-tab-bg-active", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceRaised), 100, surfDefaultName);
+  }
+
+  // tab-bg-hover: visible highlight when scanning inactive tabs
+  if (isLight) {
+    setShadow("--tug-base-tab-bg-hover", 6);
+  } else {
+    setHighlight("--tug-base-tab-bg-hover", 8);
+  }
+
+  // tab-fg-rest: muted text for inactive tabs
+  setChromatic("--tug-base-tab-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone, 100, txtNameW);
+
+  // tab-fg-hover: brighter text when hovering inactive tabs
+  setChromatic("--tug-base-tab-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+
+  // tab-fg-active: full-contrast text on the active tab
+  setChromatic("--tug-base-tab-fg-active", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+
+  // tab-close-bg-hover: close button hover — subtle but visible overlay
+  if (isLight) {
+    setShadow("--tug-base-tab-close-bg-hover", 10);
+  } else {
+    setHighlight("--tug-base-tab-close-bg-hover", 12);
+  }
+
+  // tab-close-fg-hover: close button hover text — full default contrast
+  setChromatic("--tug-base-tab-close-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
 
   // =========================================================================
   // E. Control Surfaces
