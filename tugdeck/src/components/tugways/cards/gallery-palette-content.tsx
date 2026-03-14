@@ -31,6 +31,7 @@ import {
   L_DARK,
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
+import { TugButton } from "@/components/tugways/tug-button";
 import "./gallery-palette-content.css";
 
 // ---------------------------------------------------------------------------
@@ -369,13 +370,15 @@ function CssFormulaExport({
   return (
     <div className="gp-formula-export" data-testid="gp-formula-export">
       <pre className="gp-formula-snippet" data-testid="gp-formula-snippet">{formula}</pre>
-      <button
-        className="gp-action-btn gp-formula-copy-btn"
+      <TugButton
+        emphasis="ghost"
+        role="action"
+        size="sm"
         onClick={handleCopy}
         data-testid="gp-formula-copy-btn"
       >
         {copied ? "Copied" : "Copy CSS"}
-      </button>
+      </TugButton>
     </div>
   );
 }
@@ -639,15 +642,15 @@ export function GalleryPaletteContent() {
       {/* Actions */}
       <div className="cg-section">
         <div className="gp-action-row">
-          <button className="gp-action-btn" onClick={handleExport} data-testid="gp-export-btn">
+          <TugButton emphasis="ghost" role="action" size="sm" onClick={handleExport} data-testid="gp-export-btn">
             Export JSON
-          </button>
-          <button className="gp-action-btn" onClick={handleImportClick} data-testid="gp-import-btn">
+          </TugButton>
+          <TugButton emphasis="ghost" role="action" size="sm" onClick={handleImportClick} data-testid="gp-import-btn">
             Import JSON
-          </button>
-          <button className="gp-action-btn" onClick={handleReset} data-testid="gp-reset-btn">
+          </TugButton>
+          <TugButton emphasis="ghost" role="danger" size="sm" onClick={handleReset} data-testid="gp-reset-btn">
             Reset
-          </button>
+          </TugButton>
         </div>
         {importError && (
           <div className="gp-import-error" data-testid="gp-import-error">

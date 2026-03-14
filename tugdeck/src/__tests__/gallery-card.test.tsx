@@ -967,12 +967,9 @@ describe("GalleryObservablePropsContent – inspector controls dispatch setPrope
   });
 
   it("changing the font family dispatches setProperty and updates the target element", () => {
-    // Same happy-dom limitation applies to select elements: the controlled
-    // value is reset after each render. Exercise via dispatchTo directly.
+    // Font family control is now a TugDropdown (no testid on the trigger).
+    // Exercise the full round-trip via dispatchTo directly.
     const { container, manager } = renderInTugcard();
-
-    const familySelect = container.querySelector("[data-testid='inspector-font-family']");
-    expect(familySelect).not.toBeNull(); // verifies the select is rendered
 
     act(() => {
       manager.dispatchTo("obs-card", {

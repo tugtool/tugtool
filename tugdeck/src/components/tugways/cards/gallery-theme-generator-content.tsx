@@ -597,9 +597,10 @@ function AutoFixPanel({
   return (
     <div className="gtg-autofix-panel" data-testid="gtg-autofix-panel">
       <div className="gtg-autofix-row">
-        <button
-          type="button"
-          className="gtg-autofix-btn"
+        <TugButton
+          emphasis="outlined"
+          role="action"
+          size="sm"
           onClick={handleAutoFix}
           disabled={failures.length === 0}
           data-testid="gtg-autofix-btn"
@@ -610,7 +611,7 @@ function AutoFixPanel({
           }
         >
           Auto-fix ({failures.length} {failures.length === 1 ? "failure" : "failures"})
-        </button>
+        </TugButton>
         {lastFixResult !== null && (
           <span className="gtg-autofix-result" data-testid="gtg-autofix-result">
             {lastFixResult.adjustedCount} token{lastFixResult.adjustedCount !== 1 ? "s" : ""} adjusted
@@ -841,24 +842,26 @@ function ExportImportPanel({
     <div className="gtg-export-import-panel" data-testid="gtg-export-import-panel">
       {/* Export buttons */}
       <div className="gtg-export-row">
-        <button
-          type="button"
-          className="gtg-export-btn"
+        <TugButton
+          emphasis="ghost"
+          role="action"
+          size="sm"
           onClick={handleExportCss}
           data-testid="gtg-export-css-btn"
           title="Download theme as CSS file (--tug-color() notation)"
         >
           Export CSS
-        </button>
-        <button
-          type="button"
-          className="gtg-export-btn"
+        </TugButton>
+        <TugButton
+          emphasis="ghost"
+          role="action"
+          size="sm"
           onClick={handleExportJson}
           data-testid="gtg-export-json-btn"
           title="Download current recipe as JSON"
         >
           Export Recipe JSON
-        </button>
+        </TugButton>
       </div>
 
       {/* Import section */}
@@ -874,15 +877,16 @@ function ExportImportPanel({
           aria-label="Import recipe JSON file"
           data-testid="gtg-import-file-input"
         />
-        <button
-          type="button"
-          className="gtg-export-btn"
+        <TugButton
+          emphasis="ghost"
+          role="action"
+          size="sm"
           onClick={handleImportClick}
           data-testid="gtg-import-btn"
           title="Load a previously exported recipe JSON file"
         >
           Import Recipe
-        </button>
+        </TugButton>
         {importError !== null && (
           <span
             className="gtg-import-error"
@@ -1263,15 +1267,16 @@ export function GalleryThemeGeneratorContent() {
         <div className="cg-section-title">Load Preset Recipe</div>
         <div className="gtg-preset-row">
           {(Object.keys(EXAMPLE_RECIPES) as Array<keyof typeof EXAMPLE_RECIPES>).map((name) => (
-            <button
+            <TugButton
               key={name}
-              type="button"
-              className="gtg-preset-btn"
+              emphasis="outlined"
+              role="action"
+              size="sm"
               onClick={() => loadPreset(name)}
               data-testid={`gtg-preset-${name}`}
             >
               {name.charAt(0).toUpperCase() + name.slice(1)}
-            </button>
+            </TugButton>
           ))}
         </div>
       </div>
@@ -1282,22 +1287,24 @@ export function GalleryThemeGeneratorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Mode</div>
         <div className="gtg-mode-group" data-testid="gtg-mode-group">
-          <button
-            type="button"
-            className={`gtg-mode-btn${mode === "dark" ? " gtg-mode-btn--active" : ""}`}
+          <TugButton
+            emphasis={mode === "dark" ? "filled" : "outlined"}
+            role="action"
+            size="sm"
             onClick={() => setMode("dark")}
             data-testid="gtg-mode-dark"
           >
             Dark
-          </button>
-          <button
-            type="button"
-            className={`gtg-mode-btn${mode === "light" ? " gtg-mode-btn--active" : ""}`}
+          </TugButton>
+          <TugButton
+            emphasis={mode === "light" ? "filled" : "outlined"}
+            role="action"
+            size="sm"
             onClick={() => setMode("light")}
             data-testid="gtg-mode-light"
           >
             Light
-          </button>
+          </TugButton>
         </div>
       </div>
 

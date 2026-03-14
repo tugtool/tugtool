@@ -37,9 +37,12 @@
  */
 
 import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { ChevronDown } from "lucide-react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
+import { TugButton } from "@/components/tugways/tug-button";
+import { TugDropdown } from "@/components/tugways/tug-dropdown";
 
 // ---------------------------------------------------------------------------
 // Schema constants (module-scope to avoid recreation on each render)
@@ -247,13 +250,13 @@ export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
     });
   };
 
-  const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleFontFamilySelect = (value: string) => {
     manager.dispatchTo(cardId, {
       action: "setProperty",
       phase: "discrete",
       value: {
         path: "style.fontFamily",
-        value: e.target.value,
+        value,
         source: "inspector",
       },
     });
@@ -358,25 +361,18 @@ export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
 
         {/* Font Family */}
         <div className="cg-control-group" data-testid="inspector-font-family-group">
-          <label
-            className="cg-control-label"
-            htmlFor="obs-props-font-family"
-          >
+          <label className="cg-control-label">
             {DEMO_SCHEMA[2].label}
           </label>
-          <select
-            id="obs-props-font-family"
-            className="cg-control-select"
-            value={fontFamily}
-            data-testid="inspector-font-family"
-            onChange={handleFontFamilyChange}
-          >
-            {FONT_FAMILY_OPTIONS.map((ff) => (
-              <option key={ff} value={ff}>
-                {ff}
-              </option>
-            ))}
-          </select>
+          <TugDropdown
+            trigger={
+              <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
+                {fontFamily}
+              </TugButton>
+            }
+            items={FONT_FAMILY_OPTIONS.map((ff) => ({ id: ff, label: ff }))}
+            onSelect={handleFontFamilySelect}
+          />
         </div>
       </div>
 

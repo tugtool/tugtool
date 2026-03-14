@@ -85,9 +85,9 @@ export function GalleryCascadeInspectorContent() {
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
           <TugDropdown
             trigger={
-              <button type="button" className="cg-demo-trigger">
+              <TugButton emphasis="ghost" role="action" size="sm">
                 Open Dropdown
-              </button>
+              </TugButton>
             }
             items={INSPECTOR_DEMO_ITEMS}
             onSelect={(id) => setDropdownSelected(id)}

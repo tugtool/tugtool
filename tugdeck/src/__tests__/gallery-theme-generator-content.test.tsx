@@ -320,8 +320,8 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     const lightBtn = container.querySelector("[data-testid='gtg-mode-light']");
     expect(darkBtn).not.toBeNull();
     expect(lightBtn).not.toBeNull();
-    expect(darkBtn!.classList.contains("gtg-mode-btn--active")).toBe(true);
-    expect(lightBtn!.classList.contains("gtg-mode-btn--active")).toBe(false);
+    expect(darkBtn!.classList.contains("tug-button-filled-action")).toBe(true);
+    expect(lightBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 
   it("switches to light mode when light button is clicked", () => {
@@ -333,9 +333,9 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     act(() => {
       fireEvent.click(lightBtn);
     });
-    expect(lightBtn.classList.contains("gtg-mode-btn--active")).toBe(true);
+    expect(lightBtn.classList.contains("tug-button-filled-action")).toBe(true);
     const darkBtn = container.querySelector("[data-testid='gtg-mode-dark']");
-    expect(darkBtn!.classList.contains("gtg-mode-btn--active")).toBe(false);
+    expect(darkBtn!.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 
   it("switches back to dark mode when dark button is clicked after switching to light", () => {
@@ -351,8 +351,8 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
     act(() => {
       fireEvent.click(darkBtn);
     });
-    expect(darkBtn.classList.contains("gtg-mode-btn--active")).toBe(true);
-    expect(lightBtn.classList.contains("gtg-mode-btn--active")).toBe(false);
+    expect(darkBtn.classList.contains("tug-button-filled-action")).toBe(true);
+    expect(lightBtn.classList.contains("tug-button-outlined-action")).toBe(true);
   });
 });
 

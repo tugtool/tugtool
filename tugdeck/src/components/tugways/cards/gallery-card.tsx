@@ -715,9 +715,9 @@ export function TugDropdownDemo() {
     <div className="cg-dropdown-demo">
       <TugDropdown
         trigger={
-          <button type="button" className="cg-demo-trigger">
+          <TugButton emphasis="ghost" role="action" size="sm">
             Open Dropdown
-          </button>
+          </TugButton>
         }
         items={DEMO_DROPDOWN_ITEMS}
         onSelect={(id) => setLastSelected(id)}
@@ -869,21 +869,24 @@ export function GalleryTitleBarContent() {
         <div className="cg-section-title">Preview Controls</div>
         <div className="cg-controls">
           <div className="cg-control-group">
-            <label className="cg-control-label" htmlFor="cg-title-icon-select">
+            <label className="cg-control-label">
               Icon
             </label>
-            <select
-              id="cg-title-icon-select"
-              className="cg-control-select"
-              value={iconName}
-              onChange={(e) => setIconName(e.target.value)}
-            >
-              <option value="">None</option>
-              <option value="Layout">Layout</option>
-              <option value="Settings">Settings</option>
-              <option value="Terminal">Terminal</option>
-              <option value="Code">Code</option>
-            </select>
+            <TugDropdown
+              trigger={
+                <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
+                  {iconName || "None"}
+                </TugButton>
+              }
+              items={[
+                { id: "", label: "None" },
+                { id: "Layout", label: "Layout" },
+                { id: "Settings", label: "Settings" },
+                { id: "Terminal", label: "Terminal" },
+                { id: "Code", label: "Code" },
+              ]}
+              onSelect={(id) => setIconName(id)}
+            />
           </div>
 
           <div className="cg-control-group">
