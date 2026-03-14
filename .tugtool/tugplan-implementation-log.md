@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-14T15:17:54Z
+---
+
+## step-1: CSS-only changes: removed text-transform/letter-spacing from .tug-button base, deleted Three-State Subtype section, added .tug-push-button class, restyled .tug-badge (font-weight 500, no uppercase, cursor:default)
+
+**Files changed:**
+- .tugtool/tugplan-button-hierarchy-refactor.md
+
+---
+
+---
 step: step-8
 date: 2025-03-14T01:29:09Z
 ---
