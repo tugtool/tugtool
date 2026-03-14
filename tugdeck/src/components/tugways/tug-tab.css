@@ -207,67 +207,65 @@ body {
 
 /* ============================================================================
    Add Tab [+] Button
+   [D06] Tab bar dropdown triggers use new TugDropdown API
+   [D09] ChevronDown hidden in tab bar context
+   [D10] Tab bar buttons adopt TugButton ghost-action hover
+   Spec S06: Tab bar trigger CSS overrides
    ============================================================================ */
 
-.tug-tab-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/*
+ * .tug-tab-add is now applied to a TugButton rendered by TugDropdown.
+ * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
+ * border-radius uses !important because TugButton applies it via inline style. [S06]
+ */
+.tug-tab-bar .tug-tab-add {
   width: var(--tug-base-chrome-height);
   height: 100%;
   flex-shrink: 0;
+  padding: 0 0 5px 0;
   border: none;
+  border-radius: 0 !important;
   background-color: transparent;
   color: var(--tug-base-fg-muted);
   font-size: var(--tug-base-font-size-lg);
-  line-height: 1;
-  /* Shift the + glyph up slightly to correct its optical baseline offset */
-  padding-top: 0;
-  padding-bottom: 5px;
   cursor: default;
-  user-select: none;
-  transition:
-    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
-    color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
-.tug-tab-add:hover,
-.tug-tab-add[data-state="open"] {
-  background-color: var(--tug-base-surface-control);
-  color: var(--tug-base-fg-default);
-}
+/* Old hover rules removed per [D10] -- TugButton ghost-action hover applies naturally. */
 
 /* ============================================================================
-   Overflow Dropdown Button (Phase 5b4)
-   Spec S04: Overflow button markup
-   [D06] Overflow dropdown button with badge count
+   Overflow Dropdown Button
+   [D06] Tab bar dropdown triggers use new TugDropdown API
+   [D09] ChevronDown hidden in tab bar context
+   [D10] Tab bar buttons adopt TugButton ghost-action hover
+   Spec S06: Tab bar trigger CSS overrides
    ============================================================================ */
 
-/* Overflow trigger button -- appears between the last visible tab and [+].
-   Shown only when overflowIds.length > 0 (rendered conditionally by React).
-   Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap. */
-.tug-tab-overflow-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/*
+ * .tug-tab-overflow-btn is now applied to a TugButton rendered by TugDropdown.
+ * Compound selector (specificity 0,2,0) overrides TugButton defaults (0,1,0).
+ * border-radius uses !important because TugButton applies it via inline style. [S06]
+ * Width matches OVERFLOW_BUTTON_WIDTH (40px) for measurement bootstrap.
+ */
+.tug-tab-bar .tug-tab-overflow-btn {
   height: 100%;
   padding: 0 var(--tug-base-space-sm);
   flex-shrink: 0;
   border: none;
+  border-radius: 0 !important;
   background-color: transparent;
   color: var(--tug-base-fg-muted);
   font-size: var(--tug-base-font-size-sm);
-  font-family: var(--tug-base-font-family-sans);
   cursor: default;
-  user-select: none;
-  transition:
-    background-color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard),
-    color var(--tug-base-motion-duration-fast) var(--tug-base-motion-easing-standard);
 }
 
-.tug-tab-overflow-btn:hover {
-  background-color: var(--tug-base-surface-control);
-  color: var(--tug-base-fg-default);
+/* Old hover rule removed per [D10] -- TugButton ghost-action hover applies naturally. */
+
+/* Hide ChevronDown trailing icon in tab bar context -- [D09]
+ * TugDropdown always renders a ChevronDown; hidden here to preserve
+ * the current visual appearance and measured widths of tab bar buttons. */
+.tug-tab-bar .tug-button-trailing-icon {
+  display: none;
 }
 
 /* Badge showing the count of overflow tabs (e.g., "+3"). */

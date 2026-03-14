@@ -25,7 +25,7 @@
 
 import React, { useState } from "react";
 import { Star } from "lucide-react";
-import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
+import { TugPushButton } from "@/components/tugways/tug-button";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 import type { TugDropdownItem } from "@/components/tugways/tug-dropdown";
 
@@ -84,11 +84,10 @@ export function GalleryCascadeInspectorContent() {
         </p>
         <div className="cg-variant-row" data-testid="inspector-sample-dropdown">
           <TugDropdown
-            trigger={
-              <TugButton emphasis="ghost" role="action" size="sm">
-                Open Dropdown
-              </TugButton>
-            }
+            label="Open Dropdown"
+            emphasis="ghost"
+            role="action"
+            size="sm"
             items={INSPECTOR_DEMO_ITEMS}
             onSelect={(id) => setDropdownSelected(id)}
           />
