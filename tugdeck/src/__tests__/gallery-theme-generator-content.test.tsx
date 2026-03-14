@@ -737,16 +737,16 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", ()
     expect(section).not.toBeNull();
   });
 
-  it("renders the button grid with 3 emphasis rows × 5 roles = 15 button cells", () => {
+  it("renders the button grid with 3 emphasis rows × 4 roles = 12 button cells", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const grid = container.querySelector("[data-testid='gtg-erp-button-grid']");
     expect(grid).not.toBeNull();
-    // 15 cells, each containing a tug-button
+    // 12 cells, each containing a tug-button
     const buttons = grid!.querySelectorAll(".tug-button");
-    expect(buttons.length).toBe(15);
+    expect(buttons.length).toBe(12);
   });
 
   it("renders the badge grid with 3 emphasis rows × 7 roles = 21 badge cells", () => {

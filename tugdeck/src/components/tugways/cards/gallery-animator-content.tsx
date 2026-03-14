@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugPushButton } from "@/components/tugways/tug-button";
 import {
   animate,
   SpringSolver,
@@ -205,12 +205,12 @@ function PhysicsCurvesDemo() {
         </div>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" size="sm" onClick={playAll}>
+        <TugPushButton size="sm" onClick={playAll}>
           Play All
-        </TugButton>
-        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={resetAll}>
+        </TugPushButton>
+        <TugPushButton emphasis="ghost" size="sm" onClick={resetAll}>
           Reset
-        </TugButton>
+        </TugPushButton>
         <PercentSlider value={pct} onChange={setPct} />
       </div>
     </div>
@@ -274,22 +274,21 @@ function DurationTokensDemo() {
       </div>
       <div className="cg-variant-row">
         {TOKEN_LABELS.map(({ token, label }) => (
-          <TugButton
+          <TugPushButton
             key={token}
-            subtype="push"
             emphasis={activeToken === token ? "filled" : "outlined"}
             role="action"
             size="sm"
             onClick={() => playToken(token)}
           >
             {label}
-          </TugButton>
+          </TugPushButton>
         ))}
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
+        <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
-        </TugButton>
+        </TugPushButton>
         <PercentSlider value={pct} onChange={setPct} />
       </div>
       <div className="cg-anim-token-legend">
@@ -377,23 +376,23 @@ function CancelModesDemo() {
         <div ref={boxRef} className="cg-anim-cancel-box" />
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
+        <TugPushButton emphasis="filled" role="accent" size="sm" onClick={startAnimation}>
           Start
-        </TugButton>
-        <TugButton subtype="push" size="sm" onClick={() => cancelWith("snap-to-end")}>
+        </TugPushButton>
+        <TugPushButton size="sm" onClick={() => cancelWith("snap-to-end")}>
           Snap to End
-        </TugButton>
-        <TugButton subtype="push" size="sm" onClick={() => cancelWith("hold-at-current")}>
+        </TugPushButton>
+        <TugPushButton size="sm" onClick={() => cancelWith("hold-at-current")}>
           Hold at Current
-        </TugButton>
-        <TugButton subtype="push" size="sm" onClick={() => cancelWith("reverse-from-current")}>
+        </TugPushButton>
+        <TugPushButton size="sm" onClick={() => cancelWith("reverse-from-current")}>
           Reverse
-        </TugButton>
+        </TugPushButton>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
+        <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
-        </TugButton>
+        </TugPushButton>
         <PercentSlider value={pct} onChange={setPct} />
       </div>
       <div className="cg-demo-status" data-testid="anim-cancel-status">
@@ -474,20 +473,20 @@ function NamedSlotsDemo() {
         <div ref={boxRef} className="cg-anim-slot-box" />
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" size="sm" onClick={animateToRight}>
+        <TugPushButton size="sm" onClick={animateToRight}>
           &rarr; Right (slot-demo)
-        </TugButton>
-        <TugButton subtype="push" size="sm" onClick={animateToLeft}>
+        </TugPushButton>
+        <TugPushButton size="sm" onClick={animateToLeft}>
           &larr; Left (slot-demo)
-        </TugButton>
-        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={animateDifferentKey}>
+        </TugPushButton>
+        <TugPushButton emphasis="ghost" size="sm" onClick={animateDifferentKey}>
           Fade (opacity-slot)
-        </TugButton>
+        </TugPushButton>
       </div>
       <div className="cg-variant-row">
-        <TugButton subtype="push" emphasis="ghost" size="sm" onClick={reset}>
+        <TugPushButton emphasis="ghost" size="sm" onClick={reset}>
           Reset
-        </TugButton>
+        </TugPushButton>
         <PercentSlider value={pct} onChange={setPct} />
       </div>
       {lastAction !== null && (

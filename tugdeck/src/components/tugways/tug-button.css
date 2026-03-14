@@ -5,8 +5,9 @@
  * hex values, no raw Tailwind color classes. Theme switches update CSS
  * variables at the DOM level -- TugButton re-paints without React re-renders.
  *
- * Retronow-inspired: pill shape, all-caps labels, progressive lightening
- * through rest → hover → active control states.
+ * TugButton is a typographically neutral base: no text-transform or
+ * letter-spacing. TugPushButton (.tug-push-button) adds uppercase styling
+ * for standalone action buttons.
  *
  * Emphasis x role system [D02, D03, D04]:
  *   Compound CSS class: .tug-button-{emphasis}-{role}
@@ -35,8 +36,6 @@
   font-weight: 600;
   font-family: inherit;
   line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   cursor: pointer;
   position: relative;
 
@@ -335,37 +334,16 @@
 }
 
 /* ============================================================================
-   Three-State Subtype: State Indicator
+   Push Button: Uppercase Typography Wrapper
    ========================================================================= */
 
-.tug-button-three-state {
-  position: relative;
-}
-
 /*
- * State indicator dot: appears at bottom-right of the button
- * to visually indicate on/off/mixed state.
+ * TugPushButton adds uppercase styling to TugButton for standalone action
+ * buttons. Applied as an additional class alongside .tug-button.
  */
-.tug-button-state-indicator {
-  position: absolute;
-  bottom: 3px;
-  right: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.tug-button-state-on .tug-button-state-indicator {
-  background-color: var(--tug-base-accent-default);
-}
-
-.tug-button-state-off .tug-button-state-indicator {
-  background-color: var(--tug-base-border-default);
-}
-
-.tug-button-state-mixed .tug-button-state-indicator {
-  background-color: var(--tug-base-fg-muted);
+.tug-push-button {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* ============================================================================

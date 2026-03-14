@@ -4,14 +4,22 @@
  * Wraps @radix-ui/react-dropdown-menu directly (no shadcn intermediary).
  * App code imports TugDropdown; never imports from components/ui/dropdown-menu.
  *
+ * TugDropdown owns its trigger button internally. Callers pass label,
+ * emphasis, role, size, and icon props instead of a trigger ReactNode.
+ * TugDropdown renders a TugButton with a ChevronDown trailing icon.
+ *
  * **Authoritative references:**
  * - [D01] Radix-direct wrapping replaces shadcn
+ * - [D05] TugDropdown owns its trigger button
  * - Spec S04: TugDropdownProps
- * - (#s04-tug-dropdown-props, #d01-radix-direct)
+ * - (#s04-tug-dropdown-props, #d01-radix-direct, #d05-dropdown-owns-trigger)
  */
 
 import React, { useRef, useState, useCallback } from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { ChevronDown } from "lucide-react";
+import { TugButton } from "./tug-button";
+import type { TugButtonEmphasis, TugButtonRole, TugButtonSize } from "./tug-button";
 import { animate } from "@/components/tugways/tug-animator";
 import "./tug-menu.css";
 
@@ -36,15 +44,33 @@ export interface TugDropdownItem {
 /**
  * Props for TugDropdown.
  *
+ * TugDropdown renders its own trigger button internally. Pass label,
+ * emphasis, role, size, and icon to configure the trigger appearance.
+ * When icon is provided, the trigger uses icon-text subtype; otherwise text.
+ *
  * **Authoritative reference:** Spec S04 TugDropdownProps.
  */
 export interface TugDropdownProps {
-  /** The trigger element that opens the dropdown when clicked. */
-  trigger: React.ReactNode;
+  /** Trigger button label content. Accepts string or ReactNode (e.g., styled badge span). */
+  label: React.ReactNode;
+  /** Trigger button emphasis. Default: "outlined". */
+  emphasis?: TugButtonEmphasis;
+  /** Trigger button role. Default: "action". */
+  role?: TugButtonRole;
+  /** Trigger button size. Default: "md". */
+  size?: TugButtonSize;
+  /** Optional leading icon for the trigger button. When provided, uses icon-text subtype. */
+  icon?: React.ReactNode;
   /** List of items to display in the dropdown. */
   items: TugDropdownItem[];
   /** Called with the selected item's id when an item is clicked. */
   onSelect: (id: string) => void;
+  /** Additional CSS class names for the trigger button. */
+  className?: string;
+  /** aria-label for the trigger button. */
+  "aria-label"?: string;
+  /** data-testid for the trigger button. */
+  "data-testid"?: string;
 }
 
 // ---- TugDropdown ----
@@ -56,6 +82,11 @@ export interface TugDropdownProps {
  * directly (no shadcn wrapper). Uses `--tug-base-*` semantic tokens for all
  * visual properties. The content renders into a Radix portal (document root),
  * avoiding z-index conflicts with CardFrame and other stacked elements.
+ *
+ * The trigger is a TugButton rendered internally with a ChevronDown trailing
+ * icon. Radix's Trigger with asChild automatically composes its internal ref
+ * with TugButton's forwardRef -- no manual ref merging utility is needed.
+ * [D05] TugDropdown owns its trigger button.
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  *
@@ -69,18 +100,36 @@ export interface TugDropdownProps {
 /** Side offset between trigger and dropdown content, in ems. */
 const SIDE_OFFSET_EM = 0.25;
 
-export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
+export function TugDropdown({
+  label,
+  emphasis,
+  role,
+  size,
+  icon,
+  items,
+  onSelect,
+  className,
+  "aria-label": ariaLabel,
+  "data-testid": dataTestId,
+}: TugDropdownProps) {
   // Tracks whether a blink animation is in progress to guard against re-entrant calls.
   const blinkingRef = useRef(false);
 
   // Resolve em-based offset to pixels from the trigger's font size.
   const [sideOffsetPx, setSideOffsetPx] = useState(3); // sensible fallback
-  const triggerRef = useCallback((node: HTMLElement | null) => {
+
+  // triggerRef: narrowed to HTMLButtonElement to match TugButton's Ref<HTMLButtonElement>.
+  // The function body only calls getComputedStyle(node) which accepts any Element,
+  // so narrowing from HTMLElement to HTMLButtonElement is safe. [D05]
+  const triggerRef = useCallback((node: HTMLButtonElement | null) => {
     if (node) {
       const fontSize = parseFloat(getComputedStyle(node).fontSize) || 13;
       setSideOffsetPx(Math.round(SIDE_OFFSET_EM * fontSize));
     }
   }, []);
+
+  // Determine subtype: icon-text when icon is provided, text otherwise. [D05]
+  const subtype = icon ? "icon-text" : "text";
 
   function handleItemSelect(id: string, event: Event) {
     // Prevent Radix from immediately closing the menu.
@@ -150,7 +199,22 @@ export function TugDropdown({ trigger, items, onSelect }: TugDropdownProps) {
 
   return (
     <DropdownMenuPrimitive.Root>
-      <DropdownMenuPrimitive.Trigger asChild ref={triggerRef}>{trigger}</DropdownMenuPrimitive.Trigger>
+      <DropdownMenuPrimitive.Trigger asChild>
+        <TugButton
+          ref={triggerRef}
+          subtype={subtype}
+          emphasis={emphasis}
+          role={role}
+          size={size}
+          icon={icon}
+          trailingIcon={<ChevronDown size={12} />}
+          className={className}
+          aria-label={ariaLabel}
+          data-testid={dataTestId}
+        >
+          {label}
+        </TugButton>
+      </DropdownMenuPrimitive.Trigger>
       <DropdownMenuPrimitive.Portal>
         <DropdownMenuPrimitive.Content className="tug-dropdown-content" align="start" sideOffset={sideOffsetPx}>
           {items.map((item) => (

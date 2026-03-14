@@ -37,11 +37,9 @@
  */
 
 import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
-import { ChevronDown } from "lucide-react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { usePropertyStore } from "@/components/tugways/hooks/use-property-store";
 import type { PropertyChange, PropertyDescriptor } from "@/components/tugways/property-store";
-import { TugButton } from "@/components/tugways/tug-button";
 import { TugDropdown } from "@/components/tugways/tug-dropdown";
 
 // ---------------------------------------------------------------------------
@@ -365,11 +363,10 @@ export function GalleryObservablePropsContent({ cardId }: { cardId: string }) {
             {DEMO_SCHEMA[2].label}
           </label>
           <TugDropdown
-            trigger={
-              <TugButton emphasis="ghost" role="action" size="sm" trailingIcon={<ChevronDown size={12} />}>
-                {fontFamily}
-              </TugButton>
-            }
+            label={fontFamily}
+            emphasis="ghost"
+            role="action"
+            size="sm"
             items={FONT_FAMILY_OPTIONS.map((ff) => ({ id: ff, label: ff }))}
             onSelect={handleFontFamilySelect}
           />

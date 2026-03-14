@@ -4,7 +4,7 @@
  * Wraps a plain <button> element with Radix Slot for asChild polymorphism.
  * App code imports TugButton; never imports from components/ui/button.
  *
- * Phase 2: Direct-action mode (onClick) and all four subtypes.
+ * Phase 2: Direct-action mode (onClick) and three subtypes (text, icon, icon-text).
  * Phase 3: Chain-action mode added via `action` prop.
  *   - When `action` is set, TugButton subscribes to the responder chain via
  *     useSyncExternalStore. canHandle/validateAction determine visibility and
@@ -12,9 +12,12 @@
  *   - When `action` is undefined or no ResponderChainProvider is in the tree,
  *     TugButton falls through to direct-action mode (existing onClick behavior).
  *
+ * TugButton is typographically neutral (no uppercase/letter-spacing).
+ * Use TugPushButton for standalone action buttons that need uppercase styling.
+ *
  * Emphasis x Role API [D02, D03, D04, Spec S01, Spec S02]:
  *   `emphasis` controls visual weight (filled/outlined/ghost), default: "outlined"
- *   `role` controls color domain (accent/action/data/danger), default: "active"
+ *   `role` controls color domain (accent/action/data/danger), default: "action"
  *   Compound CSS class: tug-button-{emphasis}-{role}
  *
  * [D01] TugButton wraps Radix Slot for asChild polymorphism (no shadcn)
@@ -24,7 +27,7 @@
  * Spec S01, S02, S03, S04, Table T01, T02, T03
  */
 
-import React, { useState, useSyncExternalStore } from "react";
+import React, { useSyncExternalStore } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { useResponderChain } from "./responder-chain-provider";
@@ -39,9 +42,6 @@ const NOOP_SNAPSHOT = (): number => 0;
 
 // ---- Types ----
 
-/** Three-state button state values */
-export type TugButtonState = "on" | "off" | "mixed";
-
 /** TugButton emphasis values — controls visual weight (Spec S01) [D02] */
 export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 
@@ -51,8 +51,11 @@ export type TugButtonRole = "accent" | "action" | "data" | "danger";
 /** TugButton size names (Spec S01) */
 export type TugButtonSize = "sm" | "md" | "lg";
 
-/** TugButton subtype names (Spec S01, Table T01) */
-export type TugButtonSubtype = "push" | "icon" | "icon-text" | "three-state";
+/**
+ * TugButton subtype names (Spec S01, Table T01).
+ * Three subtypes: text (default), icon (square), icon-text (leading icon + label).
+ */
+export type TugButtonSubtype = "text" | "icon" | "icon-text";
 
 /** TugButton border-radius tokens (proportional, rem-based like Tailwind) */
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
@@ -68,7 +71,7 @@ export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
  *   - 'children': TugButton redefines it as React.ReactNode (same type but explicit)
  */
 export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'role' | 'onClick' | 'children'> {
-  /** Button rendering subtype. Default: "push" */
+  /** Button rendering subtype. Default: "text" */
   subtype?: TugButtonSubtype;
   /** Visual weight. Default: "outlined". Controls filled/outlined/ghost styling. [D02, Spec S01] */
   emphasis?: TugButtonEmphasis;
@@ -113,22 +116,17 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
   disabled?: boolean;
   /** Show spinner overlay and disable interaction */
   loading?: boolean;
-  /** Button label content (required for push, icon-text, three-state subtypes) */
+  /** Button label content (required for text and icon-text subtypes) */
   children?: React.ReactNode;
 
   /** Lucide icon node for "icon" and "icon-text" subtypes */
   icon?: React.ReactNode;
 
   /**
-   * Trailing icon node rendered after the label text in "push" and "icon-text" subtypes.
+   * Trailing icon node rendered after the label text in "text" and "icon-text" subtypes.
    * Useful for dropdown triggers that show a ChevronDown indicator.
    */
   trailingIcon?: React.ReactNode;
-
-  /** Current state for "three-state" subtype. Default: "off" */
-  state?: TugButtonState;
-  /** Callback when three-state button is clicked (cycles: off → on → mixed → off) */
-  onStateChange?: (state: TugButtonState) => void;
 
   /** Accessibility label (required for "icon" subtype without visible text) */
   "aria-label"?: string;
@@ -181,12 +179,15 @@ function Spinner() {
 /**
  * TugButton -- tugways button component.
  *
- * Supports four subtypes (push, icon, icon-text, three-state), three sizes (sm, md, lg),
+ * Supports three subtypes (text, icon, icon-text), three sizes (sm, md, lg),
  * loading state, direct-action mode (onClick), and chain-action mode (action).
+ *
+ * TugButton is typographically neutral. For uppercase standalone action buttons,
+ * use TugPushButton instead.
  *
  * Styling is controlled by the emphasis x role system [D02, D03, D04]:
  *   emphasis: "filled" | "outlined" | "ghost" (default: "outlined")
- *   role:     "accent" | "active" | "data" | "danger" (default: "active")
+ *   role:     "accent" | "action" | "data" | "danger" (default: "action")
  *
  * All colors use var(--tug-base-*) semantic tokens for zero-re-render theme switching.
  *
@@ -194,7 +195,7 @@ function Spinner() {
  * reach the underlying DOM button element.
  */
 export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(function TugButton({
-  subtype = "push",
+  subtype = "text",
   emphasis = "outlined",
   role = "action",
   size = "md",
@@ -206,22 +207,12 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   children,
   icon,
   trailingIcon,
-  state = "off",
-  onStateChange,
   rounded,
   "aria-label": ariaLabel,
   className,
   asChild = false,
   ...rest
 }: TugButtonProps, ref) {
-  // Three-state subtype internal state management
-  const [internalState, setInternalState] = useState<TugButtonState>(state);
-
-  // Sync internalState when state prop changes
-  React.useEffect(() => {
-    setInternalState(state);
-  }, [state]);
-
   // Dev-mode warning for icon subtype without aria-label
   React.useEffect(() => {
     if (
@@ -328,28 +319,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       return;
     }
 
-    if (subtype === "three-state") {
-      // Cycle: off → on → mixed → off
-      const nextMap: Record<TugButtonState, TugButtonState> = {
-        off: "on",
-        on: "mixed",
-        mixed: "off",
-      };
-      const newState = nextMap[internalState];
-      setInternalState(newState);
-      onStateChange?.(newState);
-    } else {
-      onClick?.();
-    }
+    onClick?.();
   };
-
-  // aria-pressed for three-state subtype (Spec S03)
-  const ariaPressed: boolean | "mixed" | undefined =
-    subtype === "three-state"
-      ? internalState === "mixed"
-        ? "mixed"
-        : internalState === "on"
-      : undefined;
 
   // aria-disabled for chain-action disabled state.
   // Use aria-disabled (not HTML disabled) so the button stays in the tab order.
@@ -369,9 +340,6 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     subtype === "icon" && size === "sm" && "tug-button-icon-sm",
     subtype === "icon" && size === "md" && "tug-button-icon-md",
     subtype === "icon" && size === "lg" && "tug-button-icon-lg",
-    // Three-state subtype classes
-    subtype === "three-state" && "tug-button-three-state",
-    subtype === "three-state" && `tug-button-state-${internalState}`,
     // Loading state
     loading && "tug-button-loading",
     className
@@ -410,15 +378,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
           </span>
         );
 
-      case "three-state":
-        return (
-          <>
-            {children}
-            <span className="tug-button-state-indicator" aria-hidden="true" />
-          </>
-        );
-
-      case "push":
+      case "text":
       default:
         return (
           <>
@@ -441,7 +401,6 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       ref={ref}
       disabled={disabled}
       aria-label={ariaLabel}
-      aria-pressed={ariaPressed}
       aria-busy={loading ? "true" : undefined}
       aria-disabled={ariaDisabled}
       onClick={handleClick}
@@ -453,3 +412,43 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     </Comp>
   );
 });
+
+// ---- TugPushButton ----
+
+/**
+ * TugPushButtonProps -- same as TugButtonProps, but without `subtype`.
+ *
+ * TugPushButton always uses the "text" (formerly "push") subtype default and
+ * adds uppercase / letter-spacing styling via the .tug-push-button CSS class.
+ * Callers do not set subtype -- it is an implementation detail of this wrapper.
+ *
+ * [D02] TugPushButton wrapper for standalone action buttons
+ * Spec S02, S03
+ */
+export interface TugPushButtonProps extends Omit<TugButtonProps, "subtype"> {}
+
+/**
+ * TugPushButton -- uppercase standalone action button.
+ *
+ * A thin wrapper around TugButton that adds the `.tug-push-button` CSS class,
+ * which applies `text-transform: uppercase` and `letter-spacing: 0.06em`.
+ * All other TugButton props pass through unchanged.
+ *
+ * Use TugPushButton for standalone action buttons (e.g., "Save", "Cancel").
+ * Use TugButton directly for controls where mixed-case text is appropriate
+ * (e.g., dropdown triggers, tab bar controls).
+ *
+ * [D02] Separates uppercase design choice from button infrastructure
+ * Spec S02, S03
+ */
+export const TugPushButton = React.forwardRef<HTMLButtonElement, TugPushButtonProps>(
+  function TugPushButton({ className, ...props }: TugPushButtonProps, ref) {
+    return (
+      <TugButton
+        ref={ref}
+        className={cn("tug-push-button", className)}
+        {...props}
+      />
+    );
+  }
+);

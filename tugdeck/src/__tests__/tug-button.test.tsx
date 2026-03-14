@@ -2,26 +2,25 @@
  * TugButton unit tests.
  *
  * Tests cover:
- * - Default render (push, outlined active, md)
- * - All four subtypes: push, icon, icon-text, three-state
+ * - Default render (text, outlined action, md)
+ * - All three subtypes: text, icon, icon-text
  * - Emphasis x role system: default class, all 8 Table T01 combinations
  * - All three sizes: sm, md, lg
  * - Icon subtype square aspect ratio class
- * - Three-state: aria-pressed matches state prop
- * - Three-state: click toggles on/off and calls onStateChange
  * - Loading state: aria-busy and spinner
  * - Disabled state: disabled attribute
  * - Icon subtype without aria-label: console.warn
+ * - TugPushButton: wrapper, class, props, ref, onClick
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
 import "./setup-rtl";
 
 import React from "react";
-import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
-import { render, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, mock, spyOn } from "bun:test";
+import { render, fireEvent } from "@testing-library/react";
 
-import { TugButton } from "@/components/tugways/tug-button";
+import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 
 // ---- Helper: render TugButton and get the <button> element ----
 
@@ -40,7 +39,7 @@ describe("TugButton – default render", () => {
     expect(btn).not.toBeNull();
   });
 
-  it("renders with default props (push, outlined active, md)", () => {
+  it("renders with default props (text, outlined action, md)", () => {
     const btn = renderButton({ children: "Click me" });
     expect(btn).not.toBeNull();
     expect(btn.textContent).toContain("Click me");
@@ -53,15 +52,15 @@ describe("TugButton – default render", () => {
 // Subtype rendering
 // ============================================================================
 
-describe("TugButton – push subtype", () => {
+describe("TugButton – text subtype", () => {
   it("renders children as content", () => {
-    const btn = renderButton({ subtype: "push", children: "Save" });
+    const btn = renderButton({ children: "Save" });
     expect(btn.textContent).toContain("Save");
   });
 
   it("calls onClick when clicked", () => {
     const handler = mock(() => {});
-    const btn = renderButton({ subtype: "push", children: "Go", onClick: handler });
+    const btn = renderButton({ children: "Go", onClick: handler });
     fireEvent.click(btn);
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -133,112 +132,6 @@ describe("TugButton – icon-text subtype", () => {
     );
     const btn = container.querySelector("button");
     expect(btn?.querySelector(".tug-button-icon-text")).not.toBeNull();
-  });
-});
-
-describe("TugButton – three-state subtype", () => {
-  it("sets aria-pressed to false when state is 'off'", () => {
-    const btn = renderButton({
-      subtype: "three-state",
-      state: "off",
-      children: "Toggle",
-    });
-    expect(btn.getAttribute("aria-pressed")).toBe("false");
-  });
-
-  it("sets aria-pressed to true when state is 'on'", () => {
-    const btn = renderButton({
-      subtype: "three-state",
-      state: "on",
-      children: "Toggle",
-    });
-    expect(btn.getAttribute("aria-pressed")).toBe("true");
-  });
-
-  it("sets aria-pressed to 'mixed' when state is 'mixed'", () => {
-    const btn = renderButton({
-      subtype: "three-state",
-      state: "mixed",
-      children: "Toggle",
-    });
-    expect(btn.getAttribute("aria-pressed")).toBe("mixed");
-  });
-
-  it("cycles from off to on and calls onStateChange", async () => {
-    const onChange = mock((_state: string) => {});
-    const { container } = render(
-      <TugButton subtype="three-state" state="off" onStateChange={onChange}>
-        Toggle
-      </TugButton>
-    );
-    const btn = container.querySelector("button")!;
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0]).toBe("on");
-  });
-
-  it("cycles from on to mixed and calls onStateChange", async () => {
-    const onChange = mock((_state: string) => {});
-    const { container } = render(
-      <TugButton subtype="three-state" state="on" onStateChange={onChange}>
-        Toggle
-      </TugButton>
-    );
-    const btn = container.querySelector("button")!;
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0]).toBe("mixed");
-  });
-
-  it("cycles from mixed to off and calls onStateChange", async () => {
-    const onChange = mock((_state: string) => {});
-    const { container } = render(
-      <TugButton subtype="three-state" state="mixed" onStateChange={onChange}>
-        Toggle
-      </TugButton>
-    );
-    const btn = container.querySelector("button")!;
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0]).toBe("off");
-  });
-
-  it("shows state indicator element", () => {
-    const { container } = render(
-      <TugButton subtype="three-state" state="off" children="Toggle" />
-    );
-    const indicator = container.querySelector(".tug-button-state-indicator");
-    expect(indicator).not.toBeNull();
-  });
-
-  it("applies state CSS classes: tug-button-state-on", () => {
-    const { container } = render(
-      <TugButton subtype="three-state" state="on" children="Toggle" />
-    );
-    const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-button-state-on");
-  });
-
-  it("applies state CSS classes: tug-button-state-off", () => {
-    const { container } = render(
-      <TugButton subtype="three-state" state="off" children="Toggle" />
-    );
-    const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-button-state-off");
-  });
-
-  it("applies state CSS classes: tug-button-state-mixed", () => {
-    const { container } = render(
-      <TugButton subtype="three-state" state="mixed" children="Toggle" />
-    );
-    const btn = container.querySelector("button");
-    expect(btn?.className).toContain("tug-button-state-mixed");
   });
 });
 
@@ -421,10 +314,10 @@ describe("TugButton – rest props (Radix composition)", () => {
 // ============================================================================
 
 describe("TugButton – trailingIcon prop", () => {
-  it("renders trailingIcon in push subtype when provided", () => {
+  it("renders trailingIcon in text subtype when provided", () => {
     const trailing = <span data-testid="trailing-chevron">v</span>;
     const { container } = render(
-      <TugButton subtype="push" trailingIcon={trailing}>Open</TugButton>
+      <TugButton trailingIcon={trailing}>Open</TugButton>
     );
     const wrapper = container.querySelector(".tug-button-trailing-icon");
     expect(wrapper).not.toBeNull();
@@ -444,9 +337,58 @@ describe("TugButton – trailingIcon prop", () => {
 
   it("does NOT render .tug-button-trailing-icon when trailingIcon is not provided", () => {
     const { container } = render(
-      <TugButton subtype="push">Save</TugButton>
+      <TugButton>Save</TugButton>
     );
     const wrapper = container.querySelector(".tug-button-trailing-icon");
     expect(wrapper).toBeNull();
+  });
+});
+
+// ============================================================================
+// TugPushButton (T03–T07)
+// ============================================================================
+
+describe("TugPushButton", () => {
+  it("T03: renders a button element", () => {
+    const { container } = render(<TugPushButton>Save</TugPushButton>);
+    const btn = container.querySelector("button");
+    expect(btn).not.toBeNull();
+  });
+
+  it("T04: applies .tug-push-button class", () => {
+    const { container } = render(<TugPushButton>Save</TugPushButton>);
+    const btn = container.querySelector("button");
+    expect(btn?.className).toContain("tug-push-button");
+  });
+
+  it("T05: forwards all TugButton props (emphasis, role, size)", () => {
+    const { container } = render(
+      <TugPushButton emphasis="filled" role="accent" size="sm">
+        Save
+      </TugPushButton>
+    );
+    const btn = container.querySelector("button");
+    expect(btn?.className).toContain("tug-button-filled-accent");
+    expect(btn?.className).toContain("tug-button-size-sm");
+  });
+
+  it("T06: forwards ref to underlying button element", () => {
+    let capturedRef: HTMLButtonElement | null = null;
+    const { container } = render(
+      <TugPushButton ref={(el) => { capturedRef = el; }}>Save</TugPushButton>
+    );
+    const btn = container.querySelector("button");
+    expect(capturedRef).not.toBeNull();
+    expect(capturedRef).toBe(btn);
+  });
+
+  it("T07: calls onClick when clicked", () => {
+    const handler = mock(() => {});
+    const { container } = render(
+      <TugPushButton onClick={handler}>Save</TugPushButton>
+    );
+    const btn = container.querySelector("button")!;
+    fireEvent.click(btn);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });
