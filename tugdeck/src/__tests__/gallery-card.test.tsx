@@ -204,7 +204,7 @@ describe("GALLERY_DEFAULT_TABS", () => {
 
   it("entries have the correct titles", () => {
     const titles = GALLERY_DEFAULT_TABS.map((t) => t.title);
-    expect(titles).toContain("TugButton");
+    expect(titles).toContain("TugPushButton");
     expect(titles).toContain("Chain Actions");
     expect(titles).toContain("Mutation Model");
     expect(titles).toContain("TugTabBar");

@@ -425,7 +425,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
  * [D02] TugPushButton wrapper for standalone action buttons
  * Spec S02, S03
  */
-export interface TugPushButtonProps extends Omit<TugButtonProps, "subtype"> {}
+export interface TugPushButtonProps extends TugButtonProps {}
 
 /**
  * TugPushButton -- uppercase standalone action button.
