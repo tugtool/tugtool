@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-14T01:00:11Z
+---
+
+## step-3: Added optional role prop to TugCheckbox using inline CSS custom property injection. ROLE_TONE_MAP resolves role names to tone suffixes, injects --tug-toggle-on-color and --tug-toggle-on-hover-color, sets data-role attribute. CSS updated with var() fallback pattern and split hover rules. 8 new tests added.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-2
 date: 2025-03-14T00:54:28Z
 ---

@@ -56,25 +56,40 @@
 /* ---- Checked ---- */
 
 .tug-checkbox[data-state="checked"] {
-  background-color: var(--tug-base-toggle-track-on);
-  border-color: var(--tug-base-toggle-track-on);
+  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
+  border-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-on));
 }
 
-.tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]) {
+/* Default hover (no role) — uses pre-computed hover token [Spec S02] */
+.tug-checkbox[data-state="checked"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
   background-color: var(--tug-base-toggle-track-on-hover);
   border-color: var(--tug-base-toggle-track-on-hover);
 }
 
-/* ---- Indeterminate (mixed) ---- */
-
-.tug-checkbox[data-state="indeterminate"] {
-  background-color: var(--tug-base-toggle-track-mixed);
-  border-color: var(--tug-base-toggle-track-mixed);
+/* Role hover — uses injected color-mix value [Spec S02] */
+.tug-checkbox[data-state="checked"][data-role]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-toggle-on-hover-color);
+  border-color: var(--tug-toggle-on-hover-color);
 }
 
-.tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]) {
+/* ---- Indeterminate (mixed) ---- */
+
+/* Indeterminate inherits role color so it reads as "partially in this role". [D03] */
+.tug-checkbox[data-state="indeterminate"] {
+  background-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-mixed));
+  border-color: var(--tug-toggle-on-color, var(--tug-base-toggle-track-mixed));
+}
+
+/* Default hover (no role) for indeterminate [Spec S02] */
+.tug-checkbox[data-state="indeterminate"]:hover:not(:disabled):not([data-disabled]):not([data-role]) {
   background-color: var(--tug-base-toggle-track-mixed-hover);
   border-color: var(--tug-base-toggle-track-mixed-hover);
+}
+
+/* Role hover for indeterminate [Spec S02] */
+.tug-checkbox[data-state="indeterminate"][data-role]:hover:not(:disabled):not([data-disabled]) {
+  background-color: var(--tug-toggle-on-hover-color);
+  border-color: var(--tug-toggle-on-hover-color);
 }
 
 /* ---- Disabled ---- */
