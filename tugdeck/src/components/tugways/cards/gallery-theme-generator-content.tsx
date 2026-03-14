@@ -47,6 +47,14 @@ import {
   type CVDType,
 } from "@/components/tugways/theme-accessibility";
 import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
+import { TugButton } from "@/components/tugways/tug-button";
+import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
+import { TugBadge } from "@/components/tugways/tug-badge";
+import type { TugBadgeEmphasis, TugBadgeRole } from "@/components/tugways/tug-badge";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
+import { TugSwitch } from "@/components/tugways/tug-switch";
+import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -890,6 +898,114 @@ function ExportImportPanel({
 }
 
 // ---------------------------------------------------------------------------
+// EmphasisRolePreview — emphasis x role matrix for buttons, badges, and
+// selection controls [D05, Step 7]
+// ---------------------------------------------------------------------------
+
+/**
+ * All emphasis values for TugButton and TugBadge.
+ */
+const BUTTON_EMPHASES: TugButtonEmphasis[] = ["filled", "outlined", "ghost"];
+const BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "ghost"];
+
+/**
+ * TugButton supports 5 roles; TugBadge supports all 7. [D02]
+ */
+const BUTTON_ROLES: TugButtonRole[] = ["accent", "action", "agent", "data", "danger"];
+const BADGE_ROLES: TugBadgeRole[] = [
+  "accent", "action", "agent", "data", "success", "caution", "danger",
+];
+
+/**
+ * All 7 roles for TugCheckbox and TugSwitch. [D04, Table T04]
+ */
+const SELECTION_ROLES: TugCheckboxRole[] = [
+  "accent", "action", "agent", "data", "success", "caution", "danger",
+];
+
+/**
+ * EmphasisRolePreview — renders a 3×N button grid, a 3×7 badge grid, and
+ * a 1×7 selection control row showing all emphasis x role combinations.
+ *
+ * Each cell renders a live component with the current derived theme applied
+ * via the inherited CSS custom properties on the preview container.
+ *
+ * Appearance changes are driven entirely by CSS token cascade — no React
+ * state is used for color. [D08, D09]
+ */
+function EmphasisRolePreview() {
+  return (
+    <div className="gtg-erp" data-testid="gtg-emphasis-role-preview">
+
+      {/* ---- Buttons: 3 emphasis × 5 roles ---- */}
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Buttons (3 emphasis × 5 roles)</div>
+        <div className="gtg-erp-grid" data-testid="gtg-erp-button-grid" style={{ "--gtg-erp-cols": BUTTON_ROLES.length } as React.CSSProperties}>
+          {/* Role column headers */}
+          <div className="gtg-erp-corner" />
+          {BUTTON_ROLES.map((role) => (
+            <div key={role} className="gtg-erp-col-label">{role}</div>
+          ))}
+          {/* Emphasis rows */}
+          {BUTTON_EMPHASES.map((emphasis) => (
+            <React.Fragment key={emphasis}>
+              <div className="gtg-erp-row-label">{emphasis}</div>
+              {BUTTON_ROLES.map((role) => (
+                <div key={role} className="gtg-erp-cell">
+                  <TugButton emphasis={emphasis} role={role} size="sm">
+                    {role}
+                  </TugButton>
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- Badges: 3 emphasis × 7 roles ---- */}
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Badges (3 emphasis × 7 roles)</div>
+        <div className="gtg-erp-grid" data-testid="gtg-erp-badge-grid" style={{ "--gtg-erp-cols": BADGE_ROLES.length } as React.CSSProperties}>
+          {/* Role column headers */}
+          <div className="gtg-erp-corner" />
+          {BADGE_ROLES.map((role) => (
+            <div key={role} className="gtg-erp-col-label">{role}</div>
+          ))}
+          {/* Emphasis rows */}
+          {BADGE_EMPHASES.map((emphasis) => (
+            <React.Fragment key={emphasis}>
+              <div className="gtg-erp-row-label">{emphasis}</div>
+              {BADGE_ROLES.map((role) => (
+                <div key={role} className="gtg-erp-cell">
+                  <TugBadge emphasis={emphasis} role={role}>
+                    {role}
+                  </TugBadge>
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- Selection controls: TugCheckbox + TugSwitch × 7 roles ---- */}
+      <div className="gtg-erp-subsection">
+        <div className="gtg-erp-subtitle">Selection Controls (7 roles, checked)</div>
+        <div className="gtg-erp-selection-row" data-testid="gtg-erp-selection-row">
+          {SELECTION_ROLES.map((role) => (
+            <div key={role} className="gtg-erp-selection-cell">
+              <div className="gtg-erp-col-label">{role}</div>
+              <TugCheckbox role={role} checked aria-label={`checkbox-${role}`} />
+              <TugSwitch role={role as TugSwitchRole} checked aria-label={`switch-${role}`} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GalleryThemeGeneratorContent — main component
 // ---------------------------------------------------------------------------
 
@@ -1291,6 +1407,14 @@ export function GalleryThemeGeneratorContent() {
             testId="gtg-slider-warmth"
           />
         </div>
+      </div>
+
+      <div className="cg-divider" />
+
+      {/* ---- Emphasis x Role Preview ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Emphasis × Role Preview</div>
+        <EmphasisRolePreview />
       </div>
 
       <div className="cg-divider" />

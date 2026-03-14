@@ -719,3 +719,87 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step 7: Emphasis x Role Preview section
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders the emphasis x role preview section", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const section = container.querySelector("[data-testid='gtg-emphasis-role-preview']");
+    expect(section).not.toBeNull();
+  });
+
+  it("renders the button grid with 3 emphasis rows × 5 roles = 15 button cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const grid = container.querySelector("[data-testid='gtg-erp-button-grid']");
+    expect(grid).not.toBeNull();
+    // 15 cells, each containing a tug-button
+    const buttons = grid!.querySelectorAll(".tug-button");
+    expect(buttons.length).toBe(15);
+  });
+
+  it("renders the badge grid with 3 emphasis rows × 7 roles = 21 badge cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const grid = container.querySelector("[data-testid='gtg-erp-badge-grid']");
+    expect(grid).not.toBeNull();
+    const badges = grid!.querySelectorAll(".tug-badge");
+    expect(badges.length).toBe(21);
+  });
+
+  it("renders the selection controls row with 7 role cells", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const row = container.querySelector("[data-testid='gtg-erp-selection-row']");
+    expect(row).not.toBeNull();
+    const cells = row!.querySelectorAll(".gtg-erp-selection-cell");
+    expect(cells.length).toBe(7);
+  });
+
+  it("each selection cell contains a checkbox and a switch", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const row = container.querySelector("[data-testid='gtg-erp-selection-row']");
+    const cells = row!.querySelectorAll(".gtg-erp-selection-cell");
+    for (const cell of Array.from(cells)) {
+      expect(cell.querySelector(".tug-checkbox")).not.toBeNull();
+      expect(cell.querySelector(".tug-switch")).not.toBeNull();
+    }
+  });
+
+  it("preview section updates derived token output when a role hue changes", () => {
+    // Verify that switching danger hue from red to pink changes the tone-danger token.
+    // This is a unit-level assertion on deriveTheme() since the live preview update
+    // is a CSS cascade effect invisible to JSDOM.
+    const withRed = deriveTheme({
+      name: "test", mode: "dark",
+      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      destructive: "red",
+    });
+    const withPink = deriveTheme({
+      name: "test", mode: "dark",
+      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      destructive: "pink",
+    });
+    expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
+      withPink.tokens["--tug-base-tone-danger"],
+    );
+  });
+});

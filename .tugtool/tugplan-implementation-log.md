@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-14T01:26:01Z
+---
+
+## step-7: Added Emphasis x Role Preview section with button grid (3x5=15), badge grid (3x7=21), and selection controls row (7 roles with checkbox+switch). CSS grid layout with row/column labels. 6 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-form-selection-alignment.md
+
+---
+
+---
 step: step-6
 date: 2025-03-14T01:19:19Z
 ---
