@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-15T21:50:14Z
+---
+
+## step-10: Full integration checkpoint. 1616 tests pass. Zero offset syntax in production code. 48 hues in HUE_FAMILIES, ADJACENCY_RING, and tug-color-canonical.json. OKLCH delta-E and marginal band verified. All plan exit criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-9
 date: 2025-03-15T21:44:23Z
 ---
