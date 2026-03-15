@@ -2,10 +2,17 @@
  * tug-color-parser — Tokenizer and parser for the --tug-color() color notation.
  *
  * --tug-color() specifies colors using four parameters:
- *   Color (C):     A named hue, optionally adjusted by a degree offset
+ *   Color (C):     A named hue, optionally followed by an adjacent hue (hyphenated)
+ *                  and/or a preset name
  *   Intensity (I): Chroma axis, 0–100 (default 50)
  *   Tone (T):      Lightness axis, 0–100 (default 50)
  *   Alpha (A):     Opacity, 0–100 (default 100)
+ *
+ * Supported color forms (48-color vocabulary + adjacency):
+ *   --tug-color(indigo)                   bare color
+ *   --tug-color(indigo-intense)           color + preset
+ *   --tug-color(cobalt-indigo)            hyphenated adjacency (cobalt dominant)
+ *   --tug-color(cobalt-indigo-intense)    hyphenated adjacency + preset
  *
  * Supported syntax forms:
  *   --tug-color(red)                              defaults for i/t/a
@@ -14,7 +21,6 @@
  *   --tug-color(c: red, i: 50, t: 40, a: 100)    all labeled
  *   --tug-color(color: red, intensity: 50, tone: 40, alpha: 100) full label names
  *   --tug-color(coral, t: 20)                     mixed: positional then labeled
- *   --tug-color(red+5.2, i: 30, t: 70)           color with hue offset
  *   --tug-color(t: 40, a: 100, c: purple, i: 12) labeled, any order
  *
  * Labels: c/color, i/intensity, t/tone, a/alpha
@@ -30,8 +36,8 @@
 
 export interface TugColorValue {
   name: string;
-  offset: number; // degrees, 0 if no offset specified
-  preset?: string; // preset name if specified (e.g. "intense", "light")
+  adjacentName?: string; // second color name if hyphenated adjacency (must be adjacent)
+  preset?: string;       // preset name if specified (e.g. "intense", "light")
 }
 
 export interface TugColorParsed {
@@ -64,7 +70,7 @@ export interface TugColorCallSpan {
 // Tokens
 // ---------------------------------------------------------------------------
 
-type TokenType = "ident" | "number" | "plus" | "minus" | "colon" | "comma";
+type TokenType = "ident" | "number" | "minus" | "colon" | "comma";
 
 interface Token {
   type: TokenType;
@@ -98,8 +104,8 @@ function tokenize(input: string): Token[] | TugColorError {
       tokens.push({ type: "colon", value: ch, pos });
       i++;
     } else if (ch === "+") {
-      tokens.push({ type: "plus", value: ch, pos });
-      i++;
+      // Plus is no longer valid syntax — offset syntax removed
+      return { message: `Unexpected character '+'; hue offsets have been replaced by hyphenated adjacency syntax (e.g. 'cobalt-indigo')`, pos };
     } else if (ch === "-") {
       tokens.push({ type: "minus", value: ch, pos });
       i++;
@@ -155,6 +161,9 @@ const SLOT_ORDER = ["color", "intensity", "tone", "alpha"] as const;
 // Defaults for optional numeric slots
 const DEFAULTS = { intensity: 50, tone: 50, alpha: 100 } as const;
 
+// Known preset names (checked during chain parsing)
+const PRESET_NAMES = new Set(["light", "dark", "intense", "muted", "canonical"]);
+
 // ---------------------------------------------------------------------------
 // Argument group splitting
 // ---------------------------------------------------------------------------
@@ -180,7 +189,21 @@ function splitArgs(tokens: Token[]): Token[][] {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse tokens as a color value: IDENT [(PLUS|MINUS) NUMBER] | IDENT MINUS IDENT(preset)
+ * Parse tokens as a color value using the chain grammar:
+ *   IDENT [MINUS IDENT [MINUS IDENT]]
+ *
+ * Chain resolution rules (per parser grammar, [D03]-[D05]):
+ *   1. First ident: must be a known color (48-color set, plus black/white)
+ *   2. Second ident after minus (if present):
+ *      a. Preset name? → apply preset, chain ends
+ *      b. Adjacent color? → record adjacentName, continue to third ident
+ *      c. Known color but not adjacent → hard error
+ *      d. Unknown ident → hard error
+ *   3. Third ident after minus (if present): must be a preset name; error otherwise
+ *
+ * Presets win disambiguation [D05]: checked before adjacency ring.
+ * Non-adjacent pairs produce hard errors [D04].
+ *
  * Returns null on failure after pushing errors.
  */
 function parseColorTokens(
@@ -188,6 +211,7 @@ function parseColorTokens(
   knownHues: ReadonlySet<string>,
   errors: TugColorError[],
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
+  adjacencyRing?: readonly string[],
 ): TugColorValue | null {
   if (tokens.length === 0) {
     errors.push({ message: "Expected a color name", pos: 0 });
@@ -211,54 +235,127 @@ function parseColorTokens(
 
   // Color name alone
   if (tokens.length === 1) {
-    return { name, offset: 0 };
+    return { name };
   }
 
-  // Color name with preset: IDENT MINUS IDENT(preset)
-  // e.g. "green-intense", "orange-muted"
-  // Distinct from offset (IDENT MINUS NUMBER) because the third token is an ident.
-  if (
-    tokens.length === 3 &&
-    tokens[1].type === "minus" &&
-    tokens[2].type === "ident"
-  ) {
-    const presetName = tokens[2].value;
-    if (knownPresets && knownPresets.has(presetName)) {
-      return { name, offset: 0, preset: presetName };
-    }
-    // Unknown preset — report error
+  // Expect MINUS as second token
+  if (tokens[1].type !== "minus") {
     errors.push({
-      message: `Unknown preset '${presetName}' for color '${name}'`,
+      message: `Invalid color syntax after '${name}'`,
+      pos: tokens[1].pos,
+    });
+    return null;
+  }
+
+  // Need a third token (the ident after the minus)
+  if (tokens.length < 3 || tokens[2].type !== "ident") {
+    errors.push({
+      message: `Expected a color or preset name after '${name}-'`,
+      pos: tokens.length < 3 ? tokens[1].pos : tokens[2].pos,
+    });
+    return null;
+  }
+
+  const secondIdent = tokens[2].value;
+
+  // Second ident: check presets first [D05]
+  if (PRESET_NAMES.has(secondIdent)) {
+    // Validate against knownPresets map if provided
+    if (knownPresets && !knownPresets.has(secondIdent)) {
+      errors.push({
+        message: `Unknown preset '${secondIdent}' for color '${name}'`,
+        pos: tokens[2].pos,
+      });
+      return null;
+    }
+    // Must end here (no third segment after preset)
+    if (tokens.length > 3) {
+      errors.push({
+        message: `Unexpected token after preset '${secondIdent}'`,
+        pos: tokens[3].pos,
+      });
+      return null;
+    }
+    return { name, preset: secondIdent };
+  }
+
+  // Second ident is not a preset — must be an adjacent color [D04]
+  if (!knownHues.has(secondIdent)) {
+    errors.push({
+      message: `Unknown color '${secondIdent}'`,
       pos: tokens[2].pos,
     });
     return null;
   }
 
-  // Color name with explicit sign offset: IDENT (PLUS|MINUS) NUMBER
-  if (
-    tokens.length === 3 &&
-    (tokens[1].type === "plus" || tokens[1].type === "minus") &&
-    tokens[2].type === "number"
-  ) {
-    const sign = tokens[1].type === "plus" ? 1 : -1;
-    const offset = sign * parseFloat(tokens[2].value);
-    return { name, offset };
+  // Adjacency check: if ring is provided, validate ring distance = 1
+  if (adjacencyRing) {
+    const idxA = adjacencyRing.indexOf(name);
+    const idxB = adjacencyRing.indexOf(secondIdent);
+    if (idxA === -1 || idxB === -1) {
+      // One of the hues is not in the ring (e.g. black/white) — not adjacent
+      errors.push({
+        message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
+        pos: tokens[2].pos,
+      });
+      return null;
+    }
+    const dist = Math.abs(idxA - idxB);
+    const ringAdj = dist === 1 || dist === adjacencyRing.length - 1;
+    if (!ringAdj) {
+      errors.push({
+        message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
+        pos: tokens[2].pos,
+      });
+      return null;
+    }
   }
 
-  // Color name with unsigned offset: IDENT NUMBER
-  // Lightning CSS (Tailwind v4) normalizes `+10` → `10` in custom property
-  // values, stripping the `+` sign.  Accept bare numbers as positive offsets.
-  if (tokens.length === 2 && tokens[1].type === "number") {
-    const offset = parseFloat(tokens[1].value);
-    return { name, offset };
+  // Adjacent color accepted — check for optional third segment (preset)
+  if (tokens.length === 3) {
+    // IDENT MINUS IDENT — bare adjacency, no preset
+    return { name, adjacentName: secondIdent };
   }
 
-  // Anything else after the color name is a syntax error
-  errors.push({
-    message: `Invalid color offset syntax after '${name}'`,
-    pos: tokens[1].pos,
-  });
-  return null;
+  // Need MINUS IDENT for third segment
+  if (tokens.length < 5 || tokens[3].type !== "minus" || tokens[4].type !== "ident") {
+    errors.push({
+      message: `Expected '-preset' or end of color after '${name}-${secondIdent}'`,
+      pos: tokens[3].pos,
+    });
+    return null;
+  }
+
+  const thirdIdent = tokens[4].value;
+
+  // Third ident must be a preset [D05]
+  if (!PRESET_NAMES.has(thirdIdent)) {
+    errors.push({
+      message: `Expected a preset name after '${name}-${secondIdent}-', got '${thirdIdent}'`,
+      pos: tokens[4].pos,
+    });
+    return null;
+  }
+
+  // Validate against knownPresets map if provided
+  if (knownPresets && !knownPresets.has(thirdIdent)) {
+    errors.push({
+      message: `Unknown preset '${thirdIdent}' for color '${name}-${secondIdent}'`,
+      pos: tokens[4].pos,
+    });
+    return null;
+  }
+
+  // Must end here — no more tokens allowed
+  if (tokens.length > 5) {
+    errors.push({
+      message: `Unexpected token after '${name}-${secondIdent}-${thirdIdent}'`,
+      pos: tokens[5].pos,
+    });
+    return null;
+  }
+
+  return { name, adjacentName: secondIdent, preset: thirdIdent };
 }
 
 /**
@@ -315,15 +412,20 @@ function parseNumericTokens(
  * Parse the inner content of a --tug-color() call.
  *
  * @param input  The text between the parentheses (not including them).
- * @param knownHues  Set of valid color names (e.g. "red", "blue", "cherry").
+ * @param knownHues  Set of valid color names (e.g. "red", "cobalt", "indigo").
+ *   Should include all 48 named hues plus "black" and "white".
  * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
- *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(orange-muted, a: 50).
+ *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(cobalt-indigo-muted, a: 50).
  *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
+ * @param adjacencyRing  Optional ordered array of hue names defining ring adjacency.
+ *   When provided, non-adjacent pairs produce hard errors. When omitted, adjacency
+ *   is not validated (any two known hues may be hyphenated).
  */
 export function parseTugColor(
   input: string,
   knownHues: ReadonlySet<string>,
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
+  adjacencyRing?: readonly string[],
 ): ParseResult {
   const tokenResult = tokenize(input);
   if (!Array.isArray(tokenResult)) {
@@ -387,7 +489,7 @@ export function parseTugColor(
       const valueToks = group.slice(2);
 
       if (slot === "color") {
-        const c = parseColorTokens(valueToks, knownHues, errors, knownPresets);
+        const c = parseColorTokens(valueToks, knownHues, errors, knownPresets, adjacencyRing);
         if (c) color = c;
       } else if (slot === "intensity") {
         const n = parseNumericTokens(valueToks, "intensity", errors);
@@ -421,7 +523,7 @@ export function parseTugColor(
       attempted.add(slot);
 
       if (slot === "color") {
-        const c = parseColorTokens(group, knownHues, errors, knownPresets);
+        const c = parseColorTokens(group, knownHues, errors, knownPresets, adjacencyRing);
         if (c) color = c;
       } else if (slot === "intensity") {
         const n = parseNumericTokens(group, "intensity", errors);

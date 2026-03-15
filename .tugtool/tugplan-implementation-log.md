@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-15T20:44:42Z
+---
+
+## step-5: Replaced offset syntax with hyphenated adjacency in tug-color-parser. Removed offset from TugColorValue, added adjacentName. Removed plus token. Implemented IDENT-IDENT-IDENT chain grammar with adjacency validation. Updated 66 parser tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-4
 date: 2025-03-15T20:33:56Z
 ---
