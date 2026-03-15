@@ -40,6 +40,7 @@ import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { GallerySwitchContent } from "./gallery-switch-content";
 import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
 import { GalleryBadgeMockupContent } from "./gallery-badge-mockup-content";
+import { GalleryPopupButtonContent } from "./gallery-popup-button-content";
 import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -703,19 +704,10 @@ export function TugPopupButtonDemo() {
 // ---------------------------------------------------------------------------
 
 /**
- * GalleryDropdownContent -- TugPopupButton demo wrapped for gallery card tab.
- *
- * **Authoritative reference:** [D01] gallery-dropdown componentId.
+ * GalleryDropdownContent -- delegates to GalleryPopupButtonContent.
  */
 export function GalleryDropdownContent() {
-  return (
-    <div className="cg-content" data-testid="gallery-dropdown-content">
-      <div className="cg-section">
-        <div className="cg-section-title">TugPopupButton</div>
-        <TugPopupButtonDemo />
-      </div>
-    </div>
-  );
+  return <GalleryPopupButtonContent />;
 }
 
 // ---------------------------------------------------------------------------

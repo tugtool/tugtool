@@ -1,0 +1,130 @@
+/**
+ * Gallery popup button styles — self-contained CSS for the TugPopupButton gallery tab.
+ *
+ * Uses CSS custom properties (--gpb-*) set by sliders to override border-radius
+ * on button triggers and menu panels within the gallery demo.
+ */
+
+/* ============================================================================
+   Slider controls
+   ========================================================================= */
+
+.gpb-controls {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.gpb-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 12rem;
+}
+
+.gpb-control-group-title {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--tug-base-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.125rem;
+}
+
+.gpb-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gpb-slider-label {
+  font-size: 0.625rem;
+  color: var(--tug-base-fg-subtle);
+  min-width: 3rem;
+  text-align: right;
+}
+
+.gpb-slider-input {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--tug-base-tone-active);
+  cursor: pointer;
+}
+
+.gpb-slider-value {
+  font-size: 0.625rem;
+  color: var(--tug-base-fg-muted);
+  min-width: 2.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.gpb-reset {
+  background: none;
+  border: none;
+  color: var(--tug-base-fg-subtle);
+  font-size: 0.625rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  margin-left: 0.5rem;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.gpb-reset:hover {
+  color: var(--tug-base-fg-default);
+}
+
+/* ============================================================================
+   Demo layout
+   ========================================================================= */
+
+.gpb-demo-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.gpb-demo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  align-items: flex-start;
+}
+
+.gpb-demo-label {
+  font-size: 0.625rem;
+  color: var(--tug-base-fg-subtle);
+  text-transform: lowercase;
+}
+
+.gpb-status {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--tug-base-fg-muted);
+}
+
+.gpb-status code {
+  font-family: var(--tug-base-font-mono);
+  color: var(--tug-base-fg-default);
+}
+
+/* ============================================================================
+   In-context control bar
+   ========================================================================= */
+
+.gpb-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--tug-base-surface-inset);
+  border-radius: var(--tug-base-radius-sm);
+  border: 1px solid var(--tug-base-border-muted);
+}
+
+.gpb-context-label {
+  font-size: 0.75rem;
+  color: var(--tug-base-fg-subtle);
+}

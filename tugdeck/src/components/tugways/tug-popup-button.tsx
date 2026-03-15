@@ -80,7 +80,6 @@ export function TugPopupButton({
     <TugButton
       emphasis="outlined"
       role="option"
-      rounded="none"
       size={size}
       trailingIcon={<ChevronDown size={12} />}
       className={className}
