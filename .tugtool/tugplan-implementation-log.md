@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-15T00:53:35Z
+---
+
+## step-5: Verification-only checkpoint: T-BRIO-MATCH passes with 0 mismatches across all 291 chromatic tokens. All 13 derivation-engine tests green.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-4
 date: 2025-03-15T00:51:07Z
 ---
