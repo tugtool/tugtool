@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-15T20:53:14Z
+---
+
+## step-6: Updated postcss-tug-color.ts to handle TugColorValue.adjacentName via resolveHyphenatedHue. Removed offset-based resolution. Parse errors now throw decl.error(). Added adjacency and non-adjacent error tests. 52 plugin tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-5
 date: 2025-03-15T20:44:42Z
 ---
