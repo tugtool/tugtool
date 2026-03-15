@@ -823,3 +823,104 @@ describe("tug-color-parser: source spans on TugColorError", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tokenizer rewrite — uppercase, CSS hex escapes, NBSP (T-UPPER, T-HEX-*, T-NBSP)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: tokenizer rewrite", () => {
+  it("T-UPPER: parseTugColor('Red') succeeds with color.name='red'", () => {
+    const result = parseTugColor("Red", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for 'Red', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("red");
+  });
+
+  it("T-UPPER: uppercase is normalized across the full ident", () => {
+    const result = parseTugColor("GREEN", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for 'GREEN', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("green");
+  });
+
+  it("T-UPPER-MIXED: parseTugColor('Cobalt-Indigo') succeeds with adjacency", () => {
+    const result = parseTugColor("Cobalt-Indigo", KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+    if (!result.ok) {
+      throw new Error(`Expected ok for 'Cobalt-Indigo', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("cobalt");
+    expect(result.value.color.adjacentName).toBe("indigo");
+  });
+
+  it("T-UPPER-MIXED: mixed case labels are normalized", () => {
+    // Labels use a-z only (colon stops ident scan), so this just tests the hue part
+    const result = parseTugColor("VIOLET, 30, 40", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for 'VIOLET, 30, 40', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("violet");
+    expect(result.value.intensity).toBe(30);
+    expect(result.value.tone).toBe(40);
+  });
+
+  it("T-HEX-ESCAPE: '\\72 ed' decodes to ident 'red' (hex 72 = 'r', then 'ed')", () => {
+    // \72 = 'r', trailing space consumed, 'ed' continues as same ident → 'red'
+    const result = parseTugColor("\x5c72 ed", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for hex escape 'red', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("red");
+  });
+
+  it("T-HEX-ESCAPE-UPPER: '\\52 ed' decodes to ident 'red' (hex 52 = 'R' → 'r', then 'ed')", () => {
+    // \52 = 'R' normalized to 'r', trailing space consumed, 'ed' continues → 'red'
+    const result = parseTugColor("\x5c52 ed", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for hex escape uppercase 'red', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("red");
+  });
+
+  it("T-HEX-SINGLE: '\\41' tokenizes to ident 'a' (hex 41 = 'A' → 'a')", () => {
+    // \41 = 'A' → 'a'; 'a' is not a known hue but the tokenizer should produce ident 'a'
+    const result = parseTugColor("\x5c41", KNOWN_HUES);
+    // The parse will fail because 'a' is not a known hue — that's expected
+    // We verify it fails with "unknown color 'a'" not a tokenizer error
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("'a'"))).toBe(true);
+      // Must not contain tokenizer-level "Unexpected character" for the backslash
+      expect(result.errors.every((e) => !e.message.includes("Unexpected character"))).toBe(true);
+    }
+  });
+
+  it("T-NBSP: 'red,\\u00A050' succeeds with NBSP treated as whitespace", () => {
+    // U+00A0 between comma and "50" should be treated as whitespace
+    const result = parseTugColor("red,\u00A050", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok for NBSP input, got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("red");
+    expect(result.value.intensity).toBe(50);
+  });
+
+  it("NBSP in multiple positions is skipped", () => {
+    const result = parseTugColor("\u00A0red\u00A0,\u00A050\u00A0", KNOWN_HUES);
+    if (!result.ok) {
+      throw new Error(`Expected ok with NBSP surrounding tokens, got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("red");
+    expect(result.value.intensity).toBe(50);
+  });
+
+  it("uppercase preset name is normalized: 'green-Intense'", () => {
+    const result = parseTugColor("green-Intense", KNOWN_HUES, KNOWN_PRESETS);
+    if (!result.ok) {
+      throw new Error(`Expected ok for 'green-Intense', got: ${result.errors.map((e) => e.message).join(", ")}`);
+    }
+    expect(result.value.color.name).toBe("green");
+    expect(result.value.color.preset).toBe("intense");
+  });
+});

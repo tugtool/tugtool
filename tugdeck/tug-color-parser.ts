@@ -87,6 +87,11 @@ interface Token {
 // Tokenizer
 // ---------------------------------------------------------------------------
 
+/** Return true if ch is a valid ident character (a-z or A-Z). */
+function isIdentChar(ch: string): boolean {
+  return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z");
+}
+
 function tokenize(input: string): Token[] | TugColorError {
   const tokens: Token[] = [];
   let i = 0;
@@ -94,8 +99,8 @@ function tokenize(input: string): Token[] | TugColorError {
   while (i < input.length) {
     const ch = input[i];
 
-    // Skip whitespace
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+    // Skip whitespace (space, tab, newline, carriage return, NBSP U+00A0)
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\u00A0") {
       i++;
       continue;
     }
@@ -114,11 +119,59 @@ function tokenize(input: string): Token[] | TugColorError {
     } else if (ch === "-") {
       tokens.push({ type: "minus", value: ch, pos, end: pos + 1 });
       i++;
-    } else if (ch >= "a" && ch <= "z") {
-      let end = i + 1;
-      while (end < input.length && input[end] >= "a" && input[end] <= "z") end++;
-      tokens.push({ type: "ident", value: input.slice(i, end), pos, end });
-      i = end;
+    } else if (isIdentChar(ch) || ch === "\\") {
+      // Ident scanning: handles a-z, A-Z (normalized to lowercase), and CSS hex escapes (\41 etc.)
+      let identValue = "";
+      const identStart = i;
+
+      while (i < input.length) {
+        const c = input[i];
+
+        if (isIdentChar(c)) {
+          // Normalize uppercase to lowercase
+          identValue += c.toLowerCase();
+          i++;
+        } else if (c === "\\") {
+          // CSS hex escape: backslash followed by 1–6 hex digits
+          const escStart = i;
+          i++; // consume backslash
+          let hexStr = "";
+          while (hexStr.length < 6 && i < input.length) {
+            const h = input[i];
+            if ((h >= "0" && h <= "9") || (h >= "a" && h <= "f") || (h >= "A" && h <= "F")) {
+              hexStr += h;
+              i++;
+            } else {
+              break;
+            }
+          }
+          if (hexStr.length === 0) {
+            // Backslash not followed by hex digits — unrecognized escape
+            return { message: `Unexpected character '\\'`, pos: escStart, end: escStart + 1 };
+          }
+          // Optionally consume a single trailing space (per CSS spec)
+          if (i < input.length && (input[i] === " " || input[i] === "\t")) {
+            i++;
+          }
+          const codePoint = parseInt(hexStr, 16);
+          const decoded = String.fromCodePoint(codePoint);
+          // If decoded char is a letter, normalize to lowercase and add to ident
+          if (isIdentChar(decoded)) {
+            identValue += decoded.toLowerCase();
+          } else if (decoded === " " || decoded === "\t") {
+            // Decoded whitespace ends the ident — stop scanning
+            break;
+          } else {
+            // Non-ident decoded character — end ident here, leave i pointing past escape
+            break;
+          }
+        } else {
+          // Not an ident char or backslash — end of ident
+          break;
+        }
+      }
+
+      tokens.push({ type: "ident", value: identValue, pos: identStart, end: i });
     } else if ((ch >= "0" && ch <= "9") || ch === ".") {
       let end = i + 1;
       let hasDot = ch === ".";

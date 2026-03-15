@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-15T23:59:49Z
+---
+
+## step-4: Rewrote tokenizer to handle uppercase A-Z (normalized to lowercase), CSS hex escape sequences (backslash + 1-6 hex digits), and NBSP as whitespace. 10 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-3
 date: 2025-03-15T23:53:46Z
 ---
