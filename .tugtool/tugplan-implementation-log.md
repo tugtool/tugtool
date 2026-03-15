@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-15T23:37:03Z
+---
+
+## step-1: Baseline verification. Full suite: 1616 pass, 0 fail. Parser: 72 tests. PostCSS: 44 tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-15T21:53:43Z
 ---
