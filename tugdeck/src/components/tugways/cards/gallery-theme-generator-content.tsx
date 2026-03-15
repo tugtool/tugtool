@@ -43,10 +43,11 @@ import {
   CVD_SEMANTIC_PAIRS,
   simulateCVDFromOKLCH,
   WCAG_CONTRAST_THRESHOLDS,
-  APCA_LC_THRESHOLDS,
+  LC_THRESHOLDS,
+  LC_MARGINAL_DELTA,
   type CVDType,
 } from "@/components/tugways/theme-accessibility";
-import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -216,27 +217,27 @@ function TokenPreview({ output }: { output: ThemeOutput }) {
  * Determine the badge variant for a ContrastResult row.
  *
  * - "decorative" role → always "decorative" (no minimum requirement)
- * - wcagPass true → "pass"
- * - wcagRatio within 0.5 of threshold → "marginal"
+ * - lcPass true → "pass"
+ * - |lc| within LC_MARGINAL_DELTA of threshold → "marginal"
  * - otherwise → "fail"
  *
- * Per [D07]: badge is driven by WCAG 2.x only; APCA is informational.
+ * Per [D06]: badge is driven by Lc (normative); WCAG ratio is informational.
  */
 function badgeVariant(
   result: ContrastResult,
 ): "pass" | "marginal" | "fail" | "decorative" {
   if (result.role === "decorative") return "decorative";
-  if (result.wcagPass) return "pass";
-  const threshold = WCAG_CONTRAST_THRESHOLDS[result.role] ?? 1.0;
-  if (result.wcagRatio >= threshold - 0.5) return "marginal";
+  if (result.lcPass) return "pass";
+  const threshold = LC_THRESHOLDS[result.role] ?? 15;
+  if (Math.abs(result.lc) >= threshold - LC_MARGINAL_DELTA) return "marginal";
   return "fail";
 }
 
 /**
- * Render the short APCA Lc label for a result row (informational, per [D07]).
+ * Render the short Lc label for a result row.
  */
-function apcaLabel(result: ContrastResult): string {
-  return `Lc ${result.apcaLc.toFixed(1)}`;
+function lcLabel(result: ContrastResult): string {
+  return `Lc ${result.lc.toFixed(1)}`;
 }
 
 /**
@@ -253,17 +254,17 @@ function resolvedSwatchColor(
 }
 
 /**
- * ContrastDashboard — scrollable grid of all fg/bg pairs from FG_BG_PAIRING_MAP.
+ * ContrastDashboard — scrollable grid of all element/surface pairs from ELEMENT_SURFACE_PAIRING_MAP.
  *
  * Renders:
- *   - Summary bar: "N/M pairs pass WCAG AA"
- *   - Grid row per pair: fg swatch, bg swatch, fg token name, bg token name,
- *     WCAG ratio, APCA Lc (informational), pass/fail badge
+ *   - Summary bar: "N/M pairs pass Lc contrast"
+ *   - Grid row per pair: fg swatch, bg swatch, element token name, surface token name,
+ *     WCAG ratio (informational), Lc (normative), pass/fail badge
  *
- * Badge color-coding per [D07]:
- *   - Green (pass)     : wcagPass = true
- *   - Yellow (marginal): failing but within 0.5 of threshold
- *   - Red (fail)       : failing by more than 0.5
+ * Badge color-coding per [D06]:
+ *   - Green (pass)     : lcPass = true
+ *   - Yellow (marginal): failing but within LC_MARGINAL_DELTA of threshold
+ *   - Red (fail)       : failing by more than LC_MARGINAL_DELTA
  *   - Neutral          : role = "decorative" (no minimum)
  *
  * Lazy rendering: `content-visibility: auto` on each swatch handles off-screen
@@ -276,7 +277,7 @@ function ContrastDashboard({
   output: ThemeOutput;
   contrastResults: ContrastResult[];
 }) {
-  const passCount = contrastResults.filter((r) => r.role !== "decorative" && r.wcagPass).length;
+  const passCount = contrastResults.filter((r) => r.role !== "decorative" && r.lcPass).length;
   const checkedCount = contrastResults.filter((r) => r.role !== "decorative").length;
 
   let summaryClass = "gtg-dash-summary-count";
@@ -297,7 +298,7 @@ function ContrastDashboard({
         <span className={summaryClass} data-testid="gtg-dash-summary-count">
           {passCount}/{checkedCount}
         </span>
-        <span>pairs pass WCAG AA</span>
+        <span>pairs pass Lc contrast</span>
         <span style={{ color: "var(--tug-base-fg-muted)", marginLeft: "4px" }}>
           ({contrastResults.length} total pairs, {contrastResults.length - checkedCount} decorative)
         </span>
@@ -312,7 +313,7 @@ function ContrastDashboard({
           <span>Foreground token</span>
           <span>Background token</span>
           <span>WCAG 2.x</span>
-          <span>APCA Lc</span>
+          <span>Lc</span>
           <span>Badge</span>
         </div>
 
@@ -322,7 +323,7 @@ function ContrastDashboard({
           const fgSwatchColor = resolvedSwatchColor(output.resolved, result.fg);
           const bgSwatchColor = resolvedSwatchColor(output.resolved, result.bg);
           const threshold = WCAG_CONTRAST_THRESHOLDS[result.role] ?? 1.0;
-          const apcaThreshold = APCA_LC_THRESHOLDS[result.role] ?? 15;
+          const lcThreshold = LC_THRESHOLDS[result.role] ?? 15;
 
           return (
             <React.Fragment key={idx}>
@@ -361,10 +362,10 @@ function ContrastDashboard({
               </span>
               <span
                 className="gtg-dash-ratio"
-                title={`APCA threshold: Lc ${apcaThreshold} (informational)`}
+                title={`Lc threshold: ${lcThreshold}`}
                 data-testid="gtg-dash-apca-lc"
               >
-                {apcaLabel(result)}
+                {lcLabel(result)}
               </span>
               <span
                 className={`gtg-dash-badge gtg-dash-badge--${variant}`}
@@ -571,12 +572,12 @@ function AutoFixPanel({
   } | null>(null);
 
   const failures = useMemo(
-    () => contrastResults.filter((r) => !r.wcagPass && r.role !== "decorative"),
+    () => contrastResults.filter((r) => !r.lcPass && r.role !== "decorative"),
     [contrastResults],
   );
 
   const handleAutoFix = useCallback(() => {
-    const result = autoAdjustContrast(output.tokens, output.resolved, failures);
+    const result = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
     const adjustedCount = Object.keys(result.tokens).filter(
       (k) => result.tokens[k] !== output.tokens[k],
     ).length;
@@ -1055,7 +1056,7 @@ export function GalleryThemeGeneratorContent() {
   // Contrast results — derived from themeOutput via validateThemeContrast().
   // Computed with useMemo to avoid redundant runs on unrelated re-renders.
   const contrastResults = useMemo(
-    () => validateThemeContrast(themeOutput.resolved, FG_BG_PAIRING_MAP),
+    () => validateThemeContrast(themeOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP),
     [themeOutput],
   );
 

@@ -19,13 +19,13 @@
 
 import { oklchToHex, oklchToLinearSRGB, DEFAULT_CANONICAL_L, L_DARK, L_LIGHT } from "./palette-engine";
 import type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
-import type { FgBgPairing } from "./fg-bg-pairing-map";
+import type { ElementSurfacePairing } from "./element-surface-pairing-map";
 
 // ---------------------------------------------------------------------------
 // Re-export PairingEntry alias for compatibility with plan spec.
-// validateThemeContrast accepts PairingEntry[] (which is FgBgPairing[]).
+// validateThemeContrast accepts PairingEntry[] (which is ElementSurfacePairing[]).
 // ---------------------------------------------------------------------------
-export type { FgBgPairing as PairingEntry };
+export type { ElementSurfacePairing as PairingEntry };
 
 // ---------------------------------------------------------------------------
 // WCAG 2.x — relative luminance contrast ratio
@@ -134,23 +134,23 @@ function apcaY(hex: string): number {
 }
 
 /**
- * Compute the APCA Lc (lightness contrast) value for a fg/bg pair.
+ * Compute the perceptual lightness contrast (Lc, SA98G-based) for an element/surface pair.
  *
  * Returns the signed Lc value:
  *   - Positive Lc: dark text on light background (normal polarity)
  *   - Negative Lc: light text on dark background (reverse polarity)
  *
- * Magnitude (|Lc|) indicates perceptual contrast. Per APCA guidance:
+ * Magnitude (|Lc|) is the normative contrast gate per LC_THRESHOLDS:
  *   |Lc| >= 75 → body text (normal)
- *   |Lc| >= 45 → large / bold text
+ *   |Lc| >= 60 → large / bold text
  *   |Lc| >= 30 → UI components / icons
  *   |Lc| >= 15 → decorative
  *
- * @param fgHex - Foreground color as #rrggbb
- * @param bgHex - Background color as #rrggbb
- * @returns Signed APCA Lc value
+ * @param fgHex - Element (foreground) color as #rrggbb
+ * @param bgHex - Surface (background) color as #rrggbb
+ * @returns Signed Lc value
  */
-export function computeApcaLc(fgHex: string, bgHex: string): number {
+export function computeLcContrast(fgHex: string, bgHex: string): number {
   const yTxt = apcaY(fgHex);
   const yBg = apcaY(bgHex);
 
@@ -206,46 +206,70 @@ export const WCAG_CONTRAST_THRESHOLDS: Record<string, number> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Validate all fg/bg pairings for a derived theme.
+ * Validate all element/surface pairings for a derived theme.
  *
  * Converts each resolved OKLCH color to hex via `oklchToHex()`, then checks
- * WCAG 2.x contrast ratio and APCA Lc for each entry in the pairing map.
+ * WCAG 2.x contrast ratio (informational) and perceptual lightness contrast (Lc,
+ * normative) for each entry in the pairing map.
  *
- * Pairs where either the fg or bg token is absent from `resolved` (e.g.,
+ * Pairs where either the element or surface token is absent from `resolved` (e.g.,
  * non-chromatic tokens like shadows, disabled-opacity) are skipped [D09].
  *
  * @param resolved - OKLCH map from `deriveTheme()` output [D09]
- * @param pairingMap - Authoritative fg/bg pairing list (typically FG_BG_PAIRING_MAP)
+ * @param pairingMap - Authoritative element/surface pairing list (typically ELEMENT_SURFACE_PAIRING_MAP)
  * @returns Array of ContrastResult entries for all evaluated pairs
  */
 export function validateThemeContrast(
   resolved: Record<string, ResolvedColor>,
-  pairingMap: FgBgPairing[],
+  pairingMap: ElementSurfacePairing[],
 ): ContrastResult[] {
   const results: ContrastResult[] = [];
 
   for (const pairing of pairingMap) {
-    const fgColor = resolved[pairing.fg];
-    const bgColor = resolved[pairing.bg];
+    const fgColor = resolved[pairing.element];
+    const bgColor = resolved[pairing.surface];
 
     // Skip pairs where either token is not in the resolved map
     if (!fgColor || !bgColor) continue;
 
-    const fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
-    const bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    let fgHex: string;
+    let bgHex: string;
+
+    if (pairing.parentSurface) {
+      // Alpha-composite resolution (Spec S02): when parentSurface is specified,
+      // composite any semi-transparent side over the parent before measuring contrast.
+      const parentColor = resolved[pairing.parentSurface];
+      if (!parentColor) {
+        // parentSurface not in resolved map — skip (same policy as missing element/surface)
+        continue;
+      }
+
+      fgHex =
+        (fgColor.alpha ?? 1.0) < 1.0
+          ? compositeOverSurface(fgColor, parentColor)
+          : oklchToHex(fgColor.L, fgColor.C, fgColor.h);
+
+      bgHex =
+        (bgColor.alpha ?? 1.0) < 1.0
+          ? compositeOverSurface(bgColor, parentColor)
+          : oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    } else {
+      fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
+      bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    }
 
     const wcagRatio = computeWcagContrast(fgHex, bgHex);
-    const apcaLc = computeApcaLc(fgHex, bgHex);
+    const lc = computeLcContrast(fgHex, bgHex);
 
-    const threshold = WCAG_CONTRAST_THRESHOLDS[pairing.role] ?? 1.0;
-    const wcagPass = wcagRatio >= threshold;
+    const lcThreshold = LC_THRESHOLDS[pairing.role] ?? 15;
+    const lcPass = Math.abs(lc) >= lcThreshold;
 
     results.push({
-      fg: pairing.fg,
-      bg: pairing.bg,
+      fg: pairing.element,
+      bg: pairing.surface,
       wcagRatio,
-      apcaLc,
-      wcagPass,
+      lc,
+      lcPass,
       role: pairing.role,
     });
   }
@@ -409,29 +433,39 @@ function baseHueName(hueRef: string): string {
 }
 
 /**
- * Automatically adjust foreground token tones to satisfy WCAG 2.x contrast thresholds.
+ * Automatically adjust element token tones to satisfy Lc contrast thresholds.
  *
- * Strategy per plan spec:
- *   1. Group failures by fg token.
- *   2. For each fg token, identify the most restrictive background (darkest bg in
- *      dark mode, lightest bg in light mode).
- *   3. Bump fg tone in the direction that increases contrast against the most
- *      restrictive bg. Satisfying the worst-case pair guarantees all other pairings
- *      for the same fg token also pass.
- *   4. Apply a maximum of 3 iterations to handle secondary effects.
- *   5. Tokens that still fail after 3 iterations are added to `unfixable`.
+ * Strategy per plan spec (cascade-aware, convergence-based):
+ *   1. Group all failing pairs by element token.
+ *   2. For each element token, find the most restrictive surface (the surface
+ *      producing the lowest |Lc|), using Lc sign to determine bump direction:
+ *      positive Lc (dark-on-light) → bump darker; negative Lc (light-on-dark) → bump lighter.
+ *   3. Bump the element tone by TONE_STEP in the computed direction.
+ *   4. After each full pass, re-validate ALL pairs via validateThemeContrast so
+ *      cascade effects (adjusting token A may break token B) are caught immediately.
+ *   5. Convergence: stop if no pairs improved during a pass (lcPass count did not
+ *      increase and no adjustments were applied).
+ *   6. Oscillation detection per Spec S03: track per-token direction history.
+ *      If a token's last three adjustments strictly alternate directions
+ *      (+1,-1,+1 or -1,+1,-1), freeze it and add to unfixable.
+ *   7. Safety cap at SAFETY_CAP = 20 iterations to prevent infinite loops.
  *
- * Only fg tokens are adjusted. Background token adjustment is deferred [D09].
+ * [D02] Cascade-aware auto-adjust
+ * [D03] Any-token-type bumping (element token regardless of fg/bg/border role)
+ * [D06] Lc as normative threshold gate
+ * Spec S03: Oscillation detection
  *
  * @param tokens - Token string map from deriveTheme() (--tug-color() strings)
  * @param resolved - Resolved OKLCH map from deriveTheme() [D09]
- * @param failures - ContrastResult entries where wcagPass is false
- * @returns Updated tokens and resolved maps, plus list of unfixable token names
+ * @param failures - ContrastResult entries where lcPass is false (initial failures)
+ * @param pairingMap - Full pairing map for cascade-aware re-validation after each pass
+ * @returns Updated tokens and resolved maps, plus list of unfixable element token names
  */
 export function autoAdjustContrast(
   tokens: Record<string, string>,
   resolved: Record<string, ResolvedColor>,
   failures: ContrastResult[],
+  pairingMap: ElementSurfacePairing[],
 ): {
   tokens: Record<string, string>;
   resolved: Record<string, ResolvedColor>;
@@ -441,101 +475,140 @@ export function autoAdjustContrast(
   const updatedTokens: Record<string, string> = { ...tokens };
   const updatedResolved: Record<string, ResolvedColor> = { ...resolved };
 
-  const MAX_ITERATIONS = 3;
+  // Safety cap — prevents infinite loops under pathological inputs
+  const SAFETY_CAP = 20;
   // Tone step per bump — 5 tone units, re-evaluated each iteration
   const TONE_STEP = 5;
 
-  let remainingFailures = failures.filter((f) => !f.wcagPass);
+  // Per-token direction history for oscillation detection (Spec S03).
+  // Tracks the sequence of +1 / -1 bump directions applied to each element token.
+  const directionHistory = new Map<string, number[]>();
+
+  // Tokens frozen due to oscillation — excluded from further bumps
+  const frozenTokens = new Set<string>();
+
+  let remainingFailures = failures.filter((f) => !f.lcPass);
   const unfixable: string[] = [];
 
-  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+  // Track the passing count from the previous iteration for convergence detection
+  let prevPassCount = pairingMap.length - remainingFailures.length;
+
+  for (let iter = 0; iter < SAFETY_CAP; iter++) {
     if (remainingFailures.length === 0) break;
 
-    // Group remaining failures by fg token
-    const byFg = new Map<string, ContrastResult[]>();
+    // Group remaining failures by element token
+    const byElement = new Map<string, ContrastResult[]>();
     for (const failure of remainingFailures) {
-      const list = byFg.get(failure.fg) ?? [];
+      const list = byElement.get(failure.fg) ?? [];
       list.push(failure);
-      byFg.set(failure.fg, list);
+      byElement.set(failure.fg, list);
     }
 
-    // For each fg token, find the most restrictive bg and bump fg tone
-    for (const [fgToken, fgFailures] of byFg) {
-      const fgColor = updatedResolved[fgToken];
-      if (!fgColor) continue;
+    let anyAdjustmentApplied = false;
 
-      // Determine if fg is "dark" (low lightness) or "light" (high lightness)
-      // to pick the right direction to bump.
-      // In dark mode: fg is typically light (high L); bump L upward to increase contrast
-      // In light mode: fg is typically dark (low L); bump L downward to increase contrast
-      // Heuristic: compare fg L to the bg Ls. Fg is "dark relative to bgs" if fg.L < bg.L.
+    // For each element token, find the most restrictive surface and bump element tone
+    for (const [elementToken, elementFailures] of byElement) {
+      // Skip tokens frozen by oscillation detection
+      if (frozenTokens.has(elementToken)) continue;
 
-      // Find the most restrictive bg (the one where contrast delta is worst).
-      // "Most restrictive" = bg that is closest in luminance to fg.
-      let worstBgColor: ResolvedColor | null = null;
-      let worstContrast = Infinity;
-      for (const failure of fgFailures) {
-        const bgColor = updatedResolved[failure.bg];
-        if (!bgColor) continue;
-        const fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
-        const bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
-        const ratio = computeWcagContrast(fgHex, bgHex);
-        if (ratio < worstContrast) {
-          worstContrast = ratio;
-          worstBgColor = bgColor;
+      const elementColor = updatedResolved[elementToken];
+      if (!elementColor) continue;
+
+      // Find the most restrictive surface (the one producing the lowest |Lc|).
+      // "Most restrictive" = worst contrast, i.e. smallest |Lc| among all failing surfaces.
+      let worstSurfaceColor: ResolvedColor | null = null;
+      let worstLc = Infinity;
+      let worstLcSigned = 0;
+      for (const failure of elementFailures) {
+        const surfaceColor = updatedResolved[failure.bg];
+        if (!surfaceColor) continue;
+        const elementHex = oklchToHex(elementColor.L, elementColor.C, elementColor.h);
+        const surfaceHex = oklchToHex(surfaceColor.L, surfaceColor.C, surfaceColor.h);
+        const lc = computeLcContrast(elementHex, surfaceHex);
+        if (Math.abs(lc) < worstLc) {
+          worstLc = Math.abs(lc);
+          worstLcSigned = lc;
+          worstSurfaceColor = surfaceColor;
         }
       }
 
-      if (!worstBgColor) continue;
+      if (!worstSurfaceColor) continue;
 
-      // Determine bump direction: move fg L away from bg L
-      const fgL = fgColor.L;
-      const bgL = worstBgColor.L;
-      const bumpDirection = fgL >= bgL ? 1 : -1; // positive = lighter, negative = darker
+      // Determine bump direction using Lc sign (SA98G polarity semantics) [D02]:
+      //   positive Lc = dark element on light surface → bump element darker (tone -1)
+      //   negative Lc = light element on dark surface → bump element lighter (tone +1)
+      //
+      // Special case: when Lc = 0 (soft-clipped because both colors are very dark
+      // or very light), the sign is uninformative. Fall back to comparing OKLCH
+      // lightness values directly to determine polarity and bump direction.
+      //   elementL > surfaceL → element is lighter → light-on-dark polarity → bump lighter (+1)
+      //   elementL <= surfaceL → element is darker → dark-on-light polarity → bump darker (-1)
+      let bumpDirection: number;
+      if (worstLcSigned === 0) {
+        bumpDirection = elementColor.L > worstSurfaceColor.L ? 1 : -1;
+      } else {
+        bumpDirection = worstLcSigned >= 0 ? -1 : 1;
+      }
+
+      // Oscillation detection (Spec S03): record this direction and check for alternation.
+      const history = directionHistory.get(elementToken) ?? [];
+      history.push(bumpDirection);
+      directionHistory.set(elementToken, history);
+
+      // Freeze if the last 3 directions strictly alternate: [+1,-1,+1] or [-1,+1,-1]
+      if (history.length >= 3) {
+        const last3 = history.slice(-3);
+        const oscillating =
+          last3[0] !== last3[1] && last3[1] !== last3[2] && last3[0] === last3[2];
+        if (oscillating) {
+          frozenTokens.add(elementToken);
+          continue;
+        }
+      }
 
       // Parse the original --tug-color() string to extract hue reference and intensity.
       // This preserves hue+offset forms (e.g. "cobalt+6") exactly, avoiding the
       // oklchToTugColor() hue-recovery path which loses offsets >5° from named hues.
-      const originalTokenStr = updatedTokens[fgToken];
+      const originalTokenStr = updatedTokens[elementToken];
       const parsed = parseTugColorToken(originalTokenStr);
       if (!parsed) continue;
 
       const { hueRef, intensity } = parsed;
       const hueName = baseHueName(hueRef);
-      const currentTone = lToTone(fgL, hueName);
+      const elementL = elementColor.L;
+      const currentTone = lToTone(elementL, hueName);
       const newTone = Math.max(0, Math.min(100, currentTone + bumpDirection * TONE_STEP));
-      const newL = toneToL(newTone, hueName);
 
-      const newResolved: ResolvedColor = { ...fgColor, L: newL };
+      // Only apply bump if tone actually changed (avoids no-op at ceiling/floor)
+      if (newTone === currentTone) continue;
+
+      const newL = toneToL(newTone, hueName);
+      const newResolved: ResolvedColor = { ...elementColor, L: newL };
       const newTokenStr = rebuildTugColorToken(hueRef, intensity, newTone);
 
-      updatedResolved[fgToken] = newResolved;
-      updatedTokens[fgToken] = newTokenStr;
+      updatedResolved[elementToken] = newResolved;
+      updatedTokens[elementToken] = newTokenStr;
+      anyAdjustmentApplied = true;
     }
 
-    // Re-evaluate remaining failures
-    const stillFailing: ContrastResult[] = [];
-    for (const failure of remainingFailures) {
-      const fgColor = updatedResolved[failure.fg];
-      const bgColor = updatedResolved[failure.bg];
-      if (!fgColor || !bgColor) continue;
-      const fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
-      const bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
-      const ratio = computeWcagContrast(fgHex, bgHex);
-      const threshold = WCAG_CONTRAST_THRESHOLDS[failure.role] ?? 1.0;
-      if (ratio < threshold) {
-        stillFailing.push({ ...failure, wcagRatio: ratio });
-      }
-    }
-    remainingFailures = stillFailing;
+    // Re-validate ALL pairs via validateThemeContrast to catch cascade effects [D02].
+    // This ensures that adjusting one token doesn't silently break another pair.
+    const allResults = validateThemeContrast(updatedResolved, pairingMap);
+    remainingFailures = allResults.filter((r) => !r.lcPass);
+
+    // Convergence detection: stop if no pairs improved and no adjustments were applied.
+    const newPassCount = allResults.filter((r) => r.lcPass).length;
+    if (!anyAdjustmentApplied && newPassCount <= prevPassCount) break;
+    prevPassCount = newPassCount;
   }
 
-  // Any pairs still failing after MAX_ITERATIONS → unfixable
-  const unfixableFgTokens = new Set<string>();
+  // Collect unfixable element tokens: any token still failing AND either frozen
+  // (oscillation) or still present in remaining failures after the loop ends.
+  const unfixableElementTokens = new Set<string>([...frozenTokens]);
   for (const failure of remainingFailures) {
-    unfixableFgTokens.add(failure.fg);
+    unfixableElementTokens.add(failure.fg);
   }
-  unfixable.push(...Array.from(unfixableFgTokens));
+  unfixable.push(...Array.from(unfixableElementTokens));
 
   return {
     tokens: updatedTokens,
@@ -701,6 +774,53 @@ function linearToSrgbGamma(c: number): number {
   return c >= 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
 }
 
+// ---------------------------------------------------------------------------
+// Alpha compositing — Spec S02
+// ---------------------------------------------------------------------------
+
+/**
+ * Alpha-composite a semi-transparent token over a fully-opaque parent surface.
+ *
+ * Both inputs are ResolvedColor values (OKLCH). The function converts each to
+ * linear sRGB via `oklchToLinearSRGB`, applies the standard alpha-over formula
+ * in linear sRGB, gamma-encodes the result, and returns a #rrggbb hex string.
+ *
+ * The parent surface MUST be fully opaque (alpha === 1.0 or undefined). Nested
+ * compositing (semi-transparent parent) is not supported and throws.
+ *
+ * Formula (per channel, linear sRGB):
+ *   C_out = token.C * alpha + parent.C * (1 - alpha)
+ *
+ * @param token  - Semi-transparent token to composite
+ * @param parent - Opaque parent surface to composite over
+ * @returns Composited color as #rrggbb hex string
+ * @throws If parent.alpha is defined and < 1.0 (nested compositing not supported)
+ */
+export function compositeOverSurface(token: ResolvedColor, parent: ResolvedColor): string {
+  const parentAlpha = parent.alpha ?? 1.0;
+  if (parentAlpha < 1.0) {
+    throw new Error(
+      `compositeOverSurface: parentSurface must be fully opaque (alpha=1.0), ` +
+      `got alpha=${parentAlpha}. Nested compositing is not supported.`,
+    );
+  }
+
+  const tokenLinear = oklchToLinearSRGB(token.L, token.C, token.h);
+  const parentLinear = oklchToLinearSRGB(parent.L, parent.C, parent.h);
+  const alpha = token.alpha ?? 1.0;
+
+  const r = tokenLinear.r * alpha + parentLinear.r * (1 - alpha);
+  const g = tokenLinear.g * alpha + parentLinear.g * (1 - alpha);
+  const b = tokenLinear.b * alpha + parentLinear.b * (1 - alpha);
+
+  const rOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(r))) * 255);
+  const gOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(g))) * 255);
+  const bOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(b))) * 255);
+
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(rOut)}${toHex(gOut)}${toHex(bOut)}`;
+}
+
 /**
  * Simulate colour vision deficiency for a hex colour and return the result
  * as a hex string.
@@ -854,20 +974,28 @@ export { oklchToHex } from "./palette-engine";
 export type { ResolvedColor, ContrastResult, CVDWarning } from "./theme-derivation-engine";
 
 // ---------------------------------------------------------------------------
-// Expose WCAG_APCA_THRESHOLDS for informational display [D07]
+// Lc contrast thresholds (normative) and WCAG ratio thresholds (informational)
 // ---------------------------------------------------------------------------
 
 /**
- * Minimum APCA |Lc| per contrast role (informational only, per [D07]).
+ * Minimum perceptual lightness contrast (|Lc|) per role — normative gate [D06].
  *
+ * Per SA98G / APCA guidance, adjusted for design system quality bar:
  *   body-text    → 75
- *   large-text   → 45
+ *   large-text   → 60  (stricter than APCA default 45 — intentional quality bar)
  *   ui-component → 30
  *   decorative   → 15
  */
-export const APCA_LC_THRESHOLDS: Record<string, number> = {
+export const LC_THRESHOLDS: Record<string, number> = {
   "body-text": 75,
-  "large-text": 45,
+  "large-text": 60,
   "ui-component": 30,
   decorative: 15,
 };
+
+/**
+ * Near-pass band for marginal badge classification (fixed 5 Lc units, per Spec S04).
+ * A result with |Lc| >= (LC_THRESHOLDS[role] - LC_MARGINAL_DELTA) is classified as
+ * "marginal" rather than "fail".
+ */
+export const LC_MARGINAL_DELTA = 5;

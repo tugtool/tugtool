@@ -9,6 +9,78 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-15T18:01:35Z
+---
+
+## step-6: Reconciled KNOWN_BELOW_THRESHOLD between test files, added T4.2 light-mode Brio pipeline test, added focus indicator Lc 30 assertions for both dark and light modes. Verified generate:tokens produces no diff. All 1582 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
+step: step-5
+date: 2025-03-15T17:44:00Z
+---
+
+## step-5: Added 11 focus indicator pairs: 9 ui-component pairs (accent-cool-default against all major surfaces) + 2 decorative focused-vs-unfocused border pairs. All 9 ui-component pairs pass Lc 30 with explicit spot-check assertion. Added KNOWN_PAIR_EXCEPTIONS for decorative border-vs-border pairs.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
+step: step-4
+date: 2025-03-15T17:29:16Z
+---
+
+## step-4: Implemented compositeOverSurface for alpha-over blending in linear sRGB. Updated validateThemeContrast to composite semi-transparent elements/surfaces over parentSurface before measuring Lc. Added parentSurface to 22 existing pairs (badge-tinted, tone, selection). Added 7 new badge-tinted-border pairs. Removed stale KNOWN_BELOW_THRESHOLD entries for badge-tinted-fg tokens now passing with compositing.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
+step: step-3
+date: 2025-03-15T17:12:49Z
+---
+
+## step-3: Added 33 non-text ui-component pairs: toggle track visibility (12), input field borders (9), validation borders (2), outlined button borders (6), separator/divider (4). Documented 8 intentionally-below-threshold element tokens in both test exception sets.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
+step: step-2
+date: 2025-03-15T16:55:24Z
+---
+
+## step-2: Refactored autoAdjustContrast with 4th pairingMap param, SAFETY_CAP=20 replacing MAX_ITERATIONS=3, convergence detection, per-token oscillation guards, Lc sign-based bump direction, and full re-validation via validateThemeContrast. Added T3.8 oscillation, T3.9 convergence, T3.10 cascade tests.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
+step: step-1
+date: 2025-03-15T16:38:34Z
+---
+
+## step-1: Renamed all symbols from WCAG-normative/fg-bg naming to Lc-normative/element-surface naming across 11 files. Flipped normative pass/fail gate from WCAG ratio to Lc threshold, increased large-text threshold from 45 to 60.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-8
 date: 2025-03-15T01:17:28Z
 ---

@@ -355,7 +355,7 @@
    Contrast dashboard
    ========================================================================= */
 
-/* Summary bar — "N/M pairs pass WCAG AA" */
+/* Summary bar — "N/M pairs pass Lc contrast" */
 .gtg-dash-summary {
   display: flex;
   align-items: center;
