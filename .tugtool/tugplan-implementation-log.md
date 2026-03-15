@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-15T21:53:43Z
+---
+
+## audit-fix: Audit fix: Updated test_canonical_data_loaded assertions in color.rs from 24 to 48 to match expanded palette.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-10
 date: 2025-03-15T21:50:14Z
 ---
