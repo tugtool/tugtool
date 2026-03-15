@@ -925,13 +925,23 @@ export const BRIO_GROUND_TRUTH: Record<string, string> = {
 
 // ---------------------------------------------------------------------------
 // T-BRIO-MATCH: Engine output must match Brio ground truth exactly.
-// Defined as .todo in step-1 (engine not yet corrected).
-// Will be activated (it -> it.todo removed) in step-4 once all formulas match.
-// Mismatch count at step-1 baseline: 38 tokens differ (see comment above fixture).
+// Activated in step-4: all formula corrections are complete (0 mismatches).
+// Mismatch count at step-1 baseline was 38; corrected to 0 across steps 2-3.
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine brio-match", () => {
-  it.todo(
+  it(
     "T-BRIO-MATCH: deriveTheme(brio).tokens matches BRIO_GROUND_TRUTH for every chromatic token",
+    () => {
+      const output = deriveTheme(EXAMPLE_RECIPES.brio);
+      const mismatches: string[] = [];
+      for (const [name, expected] of Object.entries(BRIO_GROUND_TRUTH)) {
+        const actual = output.tokens[name];
+        if (actual !== expected) {
+          mismatches.push(`${name}:\n  expected: ${expected}\n  actual:   ${actual}`);
+        }
+      }
+      expect(mismatches).toEqual([]);
+    },
   );
 });

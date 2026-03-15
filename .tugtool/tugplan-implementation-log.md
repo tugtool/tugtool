@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-15T00:51:07Z
+---
+
+## step-4: Activated T-BRIO-MATCH test: it.todo replaced with real assertion. All 291 chromatic tokens match deriveTheme(brio) output exactly. 1564 tests pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-3
 date: 2025-03-15T00:45:32Z
 ---
