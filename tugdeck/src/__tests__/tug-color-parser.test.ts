@@ -12,6 +12,7 @@
  * - Error: '+' in input (offset syntax removed)
  * - Error: non-adjacent pairs
  * - CSS value scanning (findTugColorCalls)
+ * - Gray pseudo-hue: achromatic, C=0, tone formula with canonical L=0.5
  */
 import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls } from "../../tug-color-parser";
@@ -22,6 +23,12 @@ import { TUG_COLOR_PRESETS, ADJACENCY_RING } from "@/components/tugways/palette-
 const KNOWN_HUES = new Set([
   ...ADJACENCY_RING,
   "black", "white",
+]);
+
+// All 48 named hues plus black, white, and gray (for gray pseudo-hue tests)
+const KNOWN_HUES_WITH_GRAY = new Set([
+  ...ADJACENCY_RING,
+  "black", "white", "gray",
 ]);
 
 // Known presets map from TUG_COLOR_PRESETS
@@ -602,6 +609,56 @@ describe("tug-color-parser: preset syntax", () => {
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(42);
     expect(v.alpha).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gray pseudo-hue — parser recognition (T-GRAY-DEFAULT, T-GRAY-ADJACENCY-ERROR)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: gray pseudo-hue", () => {
+  it("T-GRAY-DEFAULT: parseTugColor('gray') succeeds with correct defaults", () => {
+    const result = parseTugColor("gray", KNOWN_HUES_WITH_GRAY);
+    if (!result.ok) {
+      throw new Error(
+        `Expected ok parse for 'gray', got errors:\n` +
+        result.errors.map((e) => `  - ${e.message}`).join("\n"),
+      );
+    }
+    expect(result.value.color).toEqual({ name: "gray" });
+    expect(result.value.intensity).toBe(50);
+    expect(result.value.tone).toBe(50);
+    expect(result.value.alpha).toBe(100);
+  });
+
+  it("gray with explicit tone and intensity parses successfully", () => {
+    const result = parseTugColor("gray, i: 80, t: 30", KNOWN_HUES_WITH_GRAY);
+    if (!result.ok) {
+      throw new Error(
+        `Expected ok parse for 'gray, i: 80, t: 30', got errors:\n` +
+        result.errors.map((e) => `  - ${e.message}`).join("\n"),
+      );
+    }
+    expect(result.value.color.name).toBe("gray");
+    expect(result.value.intensity).toBe(80);
+    expect(result.value.tone).toBe(30);
+  });
+
+  it("T-GRAY-ADJACENCY-ERROR: gray-red fails because gray is not in the adjacency ring", () => {
+    const result = parseTugColor("gray-red", KNOWN_HUES_WITH_GRAY, KNOWN_PRESETS, ADJACENCY_RING);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("not adjacent") || e.message.includes("gray"))).toBe(true);
+    }
+  });
+
+  it("gray is not valid without gray in KNOWN_HUES", () => {
+    // KNOWN_HUES does not include 'gray' — should fail
+    const result = parseTugColor("gray", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("gray"))).toBe(true);
+    }
   });
 });
 
