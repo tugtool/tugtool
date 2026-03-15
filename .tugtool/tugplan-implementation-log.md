@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-15T21:19:45Z
+---
+
+## step-7: Migrated theme-derivation-engine and theme-accessibility to use named hues instead of numeric offsets. Removed offset from ThemeRecipe, built 144-entry HUE_VOCABULARY, rewrote formatHueRef/resolveHueAngle/makeTugColor for hyphenated adjacency. Updated parseTugColorToken/rebuildTugColorToken/baseHueName. Fixed muted preset values. Eliminated all offset syntax from codebase.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-6
 date: 2025-03-15T20:53:14Z
 ---

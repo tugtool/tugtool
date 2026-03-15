@@ -327,24 +327,30 @@ interface ParsedTugColor {
 }
 
 /**
- * Preset parameter values for the four named presets.
+ * Preset parameter values for the five named presets.
+ * Must match TUG_COLOR_PRESETS in palette-engine.ts.
  */
 const PRESET_PARAMS: Record<string, { intensity: number; tone: number }> = {
   light: { intensity: 20, tone: 85 },
   dark: { intensity: 50, tone: 20 },
   intense: { intensity: 90, tone: 50 },
-  muted: { intensity: 20, tone: 50 },
+  muted: { intensity: 50, tone: 42 },
+  canonical: { intensity: 50, tone: 50 },
 };
 
 /**
  * Parse a --tug-color() token string into its hue reference, intensity, and tone.
  *
  * Handles all compact forms produced by the derivation engine:
- *   --tug-color(violet)              → hueRef=violet, i=50, t=50
- *   --tug-color(cobalt+6)            → hueRef=cobalt+6, i=50, t=50
- *   --tug-color(violet-light)        → hueRef=violet, i=20, t=85
- *   --tug-color(violet, i: 10, t: 60)→ hueRef=violet, i=10, t=60
- *   --tug-color(cobalt+6, t: 80)     → hueRef=cobalt+6, i=50, t=80
+ *   --tug-color(violet)                  → hueRef=violet, i=50, t=50
+ *   --tug-color(violet-light)            → hueRef=violet, i=20, t=85
+ *   --tug-color(cobalt-indigo)           → hueRef=cobalt-indigo, i=50, t=50
+ *   --tug-color(cobalt-indigo-light)     → hueRef=cobalt-indigo, i=20, t=85
+ *   --tug-color(violet, i: 10, t: 60)   → hueRef=violet, i=10, t=60
+ *   --tug-color(cobalt-indigo, t: 80)   → hueRef=cobalt-indigo, i=50, t=80
+ *
+ * Uses last-segment-wins strategy: split hueStr on hyphens, check if the last
+ * segment is a known preset name. If so, join remaining segments as hueRef.
  *
  * Returns null if the string is not a recognised --tug-color() form (e.g.
  * transparent, none, plain var() references).
@@ -360,17 +366,21 @@ function parseTugColorToken(token: string): ParsedTugColor | null {
   const hueStr = commaIdx === -1 ? body : body.slice(0, commaIdx).trim();
   const paramStr = commaIdx === -1 ? "" : body.slice(commaIdx + 1).trim();
 
-  // Check for preset suffix on bare hue names (no offset)
-  // A hue name is letters only; a preset suffix follows a hyphen: hue-preset
-  // Offset forms contain + or digits after letters (e.g. cobalt+6, violet-6)
-  // We distinguish "violet-light" (preset) from "violet-6" (offset) by checking
-  // whether the suffix after the last hyphen is a known preset keyword.
-  const presetMatch = hueStr.match(/^([a-z]+)-(light|dark|intense|muted)$/);
-  if (presetMatch && commaIdx === -1) {
-    const stem = presetMatch[1];
-    const preset = presetMatch[2];
-    const { intensity, tone } = PRESET_PARAMS[preset];
-    return { hueRef: stem, intensity, tone };
+  // Last-segment-wins: check if the last hyphen-delimited segment is a known preset name.
+  // This correctly handles both:
+  //   "violet-light"       → hueRef="violet", preset="light"
+  //   "cobalt-indigo-light" → hueRef="cobalt-indigo", preset="light"
+  //   "cobalt-indigo"      → no preset (last segment "indigo" not a preset)
+  if (commaIdx === -1) {
+    const lastHyphen = hueStr.lastIndexOf("-");
+    if (lastHyphen > 0) {
+      const lastSeg = hueStr.slice(lastHyphen + 1);
+      if (lastSeg in PRESET_PARAMS) {
+        const stem = hueStr.slice(0, lastHyphen);
+        const { intensity, tone } = PRESET_PARAMS[lastSeg];
+        return { hueRef: stem, intensity, tone };
+      }
+    }
   }
 
   // Parse optional i: N and t: N parameters
@@ -390,11 +400,15 @@ function parseTugColorToken(token: string): ParsedTugColor | null {
 /**
  * Rebuild a --tug-color() token string for the given hue reference, intensity, and tone.
  *
- * Preserves the hue reference exactly as-is (including any +N or -N offset),
- * only changing the tone parameter. Uses compact form rules:
+ * Preserves the hue reference exactly as-is (base name or hyphenated adjacency),
+ * only changing the i/t parameters. Uses compact form rules:
  *   - Canonical (i=50, t=50): --tug-color(hue)
- *   - Preset match (bare hue name only): --tug-color(hue-preset)
+ *   - Preset match: --tug-color(hue-preset) (applies to any hue ref including hyphenated)
  *   - Full form: --tug-color(hue, i: N, t: N)
+ *
+ * Preset values match TUG_COLOR_PRESETS in palette-engine.ts:
+ *   light: i=20, t=85  |  dark: i=50, t=20  |  intense: i=90, t=50
+ *   muted: i=50, t=42  |  canonical: i=50, t=50
  */
 function rebuildTugColorToken(hueRef: string, intensity: number, tone: number): string {
   const ri = Math.round(intensity);
@@ -402,14 +416,13 @@ function rebuildTugColorToken(hueRef: string, intensity: number, tone: number): 
 
   if (ri === 50 && rt === 50) return `--tug-color(${hueRef})`;
 
-  // Preset shortcuts only apply when hueRef is a bare name (no + or digit-after-hyphen offset)
-  const hasOffset = hueRef.includes("+") || /[a-z]-\d/.test(hueRef);
-  if (!hasOffset) {
-    if (ri === 20 && rt === 85) return `--tug-color(${hueRef}-light)`;
-    if (ri === 50 && rt === 20) return `--tug-color(${hueRef}-dark)`;
-    if (ri === 90 && rt === 50) return `--tug-color(${hueRef}-intense)`;
-    if (ri === 20 && rt === 50) return `--tug-color(${hueRef}-muted)`;
-  }
+  // Preset shortcuts apply to any hue ref (base name or hyphenated adjacency).
+  // After migration, hueRefs never contain numeric offsets.
+  if (ri === 20 && rt === 85) return `--tug-color(${hueRef}-light)`;
+  if (ri === 50 && rt === 20) return `--tug-color(${hueRef}-dark)`;
+  if (ri === 90 && rt === 50) return `--tug-color(${hueRef}-intense)`;
+  // muted preset: palette-engine defines muted as { intensity: 50, tone: 42 }
+  if (ri === 50 && rt === 42) return `--tug-color(${hueRef}-muted)`;
 
   const parts: string[] = [];
   if (ri !== 50) parts.push(`i: ${ri}`);
@@ -423,13 +436,14 @@ function rebuildTugColorToken(hueRef: string, intensity: number, tone: number): 
  * Resolve the base hue name from a hue reference string.
  *
  * For bare names like "violet" returns "violet".
- * For offset forms like "cobalt+6" or "violet-6" returns "cobalt" / "violet".
+ * For hyphenated adjacency forms like "cobalt-indigo" returns "cobalt" (dominant/primary).
  * Falls back to "violet" if no match found.
  */
 function baseHueName(hueRef: string): string {
-  // Strip + or - offset to recover the base name
-  const bare = hueRef.split(/[+-]/)[0];
-  return (bare in DEFAULT_CANONICAL_L) ? bare : "violet";
+  // The primary (dominant) color is the first hyphen-delimited segment.
+  // For bare names, the first segment is the whole name.
+  const firstSeg = hueRef.split("-")[0];
+  return (firstSeg in DEFAULT_CANONICAL_L) ? firstSeg : "violet";
 }
 
 /**

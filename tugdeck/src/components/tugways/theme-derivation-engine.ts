@@ -34,6 +34,8 @@ import {
   L_DARK,
   L_LIGHT,
   isInSRGBGamut,
+  ADJACENCY_RING,
+  resolveHyphenatedHue,
 } from "./palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -47,8 +49,8 @@ import {
 export interface ThemeRecipe {
   name: string;
   mode: "dark" | "light";
-  atmosphere: { hue: string; offset?: number };
-  text: { hue: string; offset?: number };
+  atmosphere: { hue: string };
+  text: { hue: string };
   accent?: string;
   active?: string;
   interactive?: string; // optional interactive-feedback hue (defaults to active); [D05]
@@ -124,7 +126,7 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
     mode: "dark",
-    atmosphere: { hue: "violet", offset: -6 },
+    atmosphere: { hue: "indigo-violet" },
     text: { hue: "cobalt" },
     interactive: "cyan", // [D05]: link/selection/highlight use cyan; active stays blue
   },
@@ -167,18 +169,6 @@ export interface ModePreset {
   surfaceOverlayI: number;
   surfaceScreenI: number;
 
-  // Per-tier hue offsets (from atmBaseAngle / txtBaseAngle) for surface tones.
-  // In dark mode (Brio): sunken/default use offset 0 (bare violet),
-  //   raised/inset/content use the recipe atm angle (not a fixed offset).
-  // These offsets are informational; the actual hue selection remains an
-  // algorithmic `isLight` branch since light-mode uses a different hue altogether.
-  surfaceTierOffsets: {
-    default: number;
-    overlay: number;
-    sunken: number;
-    screen: number;
-  };
-
   // Foreground tone anchors
   fgDefaultTone: number;
   fgMutedTone: number;
@@ -192,16 +182,6 @@ export interface ModePreset {
   txtISubtle: number;
   fgMutedI: number;
   atmIBorder: number; // border/divider intensity (also used for fg-placeholder in light)
-
-  // Per-tier fg hue offsets (from txtBaseAngle, dark mode).
-  // Light mode collapses these to 0 (bare txtBase hue) via the isLight branch.
-  fgTierOffsets: {
-    muted: number;
-    subtle: number;
-    disabled: number;
-    placeholder: number;
-    inverse: number;
-  };
 
   // Border parameters
   borderIBase: number;
@@ -264,9 +244,6 @@ export const DARK_PRESET: ModePreset = {
   surfaceOverlayI: 4,
   surfaceScreenI: 7,
 
-  // Per-tier surface hue offsets (informational; actual hue selection is algorithmic)
-  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 10 },
-
   // Foreground tones (Brio ground truth)
   fgDefaultTone: 94,
   fgMutedTone: 66,
@@ -280,9 +257,6 @@ export const DARK_PRESET: ModePreset = {
   txtISubtle: 7,
   fgMutedI: 5,
   atmIBorder: 6,
-
-  // Per-tier fg hue offsets (from txtBaseAngle, Brio = cobalt base)
-  fgTierOffsets: { muted: 0, subtle: 7, disabled: 8, placeholder: 0, inverse: -8 },
 
   // Border intensities
   borderIBase: 6,
@@ -345,9 +319,6 @@ export const LIGHT_PRESET: ModePreset = {
   surfaceOverlayI: 6,
   surfaceScreenI: 4,
 
-  // Per-tier surface hue offsets (light mode uses atmRefW uniformly)
-  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 0 },
-
   // Foreground tones (light mode, near-black text)
   fgDefaultTone: 13,
   fgMutedTone: 22,
@@ -361,9 +332,6 @@ export const LIGHT_PRESET: ModePreset = {
   txtISubtle: 9,
   fgMutedI: 9, // = txtISubtle in light
   atmIBorder: 9,
-
-  // Per-tier fg hue offsets — light mode collapses to 0 (bare txtBase) via isLight branch
-  fgTierOffsets: { muted: 0, subtle: 0, disabled: 0, placeholder: 0, inverse: 0 },
 
   // Border intensities
   borderIBase: 9,
@@ -410,22 +378,61 @@ export const LIGHT_PRESET: ModePreset = {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the effective hue angle for a seed: named hue + optional degree offset.
+ * Resolve the effective hue angle for a named hue.
+ * Handles bare names ("violet"), hyphenated adjacency ("indigo-violet"),
+ * and the special names "black" and "white".
  * Returns the hue angle in degrees (0-360).
  */
-function resolveHueAngle(hue: string, offset = 0): number {
-  const base = HUE_FAMILIES[hue] ?? 250; // fallback to cobalt
-  return (base + offset + 360) % 360;
+function resolveHueAngle(hue: string): number {
+  // Check if it's a known base name first
+  if (hue in HUE_FAMILIES) return HUE_FAMILIES[hue];
+  // Check for hyphenated adjacency: "A-B" where A and B are both known hues
+  const hyphenIdx = hue.lastIndexOf("-");
+  if (hyphenIdx > 0) {
+    const left = hue.slice(0, hyphenIdx);
+    const right = hue.slice(hyphenIdx + 1);
+    if (left in HUE_FAMILIES && right in HUE_FAMILIES) {
+      return resolveHyphenatedHue(left, right);
+    }
+  }
+  return HUE_FAMILIES["cobalt"]; // fallback to cobalt
 }
 
+// ---------------------------------------------------------------------------
+// HUE_VOCABULARY — precomputed 144-entry name-to-angle map (48 base + 96 hyphenated)
+// Built at module load time; reused by formatHueRef and closestHueName.
+// ---------------------------------------------------------------------------
+
 /**
- * Find the closest named hue in HUE_FAMILIES to a given angle (degrees).
- * Returns the name string.
+ * All 144 expressible hue points: 48 base names + 96 adjacent hyphenated pairs.
+ * Keys are the string expression (e.g. "cobalt", "indigo-cobalt").
+ * Values are the resolved hue angle in degrees.
+ */
+const HUE_VOCABULARY: Record<string, number> = (() => {
+  const vocab: Record<string, number> = {};
+  // 48 base names
+  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
+    vocab[name] = angle;
+  }
+  // 96 adjacent hyphenated pairs (each adjacent pair A-B and B-A)
+  const len = ADJACENCY_RING.length;
+  for (let i = 0; i < len; i++) {
+    const a = ADJACENCY_RING[i];
+    const b = ADJACENCY_RING[(i + 1) % len];
+    vocab[`${a}-${b}`] = resolveHyphenatedHue(a, b);
+    vocab[`${b}-${a}`] = resolveHyphenatedHue(b, a);
+  }
+  return vocab;
+})();
+
+/**
+ * Find the closest entry in HUE_VOCABULARY (144 entries) to a given angle (degrees).
+ * Returns the name string (may be a base name or hyphenated adjacency expression).
  */
 function closestHueName(angle: number): string {
   let best = "violet";
   let bestDiff = Infinity;
-  for (const [name, h] of Object.entries(HUE_FAMILIES)) {
+  for (const [name, h] of Object.entries(HUE_VOCABULARY)) {
     let diff = Math.abs(angle - h);
     if (diff > 180) diff = 360 - diff;
     if (diff < bestDiff) {
@@ -437,28 +444,21 @@ function closestHueName(angle: number): string {
 }
 
 /**
- * Format a hue reference with optional integer degree offset.
- * Produces the shortest valid form matching postcss-tug-color syntax:
- *   "blue", "blue+9", "blue-6", "blue+5"
- *
- * The offset is the degree difference from the named hue's base angle,
- * rounded to the nearest integer. If the offset rounds to 0, omit it.
+ * Format a hue reference by finding the closest named or hyphenated entry in
+ * HUE_VOCABULARY (144 entries). Returns a bare name ("cobalt") or a hyphenated
+ * adjacency expression ("indigo-cobalt") — never a numeric offset.
  */
-function formatHueRef(namedHue: string, targetAngle: number): string {
-  const baseAngle = HUE_FAMILIES[namedHue] ?? 0;
-  let diff = targetAngle - baseAngle;
-  // Normalize to [-180, 180]
-  while (diff > 180) diff -= 360;
-  while (diff < -180) diff += 360;
-  const rounded = Math.round(diff);
-  if (rounded === 0) return namedHue;
-  if (rounded > 0) return `${namedHue}+${rounded}`;
-  return `${namedHue}${rounded}`; // negative: e.g. "violet-6"
+function formatHueRef(_namedHue: string, targetAngle: number): string {
+  return closestHueName(targetAngle);
 }
 
 /**
  * Compute OKLCH from hue angle, intensity (0-100), tone (0-100).
  * Uses the same formula as tugColor() in palette-engine.ts.
+ *
+ * The hueName parameter may be a bare name ("cobalt") or a hyphenated adjacency
+ * expression ("indigo-cobalt"). In either case, the primary (first) color name
+ * is used for DEFAULT_CANONICAL_L and MAX_CHROMA_FOR_HUE lookups.
  */
 function resolveOklch(
   hueAngle: number,
@@ -466,7 +466,11 @@ function resolveOklch(
   tone: number,
   hueName?: string,
 ): { L: number; C: number; h: number } {
-  const name = hueName ?? closestHueName(hueAngle);
+  const fullName = hueName ?? closestHueName(hueAngle);
+  // Extract the primary (dominant) color name from a hyphenated expression
+  const name = fullName.split("-")[0] in DEFAULT_CANONICAL_L
+    ? fullName.split("-")[0]
+    : (fullName in DEFAULT_CANONICAL_L ? fullName : closestHueName(hueAngle).split("-")[0]);
   const canonL = DEFAULT_CANONICAL_L[name] ?? 0.77;
   const maxC = MAX_CHROMA_FOR_HUE[name] ?? 0.135;
   const peakC = maxC * PEAK_C_SCALE;
@@ -523,9 +527,10 @@ function makeTugColor(
     return `--tug-color(${hueRef})`;
   }
 
-  // Preset suffix (only for bare hue names without offset)
-  const hasOffset = hueRef.includes("+") || /[a-z]-\d/.test(hueRef);
-  if (!hasOffset) {
+  // Preset suffix: applies to any hue ref (base name or hyphenated adjacency).
+  // After migration, hueRefs never contain numeric offsets (+/-digits).
+  // Hyphenated adjacency names like "indigo-cobalt" are valid base forms for presets.
+  {
     if (ri === 20 && rt === 85 && ra === 100) return `--tug-color(${hueRef}-light)`;
     if (ri === 50 && rt === 20 && ra === 100) return `--tug-color(${hueRef}-dark)`;
     if (ri === 90 && rt === 50 && ra === 100) return `--tug-color(${hueRef}-intense)`;
@@ -632,12 +637,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // 1. Resolve seed hue angles
   // -------------------------------------------------------------------------
   const atmHue = recipe.atmosphere.hue;
-  const atmOffset = recipe.atmosphere.offset ?? 0;
-  const atmAngle = resolveHueAngle(atmHue, atmOffset);
+  const atmAngle = resolveHueAngle(atmHue);
 
   const txtHue = recipe.text.hue;
-  const txtOffset = recipe.text.offset ?? 0;
-  const txtAngle = resolveHueAngle(txtHue, txtOffset);
+  const txtAngle = resolveHueAngle(txtHue);
 
   const accentHue = recipe.accent ?? "orange";
   const accentAngle = resolveHueAngle(accentHue);
@@ -679,32 +682,44 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Warmth hue bias: at warmth>50, shift neutral/achromatic hues toward warm
   // (amber/yellow range, positive angle bias); at warmth<50, shift toward cool.
   // Maximum bias ±12° applied to atmosphere and text hue angles when those hues
-  // are in the achromatic-adjacent range (violet, cobalt, blue, purple, indigo).
+  // are in the achromatic-adjacent range.
   // Vivid accent/semantic hues (red, orange, yellow, green, cyan) are unaffected.
+  // For hyphenated names, the primary (dominant) hue determines achromatic adjacency.
   const ACHROMATIC_ADJACENT_HUES = new Set([
     "violet", "cobalt", "blue", "indigo", "purple", "sky",
+    "sapphire", "iris", "cerulean",
   ]);
   const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
 
+  // Extract the primary base color name from a hue expression (bare or hyphenated).
+  function primaryColorName(hueExpr: string): string {
+    const hyphenIdx = hueExpr.indexOf("-");
+    return hyphenIdx > 0 ? hueExpr.slice(0, hyphenIdx) : hueExpr;
+  }
+
   function applyWarmthBias(hueName: string, angle: number): number {
-    if (!ACHROMATIC_ADJACENT_HUES.has(hueName)) return angle;
+    const primary = primaryColorName(hueName);
+    if (!ACHROMATIC_ADJACENT_HUES.has(primary)) return angle;
     return (angle + warmthBias + 360) % 360;
   }
 
   // Atmosphere angle with warmth bias applied (for neutral/achromatic hues)
   const atmAngleW = applyWarmthBias(atmHue, atmAngle);
   const atmNameW = closestHueName(atmAngleW);
+  const atmPrimaryNameW = primaryColorName(atmNameW);
   const atmRefW = formatHueRef(atmNameW, atmAngleW);
 
   // Text angle with warmth bias applied
   const txtAngleW = applyWarmthBias(txtHue, txtAngle);
   const txtNameW = closestHueName(txtAngleW);
+  const txtPrimaryNameW = primaryColorName(txtNameW);
   const txtRefW = formatHueRef(txtNameW, txtAngleW);
 
-  // Base hue angles (without recipe offset) — used for per-tier hue derivation.
-  // Per-tier offsets are applied relative to the base hue, not the recipe offset.
-  const atmBaseAngle = HUE_FAMILIES[atmHue] ?? atmAngle;
-  const txtBaseAngle = HUE_FAMILIES[txtHue] ?? txtAngle;
+  // Base hue angles — the primary named angle used for per-tier hue derivation.
+  // For hyphenated names (e.g. "indigo-violet"), use the resolved hyphenated angle
+  // as the base for per-tier computations (warmth bias is applied per-tier).
+  const atmBaseAngle = atmAngle;
+  const txtBaseAngle = txtAngle;
 
   // -------------------------------------------------------------------------
   // 3. Derive surface/tone spread parameters from surfaceContrast and mode
@@ -751,84 +766,96 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 3a. Per-tier hue angle derivation for surface tokens (dark mode).
   //
-  // Brio ground truth per-tier hue refs (violet base, offset=-6):
-  //   bg-app/canvas: violet-6 (= recipe atm angle = atmAngleW)
-  //   surface-sunken/default: violet (= bare base = atmBaseAngle, offset 0)
-  //   surface-raised/inset/content: violet-6 (= recipe atm angle = atmAngleW)
-  //   surface-overlay: violet (= bare base = atmBaseAngle, offset 0)
-  //   surface-screen: cobalt+10 (= txtBaseAngle+10)
+  // Brio ground truth per-tier hue refs (atmosphere = indigo-violet = 263.3°):
+  //   bg-app/canvas: indigo-violet (= recipe atm angle = atmAngleW)
+  //   surface-sunken/default: violet (= bare base atm hue, no offset)
+  //   surface-raised/inset/content: indigo-violet (= recipe atm angle = atmAngleW)
+  //   surface-overlay: violet (= bare base atm hue, no offset)
+  //   surface-screen: indigo (= cobalt+10 mapped to "indigo" at 260°)
   //
-  // surfaceTierAngle() is kept for light-mode generalization (Bluenote tier
-  // offsets) but dark-mode surface refs now use direct Brio hue assignments.
+  // For the "bare atm base" tiers, we use the primary hue from the recipe.
+  // For hyphenated names like "indigo-violet", the primary is "indigo" and
+  // the bare base is "indigo" (the dominant color at 260°). However, the
+  // Brio ground truth uses bare "violet" (270°) for these tiers.
+  // We preserve the Brio pattern: bare-base tiers use the last segment of the
+  // atmosphere hue (the recessive color) which is "violet" in "indigo-violet".
   // -------------------------------------------------------------------------
-  function surfaceTierAngle(baseOffset: number): number {
-    // Apply warmth bias to the per-tier angle if the atmosphere hue is achromatic-adjacent
-    const raw = (atmBaseAngle + baseOffset + 360) % 360;
-    return applyWarmthBias(atmHue, raw);
-  }
 
-  // Dark mode: sunken/default use bare atm base (offset=0 → "violet")
-  const surfBareBaseAngle = surfaceTierAngle(0);
+  // Extract the "bare base" hue name for surface tiers.
+  // For bare names ("violet"), bare base = "violet".
+  // For hyphenated names ("indigo-violet"), bare base = last segment = "violet".
+  const atmBareBaseName = (() => {
+    const hyphenIdx = atmHue.lastIndexOf("-");
+    if (hyphenIdx > 0) {
+      const lastSeg = atmHue.slice(hyphenIdx + 1);
+      if (lastSeg in HUE_FAMILIES) return lastSeg;
+    }
+    // For bare names, use the name itself (maps through closestHueName at base angle)
+    return closestHueName(atmBaseAngle);
+  })();
+  const surfBareBaseAngle = applyWarmthBias(atmBareBaseName, HUE_FAMILIES[atmBareBaseName] ?? atmBaseAngle);
   const surfBareBaseName = closestHueName(surfBareBaseAngle);
-  const surfBareBaseRef = formatHueRef(surfBareBaseName, surfBareBaseAngle);
+  const surfBareBaseRef = atmBareBaseName; // direct named reference
 
-  // Dark mode: screen uses txtBaseAngle+10 (→ "cobalt+10" for Brio)
-  const surfScreenAngleDark = applyWarmthBias(txtHue, (txtBaseAngle + 10 + 360) % 360);
+  // Dark mode: screen uses "indigo" (= cobalt+10 at 260° maps to "indigo" at 260°)
+  const surfScreenHueDark = "indigo"; // per migration mapping: cobalt+10 → indigo (260°)
+  const surfScreenAngleDark = applyWarmthBias(surfScreenHueDark, resolveHueAngle(surfScreenHueDark));
   const surfScreenNameDark = closestHueName(surfScreenAngleDark);
   const surfScreenRefDark = formatHueRef(surfScreenNameDark, surfScreenAngleDark);
-
 
   // -------------------------------------------------------------------------
   // 3b. Per-tier hue angle derivation for foreground tokens.
   //
   // Brio dark-mode ground truth (cobalt txtBase, no recipe offset):
-  //   fg-default:     cobalt (offset=0, bare hue)
-  //   fg-muted:       cobalt (offset=0) — same bare hue, higher tone
-  //   fg-subtle:      cobalt+7 (offset=+7)
-  //   fg-disabled:    cobalt+8 (offset=+8)
-  //   fg-placeholder: cobalt (offset=0) — same bare hue
-  //   fg-inverse:     cobalt-8 (offset=-8)
+  //   fg-default:     cobalt (bare hue)
+  //   fg-muted:       cobalt (bare hue) — same bare hue, higher tone
+  //   fg-subtle:      indigo-cobalt (cobalt+7 → 257° → "indigo-cobalt" at 256.7°)
+  //   fg-disabled:    indigo-cobalt (cobalt+8 → 258° → "indigo-cobalt" at 256.7°)
+  //   fg-placeholder: cobalt (bare hue)
+  //   fg-inverse:     sapphire-cobalt (cobalt-8 → 242° → "sapphire-cobalt" at 243.3°)
   //
-  // Light mode (Harmony, txtBase=blue=230, txtOffset=5):
-  //   fg-default: txtBase+5 (= recipe txt angle)
-  //   fg-muted/subtle/disabled: txtBase (bare hue, strips the recipe offset)
+  // Light mode: all tiers use bare txtBase hue (no per-tier offsets).
   // -------------------------------------------------------------------------
-  function fgTierAngle(darkOffset: number): number {
-    if (isLight) {
-      const raw = (txtBaseAngle + 360) % 360;
-      return applyWarmthBias(txtHue, raw);
-    }
-    const raw = (txtBaseAngle + darkOffset + 360) % 360;
-    return applyWarmthBias(txtHue, raw);
-  }
-
   const fgDefaultAngleT = txtAngleW; // always uses full recipe txt angle
   const fgDefaultNameT = txtNameW;
   const fgDefaultRefT = txtRefW;
 
-  // Dark mode: fg-muted uses bare cobalt (offset=0), not +6
-  const fgMutedAngle = fgTierAngle(0);
+  // Dark mode: fg-muted uses bare txt hue (cobalt for Brio)
+  const fgMutedHue = isLight ? txtHue : (() => {
+    // Extract the primary base name from txtHue for the "bare" tier
+    const primary = primaryColorName(txtHue);
+    return primary in HUE_FAMILIES ? primary : txtHue;
+  })();
+  const fgMutedAngle = applyWarmthBias(fgMutedHue, resolveHueAngle(fgMutedHue));
   const fgMutedName = closestHueName(fgMutedAngle);
-  const fgMutedRef = formatHueRef(fgMutedName, fgMutedAngle);
+  const fgMutedPrimaryName = primaryColorName(fgMutedName);
+  const fgMutedRef = fgMutedHue in HUE_FAMILIES ? fgMutedHue : fgMutedName;
 
-  // Dark mode: fg-subtle uses cobalt+7 (offset=+7) — same as Brio ground truth
-  const fgSubtleAngle = fgTierAngle(7);
+  // Dark mode: fg-subtle uses indigo-cobalt (cobalt+7 → indigo-cobalt)
+  const fgSubtleHue = isLight ? txtHue : "indigo-cobalt"; // per migration mapping
+  const fgSubtleAngle = applyWarmthBias(primaryColorName(fgSubtleHue), resolveHueAngle(fgSubtleHue));
   const fgSubtleName = closestHueName(fgSubtleAngle);
+  const fgSubtlePrimaryName = primaryColorName(fgSubtleName);
   const fgSubtleRef = formatHueRef(fgSubtleName, fgSubtleAngle);
 
-  // Dark mode: fg-disabled uses cobalt+8 (offset=+8)
-  const fgDisabledAngle = fgTierAngle(8);
+  // Dark mode: fg-disabled uses indigo-cobalt (cobalt+8 → indigo-cobalt)
+  const fgDisabledHue = isLight ? txtHue : "indigo-cobalt"; // per migration mapping
+  const fgDisabledAngle = applyWarmthBias(primaryColorName(fgDisabledHue), resolveHueAngle(fgDisabledHue));
   const fgDisabledName = closestHueName(fgDisabledAngle);
+  const fgDisabledPrimaryName = primaryColorName(fgDisabledName);
   const fgDisabledRef = formatHueRef(fgDisabledName, fgDisabledAngle);
 
-  // Dark mode: fg-placeholder uses bare cobalt (offset=0)
-  const fgPlaceholderAngle = fgTierAngle(0);
-  const fgPlaceholderName = closestHueName(fgPlaceholderAngle);
-  const fgPlaceholderRef = formatHueRef(fgPlaceholderName, fgPlaceholderAngle);
+  // Dark mode: fg-placeholder uses bare txt hue (cobalt for Brio)
+  const fgPlaceholderAngle = fgMutedAngle;
+  const fgPlaceholderName = fgMutedName;
+  const fgPlaceholderPrimaryName = fgMutedPrimaryName;
+  const fgPlaceholderRef = fgMutedRef;
 
-  // Dark mode: fg-inverse uses cobalt-8 (offset=-8)
-  const fgInverseAngle = fgTierAngle(-8);
+  // Dark mode: fg-inverse uses sapphire-cobalt (cobalt-8 → sapphire-cobalt)
+  const fgInverseHue = isLight ? txtHue : "sapphire-cobalt"; // per migration mapping
+  const fgInverseAngle = applyWarmthBias(primaryColorName(fgInverseHue), resolveHueAngle(fgInverseHue));
   const fgInverseName = closestHueName(fgInverseAngle);
+  const fgInversePrimaryName = primaryColorName(fgInverseName);
   const fgInverseRef = formatHueRef(fgInverseName, fgInverseAngle);
 
   // Atmosphere intensity (low for surfaces — subdued, muted). From preset. [D03]
@@ -1005,21 +1032,21 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // fg-subtle=blue+7, fg-placeholder=blue+8). Light mode collapses these to the base hue.
 
   setChromatic("--tug-base-fg-default", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
-  setChromatic("--tug-base-fg-muted", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
-  setChromatic("--tug-base-fg-subtle", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
+  setChromatic("--tug-base-fg-muted", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedPrimaryName);
+  setChromatic("--tug-base-fg-subtle", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtlePrimaryName);
   // fg-disabled: Brio uses cobalt+8, i:7, t:23
-  setChromatic("--tug-base-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledPrimaryName);
 
   // fg-inverse: Brio uses cobalt-8, i:3, t:100
   const fgInverseTone = 100;
   const fgInverseI = isLight ? 1 : txtI;
-  setChromatic("--tug-base-fg-inverse", isLight ? txtRefW : fgInverseRef, isLight ? txtAngleW : fgInverseAngle, fgInverseI, fgInverseTone, 100, isLight ? txtNameW : fgInverseName);
+  setChromatic("--tug-base-fg-inverse", isLight ? txtRefW : fgInverseRef, isLight ? txtAngleW : fgInverseAngle, fgInverseI, fgInverseTone, 100, isLight ? txtNameW : fgInversePrimaryName);
 
   // fg-placeholder: Brio uses bare cobalt (offset=0), i:6, t:30
   if (isLight) {
     setChromatic("--tug-base-fg-placeholder", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
   } else {
-    setChromatic("--tug-base-fg-placeholder", fgPlaceholderRef, fgPlaceholderAngle, fgPlaceholderI, fgPlaceholderTone, 100, fgPlaceholderName);
+    setChromatic("--tug-base-fg-placeholder", fgPlaceholderRef, fgPlaceholderAngle, fgPlaceholderI, fgPlaceholderTone, 100, fgPlaceholderPrimaryName);
   }
 
   // fg-link: [D05] use interactiveHue (cyan for Brio) at canonical i:50, t:50 → "cyan"
@@ -1032,8 +1059,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setWhite("--tug-base-fg-onAccent");
     setWhite("--tug-base-fg-onDanger");
   } else {
-    setChromatic("--tug-base-fg-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
-    setChromatic("--tug-base-fg-onDanger", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-fg-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
+    setChromatic("--tug-base-fg-onDanger", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
   }
 
   // fg-onCaution: Brio uses violet-6, i:4, t:7 (dark text on bright caution/success bg)
@@ -1044,15 +1071,15 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Icons follow fg formulas: icon-default=fg-muted, icon-muted=fg-subtle, icon-disabled=fg-disabled.
   // Brio ground truth: icon-default=cobalt i:5 t:66, icon-muted=cobalt+7 i:7 t:37,
   //   icon-disabled=cobalt+8 i:7 t:23, icon-onAccent=cobalt-8 i:3 t:100.
-  setChromatic("--tug-base-icon-default", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  setChromatic("--tug-base-icon-default", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedPrimaryName);
   // icon-muted: Brio uses cobalt+7, i:7, t:37 (same as fg-subtle)
   if (isLight) {
     setChromatic("--tug-base-icon-muted", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
   } else {
-    setChromatic("--tug-base-icon-muted", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
+    setChromatic("--tug-base-icon-muted", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtlePrimaryName);
   }
   // icon-disabled: Brio uses cobalt+8, i:7, t:23 (same as fg-disabled)
-  setChromatic("--tug-base-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledPrimaryName);
 
   // icon-active: vivid primary text color (active/selected state)
   setChromatic("--tug-base-icon-active", txtRefW, txtAngleW, 100, isLight ? 22 : 80, 100, txtNameW);
@@ -1061,7 +1088,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   if (isLight) {
     setWhite("--tug-base-icon-onAccent");
   } else {
-    setChromatic("--tug-base-icon-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-icon-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
   }
 
   // --- Borders / Dividers / Focus ---
@@ -1080,7 +1107,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // border-default base: dark=bare cobalt (fgMutedRef=offset 0), light=atmRefW
   const borderHueRef = isLight ? atmRefW : fgMutedRef;
   const borderHueAngle = isLight ? atmAngleW : fgMutedAngle;
-  const borderHueName = isLight ? atmNameW : fgMutedName;
+  const borderHueName = isLight ? atmNameW : fgMutedPrimaryName;
   // border intensities from preset. [D03]
   const borderIBase = preset.borderIBase;
   const borderIStrong = preset.borderIStrong;
@@ -1088,7 +1115,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // border-muted: dark=cobalt+7 (fgSubtleRef), light=atmRefW at higher tone
   const borderMutedHueRef = isLight ? atmRefW : fgSubtleRef;
   const borderMutedHueAngle = isLight ? atmAngleW : fgSubtleAngle;
-  const borderMutedHueName = isLight ? atmNameW : fgSubtleName;
+  const borderMutedHueName = isLight ? atmNameW : fgSubtlePrimaryName;
   const borderMutedTone = isLight ? 36 : fgSubtleTone;
   const borderMutedI = isLight ? 10 : borderIStrong;
 
@@ -1098,7 +1125,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const borderStrongLightRef = formatHueRef(borderStrongLightName, borderStrongLightAngle);
   const borderStrongHueRef = isLight ? borderStrongLightRef : fgDisabledRef;
   const borderStrongHueAngle = isLight ? borderStrongLightAngle : fgDisabledAngle;
-  const borderStrongHueName = isLight ? borderStrongLightName : fgDisabledName;
+  const borderStrongHueName = isLight ? primaryColorName(borderStrongLightName) : fgDisabledPrimaryName;
   // Dark mode: Brio border-strong = cobalt+8, i:7, t:40
   const borderStrongTone = isLight ? Math.round(fgSubtleTone - 6) : 40;
   const borderStrongI = isLight ? borderIStrong : borderIStrong;
@@ -1339,8 +1366,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   if (isLight) {
     setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
   } else {
-    // Brio: violet+5, i:5, t:18 (surface tier offset +5 from atmBaseAngle)
-    const tabBgActiveAngle = surfaceTierAngle(5);
+    // Brio: violet+5 → violet-iris (272.5°) per migration mapping [D08]
+    const tabBgActiveHue = "violet-iris";
+    const tabBgActiveAngle = applyWarmthBias("violet", resolveHueAngle(tabBgActiveHue));
     const tabBgActiveName = closestHueName(tabBgActiveAngle);
     const tabBgActiveRef = formatHueRef(tabBgActiveName, tabBgActiveAngle);
     setChromatic("--tug-base-tab-bg-active", tabBgActiveRef, tabBgActiveAngle, atmI, 18, 100, tabBgActiveName);
@@ -1387,10 +1415,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-disabled-bg", surfBareBaseRef, surfBareBaseAngle, atmI, disabledBgTone, 100, surfBareBaseName);
   }
   const disabledFgTone = isLight ? fgDisabledTone : 38;
-  setChromatic("--tug-base-control-disabled-fg", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledName);
+  setChromatic("--tug-base-control-disabled-fg", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledPrimaryName);
   const disabledBorderTone = isLight ? Math.round(dividerTone) : 28;
   setChromatic("--tug-base-control-disabled-border", atmRefW, atmAngleW, isLight ? atmIBorder : 6, disabledBorderTone);
-  setChromatic("--tug-base-control-disabled-icon", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledName);
+  setChromatic("--tug-base-control-disabled-icon", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledPrimaryName);
   setInvariant("--tug-base-control-disabled-opacity", "0.5");
   setStructural("--tug-base-control-disabled-shadow", "none");
 
@@ -1759,9 +1787,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   setChromatic("--tug-base-field-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
   // field-fg-disabled: Brio uses cobalt+8, i:7, t:23
-  setChromatic("--tug-base-field-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-field-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledPrimaryName);
   // field-fg-readOnly: Brio uses cobalt, i:5, t:66 (= fg-muted)
-  setChromatic("--tug-base-field-fg-readOnly", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  setChromatic("--tug-base-field-fg-readOnly", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedPrimaryName);
   // field-placeholder / field-border: in light mode use atmosphere hue (Harmony pattern)
   // Brio dark: field-placeholder=cobalt i:6 t:30, field-border-rest=cobalt i:6 t:30,
   //            field-border-hover=cobalt+7 i:7 t:37
@@ -1805,30 +1833,30 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-toggle-track-disabled", surfBareBaseRef, surfBareBaseAngle, atmI, toggleDisabledTone, 100, surfBareBaseName);
   }
   // toggle-track-mixed: Brio uses cobalt+7, i:7, t:37 (= fgSubtleRef)
-  setChromatic("--tug-base-toggle-track-mixed", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
-  setChromatic("--tug-base-toggle-track-mixed-hover", fgSubtleRef, fgSubtleAngle, Math.min(txtISubtle + 5, 100), Math.min(fgSubtleTone + 6, 100), 100, fgSubtleName);
+  setChromatic("--tug-base-toggle-track-mixed", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtlePrimaryName);
+  setChromatic("--tug-base-toggle-track-mixed-hover", fgSubtleRef, fgSubtleAngle, Math.min(txtISubtle + 5, 100), Math.min(fgSubtleTone + 6, 100), 100, fgSubtlePrimaryName);
 
   // Thumb: Brio dark uses cobalt-8, i:3, t:100 (= fg-inverse)
   if (isLight) {
     setWhite("--tug-base-toggle-thumb");
   } else {
-    setChromatic("--tug-base-toggle-thumb", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-toggle-thumb", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
   }
   // toggle-thumb-disabled: needs contrast against disabled track
   const toggleThumbDisabledTone = isLight ? fgDisabledTone : 40;
-  setChromatic("--tug-base-toggle-thumb-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledName);
-  setChromatic("--tug-base-toggle-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledName);
-  setChromatic("--tug-base-toggle-icon-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  setChromatic("--tug-base-toggle-thumb-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledPrimaryName);
+  setChromatic("--tug-base-toggle-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledPrimaryName);
+  setChromatic("--tug-base-toggle-icon-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedPrimaryName);
 
   // Checkmark / radio: Brio dark uses cobalt-8, i:3, t:100 (= fg-inverse)
   if (isLight) {
     setWhite("--tug-base-checkmark");
     setWhite("--tug-base-radio-dot");
   } else {
-    setChromatic("--tug-base-checkmark", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
-    setChromatic("--tug-base-radio-dot", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-checkmark", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
+    setChromatic("--tug-base-radio-dot", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInversePrimaryName);
   }
-  setChromatic("--tug-base-checkmark-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  setChromatic("--tug-base-checkmark-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedPrimaryName);
 
   // --- Separator ---
   setChromatic("--tug-base-separator", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);

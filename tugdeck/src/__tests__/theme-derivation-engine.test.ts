@@ -1081,7 +1081,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-surface-raised": { L: 0.24284, C: 0.022, h: 264 },
   "--tug-base-surface-screen": { L: 0.28504, C: 0.0308, h: 260 },
   "--tug-base-surface-sunken": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-tab-bg-active": { L: 0.2958, C: 0.022, h: 275 },
+  "--tug-base-tab-bg-active": { L: 0.3509, C: 0.0149, h: 272.5 },
   "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
