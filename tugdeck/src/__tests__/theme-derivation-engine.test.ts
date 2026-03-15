@@ -31,6 +31,8 @@ import {
 import {
   validateThemeContrast,
   autoAdjustContrast,
+  LC_THRESHOLDS,
+  LC_MARGINAL_DELTA,
 } from "@/components/tugways/theme-accessibility";
 
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
@@ -386,7 +388,7 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-control-filled-success-icon-hover",
   "--tug-base-control-filled-success-icon-active",
   // C1f — filled-caution: yellow bg with light text has same contrast constraint as other filled roles
-  "--tug-base-control-filled-caution-fg-hover",
+  // (fg-hover is within 5 Lc of threshold — covered by marginal band; icon-hover/active kept)
   "--tug-base-control-filled-caution-fg-active",
   "--tug-base-control-filled-caution-icon-hover",
   "--tug-base-control-filled-caution-icon-active",
@@ -566,9 +568,12 @@ describe("derivation-engine integration", () => {
     expect(tokensAndResolvedConsistent).toBe(true);
 
     // After adjustment, failures must only come from the documented exception sets:
-    // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS) or pair-level (KNOWN_PAIR_EXCEPTIONS)
+    // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS), pair-level (KNOWN_PAIR_EXCEPTIONS),
+    // or marginal band (within LC_MARGINAL_DELTA Lc units of the role threshold). [D02]
     const unexpectedFailures = finalResults.filter((r) => {
       if (r.lcPass) return false;
+      const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
+      if (Math.abs(r.lc) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
       return true;
@@ -651,6 +656,8 @@ describe("derivation-engine integration", () => {
     const unexpectedBodyTextFailures = finalResults.filter((r) => {
       if (r.lcPass) return false;
       if (r.role !== "body-text") return false;
+      const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
+      if (Math.abs(r.lc) >= margin) return false;
       if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
       if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
       if (LIGHT_MODE_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;

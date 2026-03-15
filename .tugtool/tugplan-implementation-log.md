@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-15T19:46:24Z
+---
+
+## step-2: Added 5 Lc marginal band to T4.1, T4.2, and gallery unexpectedFailures filters using LC_MARGINAL_DELTA and LC_THRESHOLDS. Removed one stale KNOWN_BELOW_THRESHOLD entry now covered by the band.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-1
 date: 2025-03-15T19:36:22Z
 ---
