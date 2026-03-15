@@ -9,6 +9,138 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-03-15T21:53:43Z
+---
+
+## audit-fix: Audit fix: Updated test_canonical_data_loaded assertions in color.rs from 24 to 48 to match expanded palette.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-10
+date: 2025-03-15T21:50:14Z
+---
+
+## step-10: Full integration checkpoint. 1616 tests pass. Zero offset syntax in production code. 48 hues in HUE_FAMILIES, ADJACENCY_RING, and tug-color-canonical.json. OKLCH delta-E and marginal band verified. All plan exit criteria satisfied.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-9
+date: 2025-03-15T21:44:23Z
+---
+
+## step-9: Verified regenerated CSS tokens. generate:tokens produces zero diff (371 tokens). Zero offset syntax in any CSS file. Spot-checked migration mapping: cobalt+7→indigo-cobalt, violet-6→indigo-violet. Full test suite: 1616 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-8
+date: 2025-03-15T21:39:40Z
+---
+
+## step-8: Fixed oklchToTugColor to use 144-entry HUE_VOCABULARY, removing hue-NNN fallback. Fixed parseOklchStr for alpha handling. Updated roundtrip integration test with achromatic skip guard. BRIO_GROUND_TRUTH fixture verified correct from prior steps.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-7
+date: 2025-03-15T21:19:45Z
+---
+
+## step-7: Migrated theme-derivation-engine and theme-accessibility to use named hues instead of numeric offsets. Removed offset from ThemeRecipe, built 144-entry HUE_VOCABULARY, rewrote formatHueRef/resolveHueAngle/makeTugColor for hyphenated adjacency. Updated parseTugColorToken/rebuildTugColorToken/baseHueName. Fixed muted preset values. Eliminated all offset syntax from codebase.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-6
+date: 2025-03-15T20:53:14Z
+---
+
+## step-6: Updated postcss-tug-color.ts to handle TugColorValue.adjacentName via resolveHyphenatedHue. Removed offset-based resolution. Parse errors now throw decl.error(). Added adjacency and non-adjacent error tests. 52 plugin tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-5
+date: 2025-03-15T20:44:42Z
+---
+
+## step-5: Replaced offset syntax with hyphenated adjacency in tug-color-parser. Removed offset from TugColorValue, added adjacentName. Removed plus token. Implemented IDENT-IDENT-IDENT chain grammar with adjacency validation. Updated 66 parser tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-4
+date: 2025-03-15T20:33:56Z
+---
+
+## step-4: Added 24 new hue families (garnet through fuchsia) to palette engine. Implemented ADJACENCY_RING with build-time assertion, resolveHyphenatedHue with circular wrap, and isAdjacent. Derived canonical_l and chroma caps for all new hues. Regenerated tug-palette.css. Updated all affected tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-3
+date: 2025-03-15T19:48:18Z
+---
+
+## step-3: Phase 1 integration checkpoint. Full test suite 1582/1582 pass. No new KNOWN_BELOW_THRESHOLD entries required. Steps 1-2 tolerance changes verified.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-2
+date: 2025-03-15T19:46:24Z
+---
+
+## step-2: Added 5 Lc marginal band to T4.1, T4.2, and gallery unexpectedFailures filters using LC_MARGINAL_DELTA and LC_THRESHOLDS. Removed one stale KNOWN_BELOW_THRESHOLD entry now covered by the band.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
+step: step-1
+date: 2025-03-15T19:36:22Z
+---
+
+## step-1: Converted BRIO_GROUND_TRUTH fixture from exact string comparison to OKLCH triples with delta-E < 0.02 tolerance. Added oklchDeltaE helper with hue-wrap normalization per Spec S04. Updated T-BRIO-MATCH and T-PRESET-NO-REGRESSION tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-6
 date: 2025-03-15T18:01:35Z
 ---

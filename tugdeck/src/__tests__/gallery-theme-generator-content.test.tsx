@@ -29,7 +29,7 @@ import {
 import { GalleryThemeGeneratorContent, generateCssExport } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS } from "@/components/tugways/theme-accessibility";
+import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, LC_THRESHOLDS, LC_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 
 // ---------------------------------------------------------------------------
@@ -205,11 +205,14 @@ function runFullPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]) {
 
 /**
  * Filter a list of ContrastResults to only the unexpected failures —
- * those outside both the known-token exception set and the known-pair set.
+ * those outside the known-token exception set, the known-pair set,
+ * and the 5 Lc marginal band (within LC_MARGINAL_DELTA of the role threshold). [D02]
  */
 function unexpectedFailures(results: ReturnType<typeof validateThemeContrast>) {
   return results.filter((r) => {
     if (r.lcPass) return false;
+    const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
+    if (Math.abs(r.lc) >= margin) return false;
     if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
     if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
     return true;
@@ -315,7 +318,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the atmosphere hue strip with 24 swatches", () => {
+  it("renders the atmosphere hue strip with 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -323,10 +326,10 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const strip = container.querySelector("[data-testid='gtg-atmosphere-hue-strip']");
     expect(strip).not.toBeNull();
     const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-    expect(swatches.length).toBe(24);
+    expect(swatches.length).toBe(48);
   });
 
-  it("renders the text hue strip with 24 swatches", () => {
+  it("renders the text hue strip with 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -334,7 +337,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const strip = container.querySelector("[data-testid='gtg-text-hue-strip']");
     expect(strip).not.toBeNull();
     const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-    expect(swatches.length).toBe(24);
+    expect(swatches.length).toBe(48);
   });
 
   it("renders three mood sliders", () => {
@@ -705,7 +708,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     expect(strips.length).toBe(7);
   });
 
-  it("each role hue strip has 24 swatches", () => {
+  it("each role hue strip has 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -723,7 +726,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       const strip = container.querySelector(`[data-testid='${id}']`);
       expect(strip).not.toBeNull();
       const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-      expect(swatches.length).toBe(24);
+      expect(swatches.length).toBe(48);
     }
   });
 

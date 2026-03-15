@@ -5,77 +5,149 @@
     "l_light": 0.96
   },
   "hues": {
+    "garnet": {
+      "canonical_l": 0.645
+    },
     "cherry": {
       "canonical_l": 0.619
+    },
+    "scarlet": {
+      "canonical_l": 0.635
+    },
+    "coral": {
+      "canonical_l": 0.632
+    },
+    "crimson": {
+      "canonical_l": 0.631
     },
     "red": {
       "canonical_l": 0.659
     },
+    "vermilion": {
+      "canonical_l": 0.631
+    },
     "tomato": {
       "canonical_l": 0.704
+    },
+    "ember": {
+      "canonical_l": 0.68
     },
     "flame": {
       "canonical_l": 0.74
     },
+    "tangerine": {
+      "canonical_l": 0.72
+    },
     "orange": {
       "canonical_l": 0.78
+    },
+    "apricot": {
+      "canonical_l": 0.756
     },
     "amber": {
       "canonical_l": 0.821
     },
+    "honey": {
+      "canonical_l": 0.79
+    },
     "gold": {
       "canonical_l": 0.852
+    },
+    "saffron": {
+      "canonical_l": 0.834
     },
     "yellow": {
       "canonical_l": 0.901
     },
+    "chartreuse": {
+      "canonical_l": 0.922
+    },
     "lime": {
       "canonical_l": 0.861
+    },
+    "grass": {
+      "canonical_l": 0.917
     },
     "green": {
       "canonical_l": 0.821
     },
+    "jade": {
+      "canonical_l": 0.871
+    },
     "mint": {
       "canonical_l": 0.807
+    },
+    "seafoam": {
+      "canonical_l": 0.886
     },
     "teal": {
       "canonical_l": 0.803
     },
+    "aqua": {
+      "canonical_l": 0.9
+    },
     "cyan": {
       "canonical_l": 0.803
+    },
+    "azure": {
+      "canonical_l": 0.851
     },
     "sky": {
       "canonical_l": 0.807
     },
+    "cerulean": {
+      "canonical_l": 0.792
+    },
     "blue": {
       "canonical_l": 0.771
+    },
+    "sapphire": {
+      "canonical_l": 0.717
     },
     "cobalt": {
       "canonical_l": 0.744
     },
+    "indigo": {
+      "canonical_l": 0.572
+    },
     "violet": {
       "canonical_l": 0.708
+    },
+    "iris": {
+      "canonical_l": 0.555
     },
     "purple": {
       "canonical_l": 0.686
     },
+    "grape": {
+      "canonical_l": 0.555
+    },
     "plum": {
       "canonical_l": 0.731
+    },
+    "orchid": {
+      "canonical_l": 0.594
     },
     "pink": {
       "canonical_l": 0.794
     },
+    "peony": {
+      "canonical_l": 0.695
+    },
     "rose": {
       "canonical_l": 0.758
+    },
+    "cerise": {
+      "canonical_l": 0.675
     },
     "magenta": {
       "canonical_l": 0.726
     },
+    "fuchsia": {
+      "canonical_l": 0.659
+    },
     "berry": {
       "canonical_l": 0.668
-    },
-    "coral": {
-      "canonical_l": 0.632
     }
   }
 }

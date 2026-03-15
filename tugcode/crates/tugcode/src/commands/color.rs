@@ -796,9 +796,9 @@ mod tests {
             !palette_data::HUE_FAMILIES.is_empty(),
             "HUE_FAMILIES should be populated from palette-engine.ts"
         );
-        assert_eq!(palette_data::HUE_FAMILIES.len(), 24);
-        assert_eq!(palette_data::DEFAULT_CANONICAL_L.len(), 24);
-        assert_eq!(palette_data::MAX_CHROMA_FOR_HUE.len(), 24);
+        assert_eq!(palette_data::HUE_FAMILIES.len(), 48);
+        assert_eq!(palette_data::DEFAULT_CANONICAL_L.len(), 48);
+        assert_eq!(palette_data::MAX_CHROMA_FOR_HUE.len(), 48);
     }
 
     #[test]

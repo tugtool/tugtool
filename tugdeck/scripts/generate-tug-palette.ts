@@ -18,7 +18,6 @@ import {
   HUE_FAMILIES,
   DEFAULT_CANONICAL_L,
   MAX_CHROMA_FOR_HUE,
-  TUG_COLOR_PRESETS,
   L_DARK,
   L_LIGHT,
   PEAK_C_SCALE,
@@ -31,34 +30,6 @@ import {
 /** Round a number to at most `digits` significant decimal places, trimming trailing zeros. */
 function fmt(n: number, digits = 3): string {
   return parseFloat(n.toFixed(digits)).toString();
-}
-
-/** Build the preset formula for a given hue, intensity, and tone. */
-function presetFormula(H: string, intensity: number, tone: number): string {
-  const lPart = lightnessPart(H, tone);
-  const cPart = `calc(${intensity} / 100 * var(--tug-${H}-peak-c))`;
-  const hPart = `var(--tug-${H}-h)`;
-  return `oklch(${lPart} ${cPart} ${hPart})`;
-}
-
-/**
- * Build the CSS lightness expression for a given tone.
- *
- * tone=50 (and intense/muted/canonical) resolves to var(--tug-H-canonical-l) directly
- * because clamp(0,50,50)=50 contributes the full (canonical-l - l-dark)/50 step
- * and clamp(50,50,100)-50=0. So L simplifies to l-dark + (canonical-l - l-dark) = canonical-l.
- *
- * For other tone values we emit the full piecewise calc()+clamp() formula.
- */
-function lightnessPart(H: string, val: number): string {
-  if (val === 50) {
-    return `var(--tug-${H}-canonical-l)`;
-  }
-  return (
-    `calc(var(--tug-l-dark)` +
-    ` + clamp(0, ${val}, 50) * (var(--tug-${H}-canonical-l) - var(--tug-l-dark)) / 50` +
-    ` + (clamp(50, ${val}, 100) - 50) * (var(--tug-l-light) - var(--tug-${H}-canonical-l)) / 50)`
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -91,12 +62,9 @@ lines.push(` *       + clamp(0, tone, 50) * (canonical-l - L_DARK) / 50`);
 lines.push(` *       + (clamp(50, tone, 100) - 50) * (L_LIGHT - canonical-l) / 50`);
 lines.push(` *   C = intensity / 100 * peak-c`);
 lines.push(` *`);
-lines.push(` * Five convenience presets per hue (120 = 24 hues x 5 presets):`);
-lines.push(` *   canonical  intensity=50, tone=50   The crayon color — reference point`);
-lines.push(` *   light      intensity=20, tone=85   Background-safe, airy`);
-lines.push(` *   dark       intensity=50, tone=20   Contrast text, dark surfaces`);
-lines.push(` *   intense    intensity=90, tone=50   Pops, draws attention`);
-lines.push(` *   muted      intensity=45, tone=40   Subdued, secondary`);
+lines.push(` * Five convenience presets per hue (canonical, light, dark, intense, muted)`);
+lines.push(` * are handled by the TugColor parser and postcss-tug-color plugin at build time.`);
+lines.push(` * They are not stored as CSS variables in this file.`);
 lines.push(` *`);
 lines.push(` * Import order (in globals.css):`);
 lines.push(` *   1. tug-palette.css   — palette variables (this file)`);
@@ -129,9 +97,9 @@ lines.push(`  --tug-l-dark: ${fmt(L_DARK)};`);
 lines.push(`  --tug-l-light: ${fmt(L_LIGHT)};`);
 lines.push(``);
 
-// Per-hue constants (72 = 24 x 3)
+// Per-hue constants (144 = 48 x 3)
 lines.push(`  /* -------------------------------------------------------------------------`);
-lines.push(`   * Per-hue constants (72 = 24 hues x 3)`);
+lines.push(`   * Per-hue constants (144 = 48 hues x 3)`);
 lines.push(`   * Source: HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE * PEAK_C_SCALE(${PEAK_C_SCALE})`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
 lines.push(``);
@@ -146,40 +114,6 @@ for (const hue of HUE_ORDER) {
   lines.push(`  --tug-${hue}-h: ${h};`);
   lines.push(`  --tug-${hue}-canonical-l: ${fmt(canonL, 3)};`);
   lines.push(`  --tug-${hue}-peak-c: ${fmt(peakC, 3)};`);
-  lines.push(``);
-}
-
-// Chromatic preset formulas (120 = 24 x 5)
-lines.push(`  /* -------------------------------------------------------------------------`);
-lines.push(`   * Chromatic preset formulas (120 = 24 hues x 5 presets)`);
-lines.push(`   *`);
-lines.push(`   * Each preset uses literal intensity/tone numbers in the calc()+clamp() formula.`);
-lines.push(`   * Five presets: canonical (intensity=50,tone=50), light (intensity=20,tone=85),`);
-lines.push(`   *               dark (intensity=50,tone=20), intense (intensity=90,tone=50),`);
-lines.push(`   *               muted (intensity=45,tone=40)`);
-lines.push(`   *`);
-lines.push(`   * Formula for L (piecewise via clamp):`);
-lines.push(`   *   L = var(--tug-l-dark)`);
-lines.push(`   *       + clamp(0, tone, 50) * (var(--tug-H-canonical-l) - var(--tug-l-dark)) / 50`);
-lines.push(`   *       + (clamp(50, tone, 100) - 50) * (var(--tug-l-light) - var(--tug-H-canonical-l)) / 50`);
-lines.push(`   * Formula for C (linear):`);
-lines.push(`   *   C = intensity / 100 * var(--tug-H-peak-c)`);
-lines.push(`   *`);
-lines.push(`   * Canonical (tone=50): clamp(0,50,50)=50 and clamp(50,50,100)-50=0, so`);
-lines.push(`   *   L = var(--tug-l-dark) + 50*(canonical-l - l-dark)/50 + 0 = canonical-l`);
-lines.push(`   *   (simplified to just var(--tug-H-canonical-l) directly)`);
-lines.push(`   * ------------------------------------------------------------------------- */`);
-lines.push(``);
-
-const { canonical, light, dark, intense, muted } = TUG_COLOR_PRESETS;
-
-for (const hue of HUE_ORDER) {
-  lines.push(`  /* ${hue} */`);
-  lines.push(`  --tug-${hue}: ${presetFormula(hue, canonical.intensity, canonical.tone)};`);
-  lines.push(`  --tug-${hue}-light: ${presetFormula(hue, light.intensity, light.tone)};`);
-  lines.push(`  --tug-${hue}-dark: ${presetFormula(hue, dark.intensity, dark.tone)};`);
-  lines.push(`  --tug-${hue}-intense: ${presetFormula(hue, intense.intensity, intense.tone)};`);
-  lines.push(`  --tug-${hue}-muted: ${presetFormula(hue, muted.intensity, muted.tone)};`);
   lines.push(``);
 }
 

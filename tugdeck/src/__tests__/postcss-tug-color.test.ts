@@ -6,7 +6,9 @@
  * - Positional arguments: --tug-color(blue, 5, 13)
  * - Default arguments: --tug-color(blue) → intensity=50, tone=50
  * - Labeled arguments in any order
- * - Hue offsets: --tug-color(red+5, i: 30, t: 70)
+ * - Hyphenated adjacency: --tug-color(cobalt-indigo, i: 7, t: 37)
+ * - Adjacency + preset: --tug-color(cobalt-indigo-intense)
+ * - Non-adjacent pairs rejected: --tug-color(yellow-blue) errors at build
  * - Alpha: --tug-color(blue, i: 5, t: 13, a: 50)
  * - Multiple --tug-color() calls in a single declaration value
  * - Values without --tug-color() pass through unchanged
@@ -25,6 +27,8 @@ import {
   L_LIGHT,
   findMaxChroma,
   tugColor,
+  resolveHyphenatedHue,
+  ADJACENCY_RING,
 } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +45,20 @@ function processDecl(prop: string, value: string): string {
     expanded = decl.value;
   });
   return expanded;
+}
+
+/** Run the plugin and expect it to throw a CssSyntaxError; return the message. */
+function processDeclExpectError(prop: string, value: string): string {
+  const css = `a { ${prop}: ${value}; }`;
+  try {
+    postcss([postcssTugColor()]).process(css, { from: undefined }).css;
+    throw new Error(`Expected a PostCSS error for '${value}', but it succeeded`);
+  } catch (e: unknown) {
+    if (e instanceof Error) {
+      return e.message;
+    }
+    throw e;
+  }
 }
 
 /** Parse an oklch() string into its numeric components. */
@@ -120,7 +138,7 @@ describe("postcss-tug-color: default arguments", () => {
     expect(result).toBe(expected);
   });
 
-  it("expands all 24 named hues at canonical (i=50, t=50)", () => {
+  it("expands all 48 named hues at canonical (i=50, t=50)", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
       const expected = tugColor(hueName, 50, 50, canonL);
@@ -176,39 +194,81 @@ describe("postcss-tug-color: intensity and tone axes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Hue offsets
+// Hyphenated adjacency syntax
 // ---------------------------------------------------------------------------
 
-describe("postcss-tug-color: hue offsets", () => {
-  it("--tug-color(red+5) resolves to angle 30 (red=25, +5)", () => {
-    const result = processDecl("color", "--tug-color(red+5, i: 50, t: 50)");
+describe("postcss-tug-color: hyphenated adjacency", () => {
+  it("--tug-color(cobalt-indigo, i: 7, t: 37) resolves to correct OKLCH values", () => {
+    const result = processDecl("color", "--tug-color(cobalt-indigo, i: 7, t: 37)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
-    expect(parsed!.h).toBe(30);
+    // Verify hue angle matches resolveHyphenatedHue
+    const expectedH = resolveHyphenatedHue("cobalt", "indigo");
+    expect(parsed!.h).toBeCloseTo(expectedH, 4);
   });
 
-  it("--tug-color(green-10) resolves to angle 130 (green=140, -10)", () => {
-    const result = processDecl("color", "--tug-color(green-10, i: 50, t: 50)");
+  it("cobalt-indigo uses cobalt canonical L (dominant hue)", () => {
+    const result = processDecl("color", "--tug-color(cobalt-indigo, i: 50, t: 50)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
-    expect(parsed!.h).toBe(130);
+    const canonL = DEFAULT_CANONICAL_L["cobalt"];
+    expect(parsed!.L).toBeCloseTo(canonL, 3);
   });
 
-  it("offset uses base hue canonical-L but dynamic peakC", () => {
-    // red+5 (angle 30) should use red's canonicalL but findMaxChroma at 30
-    const result = processDecl("color", "--tug-color(red+5, i: 100, t: 50)");
+  it("cobalt-indigo peakC uses findMaxChroma at the resolved angle", () => {
+    const result = processDecl("color", "--tug-color(cobalt-indigo, i: 100, t: 50)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
-    const canonL = DEFAULT_CANONICAL_L["red"] ?? 0.77;
-    const expectedC = findMaxChroma(canonL, 30) * PEAK_C_SCALE;
+    const h = resolveHyphenatedHue("cobalt", "indigo");
+    const canonL = DEFAULT_CANONICAL_L["cobalt"];
+    const expectedC = findMaxChroma(canonL, h) * PEAK_C_SCALE;
     expect(parsed!.C).toBeCloseTo(expectedC, 4);
   });
 
-  it("fractional offset: --tug-color(red+5.2)", () => {
-    const result = processDecl("color", "--tug-color(red+5.2)");
+  it("cobalt-indigo-intense applies intense preset", () => {
+    const withPreset = processDecl("color", "--tug-color(cobalt-indigo-intense)");
+    const withExplicit = processDecl("color", "--tug-color(cobalt-indigo, i: 90, t: 50)");
+    expect(withPreset).toBe(withExplicit);
+  });
+
+  it("cobalt-indigo-muted applies muted preset", () => {
+    const withPreset = processDecl("color", "--tug-color(cobalt-indigo-muted)");
+    const withExplicit = processDecl("color", "--tug-color(cobalt-indigo, i: 50, t: 42)");
+    expect(withPreset).toBe(withExplicit);
+  });
+
+  it("adjacency result is different from either pure hue", () => {
+    const cobalt = processDecl("color", "--tug-color(cobalt, i: 50, t: 50)");
+    const indigo = processDecl("color", "--tug-color(indigo, i: 50, t: 50)");
+    const blended = processDecl("color", "--tug-color(cobalt-indigo, i: 50, t: 50)");
+    expect(blended).not.toBe(cobalt);
+    expect(blended).not.toBe(indigo);
+  });
+
+  it("ring-wrap adjacency: berry-garnet resolves correctly", () => {
+    const result = processDecl("color", "--tug-color(berry-garnet, i: 50, t: 50)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
-    expect(parsed!.h).toBeCloseTo(30.2, 1);
+    const expectedH = resolveHyphenatedHue("berry", "garnet");
+    expect(parsed!.h).toBeCloseTo(expectedH, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-adjacent error tests
+// ---------------------------------------------------------------------------
+
+describe("postcss-tug-color: non-adjacent pair errors", () => {
+  it("--tug-color(yellow-blue) throws a build error (not adjacent)", () => {
+    const msg = processDeclExpectError("color", "--tug-color(yellow-blue)");
+    expect(msg).toContain("postcss-tug-color");
+    expect(msg).toContain("not adjacent");
+  });
+
+  it("--tug-color(red+5) throws a build error (offset syntax removed)", () => {
+    const msg = processDeclExpectError("color", "--tug-color(red+5)");
+    expect(msg).toContain("postcss-tug-color");
+    expect(msg).toContain("+");
   });
 });
 
@@ -353,5 +413,21 @@ describe("postcss-tug-color: works on any CSS property", () => {
     const result = processDecl("fill", "--tug-color(cherry)");
     expect(result).toMatch(/^oklch\(/);
     expect(result).not.toContain("--tug-color(");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADJACENCY_RING coverage: all 48 adjacent pairs are accepted
+// ---------------------------------------------------------------------------
+
+describe("postcss-tug-color: all ring-adjacent pairs expand without error", () => {
+  it("every adjacent pair in ADJACENCY_RING resolves to a valid oklch()", () => {
+    for (let idx = 0; idx < ADJACENCY_RING.length; idx++) {
+      const a = ADJACENCY_RING[idx];
+      const b = ADJACENCY_RING[(idx + 1) % ADJACENCY_RING.length];
+      const result = processDecl("color", `--tug-color(${a}-${b})`);
+      expect(result).toMatch(/^oklch\(/);
+      expect(result).not.toContain("--tug-color(");
+    }
   });
 });

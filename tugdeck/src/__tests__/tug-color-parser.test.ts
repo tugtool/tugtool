@@ -6,21 +6,21 @@
  * - Labeled arguments (short and full label names, any order)
  * - Mixed positional + labeled
  * - Default values for intensity, tone, alpha
- * - Color hue offsets (+/- degrees, fractional)
+ * - Adjacency syntax (cobalt-indigo, cobalt-indigo-intense, etc.)
  * - Fractional numeric values
  * - Error reporting: unknown colors, out-of-range, bad labels, type mismatches
+ * - Error: '+' in input (offset syntax removed)
+ * - Error: non-adjacent pairs
  * - CSS value scanning (findTugColorCalls)
  */
 import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls } from "../../tug-color-parser";
 import type { TugColorParsed, TugColorError } from "../../tug-color-parser";
-import { TUG_COLOR_PRESETS } from "@/components/tugways/palette-engine";
+import { TUG_COLOR_PRESETS, ADJACENCY_RING } from "@/components/tugways/palette-engine";
 
-// A representative set of known hues for testing
+// All 48 named hues plus black and white
 const KNOWN_HUES = new Set([
-  "cherry", "red", "tomato", "flame", "orange", "amber", "gold", "yellow",
-  "lime", "green", "mint", "teal", "cyan", "sky", "blue", "cobalt",
-  "violet", "purple", "plum", "pink", "rose", "magenta", "berry", "coral",
+  ...ADJACENCY_RING,
   "black", "white",
 ]);
 
@@ -52,6 +52,18 @@ function expectOkWithPresets(input: string): TugColorParsed {
   return result.value;
 }
 
+/** Assert a successful parse with adjacency ring and return the parsed value. */
+function expectOkWithAdjacency(input: string): TugColorParsed {
+  const result = parseTugColor(input, KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+  if (!result.ok) {
+    throw new Error(
+      `Expected ok parse for '${input}', got errors:\n` +
+      result.errors.map((e) => `  - ${e.message}`).join("\n"),
+    );
+  }
+  return result.value;
+}
+
 /** Assert a failed parse and return the error list. */
 function expectErrors(input: string): TugColorError[] {
   const result = parseTugColor(input, KNOWN_HUES);
@@ -74,6 +86,17 @@ function expectErrorsWithPresets(input: string): TugColorError[] {
   return result.errors;
 }
 
+/** Assert a failed parse with adjacency ring and return the error list. */
+function expectErrorsWithAdjacency(input: string): TugColorError[] {
+  const result = parseTugColor(input, KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+  if (result.ok) {
+    throw new Error(
+      `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
+    );
+  }
+  return result.errors;
+}
+
 // ---------------------------------------------------------------------------
 // Positional arguments
 // ---------------------------------------------------------------------------
@@ -81,7 +104,7 @@ function expectErrorsWithPresets(input: string): TugColorError[] {
 describe("tug-color-parser: positional arguments", () => {
   it("color only — defaults for i/t/a", () => {
     const v = expectOk("green");
-    expect(v.color).toEqual({ name: "green", offset: 0 });
+    expect(v.color).toEqual({ name: "green" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(50);
     expect(v.alpha).toBe(100);
@@ -89,7 +112,7 @@ describe("tug-color-parser: positional arguments", () => {
 
   it("color + intensity — defaults for t/a", () => {
     const v = expectOk("violet, 30");
-    expect(v.color).toEqual({ name: "violet", offset: 0 });
+    expect(v.color).toEqual({ name: "violet" });
     expect(v.intensity).toBe(30);
     expect(v.tone).toBe(50);
     expect(v.alpha).toBe(100);
@@ -97,7 +120,7 @@ describe("tug-color-parser: positional arguments", () => {
 
   it("color + intensity + tone — default for a", () => {
     const v = expectOk("red, 50, 40");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(40);
     expect(v.alpha).toBe(100);
@@ -105,7 +128,7 @@ describe("tug-color-parser: positional arguments", () => {
 
   it("all four positional", () => {
     const v = expectOk("red, 50, 40, 80");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(40);
     expect(v.alpha).toBe(80);
@@ -133,7 +156,7 @@ describe("tug-color-parser: positional arguments", () => {
 describe("tug-color-parser: labeled arguments", () => {
   it("all labeled with short names", () => {
     const v = expectOk("c: red, i: 50, t: 40, a: 100");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(40);
     expect(v.alpha).toBe(100);
@@ -141,7 +164,7 @@ describe("tug-color-parser: labeled arguments", () => {
 
   it("all labeled with full names", () => {
     const v = expectOk("color: red, intensity: 30, tone: 20, alpha: 100");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(30);
     expect(v.tone).toBe(20);
     expect(v.alpha).toBe(100);
@@ -149,7 +172,7 @@ describe("tug-color-parser: labeled arguments", () => {
 
   it("labeled in arbitrary order", () => {
     const v = expectOk("t: 40, a: 80, c: purple, i: 12");
-    expect(v.color).toEqual({ name: "purple", offset: 0 });
+    expect(v.color).toEqual({ name: "purple" });
     expect(v.intensity).toBe(12);
     expect(v.tone).toBe(40);
     expect(v.alpha).toBe(80);
@@ -157,7 +180,7 @@ describe("tug-color-parser: labeled arguments", () => {
 
   it("sparse labeled — just color and tone", () => {
     const v = expectOk("c: coral, t: 20");
-    expect(v.color).toEqual({ name: "coral", offset: 0 });
+    expect(v.color).toEqual({ name: "coral" });
     expect(v.intensity).toBe(50); // default
     expect(v.tone).toBe(20);
     expect(v.alpha).toBe(100); // default
@@ -165,7 +188,7 @@ describe("tug-color-parser: labeled arguments", () => {
 
   it("sparse labeled — just color and alpha", () => {
     const v = expectOk("c: sky, a: 50");
-    expect(v.color).toEqual({ name: "sky", offset: 0 });
+    expect(v.color).toEqual({ name: "sky" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(50);
     expect(v.alpha).toBe(50);
@@ -179,7 +202,7 @@ describe("tug-color-parser: labeled arguments", () => {
 describe("tug-color-parser: mixed positional + labeled", () => {
   it("positional color, labeled tone", () => {
     const v = expectOk("coral, t: 20");
-    expect(v.color).toEqual({ name: "coral", offset: 0 });
+    expect(v.color).toEqual({ name: "coral" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(20);
     expect(v.alpha).toBe(100);
@@ -187,7 +210,7 @@ describe("tug-color-parser: mixed positional + labeled", () => {
 
   it("positional color + intensity, labeled alpha", () => {
     const v = expectOk("blue, 70, a: 50");
-    expect(v.color).toEqual({ name: "blue", offset: 0 });
+    expect(v.color).toEqual({ name: "blue" });
     expect(v.intensity).toBe(70);
     expect(v.tone).toBe(50);
     expect(v.alpha).toBe(50);
@@ -195,7 +218,7 @@ describe("tug-color-parser: mixed positional + labeled", () => {
 
   it("positional color, labeled intensity and tone", () => {
     const v = expectOk("mint, i: 80, t: 30");
-    expect(v.color).toEqual({ name: "mint", offset: 0 });
+    expect(v.color).toEqual({ name: "mint" });
     expect(v.intensity).toBe(80);
     expect(v.tone).toBe(30);
     expect(v.alpha).toBe(100);
@@ -203,42 +226,127 @@ describe("tug-color-parser: mixed positional + labeled", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Color hue offsets
+// Hyphenated adjacency syntax
 // ---------------------------------------------------------------------------
 
-describe("tug-color-parser: color hue offsets", () => {
-  it("positive integer offset", () => {
-    const v = expectOk("red+5");
-    expect(v.color).toEqual({ name: "red", offset: 5 });
+describe("tug-color-parser: hyphenated adjacency", () => {
+  it("cobalt-indigo resolves adjacentName correctly (without adjacency ring)", () => {
+    const v = expectOkWithPresets("cobalt-indigo");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+    expect(v.color.preset).toBeUndefined();
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(50);
   });
 
-  it("negative integer offset", () => {
-    const v = expectOk("green-10");
-    expect(v.color).toEqual({ name: "green", offset: -10 });
+  it("cobalt-indigo resolves adjacentName correctly (with adjacency ring)", () => {
+    const v = expectOkWithAdjacency("cobalt-indigo");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+    expect(v.color.preset).toBeUndefined();
   });
 
-  it("positive fractional offset", () => {
-    const v = expectOk("red+5.2");
-    expect(v.color).toEqual({ name: "red", offset: 5.2 });
+  it("indigo-cobalt resolves adjacentName correctly (reverse direction)", () => {
+    const v = expectOkWithAdjacency("indigo-cobalt");
+    expect(v.color.name).toBe("indigo");
+    expect(v.color.adjacentName).toBe("cobalt");
   });
 
-  it("negative fractional offset", () => {
-    const v = expectOk("cherry-2.5");
-    expect(v.color).toEqual({ name: "cherry", offset: -2.5 });
+  it("cobalt-indigo-intense resolves adjacency + preset", () => {
+    const v = expectOkWithAdjacency("cobalt-indigo-intense");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+    expect(v.color.preset).toBe("intense");
+    expect(v.intensity).toBe(90); // from intense preset
   });
 
-  it("color offset with labeled args", () => {
-    const v = expectOk("c: red+5, i: 30, t: 70");
-    expect(v.color).toEqual({ name: "red", offset: 5 });
-    expect(v.intensity).toBe(30);
-    expect(v.tone).toBe(70);
+  it("cobalt-indigo-muted resolves adjacency + muted preset", () => {
+    const v = expectOkWithAdjacency("cobalt-indigo-muted");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+    expect(v.color.preset).toBe("muted");
+    expect(v.intensity).toBe(50); // from muted preset
+    expect(v.tone).toBe(42);      // from muted preset
   });
 
-  it("color offset positional with other positional args", () => {
-    const v = expectOk("tomato-3, 60, 40");
-    expect(v.color).toEqual({ name: "tomato", offset: -3 });
-    expect(v.intensity).toBe(60);
-    expect(v.tone).toBe(40);
+  it("red-vermilion adjacency (ring neighbors)", () => {
+    const v = expectOkWithAdjacency("red-vermilion");
+    expect(v.color.name).toBe("red");
+    expect(v.color.adjacentName).toBe("vermilion");
+  });
+
+  it("ring wrap: berry-garnet are adjacent", () => {
+    const v = expectOkWithAdjacency("berry-garnet");
+    expect(v.color.name).toBe("berry");
+    expect(v.color.adjacentName).toBe("garnet");
+  });
+
+  it("adjacency with labeled syntax: c: cobalt-indigo", () => {
+    const v = expectOkWithAdjacency("c: cobalt-indigo, i: 7, t: 37");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+    expect(v.intensity).toBe(7);
+    expect(v.tone).toBe(37);
+  });
+
+  it("adjacency without ring: any two known hues may be hyphenated", () => {
+    // Without adjacencyRing, non-adjacent pairs are allowed
+    const v = expectOkWithPresets("yellow-blue");
+    expect(v.color.name).toBe("yellow");
+    expect(v.color.adjacentName).toBe("blue");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-adjacent error tests
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: non-adjacent errors", () => {
+  it("yellow-blue produces error with adjacency ring (not adjacent)", () => {
+    const errs = expectErrorsWithAdjacency("yellow-blue");
+    expect(errs.length).toBe(1);
+    expect(errs[0].message).toContain("yellow");
+    expect(errs[0].message).toContain("blue");
+    expect(errs[0].message).toContain("not adjacent");
+  });
+
+  it("red-violet produces error with adjacency ring (not adjacent)", () => {
+    const errs = expectErrorsWithAdjacency("red-violet");
+    expect(errs[0].message).toContain("not adjacent");
+  });
+
+  it("cobalt-indigo-blue errors (third ident must be preset, not color)", () => {
+    const errs = expectErrorsWithAdjacency("cobalt-indigo-blue");
+    expect(errs.length).toBe(1);
+    expect(errs[0].message).toContain("preset");
+  });
+
+  it("black and white are not in the adjacency ring — adjacency errors", () => {
+    const errs = expectErrorsWithAdjacency("black-white");
+    expect(errs[0].message).toContain("not adjacent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plus sign rejected (offset syntax removed)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: plus sign rejected", () => {
+  it("red+5 produces error — hue offsets removed", () => {
+    const errs = expectErrors("red+5");
+    expect(errs.length).toBe(1);
+    expect(errs[0].message).toContain("+");
+    expect(errs[0].message).toContain("adjacency");
+  });
+
+  it("c: red+5 produces error with labeled syntax", () => {
+    const errs = expectErrors("c: red+5, i: 30, t: 70");
+    expect(errs.some((e) => e.message.includes("+"))).toBe(true);
+  });
+
+  it("tomato+3 produces error", () => {
+    const errs = expectErrors("tomato+3");
+    expect(errs[0].message).toContain("+");
   });
 });
 
@@ -277,20 +385,20 @@ describe("tug-color-parser: fractional values", () => {
 describe("tug-color-parser: whitespace tolerance", () => {
   it("no spaces", () => {
     const v = expectOk("c:red,i:50,t:40,a:100");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(50);
   });
 
-  it("extra spaces everywhere", () => {
-    const v = expectOk("  c :  red + 5  ,  i : 30  ,  t : 70  ");
-    expect(v.color).toEqual({ name: "red", offset: 5 });
+  it("extra spaces around labeled args", () => {
+    const v = expectOk("  c :  red  ,  i : 30  ,  t : 70  ");
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(30);
     expect(v.tone).toBe(70);
   });
 
   it("tabs and mixed whitespace", () => {
     const v = expectOk("c:\tred,\ti:\t50");
-    expect(v.color).toEqual({ name: "red", offset: 0 });
+    expect(v.color).toEqual({ name: "red" });
     expect(v.intensity).toBe(50);
   });
 });
@@ -385,12 +493,12 @@ describe("tug-color-parser: error reporting", () => {
 describe("tug-color-parser: black and white", () => {
   it("black parses as a valid color", () => {
     const v = expectOk("black");
-    expect(v.color).toEqual({ name: "black", offset: 0 });
+    expect(v.color).toEqual({ name: "black" });
   });
 
   it("white parses as a valid color", () => {
     const v = expectOk("white");
-    expect(v.color).toEqual({ name: "white", offset: 0 });
+    expect(v.color).toEqual({ name: "white" });
   });
 
   it("black with alpha", () => {
@@ -407,7 +515,7 @@ describe("tug-color-parser: black and white", () => {
 describe("tug-color-parser: preset syntax", () => {
   it("--tug-color(green-intense) uses intense preset defaults: i=90, t=50", () => {
     const v = expectOkWithPresets("green-intense");
-    expect(v.color).toEqual({ name: "green", offset: 0, preset: "intense" });
+    expect(v.color).toEqual({ name: "green", preset: "intense" });
     expect(v.intensity).toBe(90);
     expect(v.tone).toBe(50);
     expect(v.alpha).toBe(100);
@@ -415,28 +523,28 @@ describe("tug-color-parser: preset syntax", () => {
 
   it("--tug-color(orange-muted) uses muted preset defaults: i=50, t=42", () => {
     const v = expectOkWithPresets("orange-muted");
-    expect(v.color).toEqual({ name: "orange", offset: 0, preset: "muted" });
+    expect(v.color).toEqual({ name: "orange", preset: "muted" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(42);
   });
 
   it("--tug-color(blue-light) uses light preset defaults: i=20, t=85", () => {
     const v = expectOkWithPresets("blue-light");
-    expect(v.color).toEqual({ name: "blue", offset: 0, preset: "light" });
+    expect(v.color).toEqual({ name: "blue", preset: "light" });
     expect(v.intensity).toBe(20);
     expect(v.tone).toBe(85);
   });
 
   it("--tug-color(red-dark) uses dark preset defaults: i=50, t=20", () => {
     const v = expectOkWithPresets("red-dark");
-    expect(v.color).toEqual({ name: "red", offset: 0, preset: "dark" });
+    expect(v.color).toEqual({ name: "red", preset: "dark" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(20);
   });
 
   it("--tug-color(cyan-canonical) uses canonical preset defaults: i=50, t=50", () => {
     const v = expectOkWithPresets("cyan-canonical");
-    expect(v.color).toEqual({ name: "cyan", offset: 0, preset: "canonical" });
+    expect(v.color).toEqual({ name: "cyan", preset: "canonical" });
     expect(v.intensity).toBe(50);
     expect(v.tone).toBe(50);
   });
@@ -472,15 +580,20 @@ describe("tug-color-parser: preset syntax", () => {
   });
 
   it("unknown preset errors: --tug-color(red-foo) should error", () => {
+    // 'foo' is not a preset name (PRESET_NAMES) and not a known hue, so errors as unknown color
     const errs = expectErrorsWithPresets("red-foo");
-    expect(errs.some((e) => e.message.includes("Unknown preset 'foo'"))).toBe(true);
+    expect(errs.some((e) => e.message.includes("'foo'"))).toBe(true);
   });
 
-  it("without knownPresets, ident-minus-ident fails with unknown preset error", () => {
-    // Without preset support (no knownPresets map), green-intense tokenizes as
-    // ident-minus-ident, which reports "Unknown preset" since there's no map to validate against
-    const errs = expectErrors("green-intense");
-    expect(errs.some((e) => e.message.includes("Unknown preset 'intense'"))).toBe(true);
+  it("without knownPresets, ident-minus-preset resolves (PRESET_NAMES check always runs)", () => {
+    // Even without a knownPresets map, PRESET_NAMES is checked first [D05].
+    // 'intense' is in PRESET_NAMES, so green-intense resolves as a preset with default i/t.
+    const v = expectOk("green-intense");
+    expect(v.color.name).toBe("green");
+    expect(v.color.preset).toBe("intense");
+    // Without knownPresets map, defaults (50/50) are used instead of preset-specific values
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(50);
   });
 
   it("labeled color with preset: --tug-color(c: orange-muted, a: 50)", () => {
@@ -532,10 +645,10 @@ describe("findTugColorCalls: CSS value scanning", () => {
   });
 
   it("extracts correct start/end positions", () => {
-    const input = "bg: --tug-color(green); color: --tug-color(red+5, i: 80);";
+    const input = "bg: --tug-color(green); color: --tug-color(cobalt-indigo, i: 80);";
     const calls = findTugColorCalls(input);
     expect(calls.length).toBe(2);
     expect(input.slice(calls[0].start, calls[0].end)).toBe("--tug-color(green)");
-    expect(input.slice(calls[1].start, calls[1].end)).toBe("--tug-color(red+5, i: 80)");
+    expect(input.slice(calls[1].start, calls[1].end)).toBe("--tug-color(cobalt-indigo, i: 80)");
   });
 });

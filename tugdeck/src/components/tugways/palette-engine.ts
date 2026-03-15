@@ -1,10 +1,10 @@
 /**
  * Palette Engine — Tugways TugColor Runtime
  *
- * Computes a continuous OKLCH color palette from 24 named hue families using
+ * Computes a continuous OKLCH color palette from 48 named hue families using
  * the TugColor (Hue · Intensity · Tone · Alpha) system. Each color is defined
  * by four axes:
- *   - Color: one of 24 named color families mapped to OKLCH hue angles
+ *   - Color: one of 48 named color families mapped to OKLCH hue angles
  *   - Intensity (0-100): chroma axis; at intensity=50, C equals the sRGB-safe max
  *   - Tone (0-100): lightness axis; tone=50 gives the per-hue canonical L
  *   - Alpha (0-100): opacity; default 100 (fully opaque)
@@ -13,6 +13,10 @@
  * provides `tugColor()` for programmatic JS use and exports the authoritative
  * source tables (HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE,
  * MAX_P3_CHROMA_FOR_HUE, PEAK_C_SCALE) that tug-palette.css was derived from.
+ *
+ * Hyphenated adjacency: any two adjacent colors in ADJACENCY_RING may be combined
+ * as `A-B`, resolving to (2/3)*angle(A) + (1/3)*angle(B) — yielding 144 expressible
+ * hue points at approximately 2.5-degree average spacing.
  *
  * Five convenience presets per hue (TUG_COLOR_PRESETS):
  *   canonical  intensity=50, tone=50   The crayon color — reference point
@@ -28,39 +32,65 @@
 import tugColorCanonical from "../../../../roadmap/tug-color-canonical.json";
 
 // ---------------------------------------------------------------------------
-// HUE_FAMILIES — 24 named hue families mapped to OKLCH hue angles
+// HUE_FAMILIES — 48 named hue families mapped to OKLCH hue angles
 // ---------------------------------------------------------------------------
 
 /**
- * 24 hue family names mapped to OKLCH hue angles (degrees).
- * Angle values derived from the Tugways Phase 5d5a theme overhaul proposal.
- * cherry=10 through berry=355.
+ * 48 hue family names mapped to OKLCH hue angles (degrees).
+ * Angles from the 48-Color Hyphenated Palette proposal (Table T01).
+ * garnet=2.5 through berry=355; all original 24 hues unchanged.
  */
 export const HUE_FAMILIES: Record<string, number> = {
-  cherry:  10,
-  red:     25,
-  tomato:  35,
-  flame:   45,
-  orange:  55,
-  amber:   65,
-  gold:    75,
-  yellow:  90,
-  lime:   115,
-  green:  140,
-  mint:   155,
-  teal:   175,
-  cyan:   200,
-  sky:    215,
-  blue:   230,
-  cobalt: 250,
-  violet: 270,
-  purple: 285,
-  plum:   300,
-  pink:   320,
-  rose:   335,
-  magenta:345,
-  berry:  355,
-  coral:   20,
+  // --- original 24 ---
+  cherry:     10,
+  coral:      20,
+  red:        25,
+  tomato:     35,
+  flame:      45,
+  orange:     55,
+  amber:      65,
+  gold:       75,
+  yellow:     90,
+  lime:      115,
+  green:     140,
+  mint:      155,
+  teal:      175,
+  cyan:      200,
+  sky:       215,
+  blue:      230,
+  cobalt:    250,
+  violet:    270,
+  purple:    285,
+  plum:      300,
+  pink:      320,
+  rose:      335,
+  magenta:   345,
+  berry:     355,
+  // --- new 24 ---
+  garnet:      2.5,
+  scarlet:    15,
+  crimson:    22.5,
+  vermilion:  30,
+  ember:      40,
+  tangerine:  50,
+  apricot:    60,
+  honey:      70,
+  saffron:    82.5,
+  chartreuse: 102.5,
+  grass:     127.5,
+  jade:      147.5,
+  seafoam:   165,
+  aqua:      187.5,
+  azure:     207.5,
+  cerulean:  222.5,
+  sapphire:  240,
+  indigo:    260,
+  iris:      277.5,
+  grape:     292.5,
+  orchid:    310,
+  peony:     327.5,
+  cerise:    340,
+  fuchsia:   350,
 };
 
 // ---------------------------------------------------------------------------
@@ -291,7 +321,7 @@ export const L_LIGHT: number = tugColorCanonical.global.l_light;
 export const PEAK_C_SCALE = 2;
 
 /**
- * Default canonical L values for all 24 hue families (Table T02).
+ * Default canonical L values for all 48 hue families.
  * These are the reference lightness values at intensity=50, tone=50.
  * Must remain above 0.555 (piecewise min() constraint, D04).
  *
@@ -336,30 +366,56 @@ export const TUG_COLOR_PRESETS: Record<string, { intensity: number; tone: number
  * where canonLSamples(hue) = [DEFAULT_CANONICAL_L[hue]].
  */
 export const MAX_CHROMA_FOR_HUE: Record<string, number> = {
-  cherry:  0.220,
-  red:     0.220,
-  tomato:  0.187,
-  flame:   0.165,
-  orange:  0.146,
-  amber:   0.130,
-  gold:    0.125,
-  yellow:  0.125,
-  lime:    0.192,
-  green:   0.220,
-  mint:    0.196,
-  teal:    0.149,
-  cyan:    0.134,
-  sky:     0.140,
-  blue:    0.143,
-  cobalt:  0.135,
-  violet:  0.149,
-  purple:  0.169,
-  plum:    0.161,
-  pink:    0.167,
-  rose:    0.211,
-  magenta: 0.212,
-  berry:   0.220,
-  coral:   0.220,
+  // --- original 24 ---
+  cherry:    0.220,
+  coral:     0.220,
+  red:       0.220,
+  tomato:    0.187,
+  flame:     0.165,
+  orange:    0.146,
+  amber:     0.130,
+  gold:      0.125,
+  yellow:    0.125,
+  lime:      0.192,
+  green:     0.220,
+  mint:      0.196,
+  teal:      0.149,
+  cyan:      0.134,
+  sky:       0.140,
+  blue:      0.143,
+  cobalt:    0.135,
+  violet:    0.149,
+  purple:    0.169,
+  plum:      0.161,
+  pink:      0.167,
+  rose:      0.211,
+  magenta:   0.212,
+  berry:     0.220,
+  // --- new 24 (derived via _deriveChromaCaps at canonical L, capped at 0.22) ---
+  garnet:    0.220,
+  scarlet:   0.220,
+  crimson:   0.220,
+  vermilion: 0.220,
+  ember:     0.210,
+  tangerine: 0.187,
+  apricot:   0.174,
+  honey:     0.168,
+  saffron:   0.169,
+  chartreuse:0.190,
+  grass:     0.220,
+  jade:      0.220,
+  seafoam:   0.183,
+  aqua:      0.154,
+  azure:     0.143,
+  cerulean:  0.144,
+  sapphire:  0.161,
+  indigo:    0.220,
+  iris:      0.220,
+  grape:     0.220,
+  orchid:    0.220,
+  peony:     0.220,
+  cerise:    0.220,
+  fuchsia:   0.220,
 };
 
 // ---------------------------------------------------------------------------
@@ -395,42 +451,161 @@ export function _deriveP3ChromaCaps(): Record<string, number> {
  * To regenerate: call _deriveP3ChromaCaps() and paste the output here.
  */
 export const MAX_P3_CHROMA_FOR_HUE: Record<string, number> = {
-  cherry:  0.275,
-  red:     0.282,
-  tomato:  0.236,
-  flame:   0.209,
-  orange:  0.185,
-  amber:   0.163,
-  gold:    0.156,
-  yellow:  0.153,
-  lime:    0.223,
-  green:   0.305,
-  mint:    0.271,
-  teal:    0.202,
-  cyan:    0.180,
-  sky:     0.168,
-  blue:    0.155,
-  cobalt:  0.146,
-  violet:  0.162,
-  purple:  0.184,
-  plum:    0.176,
-  pink:    0.184,
-  rose:    0.280,
-  magenta: 0.278,
-  berry:   0.303,
-  coral:   0.281,
+  // --- original 24 ---
+  cherry:    0.275,
+  coral:     0.281,
+  red:       0.282,
+  tomato:    0.236,
+  flame:     0.209,
+  orange:    0.185,
+  amber:     0.163,
+  gold:      0.156,
+  yellow:    0.153,
+  lime:      0.223,
+  green:     0.305,
+  mint:      0.271,
+  teal:      0.202,
+  cyan:      0.180,
+  sky:       0.168,
+  blue:      0.155,
+  cobalt:    0.146,
+  violet:    0.162,
+  purple:    0.184,
+  plum:      0.176,
+  pink:      0.184,
+  rose:      0.280,
+  magenta:   0.278,
+  berry:     0.303,
+  // --- new 24 (derived via _deriveP3ChromaCaps at canonical L) ---
+  garnet:    0.288,
+  scarlet:   0.282,
+  crimson:   0.282,
+  vermilion: 0.279,
+  ember:     0.237,
+  tangerine: 0.213,
+  apricot:   0.199,
+  honey:     0.193,
+  saffron:   0.194,
+  chartreuse:0.220,
+  grass:     0.263,
+  jade:      0.283,
+  seafoam:   0.207,
+  aqua:      0.179,
+  azure:     0.155,
+  cerulean:  0.157,
+  sapphire:  0.175,
+  indigo:    0.248,
+  iris:      0.262,
+  grape:     0.286,
+  orchid:    0.313,
+  peony:     0.344,
+  cerise:    0.320,
+  fuchsia:   0.303,
 };
+
+// ---------------------------------------------------------------------------
+// ADJACENCY_RING — 48 colors in ascending hue-angle order
+// ---------------------------------------------------------------------------
+
+/**
+ * Ordered array of all 48 hue family names in ascending OKLCH hue-angle order.
+ * Defines ring adjacency: any two consecutive entries (including berry→garnet
+ * wrap) may be hyphenated as A-B.
+ *
+ * Build-time assertion below verifies ascending angle order at module load.
+ */
+export const ADJACENCY_RING: readonly string[] = [
+  "garnet", "cherry", "scarlet", "coral", "crimson", "red",
+  "vermilion", "tomato", "ember", "flame", "tangerine", "orange",
+  "apricot", "amber", "honey", "gold", "saffron", "yellow",
+  "chartreuse", "lime", "grass", "green", "jade", "mint",
+  "seafoam", "teal", "aqua", "cyan", "azure", "sky",
+  "cerulean", "blue", "sapphire", "cobalt", "indigo", "violet",
+  "iris", "purple", "grape", "plum", "orchid", "pink",
+  "peony", "rose", "cerise", "magenta", "fuchsia", "berry",
+];
+
+// Build-time assertion: ADJACENCY_RING must be in strictly ascending angle order.
+for (let _i = 0; _i < ADJACENCY_RING.length - 1; _i++) {
+  const _a = HUE_FAMILIES[ADJACENCY_RING[_i]];
+  const _b = HUE_FAMILIES[ADJACENCY_RING[_i + 1]];
+  if (_a === undefined || _b === undefined || _a >= _b) {
+    throw new Error(
+      `ADJACENCY_RING order violation: ${ADJACENCY_RING[_i]} (${_a}) >= ${ADJACENCY_RING[_i + 1]} (${_b})`
+    );
+  }
+}
+
+/**
+ * Resolve a hyphenated hue pair to a single OKLCH hue angle.
+ *
+ * Formula: (2/3 * angle(a)) + (1/3 * angle(b)), with circular wrap handling
+ * for the berry (355°)–garnet (2.5°) boundary.
+ *
+ * @param a - Dominant (first) color name — contributes 2/3 of the angle.
+ * @param b - Secondary (second) color name — contributes 1/3 of the angle.
+ * @returns Resolved hue angle in [0, 360).
+ */
+export function resolveHyphenatedHue(a: string, b: string): number {
+  const angleA = HUE_FAMILIES[a];
+  const angleB = HUE_FAMILIES[b];
+  if (angleA === undefined || angleB === undefined) {
+    throw new Error(`resolveHyphenatedHue: unknown hue name "${angleA === undefined ? a : b}"`);
+  }
+  // Handle circular wrap for the berry-garnet boundary
+  let adjustedB = angleB;
+  if (Math.abs(angleA - angleB) > 180) {
+    adjustedB = angleB + (angleA > angleB ? 360 : -360);
+  }
+  return ((2 / 3) * angleA + (1 / 3) * adjustedB + 360) % 360;
+}
+
+/**
+ * Check if two hue names are adjacent in the ADJACENCY_RING.
+ *
+ * Two colors are adjacent if their ring positions differ by exactly 1
+ * (accounting for the circular wrap: berry and garnet are adjacent).
+ *
+ * @param a - First color name.
+ * @param b - Second color name.
+ * @returns True if a and b are consecutive in the ring (either order).
+ */
+export function isAdjacent(a: string, b: string): boolean {
+  const idxA = ADJACENCY_RING.indexOf(a);
+  const idxB = ADJACENCY_RING.indexOf(b);
+  if (idxA === -1 || idxB === -1) return false;
+  const dist = Math.abs(idxA - idxB);
+  return dist === 1 || dist === ADJACENCY_RING.length - 1;
+}
+
+// ---------------------------------------------------------------------------
+// OKLCH_HUE_VOCABULARY — precomputed 144-entry name-to-angle map for reverse lookup
+// 48 base names + 96 hyphenated adjacent pairs, built at module load time.
+// Used by oklchToTugColor to find the closest named hue expression.
+// ---------------------------------------------------------------------------
+
+const OKLCH_HUE_VOCABULARY: Record<string, number> = (() => {
+  const vocab: Record<string, number> = { ...HUE_FAMILIES };
+  const len = ADJACENCY_RING.length;
+  for (let i = 0; i < len; i++) {
+    const a = ADJACENCY_RING[i];
+    const b = ADJACENCY_RING[(i + 1) % len];
+    vocab[`${a}-${b}`] = resolveHyphenatedHue(a, b);
+    vocab[`${b}-${a}`] = resolveHyphenatedHue(b, a);
+  }
+  return vocab;
+})();
 
 // ---------------------------------------------------------------------------
 // oklchToTugColor — Reverse mapper: oklch() string → TugColor parameters
 // ---------------------------------------------------------------------------
 
 /**
- * Parse an `oklch(L C h)` CSS string into its numeric components.
- * Returns null if the string does not match the expected format.
+ * Parse an `oklch(L C h [/ alpha])` CSS string into its numeric components.
+ * Handles optional alpha channel. Returns null if the string does not match.
  */
 function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | null {
-  const m = oklchStr.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
+  const m = oklchStr.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*[\d.]+)?\s*\)/);
   if (!m) return null;
   return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
 }
@@ -439,27 +614,27 @@ function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | 
  * Reverse-map an `oklch(L C h)` CSS string to the closest TugColor parameters.
  *
  * Algorithm:
- * 1. Parse L, C, h from the oklch string.
- * 2. Find closest named hue by comparing h to all HUE_FAMILIES angles.
- *    If within 5 degrees, use the named hue; otherwise return `hue-NNN`.
- * 3. Invert the tone-to-L piecewise formula to recover tone (integer).
- * 4. Compute peakC and invert to recover intensity (integer).
+ * 1. Parse L, C, h from the oklch string (alpha ignored).
+ * 2. If achromatic (C < 0.01), return a neutral gray with intensity=0.
+ * 3. Find the closest entry in OKLCH_HUE_VOCABULARY (144 entries: 48 base + 96
+ *    hyphenated adjacent pairs). Always returns a named or hyphenated hue.
+ * 4. Invert the tone-to-L piecewise formula to recover tone (integer).
+ * 5. Compute peakC using the primary color name and invert to recover intensity.
  *
- * @param oklchStr - An `oklch(L C h)` CSS string.
- * @returns `{ hue, intensity, tone }` where hue is a named family or `hue-NNN`.
+ * @param oklchStr - An `oklch(L C h [/ alpha])` CSS string.
+ * @returns `{ hue, intensity, tone }` where hue is a named or hyphenated hue.
  */
 export function oklchToTugColor(oklchStr: string): { hue: string; intensity: number; tone: number } {
   const parsed = parseOklchStr(oklchStr);
   if (!parsed) {
-    return { hue: "hue-0", intensity: 0, tone: 0 };
+    return { hue: "cobalt", intensity: 0, tone: 50 };
   }
   const { L, C, h } = parsed;
 
-  // Step 1: Find closest named hue
-  let closestHue = "";
+  // Step 1: Find closest entry in the 144-entry vocabulary (48 base + 96 hyphenated)
+  let closestHue = "cobalt";
   let closestDiff = Infinity;
-  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
-    // Compute circular angular difference
+  for (const [name, angle] of Object.entries(OKLCH_HUE_VOCABULARY)) {
     let diff = Math.abs(h - angle);
     if (diff > 180) diff = 360 - diff;
     if (diff < closestDiff) {
@@ -467,19 +642,13 @@ export function oklchToTugColor(oklchStr: string): { hue: string; intensity: num
       closestHue = name;
     }
   }
-  const hue = closestDiff <= 5 ? closestHue : `hue-${Math.round(h)}`;
+  const hue = closestHue;
 
-  // Step 2: Invert tone-to-L piecewise formula
+  // Step 2: Invert tone-to-L piecewise formula using the primary (first) color name.
   // Forward: L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
-  let canonicalL: number;
-  let peakC: number;
-  if (hue.startsWith("hue-")) {
-    canonicalL = 0.77; // median of DEFAULT_CANONICAL_L values
-    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
-  } else {
-    canonicalL = DEFAULT_CANONICAL_L[hue] ?? 0.77;
-    peakC = (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
-  }
+  const primaryName = hue.split("-")[0];
+  const canonicalL = DEFAULT_CANONICAL_L[primaryName] ?? DEFAULT_CANONICAL_L[hue] ?? 0.77;
+  const peakC = (MAX_CHROMA_FOR_HUE[primaryName] ?? MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
 
   let tone: number;
   if (L <= canonicalL) {

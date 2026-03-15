@@ -171,6 +171,12 @@ describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () 
       const parsed1 = parseOklch(oklch1);
       if (!parsed1) continue;
 
+      // Skip achromatic colors (C ≈ 0). oklchToTugColor() is a chromatic
+      // reverse-mapper; special keywords like `black` (L=0) and `white` (L=1)
+      // produce lightness values outside the tone formula's [L_DARK, L_LIGHT]
+      // range and cannot round-trip through oklchToTugColor().
+      if (parsed1.C < 0.01) continue;
+
       // Step 2: recover TugColor params via oklchToTugColor
       const recovered = oklchToTugColor(oklch1);
       const recoveredCall = `--tug-color(${recovered.hue}, ${recovered.intensity}, ${recovered.tone})`;

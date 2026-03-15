@@ -32,7 +32,7 @@ body {
   --tug-inspector-scrub-track: var(--tug-base-separator);
   --tug-inspector-scrub-thumb: var(--tug-base-fg-subtle);
   --tug-inspector-scrub-active: var(--tug-base-accent-default);
-  --tug-dev-overlay-bg: --tug-color(violet-6, i: 4, t: 7, a: 92);
+  --tug-dev-overlay-bg: --tug-color(indigo-violet, i: 4, t: 7, a: 92);
   --tug-dev-overlay-fg: var(--tug-base-fg-default);
   --tug-dev-overlay-border: var(--tug-base-border-default);
   --tug-dev-overlay-targetHighlight: --tug-color(cyan, i: 50, t: 50, a: 30);

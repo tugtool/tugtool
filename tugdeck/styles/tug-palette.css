@@ -2,23 +2,23 @@
 /**
  * tug-palette.css — TugColor Palette Engine (Pure CSS)
  *
- * TugColor color model: Color, Intensity, Tone, Alpha — a perceptual coordinate system
+ * TugColor color model: Color, Intensity, Tone — a perceptual coordinate system
  * mapped to OKLCH. Each hue has three constants (h, canonical-l, peak-c).
  * Intensity (0-100) controls chroma as a fraction of peak-c. Tone (0-100)
  * controls lightness via a piecewise linear formula between three anchors:
- *   val=0  → L_DARK (0.15)
- *   val=50 → canonical-l (per-hue)
- *   val=100 → L_LIGHT (0.96)
+ *   tone=0  → L_DARK (0.15)
+ *   tone=50 → canonical-l (per-hue)
+ *   tone=100 → L_LIGHT (0.96)
  *
  * Piecewise formula (calc + clamp):
  *   L = L_DARK
- *       + clamp(0, val, 50) * (canonical-l - L_DARK) / 50
- *       + (clamp(50, val, 100) - 50) * (L_LIGHT - canonical-l) / 50
- *   C = vib / 100 * peak-c
+ *       + clamp(0, tone, 50) * (canonical-l - L_DARK) / 50
+ *       + (clamp(50, tone, 100) - 50) * (L_LIGHT - canonical-l) / 50
+ *   C = intensity / 100 * peak-c
  *
- * Preset colors (canonical, light, dark, intense, muted) are handled by the
- * TugColor parser and postcss-tug-color plugin at build time using the preset syntax.
- * They are no longer stored as CSS variables in this file.
+ * Five convenience presets per hue (canonical, light, dark, intense, muted)
+ * are handled by the TugColor parser and postcss-tug-color plugin at build time.
+ * They are not stored as CSS variables in this file.
  *
  * Import order (in globals.css):
  *   1. tug-palette.css   — palette variables (this file)
@@ -30,12 +30,12 @@
  *
  * Per-hue constant names:
  *   --tug-{hue}-h            OKLCH hue angle (degrees) from HUE_FAMILIES
- *   --tug-{hue}-canonical-l  Canonical lightness at vib=50, val=50
+ *   --tug-{hue}-canonical-l  Canonical lightness at intensity=50, tone=50
  *   --tug-{hue}-peak-c       Peak chroma = MAX_CHROMA_FOR_HUE * PEAK_C_SCALE (2)
  *
  * Global constants:
- *   --tug-l-dark   Lightness at val=0 (0.15)
- *   --tug-l-light  Lightness at val=100 (0.96)
+ *   --tug-l-dark   Lightness at tone=0 (0.15)
+ *   --tug-l-light  Lightness at tone=100 (0.96)
  */
 
 body {
@@ -47,7 +47,7 @@ body {
   --tug-l-light: 0.96;
 
   /* -------------------------------------------------------------------------
-   * Per-hue constants (72 = 24 hues x 3)
+   * Per-hue constants (144 = 48 hues x 3)
    * Source: HUE_FAMILIES, DEFAULT_CANONICAL_L, MAX_CHROMA_FOR_HUE * PEAK_C_SCALE(2)
    * ------------------------------------------------------------------------- */
 
@@ -55,6 +55,11 @@ body {
   --tug-cherry-h: 10;
   --tug-cherry-canonical-l: 0.619;
   --tug-cherry-peak-c: 0.44;
+
+  /* coral — hue angle 20 */
+  --tug-coral-h: 20;
+  --tug-coral-canonical-l: 0.632;
+  --tug-coral-peak-c: 0.44;
 
   /* red — hue angle 25 */
   --tug-red-h: 25;
@@ -166,18 +171,133 @@ body {
   --tug-berry-canonical-l: 0.668;
   --tug-berry-peak-c: 0.44;
 
-  /* coral — hue angle 20 */
-  --tug-coral-h: 20;
-  --tug-coral-canonical-l: 0.632;
-  --tug-coral-peak-c: 0.44;
+  /* garnet — hue angle 2.5 */
+  --tug-garnet-h: 2.5;
+  --tug-garnet-canonical-l: 0.645;
+  --tug-garnet-peak-c: 0.44;
+
+  /* scarlet — hue angle 15 */
+  --tug-scarlet-h: 15;
+  --tug-scarlet-canonical-l: 0.635;
+  --tug-scarlet-peak-c: 0.44;
+
+  /* crimson — hue angle 22.5 */
+  --tug-crimson-h: 22.5;
+  --tug-crimson-canonical-l: 0.631;
+  --tug-crimson-peak-c: 0.44;
+
+  /* vermilion — hue angle 30 */
+  --tug-vermilion-h: 30;
+  --tug-vermilion-canonical-l: 0.631;
+  --tug-vermilion-peak-c: 0.44;
+
+  /* ember — hue angle 40 */
+  --tug-ember-h: 40;
+  --tug-ember-canonical-l: 0.68;
+  --tug-ember-peak-c: 0.42;
+
+  /* tangerine — hue angle 50 */
+  --tug-tangerine-h: 50;
+  --tug-tangerine-canonical-l: 0.72;
+  --tug-tangerine-peak-c: 0.374;
+
+  /* apricot — hue angle 60 */
+  --tug-apricot-h: 60;
+  --tug-apricot-canonical-l: 0.756;
+  --tug-apricot-peak-c: 0.348;
+
+  /* honey — hue angle 70 */
+  --tug-honey-h: 70;
+  --tug-honey-canonical-l: 0.79;
+  --tug-honey-peak-c: 0.336;
+
+  /* saffron — hue angle 82.5 */
+  --tug-saffron-h: 82.5;
+  --tug-saffron-canonical-l: 0.834;
+  --tug-saffron-peak-c: 0.338;
+
+  /* chartreuse — hue angle 102.5 */
+  --tug-chartreuse-h: 102.5;
+  --tug-chartreuse-canonical-l: 0.922;
+  --tug-chartreuse-peak-c: 0.38;
+
+  /* grass — hue angle 127.5 */
+  --tug-grass-h: 127.5;
+  --tug-grass-canonical-l: 0.917;
+  --tug-grass-peak-c: 0.44;
+
+  /* jade — hue angle 147.5 */
+  --tug-jade-h: 147.5;
+  --tug-jade-canonical-l: 0.871;
+  --tug-jade-peak-c: 0.44;
+
+  /* seafoam — hue angle 165 */
+  --tug-seafoam-h: 165;
+  --tug-seafoam-canonical-l: 0.886;
+  --tug-seafoam-peak-c: 0.366;
+
+  /* aqua — hue angle 187.5 */
+  --tug-aqua-h: 187.5;
+  --tug-aqua-canonical-l: 0.9;
+  --tug-aqua-peak-c: 0.308;
+
+  /* azure — hue angle 207.5 */
+  --tug-azure-h: 207.5;
+  --tug-azure-canonical-l: 0.851;
+  --tug-azure-peak-c: 0.286;
+
+  /* cerulean — hue angle 222.5 */
+  --tug-cerulean-h: 222.5;
+  --tug-cerulean-canonical-l: 0.792;
+  --tug-cerulean-peak-c: 0.288;
+
+  /* sapphire — hue angle 240 */
+  --tug-sapphire-h: 240;
+  --tug-sapphire-canonical-l: 0.717;
+  --tug-sapphire-peak-c: 0.322;
+
+  /* indigo — hue angle 260 */
+  --tug-indigo-h: 260;
+  --tug-indigo-canonical-l: 0.572;
+  --tug-indigo-peak-c: 0.44;
+
+  /* iris — hue angle 277.5 */
+  --tug-iris-h: 277.5;
+  --tug-iris-canonical-l: 0.555;
+  --tug-iris-peak-c: 0.44;
+
+  /* grape — hue angle 292.5 */
+  --tug-grape-h: 292.5;
+  --tug-grape-canonical-l: 0.555;
+  --tug-grape-peak-c: 0.44;
+
+  /* orchid — hue angle 310 */
+  --tug-orchid-h: 310;
+  --tug-orchid-canonical-l: 0.594;
+  --tug-orchid-peak-c: 0.44;
+
+  /* peony — hue angle 327.5 */
+  --tug-peony-h: 327.5;
+  --tug-peony-canonical-l: 0.695;
+  --tug-peony-peak-c: 0.44;
+
+  /* cerise — hue angle 340 */
+  --tug-cerise-h: 340;
+  --tug-cerise-canonical-l: 0.675;
+  --tug-cerise-peak-c: 0.44;
+
+  /* fuchsia — hue angle 350 */
+  --tug-fuchsia-h: 350;
+  --tug-fuchsia-canonical-l: 0.659;
+  --tug-fuchsia-peak-c: 0.44;
 
   /* -------------------------------------------------------------------------
    * Neutral ramp (5 presets) and black/white anchors — static oklch() literals
    * C=0 for all neutrals (achromatic). L values derived from piecewise formula
    * with L_DARK=0.15, L_LIGHT=0.96, canonical-L=0.555, rounded to 3 decimals.
-   *   val=50: L = canonical-L = 0.555  (canonical, intense, muted — no chroma)
-   *   val=85: L = 0.555 + 35*(0.96-0.555)/50 = 0.555 + 0.284 = 0.839  (light)
-   *   val=20: L = 0.15 + 20*(0.555-0.15)/50 = 0.15 + 0.162 = 0.312    (dark)
+   *   tone=50: L = canonical-L = 0.555  (canonical, intense, muted — no chroma)
+   *   tone=85: L = 0.555 + 35*(0.96-0.555)/50 = 0.555 + 0.284 = 0.839  (light)
+   *   tone=20: L = 0.15 + 20*(0.555-0.15)/50 = 0.15 + 0.162 = 0.312    (dark)
    * --tug-black and --tug-white are absolute anchors, independent of val->L.
    * ------------------------------------------------------------------------- */
   --tug-neutral: oklch(0.555 0 0);

@@ -8,10 +8,9 @@
  * Syntax:
  *   --tug-color( <color> [, i: <intensity>] [, t: <tone>] [, a: <alpha>] )
  *
- *   <color>     := <hue-name>[+/-<offset>] | black | white
- *   <hue-name>  := cherry | red | tomato | flame | orange | amber | gold | yellow
- *                | lime | green | mint | teal | cyan | sky | blue | cobalt
- *                | violet | purple | plum | pink | rose | magenta | berry | coral
+ *   <color>     := <hue-name> | <hue-name>-<adjacent-hue> | black | white
+ *                  | <hue-name>-<preset> | <hue-name>-<adjacent-hue>-<preset>
+ *   <hue-name>  := one of 48 named hues (garnet, cherry, scarlet, … berry)
  *   <intensity> := <number>   // 0–100 (default 50)
  *   <tone>      := <number>   // 0–100 (default 50)
  *   <alpha>     := <number>   // 0–100 (default 100, fully opaque)
@@ -24,14 +23,15 @@
  *   white — always expands to oklch(1 0 0), ignoring intensity/tone
  *
  * Named hue examples:
- *   --tug-color(blue, i: 5, t: 13)          → oklch(0.3115 0.0143 230)
- *   --tug-color(cobalt, i: 3, t: 18)        → oklch(0.3727 0.0081 250)
- *   --tug-color(black, i: 0, t: 0, a: 50)  → oklch(0 0 0 / 0.5)
- *   --tug-color(white, i: 0, t: 100, a: 6) → oklch(1 0 0 / 0.06)
- *   --tug-color(red+5, i: 30, t: 70)        → resolved angle = red(25)+5 = 30
+ *   --tug-color(blue, i: 5, t: 13)              → oklch(0.3115 0.0143 230)
+ *   --tug-color(cobalt-indigo, i: 7, t: 37)     → hyphenated adjacency hue
+ *   --tug-color(cobalt-indigo-intense)           → adjacency + preset
+ *   --tug-color(black, i: 0, t: 0, a: 50)       → oklch(0 0 0 / 0.5)
  *
  * Multiple calls in a single declaration are all expanded.
  * Values without --tug-color() are passed through unchanged.
+ * Parse errors (including non-adjacent pairs) propagate as PostCSS errors that
+ * fail the build.
  *
  * Import path: use explicit relative path from vite.config.ts (no @/ alias
  * in Node/Bun PostCSS context). Bun's native TS support handles .ts imports.
@@ -51,8 +51,11 @@ import {
   L_LIGHT,
   findMaxChroma,
   TUG_COLOR_PRESETS,
+  ADJACENCY_RING,
+  resolveHyphenatedHue,
 } from "./src/components/tugways/palette-engine";
 import { parseTugColor, findTugColorCalls } from "./tug-color-parser";
+import type { TugColorValue } from "./tug-color-parser";
 
 // ---------------------------------------------------------------------------
 // Known hues set (for parseTugColor validation)
@@ -120,9 +123,13 @@ function fmt(n: number): string {
  *   "black" → oklch(0 0 0 [/ alpha])  — true black, ignores intensity/tone
  *   "white" → oklch(1 0 0 [/ alpha])  — true white, ignores intensity/tone
  *
- * For named hues: uses DEFAULT_CANONICAL_L[hue] and MAX_CHROMA_FOR_HUE[hue].
- * For hues with offsets: resolved angle = HUE_FAMILIES[name] + offset, mod 360.
- *   peakC is computed dynamically via findMaxChroma() at the resolved angle.
+ * For named hues without adjacency: uses DEFAULT_CANONICAL_L[hue] and
+ *   MAX_CHROMA_FOR_HUE[hue] for exact named-hue paths.
+ *
+ * For hyphenated adjacency hues (adjacentName present):
+ *   - Resolved angle via resolveHyphenatedHue(name, adjacentName)
+ *   - canonicalL from DEFAULT_CANONICAL_L[name] (primary/dominant hue)
+ *   - peakC computed dynamically via findMaxChroma(canonicalL, resolvedAngle) * PEAK_C_SCALE
  *
  * L formula (piecewise, matching tugColor()):
  *   L = L_DARK + min(tone, 50) * (canonicalL - L_DARK) / 50
@@ -135,8 +142,7 @@ function fmt(n: number): string {
  * Only emit alpha suffix if alpha < 100.
  */
 function expandTugColor(
-  colorName: string,
-  colorOffset: number,
+  color: TugColorValue,
   intensity: number,
   tone: number,
   alpha: number,
@@ -144,14 +150,14 @@ function expandTugColor(
   const alphaSuffix = alpha < 100 ? ` / ${fmt(alpha / 100)}` : "";
 
   // Special achromatic keywords — exact L values, no piecewise formula
-  if (colorName === "black") {
+  if (color.name === "black") {
     return `oklch(0 0 0${alphaSuffix})`;
   }
-  if (colorName === "white") {
+  if (color.name === "white") {
     return `oklch(1 0 0${alphaSuffix})`;
   }
 
-  const baseAngle = HUE_FAMILIES[colorName];
+  const baseAngle = HUE_FAMILIES[color.name];
   if (baseAngle === undefined) {
     // Unknown hue — emit as comment placeholder (shouldn't happen if parseTugColor validated)
     return `oklch(0.5 0 0${alphaSuffix})`;
@@ -161,18 +167,18 @@ function expandTugColor(
   let canonicalL: number;
   let peakC: number;
 
-  if (colorOffset === 0) {
+  if (color.adjacentName) {
+    // Hyphenated adjacency path: resolve angle via weighted blend
+    h = resolveHyphenatedHue(color.name, color.adjacentName);
+    canonicalL = DEFAULT_CANONICAL_L[color.name] ?? 0.77;
+    // Compute peakC dynamically at the resolved hyphenated angle
+    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
+  } else {
     // Exact named hue path
     h = baseAngle;
-    canonicalL = DEFAULT_CANONICAL_L[colorName] ?? 0.77;
-    const maxC = MAX_CHROMA_FOR_HUE[colorName] ?? 0.022;
+    canonicalL = DEFAULT_CANONICAL_L[color.name] ?? 0.77;
+    const maxC = MAX_CHROMA_FOR_HUE[color.name] ?? 0.022;
     peakC = maxC * PEAK_C_SCALE;
-  } else {
-    // Hue with offset: resolved angle = base + offset, mod 360
-    h = ((baseAngle + colorOffset) % 360 + 360) % 360;
-    canonicalL = DEFAULT_CANONICAL_L[colorName] ?? 0.77;
-    // For offset hues, compute peakC dynamically at the resolved angle
-    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
   }
 
   // tone → L: piecewise formula (matches tugColor() exactly)
@@ -214,17 +220,23 @@ export default function postcssTugColor(): Plugin {
       let result = decl.value;
       for (let i = calls.length - 1; i >= 0; i--) {
         const call = calls[i];
-        const parseResult = parseTugColor(call.inner, KNOWN_HUES, refreshPresets());
+        const parseResult = parseTugColor(
+          call.inner,
+          KNOWN_HUES,
+          refreshPresets(),
+          ADJACENCY_RING,
+        );
 
         if (!parseResult.ok) {
           for (const err of parseResult.errors) {
-            console.warn(`postcss-tug-color: ${err.message} (at pos ${err.pos}) in: ${call.inner}`);
+            const msg = `postcss-tug-color: ${err.message} in: --tug-color(${call.inner})`;
+            throw decl.error(msg);
           }
           continue;
         }
 
         const { color, intensity, tone, alpha } = parseResult.value;
-        const expanded = expandTugColor(color.name, color.offset, intensity, tone, alpha);
+        const expanded = expandTugColor(color, intensity, tone, alpha);
         result = result.slice(0, call.start) + expanded + result.slice(call.end);
       }
 

@@ -30,7 +30,7 @@ body {
   --tug-progress-fill: var(--tug-base-accent-default);
   --tug-spinner: var(--tug-base-accent-default);
   --tug-skeleton-base: --tug-color(violet, i: 5, t: 20);
-  --tug-skeleton-highlight: --tug-color(cobalt+10, i: 7, t: 28);
+  --tug-skeleton-highlight: --tug-color(indigo, i: 7, t: 28);
   --tug-emptyState-fg: var(--tug-base-fg-subtle);
   --tug-emptyState-icon: var(--tug-base-border-default);
   --tug-kbd-bg: var(--tug-base-surface-default);
