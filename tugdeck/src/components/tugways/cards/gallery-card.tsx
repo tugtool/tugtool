@@ -43,7 +43,7 @@ import { GalleryBadgeMockupContent } from "./gallery-badge-mockup-content";
 import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import type { TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
+import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
@@ -927,55 +927,60 @@ export function GalleryTitleBarContent() {
 // GalleryBadgeContent
 // ---------------------------------------------------------------------------
 
-/** All role combinations for the TugBadge showcase matrix (tinted emphasis only) */
+/** All role combinations for the TugBadge showcase matrix */
 const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution"];
 const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
+const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 
 /**
  * GalleryBadgeContent -- TugBadge showcase gallery tab.
  *
- * Shows tinted emphasis across all 7 roles at all sizes.
+ * Shows tinted and ghost emphasis across all 7 roles at all sizes.
  */
 export function GalleryBadgeContent() {
   return (
     <div className="cg-content" data-testid="gallery-badge-content">
 
-      {/* ---- All roles × sizes ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">TugBadge — All Roles × Sizes</div>
-        <div className="cg-matrix">
-          <div className="cg-subtype-block">
-            <div className="cg-subtype-label">text only</div>
-            {ALL_BADGE_ROLES.map((role) => (
-              <div key={role} className="cg-variant-row">
-                <div className="cg-variant-label">{role}</div>
-                <div className="cg-size-group">
-                  {ALL_BADGE_SIZES.map((size) => (
-                    <TugBadge key={size} role={role} size={size}>
-                      {role}
-                    </TugBadge>
-                  ))}
-                </div>
+      {ALL_BADGE_EMPHASES.map((emphasis) => (
+        <React.Fragment key={emphasis}>
+          <div className="cg-section">
+            <div className="cg-section-title">TugBadge — {emphasis}</div>
+            <div className="cg-matrix">
+              <div className="cg-subtype-block">
+                <div className="cg-subtype-label">text only</div>
+                {ALL_BADGE_ROLES.map((role) => (
+                  <div key={role} className="cg-variant-row">
+                    <div className="cg-variant-label">{role}</div>
+                    <div className="cg-size-group">
+                      {ALL_BADGE_SIZES.map((size) => (
+                        <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
+                          {role}
+                        </TugBadge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="cg-subtype-block">
-            <div className="cg-subtype-label">icon + text</div>
-            {ALL_BADGE_ROLES.map((role) => (
-              <div key={role} className="cg-variant-row">
-                <div className="cg-variant-label">{role}</div>
-                <div className="cg-size-group">
-                  {ALL_BADGE_SIZES.map((size) => (
-                    <TugBadge key={size} role={role} size={size} icon={<Star />}>
-                      {role}
-                    </TugBadge>
-                  ))}
-                </div>
+              <div className="cg-subtype-block">
+                <div className="cg-subtype-label">icon + text</div>
+                {ALL_BADGE_ROLES.map((role) => (
+                  <div key={role} className="cg-variant-row">
+                    <div className="cg-variant-label">{role}</div>
+                    <div className="cg-size-group">
+                      {ALL_BADGE_SIZES.map((size) => (
+                        <TugBadge key={size} emphasis={emphasis} role={role} size={size} icon={<Star />}>
+                          {role}
+                        </TugBadge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      </div>
+          {emphasis !== ALL_BADGE_EMPHASES[ALL_BADGE_EMPHASES.length - 1] && <div className="cg-divider" />}
+        </React.Fragment>
+      ))}
 
     </div>
   );
