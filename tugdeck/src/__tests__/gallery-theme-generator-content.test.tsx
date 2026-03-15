@@ -161,7 +161,7 @@ function runFullPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]) {
   const output = deriveTheme(recipe);
   const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
   const failures = initial.filter((r) => !r.lcPass);
-  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures);
+  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
   const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
   return { output, finalResults, unfixable: adjusted.unfixable };
 }

@@ -412,27 +412,37 @@ function baseHueName(hueRef: string): string {
 /**
  * Automatically adjust element token tones to satisfy Lc contrast thresholds.
  *
- * Strategy per plan spec:
- *   1. Group failures by element (fg) token.
- *   2. For each element token, identify the most restrictive surface (darkest surface in
- *      dark mode, lightest surface in light mode).
- *   3. Bump element tone in the direction that increases contrast against the most
- *      restrictive surface. Satisfying the worst-case pair guarantees all other pairings
- *      for the same element token also pass.
- *   4. Apply a maximum of 3 iterations to handle secondary effects.
- *   5. Tokens that still fail after 3 iterations are added to `unfixable`.
+ * Strategy per plan spec (cascade-aware, convergence-based):
+ *   1. Group all failing pairs by element token.
+ *   2. For each element token, find the most restrictive surface (the surface
+ *      producing the lowest |Lc|), using Lc sign to determine bump direction:
+ *      positive Lc (dark-on-light) → bump darker; negative Lc (light-on-dark) → bump lighter.
+ *   3. Bump the element tone by TONE_STEP in the computed direction.
+ *   4. After each full pass, re-validate ALL pairs via validateThemeContrast so
+ *      cascade effects (adjusting token A may break token B) are caught immediately.
+ *   5. Convergence: stop if no pairs improved during a pass (lcPass count did not
+ *      increase and no adjustments were applied).
+ *   6. Oscillation detection per Spec S03: track per-token direction history.
+ *      If a token's last three adjustments strictly alternate directions
+ *      (+1,-1,+1 or -1,+1,-1), freeze it and add to unfixable.
+ *   7. Safety cap at SAFETY_CAP = 20 iterations to prevent infinite loops.
  *
- * Only element (fg) tokens are adjusted. Surface token adjustment is deferred [D09].
+ * [D02] Cascade-aware auto-adjust
+ * [D03] Any-token-type bumping (element token regardless of fg/bg/border role)
+ * [D06] Lc as normative threshold gate
+ * Spec S03: Oscillation detection
  *
  * @param tokens - Token string map from deriveTheme() (--tug-color() strings)
  * @param resolved - Resolved OKLCH map from deriveTheme() [D09]
- * @param failures - ContrastResult entries where lcPass is false
- * @returns Updated tokens and resolved maps, plus list of unfixable token names
+ * @param failures - ContrastResult entries where lcPass is false (initial failures)
+ * @param pairingMap - Full pairing map for cascade-aware re-validation after each pass
+ * @returns Updated tokens and resolved maps, plus list of unfixable element token names
  */
 export function autoAdjustContrast(
   tokens: Record<string, string>,
   resolved: Record<string, ResolvedColor>,
   failures: ContrastResult[],
+  pairingMap: ElementSurfacePairing[],
 ): {
   tokens: Record<string, string>;
   resolved: Record<string, ResolvedColor>;
@@ -442,14 +452,25 @@ export function autoAdjustContrast(
   const updatedTokens: Record<string, string> = { ...tokens };
   const updatedResolved: Record<string, ResolvedColor> = { ...resolved };
 
-  const MAX_ITERATIONS = 3;
+  // Safety cap — prevents infinite loops under pathological inputs
+  const SAFETY_CAP = 20;
   // Tone step per bump — 5 tone units, re-evaluated each iteration
   const TONE_STEP = 5;
+
+  // Per-token direction history for oscillation detection (Spec S03).
+  // Tracks the sequence of +1 / -1 bump directions applied to each element token.
+  const directionHistory = new Map<string, number[]>();
+
+  // Tokens frozen due to oscillation — excluded from further bumps
+  const frozenTokens = new Set<string>();
 
   let remainingFailures = failures.filter((f) => !f.lcPass);
   const unfixable: string[] = [];
 
-  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+  // Track the passing count from the previous iteration for convergence detection
+  let prevPassCount = pairingMap.length - remainingFailures.length;
+
+  for (let iter = 0; iter < SAFETY_CAP; iter++) {
     if (remainingFailures.length === 0) break;
 
     // Group remaining failures by element token
@@ -460,40 +481,67 @@ export function autoAdjustContrast(
       byElement.set(failure.fg, list);
     }
 
+    let anyAdjustmentApplied = false;
+
     // For each element token, find the most restrictive surface and bump element tone
     for (const [elementToken, elementFailures] of byElement) {
+      // Skip tokens frozen by oscillation detection
+      if (frozenTokens.has(elementToken)) continue;
+
       const elementColor = updatedResolved[elementToken];
       if (!elementColor) continue;
 
-      // Determine if element is "dark" (low lightness) or "light" (high lightness)
-      // to pick the right direction to bump.
-      // In dark mode: element is typically light (high L); bump L upward to increase contrast
-      // In light mode: element is typically dark (low L); bump L downward to increase contrast
-      // Heuristic: compare element L to the surface Ls. Element is "dark relative to surfaces"
-      // if element.L < surface.L.
-
-      // Find the most restrictive surface (the one where contrast delta is worst).
-      // "Most restrictive" = surface that is closest in luminance to element.
+      // Find the most restrictive surface (the one producing the lowest |Lc|).
+      // "Most restrictive" = worst contrast, i.e. smallest |Lc| among all failing surfaces.
       let worstSurfaceColor: ResolvedColor | null = null;
-      let worstContrast = Infinity;
+      let worstLc = Infinity;
+      let worstLcSigned = 0;
       for (const failure of elementFailures) {
         const surfaceColor = updatedResolved[failure.bg];
         if (!surfaceColor) continue;
         const elementHex = oklchToHex(elementColor.L, elementColor.C, elementColor.h);
         const surfaceHex = oklchToHex(surfaceColor.L, surfaceColor.C, surfaceColor.h);
-        const ratio = computeWcagContrast(elementHex, surfaceHex);
-        if (ratio < worstContrast) {
-          worstContrast = ratio;
+        const lc = computeLcContrast(elementHex, surfaceHex);
+        if (Math.abs(lc) < worstLc) {
+          worstLc = Math.abs(lc);
+          worstLcSigned = lc;
           worstSurfaceColor = surfaceColor;
         }
       }
 
       if (!worstSurfaceColor) continue;
 
-      // Determine bump direction: move element L away from surface L
-      const elementL = elementColor.L;
-      const surfaceL = worstSurfaceColor.L;
-      const bumpDirection = elementL >= surfaceL ? 1 : -1; // positive = lighter, negative = darker
+      // Determine bump direction using Lc sign (SA98G polarity semantics) [D02]:
+      //   positive Lc = dark element on light surface → bump element darker (tone -1)
+      //   negative Lc = light element on dark surface → bump element lighter (tone +1)
+      //
+      // Special case: when Lc = 0 (soft-clipped because both colors are very dark
+      // or very light), the sign is uninformative. Fall back to comparing OKLCH
+      // lightness values directly to determine polarity and bump direction.
+      //   elementL > surfaceL → element is lighter → light-on-dark polarity → bump lighter (+1)
+      //   elementL <= surfaceL → element is darker → dark-on-light polarity → bump darker (-1)
+      let bumpDirection: number;
+      if (worstLcSigned === 0) {
+        bumpDirection = elementColor.L > worstSurfaceColor.L ? 1 : -1;
+      } else {
+        bumpDirection = worstLcSigned >= 0 ? -1 : 1;
+      }
+
+      // Oscillation detection (Spec S03): record this direction and check for alternation.
+      const history = directionHistory.get(elementToken) ?? [];
+      history.push(bumpDirection);
+      directionHistory.set(elementToken, history);
+
+      // Freeze if the last 3 directions strictly alternate: [+1,-1,+1] or [-1,+1,-1]
+      if (history.length >= 3) {
+        const last3 = history.slice(-3);
+        const oscillating =
+          last3[0] !== last3[1] && last3[1] !== last3[2] && last3[0] === last3[2];
+        if (oscillating) {
+          frozenTokens.add(elementToken);
+          continue;
+        }
+      }
 
       // Parse the original --tug-color() string to extract hue reference and intensity.
       // This preserves hue+offset forms (e.g. "cobalt+6") exactly, avoiding the
@@ -504,37 +552,36 @@ export function autoAdjustContrast(
 
       const { hueRef, intensity } = parsed;
       const hueName = baseHueName(hueRef);
+      const elementL = elementColor.L;
       const currentTone = lToTone(elementL, hueName);
       const newTone = Math.max(0, Math.min(100, currentTone + bumpDirection * TONE_STEP));
-      const newL = toneToL(newTone, hueName);
 
+      // Only apply bump if tone actually changed (avoids no-op at ceiling/floor)
+      if (newTone === currentTone) continue;
+
+      const newL = toneToL(newTone, hueName);
       const newResolved: ResolvedColor = { ...elementColor, L: newL };
       const newTokenStr = rebuildTugColorToken(hueRef, intensity, newTone);
 
       updatedResolved[elementToken] = newResolved;
       updatedTokens[elementToken] = newTokenStr;
+      anyAdjustmentApplied = true;
     }
 
-    // Re-evaluate remaining failures using Lc (normative gate)
-    const stillFailing: ContrastResult[] = [];
-    for (const failure of remainingFailures) {
-      const elementColor = updatedResolved[failure.fg];
-      const surfaceColor = updatedResolved[failure.bg];
-      if (!elementColor || !surfaceColor) continue;
-      const elementHex = oklchToHex(elementColor.L, elementColor.C, elementColor.h);
-      const surfaceHex = oklchToHex(surfaceColor.L, surfaceColor.C, surfaceColor.h);
-      const newWcagRatio = computeWcagContrast(elementHex, surfaceHex);
-      const newLc = computeLcContrast(elementHex, surfaceHex);
-      const lcThreshold = LC_THRESHOLDS[failure.role] ?? 15;
-      if (Math.abs(newLc) < lcThreshold) {
-        stillFailing.push({ ...failure, wcagRatio: newWcagRatio, lc: newLc, lcPass: false });
-      }
-    }
-    remainingFailures = stillFailing;
+    // Re-validate ALL pairs via validateThemeContrast to catch cascade effects [D02].
+    // This ensures that adjusting one token doesn't silently break another pair.
+    const allResults = validateThemeContrast(updatedResolved, pairingMap);
+    remainingFailures = allResults.filter((r) => !r.lcPass);
+
+    // Convergence detection: stop if no pairs improved and no adjustments were applied.
+    const newPassCount = allResults.filter((r) => r.lcPass).length;
+    if (!anyAdjustmentApplied && newPassCount <= prevPassCount) break;
+    prevPassCount = newPassCount;
   }
 
-  // Any pairs still failing after MAX_ITERATIONS → unfixable
-  const unfixableElementTokens = new Set<string>();
+  // Collect unfixable element tokens: any token still failing AND either frozen
+  // (oscillation) or still present in remaining failures after the loop ends.
+  const unfixableElementTokens = new Set<string>([...frozenTokens]);
   for (const failure of remainingFailures) {
     unfixableElementTokens.add(failure.fg);
   }

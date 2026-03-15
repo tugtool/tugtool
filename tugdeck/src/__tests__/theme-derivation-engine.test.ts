@@ -462,7 +462,7 @@ function runFullPipeline(recipeName: string): {
 
   // Step 3: Auto-adjust any failures
   const failures = initialResults.filter((r) => !r.lcPass);
-  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures);
+  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
 
   // Step 4: Re-validate with adjusted resolved map
   const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);

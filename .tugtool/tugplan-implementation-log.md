@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-15T16:55:24Z
+---
+
+## step-2: Refactored autoAdjustContrast with 4th pairingMap param, SAFETY_CAP=20 replacing MAX_ITERATIONS=3, convergence detection, per-token oscillation guards, Lc sign-based bump direction, and full re-validation via validateThemeContrast. Added T3.8 oscillation, T3.9 convergence, T3.10 cascade tests.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-1
 date: 2025-03-15T16:38:34Z
 ---

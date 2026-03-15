@@ -187,7 +187,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length > 0) {
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures);
+      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
       // The result must be an object with tokens, resolved, unfixable
       expect(fixed).toHaveProperty("tokens");
       expect(fixed).toHaveProperty("resolved");
@@ -199,7 +199,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
       expect(changed.length).toBeGreaterThan(0);
     } else {
       // No failures — autoAdjustContrast should be a no-op
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, []);
+      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, [], ELEMENT_SURFACE_PAIRING_MAP);
       expect(fixed.unfixable).toEqual([]);
     }
   });
@@ -210,7 +210,7 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length > 0) {
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures);
+      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
       const fixedResults = validateThemeContrast(fixed.resolved, ELEMENT_SURFACE_PAIRING_MAP);
       const fixedFailures = fixedResults.filter((r) => !r.lcPass && r.role !== "decorative");
       // After auto-fix, there should be fewer failures than before

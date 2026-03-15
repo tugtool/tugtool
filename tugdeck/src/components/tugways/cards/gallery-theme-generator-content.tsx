@@ -577,7 +577,7 @@ function AutoFixPanel({
   );
 
   const handleAutoFix = useCallback(() => {
-    const result = autoAdjustContrast(output.tokens, output.resolved, failures);
+    const result = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
     const adjustedCount = Object.keys(result.tokens).filter(
       (k) => result.tokens[k] !== output.tokens[k],
     ).length;

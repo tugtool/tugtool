@@ -389,7 +389,12 @@ describe("theme-accessibility", () => {
       },
     ];
 
-    const result = autoAdjustContrast(tokens, resolved, failures);
+    // Test-local pairings array — keeps T3.4 isolated and predictable
+    const testPairings = [
+      { element: fgToken, surface: bgToken, role: "body-text" as const },
+    ];
+
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
 
     // bg should be unchanged
     expect(result.resolved[bgToken].L).toBeCloseTo(bgResolved.L, 5);
@@ -526,13 +531,20 @@ describe("theme-accessibility", () => {
       { fg: fgToken, bg: bgToken3, wcagRatio: 1.3, lc: 8, lcPass: false, role: "body-text" as const },
     ];
 
-    const result = autoAdjustContrast(tokens, resolved, failures);
+    // Test-local pairings array — covers exactly the three surfaces in this test
+    const testPairings = [
+      { element: fgToken, surface: bgToken1, role: "body-text" as const },
+      { element: fgToken, surface: bgToken2, role: "body-text" as const },
+      { element: fgToken, surface: bgToken3, role: "body-text" as const },
+    ];
+
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
 
     // fg should have been adjusted (all 3 pairings share same fg token)
     const newFgResolved = result.resolved[fgToken];
     expect(newFgResolved.L).not.toBeCloseTo(fgResolved.L, 5);
 
-    // All 3 pairings should have improved contrast (even if not passing yet — 3 iter max)
+    // All 3 pairings should have improved contrast (convergence-based loop, SAFETY_CAP=20)
     // oklchToHex is imported at the top of the file
     for (const bgToken of [bgToken1, bgToken2, bgToken3]) {
       const fgHex = oklchToHex(newFgResolved.L, newFgResolved.C, newFgResolved.h);
@@ -548,16 +560,15 @@ describe("theme-accessibility", () => {
   // T3.7: autoAdjustContrast returns unfixable when token cannot reach threshold
   //
   // Scenario: fg starts slightly lighter than bg, both near the L_LIGHT ceiling
-  // (violet tone≈92 for fg, tone=90 for bg).
-  //
-  // fgL > bgL → bumpDirection=+1 (fg bumps even lighter each step).
-  // But with bg already near the L_LIGHT=0.96 ceiling, even fg at tone=100
-  // only gives ratio≈1.17 — far below 4.5:1. Three bumps of 5 tone units
-  // (92→97→100→100, capped) never reach threshold. Token must be unfixable.
+  // (violet tone≈92 for fg, tone=90 for bg). Lc sign: fgL > bgL → Lc is positive
+  // (dark-on-light polarity) → bumpDirection = -1 (bump fg darker, toward bg).
+  // That immediately reduces contrast further, Lc flips sign, direction flips to +1.
+  // The alternating pattern triggers oscillation detection, freezing the token as
+  // unfixable after 3 alternating directions.
   //
   // Probed values (violet, C=0.02, h=264):
-  //   bg=tone90 (L≈0.9096):  fg=tone100 (L=0.96) → ratio≈1.17
-  //   bg=tone90:              fg=tone92  (L≈0.920) → ratio≈1.04  (start)
+  //   bg=tone90 (L≈0.9096):  fg=tone100 (L=0.96) → |Lc|≈... far below Lc 75
+  //   bg=tone90:              fg=tone92  (L≈0.920) → |Lc|≈... far below Lc 75 (start)
   // -------------------------------------------------------------------------
   it("T3.7: autoAdjustContrast returns unfixable list when ceiling prevents reaching threshold", () => {
     const fgToken = "--tug-base-fg-special";
@@ -599,11 +610,16 @@ describe("theme-accessibility", () => {
       },
     ];
 
-    const result = autoAdjustContrast(tokens, resolved, failures);
+    // Test-local pairings array — keeps T3.7 isolated and predictable
+    const testPairings = [
+      { element: fgToken, surface: bgToken, role: "body-text" as const },
+    ];
 
-    // The token must appear in the unfixable list — no combination of 3×5 tone bumps
-    // toward L_LIGHT can get fg far enough from bg to reach 4.5:1 when both are
-    // already near the ceiling.
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
+
+    // The token must appear in the unfixable list — both fg and bg are near the
+    // L_LIGHT ceiling; bumping fg lighter just moves it closer to bg, and
+    // oscillation detection or convergence detection will freeze it as unfixable.
     expect(result.unfixable).toContain(fgToken);
 
     // bg should remain unchanged
@@ -612,6 +628,202 @@ describe("theme-accessibility", () => {
     // The returned maps must be well-formed objects
     expect(typeof result.tokens).toBe("object");
     expect(typeof result.resolved).toBe("object");
+  });
+
+  // -------------------------------------------------------------------------
+  // T3.8: Oscillation detection — two mutually-breaking pairs freeze both tokens
+  //
+  // Scenario: token A on surface S1 and token A on surface S2, where S1 is very
+  // dark and S2 is very light. Bumping A lighter fixes A/S1 but breaks A/S2;
+  // bumping darker fixes A/S2 but breaks A/S1. The direction alternates each
+  // iteration, triggering oscillation detection after 3 alternating directions.
+  // The token must be reported as unfixable.
+  //
+  // We simulate this with two surfaces: one near L_DARK (very dark) and one
+  // near L_LIGHT (very light), with the element token starting at the mid-tone
+  // (L≈canonL). No direction can satisfy both surfaces simultaneously.
+  // -------------------------------------------------------------------------
+  it("T3.8: oscillation detection — token that breaks different pairs in alternating directions is marked unfixable", () => {
+    const elementToken = "--tug-base-fg-special";
+    const darkSurface = "--tug-base-surface-dark";
+    const lightSurface = "--tug-base-surface-light";
+
+    // violet canonL=0.708, L_DARK=0.15, L_LIGHT=0.96
+    // Element at mid-tone (canonical L), surfaces at extremes
+    const elementL = 0.708; // canonical tone=50
+    const darkL = 0.17;     // very dark surface — element needs to go lighter
+    const lightL = 0.93;    // very light surface — element needs to go darker
+
+    const elementResolved: ResolvedColor = { L: elementL, C: 0.02, h: 264, alpha: 1 };
+    const darkResolved: ResolvedColor = { L: darkL, C: 0.01, h: 264, alpha: 1 };
+    const lightResolved: ResolvedColor = { L: lightL, C: 0.01, h: 264, alpha: 1 };
+
+    const resolved: Record<string, ResolvedColor> = {
+      [elementToken]: elementResolved,
+      [darkSurface]: darkResolved,
+      [lightSurface]: lightResolved,
+    };
+    const tokens: Record<string, string> = {
+      [elementToken]: "--tug-color(violet, t: 50)",
+      [darkSurface]: "--tug-color(violet, i: 2, t: 10)",
+      [lightSurface]: "--tug-color(violet, i: 2, t: 92)",
+    };
+
+    // Both pairings fail — the element is mid-tone, not enough contrast with either extreme
+    const elementHex = oklchToHex(elementL, 0.02, 264);
+    const darkHex = oklchToHex(darkL, 0.01, 264);
+    const lightHex = oklchToHex(lightL, 0.01, 264);
+    const failures = [
+      {
+        fg: elementToken, bg: darkSurface,
+        wcagRatio: computeWcagContrast(elementHex, darkHex),
+        lc: computeLcContrast(elementHex, darkHex),
+        lcPass: false, role: "body-text" as const,
+      },
+      {
+        fg: elementToken, bg: lightSurface,
+        wcagRatio: computeWcagContrast(elementHex, lightHex),
+        lc: computeLcContrast(elementHex, lightHex),
+        lcPass: false, role: "body-text" as const,
+      },
+    ];
+
+    // Both pairings should indeed be failing initially
+    expect(failures.every((f) => !f.lcPass)).toBe(true);
+
+    const testPairings = [
+      { element: elementToken, surface: darkSurface, role: "body-text" as const },
+      { element: elementToken, surface: lightSurface, role: "body-text" as const },
+    ];
+
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
+
+    // The element token must be in the unfixable list — oscillation between
+    // bumping lighter (to fix dark surface) and darker (to fix light surface)
+    // should trigger the 3-alternation freeze
+    expect(result.unfixable).toContain(elementToken);
+  });
+
+  // -------------------------------------------------------------------------
+  // T3.9: Convergence — auto-adjust stops before safety cap when all pairs pass
+  //
+  // Scenario: a single failing pair that is fixed in one iteration. After
+  // the pair passes, remainingFailures is empty and the loop should exit
+  // immediately. We verify the function terminates quickly (does not exhaust
+  // all 20 iterations) by checking the outcome is correct.
+  // -------------------------------------------------------------------------
+  it("T3.9: convergence — auto-adjust stops early when all pairs pass", () => {
+    const fgToken = "--tug-base-fg-default";
+    const bgToken = "--tug-base-bg-app";
+
+    // Start near-passing: tone=90, |Lc|≈71.2 (just below Lc 75)
+    const fgL = 0.708 + (40 * (0.96 - 0.708)) / 50; // tone=90 → ~0.9096
+    const bgL = 0.15 + (15 * (0.708 - 0.15)) / 50;  // tone=15 → ~0.3174
+
+    const fgResolved: ResolvedColor = { L: fgL, C: 0.02, h: 264, alpha: 1 };
+    const bgResolved: ResolvedColor = { L: bgL, C: 0.02, h: 264, alpha: 1 };
+
+    const resolved: Record<string, ResolvedColor> = {
+      [fgToken]: fgResolved,
+      [bgToken]: bgResolved,
+    };
+    const tokens: Record<string, string> = {
+      [fgToken]: "--tug-color(violet, t: 90)",
+      [bgToken]: "--tug-color(violet, t: 15)",
+    };
+
+    const fgHex = oklchToHex(fgL, 0.02, 264);
+    const bgHex = oklchToHex(bgL, 0.02, 264);
+    const failures = [
+      {
+        fg: fgToken, bg: bgToken,
+        wcagRatio: computeWcagContrast(fgHex, bgHex),
+        lc: computeLcContrast(fgHex, bgHex),
+        lcPass: false, role: "body-text" as const,
+      },
+    ];
+
+    const testPairings = [
+      { element: fgToken, surface: bgToken, role: "body-text" as const },
+    ];
+
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
+
+    // The pair should be fixed (one iteration of +5 tone → tone=95, |Lc|≈81.6)
+    expect(result.unfixable).toEqual([]);
+
+    // Verify the final state actually passes
+    const newFgHex = oklchToHex(result.resolved[fgToken].L, 0.02, 264);
+    const newBgHex = oklchToHex(result.resolved[bgToken].L, 0.01, 264);
+    const finalLc = computeLcContrast(newFgHex, newBgHex);
+    expect(Math.abs(finalLc)).toBeGreaterThanOrEqual(LC_THRESHOLDS["body-text"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T3.10: Cascade — adjusting one token converges without cascade breakage
+  //
+  // Scenario: a chain of two pairs sharing a surface token.
+  //   pair 1: elementA on sharedSurface (failing)
+  //   pair 2: elementB on sharedSurface (passing initially)
+  //
+  // Adjusting elementA must not inadvertently break elementB. The pairings
+  // array includes both pairs so cascade re-validation catches breakage.
+  // Both pairs must pass at the end.
+  // -------------------------------------------------------------------------
+  it("T3.10: cascade — adjusting one element does not break a passing pair on the same surface", () => {
+    const elementA = "--tug-base-fg-muted";
+    const elementB = "--tug-base-fg-default";
+    const sharedSurface = "--tug-base-surface-default";
+
+    // dark mode: surface is dark, elements should be light
+    // elementA starts at tone=90 (|Lc|≈71.2 — just below Lc 75, failing)
+    // elementB starts at tone=94 (|Lc|≈79.3 — passing Lc 75)
+    const surfaceL = 0.15 + (15 * (0.708 - 0.15)) / 50; // ~0.3174 (tone=15 equivalent)
+    const elementAL = 0.708 + (40 * (0.96 - 0.708)) / 50; // tone=90 → ~0.9096
+    const elementBL = 0.708 + (44 * (0.96 - 0.708)) / 50; // tone=94 → ~0.9298
+
+    const surfaceResolved: ResolvedColor = { L: surfaceL, C: 0.01, h: 264, alpha: 1 };
+    const elementAResolved: ResolvedColor = { L: elementAL, C: 0.02, h: 264, alpha: 1 };
+    const elementBResolved: ResolvedColor = { L: elementBL, C: 0.02, h: 264, alpha: 1 };
+
+    const resolved: Record<string, ResolvedColor> = {
+      [elementA]: elementAResolved,
+      [elementB]: elementBResolved,
+      [sharedSurface]: surfaceResolved,
+    };
+    const tokens: Record<string, string> = {
+      [elementA]: "--tug-color(violet, t: 90)",
+      [elementB]: "--tug-color(violet, t: 94)",
+      [sharedSurface]: "--tug-color(violet, i: 2, t: 15)",
+    };
+
+    const aHex = oklchToHex(elementAL, 0.02, 264);
+    const surfHex = oklchToHex(surfaceL, 0.01, 264);
+    const lcA = computeLcContrast(aHex, surfHex);
+    const failures = [
+      {
+        fg: elementA, bg: sharedSurface,
+        wcagRatio: computeWcagContrast(aHex, surfHex),
+        lc: lcA, lcPass: false, role: "body-text" as const,
+      },
+    ];
+
+    // Both pairs in the pairings map — cascade detection monitors elementB too
+    const testPairings = [
+      { element: elementA, surface: sharedSurface, role: "body-text" as const },
+      { element: elementB, surface: sharedSurface, role: "body-text" as const },
+    ];
+
+    const result = autoAdjustContrast(tokens, resolved, failures, testPairings);
+
+    // elementA should have been fixed
+    expect(result.unfixable).not.toContain(elementA);
+
+    // elementB must still pass after adjustment (cascade re-validation guards this)
+    const newBHex = oklchToHex(result.resolved[elementB].L, 0.02, 264);
+    const newSurfHex = oklchToHex(result.resolved[sharedSurface].L, 0.01, 264);
+    const lcB = computeLcContrast(newBHex, newSurfHex);
+    expect(Math.abs(lcB)).toBeGreaterThanOrEqual(LC_THRESHOLDS["body-text"]);
   });
 });
 
