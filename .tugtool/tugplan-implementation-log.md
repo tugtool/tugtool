@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-15T19:36:22Z
+---
+
+## step-1: Converted BRIO_GROUND_TRUTH fixture from exact string comparison to OKLCH triples with delta-E < 0.02 tolerance. Added oklchDeltaE helper with hue-wrap normalization per Spec S04. Updated T-BRIO-MATCH and T-PRESET-NO-REGRESSION tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-6
 date: 2025-03-15T18:01:35Z
 ---
