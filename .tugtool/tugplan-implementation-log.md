@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-15T01:05:53Z
+---
+
+## step-6: Added ModePreset interface and DARK_PRESET/LIGHT_PRESET constants. Refactored deriveTheme() to use preset.paramName references instead of inline isLight ternaries for ~40 numeric parameters. Hue-selection branches remain as isLight code per D03. Output unchanged — T-BRIO-MATCH passes.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-5
 date: 2025-03-15T00:53:35Z
 ---

@@ -128,6 +128,251 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
 };
 
 // ---------------------------------------------------------------------------
+// ModePreset — mode-specific formula parameters [D03]
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundles all mode-dependent numeric formula constants into a named preset.
+ * `deriveTheme()` selects a preset by `recipe.mode` and uses its values instead
+ * of inline `isLight ? X : Y` ternaries for numeric parameters.
+ *
+ * Hue-selection logic (which hue ref to use per tier) and structural code paths
+ * (setWhite vs setChromatic) remain as `isLight` branches in `deriveTheme()` —
+ * these are algorithmic choices, not numeric parameters.
+ *
+ * Derived values that are computed from other preset parameters
+ * (e.g. dividerTone = surfaceRaisedTone - 2) stay as computed code in
+ * `deriveTheme()`, not as additional preset fields. [D03]
+ *
+ * Spec S01.
+ */
+export interface ModePreset {
+  // Surface tone anchors (absolute tone values at surfaceContrast=50)
+  bgAppTone: number;
+  bgCanvasTone: number;
+  surfaceSunkenTone: number;
+  surfaceDefaultTone: number;
+  surfaceRaisedTone: number;
+  surfaceOverlayTone: number;
+  surfaceInsetTone: number;
+  surfaceContentTone: number;
+  surfaceScreenTone: number;
+
+  // Surface intensity — independent per-tier values.
+  // Brio dark: atmI=5, overlayI=4, screenI=7 (sunken/default/raised/inset/content use atmI).
+  atmI: number;
+  surfaceOverlayI: number;
+  surfaceScreenI: number;
+
+  // Per-tier hue offsets (from atmBaseAngle / txtBaseAngle) for surface tones.
+  // In dark mode (Brio): sunken/default use offset 0 (bare violet),
+  //   raised/inset/content use the recipe atm angle (not a fixed offset).
+  // These offsets are informational; the actual hue selection remains an
+  // algorithmic `isLight` branch since light-mode uses a different hue altogether.
+  surfaceTierOffsets: {
+    default: number;
+    overlay: number;
+    sunken: number;
+    screen: number;
+  };
+
+  // Foreground tone anchors
+  fgDefaultTone: number;
+  fgMutedTone: number;
+  fgSubtleTone: number;
+  fgDisabledTone: number;
+  fgPlaceholderTone: number;
+  fgInverseTone: number;
+
+  // Text intensity levels
+  txtI: number;
+  txtISubtle: number;
+  fgMutedI: number;
+  atmIBorder: number; // border/divider intensity (also used for fg-placeholder in light)
+
+  // Per-tier fg hue offsets (from txtBaseAngle, dark mode).
+  // Light mode collapses these to 0 (bare txtBase hue) via the isLight branch.
+  fgTierOffsets: {
+    muted: number;
+    subtle: number;
+    disabled: number;
+    placeholder: number;
+    inverse: number;
+  };
+
+  // Border parameters
+  borderIBase: number;
+  borderIStrong: number;
+
+  // Shadow / overlay alphas
+  shadowXsAlpha: number;
+  shadowMdAlpha: number;
+  shadowLgAlpha: number;
+  shadowXlAlpha: number;
+  shadowOverlayAlpha: number;
+  overlayDimAlpha: number;
+  overlayScrimAlpha: number;
+  overlayHighlightAlpha: number;
+
+  // Control emphasis parameters
+  filledBgDarkTone: number;
+  filledBgHoverTone: number;
+  filledBgActiveTone: number;
+
+  // Toggle tone
+  toggleTrackOnHoverTone: number;
+
+  // Field tone anchors
+  fieldBgRestTone: number;
+  fieldBgHoverTone: number;
+  fieldBgFocusTone: number;
+  fieldBgDisabledTone: number;
+  fieldBgReadOnlyTone: number;
+}
+
+/**
+ * Dark-mode preset — parameter values reproduce the hand-authored Brio dark-mode
+ * CSS exactly (verified by T-BRIO-MATCH). [D03]
+ */
+export const DARK_PRESET: ModePreset = {
+  // Surface tones (Brio ground truth at surfaceContrast=50)
+  bgAppTone: 5,
+  bgCanvasTone: 5,
+  surfaceSunkenTone: 11,
+  surfaceDefaultTone: 12,
+  surfaceRaisedTone: 11,
+  surfaceOverlayTone: 14,
+  surfaceInsetTone: 6,
+  surfaceContentTone: 6,
+  surfaceScreenTone: 16,
+
+  // Surface intensities
+  atmI: 5,
+  surfaceOverlayI: 4,
+  surfaceScreenI: 7,
+
+  // Per-tier surface hue offsets (informational; actual hue selection is algorithmic)
+  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 10 },
+
+  // Foreground tones (Brio ground truth)
+  fgDefaultTone: 94,
+  fgMutedTone: 66,
+  fgSubtleTone: 37,
+  fgDisabledTone: 23,
+  fgPlaceholderTone: 30,
+  fgInverseTone: 100,
+
+  // Text intensities
+  txtI: 3,
+  txtISubtle: 7,
+  fgMutedI: 5,
+  atmIBorder: 6,
+
+  // Per-tier fg hue offsets (from txtBaseAngle, Brio = cobalt base)
+  fgTierOffsets: { muted: 0, subtle: 7, disabled: 8, placeholder: 0, inverse: -8 },
+
+  // Border intensities
+  borderIBase: 6,
+  borderIStrong: 7,
+
+  // Shadow / overlay alphas (Brio dark)
+  shadowXsAlpha: 20,
+  shadowMdAlpha: 60,
+  shadowLgAlpha: 70,
+  shadowXlAlpha: 80,
+  shadowOverlayAlpha: 60,
+  overlayDimAlpha: 48,
+  overlayScrimAlpha: 64,
+  overlayHighlightAlpha: 6,
+
+  // Control emphasis tones (filled button bg)
+  filledBgDarkTone: 20,
+  filledBgHoverTone: 40,
+  filledBgActiveTone: 50,
+
+  // Toggle tone
+  toggleTrackOnHoverTone: 45,
+
+  // Field tones (Brio dark ground truth)
+  fieldBgRestTone: 8,
+  fieldBgHoverTone: 11,
+  fieldBgFocusTone: 7,
+  fieldBgDisabledTone: 6,
+  fieldBgReadOnlyTone: 11,
+};
+
+/**
+ * Light-mode preset — wraps the current light-mode formula values.
+ * Formula accuracy against a hand-authored light-mode ground truth is deferred (Q01).
+ */
+export const LIGHT_PRESET: ModePreset = {
+  // Surface tones (from Harmony, yellow atmosphere)
+  bgAppTone: 20,
+  bgCanvasTone: 20,
+  surfaceSunkenTone: 44,
+  surfaceDefaultTone: 99,
+  surfaceRaisedTone: 24,
+  surfaceOverlayTone: 48,
+  surfaceInsetTone: 100,
+  surfaceContentTone: 100,
+  surfaceScreenTone: 80,
+
+  // Surface intensities
+  atmI: 5,
+  surfaceOverlayI: 6,
+  surfaceScreenI: 4,
+
+  // Per-tier surface hue offsets (light mode uses atmRefW uniformly)
+  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 0 },
+
+  // Foreground tones (light mode, near-black text)
+  fgDefaultTone: 13,
+  fgMutedTone: 22,
+  fgSubtleTone: 30,
+  fgDisabledTone: 44,
+  fgPlaceholderTone: 28,
+  fgInverseTone: 100,
+
+  // Text intensities
+  txtI: 8,
+  txtISubtle: 9,
+  fgMutedI: 9, // = txtISubtle in light
+  atmIBorder: 9,
+
+  // Per-tier fg hue offsets — light mode collapses to 0 (bare txtBase) via isLight branch
+  fgTierOffsets: { muted: 0, subtle: 0, disabled: 0, placeholder: 0, inverse: 0 },
+
+  // Border intensities
+  borderIBase: 9,
+  borderIStrong: 10,
+
+  // Shadow / overlay alphas (light mode — lower alpha)
+  shadowXsAlpha: 8,
+  shadowMdAlpha: 30,
+  shadowLgAlpha: 36,
+  shadowXlAlpha: 44,
+  shadowOverlayAlpha: 24,
+  overlayDimAlpha: 20,
+  overlayScrimAlpha: 32,
+  overlayHighlightAlpha: 50,
+
+  // Control emphasis tones (light mode)
+  filledBgDarkTone: 30,
+  filledBgHoverTone: 40,
+  filledBgActiveTone: 50,
+
+  // Toggle tone
+  toggleTrackOnHoverTone: 40,
+
+  // Field tones (light mode)
+  fieldBgRestTone: 51,
+  fieldBgHoverTone: 74,
+  fieldBgFocusTone: 99,
+  fieldBgDisabledTone: 48,
+  fieldBgReadOnlyTone: 74,
+};
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -385,6 +630,12 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   const isLight = recipe.mode === "light";
 
+  // Select mode preset: DARK_PRESET for dark mode, LIGHT_PRESET for light mode. [D03]
+  // Numeric formula parameters (tone anchors, intensity levels, alpha values) are
+  // read from the preset. Hue-selection logic and structural code paths remain as
+  // `isLight` branches.
+  const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+
   // -------------------------------------------------------------------------
   // 2. Mood knob normalization (0-100, default 50)
   // -------------------------------------------------------------------------
@@ -434,43 +685,35 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   //   content=100, screen=80
   // -------------------------------------------------------------------------
 
-  // Dark mode bg-app tone: Brio=5 at surfaceContrast=50.
-  // Formula anchored to Brio: t = 5 at sc=50. Allow ±range for other recipes.
-  const darkBgApp = isLight ? 20 : 5 + ((surfaceContrast - 50) / 50) * 8;
+  // Surface tone anchors from preset (at surfaceContrast=50). Formula scales
+  // around the anchor for other surfaceContrast values.
+  // Dark: DARK_PRESET values reproduce Brio ground truth at sc=50.
+  // Light: LIGHT_PRESET values reproduce Harmony at sc=50.
+  const darkBgApp = preset.bgAppTone + ((surfaceContrast - 50) / 50) * 8;
 
   // bg-canvas: same as bg-app in Brio (both use violet-6, i:2, t:5)
-  const darkBgCanvas = isLight ? 20 : Math.round(darkBgApp);
+  const darkBgCanvas = Math.round(darkBgApp);
 
-  // sunken: Brio=11 at sc=50
-  const darkSurfaceSunken = isLight
-    ? Math.round(44)
-    : Math.round(11 + ((surfaceContrast - 50) / 50) * 5);
+  // sunken: anchored to preset.surfaceSunkenTone at sc=50
+  const darkSurfaceSunken = Math.round(preset.surfaceSunkenTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // default: Brio=12 at sc=50
-  const darkSurfaceDefault = isLight
-    ? Math.round(99)
-    : Math.round(12 + ((surfaceContrast - 50) / 50) * 3);
+  // default: anchored to preset.surfaceDefaultTone at sc=50
+  const darkSurfaceDefault = Math.round(preset.surfaceDefaultTone + ((surfaceContrast - 50) / 50) * 3);
 
-  // raised: Brio=11 at sc=50 (same as sunken but on violet-6 hue)
-  const darkSurfaceRaised = isLight
-    ? Math.round(24)
-    : Math.round(11 + ((surfaceContrast - 50) / 50) * 5);
+  // raised: anchored to preset.surfaceRaisedTone at sc=50
+  const darkSurfaceRaised = Math.round(preset.surfaceRaisedTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // overlay: Brio=14 at sc=50
-  const darkSurfaceOverlay = isLight
-    ? Math.round(48)
-    : Math.round(14 + ((surfaceContrast - 50) / 50) * 5);
+  // overlay: anchored to preset.surfaceOverlayTone at sc=50
+  const darkSurfaceOverlay = Math.round(preset.surfaceOverlayTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // inset: Brio=6 at sc=50 (recessed, same hue as bg-app)
-  const darkSurfaceInset = isLight ? Math.round(100) : Math.round(6 + ((surfaceContrast - 50) / 50) * 7);
+  // inset: anchored to preset.surfaceInsetTone at sc=50
+  const darkSurfaceInset = Math.round(preset.surfaceInsetTone + ((surfaceContrast - 50) / 50) * 7);
 
   // content: matches inset (code blocks, inline content areas)
   const darkSurfaceContent = darkSurfaceInset;
 
-  // screen: Brio=16 at sc=50 (uses cobalt+10 hue — text base +10)
-  const darkSurfaceScreen = isLight
-    ? Math.round(80)
-    : Math.round(16 + ((surfaceContrast - 50) / 50) * 13);
+  // screen: anchored to preset.surfaceScreenTone at sc=50
+  const darkSurfaceScreen = Math.round(preset.surfaceScreenTone + ((surfaceContrast - 50) / 50) * 13);
 
   // -------------------------------------------------------------------------
   // 3a. Per-tier hue angle derivation for surface tokens (dark mode).
@@ -555,34 +798,30 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const fgInverseName = closestHueName(fgInverseAngle);
   const fgInverseRef = formatHueRef(fgInverseName, fgInverseAngle);
 
-  // Atmosphere intensity (low for surfaces — subdued, muted)
-  const atmI = isLight ? 5 : 5;
-  // Slightly higher intensity for some overlays
-  const atmIBorder = isLight ? 9 : 6;
+  // Atmosphere intensity (low for surfaces — subdued, muted). From preset. [D03]
+  const atmI = preset.atmI;
+  // Slightly higher intensity for some overlays. From preset. [D03]
+  const atmIBorder = preset.atmIBorder;
 
   // -------------------------------------------------------------------------
-  // 4. Derive text tone anchors from mode
+  // 4. Derive text tone anchors from mode preset. [D03]
   // Dark mode: fg at tone 94 (Brio ground truth), grading down toward muted/subtle/disabled
   // Light mode: fg at tone ~13 (near-black), grading up toward muted/subtle/disabled
   // -------------------------------------------------------------------------
-  // Brio ground truth: fg-default uses cobalt i:3 t:94
-  const fgDefaultTone = isLight ? 13 : 94;
-  // Brio ground truth: fg-muted uses cobalt i:5 t:66
-  const fgMutedTone = isLight ? 22 : 66;
-  // Brio ground truth: fg-subtle uses cobalt+7 i:7 t:37
-  const fgSubtleTone = isLight ? 30 : 37;
-  // Brio ground truth: fg-disabled uses cobalt+8 i:7 t:23
-  const fgDisabledTone = isLight ? 44 : 23;
-  // Brio ground truth: fg-placeholder uses cobalt i:6 t:30
-  const fgPlaceholderTone = isLight ? 28 : 30;
+  // Foreground tones from preset (Brio ground truth for dark; Harmony for light)
+  const fgDefaultTone = preset.fgDefaultTone;
+  const fgMutedTone = preset.fgMutedTone;
+  const fgSubtleTone = preset.fgSubtleTone;
+  const fgDisabledTone = preset.fgDisabledTone;
+  const fgPlaceholderTone = preset.fgPlaceholderTone;
 
-  // Text intensity: Brio dark uses i:3 for default, i:7 for subtle tiers
-  const txtI = isLight ? 8 : 3;
-  const txtISubtle = isLight ? 9 : 7;
-  // fg-muted: Brio uses i:5 (distinct from txtI=3 and txtISubtle=7)
-  const fgMutedI = isLight ? txtISubtle : 5;
-  // fg-placeholder: Brio uses i:6
-  const fgPlaceholderI = isLight ? atmIBorder : 6;
+  // Text intensity levels from preset. [D03]
+  const txtI = preset.txtI;
+  const txtISubtle = preset.txtISubtle;
+  // fg-muted intensity from preset (Brio dark: 5; distinct from txtI=3 and txtISubtle=7)
+  const fgMutedI = preset.fgMutedI;
+  // fg-placeholder intensity: from preset.atmIBorder (same field in both presets)
+  const fgPlaceholderI = preset.atmIBorder;
 
   // -------------------------------------------------------------------------
   // 5. Signal vividity modulation for accent / semantic hues
@@ -809,9 +1048,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const borderHueRef = isLight ? atmRefW : fgMutedRef;
   const borderHueAngle = isLight ? atmAngleW : fgMutedAngle;
   const borderHueName = isLight ? atmNameW : fgMutedName;
-  // border-default intensity: Brio dark=6, light=atmIBorder
-  const borderIBase = isLight ? atmIBorder : 6;
-  const borderIStrong = isLight ? 9 : txtISubtle;
+  // border intensities from preset. [D03]
+  const borderIBase = preset.borderIBase;
+  const borderIStrong = preset.borderIStrong;
 
   // border-muted: dark=cobalt+7 (fgSubtleRef), light=atmRefW at higher tone
   const borderMutedHueRef = isLight ? atmRefW : fgSubtleRef;
@@ -856,16 +1095,16 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   }
 
   // --- Elevation / Overlay ---
-  // Shadows are always black-based with alpha; overlays black or white
-  // In dark mode: higher alpha shadows. In light mode: lower alpha.
-  const shadowXsAlpha = isLight ? 8 : 20;
-  const shadowMdAlpha = isLight ? 30 : 60;
-  const shadowLgAlpha = isLight ? 36 : 70;
-  const shadowXlAlpha = isLight ? 44 : 80;
-  const shadowOverlayAlpha = isLight ? 24 : 60;
-  const overlayDimAlpha = isLight ? 20 : 48;
-  const overlayScrimAlpha = isLight ? 32 : 64;
-  const overlayHighlightAlpha = isLight ? 50 : 6;
+  // Shadows are always black-based with alpha; overlays black or white.
+  // Alpha values from preset: dark mode uses higher alpha. [D03]
+  const shadowXsAlpha = preset.shadowXsAlpha;
+  const shadowMdAlpha = preset.shadowMdAlpha;
+  const shadowLgAlpha = preset.shadowLgAlpha;
+  const shadowXlAlpha = preset.shadowXlAlpha;
+  const shadowOverlayAlpha = preset.shadowOverlayAlpha;
+  const overlayDimAlpha = preset.overlayDimAlpha;
+  const overlayScrimAlpha = preset.overlayScrimAlpha;
+  const overlayHighlightAlpha = preset.overlayHighlightAlpha;
 
   setShadow("--tug-base-shadow-xs", shadowXsAlpha);
   setShadow("--tug-base-shadow-md", shadowMdAlpha);
@@ -1142,10 +1381,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   //   border: transparent (rest) / subtle at hover/active
   //   icon: same as fg
 
-  // Shared tone constants for filled emphasis (same across roles)
-  const filledBgDarkTone = isLight ? 30 : 20;
-  const filledBgHoverTone = isLight ? 40 : 40;
-  const filledBgActiveTone = isLight ? 50 : 50;
+  // Shared tone constants for filled emphasis (same across roles). From preset. [D03]
+  const filledBgDarkTone = preset.filledBgDarkTone;
+  const filledBgHoverTone = preset.filledBgHoverTone;
+  const filledBgActiveTone = preset.filledBgActiveTone;
   const filledFgTone = 100; // near-white on colored bg
 
   // Accent hue ref (used in setChromatic)
@@ -1459,12 +1698,12 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-highlighted-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
   setChromatic("--tug-base-control-highlighted-border", activeRef, activeAngle, 50, 50, 25, activeName);
 
-  // --- Generic Field Tokens ---
-  const fieldBgRestTone = isLight ? 51 : 8;
-  const fieldBgHoverTone = isLight ? 74 : 11;
-  const fieldBgFocusTone = isLight ? 99 : 7;
-  const fieldBgDisabledTone = isLight ? 48 : 6;
-  const fieldBgReadOnlyTone = isLight ? 74 : 11;
+  // --- Generic Field Tokens — tone anchors from preset. [D03] ---
+  const fieldBgRestTone = preset.fieldBgRestTone;
+  const fieldBgHoverTone = preset.fieldBgHoverTone;
+  const fieldBgFocusTone = preset.fieldBgFocusTone;
+  const fieldBgDisabledTone = preset.fieldBgDisabledTone;
+  const fieldBgReadOnlyTone = preset.fieldBgReadOnlyTone;
 
   // field-bg-rest: Brio=violet-6 i:5 t:8, field-bg-focus: Brio=violet-6 i:4 t:7
   setChromatic("--tug-base-field-bg-rest", atmRefW, atmAngleW, isLight ? 7 : atmI, fieldBgRestTone);
@@ -1522,7 +1761,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-toggle-track-off-hover", atmRefW, atmAngleW, Math.min(atmIBorder + 4, 100), Math.min(toggleTrackOffTone + 8, 100));
   // toggle-track-on: Brio uses orange-muted (= i:50, t:42) — matches muted preset
   setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 42, 100, accentName);
-  setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), isLight ? 40 : 45, 100, accentName);
+  setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), preset.toggleTrackOnHoverTone, 100, accentName);
   // toggle-track-disabled: Brio uses violet (bare), i:5, t:11 (= surfBareBaseRef, surfaceSunken tone)
   const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceSunken);
   if (isLight) {

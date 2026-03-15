@@ -21,6 +21,9 @@ import { describe, it, expect } from "bun:test";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
+  DARK_PRESET,
+  LIGHT_PRESET,
+  type ModePreset,
 } from "@/components/tugways/theme-derivation-engine";
 
 
@@ -944,4 +947,55 @@ describe("derivation-engine brio-match", () => {
       expect(mismatches).toEqual([]);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Step 6: ModePreset type and preset exports (T-PRESET-EXPORTS)
+// Verifies that ModePreset, DARK_PRESET, and LIGHT_PRESET are exported and
+// structurally valid, and that deriveTheme output is unchanged after the
+// preset refactor. [D03]
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine mode-preset", () => {
+  it("T-PRESET-EXPORTS: DARK_PRESET and LIGHT_PRESET are exported and implement ModePreset", () => {
+    // Verify DARK_PRESET satisfies the ModePreset interface (TypeScript compile-time
+    // check + runtime field presence). [D03]
+    const dark: ModePreset = DARK_PRESET;
+    const light: ModePreset = LIGHT_PRESET;
+
+    // Spot-check key fields match Brio ground truth values documented in the plan
+    expect(dark.bgAppTone).toBe(5);
+    expect(dark.surfaceSunkenTone).toBe(11);
+    expect(dark.fgDefaultTone).toBe(94);
+    expect(dark.txtI).toBe(3);
+    expect(dark.shadowXsAlpha).toBe(20);
+    expect(dark.filledBgDarkTone).toBe(20);
+    expect(dark.fieldBgRestTone).toBe(8);
+
+    // Light preset must have all required fields
+    expect(light.bgAppTone).toBeGreaterThanOrEqual(0);
+    expect(light.fgDefaultTone).toBeGreaterThanOrEqual(0);
+    expect(light.txtI).toBeGreaterThan(0);
+
+    // Both presets must have the same set of keys (same interface shape)
+    const darkKeys = Object.keys(dark).sort();
+    const lightKeys = Object.keys(light).sort();
+    expect(darkKeys).toEqual(lightKeys);
+  });
+
+  it("T-PRESET-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset refactor", () => {
+    // The preset refactor must produce identical output to the pre-refactor baseline.
+    // This is verified by the T-BRIO-MATCH test above; this test adds a
+    // complementary check that the full token count and all ground truth tokens
+    // still match after the step-6 refactor.
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+
+    // Token count unchanged
+    expect(Object.keys(output.tokens).length).toBe(350);
+
+    // All ground truth tokens still match (complementary to T-BRIO-MATCH)
+    for (const [name, expected] of Object.entries(BRIO_GROUND_TRUTH)) {
+      expect(output.tokens[name]).toBe(expected);
+    }
+  });
 });
