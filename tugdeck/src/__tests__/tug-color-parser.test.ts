@@ -71,6 +71,27 @@ function expectOkWithAdjacency(input: string): TugColorParsed {
   return result.value;
 }
 
+/** Verify that every error in the array has valid source span fields. */
+function assertAllErrorsHaveSpans(errors: TugColorError[], input: string): void {
+  for (const err of errors) {
+    if (!("end" in err)) {
+      throw new Error(
+        `Error missing 'end' field for input '${input}': ${JSON.stringify(err)}`,
+      );
+    }
+    if (typeof err.pos !== "number" || typeof err.end !== "number") {
+      throw new Error(
+        `Error pos/end must be numbers for input '${input}': ${JSON.stringify(err)}`,
+      );
+    }
+    if (err.end < err.pos) {
+      throw new Error(
+        `Error end (${err.end}) must be >= pos (${err.pos}) for input '${input}': ${JSON.stringify(err)}`,
+      );
+    }
+  }
+}
+
 /** Assert a failed parse and return the error list. */
 function expectErrors(input: string): TugColorError[] {
   const result = parseTugColor(input, KNOWN_HUES);
@@ -79,6 +100,7 @@ function expectErrors(input: string): TugColorError[] {
       `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
     );
   }
+  assertAllErrorsHaveSpans(result.errors, input);
   return result.errors;
 }
 
@@ -90,6 +112,7 @@ function expectErrorsWithPresets(input: string): TugColorError[] {
       `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
     );
   }
+  assertAllErrorsHaveSpans(result.errors, input);
   return result.errors;
 }
 
@@ -101,6 +124,7 @@ function expectErrorsWithAdjacency(input: string): TugColorError[] {
       `Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`,
     );
   }
+  assertAllErrorsHaveSpans(result.errors, input);
   return result.errors;
 }
 
@@ -707,5 +731,95 @@ describe("findTugColorCalls: CSS value scanning", () => {
     expect(calls.length).toBe(2);
     expect(input.slice(calls[0].start, calls[0].end)).toBe("--tug-color(green)");
     expect(input.slice(calls[1].start, calls[1].end)).toBe("--tug-color(cobalt-indigo, i: 80)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Source spans — TugColorError.pos and TugColorError.end (T-SPAN-*)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: source spans on TugColorError", () => {
+  it("T-SPAN-SINGLE: unknown color error has pos=0, end=length of unknown ident", () => {
+    const result = parseTugColor("bogus", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors[0];
+      expect(err).toHaveProperty("pos");
+      expect(err).toHaveProperty("end");
+      expect(err.pos).toBe(0);
+      // "bogus" is 5 characters
+      expect(err.end).toBe(5);
+    }
+  });
+
+  it("T-SPAN-SINGLE: unknown color error span covers the full ident", () => {
+    // "xyz" starts at offset 0, length 3
+    const result = parseTugColor("xyz", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.message.includes("xyz"));
+      expect(err).toBeDefined();
+      expect(err!.pos).toBe(0);
+      expect(err!.end).toBe(3);
+    }
+  });
+
+  it("T-SPAN-RANGE: out-of-range number has pos at start and end past the digits", () => {
+    // "red, -5" — minus is at pos 5, "5" ends at pos 7
+    const result = parseTugColor("red, -5", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.message.includes("out of range"));
+      expect(err).toBeDefined();
+      // minus is at position 5, number "5" ends at position 7
+      expect(err!.pos).toBe(5);
+      expect(err!.end).toBe(7);
+    }
+  });
+
+  it("T-SPAN-ALL-ERRORS: all errors in various test cases have both pos and end fields", () => {
+    const testInputs = [
+      "bogus",
+      "red, -5",
+      "red+5",
+      "yellow-blue",
+      "red, bad, 50",
+      "xyz, 50",
+    ];
+    for (const input of testInputs) {
+      const result = parseTugColor(input, KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+      if (!result.ok) {
+        for (const err of result.errors) {
+          expect(err).toHaveProperty("pos");
+          expect(err).toHaveProperty("end");
+          expect(typeof err.pos).toBe("number");
+          expect(typeof err.end).toBe("number");
+        }
+      }
+    }
+  });
+
+  it("plus-sign error has pos=3 and end=4 in 'red+5'", () => {
+    const result = parseTugColor("red+5", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors[0];
+      expect(err).toHaveProperty("end");
+      expect(err.pos).toBe(3);
+      expect(err.end).toBe(4);
+    }
+  });
+
+  it("error pos and end are non-negative integers", () => {
+    const result = parseTugColor("notacolor", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      for (const err of result.errors) {
+        expect(err.pos).toBeGreaterThanOrEqual(0);
+        expect(err.end).toBeGreaterThanOrEqual(0);
+        expect(Number.isInteger(err.pos)).toBe(true);
+        expect(Number.isInteger(err.end)).toBe(true);
+      }
+    }
   });
 });
