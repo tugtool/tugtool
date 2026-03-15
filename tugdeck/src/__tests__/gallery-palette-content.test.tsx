@@ -74,7 +74,7 @@ describe("GalleryPaletteContent – canonical strip", () => {
     });
     const strip = container.querySelector("[data-testid='gp-canonical-strip']")!;
     expect(strip).not.toBeNull();
-    const swatches = strip.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = strip.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     expect(swatches.length).toBe(48);
   });
 
@@ -83,7 +83,7 @@ describe("GalleryPaletteContent – canonical strip", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     swatches.forEach((s) => {
       const color = s.getAttribute("data-color") ?? "";
       expect(color).toMatch(/^oklch\(/);
@@ -128,7 +128,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -140,7 +140,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -153,7 +153,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -168,7 +168,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -199,7 +199,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -212,7 +212,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -226,7 +226,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
@@ -242,15 +242,15 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    // Click the first swatch (cherry)
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    // Click the first swatch (garnet — ADJACENCY_RING order)
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });
     const snippet = container.querySelector("[data-testid='gp-formula-snippet']");
     const text = snippet!.textContent ?? "";
-    // First hue is cherry — formula should reference cherry CSS vars
-    expect(text).toContain("var(--tug-cherry-");
+    // First hue is garnet (ADJACENCY_RING order) — formula should reference garnet CSS vars
+    expect(text).toContain("var(--tug-garnet-");
   });
 
   it("CSS formula copy button is rendered", () => {
@@ -258,7 +258,7 @@ describe("GalleryPaletteContent – VibValPicker", () => {
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
-    const swatches = container.querySelectorAll("[data-testid='gp-canonical-swatch']");
+    const swatches = container.querySelectorAll("[data-testid='tug-hue-strip-swatch']");
     act(() => {
       fireEvent.click(swatches[0] as HTMLElement);
     });

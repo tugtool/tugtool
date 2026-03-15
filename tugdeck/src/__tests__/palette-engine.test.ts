@@ -277,10 +277,10 @@ describe("DEFAULT_CANONICAL_L", () => {
     expect(DEFAULT_CANONICAL_L["yellow"]).toBe(0.901);
   });
 
-  it("new hues have correct canonical L values", () => {
-    expect(DEFAULT_CANONICAL_L["garnet"]).toBe(0.645);
-    expect(DEFAULT_CANONICAL_L["indigo"]).toBe(0.572);
-    expect(DEFAULT_CANONICAL_L["chartreuse"]).toBe(0.922);
+  it("new hues have correct canonical L values (interpolated from original 24)", () => {
+    expect(DEFAULT_CANONICAL_L["garnet"]).toBe(0.643);
+    expect(DEFAULT_CANONICAL_L["indigo"]).toBe(0.726);
+    expect(DEFAULT_CANONICAL_L["chartreuse"]).toBe(0.881);
   });
 
   it("all canonical L values are at or above 0.555 (piecewise min() constraint)", () => {

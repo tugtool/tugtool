@@ -325,7 +325,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     });
     const strip = container.querySelector("[data-testid='gtg-atmosphere-hue-strip']");
     expect(strip).not.toBeNull();
-    const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
+    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
     expect(swatches.length).toBe(48);
   });
 
@@ -336,7 +336,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     });
     const strip = container.querySelector("[data-testid='gtg-text-hue-strip']");
     expect(strip).not.toBeNull();
-    const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
+    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
     expect(swatches.length).toBe(48);
   });
 
@@ -704,7 +704,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     });
     const roleHues = container.querySelector("[data-testid='gtg-role-hues']");
     expect(roleHues).not.toBeNull();
-    const strips = roleHues!.querySelectorAll(".gtg-hue-strip");
+    const strips = roleHues!.querySelectorAll(".tug-hue-strip");
     expect(strips.length).toBe(7);
   });
 
@@ -725,7 +725,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     for (const id of roleIds) {
       const strip = container.querySelector(`[data-testid='${id}']`);
       expect(strip).not.toBeNull();
-      const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
+      const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
       expect(swatches.length).toBe(48);
     }
   });

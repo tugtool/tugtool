@@ -173,122 +173,122 @@ body {
 
   /* garnet — hue angle 2.5 */
   --tug-garnet-h: 2.5;
-  --tug-garnet-canonical-l: 0.645;
+  --tug-garnet-canonical-l: 0.643;
   --tug-garnet-peak-c: 0.44;
 
   /* scarlet — hue angle 15 */
   --tug-scarlet-h: 15;
-  --tug-scarlet-canonical-l: 0.635;
+  --tug-scarlet-canonical-l: 0.625;
   --tug-scarlet-peak-c: 0.44;
 
   /* crimson — hue angle 22.5 */
   --tug-crimson-h: 22.5;
-  --tug-crimson-canonical-l: 0.631;
+  --tug-crimson-canonical-l: 0.645;
   --tug-crimson-peak-c: 0.44;
 
   /* vermilion — hue angle 30 */
   --tug-vermilion-h: 30;
-  --tug-vermilion-canonical-l: 0.631;
-  --tug-vermilion-peak-c: 0.44;
+  --tug-vermilion-canonical-l: 0.681;
+  --tug-vermilion-peak-c: 0.408;
 
   /* ember — hue angle 40 */
   --tug-ember-h: 40;
-  --tug-ember-canonical-l: 0.68;
-  --tug-ember-peak-c: 0.42;
+  --tug-ember-canonical-l: 0.722;
+  --tug-ember-peak-c: 0.35;
 
   /* tangerine — hue angle 50 */
   --tug-tangerine-h: 50;
-  --tug-tangerine-canonical-l: 0.72;
-  --tug-tangerine-peak-c: 0.374;
+  --tug-tangerine-canonical-l: 0.76;
+  --tug-tangerine-peak-c: 0.31;
 
   /* apricot — hue angle 60 */
   --tug-apricot-h: 60;
-  --tug-apricot-canonical-l: 0.756;
-  --tug-apricot-peak-c: 0.348;
+  --tug-apricot-canonical-l: 0.8;
+  --tug-apricot-peak-c: 0.276;
 
   /* honey — hue angle 70 */
   --tug-honey-h: 70;
-  --tug-honey-canonical-l: 0.79;
-  --tug-honey-peak-c: 0.336;
+  --tug-honey-canonical-l: 0.837;
+  --tug-honey-peak-c: 0.252;
 
   /* saffron — hue angle 82.5 */
   --tug-saffron-h: 82.5;
-  --tug-saffron-canonical-l: 0.834;
-  --tug-saffron-peak-c: 0.338;
+  --tug-saffron-canonical-l: 0.877;
+  --tug-saffron-peak-c: 0.246;
 
   /* chartreuse — hue angle 102.5 */
   --tug-chartreuse-h: 102.5;
-  --tug-chartreuse-canonical-l: 0.922;
-  --tug-chartreuse-peak-c: 0.38;
+  --tug-chartreuse-canonical-l: 0.881;
+  --tug-chartreuse-peak-c: 0.364;
 
   /* grass — hue angle 127.5 */
   --tug-grass-h: 127.5;
-  --tug-grass-canonical-l: 0.917;
-  --tug-grass-peak-c: 0.44;
+  --tug-grass-canonical-l: 0.841;
+  --tug-grass-peak-c: 0.43;
 
   /* jade — hue angle 147.5 */
   --tug-jade-h: 147.5;
-  --tug-jade-canonical-l: 0.871;
+  --tug-jade-canonical-l: 0.814;
   --tug-jade-peak-c: 0.44;
 
   /* seafoam — hue angle 165 */
   --tug-seafoam-h: 165;
-  --tug-seafoam-canonical-l: 0.886;
-  --tug-seafoam-peak-c: 0.366;
+  --tug-seafoam-canonical-l: 0.805;
+  --tug-seafoam-peak-c: 0.332;
 
   /* aqua — hue angle 187.5 */
   --tug-aqua-h: 187.5;
-  --tug-aqua-canonical-l: 0.9;
-  --tug-aqua-peak-c: 0.308;
+  --tug-aqua-canonical-l: 0.803;
+  --tug-aqua-peak-c: 0.274;
 
   /* azure — hue angle 207.5 */
   --tug-azure-h: 207.5;
-  --tug-azure-canonical-l: 0.851;
-  --tug-azure-peak-c: 0.286;
+  --tug-azure-canonical-l: 0.805;
+  --tug-azure-peak-c: 0.272;
 
   /* cerulean — hue angle 222.5 */
   --tug-cerulean-h: 222.5;
-  --tug-cerulean-canonical-l: 0.792;
+  --tug-cerulean-canonical-l: 0.789;
   --tug-cerulean-peak-c: 0.288;
 
   /* sapphire — hue angle 240 */
   --tug-sapphire-h: 240;
-  --tug-sapphire-canonical-l: 0.717;
-  --tug-sapphire-peak-c: 0.322;
+  --tug-sapphire-canonical-l: 0.758;
+  --tug-sapphire-peak-c: 0.272;
 
   /* indigo — hue angle 260 */
   --tug-indigo-h: 260;
-  --tug-indigo-canonical-l: 0.572;
-  --tug-indigo-peak-c: 0.44;
+  --tug-indigo-canonical-l: 0.726;
+  --tug-indigo-peak-c: 0.28;
 
   /* iris — hue angle 277.5 */
   --tug-iris-h: 277.5;
-  --tug-iris-canonical-l: 0.555;
-  --tug-iris-peak-c: 0.44;
+  --tug-iris-canonical-l: 0.697;
+  --tug-iris-peak-c: 0.316;
 
   /* grape — hue angle 292.5 */
   --tug-grape-h: 292.5;
-  --tug-grape-canonical-l: 0.555;
-  --tug-grape-peak-c: 0.44;
+  --tug-grape-canonical-l: 0.709;
+  --tug-grape-peak-c: 0.328;
 
   /* orchid — hue angle 310 */
   --tug-orchid-h: 310;
-  --tug-orchid-canonical-l: 0.594;
-  --tug-orchid-peak-c: 0.44;
+  --tug-orchid-canonical-l: 0.762;
+  --tug-orchid-peak-c: 0.322;
 
   /* peony — hue angle 327.5 */
   --tug-peony-h: 327.5;
-  --tug-peony-canonical-l: 0.695;
+  --tug-peony-canonical-l: 0.776;
   --tug-peony-peak-c: 0.44;
 
   /* cerise — hue angle 340 */
   --tug-cerise-h: 340;
-  --tug-cerise-canonical-l: 0.675;
-  --tug-cerise-peak-c: 0.44;
+  --tug-cerise-canonical-l: 0.742;
+  --tug-cerise-peak-c: 0.422;
 
   /* fuchsia — hue angle 350 */
   --tug-fuchsia-h: 350;
-  --tug-fuchsia-canonical-l: 0.659;
+  --tug-fuchsia-canonical-l: 0.697;
   --tug-fuchsia-peak-c: 0.44;
 
   /* -------------------------------------------------------------------------

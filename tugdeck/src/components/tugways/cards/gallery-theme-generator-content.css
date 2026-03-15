@@ -59,53 +59,7 @@
   color: var(--tug-base-fg-onAccent);
 }
 
-/* ============================================================================
-   Hue swatch selector strip (atmosphere hue + text hue)
-   ========================================================================= */
-
-.gtg-hue-strip {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.gtg-hue-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-}
-
-.gtg-hue-swatch {
-  width: 24px;
-  height: 32px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  box-sizing: border-box;
-  transition: outline-offset 60ms ease;
-}
-
-.gtg-hue-swatch:hover {
-  border-color: var(--tug-base-border-default);
-}
-
-.gtg-hue-item--selected .gtg-hue-swatch {
-  outline: 2px solid var(--tug-base-accent-default);
-  outline-offset: 1px;
-}
-
-.gtg-hue-label {
-  font-size: 9px;
-  font-family: var(--tug-base-font-family-sans);
-  color: var(--tug-base-fg-muted);
-  user-select: none;
-  text-align: center;
-  width: 24px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Hue swatch strip is now provided by the shared TugHueStrip component. */
 
 /* ============================================================================
    Emphasis x Role Preview — button, badge, and selection control matrix [Step 7]

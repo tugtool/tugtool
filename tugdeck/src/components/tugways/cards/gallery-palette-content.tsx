@@ -25,6 +25,7 @@
 import React, { useState, useRef, useCallback } from "react";
 import {
   HUE_FAMILIES,
+  ADJACENCY_RING,
   tugColor,
   DEFAULT_CANONICAL_L,
   TUG_COLOR_PRESETS,
@@ -32,13 +33,14 @@ import {
   L_LIGHT,
 } from "@/components/tugways/palette-engine";
 import { TugButton } from "@/components/tugways/tug-button";
+import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import "./gallery-palette-content.css";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const HUE_NAMES = Object.keys(HUE_FAMILIES);
+const HUE_NAMES: readonly string[] = ADJACENCY_RING;
 
 const INTENSITY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const TONE_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
@@ -47,9 +49,9 @@ const TONE_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
 // SVG curve coordinate helpers (constants, outside component)
 // ---------------------------------------------------------------------------
 
-const VIEWBOX_W = 680;
-const VIEWBOX_H = 200;
-const CURVE_PAD = { top: 12, right: 12, bottom: 32, left: 36 };
+const VIEWBOX_W = 720;
+const VIEWBOX_H = 260;
+const CURVE_PAD = { top: 12, right: 52, bottom: 92, left: 36 };
 const PLOT_W = VIEWBOX_W - CURVE_PAD.left - CURVE_PAD.right;
 const PLOT_H = VIEWBOX_H - CURVE_PAD.top - CURVE_PAD.bottom;
 const L_AXIS_MIN = 0.3;
@@ -170,14 +172,15 @@ function LCurveEditor({
         const isSelected = name === selectedHue;
         return (
           <g key={name}>
-            {/* Hue abbreviation */}
+            {/* Hue name (rotated) */}
             <text
               x={cx}
-              y={CURVE_PAD.top + PLOT_H + 14}
-              textAnchor="middle"
+              y={CURVE_PAD.top + PLOT_H + 6}
+              textAnchor="start"
+              transform={`rotate(62, ${cx}, ${CURVE_PAD.top + PLOT_H + 6})`}
               className={`gp-curve-hue-label${isSelected ? " gp-curve-hue-label--selected" : ""}`}
             >
-              {name.slice(0, 3)}
+              {name}
             </text>
             {/* Selection ring */}
             {isSelected && (
@@ -209,44 +212,7 @@ function LCurveEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// CanonicalStrip — row of 24 canonical color swatches
-// ---------------------------------------------------------------------------
-
-function CanonicalStrip({
-  canonicalL,
-  selectedHue,
-  onSelectHue,
-}: {
-  canonicalL: Record<string, number>;
-  selectedHue: string | null;
-  onSelectHue: (hueName: string) => void;
-}) {
-  return (
-    <div className="gp-canonical-strip" data-testid="gp-canonical-strip">
-      {HUE_NAMES.map((name) => {
-        const color = tugColor(name, 50, 50, canonicalL[name]);
-        const isSelected = name === selectedHue;
-        return (
-          <div
-            key={name}
-            className={`gp-canonical-item${isSelected ? " gp-canonical-item--selected" : ""}`}
-            onClick={() => onSelectHue(name)}
-          >
-            <div
-              className="gp-canonical-swatch"
-              style={{ backgroundColor: color }}
-              title={`${name}: ${color}`}
-              data-testid="gp-canonical-swatch"
-              data-color={color}
-            />
-            <div className="gp-canonical-label">{name}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// CanonicalStrip is now provided by the shared TugHueStrip component.
 
 // ---------------------------------------------------------------------------
 // IntensityToneGrid — 2D grid of intensity x tone for a single hue
@@ -662,10 +628,11 @@ export function GalleryPaletteContent() {
       {/* Canonical color strip */}
       <div className="cg-section">
         <div className="cg-section-title">Canonical Colors</div>
-        <CanonicalStrip
+        <TugHueStrip
           canonicalL={canonicalL}
           selectedHue={selectedHue}
           onSelectHue={setSelectedHue}
+          data-testid="gp-canonical-strip"
         />
       </div>
 

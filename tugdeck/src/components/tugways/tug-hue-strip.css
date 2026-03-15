@@ -1,0 +1,76 @@
+/**
+ * TugHueStrip styles — shared color swatch strip with rotated labels.
+ *
+ * Used by both the Palette Engine and Theme Generator gallery cards
+ * to render a row of 48 hue swatches in ADJACENCY_RING order.
+ * All color tokens use --tug-base-* semantic tokens exclusively.
+ */
+
+/* ============================================================================
+   Strip container
+   ========================================================================= */
+
+.tug-hue-strip {
+  display: flex;
+  gap: 2px;
+  overflow: visible;
+  padding: 4px 4px 64px;
+}
+
+/* ============================================================================
+   Individual swatch item
+   ========================================================================= */
+
+.tug-hue-strip__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.tug-hue-strip__item--selected .tug-hue-strip__swatch {
+  outline: 2px solid var(--tug-base-accent-default);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
+   Swatch (color chip)
+   ========================================================================= */
+
+.tug-hue-strip__swatch {
+  width: 18px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.tug-hue-strip__swatch:hover {
+  border-color: var(--tug-base-border-default);
+}
+
+/* ============================================================================
+   Rotated label
+   ========================================================================= */
+
+.tug-hue-strip__label {
+  position: absolute;
+  top: 100%;
+  left: 60%;
+  font-size: 9px;
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  white-space: nowrap;
+  transform: rotate(62deg);
+  transform-origin: top left;
+  margin-top: 4px;
+}
+
+.tug-hue-strip__item--selected .tug-hue-strip__label {
+  color: var(--tug-base-accent-default);
+  font-weight: 600;
+}

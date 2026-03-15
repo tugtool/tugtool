@@ -27,7 +27,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
-import { HUE_FAMILIES, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
+import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
@@ -49,6 +49,7 @@ import {
 } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { TugButton } from "@/components/tugways/tug-button";
+import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
 import type { TugButtonEmphasis, TugButtonRole } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole } from "@/components/tugways/tug-badge";
@@ -62,7 +63,7 @@ import "./gallery-theme-generator-content.css";
 // Constants
 // ---------------------------------------------------------------------------
 
-const HUE_NAMES = Object.keys(HUE_FAMILIES);
+const HUE_NAMES: readonly string[] = ADJACENCY_RING;
 
 /**
  * Default recipe used on initial mount — matches Brio (default dark theme).
@@ -74,9 +75,7 @@ const DEFAULT_RECIPE: ThemeRecipe = EXAMPLE_RECIPES.brio;
 // ---------------------------------------------------------------------------
 
 /**
- * Renders a row of 24 hue swatches for atmosphere or text hue selection.
- * Each swatch shows the canonical color at intensity=50, tone=50.
- * Reuses the gp-canonical-* pattern from gallery-palette-content.
+ * Renders a labeled TugHueStrip for atmosphere, text, or role hue selection.
  */
 function HueSelector({
   label,
@@ -92,28 +91,11 @@ function HueSelector({
   return (
     <div>
       <div className="cg-section-title" style={{ marginBottom: "8px" }}>{label}</div>
-      <div className="gtg-hue-strip" data-testid={testId}>
-        {HUE_NAMES.map((name) => {
-          const canonL = DEFAULT_CANONICAL_L[name] ?? 0.77;
-          const color = tugColor(name, 50, 50, canonL);
-          const isSelected = name === selectedHue;
-          return (
-            <div
-              key={name}
-              className={`gtg-hue-item${isSelected ? " gtg-hue-item--selected" : ""}`}
-              onClick={() => onSelect(name)}
-              title={name}
-            >
-              <div
-                className="gtg-hue-swatch"
-                style={{ backgroundColor: color }}
-                data-color={color}
-              />
-              <div className="gtg-hue-label">{name.slice(0, 3)}</div>
-            </div>
-          );
-        })}
-      </div>
+      <TugHueStrip
+        selectedHue={selectedHue}
+        onSelectHue={onSelect}
+        data-testid={testId}
+      />
     </div>
   );
 }
