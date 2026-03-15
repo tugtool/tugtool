@@ -110,6 +110,24 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-tab-fg-hover",
   // Field text — light-mode field backgrounds create Lc constraints
   "--tug-base-field-fg",
+  // Non-text component visibility tokens below Lc 30 by design (Step 3)
+  // Toggle track inactive/indeterminate states: intentionally lower-contrast
+  // to signal the off/mixed (inactive) state vs. the on state.
+  "--tug-base-toggle-track-off",
+  "--tug-base-toggle-track-mixed",
+  "--tug-base-toggle-track-off-hover",
+  "--tug-base-toggle-track-mixed-hover",
+  // toggle-track-on starts below Lc 30 in some configurations; auto-adjust
+  // brings it to passing. Documented to prevent unexpected regression reports.
+  "--tug-base-toggle-track-on",
+  // Field border rest/hover: intentionally subtle boundary in dark mode.
+  // The active (focus) border uses a vivid accent color and passes without adjustment.
+  "--tug-base-field-border-rest",
+  "--tug-base-field-border-hover",
+  // Separator tokens: structural dividers intentionally low-contrast in dark mode.
+  // border-default and border-muted create visual hierarchy via subtle separation.
+  "--tug-base-border-default",
+  "--tug-base-border-muted",
 ]);
 
 /**

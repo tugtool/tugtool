@@ -1114,4 +1114,204 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "ui-component",
   },
 
+  // =========================================================================
+  // Toggle track visibility — track against parent surface (Step 3)
+  // Checks whether the toggle track itself is visible against the surface it
+  // sits on. "on" and hover states are the primary actionable signals;
+  // "off" and "mixed" states are intentionally lower-contrast to signal
+  // the inactive/indeterminate state (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // =========================================================================
+  {
+    element: "--tug-base-toggle-track-on",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-on",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-off",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-off",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-mixed",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-mixed",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-on-hover",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-on-hover",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-off-hover",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-off-hover",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-mixed-hover",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-toggle-track-mixed-hover",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Input field border visibility — 3×3 cross-product (Step 3)
+  // A field can render any border state over any bg state as interactions
+  // happen (e.g. focus border over hover bg during the transition). All 9
+  // combinations are tracked so the pipeline catches any that fall below Lc 30.
+  // field-border-rest and field-border-hover are intentionally subtle in dark
+  // mode (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS); field-border-active uses
+  // a vivid accent color that passes Lc 30 across all bg states.
+  // =========================================================================
+  {
+    element: "--tug-base-field-border-rest",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-rest",
+    surface: "--tug-base-field-bg-hover",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-rest",
+    surface: "--tug-base-field-bg-focus",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-hover",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-hover",
+    surface: "--tug-base-field-bg-hover",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-hover",
+    surface: "--tug-base-field-bg-focus",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-active",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-active",
+    surface: "--tug-base-field-bg-hover",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-active",
+    surface: "--tug-base-field-bg-focus",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Validation border visibility — border against field-bg-rest (Step 3)
+  // Danger and success validation borders use vivid signal colors that pass Lc 30.
+  // =========================================================================
+  {
+    element: "--tug-base-field-border-danger",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-field-border-success",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Outlined button border visibility (Step 3)
+  // bg-rest is transparent (not in resolved map, so validateThemeContrast skips
+  // those pairs); hover and active bg tokens are chromatic and pass Lc 30.
+  // =========================================================================
+  {
+    element: "--tug-base-control-outlined-action-border-rest",
+    surface: "--tug-base-control-outlined-action-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-control-outlined-action-border-hover",
+    surface: "--tug-base-control-outlined-action-bg-hover",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-control-outlined-action-border-active",
+    surface: "--tug-base-control-outlined-action-bg-active",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-control-outlined-agent-border-rest",
+    surface: "--tug-base-control-outlined-agent-bg-rest",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-control-outlined-agent-border-hover",
+    surface: "--tug-base-control-outlined-agent-bg-hover",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-control-outlined-agent-border-active",
+    surface: "--tug-base-control-outlined-agent-bg-active",
+    role: "ui-component",
+  },
+
+  // =========================================================================
+  // Separator / divider visibility — border against surface (Step 3)
+  // border-default and border-muted are very subtle separators in dark mode;
+  // both are below Lc 30 by design (see KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS).
+  // =========================================================================
+  {
+    element: "--tug-base-border-default",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-border-default",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-border-muted",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-border-muted",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+
 ];

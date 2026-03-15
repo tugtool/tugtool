@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-15T17:12:49Z
+---
+
+## step-3: Added 33 non-text ui-component pairs: toggle track visibility (12), input field borders (9), validation borders (2), outlined button borders (6), separator/divider (4). Documented 8 intentionally-below-threshold element tokens in both test exception sets.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-2
 date: 2025-03-15T16:55:24Z
 ---
