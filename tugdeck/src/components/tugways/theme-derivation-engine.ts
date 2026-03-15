@@ -51,6 +51,7 @@ export interface ThemeRecipe {
   text: { hue: string; offset?: number };
   accent?: string;
   active?: string;
+  interactive?: string; // optional interactive-feedback hue (defaults to active); [D05]
   destructive?: string;
   success?: string;
   caution?: string;
@@ -122,7 +123,253 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
     mode: "dark",
     atmosphere: { hue: "violet", offset: -6 },
     text: { hue: "cobalt" },
+    interactive: "cyan", // [D05]: link/selection/highlight use cyan; active stays blue
   },
+};
+
+// ---------------------------------------------------------------------------
+// ModePreset — mode-specific formula parameters [D03]
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundles all mode-dependent numeric formula constants into a named preset.
+ * `deriveTheme()` selects a preset by `recipe.mode` and uses its values instead
+ * of inline `isLight ? X : Y` ternaries for numeric parameters.
+ *
+ * Hue-selection logic (which hue ref to use per tier) and structural code paths
+ * (setWhite vs setChromatic) remain as `isLight` branches in `deriveTheme()` —
+ * these are algorithmic choices, not numeric parameters.
+ *
+ * Derived values that are computed from other preset parameters
+ * (e.g. dividerTone = surfaceRaisedTone - 2) stay as computed code in
+ * `deriveTheme()`, not as additional preset fields. [D03]
+ *
+ * Spec S01.
+ */
+export interface ModePreset {
+  // Surface tone anchors (absolute tone values at surfaceContrast=50)
+  bgAppTone: number;
+  bgCanvasTone: number;
+  surfaceSunkenTone: number;
+  surfaceDefaultTone: number;
+  surfaceRaisedTone: number;
+  surfaceOverlayTone: number;
+  surfaceInsetTone: number;
+  surfaceContentTone: number;
+  surfaceScreenTone: number;
+
+  // Surface intensity — independent per-tier values.
+  // Brio dark: atmI=5, overlayI=4, screenI=7 (sunken/default/raised/inset/content use atmI).
+  atmI: number;
+  surfaceOverlayI: number;
+  surfaceScreenI: number;
+
+  // Per-tier hue offsets (from atmBaseAngle / txtBaseAngle) for surface tones.
+  // In dark mode (Brio): sunken/default use offset 0 (bare violet),
+  //   raised/inset/content use the recipe atm angle (not a fixed offset).
+  // These offsets are informational; the actual hue selection remains an
+  // algorithmic `isLight` branch since light-mode uses a different hue altogether.
+  surfaceTierOffsets: {
+    default: number;
+    overlay: number;
+    sunken: number;
+    screen: number;
+  };
+
+  // Foreground tone anchors
+  fgDefaultTone: number;
+  fgMutedTone: number;
+  fgSubtleTone: number;
+  fgDisabledTone: number;
+  fgPlaceholderTone: number;
+  fgInverseTone: number;
+
+  // Text intensity levels
+  txtI: number;
+  txtISubtle: number;
+  fgMutedI: number;
+  atmIBorder: number; // border/divider intensity (also used for fg-placeholder in light)
+
+  // Per-tier fg hue offsets (from txtBaseAngle, dark mode).
+  // Light mode collapses these to 0 (bare txtBase hue) via the isLight branch.
+  fgTierOffsets: {
+    muted: number;
+    subtle: number;
+    disabled: number;
+    placeholder: number;
+    inverse: number;
+  };
+
+  // Border parameters
+  borderIBase: number;
+  borderIStrong: number;
+
+  // Shadow / overlay alphas
+  shadowXsAlpha: number;
+  shadowMdAlpha: number;
+  shadowLgAlpha: number;
+  shadowXlAlpha: number;
+  shadowOverlayAlpha: number;
+  overlayDimAlpha: number;
+  overlayScrimAlpha: number;
+  overlayHighlightAlpha: number;
+
+  // Control emphasis parameters
+  filledBgDarkTone: number;
+  filledBgHoverTone: number;
+  filledBgActiveTone: number;
+
+  // Toggle tone
+  toggleTrackOnHoverTone: number;
+
+  // Field tone anchors
+  fieldBgRestTone: number;
+  fieldBgHoverTone: number;
+  fieldBgFocusTone: number;
+  fieldBgDisabledTone: number;
+  fieldBgReadOnlyTone: number;
+}
+
+/**
+ * Dark-mode preset — parameter values reproduce the hand-authored Brio dark-mode
+ * CSS exactly (verified by T-BRIO-MATCH). [D03]
+ */
+export const DARK_PRESET: ModePreset = {
+  // Surface tones (Brio ground truth at surfaceContrast=50)
+  bgAppTone: 5,
+  bgCanvasTone: 5,
+  surfaceSunkenTone: 11,
+  surfaceDefaultTone: 12,
+  surfaceRaisedTone: 11,
+  surfaceOverlayTone: 14,
+  surfaceInsetTone: 6,
+  surfaceContentTone: 6,
+  surfaceScreenTone: 16,
+
+  // Surface intensities
+  atmI: 5,
+  surfaceOverlayI: 4,
+  surfaceScreenI: 7,
+
+  // Per-tier surface hue offsets (informational; actual hue selection is algorithmic)
+  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 10 },
+
+  // Foreground tones (Brio ground truth)
+  fgDefaultTone: 94,
+  fgMutedTone: 66,
+  fgSubtleTone: 37,
+  fgDisabledTone: 23,
+  fgPlaceholderTone: 30,
+  fgInverseTone: 100,
+
+  // Text intensities
+  txtI: 3,
+  txtISubtle: 7,
+  fgMutedI: 5,
+  atmIBorder: 6,
+
+  // Per-tier fg hue offsets (from txtBaseAngle, Brio = cobalt base)
+  fgTierOffsets: { muted: 0, subtle: 7, disabled: 8, placeholder: 0, inverse: -8 },
+
+  // Border intensities
+  borderIBase: 6,
+  borderIStrong: 7,
+
+  // Shadow / overlay alphas (Brio dark)
+  shadowXsAlpha: 20,
+  shadowMdAlpha: 60,
+  shadowLgAlpha: 70,
+  shadowXlAlpha: 80,
+  shadowOverlayAlpha: 60,
+  overlayDimAlpha: 48,
+  overlayScrimAlpha: 64,
+  overlayHighlightAlpha: 6,
+
+  // Control emphasis tones (filled button bg)
+  filledBgDarkTone: 20,
+  filledBgHoverTone: 40,
+  filledBgActiveTone: 50,
+
+  // Toggle tone
+  toggleTrackOnHoverTone: 45,
+
+  // Field tones (Brio dark ground truth)
+  fieldBgRestTone: 8,
+  fieldBgHoverTone: 11,
+  fieldBgFocusTone: 7,
+  fieldBgDisabledTone: 6,
+  fieldBgReadOnlyTone: 11,
+};
+
+/**
+ * Light-mode preset — wraps the current light-mode formula values.
+ * Formula accuracy against a hand-authored light-mode ground truth is deferred (Q01).
+ */
+export const LIGHT_PRESET: ModePreset = {
+  // Surface tones (from Harmony, yellow atmosphere)
+  bgAppTone: 20,
+  bgCanvasTone: 20,
+  surfaceSunkenTone: 44,
+  surfaceDefaultTone: 99,
+  surfaceRaisedTone: 24,
+  surfaceOverlayTone: 48,
+  surfaceInsetTone: 100,
+  surfaceContentTone: 100,
+  surfaceScreenTone: 80,
+
+  // Surface intensities
+  atmI: 5,
+  surfaceOverlayI: 6,
+  surfaceScreenI: 4,
+
+  // Per-tier surface hue offsets (light mode uses atmRefW uniformly)
+  surfaceTierOffsets: { default: 0, overlay: 0, sunken: 0, screen: 0 },
+
+  // Foreground tones (light mode, near-black text)
+  fgDefaultTone: 13,
+  fgMutedTone: 22,
+  fgSubtleTone: 30,
+  fgDisabledTone: 44,
+  fgPlaceholderTone: 28,
+  fgInverseTone: 100,
+
+  // Text intensities
+  txtI: 8,
+  txtISubtle: 9,
+  fgMutedI: 9, // = txtISubtle in light
+  atmIBorder: 9,
+
+  // Per-tier fg hue offsets — light mode collapses to 0 (bare txtBase) via isLight branch
+  fgTierOffsets: { muted: 0, subtle: 0, disabled: 0, placeholder: 0, inverse: 0 },
+
+  // Border intensities
+  borderIBase: 9,
+  borderIStrong: 10,
+
+  // Shadow / overlay alphas (light mode — lower alpha)
+  shadowXsAlpha: 8,
+  shadowMdAlpha: 30,
+  shadowLgAlpha: 36,
+  shadowXlAlpha: 44,
+  shadowOverlayAlpha: 24,
+  overlayDimAlpha: 20,
+  overlayScrimAlpha: 32,
+  overlayHighlightAlpha: 50,
+
+  // Control emphasis tones (light mode)
+  filledBgDarkTone: 30,
+  filledBgHoverTone: 40,
+  filledBgActiveTone: 50,
+
+  // Toggle tone
+  toggleTrackOnHoverTone: 40,
+
+  // Field tones (light mode)
+  fieldBgRestTone: 51,
+  fieldBgHoverTone: 74,
+  fieldBgFocusTone: 99,
+  fieldBgDisabledTone: 48,
+  fieldBgReadOnlyTone: 74,
 };
 
 // ---------------------------------------------------------------------------
@@ -210,6 +457,12 @@ function resolveOklch(
  *
  * When hueRef contains an offset, presets are never used (presets only apply
  * to bare hue names in postcss-tug-color).
+ *
+ * [D06] Verbose alpha form: when alpha is non-default (ra !== 100) and i/t are
+ * canonical defaults (ri === 50, rt === 50), emit the verbose form
+ * `--tug-color(hue, i: 50, t: 50, a: N)` instead of `--tug-color(hue, a: N)`.
+ * This matches the CSS ground truth for ~19 tokens including accent-subtle,
+ * all tone-N-bg, selection-bg, highlight-N, and control-selected-N/highlighted-N.
  */
 function makeTugColor(
   hueRef: string,
@@ -243,13 +496,19 @@ function makeTugColor(
     if (ri === 20 && rt === 85 && ra === 100) return `--tug-color(${hueRef}-light)`;
     if (ri === 50 && rt === 20 && ra === 100) return `--tug-color(${hueRef}-dark)`;
     if (ri === 90 && rt === 50 && ra === 100) return `--tug-color(${hueRef}-intense)`;
-    if (ri === 20 && rt === 50 && ra === 100) return `--tug-color(${hueRef}-muted)`;
+    // [D06] muted preset: palette-engine defines muted as { intensity: 50, tone: 42 }
+    if (ri === 50 && rt === 42 && ra === 100) return `--tug-color(${hueRef}-muted)`;
   }
 
-  // Full parameterized form — omit defaults: i=50, t=50, a=100
+  // Full parameterized form — omit defaults: i=50, t=50, a=100.
+  // [D06] Exception: when alpha is non-default (ra !== 100) AND i/t are both at
+  // canonical defaults (ri === 50, rt === 50), emit the verbose form
+  // `--tug-color(hue, i: 50, t: 50, a: N)` to match the CSS ground truth.
+  // When only one of i/t is non-default, the usual compaction rules apply.
+  const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
   const parts: string[] = [];
-  if (ri !== 50) parts.push(`i: ${ri}`);
-  if (rt !== 50) parts.push(`t: ${rt}`);
+  if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+  if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
   if (ra !== 100) parts.push(`a: ${ra}`);
 
   if (parts.length === 0) {
@@ -271,9 +530,10 @@ const WHITE_RESOLVED: ResolvedColor = { L: 1, C: 0, h: 0, alpha: 1 };
 /**
  * Build a semi-transparent black token (shadow / overlay).
  * alpha is 0-100.
+ * Emits verbose form with explicit i: 0, t: 0 to match the CSS ground truth.
  */
 function makeShadowToken(alpha: number): string {
-  return `--tug-color(black, a: ${Math.round(alpha)})`;
+  return `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`;
 }
 
 /**
@@ -355,6 +615,13 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const activeName = closestHueName(activeAngle);
   const activeRef = formatHueRef(activeName, activeAngle);
 
+  // [D05] Interactive hue: used for link, selection, highlight, and field-border-active.
+  // Defaults to active hue when not specified.
+  const interactiveHue = recipe.interactive ?? recipe.active ?? "blue";
+  const interactiveAngle = resolveHueAngle(interactiveHue);
+  const interactiveName = closestHueName(interactiveAngle);
+  const interactiveRef = formatHueRef(interactiveName, interactiveAngle);
+
   const destructiveHue = recipe.destructive ?? "red";
   const successHue = recipe.success ?? "green";
   const cautionHue = recipe.caution ?? "yellow";
@@ -362,6 +629,12 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const dataHue = recipe.data ?? "teal";
 
   const isLight = recipe.mode === "light";
+
+  // Select mode preset: DARK_PRESET for dark mode, LIGHT_PRESET for light mode. [D03]
+  // Numeric formula parameters (tone anchors, intensity levels, alpha values) are
+  // read from the preset. Hue-selection logic and structural code paths remain as
+  // `isLight` branches.
+  const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
 
   // -------------------------------------------------------------------------
   // 2. Mood knob normalization (0-100, default 50)
@@ -403,73 +676,57 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 3. Derive surface/tone spread parameters from surfaceContrast and mode
   //
-  // Dark mode: surface tones extracted from hand-authored themes:
-  //   Brio (violet atm):  bg-app=5,  sunken=11, default=12, raised=11, overlay=14, inset=6,  content=6,  screen=16
-  //   Bluenote (blue atm): bg-app=13, sunken=16, default=15, raised=17, overlay=19, inset=13, content=13, screen=29
-  //
-  // Calibrated formulas target the midpoint of Brio/Bluenote at surfaceContrast=50.
+  // Dark mode surface tones — Brio ground truth (surfaceContrast=50):
+  //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14,
+  //   inset=6, content=6, screen=16
   //
   // Light mode: surface tones extracted from Harmony (yellow atm):
-  //   bg-app=20, sunken=44, default=99, raised=24, overlay=48, inset=100, content=100, screen=80
+  //   bg-app=20, sunken=44, default=99, raised=24, overlay=48, inset=100,
+  //   content=100, screen=80
   // -------------------------------------------------------------------------
 
-  // Dark mode: calibrated formula targets Bluenote bg-app=13 at surfaceContrast=50.
-  // Range: ~8 (low contrast) to ~18 (high contrast).
-  const darkBgApp = isLight
-    ? 20
-    : 8 + (surfaceContrast / 100) * 10; // 50→13, matches Bluenote bg-app=13 ✓
+  // Surface tone anchors from preset (at surfaceContrast=50). Formula scales
+  // around the anchor for other surfaceContrast values.
+  // Dark: DARK_PRESET values reproduce Brio ground truth at sc=50.
+  // Light: LIGHT_PRESET values reproduce Harmony at sc=50.
+  const darkBgApp = preset.bgAppTone + ((surfaceContrast - 50) / 50) * 8;
 
-  // bg-canvas in dark mode: below bg-app (more recessed background layer).
-  // Bluenote uses t=6 (below bg-app t=13), Brio uses similar recessed tone.
-  const darkBgCanvas = isLight ? 20 : Math.round(Math.max(1, darkBgApp - 7));
+  // bg-canvas: same as bg-app in Brio (both use violet-6, i:2, t:5)
+  const darkBgCanvas = Math.round(darkBgApp);
 
-  // sunken: stepped above bg-app
-  const darkSurfaceSunken = isLight
-    ? Math.round(44)
-    : Math.round(darkBgApp + 2 + (surfaceContrast / 100) * 3);
+  // sunken: anchored to preset.surfaceSunkenTone at sc=50
+  const darkSurfaceSunken = Math.round(preset.surfaceSunkenTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // default: main content surface — calibrated for Bluenote t=15 at sc=50
-  const darkSurfaceDefault = isLight
-    ? Math.round(99)
-    : Math.round(darkBgApp + 2 + (surfaceContrast / 100) * 2); // 50→15 ✓
+  // default: anchored to preset.surfaceDefaultTone at sc=50
+  const darkSurfaceDefault = Math.round(preset.surfaceDefaultTone + ((surfaceContrast - 50) / 50) * 3);
 
-  // raised: floats above default (cards, popovers)
-  const darkSurfaceRaised = isLight
-    ? Math.round(24)
-    : Math.round(darkSurfaceDefault + 1 + (surfaceContrast / 100) * 2); // 50→17 ✓
+  // raised: anchored to preset.surfaceRaisedTone at sc=50
+  const darkSurfaceRaised = Math.round(preset.surfaceRaisedTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // overlay: dialogs, menus — slightly above default
-  const darkSurfaceOverlay = isLight
-    ? Math.round(48)
-    : Math.round(darkSurfaceDefault + 3 + (surfaceContrast / 100) * 2); // 50→19 ✓
+  // overlay: anchored to preset.surfaceOverlayTone at sc=50
+  const darkSurfaceOverlay = Math.round(preset.surfaceOverlayTone + ((surfaceContrast - 50) / 50) * 5);
 
-  // inset: recessed areas — below surface-default, near bg-app
-  const darkSurfaceInset = isLight
-    ? Math.round(100)
-    : Math.round(darkBgApp); // matches Bluenote inset=13 ≈ bg-app ✓
+  // inset: anchored to preset.surfaceInsetTone at sc=50
+  const darkSurfaceInset = Math.round(preset.surfaceInsetTone + ((surfaceContrast - 50) / 50) * 7);
 
-  // content: matches inset (used for code blocks, inline content areas)
+  // content: matches inset (code blocks, inline content areas)
   const darkSurfaceContent = darkSurfaceInset;
 
-  // screen: highest-elevated surface (tooltips, focused screens)
-  // Calibrated: Bluenote=29, formula: bgApp + 11 + sc*10 → 13+11+5=29 ✓
-  const darkSurfaceScreen = isLight
-    ? Math.round(80)
-    : Math.round(darkBgApp + 11 + (surfaceContrast / 100) * 10); // 50→29 ✓
+  // screen: anchored to preset.surfaceScreenTone at sc=50
+  const darkSurfaceScreen = Math.round(preset.surfaceScreenTone + ((surfaceContrast - 50) / 50) * 13);
 
   // -------------------------------------------------------------------------
   // 3a. Per-tier hue angle derivation for surface tokens (dark mode).
   //
-  // Hand-authored themes use subtly different hue angles per surface tier to
-  // create perceptual depth variation. Offsets are relative to atmBaseAngle:
-  //   Bluenote (blue base=230, offset=9):
-  //     bg-app/canvas: +9 (= recipe offset, the "main" atmosphere color)
-  //     surface-default/raised/inset/content: +5
-  //     surface-overlay: +6
-  //     surface-sunken: +12 (≈ cobalt-8 in absolute terms)
-  //     surface-screen: +10
+  // Brio ground truth per-tier hue refs (violet base, offset=-6):
+  //   bg-app/canvas: violet-6 (= recipe atm angle = atmAngleW)
+  //   surface-sunken/default: violet (= bare base = atmBaseAngle, offset 0)
+  //   surface-raised/inset/content: violet-6 (= recipe atm angle = atmAngleW)
+  //   surface-overlay: violet (= bare base = atmBaseAngle, offset 0)
+  //   surface-screen: cobalt+10 (= txtBaseAngle+10)
   //
-  // These per-tier offsets generalize to other hue families.
+  // surfaceTierAngle() is kept for light-mode generalization (Bluenote tier
+  // offsets) but dark-mode surface refs now use direct Brio hue assignments.
   // -------------------------------------------------------------------------
   function surfaceTierAngle(baseOffset: number): number {
     // Apply warmth bias to the per-tier angle if the atmosphere hue is achromatic-adjacent
@@ -477,34 +734,31 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     return applyWarmthBias(atmHue, raw);
   }
 
-  const surfDefaultAngle = surfaceTierAngle(5);
-  const surfDefaultName = closestHueName(surfDefaultAngle);
-  const surfDefaultRef = formatHueRef(surfDefaultName, surfDefaultAngle);
+  // Dark mode: sunken/default use bare atm base (offset=0 → "violet")
+  const surfBareBaseAngle = surfaceTierAngle(0);
+  const surfBareBaseName = closestHueName(surfBareBaseAngle);
+  const surfBareBaseRef = formatHueRef(surfBareBaseName, surfBareBaseAngle);
 
-  const surfOverlayAngle = surfaceTierAngle(6);
-  const surfOverlayName = closestHueName(surfOverlayAngle);
-  const surfOverlayRef = formatHueRef(surfOverlayName, surfOverlayAngle);
+  // Dark mode: screen uses txtBaseAngle+10 (→ "cobalt+10" for Brio)
+  const surfScreenAngleDark = applyWarmthBias(txtHue, (txtBaseAngle + 10 + 360) % 360);
+  const surfScreenNameDark = closestHueName(surfScreenAngleDark);
+  const surfScreenRefDark = formatHueRef(surfScreenNameDark, surfScreenAngleDark);
 
-  const surfSunkenAngle = surfaceTierAngle(12);
-  const surfSunkenName = closestHueName(surfSunkenAngle);
-  const surfSunkenRef = formatHueRef(surfSunkenName, surfSunkenAngle);
-
-  const surfScreenAngle = surfaceTierAngle(10);
-  const surfScreenName = closestHueName(surfScreenAngle);
-  const surfScreenRef = formatHueRef(surfScreenName, surfScreenAngle);
 
   // -------------------------------------------------------------------------
   // 3b. Per-tier hue angle derivation for foreground tokens.
   //
-  // Hand-authored themes use slightly shifted hue angles per fg tier:
-  //   Dark mode (Bluenote, txtBase=blue=230):
-  //     fg-default: no offset (bare txt hue)
-  //     fg-muted: txtBase+6
-  //     fg-subtle: txtBase+7
-  //     fg-placeholder: txtBase+8
-  //   Light mode (Harmony, txtBase=blue=230, txtOffset=5):
-  //     fg-default: txtBase+5 (= recipe txt angle)
-  //     fg-muted/subtle/disabled: txtBase (bare hue, strips the recipe offset)
+  // Brio dark-mode ground truth (cobalt txtBase, no recipe offset):
+  //   fg-default:     cobalt (offset=0, bare hue)
+  //   fg-muted:       cobalt (offset=0) — same bare hue, higher tone
+  //   fg-subtle:      cobalt+7 (offset=+7)
+  //   fg-disabled:    cobalt+8 (offset=+8)
+  //   fg-placeholder: cobalt (offset=0) — same bare hue
+  //   fg-inverse:     cobalt-8 (offset=-8)
+  //
+  // Light mode (Harmony, txtBase=blue=230, txtOffset=5):
+  //   fg-default: txtBase+5 (= recipe txt angle)
+  //   fg-muted/subtle/disabled: txtBase (bare hue, strips the recipe offset)
   // -------------------------------------------------------------------------
   function fgTierAngle(darkOffset: number): number {
     if (isLight) {
@@ -519,50 +773,62 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const fgDefaultNameT = txtNameW;
   const fgDefaultRefT = txtRefW;
 
-  const fgMutedAngle = fgTierAngle(6);
+  // Dark mode: fg-muted uses bare cobalt (offset=0), not +6
+  const fgMutedAngle = fgTierAngle(0);
   const fgMutedName = closestHueName(fgMutedAngle);
   const fgMutedRef = formatHueRef(fgMutedName, fgMutedAngle);
 
+  // Dark mode: fg-subtle uses cobalt+7 (offset=+7) — same as Brio ground truth
   const fgSubtleAngle = fgTierAngle(7);
   const fgSubtleName = closestHueName(fgSubtleAngle);
   const fgSubtleRef = formatHueRef(fgSubtleName, fgSubtleAngle);
 
-  const fgPlaceholderAngle = fgTierAngle(8);
+  // Dark mode: fg-disabled uses cobalt+8 (offset=+8)
+  const fgDisabledAngle = fgTierAngle(8);
+  const fgDisabledName = closestHueName(fgDisabledAngle);
+  const fgDisabledRef = formatHueRef(fgDisabledName, fgDisabledAngle);
+
+  // Dark mode: fg-placeholder uses bare cobalt (offset=0)
+  const fgPlaceholderAngle = fgTierAngle(0);
   const fgPlaceholderName = closestHueName(fgPlaceholderAngle);
   const fgPlaceholderRef = formatHueRef(fgPlaceholderName, fgPlaceholderAngle);
 
-  // Atmosphere intensity (low for surfaces — subdued, muted)
-  const atmI = isLight ? 5 : 5;
-  // Slightly higher intensity for some overlays
-  const atmIBorder = isLight ? 9 : 6;
+  // Dark mode: fg-inverse uses cobalt-8 (offset=-8)
+  const fgInverseAngle = fgTierAngle(-8);
+  const fgInverseName = closestHueName(fgInverseAngle);
+  const fgInverseRef = formatHueRef(fgInverseName, fgInverseAngle);
+
+  // Atmosphere intensity (low for surfaces — subdued, muted). From preset. [D03]
+  const atmI = preset.atmI;
+  // Slightly higher intensity for some overlays. From preset. [D03]
+  const atmIBorder = preset.atmIBorder;
 
   // -------------------------------------------------------------------------
-  // 4. Derive text tone anchors from mode
-  // Dark mode: fg at tone ~94 (near-white), grading down toward muted/subtle/disabled
+  // 4. Derive text tone anchors from mode preset. [D03]
+  // Dark mode: fg at tone 94 (Brio ground truth), grading down toward muted/subtle/disabled
   // Light mode: fg at tone ~13 (near-black), grading up toward muted/subtle/disabled
   // -------------------------------------------------------------------------
-  // Dark mode: Brio uses t=94 (cobalt), Bluenote uses t=88 (blue), so use ~90 as default
-  // Light mode: Harmony uses t=13 (blue+5)
-  const fgDefaultTone = isLight ? 13 : 90;
-  // fg-muted dark: Bluenote uses bare `blue+6, i:8` which defaults to t=50 (canonical).
-  // Using t=50 generalizes well across dark themes (canonical mid-tone for muted text).
-  const fgMutedTone = isLight ? 22 : 50;
-  const fgSubtleTone = isLight ? 30 : 37;
-  const fgDisabledTone = isLight ? 44 : 23;
-  const fgPlaceholderTone = isLight ? 28 : 30;
+  // Foreground tones from preset (Brio ground truth for dark; Harmony for light)
+  const fgDefaultTone = preset.fgDefaultTone;
+  const fgMutedTone = preset.fgMutedTone;
+  const fgSubtleTone = preset.fgSubtleTone;
+  const fgDisabledTone = preset.fgDisabledTone;
+  const fgPlaceholderTone = preset.fgPlaceholderTone;
 
-  // Text intensity: slightly higher for light mode (more contrast needed on bright bg)
-  const txtI = isLight ? 8 : 3;
-  const txtISubtle = isLight ? 9 : 7;
-  // fg-muted uses higher intensity in dark mode to compensate for lower tone
-  const fgMutedI = isLight ? txtISubtle : 8;
+  // Text intensity levels from preset. [D03]
+  const txtI = preset.txtI;
+  const txtISubtle = preset.txtISubtle;
+  // fg-muted intensity from preset (Brio dark: 5; distinct from txtI=3 and txtISubtle=7)
+  const fgMutedI = preset.fgMutedI;
+  // fg-placeholder intensity: from preset.atmIBorder (same field in both presets)
+  const fgPlaceholderI = preset.atmIBorder;
 
   // -------------------------------------------------------------------------
   // 5. Signal vividity modulation for accent / semantic hues
-  // At signalVividity=50 → intensity=50 (canonical)
-  // Range: 30 (muted) to 80 (vivid)
+  // At signalVividity=50 → intensity=50 (canonical). Direct linear mapping:
+  //   0 → 0 (achromatic/invisible), 50 → 50 (Brio default), 100 → 100 (vivid)
   // -------------------------------------------------------------------------
-  const signalI = Math.round(30 + (signalVividity / 100) * 50);
+  const signalI = Math.round(signalVividity);
 
   // -------------------------------------------------------------------------
   // 6. Derive all 264 tokens
@@ -628,77 +894,75 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // --- Surfaces ---
   // atmosphere hue drives all surfaces; tone levels from mode + surfaceContrast.
-  // Dark mode uses per-tier hue angles (surfDefaultRef, surfOverlayRef, etc.) to
-  // match hand-authored themes' subtle per-tier hue variation (e.g. Bluenote uses
-  // blue+9 for bg-app but blue+5 for surface-default). Light mode uses atmRefW
-  // (atmosphere hue with warmth bias) for atmosphere-colored surfaces.
+  // Dark mode uses Brio-matched hue refs per surface tier (violet-6/violet/cobalt+10).
+  // Light mode uses atmRefW (atmosphere hue with warmth bias) for atmosphere-colored surfaces.
 
   // bg-app:
-  //   Dark mode: uses recipe atmosphere angle (atmRefW) — the "signature" atmosphere color.
+  //   Dark mode: Brio uses violet-6 (= atmRefW), i:2, t:5.
   //   Light mode: Harmony uses TEXT hue (blue+5) for bg-app, not atmosphere (yellow).
-  //   This creates the cooler recessed chrome look against warm canvas in light themes.
   if (isLight) {
     setChromatic("--tug-base-bg-app", txtRefW, txtAngleW, atmI, Math.round(darkBgApp), 100, txtNameW);
   } else {
-    setChromatic("--tug-base-bg-app", atmRefW, atmAngleW, atmI, Math.round(darkBgApp), 100, atmNameW);
+    setChromatic("--tug-base-bg-app", atmRefW, atmAngleW, 2, Math.round(darkBgApp), 100, atmNameW);
   }
 
-  // bg-canvas: in light mode Harmony uses atmosphere hue (yellow t=39).
-  // Dark mode: below bg-app (more recessed). Calibrated: Bluenote bg-canvas=t:6.
+  // bg-canvas: Brio uses violet-6, i:2, t:5 (same as bg-app).
   const bgCanvasTone = isLight ? Math.round(35 + (surfaceContrast / 100) * 10) : Math.round(darkBgCanvas);
-  setChromatic("--tug-base-bg-canvas", atmRefW, atmAngleW, isLight ? 7 : atmI, Math.round(bgCanvasTone), 100, atmNameW);
+  if (isLight) {
+    setChromatic("--tug-base-bg-canvas", atmRefW, atmAngleW, 7, Math.round(bgCanvasTone), 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-bg-canvas", atmRefW, atmAngleW, 2, Math.round(bgCanvasTone), 100, atmNameW);
+  }
 
-  // surface-sunken: dark mode uses per-tier angle (surfSunkenRef ≈ blue+12 = cobalt-8 for Bluenote)
+  // surface-sunken: Brio uses bare violet (offset=0), i:5, t:11.
   if (isLight) {
     setChromatic("--tug-base-surface-sunken", atmRefW, atmAngleW, atmI, Math.round(darkSurfaceSunken), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-surface-sunken", surfSunkenRef, surfSunkenAngle, isLight ? 6 : atmI + 3, Math.round(darkSurfaceSunken), 100, surfSunkenName);
+    setChromatic("--tug-base-surface-sunken", surfBareBaseRef, surfBareBaseAngle, atmI, Math.round(darkSurfaceSunken), 100, surfBareBaseName);
   }
 
-  // surface-default: dark mode uses per-tier angle (surfDefaultRef ≈ blue+5 for Bluenote)
+  // surface-default: Brio uses bare violet (offset=0), i:5, t:12.
   if (isLight) {
-    setChromatic("--tug-base-surface-default", atmRefW, atmAngleW, isLight ? 4 : atmI, Math.round(darkSurfaceDefault), 100, atmNameW);
+    setChromatic("--tug-base-surface-default", atmRefW, atmAngleW, 4, Math.round(darkSurfaceDefault), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-surface-default", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceDefault), 100, surfDefaultName);
+    setChromatic("--tug-base-surface-default", surfBareBaseRef, surfBareBaseAngle, atmI, Math.round(darkSurfaceDefault), 100, surfBareBaseName);
   }
 
-  // surface-raised:
-  //   Light mode: Harmony uses text hue (blue t=24) for contrast with warm canvas.
-  //   Dark mode: per-tier angle (surfDefaultRef ≈ blue+5 for Bluenote).
+  // surface-raised: Brio uses violet-6 (= atmRefW), i:5, t:11.
+  //   Light mode: Harmony uses text hue (blue t=24).
   if (isLight) {
     setChromatic("--tug-base-surface-raised", txtRefW, txtAngleW, 5, Math.round(darkSurfaceRaised), 100, txtNameW);
   } else {
-    setChromatic("--tug-base-surface-raised", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceRaised), 100, surfDefaultName);
+    setChromatic("--tug-base-surface-raised", atmRefW, atmAngleW, atmI, Math.round(darkSurfaceRaised), 100, atmNameW);
   }
 
-  // surface-overlay: dark mode per-tier angle (surfOverlayRef ≈ blue+6 for Bluenote)
+  // surface-overlay: Brio uses bare violet (offset=0), i:4, t:14.
   if (isLight) {
-    setChromatic("--tug-base-surface-overlay", atmRefW, atmAngleW, isLight ? 6 : atmI, Math.round(darkSurfaceOverlay), 100, atmNameW);
+    setChromatic("--tug-base-surface-overlay", atmRefW, atmAngleW, 6, Math.round(darkSurfaceOverlay), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-surface-overlay", surfOverlayRef, surfOverlayAngle, isLight ? 7 : atmI + 2, Math.round(darkSurfaceOverlay), 100, surfOverlayName);
+    setChromatic("--tug-base-surface-overlay", surfBareBaseRef, surfBareBaseAngle, 4, Math.round(darkSurfaceOverlay), 100, surfBareBaseName);
   }
 
-  // surface-inset: dark mode per-tier angle (surfDefaultRef ≈ blue+5 for Bluenote)
+  // surface-inset: Brio uses violet-6 (= atmRefW), i:5, t:6.
   if (isLight) {
-    setChromatic("--tug-base-surface-inset", atmRefW, atmAngleW, isLight ? 4 : atmI, Math.round(darkSurfaceInset), 100, atmNameW);
+    setChromatic("--tug-base-surface-inset", atmRefW, atmAngleW, 4, Math.round(darkSurfaceInset), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-surface-inset", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceInset), 100, surfDefaultName);
+    setChromatic("--tug-base-surface-inset", atmRefW, atmAngleW, atmI, Math.round(darkSurfaceInset), 100, atmNameW);
   }
 
-  // surface-content: same as surface-inset (code blocks, inline content areas)
+  // surface-content: Brio uses violet-6 (= atmRefW), i:5, t:6 (same as inset).
   if (isLight) {
-    setChromatic("--tug-base-surface-content", atmRefW, atmAngleW, isLight ? 4 : atmI, Math.round(darkSurfaceContent), 100, atmNameW);
+    setChromatic("--tug-base-surface-content", atmRefW, atmAngleW, 4, Math.round(darkSurfaceContent), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-surface-content", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceContent), 100, surfDefaultName);
+    setChromatic("--tug-base-surface-content", atmRefW, atmAngleW, atmI, Math.round(darkSurfaceContent), 100, atmNameW);
   }
 
-  // surface-screen:
+  // surface-screen: Brio uses cobalt+10 (= txtBaseAngle+10), i:7, t:16.
   //   Light mode: Harmony uses text hue (blue t=80).
-  //   Dark mode: per-tier angle (surfScreenRef ≈ blue+10 for Bluenote).
   if (isLight) {
     setChromatic("--tug-base-surface-screen", txtRefW, txtAngleW, 4, Math.round(darkSurfaceScreen), 100, txtNameW);
   } else {
-    setChromatic("--tug-base-surface-screen", surfScreenRef, surfScreenAngle, isLight ? 4 : atmI + 3, Math.round(darkSurfaceScreen), 100, surfScreenName);
+    setChromatic("--tug-base-surface-screen", surfScreenRefDark, surfScreenAngleDark, txtISubtle, Math.round(darkSurfaceScreen), 100, surfScreenNameDark);
   }
 
   // --- Foreground / Text ---
@@ -710,63 +974,61 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-fg-default", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
   setChromatic("--tug-base-fg-muted", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
   setChromatic("--tug-base-fg-subtle", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
-  setChromatic("--tug-base-fg-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone, 100, txtNameW);
+  // fg-disabled: Brio uses cobalt+8, i:7, t:23
+  setChromatic("--tug-base-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
 
-  // fg-inverse: opposite extreme (near-white in dark, near-black in light).
-  // Light mode: use near-zero intensity to minimize chroma — matches Harmony's use of
-  // sky, i:1, t:100 (essentially white with a slight sky tint). Using i=1 keeps the
-  // resolved color close to white regardless of text hue, matching the low-chroma intent.
+  // fg-inverse: Brio uses cobalt-8, i:3, t:100
   const fgInverseTone = 100;
-  const fgInverseI = isLight ? 1 : Math.max(1, txtI - 1);
-  setChromatic("--tug-base-fg-inverse", txtRefW, txtAngleW, fgInverseI, fgInverseTone, 100, txtNameW);
+  const fgInverseI = isLight ? 1 : txtI;
+  setChromatic("--tug-base-fg-inverse", isLight ? txtRefW : fgInverseRef, isLight ? txtAngleW : fgInverseAngle, fgInverseI, fgInverseTone, 100, isLight ? txtNameW : fgInverseName);
 
-  // fg-placeholder: in dark mode uses per-tier text hue; in light mode uses atmosphere hue
-  // (Harmony: yellow i:9 t:28 for placeholder, matching the warm border tones)
+  // fg-placeholder: Brio uses bare cobalt (offset=0), i:6, t:30
   if (isLight) {
     setChromatic("--tug-base-fg-placeholder", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
   } else {
-    setChromatic("--tug-base-fg-placeholder", fgPlaceholderRef, fgPlaceholderAngle, txtISubtle, fgPlaceholderTone, 100, fgPlaceholderName);
+    setChromatic("--tug-base-fg-placeholder", fgPlaceholderRef, fgPlaceholderAngle, fgPlaceholderI, fgPlaceholderTone, 100, fgPlaceholderName);
   }
 
-  // fg-link: active hue (blue by default), per [D06]
-  setChromatic("--tug-base-fg-link", activeHue, resolveHueAngle(activeHue), signalI, 50);
-  setChromatic("--tug-base-fg-link-hover", activeHue, resolveHueAngle(activeHue), Math.min(90, signalI + 20), 55);
+  // fg-link: [D05] use interactiveHue (cyan for Brio) at canonical i:50, t:50 → "cyan"
+  setChromatic("--tug-base-fg-link", interactiveRef, interactiveAngle, 50, 50, 100, interactiveName);
+  // fg-link-hover: [D05] use interactiveHue at i:20, t:85 → "cyan-light" preset
+  setChromatic("--tug-base-fg-link-hover", interactiveRef, interactiveAngle, 20, 85, 100, interactiveName);
 
-  // fg-onAccent: text over accent background (need high contrast)
-  // In dark mode: near-white over accent; in light mode: near-white over accent (accent is dark enough)
+  // fg-onAccent/onDanger: Brio uses cobalt-8, i:3, t:100 (same as fg-inverse in dark mode)
   if (isLight) {
     setWhite("--tug-base-fg-onAccent");
     setWhite("--tug-base-fg-onDanger");
   } else {
-    setChromatic("--tug-base-fg-onAccent", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone, 100, txtNameW);
-    setChromatic("--tug-base-fg-onDanger", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone, 100, txtNameW);
+    setChromatic("--tug-base-fg-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-fg-onDanger", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
   }
 
-  // fg-onCaution: dark text on yellow/caution (yellow is bright, needs dark text in both modes)
-  setChromatic("--tug-base-fg-onCaution", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
-  setChromatic("--tug-base-fg-onSuccess", atmRefW, atmAngleW, atmI, Math.round(isLight ? 7 : 7), 100, atmNameW);
+  // fg-onCaution: Brio uses violet-6, i:4, t:7 (dark text on bright caution/success bg)
+  setChromatic("--tug-base-fg-onCaution", atmRefW, atmAngleW, isLight ? atmI : 4, Math.round(isLight ? 7 : 7), 100, atmNameW);
+  setChromatic("--tug-base-fg-onSuccess", atmRefW, atmAngleW, isLight ? atmI : 4, Math.round(isLight ? 7 : 7), 100, atmNameW);
 
   // --- Icon ---
-  // Icons follow text hue, same tones as fg-muted/subtle/disabled.
-  // Per-tier hue angles match hand-authored themes (e.g. Bluenote icon-default=blue+6, icon-muted=blue+7).
+  // Icons follow fg formulas: icon-default=fg-muted, icon-muted=fg-subtle, icon-disabled=fg-disabled.
+  // Brio ground truth: icon-default=cobalt i:5 t:66, icon-muted=cobalt+7 i:7 t:37,
+  //   icon-disabled=cobalt+8 i:7 t:23, icon-onAccent=cobalt-8 i:3 t:100.
   setChromatic("--tug-base-icon-default", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
-  // icon-muted: in light mode uses atmosphere hue (Harmony: yellow i:9 t:28)
+  // icon-muted: Brio uses cobalt+7, i:7, t:37 (same as fg-subtle)
   if (isLight) {
     setChromatic("--tug-base-icon-muted", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
   } else {
-    // Dark mode: Bluenote icon-muted = blue+7, i:9, t:34. Use fgMutedI intensity at fgSubtleTone-3.
-    setChromatic("--tug-base-icon-muted", fgSubtleRef, fgSubtleAngle, fgMutedI, Math.round(fgSubtleTone - 3), 100, fgSubtleName);
+    setChromatic("--tug-base-icon-muted", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
   }
-  setChromatic("--tug-base-icon-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone, 100, txtNameW);
+  // icon-disabled: Brio uses cobalt+8, i:7, t:23 (same as fg-disabled)
+  setChromatic("--tug-base-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
 
   // icon-active: vivid primary text color (active/selected state)
   setChromatic("--tug-base-icon-active", txtRefW, txtAngleW, 100, isLight ? 22 : 80, 100, txtNameW);
 
-  // icon-onAccent: follows fg-onAccent
+  // icon-onAccent: Brio uses cobalt-8, i:3, t:100 (same as fg-inverse/fg-onAccent in dark)
   if (isLight) {
     setWhite("--tug-base-icon-onAccent");
   } else {
-    setChromatic("--tug-base-icon-onAccent", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone, 100, txtNameW);
+    setChromatic("--tug-base-icon-onAccent", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
   }
 
   // --- Borders / Dividers / Focus ---
@@ -775,34 +1037,38 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // This reflects the principle that on warm light backgrounds, structural elements
   // should harmonize with the warm atmosphere rather than the cool text hue.
 
-  // Borders: dark mode uses per-tier fg angles for richer hue variation
-  // (Bluenote: border-default=blue+8, border-muted=blue+7, border-strong=blue)
+  // Borders: dark mode — Brio ground truth:
+  //   border-default: cobalt (offset=0), i:6, t:30
+  //   border-muted:   cobalt+7 (= fgSubtleRef), i:7, t:37
+  //   border-strong:  cobalt+8 (= fgDisabledRef), i:7, t:40
+  //   border-inverse: cobalt (default), i:3, t:94 (= fgDefaultRef)
   // Light mode: atmosphere hue for borders (Harmony: yellow).
-  // border-muted in light mode: Harmony uses i:10 at a higher tone than border-default.
-  // border-strong in light mode: Harmony uses yellow-5 (atm base minus 5°) at lower tone.
-  const borderHueRef = isLight ? atmRefW : fgPlaceholderRef;
-  const borderHueAngle = isLight ? atmAngleW : fgPlaceholderAngle;
-  const borderHueName = isLight ? atmNameW : fgPlaceholderName;
-  const borderIBase = isLight ? atmIBorder : txtISubtle;
-  const borderIStrong = isLight ? 9 : txtISubtle;
 
-  // border-muted: dark uses fg-subtle tier (blue+7), light uses higher tone/intensity
+  // border-default base: dark=bare cobalt (fgMutedRef=offset 0), light=atmRefW
+  const borderHueRef = isLight ? atmRefW : fgMutedRef;
+  const borderHueAngle = isLight ? atmAngleW : fgMutedAngle;
+  const borderHueName = isLight ? atmNameW : fgMutedName;
+  // border intensities from preset. [D03]
+  const borderIBase = preset.borderIBase;
+  const borderIStrong = preset.borderIStrong;
+
+  // border-muted: dark=cobalt+7 (fgSubtleRef), light=atmRefW at higher tone
   const borderMutedHueRef = isLight ? atmRefW : fgSubtleRef;
   const borderMutedHueAngle = isLight ? atmAngleW : fgSubtleAngle;
   const borderMutedHueName = isLight ? atmNameW : fgSubtleName;
   const borderMutedTone = isLight ? 36 : fgSubtleTone;
-  const borderMutedI = isLight ? 10 : borderIBase;
+  const borderMutedI = isLight ? 10 : borderIStrong;
 
-  // border-strong: dark uses bare text hue; light uses atm base minus 5° (Harmony: yellow-5)
+  // border-strong: dark=cobalt+8 (fgDisabledRef) at t:40, light=atm-5° (Harmony: yellow-5)
   const borderStrongLightAngle = applyWarmthBias(atmHue, (atmBaseAngle - 5 + 360) % 360);
   const borderStrongLightName = closestHueName(borderStrongLightAngle);
   const borderStrongLightRef = formatHueRef(borderStrongLightName, borderStrongLightAngle);
-  const borderStrongHueRef = isLight ? borderStrongLightRef : txtRefW;
-  const borderStrongHueAngle = isLight ? borderStrongLightAngle : txtAngleW;
-  const borderStrongHueName = isLight ? borderStrongLightName : txtNameW;
-  // Dark mode: Bluenote border-strong = blue, i:8, t:43 (fgSubtleTone+6). Use fgMutedI=8 intensity.
-  const borderStrongTone = isLight ? Math.round(fgSubtleTone - 6) : Math.round(fgSubtleTone + 6);
-  const borderStrongI = isLight ? borderIStrong : fgMutedI;
+  const borderStrongHueRef = isLight ? borderStrongLightRef : fgDisabledRef;
+  const borderStrongHueAngle = isLight ? borderStrongLightAngle : fgDisabledAngle;
+  const borderStrongHueName = isLight ? borderStrongLightName : fgDisabledName;
+  // Dark mode: Brio border-strong = cobalt+8, i:7, t:40
+  const borderStrongTone = isLight ? Math.round(fgSubtleTone - 6) : 40;
+  const borderStrongI = isLight ? borderIStrong : borderIStrong;
 
   setChromatic("--tug-base-border-default", borderHueRef, borderHueAngle, borderIBase, fgPlaceholderTone, 100, borderHueName);
   setChromatic("--tug-base-border-muted", borderMutedHueRef, borderMutedHueAngle, borderMutedI, borderMutedTone, 100, borderMutedHueName);
@@ -811,23 +1077,34 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-border-accent", accentHue, accentAngle, signalI, 50, 100, accentName);
   setChromatic("--tug-base-border-danger", destructiveHue, resolveHueAngle(destructiveHue), signalI, 50);
 
-  // dividers: atmosphere hue, very low intensity
-  // Light mode: Harmony uses yellow at t=46/48; dark mode: just below surface-raised
-  const dividerTone = isLight ? Math.round(darkSurfaceOverlay - 2) : Math.round(darkSurfaceRaised - 2);
-  setChromatic("--tug-base-divider-default", atmRefW, atmAngleW, atmI, Math.round(dividerTone), 100, atmNameW);
-  setChromatic("--tug-base-divider-muted", atmRefW, atmAngleW, atmI, Math.round(dividerTone + 2), 100, atmNameW);
+  // dividers: atmosphere hue, very low intensity.
+  // Brio ground truth: divider-default = violet-6, i:6, t:17
+  //                    divider-muted   = violet, i:4, t:15
+  // Dark mode: use specific Brio tones. dividerTone is also used for disabled/toggle/separator.
+  const dividerDefaultTone = isLight ? Math.round(darkSurfaceOverlay - 2) : 17;
+  const dividerMutedTone = isLight ? Math.round(darkSurfaceOverlay) : 15;
+  // dividerTone: shared reference used by disabled/toggle/separator (= divider-default tone in dark)
+  const dividerTone = dividerDefaultTone;
+  // divider-default: dark=violet-6 (atmRefW), i:6
+  setChromatic("--tug-base-divider-default", atmRefW, atmAngleW, isLight ? atmI : 6, Math.round(dividerDefaultTone), 100, atmNameW);
+  // divider-muted: dark=violet (bare, surfBareBaseRef), i:4
+  if (isLight) {
+    setChromatic("--tug-base-divider-muted", atmRefW, atmAngleW, atmI, Math.round(dividerMutedTone), 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-divider-muted", surfBareBaseRef, surfBareBaseAngle, 4, Math.round(dividerMutedTone), 100, surfBareBaseName);
+  }
 
   // --- Elevation / Overlay ---
-  // Shadows are always black-based with alpha; overlays black or white
-  // In dark mode: higher alpha shadows. In light mode: lower alpha.
-  const shadowXsAlpha = isLight ? 8 : 20;
-  const shadowMdAlpha = isLight ? 30 : 60;
-  const shadowLgAlpha = isLight ? 36 : 70;
-  const shadowXlAlpha = isLight ? 44 : 80;
-  const shadowOverlayAlpha = isLight ? 24 : 60;
-  const overlayDimAlpha = isLight ? 20 : 48;
-  const overlayScrimAlpha = isLight ? 32 : 64;
-  const overlayHighlightAlpha = isLight ? 50 : 6;
+  // Shadows are always black-based with alpha; overlays black or white.
+  // Alpha values from preset: dark mode uses higher alpha. [D03]
+  const shadowXsAlpha = preset.shadowXsAlpha;
+  const shadowMdAlpha = preset.shadowMdAlpha;
+  const shadowLgAlpha = preset.shadowLgAlpha;
+  const shadowXlAlpha = preset.shadowXlAlpha;
+  const shadowOverlayAlpha = preset.shadowOverlayAlpha;
+  const overlayDimAlpha = preset.overlayDimAlpha;
+  const overlayScrimAlpha = preset.overlayScrimAlpha;
+  const overlayHighlightAlpha = preset.overlayHighlightAlpha;
 
   setShadow("--tug-base-shadow-xs", shadowXsAlpha);
   setShadow("--tug-base-shadow-md", shadowMdAlpha);
@@ -846,7 +1123,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   setShadow("--tug-base-overlay-dim", overlayDimAlpha);
   setShadow("--tug-base-overlay-scrim", overlayScrimAlpha);
-  setHighlight("--tug-base-overlay-highlight", overlayHighlightAlpha);
+  // overlay-highlight: verbose white form with explicit i: 0, t: 100 per [D06] ground truth.
+  // Cannot use setHighlight() (which emits compact --tug-color(white, a: N)) for this token.
+  tokens["--tug-base-overlay-highlight"] = `--tug-color(white, i: 0, t: 100, a: ${overlayHighlightAlpha})`;
+  resolved["--tug-base-overlay-highlight"] = { ...WHITE_RESOLVED, alpha: overlayHighlightAlpha / 100 };
 
   // --- Typography (invariant) ---
   setInvariant("--tug-base-font-family-sans", '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif');
@@ -915,8 +1195,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-accent-default", accentHue, accentAngle, signalI, 50, 100, accentName);
   setChromatic("--tug-base-accent-subtle", accentHue, accentAngle, signalI, 50, 15, accentName);
 
-  // accent-cool: active hue at intense level
-  setChromatic("--tug-base-accent-cool-default", activeHue, activeAngle, Math.min(90, signalI + 20), 50, 100, activeName);
+  // accent-cool-default: Brio uses cobalt-intense (= text hue at i:90, t:50)
+  setChromatic("--tug-base-accent-cool-default", txtRefW, txtAngleW, 90, 50, 100, txtNameW);
 
   // =========================================================================
   // C. Semantic Tones
@@ -979,39 +1259,37 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // D. Selection / Highlight / Preview
   // =========================================================================
 
-  // selection-bg: active hue (blue) with moderate alpha — per [D06]
-  setChromatic("--tug-base-selection-bg", activeHue, activeAngle, signalI, 50, 40, activeName);
-  // selection-bg-inactive: muted tint of text hue (Brio: yellow/i:0/t:30/a:25, Bluenote: blue/i:10/t:33/a:30)
-  // In dark mode, use text hue at low intensity. In light mode, use atmosphere warm tint.
-  // selection-bg-inactive:
-  //   Dark mode: text hue at low intensity, slightly higher tone than placeholder.
-  //     Bluenote: blue, i:10, t:33, a:30.
-  //   Light mode: atmosphere hue shifted toward amber (-20° from atm base) for warmth.
-  //     Harmony: amber (yellow-20°), i:8, t:24, a:20.
+  // selection-bg: [D05] use interactiveHue (cyan for Brio) at i:50, t:50, a:40
+  setChromatic("--tug-base-selection-bg", interactiveRef, interactiveAngle, 50, 50, 40, interactiveName);
+  // selection-bg-inactive: Brio uses yellow, i:0, t:30, a:25
   if (isLight) {
-    // Use a warmer-shifted atmosphere hue (amber) for selection in light mode
+    // Light mode: atmosphere hue shifted toward amber (-20° from atm base) for warmth
     const selInactAngle = applyWarmthBias(atmHue, (atmBaseAngle - 20 + 360) % 360);
     const selInactName = closestHueName(selInactAngle);
     const selInactRef = formatHueRef(selInactName, selInactAngle);
     setChromatic("--tug-base-selection-bg-inactive", selInactRef, selInactAngle, 8, 24, 20, selInactName);
   } else {
-    setChromatic("--tug-base-selection-bg-inactive", txtRefW, txtAngleW, 10, 33, 30, txtNameW);
+    // Dark mode: Brio uses yellow, i:0, t:30, a:25
+    setChromatic("--tug-base-selection-bg-inactive", "yellow", resolveHueAngle("yellow"), 0, 30, 25, "yellow");
   }
   setChromatic("--tug-base-selection-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
 
-  // highlights: white or black semi-transparent overlays depending on mode
+  // highlights: [D05] use interactiveHue (cyan for Brio) for dropTarget/preview/inspectorTarget/snapGuide
   if (isLight) {
     setShadow("--tug-base-highlight-hover", 4);
-    setChromatic("--tug-base-highlight-dropTarget", activeHue, activeAngle, signalI, 50, 18, activeName);
-    setChromatic("--tug-base-highlight-preview", activeHue, activeAngle, signalI, 50, 12, activeName);
-    setChromatic("--tug-base-highlight-inspectorTarget", activeHue, activeAngle, signalI, 50, 22, activeName);
-    setChromatic("--tug-base-highlight-snapGuide", activeHue, activeAngle, signalI, 50, 50, activeName);
+    setChromatic("--tug-base-highlight-dropTarget", interactiveRef, interactiveAngle, 50, 50, 18, interactiveName);
+    setChromatic("--tug-base-highlight-preview", interactiveRef, interactiveAngle, 50, 50, 12, interactiveName);
+    setChromatic("--tug-base-highlight-inspectorTarget", interactiveRef, interactiveAngle, 50, 50, 22, interactiveName);
+    setChromatic("--tug-base-highlight-snapGuide", interactiveRef, interactiveAngle, 50, 50, 50, interactiveName);
   } else {
-    setHighlight("--tug-base-highlight-hover", 5);
-    setChromatic("--tug-base-highlight-dropTarget", activeHue, activeAngle, signalI, 50, 18, activeName);
-    setChromatic("--tug-base-highlight-preview", activeHue, activeAngle, signalI, 50, 12, activeName);
-    setChromatic("--tug-base-highlight-inspectorTarget", activeHue, activeAngle, signalI, 50, 22, activeName);
-    setChromatic("--tug-base-highlight-snapGuide", activeHue, activeAngle, signalI, 50, 50, activeName);
+    // highlight-hover: verbose white form with explicit i: 0, t: 100 per ground truth.
+    // Cannot use setHighlight() (compact --tug-color(white, a: N)) for this token.
+    tokens["--tug-base-highlight-hover"] = "--tug-color(white, i: 0, t: 100, a: 5)";
+    resolved["--tug-base-highlight-hover"] = { ...WHITE_RESOLVED, alpha: 5 / 100 };
+    setChromatic("--tug-base-highlight-dropTarget", interactiveRef, interactiveAngle, 50, 50, 18, interactiveName);
+    setChromatic("--tug-base-highlight-preview", interactiveRef, interactiveAngle, 50, 50, 12, interactiveName);
+    setChromatic("--tug-base-highlight-inspectorTarget", interactiveRef, interactiveAngle, 50, 50, 22, interactiveName);
+    setChromatic("--tug-base-highlight-snapGuide", interactiveRef, interactiveAngle, 50, 50, 50, interactiveName);
   }
   setChromatic("--tug-base-highlight-flash", accentHue, accentAngle, signalI, 50, 35, accentName);
 
@@ -1028,7 +1306,11 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   if (isLight) {
     setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
   } else {
-    setChromatic("--tug-base-tab-bg-active", surfDefaultRef, surfDefaultAngle, atmI, Math.round(darkSurfaceRaised), 100, surfDefaultName);
+    // Brio: violet+5, i:5, t:18 (surface tier offset +5 from atmBaseAngle)
+    const tabBgActiveAngle = surfaceTierAngle(5);
+    const tabBgActiveName = closestHueName(tabBgActiveAngle);
+    const tabBgActiveRef = formatHueRef(tabBgActiveName, tabBgActiveAngle);
+    setChromatic("--tug-base-tab-bg-active", tabBgActiveRef, tabBgActiveAngle, atmI, 18, 100, tabBgActiveName);
   }
 
   // tab-bg-hover: visible highlight when scanning inactive tabs
@@ -1038,14 +1320,15 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setHighlight("--tug-base-tab-bg-hover", 8);
   }
 
-  // tab-fg-rest: muted text for inactive tabs
-  setChromatic("--tug-base-tab-fg-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone, 100, txtNameW);
+  // tab-fg-rest: Brio uses cobalt, i:7 (canonical tone=50) → "--tug-color(cobalt, i: 7)"
+  setChromatic("--tug-base-tab-fg-rest", txtRefW, txtAngleW, txtISubtle, 50, 100, txtNameW);
 
-  // tab-fg-hover: brighter text when hovering inactive tabs
-  setChromatic("--tug-base-tab-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  // tab-fg-hover: Brio uses cobalt, i:3, t:90
+  const tabFgActiveTone = isLight ? fgDefaultTone : 90;
+  setChromatic("--tug-base-tab-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, tabFgActiveTone, 100, fgDefaultNameT);
 
-  // tab-fg-active: full-contrast text on the active tab
-  setChromatic("--tug-base-tab-fg-active", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  // tab-fg-active: Brio uses cobalt, i:3, t:90
+  setChromatic("--tug-base-tab-fg-active", fgDefaultRefT, fgDefaultAngleT, txtI, tabFgActiveTone, 100, fgDefaultNameT);
 
   // tab-close-bg-hover: close button hover — subtle but visible overlay
   if (isLight) {
@@ -1054,20 +1337,25 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setHighlight("--tug-base-tab-close-bg-hover", 12);
   }
 
-  // tab-close-fg-hover: close button hover text — full default contrast
-  setChromatic("--tug-base-tab-close-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  // tab-close-fg-hover: Brio uses cobalt, i:3, t:90
+  setChromatic("--tug-base-tab-close-fg-hover", fgDefaultRefT, fgDefaultAngleT, txtI, tabFgActiveTone, 100, fgDefaultNameT);
 
   // =========================================================================
   // E. Control Surfaces
   // =========================================================================
 
   // --- Cross-Control Disabled Contract ---
-  // disabled-bg: in light mode Harmony uses very light yellow (t=74); dark mode uses sunken surface tone
+  // Brio: disabled-bg=violet i:5 t:11, disabled-fg=cobalt+8 i:7 t:23,
+  //       disabled-border=violet-6 i:6 t:17, disabled-icon=cobalt+8 i:7 t:23
   const disabledBgTone = isLight ? Math.round(70 + (surfaceContrast / 100) * 10) : Math.round(darkSurfaceSunken);
-  setChromatic("--tug-base-control-disabled-bg", atmRefW, atmAngleW, isLight ? 6 : atmI, disabledBgTone);
-  setChromatic("--tug-base-control-disabled-fg", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
-  setChromatic("--tug-base-control-disabled-border", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
-  setChromatic("--tug-base-control-disabled-icon", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
+  if (isLight) {
+    setChromatic("--tug-base-control-disabled-bg", atmRefW, atmAngleW, 6, disabledBgTone);
+  } else {
+    setChromatic("--tug-base-control-disabled-bg", surfBareBaseRef, surfBareBaseAngle, atmI, disabledBgTone, 100, surfBareBaseName);
+  }
+  setChromatic("--tug-base-control-disabled-fg", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-control-disabled-border", atmRefW, atmAngleW, isLight ? atmIBorder : 6, Math.round(dividerTone));
+  setChromatic("--tug-base-control-disabled-icon", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
   setInvariant("--tug-base-control-disabled-opacity", "0.5");
   setStructural("--tug-base-control-disabled-shadow", "none");
 
@@ -1093,10 +1381,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   //   border: transparent (rest) / subtle at hover/active
   //   icon: same as fg
 
-  // Shared tone constants for filled emphasis (same across roles)
-  const filledBgDarkTone = isLight ? 30 : 20;
-  const filledBgHoverTone = isLight ? 40 : 40;
-  const filledBgActiveTone = isLight ? 50 : 50;
+  // Shared tone constants for filled emphasis (same across roles). From preset. [D03]
+  const filledBgDarkTone = preset.filledBgDarkTone;
+  const filledBgHoverTone = preset.filledBgHoverTone;
+  const filledBgActiveTone = preset.filledBgActiveTone;
   const filledFgTone = 100; // near-white on colored bg
 
   // Accent hue ref (used in setChromatic)
@@ -1117,8 +1405,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-accent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-accent-border-rest", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-control-filled-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 10), 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-rest", accentHue, accentAngle, Math.min(90, signalI + 5), 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 15), 50, 100, accentName);
   setChromatic("--tug-base-control-filled-accent-border-active", accentHue, accentAngle, 90, filledBgActiveTone, 100, accentName);
   setChromatic("--tug-base-control-filled-accent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1132,8 +1420,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-action-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-action-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-filled-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-action-border-rest", activeRef, activeAngle, Math.min(90, signalI + 5), 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 15), 50, 100, activeName);
   setChromatic("--tug-base-control-filled-action-border-active", activeRef, activeAngle, 90, filledBgActiveTone, 100, activeName);
   setChromatic("--tug-base-control-filled-action-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1146,8 +1434,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-danger-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-border-active", destructiveHue, dangerAngle, 90, filledBgActiveTone, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1162,8 +1450,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-agent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
-  setChromatic("--tug-base-control-filled-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-rest", agentRef, agentAngle, Math.min(90, signalI + 5), 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 15), 50, 100, agentName);
   setChromatic("--tug-base-control-filled-agent-border-active", agentRef, agentAngle, 90, filledBgActiveTone, 100, agentName);
   setChromatic("--tug-base-control-filled-agent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1176,8 +1464,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-data-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-data-border-rest", dataHue, dataAngle, signalI, 50, 100, dataName);
-  setChromatic("--tug-base-control-filled-data-border-hover", dataHue, dataAngle, Math.min(90, signalI + 10), 50, 100, dataName);
+  setChromatic("--tug-base-control-filled-data-border-rest", dataHue, dataAngle, Math.min(90, signalI + 5), 50, 100, dataName);
+  setChromatic("--tug-base-control-filled-data-border-hover", dataHue, dataAngle, Math.min(90, signalI + 15), 50, 100, dataName);
   setChromatic("--tug-base-control-filled-data-border-active", dataHue, dataAngle, 90, filledBgActiveTone, 100, dataName);
   setChromatic("--tug-base-control-filled-data-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1190,8 +1478,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-success-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-success-border-rest", successHue, successAngle, signalI, 50, 100, successName);
-  setChromatic("--tug-base-control-filled-success-border-hover", successHue, successAngle, Math.min(90, signalI + 10), 50, 100, successName);
+  setChromatic("--tug-base-control-filled-success-border-rest", successHue, successAngle, Math.min(90, signalI + 5), 50, 100, successName);
+  setChromatic("--tug-base-control-filled-success-border-hover", successHue, successAngle, Math.min(90, signalI + 15), 50, 100, successName);
   setChromatic("--tug-base-control-filled-success-border-active", successHue, successAngle, 90, filledBgActiveTone, 100, successName);
   setChromatic("--tug-base-control-filled-success-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1204,8 +1492,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-caution-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-caution-border-rest", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
-  setChromatic("--tug-base-control-filled-caution-border-hover", cautionHue, cautionAngle, Math.min(90, signalI + 10), 50, 100, cautionName);
+  setChromatic("--tug-base-control-filled-caution-border-rest", cautionHue, cautionAngle, Math.min(90, signalI + 5), 50, 100, cautionName);
+  setChromatic("--tug-base-control-filled-caution-border-hover", cautionHue, cautionAngle, Math.min(90, signalI + 15), 50, 100, cautionName);
   setChromatic("--tug-base-control-filled-caution-border-active", cautionHue, cautionAngle, 90, filledBgActiveTone, 100, cautionName);
   setChromatic("--tug-base-control-filled-caution-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1241,9 +1529,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-outlined-action-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   }
   // Border: same action/blue hue as filled-action
-  setChromatic("--tug-base-control-outlined-action-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-outlined-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
-  setChromatic("--tug-base-control-outlined-action-border-active", activeRef, activeAngle, Math.min(90, signalI + 20), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-rest", activeRef, activeAngle, Math.min(90, signalI + 5), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 15), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-active", activeRef, activeAngle, Math.min(90, signalI + 25), 50, 100, activeName);
 
   // --- Outlined Agent (transparent bg, agent/violet border) [D05] ---
   // Same transparent-bg approach. Border from agent/violet hue.
@@ -1271,9 +1559,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-outlined-agent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
     setChromatic("--tug-base-control-outlined-agent-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   }
-  setChromatic("--tug-base-control-outlined-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
-  setChromatic("--tug-base-control-outlined-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
-  setChromatic("--tug-base-control-outlined-agent-border-active", agentRef, agentAngle, Math.min(90, signalI + 20), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-rest", agentRef, agentAngle, Math.min(90, signalI + 5), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 15), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-active", agentRef, agentAngle, Math.min(90, signalI + 25), 50, 100, agentName);
 
   // --- Ghost Active (link-like action — no role color in bg/border) ---
   // Preserves old ghost button appearance using neutral text hue.
@@ -1310,23 +1598,24 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // --- Ghost Danger (subtle destructive — danger/red fg, transparent bg) ---
   // Same transparent-bg approach as ghost-action but fg/icon from tone-danger-fg.
   // Hover bg uses danger-tinted subtle alpha.
+  // Brio: bg-hover/active use i=signalI+5; fg/icon use i=signalI+5/+15/+25 progression.
   setStructural("--tug-base-control-ghost-danger-bg-rest", "transparent");
   if (isLight) {
-    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 8, dangerName);
-    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 15, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 8, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 15, dangerName);
   } else {
-    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 10, dangerName);
-    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 20, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 10, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 20, dangerName);
   }
-  setChromatic("--tug-base-control-ghost-danger-fg-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-fg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-fg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 25), 50, 100, dangerName);
   setStructural("--tug-base-control-ghost-danger-border-rest", "transparent");
-  setChromatic("--tug-base-control-ghost-danger-border-hover", destructiveHue, dangerAngle, signalI, 50, 40, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-border-active", destructiveHue, dangerAngle, signalI, 50, 60, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 40, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-border-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 60, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 25), 50, 100, dangerName);
 
   // --- Outlined Option (calm configuration control — neutral muted border, no action-blue chroma) ---
   // [D01] Option role uses neutral fg-muted formulas: border from txtRefW at txtISubtle/fgMutedTone,
@@ -1355,10 +1644,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-outlined-option-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
     setChromatic("--tug-base-control-outlined-option-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   }
-  // Border: neutral text hue at muted intensity — no action-blue chroma (distinguishes from outlined-action)
-  setChromatic("--tug-base-control-outlined-option-border-rest", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-  setChromatic("--tug-base-control-outlined-option-border-hover", txtRefW, txtAngleW, Math.min(90, txtISubtle + 2), isLight ? fgMutedTone - 3 : fgMutedTone + 5);
-  setChromatic("--tug-base-control-outlined-option-border-active", txtRefW, txtAngleW, Math.min(90, txtISubtle + 4), isLight ? fgMutedTone - 6 : fgMutedTone + 10);
+  // Border: neutral text hue — Brio dark: cobalt i:7 (canonical t=50), i:9 t:55, i:11 t:60
+  setChromatic("--tug-base-control-outlined-option-border-rest", txtRefW, txtAngleW, txtISubtle, isLight ? fgMutedTone : 50);
+  setChromatic("--tug-base-control-outlined-option-border-hover", txtRefW, txtAngleW, Math.min(90, txtISubtle + 2), isLight ? fgMutedTone - 3 : 55);
+  setChromatic("--tug-base-control-outlined-option-border-active", txtRefW, txtAngleW, Math.min(90, txtISubtle + 4), isLight ? fgMutedTone - 6 : 60);
 
   // --- Ghost Option (ultra-calm configuration control — transparent border at rest, fg-muted text) ---
   // [D01] Ghost-option: same bg hover/active as ghost-action but fg-muted at rest (calmer than ghost-action).
@@ -1399,55 +1688,68 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setStructural("--tug-base-surface-control", "var(--tug-base-control-outlined-action-bg-rest)");
 
   // --- Selected / Highlighted ---
-  setChromatic("--tug-base-control-selected-bg", activeRef, activeAngle, signalI, 50, 18, activeName);
-  setChromatic("--tug-base-control-selected-bg-hover", activeRef, activeAngle, signalI, 50, 24, activeName);
-  setChromatic("--tug-base-control-selected-fg", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-control-selected-border", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-selected-disabled-bg", activeRef, activeAngle, signalI, 50, 10, activeName);
-  setChromatic("--tug-base-control-highlighted-bg", activeRef, activeAngle, signalI, 50, 10, activeName);
-  setChromatic("--tug-base-control-highlighted-fg", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-control-highlighted-border", activeRef, activeAngle, signalI, 50, 25, activeName);
+  // Brio: control-selected-bg = blue, i:50, t:50, a:18 (canonical i=50, t=50 — verbose form per [D06])
+  setChromatic("--tug-base-control-selected-bg", activeRef, activeAngle, 50, 50, 18, activeName);
+  setChromatic("--tug-base-control-selected-bg-hover", activeRef, activeAngle, 50, 50, 24, activeName);
+  setChromatic("--tug-base-control-selected-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  setChromatic("--tug-base-control-selected-border", activeRef, activeAngle, 50, 50, 100, activeName);
+  setChromatic("--tug-base-control-selected-disabled-bg", activeRef, activeAngle, 50, 50, 10, activeName);
+  setChromatic("--tug-base-control-highlighted-bg", activeRef, activeAngle, 50, 50, 10, activeName);
+  setChromatic("--tug-base-control-highlighted-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  setChromatic("--tug-base-control-highlighted-border", activeRef, activeAngle, 50, 50, 25, activeName);
 
-  // --- Generic Field Tokens ---
-  const fieldBgRestTone = isLight ? 51 : 8;
-  const fieldBgHoverTone = isLight ? 74 : 11;
-  const fieldBgFocusTone = isLight ? 99 : 7;
-  const fieldBgDisabledTone = isLight ? 48 : 6;
-  const fieldBgReadOnlyTone = isLight ? 74 : 11;
+  // --- Generic Field Tokens — tone anchors from preset. [D03] ---
+  const fieldBgRestTone = preset.fieldBgRestTone;
+  const fieldBgHoverTone = preset.fieldBgHoverTone;
+  const fieldBgFocusTone = preset.fieldBgFocusTone;
+  const fieldBgDisabledTone = preset.fieldBgDisabledTone;
+  const fieldBgReadOnlyTone = preset.fieldBgReadOnlyTone;
 
-  setChromatic("--tug-base-field-bg-rest", atmRefW, atmAngleW, isLight ? 7 : 5, fieldBgRestTone);
-  setChromatic("--tug-base-field-bg-hover", atmRefW, atmAngleW, atmI, fieldBgHoverTone);
-  setChromatic("--tug-base-field-bg-focus", atmRefW, atmAngleW, isLight ? 4 : 4, fieldBgFocusTone);
+  // field-bg-rest: Brio=violet-6 i:5 t:8, field-bg-focus: Brio=violet-6 i:4 t:7
+  setChromatic("--tug-base-field-bg-rest", atmRefW, atmAngleW, isLight ? 7 : atmI, fieldBgRestTone);
+  // field-bg-hover: Brio=violet (bare), i:5, t:11
+  if (isLight) {
+    setChromatic("--tug-base-field-bg-hover", atmRefW, atmAngleW, atmI, fieldBgHoverTone);
+  } else {
+    setChromatic("--tug-base-field-bg-hover", surfBareBaseRef, surfBareBaseAngle, atmI, fieldBgHoverTone, 100, surfBareBaseName);
+  }
+  setChromatic("--tug-base-field-bg-focus", atmRefW, atmAngleW, 4, fieldBgFocusTone);
   setChromatic("--tug-base-field-bg-disabled", atmRefW, atmAngleW, atmI, fieldBgDisabledTone);
-  setChromatic("--tug-base-field-bg-readOnly", atmRefW, atmAngleW, atmI, fieldBgReadOnlyTone);
+  // field-bg-readOnly: Brio=violet (bare), i:5, t:11
+  if (isLight) {
+    setChromatic("--tug-base-field-bg-readOnly", atmRefW, atmAngleW, atmI, fieldBgReadOnlyTone);
+  } else {
+    setChromatic("--tug-base-field-bg-readOnly", surfBareBaseRef, surfBareBaseAngle, atmI, fieldBgReadOnlyTone, 100, surfBareBaseName);
+  }
 
-  setChromatic("--tug-base-field-fg", txtRefW, txtAngleW, txtI, fgDefaultTone);
-  setChromatic("--tug-base-field-fg-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
-  setChromatic("--tug-base-field-fg-readOnly", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  setChromatic("--tug-base-field-fg", fgDefaultRefT, fgDefaultAngleT, txtI, fgDefaultTone, 100, fgDefaultNameT);
+  // field-fg-disabled: Brio uses cobalt+8, i:7, t:23
+  setChromatic("--tug-base-field-fg-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  // field-fg-readOnly: Brio uses cobalt, i:5, t:66 (= fg-muted)
+  setChromatic("--tug-base-field-fg-readOnly", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
   // field-placeholder / field-border: in light mode use atmosphere hue (Harmony pattern)
+  // Brio dark: field-placeholder=cobalt i:6 t:30, field-border-rest=cobalt i:6 t:30,
+  //            field-border-hover=cobalt+7 i:7 t:37
   if (isLight) {
     setChromatic("--tug-base-field-placeholder", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
     setChromatic("--tug-base-field-border-rest", atmRefW, atmAngleW, atmIBorder, fgPlaceholderTone, 100, atmNameW);
     // field-border-hover in light mode: Harmony uses yellow-5 (same as border-strong: atm-5°)
     setChromatic("--tug-base-field-border-hover", borderStrongHueRef, borderStrongHueAngle, borderIStrong, borderStrongTone, 100, borderStrongHueName);
   } else {
-    setChromatic("--tug-base-field-placeholder", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
-    setChromatic("--tug-base-field-border-rest", txtRefW, txtAngleW, txtISubtle, fgPlaceholderTone);
-    setChromatic("--tug-base-field-border-hover", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
+    setChromatic("--tug-base-field-placeholder", fgPlaceholderRef, fgPlaceholderAngle, fgPlaceholderI, fgPlaceholderTone);
+    setChromatic("--tug-base-field-border-rest", fgPlaceholderRef, fgPlaceholderAngle, fgPlaceholderI, fgPlaceholderTone);
+    setChromatic("--tug-base-field-border-hover", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone);
   }
-  setChromatic("--tug-base-field-border-active", activeHue, activeAngle, signalI, 50, 100, activeName);
+  // field-border-active: [D05] use interactiveHue (cyan for Brio) at canonical i:50, t:50
+  setChromatic("--tug-base-field-border-active", interactiveRef, interactiveAngle, 50, 50, 100, interactiveName);
   setChromatic("--tug-base-field-border-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-field-border-success", successHue, successAngle, signalI, 50, 100, successName);
   setChromatic("--tug-base-field-border-disabled", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
   setChromatic("--tug-base-field-border-readOnly", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
 
-  if (isLight) {
-    setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-    setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  } else {
-    setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
-    setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  }
+  // field-label: Brio uses cobalt, i:5, t:66 (= fg-muted)
+  setChromatic("--tug-base-field-label", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-field-tone-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-field-tone-caution", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
   setChromatic("--tug-base-field-tone-success", successHue, successAngle, signalI, 50, 100, successName);
@@ -1457,33 +1759,40 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const toggleTrackOffTone = Math.round(dividerTone);
   setChromatic("--tug-base-toggle-track-off", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
   setChromatic("--tug-base-toggle-track-off-hover", atmRefW, atmAngleW, Math.min(atmIBorder + 4, 100), Math.min(toggleTrackOffTone + 8, 100));
-  setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), isLight ? 40 : 45, 100, accentName);
-  // toggle-track-disabled: light mode uses overlay tone (Harmony: yellow, i:6, t:48)
+  // toggle-track-on: Brio uses orange-muted (= i:50, t:42) — matches muted preset
+  setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 42, 100, accentName);
+  setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), preset.toggleTrackOnHoverTone, 100, accentName);
+  // toggle-track-disabled: Brio uses violet (bare), i:5, t:11 (= surfBareBaseRef, surfaceSunken tone)
   const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceSunken);
-  setChromatic("--tug-base-toggle-track-disabled", atmRefW, atmAngleW, isLight ? 6 : atmI, toggleDisabledTone, 100, atmNameW);
-  setChromatic("--tug-base-toggle-track-mixed", txtRefW, txtAngleW, txtISubtle, fgSubtleTone);
-  setChromatic("--tug-base-toggle-track-mixed-hover", txtRefW, txtAngleW, Math.min(txtISubtle + 5, 100), Math.min(fgSubtleTone + 6, 100));
+  if (isLight) {
+    setChromatic("--tug-base-toggle-track-disabled", atmRefW, atmAngleW, 6, toggleDisabledTone, 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-toggle-track-disabled", surfBareBaseRef, surfBareBaseAngle, atmI, toggleDisabledTone, 100, surfBareBaseName);
+  }
+  // toggle-track-mixed: Brio uses cobalt+7, i:7, t:37 (= fgSubtleRef)
+  setChromatic("--tug-base-toggle-track-mixed", fgSubtleRef, fgSubtleAngle, txtISubtle, fgSubtleTone, 100, fgSubtleName);
+  setChromatic("--tug-base-toggle-track-mixed-hover", fgSubtleRef, fgSubtleAngle, Math.min(txtISubtle + 5, 100), Math.min(fgSubtleTone + 6, 100), 100, fgSubtleName);
 
-  // Thumb: near-white (text inverse) in dark mode; white in light mode
+  // Thumb: Brio dark uses cobalt-8, i:3, t:100 (= fg-inverse)
   if (isLight) {
     setWhite("--tug-base-toggle-thumb");
   } else {
-    setChromatic("--tug-base-toggle-thumb", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone);
+    setChromatic("--tug-base-toggle-thumb", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
   }
-  setChromatic("--tug-base-toggle-thumb-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
-  setChromatic("--tug-base-toggle-icon-disabled", txtRefW, txtAngleW, txtISubtle, fgDisabledTone);
-  setChromatic("--tug-base-toggle-icon-mixed", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  // toggle-thumb-disabled: Brio uses cobalt+8, i:7, t:23 (= fg-disabled)
+  setChromatic("--tug-base-toggle-thumb-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-toggle-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-toggle-icon-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
 
-  // Checkmark / radio: same as thumb
+  // Checkmark / radio: Brio dark uses cobalt-8, i:3, t:100 (= fg-inverse)
   if (isLight) {
     setWhite("--tug-base-checkmark");
     setWhite("--tug-base-radio-dot");
   } else {
-    setChromatic("--tug-base-checkmark", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone);
-    setChromatic("--tug-base-radio-dot", txtRefW, txtAngleW, Math.max(1, txtI - 1), fgInverseTone);
+    setChromatic("--tug-base-checkmark", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
+    setChromatic("--tug-base-radio-dot", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
   }
-  setChromatic("--tug-base-checkmark-mixed", txtRefW, txtAngleW, txtISubtle, fgMutedTone);
+  setChromatic("--tug-base-checkmark-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
 
   // --- Separator ---
   setChromatic("--tug-base-separator", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);

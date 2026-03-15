@@ -9,6 +9,102 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-15T01:17:28Z
+---
+
+## step-8: Final verification checkpoint: 1566 tests pass, generation idempotent, build succeeds, CSS structure correct. Plan tugplan-mode-preset-formulas complete.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-7
+date: 2025-03-15T01:14:00Z
+---
+
+## step-7: Restructured tug-base.css body{} with hand-authored preamble (zoom, chart aliases, shiki bridge) and single @generated:tokens:begin/end region covering all 350 tokens. Removed old control-tokens and chrome-tokens markers. Generation is idempotent.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-6
+date: 2025-03-15T01:05:53Z
+---
+
+## step-6: Added ModePreset interface and DARK_PRESET/LIGHT_PRESET constants. Refactored deriveTheme() to use preset.paramName references instead of inline isLight ternaries for ~40 numeric parameters. Hue-selection branches remain as isLight code per D03. Output unchanged — T-BRIO-MATCH passes.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-5
+date: 2025-03-15T00:53:35Z
+---
+
+## step-5: Verification-only checkpoint: T-BRIO-MATCH passes with 0 mismatches across all 291 chromatic tokens. All 13 derivation-engine tests green.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-4
+date: 2025-03-15T00:51:07Z
+---
+
+## step-4: Activated T-BRIO-MATCH test: it.todo replaced with real assertion. All 291 chromatic tokens match deriveTheme(brio) output exactly. 1564 tests pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-3
+date: 2025-03-15T00:45:32Z
+---
+
+## step-3: Fixed makeShadowToken verbose black form (D06), makeTugColor verbose alpha for canonical tokens, muted preset (i:50 t:42), accent/tone tokens using canonical i=50 instead of signalI. Remaining mismatches reduced to control/field/toggle/tab scope.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-2
+date: 2025-03-15T00:25:37Z
+---
+
+## step-2: Corrected all dark-mode surface tone/intensity/hue formulas, fg tier offsets and tone anchors, icon formulas, and added interactive hue field (cyan) per D05. Surface/fg/icon mismatches reduced from 38 to 23.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
+step: step-1
+date: 2025-03-15T00:07:30Z
+---
+
+## step-1: Extracted 291 chromatic tokens and 59 structural tokens from tug-base.css into BRIO_GROUND_TRUTH and BRIO_STRUCTURAL_TOKENS constants. Added T-BRIO-MATCH test as it.todo with 38-token mismatch baseline.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-14T19:47:24Z
 ---
