@@ -1,7 +1,7 @@
 /**
  * Step 8 integration: round-trip verification across all converted theme tokens.
  *
- * For every --tug-color() call in tug-base.css:
+ * For every --tug-color() call in tug-base.css + tug-base-generated.css:
  * 1. Expand via the PostCSS plugin to get an oklch() string.
  * 2. Run oklchToTugColor() on the expanded oklch.
  * 3. Re-expand the recovered --tug-color() call via the plugin.
@@ -11,6 +11,10 @@
  * - tug-palette.css is unmodified (no --tug-color() calls).
  * - brio.css is unmodified (no --tug-color() calls).
  * - Zero standalone hex values remain in tug-base.css body{} block.
+ *
+ * Note: --tug-base-* tokens now live in tug-base-generated.css, which is
+ * @imported by tug-base.css inside body {}. Both files are read for checks
+ * that involve the token declarations.
  */
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
@@ -81,6 +85,13 @@ function extractStandaloneHex(css: string): string[] {
   return standaloneHex;
 }
 
+// Read combined theme CSS (tug-base.css hand-authored portion + tug-base-generated.css tokens)
+function readCombinedThemeCSS(): string {
+  const base = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
+  const generated = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+  return base + "\n" + generated;
+}
+
 // ---------------------------------------------------------------------------
 // Theme file integrity checks
 // ---------------------------------------------------------------------------
@@ -104,6 +115,10 @@ describe("Step 8: zero standalone hex values in theme files", () => {
     const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
     expect(extractStandaloneHex(css)).toHaveLength(0);
   });
+  it("tug-base-generated.css has no standalone hex values", () => {
+    const css = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+    expect(extractStandaloneHex(css)).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -111,29 +126,27 @@ describe("Step 8: zero standalone hex values in theme files", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
-  const themeFiles = ["tug-base.css"];
+  // tug-base.css @imports tug-base-generated.css for the token block.
+  // Read both files combined to get all --tug-color() calls.
+  it("tug-base (combined): every --tug-color() call expands to a parseable oklch()", () => {
+    const css = readCombinedThemeCSS();
+    const calls = extractTugColorCalls(css);
+    expect(calls.length).toBeGreaterThan(0);
 
-  for (const file of themeFiles) {
-    it(`${file}: every --tug-color() call expands to a parseable oklch()`, () => {
-      const css = readFileSync(join(STYLES_DIR, file), "utf8");
-      const calls = extractTugColorCalls(css);
-      expect(calls.length).toBeGreaterThan(0);
-
-      const failures: string[] = [];
-      for (const call of calls) {
-        const expanded = expandTugColorInCSS(`a { color: ${call}; }`);
-        const m = expanded.match(/color:\s*(oklch\([^)]+\))/);
-        if (!m) {
-          failures.push(`${call} → not expanded`);
-          continue;
-        }
-        if (!parseOklch(m[1])) {
-          failures.push(`${call} → unparseable: ${m[1]}`);
-        }
+    const failures: string[] = [];
+    for (const call of calls) {
+      const expanded = expandTugColorInCSS(`a { color: ${call}; }`);
+      const m = expanded.match(/color:\s*(oklch\([^)]+\))/);
+      if (!m) {
+        failures.push(`${call} → not expanded`);
+        continue;
       }
-      expect(failures).toHaveLength(0);
-    });
-  }
+      if (!parseOklch(m[1])) {
+        failures.push(`${call} → unparseable: ${m[1]}`);
+      }
+    }
+    expect(failures).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -141,48 +154,46 @@ describe("Step 8: all --tug-color() calls expand to valid oklch()", () => {
 // ---------------------------------------------------------------------------
 
 describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () => {
-  const themeFiles = ["tug-base.css"];
+  // tug-base.css @imports tug-base-generated.css for the token block.
+  // Read both files combined to get all --tug-color() calls.
+  it("tug-base (combined): round-trip stays within delta-E < 0.02 for all tokens", () => {
+    const css = readCombinedThemeCSS();
+    const calls = extractTugColorCalls(css);
 
-  for (const file of themeFiles) {
-    it(`${file}: round-trip stays within delta-E < 0.02 for all tokens`, () => {
-      const css = readFileSync(join(STYLES_DIR, file), "utf8");
-      const calls = extractTugColorCalls(css);
+    const failures: Array<{ call: string; dE: number }> = [];
 
-      const failures: Array<{ call: string; dE: number }> = [];
+    for (const call of calls) {
+      // Step 1: expand original --tug-color() to oklch
+      const expanded1CSS = expandTugColorInCSS(`a { color: ${call}; }`);
+      const m1 = expanded1CSS.match(/color:\s*(oklch\([^)]+\))/);
+      if (!m1) continue;
+      const oklch1 = m1[1];
+      const parsed1 = parseOklch(oklch1);
+      if (!parsed1) continue;
 
-      for (const call of calls) {
-        // Step 1: expand original --tug-color() to oklch
-        const expanded1CSS = expandTugColorInCSS(`a { color: ${call}; }`);
-        const m1 = expanded1CSS.match(/color:\s*(oklch\([^)]+\))/);
-        if (!m1) continue;
-        const oklch1 = m1[1];
-        const parsed1 = parseOklch(oklch1);
-        if (!parsed1) continue;
+      // Step 2: recover TugColor params via oklchToTugColor
+      const recovered = oklchToTugColor(oklch1);
+      const recoveredCall = `--tug-color(${recovered.hue}, ${recovered.intensity}, ${recovered.tone})`;
 
-        // Step 2: recover TugColor params via oklchToTugColor
-        const recovered = oklchToTugColor(oklch1);
-        const recoveredCall = `--tug-color(${recovered.hue}, ${recovered.intensity}, ${recovered.tone})`;
+      // Step 3: re-expand recovered --tug-color()
+      const expanded2CSS = expandTugColorInCSS(`a { color: ${recoveredCall}; }`);
+      const m2 = expanded2CSS.match(/color:\s*(oklch\([^)]+\))/);
+      if (!m2) continue;
+      const parsed2 = parseOklch(m2[1]);
+      if (!parsed2) continue;
 
-        // Step 3: re-expand recovered --tug-color()
-        const expanded2CSS = expandTugColorInCSS(`a { color: ${recoveredCall}; }`);
-        const m2 = expanded2CSS.match(/color:\s*(oklch\([^)]+\))/);
-        if (!m2) continue;
-        const parsed2 = parseOklch(m2[1]);
-        if (!parsed2) continue;
-
-        // Step 4: compare
-        const dE = oklchDeltaE(parsed1, parsed2);
-        if (dE >= 0.02) {
-          failures.push({ call, dE });
-        }
+      // Step 4: compare
+      const dE = oklchDeltaE(parsed1, parsed2);
+      if (dE >= 0.02) {
+        failures.push({ call, dE });
       }
+    }
 
-      if (failures.length > 0) {
-        const report = failures.map(f => `  ${f.call}: delta-E=${f.dE.toFixed(4)}`).join("\n");
-        throw new Error(`${failures.length} round-trip failure(s) in ${file}:\n${report}`);
-      }
-    });
-  }
+    if (failures.length > 0) {
+      const report = failures.map(f => `  ${f.call}: delta-E=${f.dE.toFixed(4)}`).join("\n");
+      throw new Error(`${failures.length} round-trip failure(s) in tug-base (combined):\n${report}`);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -190,8 +201,9 @@ describe("Step 8: oklchToTugColor() round-trip across all converted tokens", () 
 // ---------------------------------------------------------------------------
 
 describe("Step 8: --tug-color() calls are fully expanded in theme files", () => {
-  it("tug-base.css: processing through plugin produces zero --tug-color() in declaration values", () => {
-    const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
+  it("tug-base-generated.css: processing through plugin produces zero --tug-color() in declaration values", () => {
+    // tug-base-generated.css contains its own body {} block with all token declarations
+    const css = readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
     const result = expandTugColorInCSS(css);
     const root = postcss.parse(result);
     const remaining: string[] = [];
@@ -201,4 +213,3 @@ describe("Step 8: --tug-color() calls are fully expanded in theme files", () => 
     expect(remaining).toHaveLength(0);
   });
 });
-

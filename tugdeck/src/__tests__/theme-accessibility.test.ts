@@ -55,6 +55,15 @@ import { oklchToHex, oklchToLinearSRGB } from "@/components/tugways/palette-engi
 
 const STYLES_DIR = join(import.meta.dir, "../../styles");
 
+/**
+ * Read tug-base-generated.css, which contains the body {} block with all
+ * --tug-base-* token declarations. This is the file used by the token-extraction
+ * helpers (which regex on body {}). tug-base.css @imports it at the top level.
+ */
+function readInlinedThemeCSS(): string {
+  return readFileSync(join(STYLES_DIR, "tug-base-generated.css"), "utf8");
+}
+
 /** Extract all --tug-base-* custom property names defined in tug-base.css body{}. */
 function extractBaseTokenNames(css: string): Set<string> {
   const tokens = new Set<string>();
@@ -151,7 +160,9 @@ function extractChromaticTokens(css: string): {
 // ---------------------------------------------------------------------------
 
 describe("pairing-map", () => {
-  const css = readFileSync(join(STYLES_DIR, "tug-base.css"), "utf8");
+  // tug-base.css @imports tug-base-generated.css for the token block.
+  // Use the inlined combined CSS so the body{} regex finds all tokens.
+  const css = readInlinedThemeCSS();
   const { fg: chromaticFgTokens, bg: chromaticBgTokens } =
     extractChromaticTokens(css);
 
