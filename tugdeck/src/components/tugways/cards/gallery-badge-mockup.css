@@ -1,0 +1,396 @@
+/**
+ * Badge mockup styles — self-contained CSS for exploring badge redesign.
+ *
+ * These styles are scoped under .badge-mockup-* classes and do NOT touch
+ * the real tug-badge or tug-base token system. Purely exploratory.
+ */
+
+/* ============================================================================
+   Mockup badge base — shared across all mockup variants
+   ========================================================================= */
+
+.badge-mockup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================================
+   Mockup icon support
+   ========================================================================= */
+
+.badge-mockup-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.badge-mockup-icon svg {
+  color: currentColor;
+}
+
+/* ============================================================================
+   Mockup sizes — same dimensions as real TugBadge
+   ========================================================================= */
+
+.badge-mockup-sm {
+  height: 1.25rem;   /* 20px */
+  padding: 0 0.5rem;
+  font-size: 0.625rem; /* 10px */
+  gap: 0.1875rem;
+}
+
+.badge-mockup-sm .badge-mockup-icon svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+.badge-mockup-md {
+  height: 1.5rem;    /* 24px */
+  padding: 0 0.625rem;
+  font-size: 0.6875rem; /* 11px */
+  gap: 0.25rem;
+}
+
+.badge-mockup-md .badge-mockup-icon svg {
+  width: 0.6875rem;
+  height: 0.6875rem;
+}
+
+.badge-mockup-lg {
+  height: 1.75rem;   /* 28px */
+  padding: 0 0.75rem;
+  font-size: 0.75rem; /* 12px */
+  gap: 0.25rem;
+}
+
+.badge-mockup-lg .badge-mockup-icon svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* ============================================================================
+   Shape: "tag" — squarish with small radius (vs button pill)
+   ========================================================================= */
+
+.badge-mockup-shape-tag {
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+/* ============================================================================
+   Shape: "pill" — current badge shape (for comparison)
+   ========================================================================= */
+
+.badge-mockup-shape-pill {
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+
+/* ============================================================================
+   Treatment: "tinted" — subtle tinted background + colored text
+   The key differentiation from buttons: badges use low-alpha background
+   with role-colored text. Buttons use dark fill + knocked-out (white) text.
+   ========================================================================= */
+
+/* --- tinted accent (orange) --- */
+.badge-mockup-tinted-accent {
+  background-color: var(--tug-base-tone-accent-bg);
+  color: --tug-color(orange-light);
+  border-color: transparent;
+}
+
+/* --- tinted action (blue) --- */
+.badge-mockup-tinted-action {
+  background-color: var(--tug-base-tone-active-bg);
+  color: --tug-color(blue-light);
+  border-color: transparent;
+}
+
+/* --- tinted agent (violet) --- */
+.badge-mockup-tinted-agent {
+  background-color: var(--tug-base-tone-agent-bg);
+  color: --tug-color(violet-light);
+  border-color: transparent;
+}
+
+/* --- tinted data (teal) --- */
+.badge-mockup-tinted-data {
+  background-color: var(--tug-base-tone-data-bg);
+  color: --tug-color(teal-light);
+  border-color: transparent;
+}
+
+/* --- tinted danger (red) --- */
+.badge-mockup-tinted-danger {
+  background-color: var(--tug-base-tone-danger-bg);
+  color: --tug-color(red-light);
+  border-color: transparent;
+}
+
+/* --- tinted success (green) --- */
+.badge-mockup-tinted-success {
+  background-color: var(--tug-base-tone-success-bg);
+  color: --tug-color(green-light);
+  border-color: transparent;
+}
+
+/* --- tinted caution (yellow) --- */
+.badge-mockup-tinted-caution {
+  background-color: var(--tug-base-tone-caution-bg);
+  color: --tug-color(yellow-light);
+  border-color: transparent;
+}
+
+/* ============================================================================
+   Treatment: "tinted-border" — tinted bg + colored text + subtle border
+   Same as tinted but with a faint border matching the role color.
+   ========================================================================= */
+
+.badge-mockup-tinted-border-accent {
+  background-color: var(--tug-base-tone-accent-bg);
+  color: --tug-color(orange-light);
+  border-color: var(--tug-base-tone-accent-border);
+}
+
+.badge-mockup-tinted-border-action {
+  background-color: var(--tug-base-tone-active-bg);
+  color: --tug-color(blue-light);
+  border-color: var(--tug-base-tone-active-border);
+}
+
+.badge-mockup-tinted-border-agent {
+  background-color: var(--tug-base-tone-agent-bg);
+  color: --tug-color(violet-light);
+  border-color: var(--tug-base-tone-agent-border);
+}
+
+.badge-mockup-tinted-border-data {
+  background-color: var(--tug-base-tone-data-bg);
+  color: --tug-color(teal-light);
+  border-color: var(--tug-base-tone-data-border);
+}
+
+.badge-mockup-tinted-border-danger {
+  background-color: var(--tug-base-tone-danger-bg);
+  color: --tug-color(red-light);
+  border-color: var(--tug-base-tone-danger-border);
+}
+
+.badge-mockup-tinted-border-success {
+  background-color: var(--tug-base-tone-success-bg);
+  color: --tug-color(green-light);
+  border-color: var(--tug-base-tone-success-border);
+}
+
+.badge-mockup-tinted-border-caution {
+  background-color: var(--tug-base-tone-caution-bg);
+  color: --tug-color(yellow-light);
+  border-color: var(--tug-base-tone-caution-border);
+}
+
+/* ============================================================================
+   Treatment: "filled" — current button-style (dark fill + white text)
+   Included for side-by-side comparison with the new treatments.
+   ========================================================================= */
+
+.badge-mockup-filled-accent {
+  background-color: var(--tug-base-control-filled-accent-bg-rest);
+  color: var(--tug-base-control-filled-accent-fg-rest);
+  border-color: var(--tug-base-control-filled-accent-border-rest);
+}
+
+.badge-mockup-filled-action {
+  background-color: var(--tug-base-control-filled-action-bg-rest);
+  color: var(--tug-base-control-filled-action-fg-rest);
+  border-color: var(--tug-base-control-filled-action-border-rest);
+}
+
+.badge-mockup-filled-agent {
+  background-color: var(--tug-base-control-filled-agent-bg-rest);
+  color: var(--tug-base-control-filled-agent-fg-rest);
+  border-color: var(--tug-base-control-filled-agent-border-rest);
+}
+
+.badge-mockup-filled-data {
+  background-color: var(--tug-base-control-filled-data-bg-rest);
+  color: var(--tug-base-control-filled-data-fg-rest);
+  border-color: var(--tug-base-control-filled-data-border-rest);
+}
+
+.badge-mockup-filled-danger {
+  background-color: var(--tug-base-control-filled-danger-bg-rest);
+  color: var(--tug-base-control-filled-danger-fg-rest);
+  border-color: var(--tug-base-control-filled-danger-border-rest);
+}
+
+.badge-mockup-filled-success {
+  background-color: var(--tug-base-control-filled-success-bg-rest);
+  color: var(--tug-base-control-filled-success-fg-rest);
+  border-color: var(--tug-base-control-filled-success-border-rest);
+}
+
+.badge-mockup-filled-caution {
+  background-color: var(--tug-base-control-filled-caution-bg-rest);
+  color: var(--tug-base-control-filled-caution-fg-rest);
+  border-color: var(--tug-base-control-filled-caution-border-rest);
+}
+
+/* ============================================================================
+   Treatment: "ghost" — no background, just colored text (for comparison)
+   ========================================================================= */
+
+.badge-mockup-ghost-accent   { background: transparent; color: --tug-color(orange-light);  border-color: transparent; }
+.badge-mockup-ghost-action   { background: transparent; color: --tug-color(blue-light);    border-color: transparent; }
+.badge-mockup-ghost-agent    { background: transparent; color: --tug-color(violet-light);   border-color: transparent; }
+.badge-mockup-ghost-data     { background: transparent; color: --tug-color(teal-light);     border-color: transparent; }
+.badge-mockup-ghost-danger   { background: transparent; color: --tug-color(red-light);      border-color: transparent; }
+.badge-mockup-ghost-success  { background: transparent; color: --tug-color(green-light);    border-color: transparent; }
+.badge-mockup-ghost-caution  { background: transparent; color: --tug-color(yellow-light);   border-color: transparent; }
+
+/* ============================================================================
+   Comparison section layout
+   ========================================================================= */
+
+/* ============================================================================
+   Slider controls
+   ========================================================================= */
+
+.badge-mockup-controls {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.badge-mockup-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 12rem;
+}
+
+.badge-mockup-control-group-title {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--tug-base-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.125rem;
+}
+
+.badge-mockup-reset,
+.badge-mockup-reset-all {
+  background: none;
+  border: none;
+  color: var(--tug-base-fg-subtle);
+  font-size: 0.5625rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.badge-mockup-reset:hover,
+.badge-mockup-reset-all:hover {
+  color: var(--tug-base-fg-default);
+}
+
+.badge-mockup-reset-all {
+  font-size: 0.625rem;
+  margin-left: 0.5rem;
+  color: var(--tug-base-fg-muted);
+}
+
+.badge-mockup-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge-mockup-slider-label {
+  font-size: 0.625rem;
+  color: var(--tug-base-fg-subtle);
+  min-width: 4rem;
+  text-align: right;
+}
+
+.badge-mockup-slider-input {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--tug-base-tone-active);
+  cursor: pointer;
+}
+
+.badge-mockup-slider-value {
+  font-size: 0.625rem;
+  color: var(--tug-base-fg-muted);
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   Comparison section layout
+   ========================================================================= */
+
+.badge-mockup-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.badge-mockup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.badge-mockup-group-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--tug-base-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-mockup-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge-mockup-row-label {
+  font-size: 0.6875rem;
+  color: var(--tug-base-fg-subtle);
+  min-width: 7rem;
+  flex-shrink: 0;
+}
+
+.badge-mockup-vs {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+.badge-mockup-vs-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.badge-mockup-vs-header {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--tug-base-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--tug-base-border-muted);
+}
