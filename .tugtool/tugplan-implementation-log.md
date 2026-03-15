@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-15T01:17:28Z
+---
+
+## step-8: Final verification checkpoint: 1566 tests pass, generation idempotent, build succeeds, CSS structure correct. Plan tugplan-mode-preset-formulas complete.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-7
 date: 2025-03-15T01:14:00Z
 ---
