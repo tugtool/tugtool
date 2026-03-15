@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-15T00:25:37Z
+---
+
+## step-2: Corrected all dark-mode surface tone/intensity/hue formulas, fg tier offsets and tone anchors, icon formulas, and added interactive hue field (cyan) per D05. Surface/fg/icon mismatches reduced from 38 to 23.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-1
 date: 2025-03-15T00:07:30Z
 ---
