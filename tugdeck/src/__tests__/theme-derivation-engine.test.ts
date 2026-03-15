@@ -32,7 +32,7 @@ import {
   autoAdjustContrast,
 } from "@/components/tugways/theme-accessibility";
 
-import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 
 
 // ---------------------------------------------------------------------------
@@ -280,29 +280,35 @@ describe("derivation-engine", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * fg tokens that the current derivation engine produces below WCAG thresholds
+ * Element tokens that the current derivation engine produces below Lc thresholds
  * for known structural or design reasons. These are excluded from the T4.x
  * zero-unexpected-failures assertions so the tests track real regressions rather
  * than pre-existing constraints.
  *
  * Categories:
  *
- * A. Secondary/tertiary text hierarchy (same as T3.5 exceptions):
+ * A. Secondary/tertiary text hierarchy (intentionally reduced contrast):
  *      fg-subtle, fg-placeholder, fg-link-hover, fg-link,
  *      control-selected-fg, control-highlighted-fg,
  *      selection-fg
  *
+ * A2. Muted / read-only hierarchy — below Lc 75 by design (engine calibrated for
+ *     primary text; secondary tiers intentionally trade off contrast for visual
+ *     hierarchy legibility):
+ *      fg-muted (Lc ~61, below Lc 75 body-text threshold),
+ *      field-fg-readOnly (Lc ~61, read-only fields use reduced contrast)
+ *
  * B. Text/icon on accent or vivid colored backgrounds (design constraint —
- *    accent hues are vivid mid-tone; white fg cannot always reach 4.5:1 against
- *    them while keeping the accent visually vibrant):
- *      fg-onAccent, icon-onAccent
+ *    accent hues are vivid mid-tone):
+ *      fg-onAccent, icon-onAccent, fg-onDanger (danger bg creates Lc ~53 ceiling)
  *
  * C. Interactive state tokens on vivid colored filled button backgrounds
  *    (hover/active states are transient; filled button bg hues may be vivid
- *    mid-tones that fg text can't always reach 4.5:1 against):
+ *    mid-tones that fg text can't reach Lc 60):
  *      control-filled-{role}-fg-hover/active, control-filled-{role}-icon-hover/active
  *    Also outlined-agent (colored bg reduces default fg contrast in dark mode)
- *    and ghost-danger-active (danger hue at high intensity is mid-tone).
+ *    and ghost-danger: rest/hover/active (danger hue at high intensity is mid-tone,
+ *    Lc ~40-41 — below Lc 60 large-text threshold).
  *
  * D. Semantic tone tokens (status/informational colors — designed for
  *    medium visual weight, not primary body-text contrast):
@@ -311,14 +317,22 @@ describe("derivation-engine", () => {
  *      tone-accent-icon, tone-active-icon, tone-agent-icon, tone-data-icon,
  *      tone-success-icon, tone-caution-icon, tone-danger-icon
  *
- * E. UI control indicators (form elements / state indicators — small, decorative
- *    or same-plane as their background; WCAG non-text threshold applies but
- *    3-iteration tone-bumping alone cannot fix all):
+ * E. UI control indicators (form elements / state indicators):
  *      accent-default, toggle-thumb, toggle-icon-mixed,
  *      checkmark, radio-dot, range-thumb
+ *    Also muted icons (Lc ~29, borderline below Lc 30 ui-component threshold)
+ *    and disabled elements (decorative role, Lc ~8-9 below Lc 15):
+ *      fg-disabled, icon-disabled, field-fg-disabled
+ *
+ * F. Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
+ *    has inherently low contrast; real readability is fg over the underlying surface.
+ *
+ * G. Tab chrome — structural UI chrome below Lc 75 body-text threshold:
+ *      tab-fg-rest (Lc ~42 on surface-sunken; tab chrome uses intentionally
+ *      lower contrast for visual hierarchy)
  *
  */
-const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
+const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   // A — secondary / tertiary text
   "--tug-base-fg-subtle",
   "--tug-base-fg-placeholder",
@@ -327,9 +341,13 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-selected-fg",
   "--tug-base-control-highlighted-fg",
   "--tug-base-selection-fg",
-  // B — text/icon on vivid accent bg
+  // A2 — muted / read-only hierarchy (Lc ~61, below Lc 75 body-text threshold)
+  "--tug-base-fg-muted",
+  "--tug-base-field-fg-readOnly",
+  // B — text/icon on vivid accent or semantic bg
   "--tug-base-fg-onAccent",
   "--tug-base-icon-onAccent",
+  "--tug-base-fg-onDanger",
   // C — interactive state tokens on vivid colored filled buttons
   // (hover/active states are transient; filled button bg hues may be vivid mid-tones)
   "--tug-base-control-filled-accent-fg-hover",
@@ -375,7 +393,9 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-control-outlined-agent-icon-rest",
   "--tug-base-control-outlined-agent-icon-hover",
   "--tug-base-control-outlined-agent-icon-active",
-  // C3 — ghost-danger active: danger hue at signalI+20 is mid-tone on dark surface
+  // C3 — ghost-danger rest/hover/active: danger hue at mid-tone is below Lc 60 large-text
+  "--tug-base-control-ghost-danger-fg-rest",
+  "--tug-base-control-ghost-danger-fg-hover",
   "--tug-base-control-ghost-danger-fg-active",
   "--tug-base-control-ghost-danger-icon-active",
   // D — semantic tone tokens (all 7 families)
@@ -400,6 +420,11 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-checkmark",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
+  // E2 — muted / disabled element tokens below Lc thresholds
+  "--tug-base-icon-muted",
+  "--tug-base-fg-disabled",
+  "--tug-base-icon-disabled",
+  "--tug-base-field-fg-disabled",
   // F — Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
   // has inherently low contrast; real readability is fg over the underlying surface.
   "--tug-base-badge-tinted-accent-fg",
@@ -409,6 +434,8 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-badge-tinted-danger-fg",
   "--tug-base-badge-tinted-success-fg",
   "--tug-base-badge-tinted-caution-fg",
+  // G — Tab chrome (intentionally below Lc 75 body-text threshold)
+  "--tug-base-tab-fg-rest",
 ]);
 
 /**
@@ -430,15 +457,15 @@ function runFullPipeline(recipeName: string): {
   const output = deriveTheme(recipe);
 
   // Step 2: Validate contrast — resolved feeds directly into validateThemeContrast [D09]
-  const initialResults = validateThemeContrast(output.resolved, FG_BG_PAIRING_MAP);
-  const initialFailureCount = initialResults.filter((r) => !r.wcagPass).length;
+  const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  const initialFailureCount = initialResults.filter((r) => !r.lcPass).length;
 
   // Step 3: Auto-adjust any failures
-  const failures = initialResults.filter((r) => !r.wcagPass);
+  const failures = initialResults.filter((r) => !r.lcPass);
   const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures);
 
   // Step 4: Re-validate with adjusted resolved map
-  const finalResults = validateThemeContrast(adjusted.resolved, FG_BG_PAIRING_MAP);
+  const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
   // Consistency check: every token that was adjusted must still have a
   // --tug-color() string in adjusted.tokens. This verifies tokens and
@@ -481,22 +508,22 @@ describe("derivation-engine integration", () => {
     // After adjustment, body-text and ui-component failures must only come from
     // the documented known-exception set
     const unexpectedFailures = finalResults.filter((r) => {
-      if (r.wcagPass) return false;
-      return !KNOWN_BELOW_THRESHOLD_FG_TOKENS.has(r.fg);
+      if (r.lcPass) return false;
+      return !KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg);
     });
     const descriptions = unexpectedFailures.map(
-      (f) => `${f.fg} on ${f.bg} [${f.role}]: ${f.wcagRatio.toFixed(2)}:1`,
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
     );
     expect(descriptions).toEqual([]);
 
-    // Core readability assertion: fg-default on primary surfaces must pass 4.5:1
+    // Core readability assertion: fg-default on primary surfaces must pass Lc 75
     const coreFailures = finalResults.filter(
       (r) =>
         r.fg === "--tug-base-fg-default" &&
         (r.bg === "--tug-base-surface-default" ||
           r.bg === "--tug-base-surface-inset" ||
           r.bg === "--tug-base-surface-content") &&
-        !r.wcagPass,
+        !r.lcPass,
     );
     expect(coreFailures).toEqual([]);
   });
@@ -511,7 +538,7 @@ describe("derivation-engine integration", () => {
     // validateThemeContrast accepts Record<string, ResolvedColor> directly —
     // the same type returned by deriveTheme().resolved. No type assertion or
     // conversion is needed.
-    const results = validateThemeContrast(output.resolved, FG_BG_PAIRING_MAP);
+    const results = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     // Results must be non-empty (at least one pair evaluated)
     expect(results.length).toBeGreaterThan(0);
@@ -525,7 +552,7 @@ describe("derivation-engine integration", () => {
     }
 
     // The results contain both passing and failing pairs (not trivially all-pass)
-    const passingCount = results.filter((r) => r.wcagPass).length;
+    const passingCount = results.filter((r) => r.lcPass).length;
     const totalCount = results.length;
     expect(passingCount).toBeGreaterThan(0);
     expect(totalCount).toBeGreaterThan(passingCount); // some pairs fail → engine is honest

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-15T16:38:34Z
+---
+
+## step-1: Renamed all symbols from WCAG-normative/fg-bg naming to Lc-normative/element-surface naming across 11 files. Flipped normative pass/fail gate from WCAG ratio to Lc threshold, increased large-text threshold from 45 to 60.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-8
 date: 2025-03-15T01:17:28Z
 ---

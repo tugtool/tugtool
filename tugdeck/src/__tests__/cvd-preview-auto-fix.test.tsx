@@ -17,7 +17,7 @@ import { render, act, cleanup, fireEvent } from "@testing-library/react";
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { autoAdjustContrast, validateThemeContrast } from "@/components/tugways/theme-accessibility";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { FG_BG_PAIRING_MAP } from "@/components/tugways/fg-bg-pairing-map";
+import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------
@@ -150,8 +150,8 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
 
     // Compute actual failure count from logic to know expected button state
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, FG_BG_PAIRING_MAP);
-    const failures = results.filter((r) => !r.wcagPass && r.role !== "decorative");
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length === 0) {
       expect(btn.disabled).toBe(true);
@@ -165,8 +165,8 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
 
     // Check if there are failures — if so, clicking should show a result.
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, FG_BG_PAIRING_MAP);
-    const failures = results.filter((r) => !r.wcagPass && r.role !== "decorative");
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const btn = container.querySelector("[data-testid='gtg-autofix-btn']") as HTMLButtonElement;
@@ -183,8 +183,8 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
     // Pure-logic test verifying the underlying function works correctly,
     // independent of UI rendering.
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, FG_BG_PAIRING_MAP);
-    const failures = results.filter((r) => !r.wcagPass && r.role !== "decorative");
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures);
@@ -206,13 +206,13 @@ describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates toke
 
   it("autoAdjustContrast (unit): re-validating fixed tokens shows improved contrast", () => {
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, FG_BG_PAIRING_MAP);
-    const failures = results.filter((r) => !r.wcagPass && r.role !== "decorative");
+    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    const failures = results.filter((r) => !r.lcPass && r.role !== "decorative");
 
     if (failures.length > 0) {
       const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures);
-      const fixedResults = validateThemeContrast(fixed.resolved, FG_BG_PAIRING_MAP);
-      const fixedFailures = fixedResults.filter((r) => !r.wcagPass && r.role !== "decorative");
+      const fixedResults = validateThemeContrast(fixed.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+      const fixedFailures = fixedResults.filter((r) => !r.lcPass && r.role !== "decorative");
       // After auto-fix, there should be fewer failures than before
       expect(fixedFailures.length).toBeLessThanOrEqual(failures.length);
     }
