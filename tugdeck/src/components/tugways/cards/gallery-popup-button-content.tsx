@@ -121,6 +121,34 @@ export function GalleryPopupButtonContent() {
             </div>
           </div>
           <div className="gpb-demo-item">
+            <span className="gpb-demo-label">icon+text</span>
+            <div className="gpb-button-wrapper">
+              <TugPopupMenu
+                trigger={
+                  <TugButton emphasis="filled" role="action" size="sm" subtype="icon-text" icon={<Settings size={14} />} trailingIcon={<ChevronDown size={12} />}>
+                    Settings
+                  </TugButton>
+                }
+                items={SAMPLE_ITEMS}
+                onSelect={(id) => setLastSelected(id)}
+              />
+            </div>
+          </div>
+          <div className="gpb-demo-item">
+            <span className="gpb-demo-label">icon+text outlined</span>
+            <div className="gpb-button-wrapper">
+              <TugPopupMenu
+                trigger={
+                  <TugButton emphasis="outlined" role="action" size="sm" subtype="icon-text" icon={<Palette size={14} />} trailingIcon={<ChevronDown size={12} />}>
+                    Theme
+                  </TugButton>
+                }
+                items={THEME_ITEMS}
+                onSelect={(id) => setLastSelected(id)}
+              />
+            </div>
+          </div>
+          <div className="gpb-demo-item">
             <span className="gpb-demo-label">icon-only</span>
             <div className="gpb-button-wrapper">
               <TugPopupMenu
