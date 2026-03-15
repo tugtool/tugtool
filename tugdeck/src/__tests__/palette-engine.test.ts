@@ -700,11 +700,11 @@ describe("oklchToTugColor()", () => {
     expect(rV100.tone).toBe(100);
   });
 
-  it("raw angle test: oklch at hue angle 96 (not close to any named hue) returns hue-96", () => {
-    // hue angle 96 — yellow=90(6deg away), chartreuse=102.5(6.5deg away), both > 5 deg threshold
+  it("raw angle test: oklch at hue angle 96 returns closest 144-vocab name (yellow-chartreuse at 94.17°)", () => {
+    // hue angle 96 — with 144-entry vocabulary, yellow-chartreuse at 94.17° is the closest (diff=1.83°)
     const oklch = "oklch(0.5 0.05 96)";
     const result = oklchToTugColor(oklch);
-    expect(result.hue).toBe("hue-96");
+    expect(result.hue).toBe("yellow-chartreuse");
   });
 
   it("round-trip: all 48 hues at intensity=20, tone=85 recover correct hue name", () => {
@@ -718,16 +718,18 @@ describe("oklchToTugColor()", () => {
     }
   });
 
-  it("returns hue-NNN for raw angle when not within 5 degrees of any named hue", () => {
-    // angle 96 is 6 degrees from yellow (90) and 6.5 from chartreuse (102.5) — both > 5 deg threshold
+  it("returns closest 144-vocab hue name for any angle (no hue-NNN fallback in 48-color system)", () => {
+    // With 144 entries (48 base + 96 hyphenated), all angles are within ~4° of a named hue.
+    // angle 96 is 1.83° from yellow-chartreuse (94.17°) — always returns a named form.
     const result = oklchToTugColor("oklch(0.7 0.08 96)");
-    expect(result.hue).toMatch(/^hue-\d+/);
+    expect(result.hue).toBe("yellow-chartreuse");
   });
 
-  it("returns a named hue when within 5 degrees of a named hue angle", () => {
-    // blue is at 230; angle 234 is 4 degrees away — within threshold
+  it("returns the closest 144-vocab entry for a given angle", () => {
+    // blue is at 230°, blue-sapphire at 233.33°, sapphire-blue at 236.67°.
+    // angle 234 is 0.67° from blue-sapphire — closest in the 144-entry vocabulary.
     const result = oklchToTugColor("oklch(0.7 0.08 234)");
-    expect(result.hue).toBe("blue");
+    expect(result.hue).toBe("blue-sapphire");
   });
 
   it("returns valid {hue, intensity, tone} for an invalid oklch string", () => {
@@ -747,10 +749,10 @@ describe("tugColorPretty()", () => {
     expect(result).toBe("blue intensity=5 tone=13");
   });
 
-  it("formats raw angle as 'hue-NNN intensity=N tone=N'", () => {
-    // angle 96: 6 degrees from yellow (90) and 6.5 from chartreuse (102.5) — both > 5 threshold
+  it("formats any angle as a named hue (no hue-NNN fallback in 48-color system)", () => {
+    // angle 96: closest in 144-vocab is yellow-chartreuse at 94.17° (diff=1.83°)
     const result = tugColorPretty("oklch(0.5 0.05 96)");
-    expect(result).toMatch(/^hue-96 intensity=\d+ tone=\d+$/);
+    expect(result).toMatch(/^yellow-chartreuse intensity=\d+ tone=\d+$/);
   });
 
   it("round-trip: tugColorPretty(tugColor(hue, intensity, tone)) contains correct hue name", () => {

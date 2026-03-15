@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-15T21:39:40Z
+---
+
+## step-8: Fixed oklchToTugColor to use 144-entry HUE_VOCABULARY, removing hue-NNN fallback. Fixed parseOklchStr for alpha handling. Updated roundtrip integration test with achromatic skip guard. BRIO_GROUND_TRUTH fixture verified correct from prior steps.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-7
 date: 2025-03-15T21:19:45Z
 ---

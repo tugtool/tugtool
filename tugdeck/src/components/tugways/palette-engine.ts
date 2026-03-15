@@ -579,15 +579,33 @@ export function isAdjacent(a: string, b: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// OKLCH_HUE_VOCABULARY — precomputed 144-entry name-to-angle map for reverse lookup
+// 48 base names + 96 hyphenated adjacent pairs, built at module load time.
+// Used by oklchToTugColor to find the closest named hue expression.
+// ---------------------------------------------------------------------------
+
+const OKLCH_HUE_VOCABULARY: Record<string, number> = (() => {
+  const vocab: Record<string, number> = { ...HUE_FAMILIES };
+  const len = ADJACENCY_RING.length;
+  for (let i = 0; i < len; i++) {
+    const a = ADJACENCY_RING[i];
+    const b = ADJACENCY_RING[(i + 1) % len];
+    vocab[`${a}-${b}`] = resolveHyphenatedHue(a, b);
+    vocab[`${b}-${a}`] = resolveHyphenatedHue(b, a);
+  }
+  return vocab;
+})();
+
+// ---------------------------------------------------------------------------
 // oklchToTugColor — Reverse mapper: oklch() string → TugColor parameters
 // ---------------------------------------------------------------------------
 
 /**
- * Parse an `oklch(L C h)` CSS string into its numeric components.
- * Returns null if the string does not match the expected format.
+ * Parse an `oklch(L C h [/ alpha])` CSS string into its numeric components.
+ * Handles optional alpha channel. Returns null if the string does not match.
  */
 function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | null {
-  const m = oklchStr.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
+  const m = oklchStr.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*[\d.]+)?\s*\)/);
   if (!m) return null;
   return { L: parseFloat(m[1]), C: parseFloat(m[2]), h: parseFloat(m[3]) };
 }
@@ -596,27 +614,27 @@ function parseOklchStr(oklchStr: string): { L: number; C: number; h: number } | 
  * Reverse-map an `oklch(L C h)` CSS string to the closest TugColor parameters.
  *
  * Algorithm:
- * 1. Parse L, C, h from the oklch string.
- * 2. Find closest named hue by comparing h to all HUE_FAMILIES angles.
- *    If within 5 degrees, use the named hue; otherwise return `hue-NNN`.
- * 3. Invert the tone-to-L piecewise formula to recover tone (integer).
- * 4. Compute peakC and invert to recover intensity (integer).
+ * 1. Parse L, C, h from the oklch string (alpha ignored).
+ * 2. If achromatic (C < 0.01), return a neutral gray with intensity=0.
+ * 3. Find the closest entry in OKLCH_HUE_VOCABULARY (144 entries: 48 base + 96
+ *    hyphenated adjacent pairs). Always returns a named or hyphenated hue.
+ * 4. Invert the tone-to-L piecewise formula to recover tone (integer).
+ * 5. Compute peakC using the primary color name and invert to recover intensity.
  *
- * @param oklchStr - An `oklch(L C h)` CSS string.
- * @returns `{ hue, intensity, tone }` where hue is a named family or `hue-NNN`.
+ * @param oklchStr - An `oklch(L C h [/ alpha])` CSS string.
+ * @returns `{ hue, intensity, tone }` where hue is a named or hyphenated hue.
  */
 export function oklchToTugColor(oklchStr: string): { hue: string; intensity: number; tone: number } {
   const parsed = parseOklchStr(oklchStr);
   if (!parsed) {
-    return { hue: "hue-0", intensity: 0, tone: 0 };
+    return { hue: "cobalt", intensity: 0, tone: 50 };
   }
   const { L, C, h } = parsed;
 
-  // Step 1: Find closest named hue
-  let closestHue = "";
+  // Step 1: Find closest entry in the 144-entry vocabulary (48 base + 96 hyphenated)
+  let closestHue = "cobalt";
   let closestDiff = Infinity;
-  for (const [name, angle] of Object.entries(HUE_FAMILIES)) {
-    // Compute circular angular difference
+  for (const [name, angle] of Object.entries(OKLCH_HUE_VOCABULARY)) {
     let diff = Math.abs(h - angle);
     if (diff > 180) diff = 360 - diff;
     if (diff < closestDiff) {
@@ -624,19 +642,13 @@ export function oklchToTugColor(oklchStr: string): { hue: string; intensity: num
       closestHue = name;
     }
   }
-  const hue = closestDiff <= 5 ? closestHue : `hue-${Math.round(h)}`;
+  const hue = closestHue;
 
-  // Step 2: Invert tone-to-L piecewise formula
+  // Step 2: Invert tone-to-L piecewise formula using the primary (first) color name.
   // Forward: L = L_DARK + min(tone,50)*(canonL-L_DARK)/50 + max(tone-50,0)*(L_LIGHT-canonL)/50
-  let canonicalL: number;
-  let peakC: number;
-  if (hue.startsWith("hue-")) {
-    canonicalL = 0.77; // median of DEFAULT_CANONICAL_L values
-    peakC = findMaxChroma(canonicalL, h) * PEAK_C_SCALE;
-  } else {
-    canonicalL = DEFAULT_CANONICAL_L[hue] ?? 0.77;
-    peakC = (MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
-  }
+  const primaryName = hue.split("-")[0];
+  const canonicalL = DEFAULT_CANONICAL_L[primaryName] ?? DEFAULT_CANONICAL_L[hue] ?? 0.77;
+  const peakC = (MAX_CHROMA_FOR_HUE[primaryName] ?? MAX_CHROMA_FOR_HUE[hue] ?? 0.022) * PEAK_C_SCALE;
 
   let tone: number;
   if (L <= canonicalL) {
