@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-15T01:14:00Z
+---
+
+## step-7: Restructured tug-base.css body{} with hand-authored preamble (zoom, chart aliases, shiki bridge) and single @generated:tokens:begin/end region covering all 350 tokens. Removed old control-tokens and chrome-tokens markers. Generation is idempotent.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-6
 date: 2025-03-15T01:05:53Z
 ---
