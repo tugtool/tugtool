@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-15T21:44:23Z
+---
+
+## step-9: Verified regenerated CSS tokens. generate:tokens produces zero diff (371 tokens). Zero offset syntax in any CSS file. Spot-checked migration mapping: cobalt+7→indigo-cobalt, violet-6→indigo-violet. Full test suite: 1616 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-8
 date: 2025-03-15T21:39:40Z
 ---
