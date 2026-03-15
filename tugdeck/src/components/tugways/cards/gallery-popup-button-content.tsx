@@ -125,9 +125,7 @@ export function GalleryPopupButtonContent() {
             <div className="gpb-button-wrapper">
               <TugPopupMenu
                 trigger={
-                  <TugButton emphasis="ghost" role="action" size="sm" subtype="icon" aria-label="Settings">
-                    <Settings size={14} />
-                  </TugButton>
+                  <TugButton emphasis="outlined" role="action" size="sm" subtype="icon" icon={<Settings size={14} />} aria-label="Settings" />
                 }
                 items={SAMPLE_ITEMS}
                 onSelect={(id) => setLastSelected(id)}
