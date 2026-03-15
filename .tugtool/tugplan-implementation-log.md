@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-15T19:48:18Z
+---
+
+## step-3: Phase 1 integration checkpoint. Full test suite 1582/1582 pass. No new KNOWN_BELOW_THRESHOLD entries required. Steps 1-2 tolerance changes verified.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-2
 date: 2025-03-15T19:46:24Z
 ---
