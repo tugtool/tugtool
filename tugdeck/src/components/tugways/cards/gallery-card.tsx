@@ -43,7 +43,7 @@ import { GalleryBadgeMockupContent } from "./gallery-badge-mockup-content";
 import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
+import type { TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupMenuItem } from "@/components/tugways/tug-popup-button";
@@ -927,120 +927,31 @@ export function GalleryTitleBarContent() {
 // GalleryBadgeContent
 // ---------------------------------------------------------------------------
 
-/** All emphasis x role combinations for the TugBadge showcase matrix [D06, Spec S06] */
-const ALL_BADGE_COMBOS: Array<{ emphasis: TugBadgeEmphasis; role: TugBadgeRole }> = [
-  { emphasis: "tinted",   role: "accent"   },
-  { emphasis: "tinted",   role: "action"   },
-  { emphasis: "tinted",   role: "agent"    },
-  { emphasis: "tinted",   role: "data"     },
-  { emphasis: "tinted",   role: "danger"   },
-  { emphasis: "tinted",   role: "success"  },
-  { emphasis: "tinted",   role: "caution"  },
-  { emphasis: "filled",   role: "accent"   },
-  { emphasis: "filled",   role: "action"   },
-  { emphasis: "filled",   role: "agent"    },
-  { emphasis: "filled",   role: "data"     },
-  { emphasis: "filled",   role: "danger"   },
-  { emphasis: "filled",   role: "success"  },
-  { emphasis: "filled",   role: "caution"  },
-  { emphasis: "outlined", role: "accent"   },
-  { emphasis: "outlined", role: "action"   },
-  { emphasis: "outlined", role: "agent"    },
-  { emphasis: "outlined", role: "data"     },
-  { emphasis: "outlined", role: "danger"   },
-  { emphasis: "outlined", role: "success"  },
-  { emphasis: "outlined", role: "caution"  },
-  { emphasis: "ghost",    role: "accent"   },
-  { emphasis: "ghost",    role: "action"   },
-  { emphasis: "ghost",    role: "agent"    },
-  { emphasis: "ghost",    role: "data"     },
-  { emphasis: "ghost",    role: "danger"   },
-  { emphasis: "ghost",    role: "success"  },
-  { emphasis: "ghost",    role: "caution"  },
-];
+/** All role combinations for the TugBadge showcase matrix (tinted emphasis only) */
+const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution"];
 const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
 
 /**
  * GalleryBadgeContent -- TugBadge showcase gallery tab.
  *
- * Renders the full emphasis x role matrix (3 emphasis × 7 roles = 21 combinations)
- * at all three sizes, with an interactive preview control section.
- *
- * **Authoritative reference:** [D06] TugBadge API, Spec S06, S07, S08, S09.
+ * Shows tinted emphasis across all 7 roles at all sizes.
  */
 export function GalleryBadgeContent() {
-  const [previewEmphasis, setPreviewEmphasis] = useState<TugBadgeEmphasis>("tinted");
-  const [previewRole, setPreviewRole] = useState<TugBadgeRole>("action");
-
   return (
     <div className="cg-content" data-testid="gallery-badge-content">
 
-      {/* ---- Interactive Preview Controls ---- */}
+      {/* ---- All roles × sizes ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Preview Controls</div>
-        <div className="cg-controls">
-          <div className="cg-control-group">
-            <span className="cg-control-label">Emphasis</span>
-            <TugPopupButton
-              label={previewEmphasis}
-              size="sm"
-              items={(["tinted", "filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => ({
-                id: v,
-                label: v,
-              }))}
-              onSelect={(id) => setPreviewEmphasis(id as TugBadgeEmphasis)}
-            />
-          </div>
-          <div className="cg-control-group">
-            <span className="cg-control-label">Role</span>
-            <TugPopupButton
-              label={previewRole}
-              size="sm"
-              items={(["accent", "active", "agent", "data", "danger", "success", "caution"] as TugBadgeRole[]).map((v) => ({
-                id: v,
-                label: v,
-              }))}
-              onSelect={(id) => setPreviewRole(id as TugBadgeRole)}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Interactive Preview ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">TugBadge — Interactive Preview</div>
-        <div className="cg-variant-row">
-          {ALL_BADGE_SIZES.map((size) => (
-            <TugBadge key={size} emphasis={previewEmphasis} role={previewRole} size={size}>
-              {previewEmphasis}-{previewRole}
-            </TugBadge>
-          ))}
-        </div>
-        <div className="cg-variant-row" style={{ marginTop: "0.5rem" }}>
-          {ALL_BADGE_SIZES.map((size) => (
-            <TugBadge key={`icon-${size}`} emphasis={previewEmphasis} role={previewRole} size={size} icon={<Star />}>
-              {previewEmphasis}-{previewRole}
-            </TugBadge>
-          ))}
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Full Matrix ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">TugBadge — Full Matrix (all emphasis × role × sizes)</div>
+        <div className="cg-section-title">TugBadge — All Roles × Sizes</div>
         <div className="cg-matrix">
           <div className="cg-subtype-block">
             <div className="cg-subtype-label">text only</div>
-            {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
-              <div key={`${emphasis}-${role}`} className="cg-variant-row">
-                <div className="cg-variant-label">{emphasis}-{role}</div>
+            {ALL_BADGE_ROLES.map((role) => (
+              <div key={role} className="cg-variant-row">
+                <div className="cg-variant-label">{role}</div>
                 <div className="cg-size-group">
                   {ALL_BADGE_SIZES.map((size) => (
-                    <TugBadge key={size} emphasis={emphasis} role={role} size={size}>
+                    <TugBadge key={size} role={role} size={size}>
                       {role}
                     </TugBadge>
                   ))}
@@ -1050,12 +961,12 @@ export function GalleryBadgeContent() {
           </div>
           <div className="cg-subtype-block">
             <div className="cg-subtype-label">icon + text</div>
-            {ALL_BADGE_COMBOS.map(({ emphasis, role }) => (
-              <div key={`${emphasis}-${role}`} className="cg-variant-row">
-                <div className="cg-variant-label">{emphasis}-{role}</div>
+            {ALL_BADGE_ROLES.map((role) => (
+              <div key={role} className="cg-variant-row">
+                <div className="cg-variant-label">{role}</div>
                 <div className="cg-size-group">
                   {ALL_BADGE_SIZES.map((size) => (
-                    <TugBadge key={size} emphasis={emphasis} role={role} size={size} icon={<Star />}>
+                    <TugBadge key={size} role={role} size={size} icon={<Star />}>
                       {role}
                     </TugBadge>
                   ))}

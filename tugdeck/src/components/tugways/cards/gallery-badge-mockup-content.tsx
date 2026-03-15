@@ -154,16 +154,16 @@ function MockupBadge({
 // ---- Defaults ----
 
 const DEFAULTS = {
-  fgIntensity: 20,
+  fgIntensity: 72,
   fgTone: 85,
-  bgIntensity: 50,
-  bgTone: 50,
+  bgIntensity: 65,
+  bgTone: 60,
   bgAlpha: 15,
   borderIntensity: 50,
   borderTone: 50,
-  borderAlpha: 0,
+  borderAlpha: 35,
   borderWidth: 1,
-  radius: 3,
+  radius: 2,
 } as const;
 
 export function GalleryBadgeMockupContent() {
