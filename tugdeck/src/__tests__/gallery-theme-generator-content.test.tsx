@@ -128,6 +128,17 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   // border-default and border-muted create visual hierarchy via subtle separation.
   "--tug-base-border-default",
   "--tug-base-border-muted",
+  // Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
+  // compositing over surface-default produces Lc ~19-24, below the Lc 30 ui-component
+  // threshold. These borders are deliberately subtle tinted accents — their visual
+  // presence is reinforced by the filled badge bg and text, not by the border alone.
+  "--tug-base-badge-tinted-accent-border",
+  "--tug-base-badge-tinted-action-border",
+  "--tug-base-badge-tinted-agent-border",
+  "--tug-base-badge-tinted-data-border",
+  "--tug-base-badge-tinted-danger-border",
+  "--tug-base-badge-tinted-success-border",
+  "--tug-base-badge-tinted-caution-border",
 ]);
 
 /**

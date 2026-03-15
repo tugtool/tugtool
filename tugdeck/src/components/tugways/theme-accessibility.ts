@@ -232,8 +232,31 @@ export function validateThemeContrast(
     // Skip pairs where either token is not in the resolved map
     if (!fgColor || !bgColor) continue;
 
-    const fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
-    const bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    let fgHex: string;
+    let bgHex: string;
+
+    if (pairing.parentSurface) {
+      // Alpha-composite resolution (Spec S02): when parentSurface is specified,
+      // composite any semi-transparent side over the parent before measuring contrast.
+      const parentColor = resolved[pairing.parentSurface];
+      if (!parentColor) {
+        // parentSurface not in resolved map — skip (same policy as missing element/surface)
+        continue;
+      }
+
+      fgHex =
+        (fgColor.alpha ?? 1.0) < 1.0
+          ? compositeOverSurface(fgColor, parentColor)
+          : oklchToHex(fgColor.L, fgColor.C, fgColor.h);
+
+      bgHex =
+        (bgColor.alpha ?? 1.0) < 1.0
+          ? compositeOverSurface(bgColor, parentColor)
+          : oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    } else {
+      fgHex = oklchToHex(fgColor.L, fgColor.C, fgColor.h);
+      bgHex = oklchToHex(bgColor.L, bgColor.C, bgColor.h);
+    }
 
     const wcagRatio = computeWcagContrast(fgHex, bgHex);
     const lc = computeLcContrast(fgHex, bgHex);
@@ -749,6 +772,53 @@ export function simulateCVDFromOKLCH(
  */
 function linearToSrgbGamma(c: number): number {
   return c >= 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
+}
+
+// ---------------------------------------------------------------------------
+// Alpha compositing — Spec S02
+// ---------------------------------------------------------------------------
+
+/**
+ * Alpha-composite a semi-transparent token over a fully-opaque parent surface.
+ *
+ * Both inputs are ResolvedColor values (OKLCH). The function converts each to
+ * linear sRGB via `oklchToLinearSRGB`, applies the standard alpha-over formula
+ * in linear sRGB, gamma-encodes the result, and returns a #rrggbb hex string.
+ *
+ * The parent surface MUST be fully opaque (alpha === 1.0 or undefined). Nested
+ * compositing (semi-transparent parent) is not supported and throws.
+ *
+ * Formula (per channel, linear sRGB):
+ *   C_out = token.C * alpha + parent.C * (1 - alpha)
+ *
+ * @param token  - Semi-transparent token to composite
+ * @param parent - Opaque parent surface to composite over
+ * @returns Composited color as #rrggbb hex string
+ * @throws If parent.alpha is defined and < 1.0 (nested compositing not supported)
+ */
+export function compositeOverSurface(token: ResolvedColor, parent: ResolvedColor): string {
+  const parentAlpha = parent.alpha ?? 1.0;
+  if (parentAlpha < 1.0) {
+    throw new Error(
+      `compositeOverSurface: parentSurface must be fully opaque (alpha=1.0), ` +
+      `got alpha=${parentAlpha}. Nested compositing is not supported.`,
+    );
+  }
+
+  const tokenLinear = oklchToLinearSRGB(token.L, token.C, token.h);
+  const parentLinear = oklchToLinearSRGB(parent.L, parent.C, parent.h);
+  const alpha = token.alpha ?? 1.0;
+
+  const r = tokenLinear.r * alpha + parentLinear.r * (1 - alpha);
+  const g = tokenLinear.g * alpha + parentLinear.g * (1 - alpha);
+  const b = tokenLinear.b * alpha + parentLinear.b * (1 - alpha);
+
+  const rOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(r))) * 255);
+  const gOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(g))) * 255);
+  const bOut = Math.round(Math.max(0, Math.min(1, linearToSrgbGamma(b))) * 255);
+
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(rOut)}${toHex(gOut)}${toHex(bOut)}`;
 }
 
 /**

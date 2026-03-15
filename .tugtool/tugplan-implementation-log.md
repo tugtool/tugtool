@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-15T17:29:16Z
+---
+
+## step-4: Implemented compositeOverSurface for alpha-over blending in linear sRGB. Updated validateThemeContrast to composite semi-transparent elements/surfaces over parentSurface before measuring Lc. Added parentSurface to 22 existing pairs (badge-tinted, tone, selection). Added 7 new badge-tinted-border pairs. Removed stale KNOWN_BELOW_THRESHOLD entries for badge-tinted-fg tokens now passing with compositing.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-3
 date: 2025-03-15T17:12:49Z
 ---

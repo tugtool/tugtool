@@ -433,15 +433,17 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-fg-disabled",
   "--tug-base-icon-disabled",
   "--tug-base-field-fg-disabled",
-  // F — Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
-  // has inherently low contrast; real readability is fg over the underlying surface.
-  "--tug-base-badge-tinted-accent-fg",
-  "--tug-base-badge-tinted-action-fg",
-  "--tug-base-badge-tinted-agent-fg",
-  "--tug-base-badge-tinted-data-fg",
-  "--tug-base-badge-tinted-danger-fg",
-  "--tug-base-badge-tinted-success-fg",
-  "--tug-base-badge-tinted-caution-fg",
+  // F — Badge tinted border tokens (Step 4): element side (border) has alpha 35%;
+  // compositing over surface-default produces Lc ~19-24, below the Lc 30 ui-component
+  // threshold. These borders are deliberately subtle tinted accents — their visual
+  // presence is reinforced by the filled badge bg and text, not by the border alone.
+  "--tug-base-badge-tinted-accent-border",
+  "--tug-base-badge-tinted-action-border",
+  "--tug-base-badge-tinted-agent-border",
+  "--tug-base-badge-tinted-data-border",
+  "--tug-base-badge-tinted-danger-border",
+  "--tug-base-badge-tinted-success-border",
+  "--tug-base-badge-tinted-caution-border",
   // G — Tab chrome (intentionally below Lc 75 body-text threshold)
   "--tug-base-tab-fg-rest",
   // H — Non-text component visibility tokens below Lc 30 by design (Step 3)

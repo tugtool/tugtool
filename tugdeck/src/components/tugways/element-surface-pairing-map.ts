@@ -787,11 +787,15 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
   // =========================================================================
   // Semantic tone — foreground text on tone backgrounds
+  // tone-*-bg tokens have alpha 12-15%; parentSurface triggers alpha compositing
+  // before Lc measurement so the measured contrast reflects actual rendering
+  // (the composited tone-*-bg over surface-default). Spec S02. [D04]
   // =========================================================================
   {
     element: "--tug-base-tone-success-fg",
     surface: "--tug-base-tone-success-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-success-fg",
@@ -802,6 +806,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-caution-fg",
     surface: "--tug-base-tone-caution-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-caution-fg",
@@ -812,6 +817,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-danger-fg",
     surface: "--tug-base-tone-danger-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-danger-fg",
@@ -822,6 +828,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-accent-fg",
     surface: "--tug-base-tone-accent-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-accent-fg",
@@ -832,6 +839,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-active-fg",
     surface: "--tug-base-tone-active-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-active-fg",
@@ -842,6 +850,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-agent-fg",
     surface: "--tug-base-tone-agent-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-agent-fg",
@@ -852,6 +861,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-tone-data-fg",
     surface: "--tug-base-tone-data-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-tone-data-fg",
@@ -954,11 +964,14 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // =========================================================================
   // Selection text on selection background
+  // selection-bg has alpha 40%; parentSurface composites it over surface-default
+  // before measuring contrast against the opaque selection-fg. Spec S02. [D04]
   // =========================================================================
   {
     element: "--tug-base-selection-fg",
     surface: "--tug-base-selection-bg",
     role: "body-text",
+    parentSurface: "--tug-base-surface-default",
   },
 
   // =========================================================================
@@ -1075,43 +1088,97 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "ui-component",
   },
 
-  // --- Badge Tinted ---
-  // tinted fg over tinted bg (semi-transparent bg — pair fg against both the
-  // tinted bg token and surface-default for accurate contrast measurement)
+  // --- Badge Tinted fg on tinted bg ---
+  // badge-tinted-*-bg has alpha 15%; parentSurface composites the bg over
+  // surface-default before measuring Lc against the opaque fg element. Spec S02. [D04]
   {
     element: "--tug-base-badge-tinted-accent-fg",
     surface: "--tug-base-badge-tinted-accent-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-action-fg",
     surface: "--tug-base-badge-tinted-action-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-agent-fg",
     surface: "--tug-base-badge-tinted-agent-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-data-fg",
     surface: "--tug-base-badge-tinted-data-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-danger-fg",
     surface: "--tug-base-badge-tinted-danger-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-success-fg",
     surface: "--tug-base-badge-tinted-success-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
   {
     element: "--tug-base-badge-tinted-caution-fg",
     surface: "--tug-base-badge-tinted-caution-bg",
     role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+
+  // --- Badge Tinted border on surface-default --- (Step 4)
+  // badge-tinted-*-border has alpha 35%; the border element is composited over
+  // surface-default before measuring contrast against surface-default. Spec S02. [D04]
+  // These pairs were deferred from Step 3 because they require compositing.
+  {
+    element: "--tug-base-badge-tinted-accent-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-action-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-agent-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-data-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-danger-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-success-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
+  },
+  {
+    element: "--tug-base-badge-tinted-caution-border",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+    parentSurface: "--tug-base-surface-default",
   },
 
   // =========================================================================

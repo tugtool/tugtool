@@ -36,6 +36,7 @@ import {
   computeLcContrast,
   validateThemeContrast,
   autoAdjustContrast,
+  compositeOverSurface,
   simulateCVD,
   simulateCVDFromOKLCH,
   simulateCVDForHex,
@@ -1030,5 +1031,117 @@ describe("cvd-simulation", () => {
         }
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test suite: compositeOverSurface — alpha-over compositing (Spec S02, [D04])
+// ---------------------------------------------------------------------------
+
+describe("compositeOverSurface", () => {
+  // -------------------------------------------------------------------------
+  // T4.2: white at 50% alpha over black = perceptual mid-gray
+  //
+  // compositeOverSurface performs alpha-over in linear sRGB, then gamma-encodes.
+  // OKLCH L=1.0, C=0, h=0 (white) at alpha=0.5 composited over OKLCH L=0.0,
+  // C=0, h=0 (black):
+  //   linear channels: 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+  //   gamma-encoded:   0.5^(1/2.4) * 1.055 - 0.055 ≈ 0.735 → byte ≈ 188 (0xbc)
+  //
+  // The result is a neutral gray hex. Note: this is NOT #808080 — that would be
+  // a naive 8-bit midpoint. Linear compositing + gamma encoding produces ~#bcbcbc.
+  // -------------------------------------------------------------------------
+  it("T4.2: white at 50% alpha over black produces perceptual mid-gray (~#bcbcbc)", () => {
+    // Pure white in OKLCH: L=1.0, C=0, h=0 (canonical white)
+    const white: ResolvedColor = { L: 1.0, C: 0.0, h: 0, alpha: 0.5 };
+    // Pure black in OKLCH: L=0.0, C=0, h=0 (canonical black)
+    const black: ResolvedColor = { L: 0.0, C: 0.0, h: 0, alpha: 1.0 };
+
+    const result = compositeOverSurface(white, black);
+
+    // Result must be a valid #rrggbb hex string
+    expect(result).toMatch(/^#[0-9a-f]{6}$/);
+
+    // All three channels must be equal (neutral gray from equal input channels)
+    const r = parseInt(result.slice(1, 3), 16);
+    const g = parseInt(result.slice(3, 5), 16);
+    const b = parseInt(result.slice(5, 7), 16);
+    expect(r).toBe(g);
+    expect(g).toBe(b);
+
+    // The byte value must be in the range [180, 196] — linear 0.5 gamma-encoded
+    // to approximately 0.735 * 255 ≈ 188 (0xbc). Allow ±8 for OKLCH round-trip precision.
+    expect(r).toBeGreaterThanOrEqual(180);
+    expect(r).toBeLessThanOrEqual(196);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.3: fully opaque token returns its own color unchanged
+  //
+  // When token.alpha is 1.0 (fully opaque), the alpha-over formula reduces to:
+  //   C_out = token.C * 1.0 + parent.C * 0.0 = token.C
+  // The result must exactly equal oklchToHex(token.L, token.C, token.h).
+  // -------------------------------------------------------------------------
+  it("T4.3: fully opaque token (alpha=1.0) returns element color unchanged", () => {
+    const token: ResolvedColor = { L: 0.5, C: 0.15, h: 200, alpha: 1.0 };
+    const parent: ResolvedColor = { L: 0.2, C: 0.05, h: 90, alpha: 1.0 };
+
+    const composited = compositeOverSurface(token, parent);
+    const direct = oklchToHex(token.L, token.C, token.h);
+
+    expect(composited).toBe(direct);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.4: semi-transparent parent throws
+  //
+  // Spec S02 requires parentSurface.alpha === 1.0. Nested compositing
+  // (semi-transparent parent) is not supported and must throw.
+  // -------------------------------------------------------------------------
+  it("T4.4: semi-transparent parent surface throws an error", () => {
+    const token: ResolvedColor = { L: 0.6, C: 0.12, h: 150, alpha: 0.5 };
+    // Semi-transparent parent — violates Spec S02
+    const semiParent: ResolvedColor = { L: 0.3, C: 0.05, h: 270, alpha: 0.7 };
+
+    expect(() => compositeOverSurface(token, semiParent)).toThrow();
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes Lc 30
+  //
+  // Integration test: badge-tinted-accent-bg has alpha=0.15 in the Brio theme.
+  // After compositing over surface-default, the resulting background should
+  // have sufficient contrast against badge-tinted-accent-fg to pass Lc 30
+  // (ui-component role threshold).
+  //
+  // This validates that the compositing pipeline enables valid contrast
+  // measurement for semi-transparent badge backgrounds.
+  // -------------------------------------------------------------------------
+  it("T4.5: badge-tinted-accent-fg on composited badge-tinted-accent-bg passes Lc 30 (ui-component)", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const badgeFg = brioOutput.resolved["--tug-base-badge-tinted-accent-fg"];
+    const badgeBg = brioOutput.resolved["--tug-base-badge-tinted-accent-bg"];
+    const surfaceDefault = brioOutput.resolved["--tug-base-surface-default"];
+
+    // All three tokens must exist in the Brio resolved map
+    expect(badgeFg).toBeDefined();
+    expect(badgeBg).toBeDefined();
+    expect(surfaceDefault).toBeDefined();
+
+    // badge-tinted-accent-bg must have alpha < 1.0 (semi-transparent tint)
+    expect((badgeBg!.alpha ?? 1.0)).toBeLessThan(1.0);
+
+    // surface-default must be fully opaque
+    expect((surfaceDefault!.alpha ?? 1.0)).toBe(1.0);
+
+    // Composite the semi-transparent bg over surface-default
+    const compositedBgHex = compositeOverSurface(badgeBg!, surfaceDefault!);
+    const fgHex = oklchToHex(badgeFg!.L, badgeFg!.C, badgeFg!.h);
+
+    // Measure Lc between fg and composited bg
+    const lc = computeLcContrast(fgHex, compositedBgHex);
+
+    // Must pass ui-component Lc 30 threshold
+    expect(Math.abs(lc)).toBeGreaterThanOrEqual(LC_THRESHOLDS["ui-component"]);
   });
 });
