@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-15T18:01:35Z
+---
+
+## step-6: Reconciled KNOWN_BELOW_THRESHOLD between test files, added T4.2 light-mode Brio pipeline test, added focus indicator Lc 30 assertions for both dark and light modes. Verified generate:tokens produces no diff. All 1582 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-5
 date: 2025-03-15T17:44:00Z
 ---

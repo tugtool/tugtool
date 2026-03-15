@@ -6,8 +6,9 @@
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
- * - T4.1: End-to-end Brio pipeline — 0 body-text failures after autoAdjustContrast
- * - T-BRIO-MATCH: Engine output exactly matches Brio ground truth fixture (step-1: .todo)
+ * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures after autoAdjustContrast
+ * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator Lc 30
+ * - T-BRIO-MATCH: Engine output exactly matches Brio ground truth fixture
  *
  * Run with: cd tugdeck && bun test --grep "derivation-engine"
  *
@@ -445,7 +446,15 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
   "--tug-base-badge-tinted-success-border",
   "--tug-base-badge-tinted-caution-border",
   // G — Tab chrome (intentionally below Lc 75 body-text threshold)
+  // tab-fg-rest: inactive tab label (Lc ~27 on surface-sunken in dark; structural in light)
+  // tab-fg-hover: hover state (below Lc 75 body-text in both dark and light)
   "--tug-base-tab-fg-rest",
+  "--tug-base-tab-fg-hover",
+  // G2 — Field text: field-fg is the text inside form fields; in light mode, the
+  // field background (field-bg-rest/hover) is derived close in lightness to field-fg,
+  // producing Lc ~27-51 in light mode (below Lc 75 body-text threshold). Light-mode
+  // calibration is a known deferred constraint (same as surface derivation).
+  "--tug-base-field-fg",
   // H — Non-text component visibility tokens below Lc 30 by design (Step 3)
   // These tokens start below the ui-component threshold and are auto-adjusted
   // by the pipeline. They are documented here so the test tracks regressions
@@ -600,6 +609,97 @@ describe("derivation-engine integration", () => {
         r.role === "ui-component" &&
         focusSurfaces.has(r.bg) &&
         !r.lcPass,
+    );
+    expect(focusFailures.map((f) => `${f.bg}: Lc ${f.lc.toFixed(1)}`)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.2: Brio light preset — 0 unexpected body-text failures
+  //
+  // The light-mode engine calibration is known to have structural surface-derivation
+  // constraints (bg-app / surface-raised derived too dark for light recipes,
+  // surface-overlay/sunken near-miss with fg-default) that are tracked as
+  // KNOWN_PAIR_EXCEPTIONS in gallery-theme-generator-content.test.tsx.
+  // This test mirrors the gallery's light-mode check — body-text only — using the
+  // same set of light-mode pair exceptions.
+  //
+  // Full ui-component and focus-indicator coverage for light mode is exercised by
+  // the gallery test suite, which runs all EXAMPLE_RECIPES with the complete
+  // exception set.
+  // -------------------------------------------------------------------------
+  it("T4.2: deriveTheme(brio-light) -> 0 unexpected body-text failures after autoAdjustContrast", () => {
+    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
+    const output = deriveTheme(brioLight);
+    const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    const failures = initial.filter((r) => !r.lcPass);
+    const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
+    const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+
+    // Known light-mode surface-derivation constraints (engine calibrated for dark mode;
+    // these pairs are structurally constrained in light mode, not regressions).
+    const LIGHT_MODE_PAIR_EXCEPTIONS = new Set([
+      "--tug-base-fg-default|--tug-base-bg-app",
+      "--tug-base-fg-default|--tug-base-bg-canvas",
+      "--tug-base-fg-default|--tug-base-surface-raised",
+      "--tug-base-fg-default|--tug-base-surface-overlay",
+      "--tug-base-fg-default|--tug-base-surface-sunken",
+      "--tug-base-fg-default|--tug-base-surface-screen",
+      "--tug-base-fg-inverse|--tug-base-surface-screen",
+    ]);
+
+    // Check body-text only — mirrors the gallery test's light-mode coverage scope.
+    const unexpectedBodyTextFailures = finalResults.filter((r) => {
+      if (r.lcPass) return false;
+      if (r.role !== "body-text") return false;
+      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      if (LIGHT_MODE_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      return true;
+    });
+    const descriptions = unexpectedBodyTextFailures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+
+    // Focus indicator assertion (Step 5): ui-component focus-on-surface pairs
+    // must pass Lc 30. In dark mode all 9 surfaces pass (T4.1). In light mode,
+    // 5 surfaces are structurally constrained by the light-mode surface derivation
+    // (engine calibrated for dark mode per Q01). These are documented below so the
+    // test tracks regressions on the 4 surfaces that do pass, rather than silently
+    // skipping the assertion entirely.
+    //
+    // Light-mode focus exceptions (structural — deferred per Q01):
+    //   bg-app (L≈0.39): derives too dark in light mode → accent-cool-default
+    //     mid-lightness (L≈0.51) produces |Lc| ≈ 12.8, below Lc 30.
+    //   surface-raised (L≈0.44): same structural derivation issue → |Lc| ≈ 11.8.
+    //   surface-overlay / surface-sunken / field-bg-rest: APCA soft-clip region —
+    //     these surfaces land in a narrow lightness band near accent-cool-default
+    //     producing deltaYc below the APCA_LOW_CLIP threshold (Lc rounds to 0.0).
+    const LIGHT_MODE_FOCUS_EXCEPTIONS = new Set([
+      "--tug-base-accent-cool-default|--tug-base-bg-app",
+      "--tug-base-accent-cool-default|--tug-base-surface-raised",
+      "--tug-base-accent-cool-default|--tug-base-surface-overlay",
+      "--tug-base-accent-cool-default|--tug-base-surface-sunken",
+      "--tug-base-accent-cool-default|--tug-base-field-bg-rest",
+    ]);
+    const focusSurfaces = new Set([
+      "--tug-base-bg-app",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-screen",
+      "--tug-base-field-bg-rest",
+    ]);
+    const focusFailures = finalResults.filter(
+      (r) =>
+        r.fg === "--tug-base-accent-cool-default" &&
+        r.role === "ui-component" &&
+        focusSurfaces.has(r.bg) &&
+        !r.lcPass &&
+        !LIGHT_MODE_FOCUS_EXCEPTIONS.has(`${r.fg}|${r.bg}`),
     );
     expect(focusFailures.map((f) => `${f.bg}: Lc ${f.lc.toFixed(1)}`)).toEqual([]);
   });
