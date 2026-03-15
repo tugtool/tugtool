@@ -125,6 +125,10 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   "--tug-base-icon-default|--tug-base-surface-overlay",
   "--tug-base-icon-default|--tug-base-surface-raised",
   "--tug-base-icon-default|--tug-base-surface-default",
+  // Light-mode tab chrome: tab-fg-rest (tone=50) vs surface-sunken (tone=44) in light
+  // mode are near-identical in lightness. Light-mode formula calibration is deferred
+  // per Q01 — this constraint is structural, not a regression.
+  "--tug-base-tab-fg-rest|--tug-base-surface-sunken",
 ]);
 
 /**

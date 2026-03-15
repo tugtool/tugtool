@@ -212,6 +212,12 @@ function resolveOklch(
  *
  * When hueRef contains an offset, presets are never used (presets only apply
  * to bare hue names in postcss-tug-color).
+ *
+ * [D06] Verbose alpha form: when alpha is non-default (ra !== 100) and i/t are
+ * canonical defaults (ri === 50, rt === 50), emit the verbose form
+ * `--tug-color(hue, i: 50, t: 50, a: N)` instead of `--tug-color(hue, a: N)`.
+ * This matches the CSS ground truth for ~19 tokens including accent-subtle,
+ * all tone-N-bg, selection-bg, highlight-N, and control-selected-N/highlighted-N.
  */
 function makeTugColor(
   hueRef: string,
@@ -245,13 +251,19 @@ function makeTugColor(
     if (ri === 20 && rt === 85 && ra === 100) return `--tug-color(${hueRef}-light)`;
     if (ri === 50 && rt === 20 && ra === 100) return `--tug-color(${hueRef}-dark)`;
     if (ri === 90 && rt === 50 && ra === 100) return `--tug-color(${hueRef}-intense)`;
-    if (ri === 20 && rt === 50 && ra === 100) return `--tug-color(${hueRef}-muted)`;
+    // [D06] muted preset: palette-engine defines muted as { intensity: 50, tone: 42 }
+    if (ri === 50 && rt === 42 && ra === 100) return `--tug-color(${hueRef}-muted)`;
   }
 
-  // Full parameterized form — omit defaults: i=50, t=50, a=100
+  // Full parameterized form — omit defaults: i=50, t=50, a=100.
+  // [D06] Exception: when alpha is non-default (ra !== 100) AND i/t are both at
+  // canonical defaults (ri === 50, rt === 50), emit the verbose form
+  // `--tug-color(hue, i: 50, t: 50, a: N)` to match the CSS ground truth.
+  // When only one of i/t is non-default, the usual compaction rules apply.
+  const isVerboseAlpha = ra !== 100 && ri === 50 && rt === 50;
   const parts: string[] = [];
-  if (ri !== 50) parts.push(`i: ${ri}`);
-  if (rt !== 50) parts.push(`t: ${rt}`);
+  if (isVerboseAlpha || ri !== 50) parts.push(`i: ${ri}`);
+  if (isVerboseAlpha || rt !== 50) parts.push(`t: ${rt}`);
   if (ra !== 100) parts.push(`a: ${ra}`);
 
   if (parts.length === 0) {
@@ -273,9 +285,10 @@ const WHITE_RESOLVED: ResolvedColor = { L: 1, C: 0, h: 0, alpha: 1 };
 /**
  * Build a semi-transparent black token (shadow / overlay).
  * alpha is 0-100.
+ * Emits verbose form with explicit i: 0, t: 0 to match the CSS ground truth.
  */
 function makeShadowToken(alpha: number): string {
-  return `--tug-color(black, a: ${Math.round(alpha)})`;
+  return `--tug-color(black, i: 0, t: 0, a: ${Math.round(alpha)})`;
 }
 
 /**
@@ -573,10 +586,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // -------------------------------------------------------------------------
   // 5. Signal vividity modulation for accent / semantic hues
-  // At signalVividity=50 → intensity=50 (canonical)
-  // Range: 30 (muted) to 80 (vivid)
+  // At signalVividity=50 → intensity=50 (canonical). Direct linear mapping:
+  //   0 → 0 (achromatic/invisible), 50 → 50 (Brio default), 100 → 100 (vivid)
   // -------------------------------------------------------------------------
-  const signalI = Math.round(30 + (signalVividity / 100) * 50);
+  const signalI = Math.round(signalVividity);
 
   // -------------------------------------------------------------------------
   // 6. Derive all 264 tokens
@@ -871,7 +884,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   setShadow("--tug-base-overlay-dim", overlayDimAlpha);
   setShadow("--tug-base-overlay-scrim", overlayScrimAlpha);
-  setHighlight("--tug-base-overlay-highlight", overlayHighlightAlpha);
+  // overlay-highlight: verbose white form with explicit i: 0, t: 100 per [D06] ground truth.
+  // Cannot use setHighlight() (which emits compact --tug-color(white, a: N)) for this token.
+  tokens["--tug-base-overlay-highlight"] = `--tug-color(white, i: 0, t: 100, a: ${overlayHighlightAlpha})`;
+  resolved["--tug-base-overlay-highlight"] = { ...WHITE_RESOLVED, alpha: overlayHighlightAlpha / 100 };
 
   // --- Typography (invariant) ---
   setInvariant("--tug-base-font-family-sans", '"IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif');
@@ -1027,7 +1043,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-highlight-inspectorTarget", interactiveRef, interactiveAngle, 50, 50, 22, interactiveName);
     setChromatic("--tug-base-highlight-snapGuide", interactiveRef, interactiveAngle, 50, 50, 50, interactiveName);
   } else {
-    setHighlight("--tug-base-highlight-hover", 5);
+    // highlight-hover: verbose white form with explicit i: 0, t: 100 per ground truth.
+    // Cannot use setHighlight() (compact --tug-color(white, a: N)) for this token.
+    tokens["--tug-base-highlight-hover"] = "--tug-color(white, i: 0, t: 100, a: 5)";
+    resolved["--tug-base-highlight-hover"] = { ...WHITE_RESOLVED, alpha: 5 / 100 };
     setChromatic("--tug-base-highlight-dropTarget", interactiveRef, interactiveAngle, 50, 50, 18, interactiveName);
     setChromatic("--tug-base-highlight-preview", interactiveRef, interactiveAngle, 50, 50, 12, interactiveName);
     setChromatic("--tug-base-highlight-inspectorTarget", interactiveRef, interactiveAngle, 50, 50, 22, interactiveName);
@@ -1147,8 +1166,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-accent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-accent-border-rest", accentHue, accentAngle, signalI, 50, 100, accentName);
-  setChromatic("--tug-base-control-filled-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 10), 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-rest", accentHue, accentAngle, Math.min(90, signalI + 5), 50, 100, accentName);
+  setChromatic("--tug-base-control-filled-accent-border-hover", accentHue, accentAngle, Math.min(90, signalI + 15), 50, 100, accentName);
   setChromatic("--tug-base-control-filled-accent-border-active", accentHue, accentAngle, 90, filledBgActiveTone, 100, accentName);
   setChromatic("--tug-base-control-filled-accent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-accent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1162,8 +1181,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-action-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-action-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-filled-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-action-border-rest", activeRef, activeAngle, Math.min(90, signalI + 5), 50, 100, activeName);
+  setChromatic("--tug-base-control-filled-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 15), 50, 100, activeName);
   setChromatic("--tug-base-control-filled-action-border-active", activeRef, activeAngle, 90, filledBgActiveTone, 100, activeName);
   setChromatic("--tug-base-control-filled-action-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-action-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1176,8 +1195,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-danger-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-filled-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-border-active", destructiveHue, dangerAngle, 90, filledBgActiveTone, 100, dangerName);
   setChromatic("--tug-base-control-filled-danger-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-danger-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1192,8 +1211,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-agent-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
-  setChromatic("--tug-base-control-filled-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-rest", agentRef, agentAngle, Math.min(90, signalI + 5), 50, 100, agentName);
+  setChromatic("--tug-base-control-filled-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 15), 50, 100, agentName);
   setChromatic("--tug-base-control-filled-agent-border-active", agentRef, agentAngle, 90, filledBgActiveTone, 100, agentName);
   setChromatic("--tug-base-control-filled-agent-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-agent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1206,8 +1225,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-data-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-data-border-rest", dataHue, dataAngle, signalI, 50, 100, dataName);
-  setChromatic("--tug-base-control-filled-data-border-hover", dataHue, dataAngle, Math.min(90, signalI + 10), 50, 100, dataName);
+  setChromatic("--tug-base-control-filled-data-border-rest", dataHue, dataAngle, Math.min(90, signalI + 5), 50, 100, dataName);
+  setChromatic("--tug-base-control-filled-data-border-hover", dataHue, dataAngle, Math.min(90, signalI + 15), 50, 100, dataName);
   setChromatic("--tug-base-control-filled-data-border-active", dataHue, dataAngle, 90, filledBgActiveTone, 100, dataName);
   setChromatic("--tug-base-control-filled-data-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-data-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1220,8 +1239,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-success-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-success-border-rest", successHue, successAngle, signalI, 50, 100, successName);
-  setChromatic("--tug-base-control-filled-success-border-hover", successHue, successAngle, Math.min(90, signalI + 10), 50, 100, successName);
+  setChromatic("--tug-base-control-filled-success-border-rest", successHue, successAngle, Math.min(90, signalI + 5), 50, 100, successName);
+  setChromatic("--tug-base-control-filled-success-border-hover", successHue, successAngle, Math.min(90, signalI + 15), 50, 100, successName);
   setChromatic("--tug-base-control-filled-success-border-active", successHue, successAngle, 90, filledBgActiveTone, 100, successName);
   setChromatic("--tug-base-control-filled-success-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-success-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1234,8 +1253,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-control-filled-caution-fg-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-fg-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-fg-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
-  setChromatic("--tug-base-control-filled-caution-border-rest", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
-  setChromatic("--tug-base-control-filled-caution-border-hover", cautionHue, cautionAngle, Math.min(90, signalI + 10), 50, 100, cautionName);
+  setChromatic("--tug-base-control-filled-caution-border-rest", cautionHue, cautionAngle, Math.min(90, signalI + 5), 50, 100, cautionName);
+  setChromatic("--tug-base-control-filled-caution-border-hover", cautionHue, cautionAngle, Math.min(90, signalI + 15), 50, 100, cautionName);
   setChromatic("--tug-base-control-filled-caution-border-active", cautionHue, cautionAngle, 90, filledBgActiveTone, 100, cautionName);
   setChromatic("--tug-base-control-filled-caution-icon-rest", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   setChromatic("--tug-base-control-filled-caution-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
@@ -1271,9 +1290,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-outlined-action-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   }
   // Border: same action/blue hue as filled-action
-  setChromatic("--tug-base-control-outlined-action-border-rest", activeRef, activeAngle, signalI, 50, 100, activeName);
-  setChromatic("--tug-base-control-outlined-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 10), 50, 100, activeName);
-  setChromatic("--tug-base-control-outlined-action-border-active", activeRef, activeAngle, Math.min(90, signalI + 20), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-rest", activeRef, activeAngle, Math.min(90, signalI + 5), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-hover", activeRef, activeAngle, Math.min(90, signalI + 15), 50, 100, activeName);
+  setChromatic("--tug-base-control-outlined-action-border-active", activeRef, activeAngle, Math.min(90, signalI + 25), 50, 100, activeName);
 
   // --- Outlined Agent (transparent bg, agent/violet border) [D05] ---
   // Same transparent-bg approach. Border from agent/violet hue.
@@ -1301,9 +1320,9 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
     setChromatic("--tug-base-control-outlined-agent-icon-hover", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
     setChromatic("--tug-base-control-outlined-agent-icon-active", txtRefW, txtAngleW, Math.max(1, txtI - 1), filledFgTone);
   }
-  setChromatic("--tug-base-control-outlined-agent-border-rest", agentRef, agentAngle, signalI, 50, 100, agentName);
-  setChromatic("--tug-base-control-outlined-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 10), 50, 100, agentName);
-  setChromatic("--tug-base-control-outlined-agent-border-active", agentRef, agentAngle, Math.min(90, signalI + 20), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-rest", agentRef, agentAngle, Math.min(90, signalI + 5), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-hover", agentRef, agentAngle, Math.min(90, signalI + 15), 50, 100, agentName);
+  setChromatic("--tug-base-control-outlined-agent-border-active", agentRef, agentAngle, Math.min(90, signalI + 25), 50, 100, agentName);
 
   // --- Ghost Active (link-like action — no role color in bg/border) ---
   // Preserves old ghost button appearance using neutral text hue.
@@ -1340,23 +1359,24 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // --- Ghost Danger (subtle destructive — danger/red fg, transparent bg) ---
   // Same transparent-bg approach as ghost-action but fg/icon from tone-danger-fg.
   // Hover bg uses danger-tinted subtle alpha.
+  // Brio: bg-hover/active use i=signalI+5; fg/icon use i=signalI+5/+15/+25 progression.
   setStructural("--tug-base-control-ghost-danger-bg-rest", "transparent");
   if (isLight) {
-    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 8, dangerName);
-    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 15, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 8, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 15, dangerName);
   } else {
-    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, signalI, 50, 10, dangerName);
-    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, signalI, 50, 20, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 10, dangerName);
+    setChromatic("--tug-base-control-ghost-danger-bg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 20, dangerName);
   }
-  setChromatic("--tug-base-control-ghost-danger-fg-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-fg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-fg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-fg-active", destructiveHue, dangerAngle, Math.min(90, signalI + 25), 50, 100, dangerName);
   setStructural("--tug-base-control-ghost-danger-border-rest", "transparent");
-  setChromatic("--tug-base-control-ghost-danger-border-hover", destructiveHue, dangerAngle, signalI, 50, 40, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-border-active", destructiveHue, dangerAngle, signalI, 50, 60, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 10), 50, 100, dangerName);
-  setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 20), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-border-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 40, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-border-active", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 60, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-rest", destructiveHue, dangerAngle, Math.min(90, signalI + 5), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-hover", destructiveHue, dangerAngle, Math.min(90, signalI + 15), 50, 100, dangerName);
+  setChromatic("--tug-base-control-ghost-danger-icon-active", destructiveHue, dangerAngle, Math.min(90, signalI + 25), 50, 100, dangerName);
 
   // --- Outlined Option (calm configuration control — neutral muted border, no action-blue chroma) ---
   // [D01] Option role uses neutral fg-muted formulas: border from txtRefW at txtISubtle/fgMutedTone,
@@ -1500,7 +1520,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const toggleTrackOffTone = Math.round(dividerTone);
   setChromatic("--tug-base-toggle-track-off", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
   setChromatic("--tug-base-toggle-track-off-hover", atmRefW, atmAngleW, Math.min(atmIBorder + 4, 100), Math.min(toggleTrackOffTone + 8, 100));
-  setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 50, 100, accentName);
+  // toggle-track-on: Brio uses orange-muted (= i:50, t:42) — matches muted preset
+  setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 42, 100, accentName);
   setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), isLight ? 40 : 45, 100, accentName);
   // toggle-track-disabled: Brio uses violet (bare), i:5, t:11 (= surfBareBaseRef, surfaceSunken tone)
   const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceSunken);

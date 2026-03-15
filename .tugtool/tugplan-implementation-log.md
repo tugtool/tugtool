@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-15T00:45:32Z
+---
+
+## step-3: Fixed makeShadowToken verbose black form (D06), makeTugColor verbose alpha for canonical tokens, muted preset (i:50 t:42), accent/tone tokens using canonical i=50 instead of signalI. Remaining mismatches reduced to control/field/toggle/tab scope.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: step-2
 date: 2025-03-15T00:25:37Z
 ---
