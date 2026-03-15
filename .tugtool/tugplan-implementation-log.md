@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-15T00:07:30Z
+---
+
+## step-1: Extracted 291 chromatic tokens and 59 structural tokens from tug-base.css into BRIO_GROUND_TRUTH and BRIO_STRUCTURAL_TOKENS constants. Added T-BRIO-MATCH test as it.todo with 38-token mismatch baseline.
+
+**Files changed:**
+- .tugtool/tugplan-mode-preset-formulas.md
+
+---
+
+---
 step: audit-fix
 date: 2025-03-14T19:47:24Z
 ---
