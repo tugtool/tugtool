@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-15T20:33:56Z
+---
+
+## step-4: Added 24 new hue families (garnet through fuchsia) to palette engine. Implemented ADJACENCY_RING with build-time assertion, resolveHyphenatedHue with circular wrap, and isAdjacent. Derived canonical_l and chroma caps for all new hues. Regenerated tug-palette.css. Updated all affected tests.
+
+**Files changed:**
+- .tugtool/tugplan-hyphenated-palette.md
+
+---
+
+---
 step: step-3
 date: 2025-03-15T19:48:18Z
 ---

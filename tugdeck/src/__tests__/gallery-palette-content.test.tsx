@@ -3,8 +3,8 @@
  *
  * Tests cover:
  * - GalleryPaletteContent renders without errors
- * - Canonical strip: 24 swatches with oklch colors
- * - L curve editor: 24 draggable points
+ * - Canonical strip: 48 swatches with oklch colors
+ * - L curve editor: 48 draggable points
  * - VibValPicker: appears on selection, 441 cells (21x21), drag updates swatch,
  *   preset overlay, CSS formula export
  * - tugColor: pure computation tests
@@ -67,7 +67,7 @@ describe("GalleryPaletteContent – renders without errors", () => {
 describe("GalleryPaletteContent – canonical strip", () => {
   afterEach(() => { cleanup(); });
 
-  it("renders exactly 24 canonical swatches", () => {
+  it("renders exactly 48 canonical swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
@@ -75,7 +75,7 @@ describe("GalleryPaletteContent – canonical strip", () => {
     const strip = container.querySelector("[data-testid='gp-canonical-strip']")!;
     expect(strip).not.toBeNull();
     const swatches = strip.querySelectorAll("[data-testid='gp-canonical-swatch']");
-    expect(swatches.length).toBe(24);
+    expect(swatches.length).toBe(48);
   });
 
   it("each canonical swatch has a data-color with oklch value", () => {
@@ -98,13 +98,13 @@ describe("GalleryPaletteContent – canonical strip", () => {
 describe("GalleryPaletteContent – L curve editor", () => {
   afterEach(() => { cleanup(); });
 
-  it("renders 24 draggable curve points", () => {
+  it("renders 48 draggable curve points", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
     });
     const points = container.querySelectorAll("[data-testid^='gp-curve-point-']");
-    expect(points.length).toBe(24);
+    expect(points.length).toBe(48);
   });
 });
 

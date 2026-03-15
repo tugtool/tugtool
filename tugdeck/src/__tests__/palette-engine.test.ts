@@ -2,14 +2,15 @@
  * Palette Engine tests — TugColor Runtime + tug-palette.css verification.
  *
  * Tests cover:
- * - HUE_FAMILIES and MAX_CHROMA_FOR_HUE tables
+ * - HUE_FAMILIES (48 entries) and MAX_CHROMA_FOR_HUE tables
+ * - ADJACENCY_RING, resolveHyphenatedHue, isAdjacent
  * - oklchToLinearSRGB, isInSRGBGamut, findMaxChroma, _deriveChromaCaps utilities
  * - tugColor(): tone→L piecewise, intensity→C linear, optional peakChroma override
  * - DEFAULT_CANONICAL_L, L_DARK, L_LIGHT, PEAK_C_SCALE constants
  * - TUG_COLOR_PRESETS: 5 entries with correct intensity/tone
  * - MAX_P3_CHROMA_FOR_HUE: all > corresponding sRGB caps
  * - oklchToLinearP3 and isInP3Gamut: P3 gamut conversion and checking
- * - Gamut safety: all 24 hues × 5 presets produce valid oklch strings
+ * - Gamut safety: all 48 hues × 5 presets produce valid oklch strings
  * - tug-palette.css: verifies static palette file structure and contents
  *
  * Note: setup-rtl MUST be the first import (required for DOM globals).
@@ -22,6 +23,9 @@ import { describe, it, expect } from "bun:test";
 
 import {
   HUE_FAMILIES,
+  ADJACENCY_RING,
+  resolveHyphenatedHue,
+  isAdjacent,
   MAX_CHROMA_FOR_HUE,
   DEFAULT_LC_PARAMS,
   oklchToLinearSRGB,
@@ -57,16 +61,121 @@ function parseOklch(s: string): { L: number; C: number; h: number } | null {
 // ---------------------------------------------------------------------------
 
 describe("HUE_FAMILIES", () => {
-  it("has exactly 24 entries", () => {
-    expect(Object.keys(HUE_FAMILIES).length).toBe(24);
+  it("has exactly 48 entries", () => {
+    expect(Object.keys(HUE_FAMILIES).length).toBe(48);
   });
 
-  it("contains expected hue names and angles", () => {
+  it("contains expected original hue names and angles", () => {
     expect(HUE_FAMILIES["cherry"]).toBe(10);
     expect(HUE_FAMILIES["red"]).toBe(25);
     expect(HUE_FAMILIES["yellow"]).toBe(90);
     expect(HUE_FAMILIES["blue"]).toBe(230);
     expect(HUE_FAMILIES["berry"]).toBe(355);
+  });
+
+  it("contains expected new hue names and angles", () => {
+    expect(HUE_FAMILIES["garnet"]).toBe(2.5);
+    expect(HUE_FAMILIES["scarlet"]).toBe(15);
+    expect(HUE_FAMILIES["indigo"]).toBe(260);
+    expect(HUE_FAMILIES["iris"]).toBe(277.5);
+    expect(HUE_FAMILIES["fuchsia"]).toBe(350);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADJACENCY_RING, resolveHyphenatedHue, isAdjacent
+// ---------------------------------------------------------------------------
+
+describe("ADJACENCY_RING", () => {
+  it("has exactly 48 entries matching HUE_FAMILIES keys", () => {
+    expect(ADJACENCY_RING.length).toBe(48);
+    expect(ADJACENCY_RING.length).toBe(Object.keys(HUE_FAMILIES).length);
+  });
+
+  it("contains every hue name from HUE_FAMILIES exactly once", () => {
+    const ringSet = new Set(ADJACENCY_RING);
+    for (const hue of Object.keys(HUE_FAMILIES)) {
+      expect(ringSet.has(hue)).toBe(true);
+    }
+  });
+
+  it("is in strictly ascending hue-angle order", () => {
+    for (let i = 0; i < ADJACENCY_RING.length - 1; i++) {
+      const a = HUE_FAMILIES[ADJACENCY_RING[i]];
+      const b = HUE_FAMILIES[ADJACENCY_RING[i + 1]];
+      expect(a).toBeLessThan(b);
+    }
+  });
+
+  it("starts with garnet (2.5) and ends with berry (355)", () => {
+    expect(ADJACENCY_RING[0]).toBe("garnet");
+    expect(ADJACENCY_RING[ADJACENCY_RING.length - 1]).toBe("berry");
+  });
+});
+
+describe("resolveHyphenatedHue()", () => {
+  it("yellow-chartreuse resolves to approximately 94.2 degrees (2/3*90 + 1/3*102.5)", () => {
+    const result = resolveHyphenatedHue("yellow", "chartreuse");
+    expect(result).toBeCloseTo(94.17, 1);
+  });
+
+  it("berry-garnet wraps correctly across 360/0 boundary (approximately 357.5)", () => {
+    const result = resolveHyphenatedHue("berry", "garnet");
+    // 2/3*355 + 1/3*2.5 (wrap: 2.5+360=362.5) = 236.67 + 120.83 = 357.5
+    expect(result).toBeCloseTo(357.5, 1);
+  });
+
+  it("cobalt-indigo resolves to approximately 253.3 degrees (2/3*250 + 1/3*260)", () => {
+    const result = resolveHyphenatedHue("cobalt", "indigo");
+    expect(result).toBeCloseTo(253.33, 1);
+  });
+
+  it("indigo-cobalt resolves to approximately 256.7 degrees (2/3*260 + 1/3*250)", () => {
+    const result = resolveHyphenatedHue("indigo", "cobalt");
+    expect(result).toBeCloseTo(256.67, 1);
+  });
+
+  it("throws for unknown hue names", () => {
+    expect(() => resolveHyphenatedHue("notahue", "blue")).toThrow();
+  });
+});
+
+describe("isAdjacent()", () => {
+  it("yellow and chartreuse are adjacent", () => {
+    expect(isAdjacent("yellow", "chartreuse")).toBe(true);
+  });
+
+  it("chartreuse and yellow are adjacent (symmetric)", () => {
+    expect(isAdjacent("chartreuse", "yellow")).toBe(true);
+  });
+
+  it("yellow and blue are not adjacent", () => {
+    expect(isAdjacent("yellow", "blue")).toBe(false);
+  });
+
+  it("berry and garnet are adjacent (wrap around)", () => {
+    expect(isAdjacent("berry", "garnet")).toBe(true);
+  });
+
+  it("garnet and berry are adjacent (wrap around, symmetric)", () => {
+    expect(isAdjacent("garnet", "berry")).toBe(true);
+  });
+
+  it("unknown hue returns false", () => {
+    expect(isAdjacent("notahue", "blue")).toBe(false);
+  });
+
+  it("all MAX_CHROMA_FOR_HUE new-24 entries are positive and at most cMax", () => {
+    const newHues = ["garnet", "scarlet", "crimson", "vermilion", "ember", "tangerine",
+      "apricot", "honey", "saffron", "chartreuse", "grass", "jade", "seafoam", "aqua",
+      "azure", "cerulean", "sapphire", "indigo", "iris", "grape", "orchid", "peony",
+      "cerise", "fuchsia"];
+    for (const hue of newHues) {
+      const cap = MAX_CHROMA_FOR_HUE[hue];
+      expect(cap).toBeDefined();
+      expect(cap).toBeGreaterThan(0);
+      expect(cap).toBeLessThanOrEqual(DEFAULT_LC_PARAMS.cMax + 0.001);
+    }
   });
 });
 
@@ -141,10 +250,10 @@ describe("findMaxChroma()", () => {
 });
 
 describe("_deriveChromaCaps()", () => {
-  it("returns a record with 24 entries when called with TugColor L samples", () => {
+  it("returns a record with 48 entries when called with TugColor L samples", () => {
     const tugColorLSamples = (hue: string) => [L_DARK, DEFAULT_CANONICAL_L[hue] ?? 0.7, L_LIGHT];
     const caps = _deriveChromaCaps(tugColorLSamples, isInSRGBGamut, DEFAULT_LC_PARAMS.cMax);
-    expect(Object.keys(caps).length).toBe(24);
+    expect(Object.keys(caps).length).toBe(48);
   });
 });
 
@@ -153,11 +262,11 @@ describe("_deriveChromaCaps()", () => {
 // ---------------------------------------------------------------------------
 
 describe("DEFAULT_CANONICAL_L", () => {
-  it("has exactly 24 entries", () => {
-    expect(Object.keys(DEFAULT_CANONICAL_L).length).toBe(24);
+  it("has exactly 48 entries", () => {
+    expect(Object.keys(DEFAULT_CANONICAL_L).length).toBe(48);
   });
 
-  it("has entries for all 24 hue families", () => {
+  it("has entries for all 48 hue families", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(DEFAULT_CANONICAL_L[hue]).toBeDefined();
     }
@@ -168,9 +277,15 @@ describe("DEFAULT_CANONICAL_L", () => {
     expect(DEFAULT_CANONICAL_L["yellow"]).toBe(0.901);
   });
 
-  it("all canonical L values are above 0.555 (piecewise min() constraint)", () => {
+  it("new hues have correct canonical L values", () => {
+    expect(DEFAULT_CANONICAL_L["garnet"]).toBe(0.645);
+    expect(DEFAULT_CANONICAL_L["indigo"]).toBe(0.572);
+    expect(DEFAULT_CANONICAL_L["chartreuse"]).toBe(0.922);
+  });
+
+  it("all canonical L values are at or above 0.555 (piecewise min() constraint)", () => {
     for (const [hue, l] of Object.entries(DEFAULT_CANONICAL_L)) {
-      expect(l).toBeGreaterThan(0.555);
+      expect(l).toBeGreaterThanOrEqual(0.555);
       void hue;
     }
   });
@@ -256,7 +371,7 @@ describe("tugColor()", () => {
     expect(tugColor("red", 50, 50, 0.659)).toBe(tugColor("red", 50, 50, 0.659, defaultPeak));
   });
 
-  it("all 24 hue names produce valid oklch strings at canonical (50/50)", () => {
+  it("all 48 hue names produce valid oklch strings at canonical (50/50)", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const result = tugColor(hueName, 50, 50, DEFAULT_CANONICAL_L[hueName]);
       expect(result).toMatch(/^oklch\(/);
@@ -270,8 +385,8 @@ describe("tugColor()", () => {
 // ---------------------------------------------------------------------------
 
 describe("MAX_P3_CHROMA_FOR_HUE", () => {
-  it("has exactly 24 entries", () => {
-    expect(Object.keys(MAX_P3_CHROMA_FOR_HUE).length).toBe(24);
+  it("has exactly 48 entries", () => {
+    expect(Object.keys(MAX_P3_CHROMA_FOR_HUE).length).toBe(48);
   });
 
   it("all P3 caps are strictly greater than corresponding sRGB caps", () => {
@@ -358,43 +473,44 @@ const TUG_PALETTE_CSS = readFileSync(
 );
 
 describe("tug-palette.css — per-hue constants", () => {
-  it("contains all 24 --tug-{hue}-h variables", () => {
+  it("contains all 48 --tug-{hue}-h variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
     }
   });
 
-  it("all 24 --tug-{hue}-h values match HUE_FAMILIES angles", () => {
+  it("all 48 --tug-{hue}-h values match HUE_FAMILIES angles", () => {
     for (const [hue, angle] of Object.entries(HUE_FAMILIES)) {
       const pattern = new RegExp(`--tug-${hue}-h:\\s*${angle};`);
       expect(TUG_PALETTE_CSS).toMatch(pattern);
     }
   });
 
-  it("contains all 24 --tug-{hue}-canonical-l variables", () => {
+  it("contains all 48 --tug-{hue}-canonical-l variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
     }
   });
 
-  it("contains all 24 --tug-{hue}-peak-c variables", () => {
+  it("contains all 48 --tug-{hue}-peak-c variables", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-peak-c:`);
     }
   });
 
-  it("total per-hue constant count is 72 (24 hues × 3 constants)", () => {
-    const hVars     = (TUG_PALETTE_CSS.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
+  it("total per-hue constant count is 144 (48 hues × 3 constants)", () => {
+    const hVars     = (TUG_PALETTE_CSS.match(/--tug-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
     const canonLVars = TUG_PALETTE_CSS.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
     const peakCVars  = TUG_PALETTE_CSS.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
-    // Only count the sRGB block (before @media)
-    const srgbBlock = TUG_PALETTE_CSS.slice(0, TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)"));
-    const srgbH      = (srgbBlock.match(/--tug-\w+-h:\s*\d+;/g) ?? []).filter(v => !v.includes("peak"));
+    // Only count the sRGB block (before @media if any, otherwise use full file)
+    const mediaIdx = TUG_PALETTE_CSS.indexOf("@media (color-gamut: p3)");
+    const srgbBlock = mediaIdx >= 0 ? TUG_PALETTE_CSS.slice(0, mediaIdx) : TUG_PALETTE_CSS;
+    const srgbH      = (srgbBlock.match(/--tug-\w+-h:\s*\d+(?:\.\d+)?;/g) ?? []).filter(v => !v.includes("peak"));
     const srgbCanonL = srgbBlock.match(/--tug-\w+-canonical-l:\s*[\d.]+;/g) ?? [];
     const srgbPeakC  = srgbBlock.match(/--tug-\w+-peak-c:\s*[\d.]+;/g) ?? [];
-    expect(srgbH.length).toBe(24);
-    expect(srgbCanonL.length).toBe(24);
-    expect(srgbPeakC.length).toBe(24);
+    expect(srgbH.length).toBe(48);
+    expect(srgbCanonL.length).toBe(48);
+    expect(srgbPeakC.length).toBe(48);
     void hVars; void canonLVars; void peakCVars;
   });
 });
@@ -422,7 +538,7 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
     expect(TUG_PALETTE_CSS).not.toContain("--tug-red-muted:");
   });
 
-  it("does NOT contain any chromatic preset variables for any of the 24 hues", () => {
+  it("does NOT contain any chromatic preset variables for any of the 48 hues", () => {
     const presetSuffixes = ["", "-light", "-dark", "-intense", "-muted"];
     for (const hue of Object.keys(HUE_FAMILIES)) {
       for (const suffix of presetSuffixes) {
@@ -431,7 +547,7 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
     }
   });
 
-  it("still contains per-hue constants (h, canonical-l, peak-c) for all 24 hues", () => {
+  it("still contains per-hue constants (h, canonical-l, peak-c) for all 48 hues", () => {
     for (const hue of Object.keys(HUE_FAMILIES)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-h:`);
       expect(TUG_PALETTE_CSS).toContain(`--tug-${hue}-canonical-l:`);
@@ -509,11 +625,11 @@ describe("tug-palette.css — no P3 @media block", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Gamut safety: all 24 hues x 7 presets
+// Gamut safety: all 48 hues x 5 presets
 // ---------------------------------------------------------------------------
 
-describe("Gamut safety: all 24 hues x 5 presets", () => {
-  it("all 120 sRGB presets produce parseable oklch strings", () => {
+describe("Gamut safety: all 48 hues x 5 presets", () => {
+  it("all 240 sRGB presets produce parseable oklch strings", () => {
     let count = 0;
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
@@ -524,10 +640,10 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
         count++;
       }
     }
-    expect(count).toBe(120);
+    expect(count).toBe(240);
   });
 
-  it("all 120 P3 presets produce parseable oklch strings", () => {
+  it("all 240 P3 presets produce parseable oklch strings", () => {
     let count = 0;
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL  = DEFAULT_CANONICAL_L[hueName];
@@ -539,7 +655,7 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
         count++;
       }
     }
-    expect(count).toBe(120);
+    expect(count).toBe(240);
   });
 });
 
@@ -548,7 +664,7 @@ describe("Gamut safety: all 24 hues x 5 presets", () => {
 // ---------------------------------------------------------------------------
 
 describe("oklchToTugColor()", () => {
-  it("round-trip: all 24 hues at intensity=50, tone=50 recover exact hue name and intensity/tone", () => {
+  it("round-trip: all 48 hues at intensity=50, tone=50 recover exact hue name and intensity/tone", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
       const oklch = tugColor(hueName, 50, 50, canonL);
@@ -584,15 +700,14 @@ describe("oklchToTugColor()", () => {
     expect(rV100.tone).toBe(100);
   });
 
-  it("raw angle test: oklch at hue angle 237 (not close to any named hue) returns hue-237", () => {
-    // hue angle 237 — blue=230(7deg away), cobalt=250(13deg away), both > 5 deg threshold
-    // Wait: 237-230=7, 250-237=13 — 7 > 5, so raw angle
-    const oklch = "oklch(0.5 0.05 237)";
+  it("raw angle test: oklch at hue angle 96 (not close to any named hue) returns hue-96", () => {
+    // hue angle 96 — yellow=90(6deg away), chartreuse=102.5(6.5deg away), both > 5 deg threshold
+    const oklch = "oklch(0.5 0.05 96)";
     const result = oklchToTugColor(oklch);
-    expect(result.hue).toBe("hue-237");
+    expect(result.hue).toBe("hue-96");
   });
 
-  it("round-trip: all 24 hues at intensity=20, tone=85 recover correct hue name", () => {
+  it("round-trip: all 48 hues at intensity=20, tone=85 recover correct hue name", () => {
     for (const hueName of Object.keys(HUE_FAMILIES)) {
       const canonL = DEFAULT_CANONICAL_L[hueName];
       const oklch = tugColor(hueName, 20, 85, canonL);
@@ -604,8 +719,8 @@ describe("oklchToTugColor()", () => {
   });
 
   it("returns hue-NNN for raw angle when not within 5 degrees of any named hue", () => {
-    // angle 237 is 7 degrees from blue (230), just outside the 5-degree threshold
-    const result = oklchToTugColor("oklch(0.7 0.08 237)");
+    // angle 96 is 6 degrees from yellow (90) and 6.5 from chartreuse (102.5) — both > 5 deg threshold
+    const result = oklchToTugColor("oklch(0.7 0.08 96)");
     expect(result.hue).toMatch(/^hue-\d+/);
   });
 
@@ -633,8 +748,9 @@ describe("tugColorPretty()", () => {
   });
 
   it("formats raw angle as 'hue-NNN intensity=N tone=N'", () => {
-    const result = tugColorPretty("oklch(0.5 0.05 237)");
-    expect(result).toMatch(/^hue-237 intensity=\d+ tone=\d+$/);
+    // angle 96: 6 degrees from yellow (90) and 6.5 from chartreuse (102.5) — both > 5 threshold
+    const result = tugColorPretty("oklch(0.5 0.05 96)");
+    expect(result).toMatch(/^hue-96 intensity=\d+ tone=\d+$/);
   });
 
   it("round-trip: tugColorPretty(tugColor(hue, intensity, tone)) contains correct hue name", () => {

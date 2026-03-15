@@ -318,7 +318,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the atmosphere hue strip with 24 swatches", () => {
+  it("renders the atmosphere hue strip with 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -326,10 +326,10 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const strip = container.querySelector("[data-testid='gtg-atmosphere-hue-strip']");
     expect(strip).not.toBeNull();
     const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-    expect(swatches.length).toBe(24);
+    expect(swatches.length).toBe(48);
   });
 
-  it("renders the text hue strip with 24 swatches", () => {
+  it("renders the text hue strip with 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -337,7 +337,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const strip = container.querySelector("[data-testid='gtg-text-hue-strip']");
     expect(strip).not.toBeNull();
     const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-    expect(swatches.length).toBe(24);
+    expect(swatches.length).toBe(48);
   });
 
   it("renders three mood sliders", () => {
@@ -708,7 +708,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     expect(strips.length).toBe(7);
   });
 
-  it("each role hue strip has 24 swatches", () => {
+  it("each role hue strip has 48 swatches", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -726,7 +726,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       const strip = container.querySelector(`[data-testid='${id}']`);
       expect(strip).not.toBeNull();
       const swatches = strip!.querySelectorAll(".gtg-hue-swatch");
-      expect(swatches.length).toBe(24);
+      expect(swatches.length).toBe(48);
     }
   });
 
