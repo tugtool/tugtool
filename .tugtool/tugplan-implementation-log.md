@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-15T17:44:00Z
+---
+
+## step-5: Added 11 focus indicator pairs: 9 ui-component pairs (accent-cool-default against all major surfaces) + 2 decorative focused-vs-unfocused border pairs. All 9 ui-component pairs pass Lc 30 with explicit spot-check assertion. Added KNOWN_PAIR_EXCEPTIONS for decorative border-vs-border pairs.
+
+**Files changed:**
+- .tugtool/tugplan-perceptual-contrast-conformance.md
+
+---
+
+---
 step: step-4
 date: 2025-03-15T17:29:16Z
 ---

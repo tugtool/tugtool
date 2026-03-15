@@ -180,6 +180,14 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
   // mode are near-identical in lightness. Light-mode formula calibration is deferred
   // per Q01 — this constraint is structural, not a regression.
   "--tug-base-tab-fg-rest|--tug-base-surface-sunken",
+  // Focused-vs-unfocused decorative comparisons (Step 5): SA98G is designed for
+  // element-on-area contrast, not border-vs-border comparisons [D05]. The auto-adjuster
+  // bumps accent-cool-default toward control-outlined-action-border-rest (Lc ~9.5,
+  // below the decorative Lc 15 threshold), causing cascade that drives field-border-rest
+  // to Lc 0.0. Both pairs are informational only. All 9 ui-component focus-on-surface
+  // pairs pass Lc 30.
+  "--tug-base-accent-cool-default|--tug-base-field-border-rest",
+  "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
 ]);
 
 /**

@@ -471,6 +471,25 @@ const KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS = new Set([
 ]);
 
 /**
+ * Specific (element, surface) pairs below threshold due to structural constraints
+ * that cannot be resolved by tone-bumping alone. Keyed as "elementToken|surfaceToken"
+ * strings for O(1) lookup.
+ *
+ * Categories:
+ *   - Focus indicator focused-vs-unfocused decorative pairs (Step 5): SA98G is
+ *     designed for element-on-area contrast, not border-vs-border comparisons [D05].
+ *     The auto-adjuster bumps accent-cool-default trying to satisfy the decorative
+ *     threshold for control-outlined-action-border-rest (Lc ~9.5 < 15), causing
+ *     cascade that drives field-border-rest to Lc 0.0. Both pairs are informational
+ *     only. The 9 ui-component focus-on-surface pairs all pass Lc 30 independently.
+ */
+const KNOWN_PAIR_EXCEPTIONS = new Set([
+  // Focused-vs-unfocused decorative comparisons (border-vs-border, informational [D05])
+  "--tug-base-accent-cool-default|--tug-base-field-border-rest",
+  "--tug-base-accent-cool-default|--tug-base-control-outlined-action-border-rest",
+]);
+
+/**
  * Run the full derivation → contrast-validation → auto-adjustment pipeline for
  * a given recipe and return the final contrast results after adjustment.
  *
@@ -537,11 +556,13 @@ describe("derivation-engine integration", () => {
     // tokens and resolved must remain consistent after adjustment [D09]
     expect(tokensAndResolvedConsistent).toBe(true);
 
-    // After adjustment, body-text and ui-component failures must only come from
-    // the documented known-exception set
+    // After adjustment, failures must only come from the documented exception sets:
+    // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS) or pair-level (KNOWN_PAIR_EXCEPTIONS)
     const unexpectedFailures = finalResults.filter((r) => {
       if (r.lcPass) return false;
-      return !KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg);
+      if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+      if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+      return true;
     });
     const descriptions = unexpectedFailures.map(
       (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
@@ -558,6 +579,29 @@ describe("derivation-engine integration", () => {
         !r.lcPass,
     );
     expect(coreFailures).toEqual([]);
+
+    // Focus indicator assertion (Step 5): all 9 ui-component focus-on-surface pairs
+    // must pass Lc 30. This guards against regressions on the accent-cool-default
+    // ui-component pairs even though two decorative pairs are in KNOWN_PAIR_EXCEPTIONS.
+    const focusSurfaces = new Set([
+      "--tug-base-bg-app",
+      "--tug-base-surface-default",
+      "--tug-base-surface-raised",
+      "--tug-base-surface-inset",
+      "--tug-base-surface-content",
+      "--tug-base-surface-overlay",
+      "--tug-base-surface-sunken",
+      "--tug-base-surface-screen",
+      "--tug-base-field-bg-rest",
+    ]);
+    const focusFailures = finalResults.filter(
+      (r) =>
+        r.fg === "--tug-base-accent-cool-default" &&
+        r.role === "ui-component" &&
+        focusSurfaces.has(r.bg) &&
+        !r.lcPass,
+    );
+    expect(focusFailures.map((f) => `${f.bg}: Lc ${f.lc.toFixed(1)}`)).toEqual([]);
   });
 
   // -------------------------------------------------------------------------

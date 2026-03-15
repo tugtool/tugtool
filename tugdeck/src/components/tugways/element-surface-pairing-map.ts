@@ -956,12 +956,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug-base-surface-sunken",
     role: "ui-component",
   },
-  {
-    element: "--tug-base-accent-cool-default",
-    surface: "--tug-base-surface-default",
-    role: "ui-component",
-  },
-
   // =========================================================================
   // Selection text on selection background
   // selection-bg has alpha 40%; parentSurface composites it over surface-default
@@ -1379,6 +1373,78 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     element: "--tug-base-border-muted",
     surface: "--tug-base-surface-raised",
     role: "ui-component",
+  },
+
+  // =========================================================================
+  // Focus indicator pairs — accent-cool-default against all surfaces (Step 5)
+  //
+  // accent-cool-default (cobalt-intense) is the universal focus ring color.
+  // All 9 surfaces that can contain focusable elements are covered with
+  // role "ui-component" (Lc 30 threshold). surface-screen is included
+  // because tooltips (--tug-tooltip-bg: var(--tug-base-surface-screen))
+  // can contain focusable elements. [D05]
+  //
+  // Focused-vs-unfocused state comparison pairs use role "decorative"
+  // because SA98G is designed for element-on-area contrast, not border-vs-border
+  // comparisons. These pairs are informational only and do not gate the pipeline. [D05]
+  // =========================================================================
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-bg-app",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-default",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-raised",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-inset",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-content",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-overlay",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-sunken",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-surface-screen",
+    role: "ui-component",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-field-bg-rest",
+    role: "ui-component",
+  },
+  // Focused-vs-unfocused comparisons: informational only (decorative role).
+  // SA98G measures element-on-area contrast; border-vs-border results are
+  // unreliable as a gate. These appear in the dashboard for visual review. [D05]
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-field-border-rest",
+    role: "decorative",
+  },
+  {
+    element: "--tug-base-accent-cool-default",
+    surface: "--tug-base-control-outlined-action-border-rest",
+    role: "decorative",
   },
 
 ];
