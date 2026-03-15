@@ -4,7 +4,7 @@
  * Tests cover:
  * - Trigger renders with class tug-button-outlined-option
  * - Trigger has ChevronDown trailing icon (.tug-button-trailing-icon present)
- * - Trigger has border-radius: 0 (rounded="none")
+ * - Trigger has default border-radius (inherits from TugButton size default)
  * - Label text is rendered in the trigger
  * - Mounts without throwing
  *
@@ -106,14 +106,14 @@ describe("TugPopupButton – ChevronDown trailing icon", () => {
 // Border radius: rounded="none" → border-radius: 0 [D04]
 // ============================================================================
 
-describe("TugPopupButton – border-radius: 0 (rounded=none)", () => {
-  it("trigger has inline style border-radius: 0", () => {
+describe("TugPopupButton – border-radius (default rounded)", () => {
+  it("trigger has inline style border-radius matching default rounded", () => {
     const { container } = renderPopupButton();
     const btn = container.querySelector(".tug-button") as HTMLElement | null;
     expect(btn).not.toBeNull();
-    // TugButton applies border-radius via inline style from ROUNDED_MAP["none"] = "0".
-    // happy-dom normalizes the computed value to "0px"; accept either form.
-    expect(["0", "0px"]).toContain(btn!.style.borderRadius);
+    // TugButton applies border-radius via inline style from SIZE_ROUNDED_DEFAULT.
+    // Default size "md" maps to "lg" rounded = "0.5rem".
+    expect(btn!.style.borderRadius).toBe("0.5rem");
   });
 });
 

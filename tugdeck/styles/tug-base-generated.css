@@ -181,10 +181,10 @@ body {
   --tug-base-tab-fg-rest: --tug-color(cobalt, i: 7);
 
   /* Control — Disabled */
-  --tug-base-control-disabled-bg: --tug-color(violet, i: 5, t: 11);
-  --tug-base-control-disabled-border: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-control-disabled-fg: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-base-control-disabled-icon: --tug-color(cobalt+8, i: 7, t: 23);
+  --tug-base-control-disabled-bg: --tug-color(violet, i: 5, t: 22);
+  --tug-base-control-disabled-border: --tug-color(violet-6, i: 6, t: 28);
+  --tug-base-control-disabled-fg: --tug-color(cobalt+8, i: 7, t: 38);
+  --tug-base-control-disabled-icon: --tug-color(cobalt+8, i: 7, t: 38);
   --tug-base-control-disabled-opacity: 0.5;
   --tug-base-control-disabled-shadow: none;
 
@@ -399,7 +399,7 @@ body {
   --tug-base-field-fg: --tug-color(cobalt, i: 3, t: 94);
   --tug-base-field-fg-disabled: --tug-color(cobalt+8, i: 7, t: 23);
   --tug-base-field-fg-readOnly: --tug-color(cobalt, i: 5, t: 66);
-  --tug-base-field-label: --tug-color(cobalt, i: 5, t: 66);
+  --tug-base-field-label: --tug-color(cobalt, i: 3, t: 94);
   --tug-base-field-placeholder: --tug-color(cobalt, i: 6, t: 30);
   --tug-base-field-required: --tug-color(red);
   --tug-base-field-tone-caution: --tug-color(yellow);
@@ -410,20 +410,20 @@ body {
   --tug-base-checkmark: --tug-color(cobalt-8, i: 3, t: 100);
   --tug-base-checkmark-mixed: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-radio-dot: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-toggle-icon-disabled: --tug-color(cobalt+8, i: 7, t: 23);
+  --tug-base-toggle-icon-disabled: --tug-color(cobalt+8, i: 7, t: 40);
   --tug-base-toggle-icon-mixed: --tug-color(cobalt, i: 5, t: 66);
   --tug-base-toggle-thumb: --tug-color(cobalt-8, i: 3, t: 100);
-  --tug-base-toggle-thumb-disabled: --tug-color(cobalt+8, i: 7, t: 23);
-  --tug-base-toggle-track-disabled: --tug-color(violet, i: 5, t: 11);
+  --tug-base-toggle-thumb-disabled: --tug-color(cobalt+8, i: 7, t: 40);
+  --tug-base-toggle-track-disabled: --tug-color(violet, i: 5, t: 22);
   --tug-base-toggle-track-mixed: --tug-color(cobalt+7, i: 7, t: 37);
   --tug-base-toggle-track-mixed-hover: --tug-color(cobalt+7, i: 12, t: 43);
-  --tug-base-toggle-track-off: --tug-color(violet-6, i: 6, t: 17);
-  --tug-base-toggle-track-off-hover: --tug-color(violet-6, i: 10, t: 25);
+  --tug-base-toggle-track-off: --tug-color(violet-6, i: 6, t: 28);
+  --tug-base-toggle-track-off-hover: --tug-color(violet-6, i: 10, t: 36);
   --tug-base-toggle-track-on: --tug-color(orange-muted);
   --tug-base-toggle-track-on-hover: --tug-color(orange, i: 55, t: 45);
 
   /* Separator */
-  --tug-base-separator: --tug-color(violet-6, i: 6, t: 17);
+  --tug-base-separator: --tug-color(violet-6, i: 6, t: 28);
 
   /* Other */
   --tug-base-badge-tinted-accent-bg: --tug-color(orange, i: 65, t: 60, a: 15);

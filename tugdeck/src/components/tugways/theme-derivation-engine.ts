@@ -1377,15 +1377,17 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // --- Cross-Control Disabled Contract ---
   // Brio: disabled-bg=violet i:5 t:11, disabled-fg=cobalt+8 i:7 t:23,
   //       disabled-border=violet-6 i:6 t:17, disabled-icon=cobalt+8 i:7 t:23
-  const disabledBgTone = isLight ? Math.round(70 + (surfaceContrast / 100) * 10) : Math.round(darkSurfaceSunken);
+  const disabledBgTone = isLight ? Math.round(70 + (surfaceContrast / 100) * 10) : 22;
   if (isLight) {
     setChromatic("--tug-base-control-disabled-bg", atmRefW, atmAngleW, 6, disabledBgTone);
   } else {
     setChromatic("--tug-base-control-disabled-bg", surfBareBaseRef, surfBareBaseAngle, atmI, disabledBgTone, 100, surfBareBaseName);
   }
-  setChromatic("--tug-base-control-disabled-fg", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
-  setChromatic("--tug-base-control-disabled-border", atmRefW, atmAngleW, isLight ? atmIBorder : 6, Math.round(dividerTone));
-  setChromatic("--tug-base-control-disabled-icon", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  const disabledFgTone = isLight ? fgDisabledTone : 38;
+  setChromatic("--tug-base-control-disabled-fg", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledName);
+  const disabledBorderTone = isLight ? Math.round(dividerTone) : 28;
+  setChromatic("--tug-base-control-disabled-border", atmRefW, atmAngleW, isLight ? atmIBorder : 6, disabledBorderTone);
+  setChromatic("--tug-base-control-disabled-icon", fgDisabledRef, fgDisabledAngle, txtISubtle, disabledFgTone, 100, fgDisabledName);
   setInvariant("--tug-base-control-disabled-opacity", "0.5");
   setStructural("--tug-base-control-disabled-shadow", "none");
 
@@ -1777,8 +1779,8 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-field-border-disabled", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
   setChromatic("--tug-base-field-border-readOnly", atmRefW, atmAngleW, atmIBorder, Math.round(dividerTone));
 
-  // field-label: Brio uses cobalt, i:5, t:66 (= fg-muted)
-  setChromatic("--tug-base-field-label", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
+  // field-label: uses fg-default for full readability
+  setChromatic("--tug-base-field-label", txtRefW, txtAngleW, txtI, fgDefaultTone, 100, txtNameW);
   setChromatic("--tug-base-field-required", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-field-tone-danger", destructiveHue, dangerAngle, signalI, 50, 100, dangerName);
   setChromatic("--tug-base-field-tone-caution", cautionHue, cautionAngle, signalI, 50, 100, cautionName);
@@ -1786,14 +1788,14 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // --- Toggle / Range Tokens ---
   // Toggle track: atmosphere (off) or accent (on)
-  const toggleTrackOffTone = Math.round(dividerTone);
+  const toggleTrackOffTone = isLight ? Math.round(dividerTone) : 28;
   setChromatic("--tug-base-toggle-track-off", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
   setChromatic("--tug-base-toggle-track-off-hover", atmRefW, atmAngleW, Math.min(atmIBorder + 4, 100), Math.min(toggleTrackOffTone + 8, 100));
   // toggle-track-on: Brio uses orange-muted (= i:50, t:42) — matches muted preset
   setChromatic("--tug-base-toggle-track-on", accentHue, accentAngle, signalI, 42, 100, accentName);
   setChromatic("--tug-base-toggle-track-on-hover", accentHue, accentAngle, Math.min(signalI + 5, 100), preset.toggleTrackOnHoverTone, 100, accentName);
-  // toggle-track-disabled: Brio uses violet (bare), i:5, t:11 (= surfBareBaseRef, surfaceSunken tone)
-  const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : Math.round(darkSurfaceSunken);
+  // toggle-track-disabled: needs enough contrast against surface-default (t:12)
+  const toggleDisabledTone = isLight ? Math.round(darkSurfaceOverlay) : 22;
   if (isLight) {
     setChromatic("--tug-base-toggle-track-disabled", atmRefW, atmAngleW, 6, toggleDisabledTone, 100, atmNameW);
   } else {
@@ -1809,9 +1811,10 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   } else {
     setChromatic("--tug-base-toggle-thumb", fgInverseRef, fgInverseAngle, txtI, fgInverseTone, 100, fgInverseName);
   }
-  // toggle-thumb-disabled: Brio uses cobalt+8, i:7, t:23 (= fg-disabled)
-  setChromatic("--tug-base-toggle-thumb-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
-  setChromatic("--tug-base-toggle-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, fgDisabledTone, 100, fgDisabledName);
+  // toggle-thumb-disabled: needs contrast against disabled track
+  const toggleThumbDisabledTone = isLight ? fgDisabledTone : 40;
+  setChromatic("--tug-base-toggle-thumb-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledName);
+  setChromatic("--tug-base-toggle-icon-disabled", fgDisabledRef, fgDisabledAngle, txtISubtle, toggleThumbDisabledTone, 100, fgDisabledName);
   setChromatic("--tug-base-toggle-icon-mixed", fgMutedRef, fgMutedAngle, fgMutedI, fgMutedTone, 100, fgMutedName);
 
   // Checkmark / radio: Brio dark uses cobalt-8, i:3, t:100 (= fg-inverse)

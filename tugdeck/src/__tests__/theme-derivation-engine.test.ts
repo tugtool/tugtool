@@ -715,10 +715,10 @@ export const BRIO_GROUND_TRUTH: Record<string, string> = {
   "--tug-base-highlight-flash": "--tug-color(orange, i: 50, t: 50, a: 35)",
 
   // === I. Control Disabled Contract ===
-  "--tug-base-control-disabled-bg": "--tug-color(violet, i: 5, t: 11)",
-  "--tug-base-control-disabled-fg": "--tug-color(cobalt+8, i: 7, t: 23)",
-  "--tug-base-control-disabled-border": "--tug-color(violet-6, i: 6, t: 17)",
-  "--tug-base-control-disabled-icon": "--tug-color(cobalt+8, i: 7, t: 23)",
+  "--tug-base-control-disabled-bg": "--tug-color(violet, i: 5, t: 22)",
+  "--tug-base-control-disabled-fg": "--tug-color(cobalt+8, i: 7, t: 38)",
+  "--tug-base-control-disabled-border": "--tug-color(violet-6, i: 6, t: 28)",
+  "--tug-base-control-disabled-icon": "--tug-color(cobalt+8, i: 7, t: 38)",
 
   // === J. Filled Controls ===
   "--tug-base-control-filled-accent-bg-rest": "--tug-color(orange-dark)",
@@ -909,30 +909,30 @@ export const BRIO_GROUND_TRUTH: Record<string, string> = {
   "--tug-base-field-border-success": "--tug-color(green)",
   "--tug-base-field-border-disabled": "--tug-color(violet-6, i: 6, t: 17)",
   "--tug-base-field-border-readOnly": "--tug-color(violet-6, i: 6, t: 17)",
-  "--tug-base-field-label": "--tug-color(cobalt, i: 5, t: 66)",
+  "--tug-base-field-label": "--tug-color(cobalt, i: 3, t: 94)",
   "--tug-base-field-required": "--tug-color(red)",
   "--tug-base-field-tone-danger": "--tug-color(red)",
   "--tug-base-field-tone-caution": "--tug-color(yellow)",
   "--tug-base-field-tone-success": "--tug-color(green)",
 
   // === P. Toggle / Check / Radio ===
-  "--tug-base-toggle-track-off": "--tug-color(violet-6, i: 6, t: 17)",
-  "--tug-base-toggle-track-off-hover": "--tug-color(violet-6, i: 10, t: 25)",
+  "--tug-base-toggle-track-off": "--tug-color(violet-6, i: 6, t: 28)",
+  "--tug-base-toggle-track-off-hover": "--tug-color(violet-6, i: 10, t: 36)",
   "--tug-base-toggle-track-on": "--tug-color(orange-muted)",
   "--tug-base-toggle-track-on-hover": "--tug-color(orange, i: 55, t: 45)",
   "--tug-base-toggle-track-mixed": "--tug-color(cobalt+7, i: 7, t: 37)",
   "--tug-base-toggle-track-mixed-hover": "--tug-color(cobalt+7, i: 12, t: 43)",
-  "--tug-base-toggle-track-disabled": "--tug-color(violet, i: 5, t: 11)",
+  "--tug-base-toggle-track-disabled": "--tug-color(violet, i: 5, t: 22)",
   "--tug-base-toggle-thumb": "--tug-color(cobalt-8, i: 3, t: 100)",
-  "--tug-base-toggle-thumb-disabled": "--tug-color(cobalt+8, i: 7, t: 23)",
-  "--tug-base-toggle-icon-disabled": "--tug-color(cobalt+8, i: 7, t: 23)",
+  "--tug-base-toggle-thumb-disabled": "--tug-color(cobalt+8, i: 7, t: 40)",
+  "--tug-base-toggle-icon-disabled": "--tug-color(cobalt+8, i: 7, t: 40)",
   "--tug-base-toggle-icon-mixed": "--tug-color(cobalt, i: 5, t: 66)",
   "--tug-base-checkmark": "--tug-color(cobalt-8, i: 3, t: 100)",
   "--tug-base-checkmark-mixed": "--tug-color(cobalt, i: 5, t: 66)",
   "--tug-base-radio-dot": "--tug-color(cobalt-8, i: 3, t: 100)",
 
   // === Q. Separator ===
-  "--tug-base-separator": "--tug-color(violet-6, i: 6, t: 17)",
+  "--tug-base-separator": "--tug-color(violet-6, i: 6, t: 28)",
 
   // === R. Badge Tinted ===
   "--tug-base-badge-tinted-accent-fg": "--tug-color(orange, i: 72, t: 85)",

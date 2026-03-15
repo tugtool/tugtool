@@ -39,7 +39,6 @@ import { GalleryMarqueeContent } from "./gallery-marquee-content";
 import { GalleryCheckboxContent } from "./gallery-checkbox-content";
 import { GallerySwitchContent } from "./gallery-switch-content";
 import { GalleryThemeGeneratorContent } from "./gallery-theme-generator-content";
-import { GalleryBadgeMockupContent } from "./gallery-badge-mockup-content";
 import { GalleryPopupButtonContent } from "./gallery-popup-button-content";
 import { TugButton, TugPushButton } from "@/components/tugways/tug-button";
 import type { TugButtonEmphasis, TugButtonRole, TugButtonSize, TugButtonSubtype } from "@/components/tugways/tug-button";
@@ -100,7 +99,6 @@ export const GALLERY_DEFAULT_TABS: readonly TabItem[] = [
   { id: "template", componentId: "gallery-switch",             title: "TugSwitch",            closable: true },
   { id: "template", componentId: "gallery-theme-generator",   title: "Theme Generator",      closable: true },
   { id: "template", componentId: "gallery-badge",             title: "TugBadge",             closable: true },
-  { id: "template", componentId: "gallery-badge-mockup",      title: "Badge Mockup",         closable: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1208,16 +1206,6 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["developer"],
   });
 
-  // ---- gallery-badge-mockup ----
-  // Exploratory badge redesign: tinted bg + tag shape vs current filled pill.
-  // Self-contained CSS — does not touch real badge/theme system.
-  registerCard({
-    componentId: "gallery-badge-mockup",
-    contentFactory: (_cardId) => <GalleryBadgeMockupContent />,
-    defaultMeta: { title: "Badge Mockup", icon: "Tag", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-  });
 }
 
 // Re-export GalleryMutationTxContent so tests can import it from either location.

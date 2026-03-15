@@ -181,7 +181,7 @@ describe("GalleryDropdownContent – renders without errors", () => {
     act(() => {
       ({ container } = render(<GalleryDropdownContent />));
     });
-    expect(container.querySelector("[data-testid='gallery-dropdown-content']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gallery-popup-button-content']")).not.toBeNull();
   });
 });
 
