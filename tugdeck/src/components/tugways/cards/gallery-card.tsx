@@ -929,6 +929,13 @@ export function GalleryTitleBarContent() {
 
 /** All emphasis x role combinations for the TugBadge showcase matrix [D06, Spec S06] */
 const ALL_BADGE_COMBOS: Array<{ emphasis: TugBadgeEmphasis; role: TugBadgeRole }> = [
+  { emphasis: "tinted",   role: "accent"   },
+  { emphasis: "tinted",   role: "action"   },
+  { emphasis: "tinted",   role: "agent"    },
+  { emphasis: "tinted",   role: "data"     },
+  { emphasis: "tinted",   role: "danger"   },
+  { emphasis: "tinted",   role: "success"  },
+  { emphasis: "tinted",   role: "caution"  },
   { emphasis: "filled",   role: "accent"   },
   { emphasis: "filled",   role: "action"   },
   { emphasis: "filled",   role: "agent"    },
@@ -962,7 +969,7 @@ const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
  * **Authoritative reference:** [D06] TugBadge API, Spec S06, S07, S08, S09.
  */
 export function GalleryBadgeContent() {
-  const [previewEmphasis, setPreviewEmphasis] = useState<TugBadgeEmphasis>("filled");
+  const [previewEmphasis, setPreviewEmphasis] = useState<TugBadgeEmphasis>("tinted");
   const [previewRole, setPreviewRole] = useState<TugBadgeRole>("action");
 
   return (
@@ -977,7 +984,7 @@ export function GalleryBadgeContent() {
             <TugPopupButton
               label={previewEmphasis}
               size="sm"
-              items={(["filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => ({
+              items={(["tinted", "filled", "outlined", "ghost"] as TugBadgeEmphasis[]).map((v) => ({
                 id: v,
                 label: v,
               }))}

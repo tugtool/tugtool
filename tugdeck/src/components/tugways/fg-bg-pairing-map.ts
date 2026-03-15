@@ -1072,4 +1072,43 @@ export const FG_BG_PAIRING_MAP: FgBgPairing[] = [
     role: "ui-component",
   },
 
+  // --- Badge Tinted ---
+  // tinted fg over tinted bg (semi-transparent bg — pair fg against both the
+  // tinted bg token and surface-default for accurate contrast measurement)
+  {
+    fg: "--tug-base-badge-tinted-accent-fg",
+    bg: "--tug-base-badge-tinted-accent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-action-fg",
+    bg: "--tug-base-badge-tinted-action-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-agent-fg",
+    bg: "--tug-base-badge-tinted-agent-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-data-fg",
+    bg: "--tug-base-badge-tinted-data-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-danger-fg",
+    bg: "--tug-base-badge-tinted-danger-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-success-fg",
+    bg: "--tug-base-badge-tinted-success-bg",
+    role: "ui-component",
+  },
+  {
+    fg: "--tug-base-badge-tinted-caution-fg",
+    bg: "--tug-base-badge-tinted-caution-bg",
+    role: "ui-component",
+  },
+
 ];

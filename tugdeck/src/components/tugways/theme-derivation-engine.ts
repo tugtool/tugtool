@@ -228,6 +228,16 @@ export interface ModePreset {
   fieldBgFocusTone: number;
   fieldBgDisabledTone: number;
   fieldBgReadOnlyTone: number;
+
+  // Badge tinted emphasis formula parameters
+  badgeTintedFgI: number;
+  badgeTintedFgTone: number;
+  badgeTintedBgI: number;
+  badgeTintedBgTone: number;
+  badgeTintedBgAlpha: number;
+  badgeTintedBorderI: number;
+  badgeTintedBorderTone: number;
+  badgeTintedBorderAlpha: number;
 }
 
 /**
@@ -299,6 +309,16 @@ export const DARK_PRESET: ModePreset = {
   fieldBgFocusTone: 7,
   fieldBgDisabledTone: 6,
   fieldBgReadOnlyTone: 11,
+
+  // Badge tinted emphasis formula parameters
+  badgeTintedFgI: 72,
+  badgeTintedFgTone: 85,
+  badgeTintedBgI: 65,
+  badgeTintedBgTone: 60,
+  badgeTintedBgAlpha: 15,
+  badgeTintedBorderI: 50,
+  badgeTintedBorderTone: 50,
+  badgeTintedBorderAlpha: 35,
 };
 
 /**
@@ -370,6 +390,16 @@ export const LIGHT_PRESET: ModePreset = {
   fieldBgFocusTone: 99,
   fieldBgDisabledTone: 48,
   fieldBgReadOnlyTone: 74,
+
+  // Badge tinted emphasis formula parameters
+  badgeTintedFgI: 72,
+  badgeTintedFgTone: 85,
+  badgeTintedBgI: 65,
+  badgeTintedBgTone: 60,
+  badgeTintedBgAlpha: 15,
+  badgeTintedBorderI: 50,
+  badgeTintedBorderTone: 50,
+  badgeTintedBorderAlpha: 35,
 };
 
 // ---------------------------------------------------------------------------
@@ -1796,6 +1826,59 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
 
   // --- Separator ---
   setChromatic("--tug-base-separator", atmRefW, atmAngleW, atmIBorder, toggleTrackOffTone);
+
+  // =========================================================================
+  // F. Badge Tinted Tokens
+  // Badge-specific tinted emphasis tokens for --tug-base-badge-tinted-{role}-*
+  // 7 roles × 3 properties (fg, bg, border) = 21 tokens
+  // FG: role hue at badgeTintedFgI, badgeTintedFgTone (alpha=100)
+  // BG: role hue at badgeTintedBgI, badgeTintedBgTone, alpha=badgeTintedBgAlpha
+  // Border: role hue at badgeTintedBorderI, badgeTintedBorderTone, alpha=badgeTintedBorderAlpha
+  // =========================================================================
+
+  const btFgI = preset.badgeTintedFgI;
+  const btFgTone = preset.badgeTintedFgTone;
+  const btBgI = preset.badgeTintedBgI;
+  const btBgTone = preset.badgeTintedBgTone;
+  const btBgAlpha = preset.badgeTintedBgAlpha;
+  const btBorderI = preset.badgeTintedBorderI;
+  const btBorderTone = preset.badgeTintedBorderTone;
+  const btBorderAlpha = preset.badgeTintedBorderAlpha;
+
+  // --- badge-tinted-accent (orange) ---
+  setChromatic("--tug-base-badge-tinted-accent-fg", accentHue, accentAngle, btFgI, btFgTone, 100, accentName);
+  setChromatic("--tug-base-badge-tinted-accent-bg", accentHue, accentAngle, btBgI, btBgTone, btBgAlpha, accentName);
+  setChromatic("--tug-base-badge-tinted-accent-border", accentHue, accentAngle, btBorderI, btBorderTone, btBorderAlpha, accentName);
+
+  // --- badge-tinted-action (blue) ---
+  setChromatic("--tug-base-badge-tinted-action-fg", activeHue, activeAngle, btFgI, btFgTone, 100, activeName);
+  setChromatic("--tug-base-badge-tinted-action-bg", activeHue, activeAngle, btBgI, btBgTone, btBgAlpha, activeName);
+  setChromatic("--tug-base-badge-tinted-action-border", activeHue, activeAngle, btBorderI, btBorderTone, btBorderAlpha, activeName);
+
+  // --- badge-tinted-agent (violet) ---
+  setChromatic("--tug-base-badge-tinted-agent-fg", agentHue, agentAngle, btFgI, btFgTone, 100, agentName);
+  setChromatic("--tug-base-badge-tinted-agent-bg", agentHue, agentAngle, btBgI, btBgTone, btBgAlpha, agentName);
+  setChromatic("--tug-base-badge-tinted-agent-border", agentHue, agentAngle, btBorderI, btBorderTone, btBorderAlpha, agentName);
+
+  // --- badge-tinted-data (teal) ---
+  setChromatic("--tug-base-badge-tinted-data-fg", dataHue, dataAngle, btFgI, btFgTone, 100, dataName);
+  setChromatic("--tug-base-badge-tinted-data-bg", dataHue, dataAngle, btBgI, btBgTone, btBgAlpha, dataName);
+  setChromatic("--tug-base-badge-tinted-data-border", dataHue, dataAngle, btBorderI, btBorderTone, btBorderAlpha, dataName);
+
+  // --- badge-tinted-danger (red) ---
+  setChromatic("--tug-base-badge-tinted-danger-fg", destructiveHue, dangerAngle, btFgI, btFgTone, 100, dangerName);
+  setChromatic("--tug-base-badge-tinted-danger-bg", destructiveHue, dangerAngle, btBgI, btBgTone, btBgAlpha, dangerName);
+  setChromatic("--tug-base-badge-tinted-danger-border", destructiveHue, dangerAngle, btBorderI, btBorderTone, btBorderAlpha, dangerName);
+
+  // --- badge-tinted-success (green) ---
+  setChromatic("--tug-base-badge-tinted-success-fg", successHue, successAngle, btFgI, btFgTone, 100, successName);
+  setChromatic("--tug-base-badge-tinted-success-bg", successHue, successAngle, btBgI, btBgTone, btBgAlpha, successName);
+  setChromatic("--tug-base-badge-tinted-success-border", successHue, successAngle, btBorderI, btBorderTone, btBorderAlpha, successName);
+
+  // --- badge-tinted-caution (yellow) ---
+  setChromatic("--tug-base-badge-tinted-caution-fg", cautionHue, cautionAngle, btFgI, btFgTone, 100, cautionName);
+  setChromatic("--tug-base-badge-tinted-caution-bg", cautionHue, cautionAngle, btBgI, btBgTone, btBgAlpha, cautionName);
+  setChromatic("--tug-base-badge-tinted-caution-border", cautionHue, cautionAngle, btBorderI, btBorderTone, btBorderAlpha, cautionName);
 
   // =========================================================================
   // Return ThemeOutput

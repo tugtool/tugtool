@@ -25,7 +25,7 @@ import "./tug-badge.css";
 // ---- Types ----
 
 /** TugBadge emphasis values — controls visual weight (Spec S06) */
-export type TugBadgeEmphasis = "filled" | "outlined" | "ghost";
+export type TugBadgeEmphasis = "filled" | "outlined" | "ghost" | "tinted";
 
 /** TugBadge role values — controls color domain (Spec S06); includes all 7 roles */
 export type TugBadgeRole =
@@ -44,7 +44,7 @@ export type TugBadgeSize = "sm" | "md" | "lg";
  * TugBadge props interface (Spec S06).
  */
 export interface TugBadgeProps {
-  /** Visual weight. Default: "filled". Controls filled/outlined/ghost styling. */
+  /** Visual weight. Default: "tinted". Controls filled/outlined/ghost/tinted styling. */
   emphasis?: TugBadgeEmphasis;
   /** Color domain. Default: "action". Controls the hue family. */
   role?: TugBadgeRole;
@@ -63,15 +63,15 @@ export interface TugBadgeProps {
 /**
  * TugBadge -- tugways badge component.
  *
- * Compact pill-shaped label for status, role, or category. Display-only:
+ * Compact label for status, role, or category. Display-only:
  * no hover or active states. Styling is entirely CSS custom property driven.
  *
- * emphasis: "filled" | "outlined" | "ghost" (default: "filled")
+ * emphasis: "filled" | "outlined" | "ghost" | "tinted" (default: "tinted")
  * role:     "accent" | "action" | "agent" | "data" | "danger" | "success" | "caution" (default: "action")
  * size:     "sm" | "md" | "lg" (default: "sm")
  */
 export function TugBadge({
-  emphasis = "filled",
+  emphasis = "tinted",
   role = "action",
   size = "sm",
   children,

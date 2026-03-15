@@ -36,9 +36,9 @@ describe("TugBadge – default render", () => {
     expect(badge).not.toBeNull();
   });
 
-  it("default props produce tug-badge-filled-action and tug-badge-size-sm classes", () => {
+  it("default props produce tug-badge-tinted-action and tug-badge-size-sm classes", () => {
     const badge = renderBadge({ children: "Tag" });
-    expect(badge.className).toContain("tug-badge-filled-action");
+    expect(badge.className).toContain("tug-badge-tinted-action");
     expect(badge.className).toContain("tug-badge-size-sm");
   });
 
@@ -73,6 +73,29 @@ describe("TugBadge – sizes", () => {
     const badge = renderBadge({ size: "lg", children: "Large" });
     expect(badge.className).toContain("tug-badge-size-lg");
   });
+});
+
+// ============================================================================
+// Emphasis x Role CSS classes — tinted emphasis
+// ============================================================================
+
+describe("TugBadge – tinted emphasis", () => {
+  const tintedCases: Array<[TugBadgeRole, string]> = [
+    ["accent",  "tug-badge-tinted-accent"],
+    ["action",  "tug-badge-tinted-action"],
+    ["agent",   "tug-badge-tinted-agent"],
+    ["data",    "tug-badge-tinted-data"],
+    ["danger",  "tug-badge-tinted-danger"],
+    ["success", "tug-badge-tinted-success"],
+    ["caution", "tug-badge-tinted-caution"],
+  ];
+
+  for (const [role, expectedClass] of tintedCases) {
+    it(`emphasis=tinted role=${role}: applies ${expectedClass}`, () => {
+      const badge = renderBadge({ emphasis: "tinted", role, children: role });
+      expect(badge.className).toContain(expectedClass);
+    });
+  }
 });
 
 // ============================================================================

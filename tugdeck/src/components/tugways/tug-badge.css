@@ -23,7 +23,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: 2px;
   font-weight: 500;
   font-family: inherit;
   line-height: 1;
@@ -267,4 +267,65 @@
   background-color: transparent;
   color: var(--tug-base-tone-caution-fg);
   border-color: transparent;
+}
+
+/* ============================================================================
+   Tinted Emphasis: badge-specific emphasis using --tug-base-badge-tinted-* tokens
+   Visually differentiates badges from buttons.
+   ========================================================================= */
+
+/* --- tinted-accent --- */
+
+.tug-badge-tinted-accent {
+  background-color: var(--tug-base-badge-tinted-accent-bg);
+  color: var(--tug-base-badge-tinted-accent-fg);
+  border-color: var(--tug-base-badge-tinted-accent-border);
+}
+
+/* --- tinted-action --- */
+
+.tug-badge-tinted-action {
+  background-color: var(--tug-base-badge-tinted-action-bg);
+  color: var(--tug-base-badge-tinted-action-fg);
+  border-color: var(--tug-base-badge-tinted-action-border);
+}
+
+/* --- tinted-agent --- */
+
+.tug-badge-tinted-agent {
+  background-color: var(--tug-base-badge-tinted-agent-bg);
+  color: var(--tug-base-badge-tinted-agent-fg);
+  border-color: var(--tug-base-badge-tinted-agent-border);
+}
+
+/* --- tinted-data --- */
+
+.tug-badge-tinted-data {
+  background-color: var(--tug-base-badge-tinted-data-bg);
+  color: var(--tug-base-badge-tinted-data-fg);
+  border-color: var(--tug-base-badge-tinted-data-border);
+}
+
+/* --- tinted-danger --- */
+
+.tug-badge-tinted-danger {
+  background-color: var(--tug-base-badge-tinted-danger-bg);
+  color: var(--tug-base-badge-tinted-danger-fg);
+  border-color: var(--tug-base-badge-tinted-danger-border);
+}
+
+/* --- tinted-success --- */
+
+.tug-badge-tinted-success {
+  background-color: var(--tug-base-badge-tinted-success-bg);
+  color: var(--tug-base-badge-tinted-success-fg);
+  border-color: var(--tug-base-badge-tinted-success-border);
+}
+
+/* --- tinted-caution --- */
+
+.tug-badge-tinted-caution {
+  background-color: var(--tug-base-badge-tinted-caution-bg);
+  color: var(--tug-base-badge-tinted-caution-fg);
+  border-color: var(--tug-base-badge-tinted-caution-border);
 }

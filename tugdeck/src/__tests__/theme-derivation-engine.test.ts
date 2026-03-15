@@ -89,9 +89,9 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 350 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 371 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(Object.keys(output.tokens).length).toBe(350);
+    expect(Object.keys(output.tokens).length).toBe(371);
   });
 
   // -------------------------------------------------------------------------
@@ -400,6 +400,15 @@ const KNOWN_BELOW_THRESHOLD_FG_TOKENS = new Set([
   "--tug-base-checkmark",
   "--tug-base-radio-dot",
   "--tug-base-range-thumb",
+  // F — Badge tinted fg tokens: semi-transparent bg means fg-over-tinted-bg
+  // has inherently low contrast; real readability is fg over the underlying surface.
+  "--tug-base-badge-tinted-accent-fg",
+  "--tug-base-badge-tinted-action-fg",
+  "--tug-base-badge-tinted-agent-fg",
+  "--tug-base-badge-tinted-data-fg",
+  "--tug-base-badge-tinted-danger-fg",
+  "--tug-base-badge-tinted-success-fg",
+  "--tug-base-badge-tinted-caution-fg",
 ]);
 
 /**
@@ -924,6 +933,29 @@ export const BRIO_GROUND_TRUTH: Record<string, string> = {
 
   // === Q. Separator ===
   "--tug-base-separator": "--tug-color(violet-6, i: 6, t: 17)",
+
+  // === R. Badge Tinted ===
+  "--tug-base-badge-tinted-accent-fg": "--tug-color(orange, i: 72, t: 85)",
+  "--tug-base-badge-tinted-accent-bg": "--tug-color(orange, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-accent-border": "--tug-color(orange, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-action-fg": "--tug-color(blue, i: 72, t: 85)",
+  "--tug-base-badge-tinted-action-bg": "--tug-color(blue, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-action-border": "--tug-color(blue, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-agent-fg": "--tug-color(violet, i: 72, t: 85)",
+  "--tug-base-badge-tinted-agent-bg": "--tug-color(violet, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-agent-border": "--tug-color(violet, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-data-fg": "--tug-color(teal, i: 72, t: 85)",
+  "--tug-base-badge-tinted-data-bg": "--tug-color(teal, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-data-border": "--tug-color(teal, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-danger-fg": "--tug-color(red, i: 72, t: 85)",
+  "--tug-base-badge-tinted-danger-bg": "--tug-color(red, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-danger-border": "--tug-color(red, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-success-fg": "--tug-color(green, i: 72, t: 85)",
+  "--tug-base-badge-tinted-success-bg": "--tug-color(green, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-success-border": "--tug-color(green, i: 50, t: 50, a: 35)",
+  "--tug-base-badge-tinted-caution-fg": "--tug-color(yellow, i: 72, t: 85)",
+  "--tug-base-badge-tinted-caution-bg": "--tug-color(yellow, i: 65, t: 60, a: 15)",
+  "--tug-base-badge-tinted-caution-border": "--tug-color(yellow, i: 50, t: 50, a: 35)",
 };
 
 // ---------------------------------------------------------------------------
@@ -991,7 +1023,7 @@ describe("derivation-engine mode-preset", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     // Token count unchanged
-    expect(Object.keys(output.tokens).length).toBe(350);
+    expect(Object.keys(output.tokens).length).toBe(371);
 
     // All ground truth tokens still match (complementary to T-BRIO-MATCH)
     for (const [name, expected] of Object.entries(BRIO_GROUND_TRUTH)) {
