@@ -346,7 +346,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const sc = container.querySelector("[data-testid='gtg-slider-surface-contrast']");
-    const sv = container.querySelector("[data-testid='gtg-slider-signal-vividity']");
+    const sv = container.querySelector("[data-testid='gtg-slider-signal-intensity']");
     const w = container.querySelector("[data-testid='gtg-slider-warmth']");
     expect(sc).not.toBeNull();
     expect(sv).not.toBeNull();
@@ -439,7 +439,7 @@ const CHM_NOVEL_RECIPE = {
   accent: "flame",
   active: "cobalt",
   surfaceContrast: 70,
-  signalVividity: 80,
+  signalIntensity: 80,
   warmth: 65,
 };
 
@@ -677,7 +677,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       positive: "green",
       destructive: "red",
       surfaceContrast: 50,
-      signalVividity: 80,
+      signalIntensity: 80,
       warmth: 50,
     };
     const output = deriveTheme(greenRedRecipe);

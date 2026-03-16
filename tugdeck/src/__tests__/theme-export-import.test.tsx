@@ -190,7 +190,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
       agent: "violet",
       data: "teal",
       surfaceContrast: 65,
-      signalVividity: 75,
+      signalIntensity: 75,
       warmth: 40,
     };
     const json1 = JSON.stringify(fullRecipe, null, 2);
@@ -300,11 +300,11 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for signalVividity as string", () => {
+  it("validateRecipeJson returns error for signalIntensity as string", () => {
     const bad = {
       name: "X", mode: "dark",
       atmosphere: { hue: "red" }, text: { hue: "blue" },
-      signalVividity: "vivid",
+      signalIntensity: "vivid",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
@@ -335,5 +335,20 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const container = renderComponent();
     const errorEl = container.querySelector("[data-testid='gtg-import-error']");
     expect(errorEl).toBeNull();
+  });
+
+  it("validateRecipeJson accepts legacy signalVividity and migrates it to signalIntensity", () => {
+    const legacy = {
+      name: "LegacyTheme",
+      mode: "dark",
+      atmosphere: { hue: "cobalt" },
+      text: { hue: "slate" },
+      signalVividity: 75,
+    };
+    const result = validateRecipeJson(legacy);
+    expect(result).toBeNull();
+    // Migration shim should have renamed the field in-place
+    expect((legacy as Record<string, unknown>)["signalIntensity"]).toBe(75);
+    expect((legacy as Record<string, unknown>)["signalVividity"]).toBeUndefined();
   });
 });

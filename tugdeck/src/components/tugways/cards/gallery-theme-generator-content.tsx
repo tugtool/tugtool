@@ -713,8 +713,15 @@ export function validateRecipeJson(value: unknown): string | null {
   if (typeof txt["hue"] !== "string" || txt["hue"].trim() === "") {
     return "Missing or invalid 'text.hue' field (string required)";
   }
+  // Legacy migration shim: rename signalVividity → signalIntensity in imported JSON.
+  // Allows old recipe files saved before the rename to import seamlessly. [Risk R01]
+  const LEGACY_FIELD = "signalVividity";
+  if (LEGACY_FIELD in obj && !("signalIntensity" in obj)) {
+    obj.signalIntensity = obj[LEGACY_FIELD];
+    delete obj[LEGACY_FIELD];
+  }
   // Optional numeric fields
-  for (const field of ["surfaceContrast", "signalVividity", "warmth"] as const) {
+  for (const field of ["surfaceContrast", "signalIntensity", "warmth"] as const) {
     if (obj[field] !== undefined && typeof obj[field] !== "number") {
       return `Invalid '${field}' field (number required)`;
     }
@@ -1017,8 +1024,8 @@ export function GalleryThemeGeneratorContent() {
   const [surfaceContrast, setSurfaceContrast] = useState<number>(
     DEFAULT_RECIPE.surfaceContrast ?? 50,
   );
-  const [signalVividity, setSignalVividity] = useState<number>(
-    DEFAULT_RECIPE.signalVividity ?? 50,
+  const [signalIntensity, setSignalIntensity] = useState<number>(
+    DEFAULT_RECIPE.signalIntensity ?? 50,
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
@@ -1080,7 +1087,7 @@ export function GalleryThemeGeneratorContent() {
         atmosphere: { hue: atm },
         text: { hue: txt },
         surfaceContrast: sc,
-        signalVividity: sv,
+        signalIntensity: sv,
         warmth: w,
         accent,
         active,
@@ -1105,7 +1112,7 @@ export function GalleryThemeGeneratorContent() {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, atmosphereHue, textHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
 
@@ -1168,7 +1175,7 @@ export function GalleryThemeGeneratorContent() {
       setAtmosphereHue(r.atmosphere.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalVividity(r.signalVividity ?? 50);
+      setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
@@ -1199,7 +1206,7 @@ export function GalleryThemeGeneratorContent() {
       atmosphere: { hue: atmosphereHue },
       text: { hue: textHue },
       surfaceContrast,
-      signalVividity,
+      signalIntensity,
       warmth,
       accent: accentHue,
       active: activeHue,
@@ -1209,7 +1216,7 @@ export function GalleryThemeGeneratorContent() {
       caution: cautionHue,
       destructive: dangerHue,
     }),
-    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
+    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
   );
 
   /**
@@ -1224,7 +1231,7 @@ export function GalleryThemeGeneratorContent() {
       setAtmosphereHue(r.atmosphere.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalVividity(r.signalVividity ?? 50);
+      setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
@@ -1376,23 +1383,23 @@ export function GalleryThemeGeneratorContent() {
             label="Surface Contrast"
             value={surfaceContrast}
             onChange={(v) =>
-              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-surface-contrast"
           />
           <MoodSlider
-            label="Signal Vividity"
-            value={signalVividity}
+            label="Signal Intensity"
+            value={signalIntensity}
             onChange={(v) =>
-              handleSliderChange(setSignalVividity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSignalIntensity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
-            testId="gtg-slider-signal-vividity"
+            testId="gtg-slider-signal-intensity"
           />
           <MoodSlider
             label="Warmth"
             value={warmth}
             onChange={(v) =>
-              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-warmth"
           />

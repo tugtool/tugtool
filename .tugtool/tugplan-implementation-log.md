@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-16T02:09:50Z
+---
+
+## step-2: Renamed signalVividity to signalIntensity in gallery-theme-generator-content.tsx (state, slider label, testId, validateRecipeJson), gallery-theme-generator-content.test.tsx, and theme-export-import.test.tsx. Added legacy migration shim in validateRecipeJson for old recipe JSON import. 86 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-1
 date: 2025-03-16T02:02:57Z
 ---
