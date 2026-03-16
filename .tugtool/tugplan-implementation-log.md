@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-16T00:30:44Z
+---
+
+## step-9: Changed tokenize() to TokenizeResult, skip-and-continue on bad chars. parseTugColor merges tokenizer errors, within-group failures mark slots attempted. 7 new recovery tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-8
 date: 2025-03-16T00:21:48Z
 ---

@@ -108,8 +108,22 @@ function isIdentChar(ch: string): boolean {
   return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z");
 }
 
-function tokenize(input: string): Token[] | TugColorError {
+/** Result from tokenize() — tokens produced and any errors encountered during scanning. */
+interface TokenizeResult {
+  tokens: Token[];
+  errors: TugColorError[];
+}
+
+/**
+ * Tokenize the input string.
+ *
+ * Error recovery: unrecognized characters (including `+`) are recorded as errors and
+ * skipped; tokenization continues from the next position rather than aborting. This
+ * allows the parser to report all problems in a single pass.
+ */
+function tokenize(input: string): TokenizeResult {
   const tokens: Token[] = [];
+  const errors: TugColorError[] = [];
   let i = 0;
 
   while (i < input.length) {
@@ -130,8 +144,9 @@ function tokenize(input: string): Token[] | TugColorError {
       tokens.push({ type: "colon", value: ch, pos, end: pos + 1 });
       i++;
     } else if (ch === "+") {
-      // Plus is no longer valid syntax — offset syntax removed
-      return { message: `Unexpected character '+'; hue offsets have been replaced by hyphenated adjacency syntax (e.g. 'cobalt-indigo')`, pos, end: pos + 1 };
+      // Plus is no longer valid syntax — offset syntax removed. Record error and skip.
+      errors.push({ message: `Unexpected character '+'; hue offsets have been replaced by hyphenated adjacency syntax (e.g. 'cobalt-indigo')`, pos, end: pos + 1 });
+      i++;
     } else if (ch === "-") {
       tokens.push({ type: "minus", value: ch, pos, end: pos + 1 });
       i++;
@@ -162,8 +177,9 @@ function tokenize(input: string): Token[] | TugColorError {
             }
           }
           if (hexStr.length === 0) {
-            // Backslash not followed by hex digits — unrecognized escape
-            return { message: `Unexpected character '\\'`, pos: escStart, end: escStart + 1 };
+            // Backslash not followed by hex digits — record error, skip backslash, end ident
+            errors.push({ message: `Unexpected character '\\'`, pos: escStart, end: escStart + 1 });
+            break;
           }
           // Optionally consume a single trailing space (per CSS spec)
           if (i < input.length && (input[i] === " " || input[i] === "\t")) {
@@ -205,11 +221,13 @@ function tokenize(input: string): Token[] | TugColorError {
       tokens.push({ type: "number", value: input.slice(i, end), pos, end });
       i = end;
     } else {
-      return { message: `Unexpected character '${ch}'`, pos, end: pos + 1 };
+      // Unrecognized character — record error, skip, and continue
+      errors.push({ message: `Unexpected character '${ch}'`, pos, end: pos + 1 });
+      i++;
     }
   }
 
-  return tokens;
+  return { tokens, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -560,17 +578,20 @@ export function parseTugColor(
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
   adjacencyRing?: readonly string[],
 ): ParseResult {
-  const tokenResult = tokenize(input);
-  if (!Array.isArray(tokenResult)) {
-    return { ok: false, errors: [tokenResult] };
-  }
+  const { tokens, errors: tokErrors } = tokenize(input);
 
-  if (tokenResult.length === 0) {
+  // Merge tokenizer errors into the parser error array before argument parsing.
+  // Tokenization continues past bad characters, so we proceed with whatever tokens
+  // were produced even when there were tokenizer errors.
+  const errors: TugColorError[] = [...tokErrors];
+
+  if (tokens.length === 0 && errors.length === 0) {
     return { ok: false, errors: [{ message: "Empty --tug-color() call", pos: 0, end: 0 }] };
   }
 
-  const argGroups = splitArgs(tokenResult);
-  const errors: TugColorError[] = [];
+  // If the tokenizer found only errors and no tokens, we still fall through to
+  // the "missing color" check below, which will add the appropriate error.
+  const argGroups = splitArgs(tokens);
 
   // Parsed values — undefined means not yet assigned
   let color: TugColorValue | undefined;

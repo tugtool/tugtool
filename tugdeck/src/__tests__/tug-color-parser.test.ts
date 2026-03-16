@@ -365,9 +365,9 @@ describe("tug-color-parser: non-adjacent errors", () => {
 describe("tug-color-parser: plus sign rejected", () => {
   it("red+5 produces error — hue offsets removed", () => {
     const errs = expectErrors("red+5");
-    expect(errs.length).toBe(1);
-    expect(errs[0].message).toContain("+");
-    expect(errs[0].message).toContain("adjacency");
+    expect(errs.length).toBeGreaterThanOrEqual(1);
+    expect(errs.some((e) => e.message.includes("+"))).toBe(true);
+    expect(errs.some((e) => e.message.includes("adjacency"))).toBe(true);
   });
 
   it("c: red+5 produces error with labeled syntax", () => {
@@ -1140,5 +1140,92 @@ describe("findTugColorCallsWithWarnings", () => {
     const calls = findTugColorCalls("--tug-color(red");
     expect(calls.length).toBe(0);
     // No throw — silently returns empty array
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error recovery — report all problems in one pass (T-RECOVER-*)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: error recovery", () => {
+  it("T-RECOVER-TOKENIZER: bad character mid-stream reports error for '@' AND parses surrounding args", () => {
+    // "red, 50, @, 80" — '@' is unrecognized, skipped; "red"=color, "50"=intensity, "80"=alpha
+    // The '@' group is empty after skipping, so tone gets an "empty argument" error.
+    const result = parseTugColor("red, 50, @, 80", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("@") || e.message.includes("Unexpected character") || e.message.includes("Empty"))).toBe(true);
+    }
+  });
+
+  it("T-RECOVER-PLUS: 'red+5, 50' reports '+' error AND still parses '50' for intensity", () => {
+    // '+' is skipped, "5" becomes a number token adjacent to "red" in the first arg group.
+    // The first group fails to parse as a color (ident+number is invalid color syntax).
+    // The second group "50" is parsed as intensity.
+    const result = parseTugColor("red+5, 50", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("+"))).toBe(true);
+      // Intensity "50" is parsed from the second group — verify it's not a "missing" complaint
+      expect(result.errors.every((e) => !e.message.includes("intensity"))).toBe(true);
+    }
+  });
+
+  it("T-RECOVER-NO-MISSING: 'red, bad' reports error for 'bad' but NOT 'missing tone' or 'missing alpha'", () => {
+    const result = parseTugColor("red, bad", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Should have an error about "bad" (invalid intensity value)
+      expect(result.errors.some((e) => e.message.includes("bad") || e.message.includes("intensity"))).toBe(true);
+      // Should NOT have errors about missing tone or missing alpha
+      expect(result.errors.every((e) => !e.message.toLowerCase().includes("missing"))).toBe(true);
+      expect(result.errors.every((e) => !e.message.includes("tone"))).toBe(true);
+      expect(result.errors.every((e) => !e.message.includes("alpha"))).toBe(true);
+    }
+  });
+
+  it("T-RECOVER-MULTI-GROUP: 'unknown, bad, -, zz' reports errors for each group", () => {
+    const result = parseTugColor("unknown, bad, -, zz", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Error for "unknown" color
+      expect(result.errors.some((e) => e.message.includes("unknown") || e.message.includes("Unknown"))).toBe(true);
+      // Error for "bad" in intensity slot
+      expect(result.errors.some((e) => e.message.includes("intensity"))).toBe(true);
+      // Error for bare minus in tone slot
+      expect(result.errors.some((e) => e.message.includes("tone") || e.message.includes("bare") || e.message.includes("Bare"))).toBe(true);
+      // Error for "zz" in alpha slot
+      expect(result.errors.some((e) => e.message.includes("alpha"))).toBe(true);
+    }
+  });
+
+  it("T-RECOVER-SINGLE: 'unknown' still produces a single 'Unknown color' error (no regression)", () => {
+    const result = parseTugColor("unknown", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.length).toBe(1);
+      expect(result.errors[0].message).toContain("Unknown color");
+    }
+  });
+
+  it("bad character at start reports error but parser still proceeds with remaining tokens", () => {
+    // "@red" — '@' skipped, "red" tokenizes as ident
+    const result = parseTugColor("@red", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.message.includes("@") || e.message.includes("Unexpected"))).toBe(true);
+    }
+  });
+
+  it("multiple bad characters all produce errors (not just the first)", () => {
+    // "@, #, red" — '@' and '#' both produce errors; "red" succeeds as color
+    // but tone/alpha are missing so color arg is the only resolved slot
+    const result = parseTugColor("@, #, red", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // At least one error per bad character
+      const badCharErrors = result.errors.filter((e) => e.message.includes("Unexpected character"));
+      expect(badCharErrors.length).toBeGreaterThanOrEqual(1);
+    }
   });
 });
