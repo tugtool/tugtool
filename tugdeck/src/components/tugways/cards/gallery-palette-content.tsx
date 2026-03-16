@@ -249,14 +249,17 @@ export function TugAchromaticStrip() {
         return (
           <div
             key={name}
-            className="gp-achromatic-swatch"
-            style={{ backgroundColor: color }}
-            title={`${name}: ${color}`}
+            className="gp-achromatic-item"
             data-testid="gp-achromatic-swatch"
             data-color={color}
             data-name={name}
             data-tone={tone}
           >
+            <div
+              className="gp-achromatic-swatch"
+              style={{ backgroundColor: color }}
+              title={`${name}: ${color}`}
+            />
             <span className="gp-achromatic-label">{name}</span>
           </div>
         );

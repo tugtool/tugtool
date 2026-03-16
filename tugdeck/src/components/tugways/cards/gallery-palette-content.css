@@ -61,42 +61,49 @@
 
 /* ============================================================================
    Achromatic strip (black / gray tones / white)
+   Mirrors tug-hue-strip layout: same swatch size, gap, rotated labels.
    ========================================================================= */
 
 .gp-achromatic-strip {
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 2px;
+  overflow: visible;
+  padding: 4px 4px 64px;
+}
+
+.gp-achromatic-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .gp-achromatic-swatch {
-  position: relative;
-  width: 52px;
-  height: 40px;
+  width: 18px;
+  height: 28px;
   border-radius: 3px;
-  border: 1px solid var(--tug-base-border-default, #444);
-  cursor: default;
-  flex-shrink: 0;
-  overflow: hidden;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.gp-achromatic-swatch:hover {
+  border-color: var(--tug-base-border-default);
 }
 
 .gp-achromatic-label {
   position: absolute;
-  bottom: 3px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 8px;
-  font-family: var(--tug-base-font-family-mono, monospace);
-  color: rgba(128, 128, 128, 0.9);
-  mix-blend-mode: difference;
-  pointer-events: none;
+  top: 100%;
+  left: 60%;
+  font-size: 9px;
+  font-family: var(--tug-base-font-family-mono);
+  color: var(--tug-base-fg-muted);
   user-select: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transform: rotate(62deg);
+  transform-origin: top left;
+  margin-top: 4px;
 }
 
 /* ============================================================================
