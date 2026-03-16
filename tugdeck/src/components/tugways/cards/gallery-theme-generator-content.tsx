@@ -74,7 +74,36 @@ const HUE_NAMES: readonly string[] = ADJACENCY_RING;
  */
 const DEFAULT_RECIPE: ThemeRecipe = EXAMPLE_RECIPES.brio;
 
-// ---------------------------------------------------------------------------
+/** Convert a ResolvedColor to an oklch() CSS string. */
+function resolvedToCSS(r: { L: number; C: number; h: number; alpha: number }): string {
+  const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
+  const a = r.alpha < 1 ? ` / ${fmt(r.alpha)}` : "";
+  return `oklch(${fmt(r.L)} ${fmt(r.C)} ${r.h}${a})`;
+}
+
+/**
+ * Token names used to sample the actual resolved color for each structural/role hue.
+ * These are the representative tokens whose color best illustrates what the hue controls.
+ */
+const STRUCTURAL_TOKENS: Record<string, string> = {
+  cardBg: "--tug-base-surface-default",
+  canvas: "--tug-base-bg-canvas",
+  cardFrame: "--tug-base-tab-bg-active",
+  borderTint: "--tug-base-border-default",
+  text: "--tug-base-fg-default",
+  link: "--tug-base-fg-link",
+};
+
+const ROLE_TOKENS: Record<string, string> = {
+  accent: "--tug-base-tone-accent",
+  action: "--tug-base-tone-active",
+  agent: "--tug-base-tone-agent",
+  data: "--tug-base-tone-data",
+  success: "--tug-base-tone-success",
+  caution: "--tug-base-tone-caution",
+  danger: "--tug-base-tone-danger",
+};
+
 // ---------------------------------------------------------------------------
 // CompactHuePicker — compact row with color chip that opens a popover strip
 // ---------------------------------------------------------------------------
@@ -106,14 +135,20 @@ function CompactHuePicker({
   selectedHue,
   onSelect,
   testId,
+  actualColor,
+  preview,
 }: {
   label: string;
   selectedHue: string;
   onSelect: (hue: string) => void;
   testId: string;
+  /** Override the chip color with the actual resolved color instead of canonical. */
+  actualColor?: string;
+  /** Mini preview element rendered before the label (structural hues only). */
+  preview?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const swatchColor = hueSwatchColor(selectedHue);
+  const swatchColor = actualColor ?? hueSwatchColor(selectedHue);
 
   const handleSelect = useCallback(
     (hue: string) => {
@@ -132,6 +167,7 @@ function CompactHuePicker({
           aria-label={`${label}: ${selectedHue}. Click to change.`}
           type="button"
         >
+          {preview && <span className="gtg-hue-preview" aria-hidden="true">{preview}</span>}
           <span className="gtg-compact-hue-label">{label}</span>
           <span
             className="gtg-compact-hue-chip"
@@ -1319,6 +1355,17 @@ export function GalleryThemeGeneratorContent() {
     return style as React.CSSProperties;
   }, [themeOutput]);
 
+  /** Look up the actual resolved CSS color for a structural or role hue key. */
+  const resolvedColor = useCallback(
+    (key: string): string => {
+      const token = STRUCTURAL_TOKENS[key] ?? ROLE_TOKENS[key];
+      if (!token) return "transparent";
+      const r = themeOutput.resolved[token];
+      return r ? resolvedToCSS(r) : "transparent";
+    },
+    [themeOutput],
+  );
+
   // Slider debounce timer ref.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1634,21 +1681,56 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      {/* ---- Hue selectors: structural + role hues in a wrapping grid ---- */}
-      <div className="gtg-hue-grid" data-testid="gtg-role-hues">
-        <CompactHuePicker label="Card BG" selectedHue={cardBgHue} onSelect={setCardBgHue} testId="gtg-cardbg-hue" />
-        <CompactHuePicker label="Canvas" selectedHue={canvasHue} onSelect={setCanvasHue} testId="gtg-canvas-hue" />
-        <CompactHuePicker label="Card Frame" selectedHue={cardFrameHue} onSelect={setCardFrameHue} testId="gtg-cardframe-hue" />
-        <CompactHuePicker label="Border Tint" selectedHue={borderTintHue} onSelect={setBorderTintHue} testId="gtg-bordertint-hue" />
-        <CompactHuePicker label="Text" selectedHue={textHue} onSelect={setTextHue} testId="gtg-text-hue" />
-        <CompactHuePicker label="Link" selectedHue={linkHue} onSelect={setLinkHue} testId="gtg-link-hue" />
-        <CompactHuePicker label="Accent" selectedHue={accentHue} onSelect={setAccentHue} testId="gtg-role-hue-accent" />
-        <CompactHuePicker label="Action" selectedHue={activeHue} onSelect={setActiveHue} testId="gtg-role-hue-action" />
-        <CompactHuePicker label="Agent" selectedHue={agentHue} onSelect={setAgentHue} testId="gtg-role-hue-agent" />
-        <CompactHuePicker label="Data" selectedHue={dataHue} onSelect={setDataHue} testId="gtg-role-hue-data" />
-        <CompactHuePicker label="Success" selectedHue={successHue} onSelect={setSuccessHue} testId="gtg-role-hue-success" />
-        <CompactHuePicker label="Caution" selectedHue={cautionHue} onSelect={setCautionHue} testId="gtg-role-hue-caution" />
-        <CompactHuePicker label="Danger" selectedHue={dangerHue} onSelect={setDangerHue} testId="gtg-role-hue-danger" />
+      {/* ---- Hue selectors: two-column layout — structural left, role right ---- */}
+      <div className="gtg-hue-columns" data-testid="gtg-role-hues">
+        <div className="gtg-hue-column">
+          <div className="gtg-hue-column-title">Structural</div>
+          {([
+            { key: "cardBg", label: "Card BG", hue: cardBgHue, set: setCardBgHue, testId: "gtg-cardbg-hue",
+              preview: <span className="gtg-sp gtg-sp-surface" style={{ backgroundColor: resolvedColor("cardBg") }} /> },
+            { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue",
+              preview: <span className="gtg-sp gtg-sp-canvas" style={{ backgroundColor: resolvedColor("canvas") }} /> },
+            { key: "cardFrame", label: "Card Frame", hue: cardFrameHue, set: setCardFrameHue, testId: "gtg-cardframe-hue",
+              preview: <span className="gtg-sp gtg-sp-frame" style={{ backgroundColor: resolvedColor("cardFrame") }} /> },
+            { key: "borderTint", label: "Border", hue: borderTintHue, set: setBorderTintHue, testId: "gtg-bordertint-hue",
+              preview: <span className="gtg-sp gtg-sp-border" style={{ borderColor: resolvedColor("borderTint") }} /> },
+            { key: "text", label: "Text", hue: textHue, set: setTextHue, testId: "gtg-text-hue",
+              preview: <span className="gtg-sp gtg-sp-text" style={{ color: resolvedColor("text") }}>Aa</span> },
+            { key: "link", label: "Link", hue: linkHue, set: setLinkHue, testId: "gtg-link-hue",
+              preview: <span className="gtg-sp gtg-sp-link" style={{ color: resolvedColor("link") }}>Aa</span> },
+          ] as const).map(({ key, label, hue, set, testId, preview }) => (
+            <CompactHuePicker
+              key={key}
+              label={label}
+              selectedHue={hue}
+              onSelect={set}
+              testId={testId}
+              actualColor={resolvedColor(key)}
+              preview={preview}
+            />
+          ))}
+        </div>
+        <div className="gtg-hue-column">
+          <div className="gtg-hue-column-title">Role</div>
+          {([
+            { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
+            { key: "action", label: "Action", hue: activeHue, set: setActiveHue, testId: "gtg-role-hue-action" },
+            { key: "agent", label: "Agent", hue: agentHue, set: setAgentHue, testId: "gtg-role-hue-agent" },
+            { key: "data", label: "Data", hue: dataHue, set: setDataHue, testId: "gtg-role-hue-data" },
+            { key: "success", label: "Success", hue: successHue, set: setSuccessHue, testId: "gtg-role-hue-success" },
+            { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
+            { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
+          ] as const).map(({ key, label, hue, set, testId }) => (
+            <CompactHuePicker
+              key={key}
+              label={label}
+              selectedHue={hue}
+              onSelect={set}
+              testId={testId}
+              actualColor={resolvedColor(key)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* ---- Mood sliders ---- */}

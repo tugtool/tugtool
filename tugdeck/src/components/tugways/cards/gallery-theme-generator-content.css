@@ -35,13 +35,72 @@
 }
 
 /* ============================================================================
-   Hue grid — wrapping grid of compact hue pickers
+   Hue columns — structural left, role right
    ========================================================================= */
 
-.gtg-hue-grid {
+.gtg-hue-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 4px;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.gtg-hue-column {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gtg-hue-column-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  margin-bottom: 2px;
+}
+
+/* Mini structural preview swatch — shown before the label */
+.gtg-hue-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Base: 24x16 rounded rect */
+.gtg-sp {
+  display: inline-block;
+  width: 24px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+/* Surface/canvas/frame: filled swatch */
+.gtg-sp-surface,
+.gtg-sp-canvas,
+.gtg-sp-frame {
+  /* backgroundColor set inline */
+}
+
+/* Border: outlined rect */
+.gtg-sp-border {
+  background: transparent;
+  border: 2px solid;
+  /* borderColor set inline */
+}
+
+/* Text/link: text sample */
+.gtg-sp-text,
+.gtg-sp-link {
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--tug-base-font-family-sans);
+  width: auto;
+  height: auto;
+  line-height: 1;
+  /* color set inline */
 }
 
 /* ============================================================================
