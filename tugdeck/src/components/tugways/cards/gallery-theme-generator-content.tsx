@@ -60,6 +60,7 @@ import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
 import { TugInput } from "@/components/tugways/tug-input";
+import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -852,11 +853,19 @@ function ExportImportPanel({
   recipe,
   onRecipeImported,
   exportDisabled,
+  savedThemes,
+  onSelectSavedTheme,
+  onSelectBuiltIn,
+  onSaveSuccess,
 }: {
   output: ThemeOutput;
   recipe: ThemeRecipe;
   onRecipeImported: (r: ThemeRecipe) => void;
   exportDisabled: boolean;
+  savedThemes: string[];
+  onSelectSavedTheme: (name: string) => void;
+  onSelectBuiltIn: () => void;
+  onSaveSuccess: () => void;
 }) {
   const [importError, setImportError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -888,13 +897,14 @@ function ExportImportPanel({
       if (res.ok) {
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus("idle"), 2000);
+        onSaveSuccess();
       } else {
         setSaveStatus("error");
       }
     } catch {
       setSaveStatus("error");
     }
-  }, [output, recipe, exportDisabled]);
+  }, [output, recipe, exportDisabled, onSaveSuccess]);
 
   const handleImportClick = useCallback(() => {
     setImportError(null);
@@ -940,6 +950,42 @@ function ExportImportPanel({
 
   return (
     <div className="gtg-export-import-panel" data-testid="gtg-export-import-panel">
+      {/* Saved-theme selector dropdown */}
+      <div className="gtg-saved-theme-row">
+        <label className="gtg-saved-theme-label" htmlFor="gtg-saved-theme-select">
+          Load saved theme
+        </label>
+        <select
+          id="gtg-saved-theme-select"
+          className="gtg-saved-theme-select"
+          data-testid="gtg-saved-theme-select"
+          defaultValue=""
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "__brio__") {
+              onSelectBuiltIn();
+            } else if (val !== "") {
+              onSelectSavedTheme(val);
+            }
+            // Reset to placeholder after selection
+            e.target.value = "";
+          }}
+          aria-label="Load a saved theme"
+        >
+          <option value="" disabled>
+            Select a theme…
+          </option>
+          <option value="__brio__" data-testid="gtg-saved-theme-option-brio">
+            Brio (default)
+          </option>
+          {savedThemes.map((name) => (
+            <option key={name} value={name} data-testid={`gtg-saved-theme-option-${name}`}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Export buttons */}
       <div className="gtg-export-row">
         <TugButton
@@ -1140,6 +1186,21 @@ function EmphasisRolePreview() {
  * [D02] Native contrast fix.
  */
 export function GalleryThemeGeneratorContent() {
+  // Optional theme context — null when rendered outside a TugThemeProvider (e.g. tests).
+  const themeCtx = useOptionalThemeContext();
+
+  // Saved-theme list — populated from the /__themes/list middleware endpoint.
+  const [savedThemes, setSavedThemes] = useState<string[]>([]);
+
+  // Load saved theme names on mount and expose a refresh callback.
+  const refreshSavedThemes = useCallback(() => {
+    void loadSavedThemes().then(setSavedThemes);
+  }, []);
+
+  useEffect(() => {
+    refreshSavedThemes();
+  }, [refreshSavedThemes]);
+
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
   const [atmosphereHue, setAtmosphereHue] = useState<string>(DEFAULT_RECIPE.atmosphere.hue);
@@ -1367,6 +1428,53 @@ export function GalleryThemeGeneratorContent() {
     },
     [],
   );
+
+  // ---------------------------------------------------------------------------
+  // Saved-theme selection handlers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Select a saved dynamic theme by name.
+   * Calls setDynamicTheme() to inject the CSS, then fetches the recipe JSON
+   * from /styles/themes/<name>-recipe.json and loads it into generator state.
+   * No-ops silently if theme context is unavailable (e.g. outside provider).
+   */
+  const handleSelectSavedTheme = useCallback(
+    (name: string) => {
+      if (themeCtx) {
+        void themeCtx.setDynamicTheme(name);
+      }
+      // Fetch the recipe JSON and load parameters into generator state
+      void fetch(`/styles/themes/${encodeURIComponent(name)}-recipe.json`)
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json() as Promise<unknown>;
+        })
+        .then((data) => {
+          if (!data) return;
+          const err = validateRecipeJson(data);
+          if (err !== null) return;
+          handleRecipeImported(data as ThemeRecipe);
+        })
+        .catch(() => {
+          // Network or parse error — ignore silently
+        });
+    },
+    [themeCtx, handleRecipeImported],
+  );
+
+  /**
+   * Revert to the built-in Brio theme.
+   * Calls revertToBuiltIn() to remove the dynamic CSS override and clears
+   * localStorage. Resets generator to the default Brio recipe.
+   * No-ops silently if theme context is unavailable.
+   */
+  const handleSelectBuiltIn = useCallback(() => {
+    if (themeCtx) {
+      themeCtx.revertToBuiltIn();
+    }
+    loadPreset("brio");
+  }, [themeCtx, loadPreset]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1602,6 +1710,10 @@ export function GalleryThemeGeneratorContent() {
           recipe={currentRecipe}
           onRecipeImported={handleRecipeImported}
           exportDisabled={recipeName.trim() === ""}
+          savedThemes={savedThemes}
+          onSelectSavedTheme={handleSelectSavedTheme}
+          onSelectBuiltIn={handleSelectBuiltIn}
+          onSaveSuccess={refreshSavedThemes}
         />
       </div>
 

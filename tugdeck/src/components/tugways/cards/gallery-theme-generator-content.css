@@ -714,6 +714,53 @@
 }
 
 /* ============================================================================
+   Saved-theme selector — dropdown row for loading saved themes [Step 9]
+   ========================================================================= */
+
+/* Row containing the label and the select element */
+.gtg-saved-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* "Load saved theme" label */
+.gtg-saved-theme-label {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Native select element */
+.gtg-saved-theme-select {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 3px 24px 3px 8px;
+  cursor: pointer;
+  min-width: 160px;
+  max-width: 260px;
+  -webkit-appearance: none;
+  appearance: none;
+  /* Inline chevron via background SVG */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.gtg-saved-theme-select:focus {
+  outline: 2px solid var(--tug-base-accent-default);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
    Export / Import panel
    ========================================================================= */
 

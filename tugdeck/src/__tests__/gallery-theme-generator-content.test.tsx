@@ -31,6 +31,7 @@ import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
 import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, LC_THRESHOLDS, LC_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
 // Known-exception set shared by T10.3 and T-ACC-1
@@ -1072,5 +1073,176 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
       withPink.tokens["--tug-base-tone-danger"],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 9: Saved-theme selector dropdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Render GalleryThemeGeneratorContent wrapped in TugThemeProvider with a
+ * mocked global.fetch so loadSavedThemes() returns a controlled list.
+ *
+ * Returns cleanup helpers and the rendered container.
+ */
+function renderWithThemeProvider(savedThemeNames: string[] = []) {
+  const originalFetch = globalThis.fetch;
+  // Mock fetch: /__themes/list returns the provided list; other URLs return ok stubs.
+  globalThis.fetch = async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/__themes/list") {
+      return new Response(JSON.stringify({ themes: savedThemeNames }), { status: 200 });
+    }
+    if (url === "/__themes/save") {
+      return new Response(JSON.stringify({ ok: true, name: "test-theme" }), { status: 200 });
+    }
+    if (url.startsWith("/styles/themes/") && url.endsWith(".css")) {
+      return new Response("body {}", { status: 200 });
+    }
+    if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
+      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", atmosphere: { hue: "amber" }, text: { hue: "sand" } });
+      return new Response(recipe, { status: 200 });
+    }
+    return new Response("", { status: 404 });
+  };
+
+  let container!: HTMLElement;
+  act(() => {
+    ({ container } = render(
+      React.createElement(
+        TugThemeProvider,
+        {},
+        React.createElement(GalleryThemeGeneratorContent, {}),
+      ),
+    ));
+  });
+
+  const restoreFetch = () => {
+    globalThis.fetch = originalFetch;
+  };
+
+  return { container, restoreFetch };
+}
+
+describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+
+  it("dropdown renders with 'Brio (default)' option when no saved themes exist", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      // Wait for the async loadSavedThemes() effect to complete
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      const brioOption = select.querySelector("[data-testid='gtg-saved-theme-option-brio']");
+      expect(brioOption).not.toBeNull();
+      expect(brioOption!.textContent).toBe("Brio (default)");
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("dropdown shows only placeholder + 'Brio (default)' when no saved themes exist", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      // Placeholder + Brio (default) = 2 options
+      expect(select.options.length).toBe(2);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("dropdown includes saved theme names returned by loadSavedThemes()", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider(["my-theme", "dark-forest"]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      // Placeholder + Brio (default) + 2 saved themes = 4 options
+      expect(select.options.length).toBe(4);
+      const myThemeOpt = select.querySelector("[value='my-theme']");
+      const darkForestOpt = select.querySelector("[value='dark-forest']");
+      expect(myThemeOpt).not.toBeNull();
+      expect(darkForestOpt).not.toBeNull();
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("selecting 'Brio (default)' resets recipe to Brio dark mode defaults", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      // First switch to light mode to change state away from Brio defaults
+      const lightBtn = container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement;
+      act(() => { fireEvent.click(lightBtn); });
+
+      // Now select "Brio (default)" from the dropdown
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      act(() => {
+        fireEvent.change(select, { target: { value: "__brio__" } });
+      });
+
+      // After selecting Brio (default), the mode button should return to dark (Brio default)
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      const darkBtn = container.querySelector("[data-testid='gtg-mode-dark']");
+      expect(darkBtn!.classList.contains("tug-button-filled-action")).toBe(true);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("selecting a saved theme dispatches fetch for the theme CSS and recipe JSON", async () => {
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url === "/__themes/list") {
+        return new Response(JSON.stringify({ themes: ["my-custom-theme"] }), { status: 200 });
+      }
+      if (url.endsWith(".css")) {
+        return new Response("body {}", { status: 200 });
+      }
+      if (url.endsWith("-recipe.json")) {
+        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", atmosphere: { hue: "cobalt" }, text: { hue: "slate" } });
+        return new Response(recipe, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        React.createElement(TugThemeProvider, {}, React.createElement(GalleryThemeGeneratorContent, {})),
+      ));
+    });
+
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      await act(async () => {
+        fireEvent.change(select, { target: { value: "my-custom-theme" } });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      // Verify fetch was called for the theme CSS (setDynamicTheme) and recipe JSON
+      const cssFetch = fetchCalls.find((u) => u.includes("my-custom-theme") && u.endsWith(".css") && !u.endsWith("-recipe.json"));
+      const recipeFetch = fetchCalls.find((u) => u.includes("my-custom-theme") && u.endsWith("-recipe.json"));
+      expect(cssFetch).toBeDefined();
+      expect(recipeFetch).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

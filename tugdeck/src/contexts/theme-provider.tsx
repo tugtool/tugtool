@@ -286,3 +286,12 @@ export function useThemeContext(): ThemeContextValue {
   }
   return ctx;
 }
+
+/**
+ * Hook that returns the theme context value when inside a TugThemeProvider,
+ * or null when used outside one. Safe to call in components that may render
+ * both inside and outside a TugThemeProvider (e.g. gallery cards in tests).
+ */
+export function useOptionalThemeContext(): ThemeContextValue | null {
+  return useContext(ThemeContext);
+}

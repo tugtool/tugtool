@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-9
+date: 2025-03-16T03:10:40Z
+---
+
+## step-9: Added SavedThemeSelector dropdown to ExportImportPanel. Lists saved themes via loadSavedThemes() plus 'Brio (default)'. Selecting a saved theme calls setDynamicTheme and imports recipe JSON. Selecting Brio reverts to built-in. Added useOptionalThemeContext hook. 5 new tests with TugThemeProvider wrapper. 64 generator tests pass, 1713 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-8
 date: 2025-03-16T02:58:14Z
 ---
