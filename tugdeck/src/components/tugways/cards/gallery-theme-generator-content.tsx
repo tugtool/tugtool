@@ -176,6 +176,7 @@ function CompactHuePicker({
           side="bottom"
           align="start"
           sideOffset={4}
+          collisionPadding={8}
         >
           <TugHueStrip
             selectedHue={selectedHue}

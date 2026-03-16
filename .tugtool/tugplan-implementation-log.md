@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-16T16:07:34Z
+---
+
+## step-7: Fixed compact hue popover CSS: added display:none for rotated labels inside popover, reduced swatch size to 14x20px for better wrapping within 360px max-width, confirmed overflow constrained via flex-wrap. Added collisionPadding={8} to Radix Popover.Content. 1793 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-6
 date: 2025-03-16T16:00:08Z
 ---
