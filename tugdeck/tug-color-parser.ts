@@ -509,6 +509,35 @@ function parseNumericTokens(
 }
 
 // ---------------------------------------------------------------------------
+// Slot dispatch table (Spec S07)
+// ---------------------------------------------------------------------------
+
+/**
+ * A SlotParser receives the tokens for one argument group, pushes any errors into
+ * the shared errors array, and returns the parsed value (TugColorValue, number, or null).
+ * The extra parameters (knownHues, knownPresets, adjacencyRing) are forwarded only by
+ * the color slot; numeric slots ignore them.
+ */
+type SlotParser = (
+  tokens: Token[],
+  errors: TugColorError[],
+  knownHues: ReadonlySet<string>,
+  knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
+  adjacencyRing?: readonly string[],
+) => TugColorValue | number | null;
+
+const SLOT_DISPATCH: Record<string, SlotParser> = {
+  color: (tokens, errors, knownHues, knownPresets, adjacencyRing) =>
+    parseColorTokens(tokens, knownHues, errors, knownPresets, adjacencyRing),
+  intensity: (tokens, errors) =>
+    parseNumericTokens(tokens, "intensity", errors),
+  tone: (tokens, errors) =>
+    parseNumericTokens(tokens, "tone", errors),
+  alpha: (tokens, errors) =>
+    parseNumericTokens(tokens, "alpha", errors),
+};
+
+// ---------------------------------------------------------------------------
 // Main parser
 // ---------------------------------------------------------------------------
 
@@ -594,19 +623,11 @@ export function parseTugColor(
       attempted.add(slot);
       const valueToks = group.slice(2);
 
-      if (slot === "color") {
-        const c = parseColorTokens(valueToks, knownHues, errors, knownPresets, adjacencyRing);
-        if (c) color = c;
-      } else if (slot === "intensity") {
-        const n = parseNumericTokens(valueToks, "intensity", errors);
-        if (n !== null) intensity = n;
-      } else if (slot === "tone") {
-        const n = parseNumericTokens(valueToks, "tone", errors);
-        if (n !== null) tone = n;
-      } else {
-        const n = parseNumericTokens(valueToks, "alpha", errors);
-        if (n !== null) alpha = n;
-      }
+      const labeledResult = SLOT_DISPATCH[slot](valueToks, errors, knownHues, knownPresets, adjacencyRing);
+      if (slot === "color") { if (labeledResult !== null) color = labeledResult as TugColorValue; }
+      else if (slot === "intensity") { if (labeledResult !== null) intensity = labeledResult as number; }
+      else if (slot === "tone") { if (labeledResult !== null) tone = labeledResult as number; }
+      else { if (labeledResult !== null) alpha = labeledResult as number; }
     } else {
       // Positional argument
       if (seenLabeled) {
@@ -630,19 +651,11 @@ export function parseTugColor(
 
       attempted.add(slot);
 
-      if (slot === "color") {
-        const c = parseColorTokens(group, knownHues, errors, knownPresets, adjacencyRing);
-        if (c) color = c;
-      } else if (slot === "intensity") {
-        const n = parseNumericTokens(group, "intensity", errors);
-        if (n !== null) intensity = n;
-      } else if (slot === "tone") {
-        const n = parseNumericTokens(group, "tone", errors);
-        if (n !== null) tone = n;
-      } else {
-        const n = parseNumericTokens(group, "alpha", errors);
-        if (n !== null) alpha = n;
-      }
+      const positionalResult = SLOT_DISPATCH[slot](group, errors, knownHues, knownPresets, adjacencyRing);
+      if (slot === "color") { if (positionalResult !== null) color = positionalResult as TugColorValue; }
+      else if (slot === "intensity") { if (positionalResult !== null) intensity = positionalResult as number; }
+      else if (slot === "tone") { if (positionalResult !== null) tone = positionalResult as number; }
+      else { if (positionalResult !== null) alpha = positionalResult as number; }
 
       positionalIndex++;
     }

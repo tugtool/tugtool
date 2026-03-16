@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-16T00:21:48Z
+---
+
+## step-8: Replaced duplicated if/else slot dispatch chains with SLOT_DISPATCH record. Pure internal refactor, no behavior change.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-7
 date: 2025-03-16T00:17:04Z
 ---
