@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-16T02:02:57Z
+---
+
+## step-1: Renamed signalVividity to signalIntensity across ThemeRecipe interface, deriveTheme() body, module doc comment, and test file. Pure mechanical rename with no behavioral changes. 16/16 engine tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-11
 date: 2025-03-16T00:45:03Z
 ---

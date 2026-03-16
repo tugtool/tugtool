@@ -7,7 +7,7 @@
  *   - `resolved`: OKLCH values for all chromatic tokens (for contrast checking / CVD)
  *
  * The derivation follows ~55 role formulas extracted from the three hand-authored
- * themes (Brio, Bluenote, Harmony). Mood knobs (`surfaceContrast`, `signalVividity`,
+ * themes (Brio, Bluenote, Harmony). Mood knobs (`surfaceContrast`, `signalIntensity`,
  * `warmth`) modulate tone spreads and intensity levels.
  *
  * Control tokens use the emphasis x role system (Table T01):
@@ -60,7 +60,7 @@ export interface ThemeRecipe {
   agent?: string;
   data?: string;
   surfaceContrast?: number; // 0-100, default 50
-  signalVividity?: number; // 0-100, default 50
+  signalIntensity?: number; // 0-100, default 50
   warmth?: number; // 0-100, default 50
 }
 
@@ -676,7 +676,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // 2. Mood knob normalization (0-100, default 50)
   // -------------------------------------------------------------------------
   const surfaceContrast = recipe.surfaceContrast ?? 50;
-  const signalVividity = recipe.signalVividity ?? 50;
+  const signalIntensity = recipe.signalIntensity ?? 50;
   const warmth = recipe.warmth ?? 50;
 
   // Warmth hue bias: at warmth>50, shift neutral/achromatic hues toward warm
@@ -884,11 +884,11 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const fgPlaceholderI = preset.atmIBorder;
 
   // -------------------------------------------------------------------------
-  // 5. Signal vividity modulation for accent / semantic hues
-  // At signalVividity=50 → intensity=50 (canonical). Direct linear mapping:
+  // 5. Signal intensity modulation for accent / semantic hues
+  // At signalIntensity=50 → intensity=50 (canonical). Direct linear mapping:
   //   0 → 0 (achromatic/invisible), 50 → 50 (Brio default), 100 → 100 (vivid)
   // -------------------------------------------------------------------------
-  const signalI = Math.round(signalVividity);
+  const signalI = Math.round(signalIntensity);
 
   // -------------------------------------------------------------------------
   // 6. Derive all 264 tokens
