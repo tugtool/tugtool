@@ -18,6 +18,15 @@
 }
 
 /* ============================================================================
+   Theme Name input — prominent full-width name field at top of generator
+   ========================================================================= */
+
+.gtg-theme-name-input {
+  width: 100%;
+  font-size: 14px;
+}
+
+/* ============================================================================
    Mode toggle (dark / light two-state button group)
    ========================================================================= */
 
@@ -154,13 +163,82 @@
 }
 
 /* ============================================================================
-   Role hue selectors — 7 HueSelector strips, one per role [D05, Step 6]
+   Compact role hue pickers — compact rows with popover strip [D05, Step 7]
    ========================================================================= */
 
+/* Container for all 7 compact hue picker rows */
 .gtg-role-hues {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 4px;
+}
+
+/* Each compact picker row — flex row with label, chip, hue name */
+.gtg-compact-hue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  background-color: var(--tug-base-surface-default);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 80ms ease;
+}
+
+.gtg-compact-hue-row:hover {
+  background-color: var(--tug-base-surface-raised);
+}
+
+/* Role label — fixed-width so chip columns align across rows */
+.gtg-compact-hue-label {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  width: 56px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* 20x20px color chip swatch */
+.gtg-compact-hue-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default);
+  flex-shrink: 0;
+}
+
+/* Current hue name text */
+.gtg-compact-hue-name {
+  font-size: 10px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Popover content containing TugHueStrip — constrained width so 48 swatches
+   wrap into multiple rows. Hides rotated labels to save vertical space. */
+.gtg-compact-hue-popover {
+  max-width: 360px;
+  padding: 8px;
+  background-color: var(--tug-base-surface-raised);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  z-index: 100;
+}
+
+/* Inside the popover, wrap the hue swatches into multiple rows */
+.gtg-compact-hue-popover .tug-hue-strip {
+  flex-wrap: wrap;
+  padding-bottom: 4px;
 }
 
 /* ============================================================================
@@ -633,6 +711,53 @@
   font-family: var(--tug-base-font-family-mono, monospace);
   font-size: 10px;
   color: var(--tug-base-tone-caution-fg);
+}
+
+/* ============================================================================
+   Saved-theme selector — dropdown row for loading saved themes [Step 9]
+   ========================================================================= */
+
+/* Row containing the label and the select element */
+.gtg-saved-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* "Load saved theme" label */
+.gtg-saved-theme-label {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Native select element */
+.gtg-saved-theme-select {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  background-color: var(--tug-base-surface-control);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 3px 24px 3px 8px;
+  cursor: pointer;
+  min-width: 160px;
+  max-width: 260px;
+  -webkit-appearance: none;
+  appearance: none;
+  /* Inline chevron via background SVG */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.gtg-saved-theme-select:focus {
+  outline: 2px solid var(--tug-base-accent-default);
+  outline-offset: 1px;
 }
 
 /* ============================================================================

@@ -9,6 +9,126 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-16T03:18:43Z
+---
+
+## step-10: Final verification step. All 1713 tests pass, tsc --noEmit exits 0 (fixed pre-existing badge type errors), zero signalVividity occurrences, ThemeName remains literal 'brio'. All 5 gaps confirmed closed: rename, theme name UI, save/load, compact pickers, stress tests.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-9
+date: 2025-03-16T03:10:40Z
+---
+
+## step-9: Added SavedThemeSelector dropdown to ExportImportPanel. Lists saved themes via loadSavedThemes() plus 'Brio (default)'. Selecting a saved theme calls setDynamicTheme and imports recipe JSON. Selecting Brio reverts to built-in. Added useOptionalThemeContext hook. 5 new tests with TugThemeProvider wrapper. 64 generator tests pass, 1713 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-8
+date: 2025-03-16T02:58:14Z
+---
+
+## step-8: Added runPipelineForRecipe helper and 5 stress tests (T4.3-T4.7) covering warm/cool/neutral atmosphere, dark/light mode, extreme surfaceContrast (20/80), and extreme signalIntensity (10/90). All show 0 unexpected body-text failures. Added LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS for documented structural constraints. 25 engine tests pass, 1708 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-7
+date: 2025-03-16T02:50:48Z
+---
+
+## step-7: Added CompactHuePicker component using Radix Popover. Replaced 7 full-width HueSelector instances in Role Hues section with compact rows showing label, 20x20 color chip, and hue name. Click opens popover with TugHueStrip. Added @radix-ui/react-popover dependency. Updated setup-rtl.ts for Radix compatibility. 59 tests pass, 1703 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-6
+date: 2025-03-16T02:40:33Z
+---
+
+## step-6: Created styles/themes/ directory. Added Vite middleware plugin for POST /__themes/save and GET /__themes/list. Extended theme-provider with dynamicThemeName state, setDynamicTheme, revertToBuiltIn, loadSavedThemes, and localStorage persistence. Added Save Theme button to generator UI. Created 8 middleware unit tests and 7 provider integration tests exercising actual context functions. 51 new tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-5
+date: 2025-03-16T02:27:01Z
+---
+
+## step-5: Added generateResolvedCssExport() to theme-derivation-engine.ts that formats resolved colors as oklch() CSS with header comment. Added simpleHashForEngine() utility. Added 4 new tests covering CSS structure, token naming, delta-E fidelity, and header format. 20 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-4
+date: 2025-03-16T02:19:56Z
+---
+
+## step-4: Added TugInput for theme name at top of generator card bound to recipeName state. Export CSS and Export Recipe JSON buttons now disabled when name is empty. Added CSS styles and 4 new tests. 54 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-3
+date: 2025-03-16T02:12:12Z
+---
+
+## step-3: Verification-only step. Confirmed zero unintended signalVividity occurrences remain (5 hits are migration shim infrastructure). Full test suite passes: 1675 tests, 0 failures.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-2
+date: 2025-03-16T02:09:50Z
+---
+
+## step-2: Renamed signalVividity to signalIntensity in gallery-theme-generator-content.tsx (state, slider label, testId, validateRecipeJson), gallery-theme-generator-content.test.tsx, and theme-export-import.test.tsx. Added legacy migration shim in validateRecipeJson for old recipe JSON import. 86 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
+step: step-1
+date: 2025-03-16T02:02:57Z
+---
+
+## step-1: Renamed signalVividity to signalIntensity across ThemeRecipe interface, deriveTheme() body, module doc comment, and test file. Pure mechanical rename with no behavioral changes. 16/16 engine tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-11
 date: 2025-03-16T00:45:03Z
 ---

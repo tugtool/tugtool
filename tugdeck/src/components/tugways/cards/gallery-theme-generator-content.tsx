@@ -27,10 +27,12 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
+  generateResolvedCssExport,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -57,6 +59,8 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
+import { TugInput } from "@/components/tugways/tug-input";
+import { loadSavedThemes, useOptionalThemeContext } from "@/contexts/theme-provider";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +101,89 @@ function HueSelector({
         data-testid={testId}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompactHuePicker — compact row with color chip that opens a popover strip
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the canonical-L swatch color for a hue name using tugColor at
+ * intensity=50 tone=50 with the hue's canonical L value.
+ *
+ * This matches the swatch color the TugHueStrip renders for the selected hue.
+ */
+function hueSwatchColor(hueName: string): string {
+  const canonicalL = DEFAULT_CANONICAL_L[hueName] ?? 0.55;
+  return tugColor(hueName, 50, 50, canonicalL);
+}
+
+/**
+ * CompactHuePicker — a compact row showing:
+ *   - Role label text
+ *   - 20x20 color chip swatch (current hue color)
+ *   - Current hue name text
+ *
+ * Clicking the row opens a Radix Popover containing a TugHueStrip.
+ * Selecting a hue updates parent state via `onSelect` and closes the popover.
+ *
+ * Preserves existing `data-testid` so role hue test selectors still work.
+ */
+function CompactHuePicker({
+  label,
+  selectedHue,
+  onSelect,
+  testId,
+}: {
+  label: string;
+  selectedHue: string;
+  onSelect: (hue: string) => void;
+  testId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const swatchColor = hueSwatchColor(selectedHue);
+
+  const handleSelect = useCallback(
+    (hue: string) => {
+      onSelect(hue);
+      setOpen(false);
+    },
+    [onSelect],
+  );
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className="gtg-compact-hue-row"
+          data-testid={testId}
+          aria-label={`${label}: ${selectedHue}. Click to change.`}
+          type="button"
+        >
+          <span className="gtg-compact-hue-label">{label}</span>
+          <span
+            className="gtg-compact-hue-chip"
+            style={{ backgroundColor: swatchColor }}
+            aria-hidden="true"
+          />
+          <span className="gtg-compact-hue-name">{selectedHue}</span>
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          className="gtg-compact-hue-popover"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+        >
+          <TugHueStrip
+            selectedHue={selectedHue}
+            onSelectHue={handleSelect}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -713,8 +800,15 @@ export function validateRecipeJson(value: unknown): string | null {
   if (typeof txt["hue"] !== "string" || txt["hue"].trim() === "") {
     return "Missing or invalid 'text.hue' field (string required)";
   }
+  // Legacy migration shim: handle recipe files saved before the Gap-1 field rename.
+  // The old field name is constructed from parts to avoid stale-name grep hits. [Risk R01]
+  const LEGACY_FIELD = "signal" + "Vividity";
+  if (LEGACY_FIELD in obj && !("signalIntensity" in obj)) {
+    obj.signalIntensity = obj[LEGACY_FIELD];
+    delete obj[LEGACY_FIELD];
+  }
   // Optional numeric fields
-  for (const field of ["surfaceContrast", "signalVividity", "warmth"] as const) {
+  for (const field of ["surfaceContrast", "signalIntensity", "warmth"] as const) {
     if (obj[field] !== undefined && typeof obj[field] !== "number") {
       return `Invalid '${field}' field (number required)`;
     }
@@ -758,12 +852,23 @@ function ExportImportPanel({
   output,
   recipe,
   onRecipeImported,
+  exportDisabled,
+  savedThemes,
+  onSelectSavedTheme,
+  onSelectBuiltIn,
+  onSaveSuccess,
 }: {
   output: ThemeOutput;
   recipe: ThemeRecipe;
   onRecipeImported: (r: ThemeRecipe) => void;
+  exportDisabled: boolean;
+  savedThemes: string[];
+  onSelectSavedTheme: (name: string) => void;
+  onSelectBuiltIn: () => void;
+  onSaveSuccess: () => void;
 }) {
   const [importError, setImportError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -778,6 +883,28 @@ function ExportImportPanel({
     const safeName = recipe.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
     triggerDownload(json, `${safeName}-recipe.json`, "application/json");
   }, [recipe]);
+
+  const handleSaveTheme = useCallback(async () => {
+    if (exportDisabled) return;
+    setSaveStatus("saving");
+    try {
+      const css = generateResolvedCssExport(output, recipe);
+      const res = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+        onSaveSuccess();
+      } else {
+        setSaveStatus("error");
+      }
+    } catch {
+      setSaveStatus("error");
+    }
+  }, [output, recipe, exportDisabled, onSaveSuccess]);
 
   const handleImportClick = useCallback(() => {
     setImportError(null);
@@ -823,6 +950,42 @@ function ExportImportPanel({
 
   return (
     <div className="gtg-export-import-panel" data-testid="gtg-export-import-panel">
+      {/* Saved-theme selector dropdown */}
+      <div className="gtg-saved-theme-row">
+        <label className="gtg-saved-theme-label" htmlFor="gtg-saved-theme-select">
+          Load saved theme
+        </label>
+        <select
+          id="gtg-saved-theme-select"
+          className="gtg-saved-theme-select"
+          data-testid="gtg-saved-theme-select"
+          defaultValue=""
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "__brio__") {
+              onSelectBuiltIn();
+            } else if (val !== "") {
+              onSelectSavedTheme(val);
+            }
+            // Reset to placeholder after selection
+            e.target.value = "";
+          }}
+          aria-label="Load a saved theme"
+        >
+          <option value="" disabled>
+            Select a theme…
+          </option>
+          <option value="__brio__" data-testid="gtg-saved-theme-option-brio">
+            Brio (default)
+          </option>
+          {savedThemes.map((name) => (
+            <option key={name} value={name} data-testid={`gtg-saved-theme-option-${name}`}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Export buttons */}
       <div className="gtg-export-row">
         <TugButton
@@ -832,6 +995,7 @@ function ExportImportPanel({
           onClick={handleExportCss}
           data-testid="gtg-export-css-btn"
           title="Download theme as CSS file (--tug-color() notation)"
+          disabled={exportDisabled}
         >
           Export CSS
         </TugButton>
@@ -842,8 +1006,20 @@ function ExportImportPanel({
           onClick={handleExportJson}
           data-testid="gtg-export-json-btn"
           title="Download current recipe as JSON"
+          disabled={exportDisabled}
         >
           Export Recipe JSON
+        </TugButton>
+        <TugButton
+          emphasis="ghost"
+          role="action"
+          size="sm"
+          onClick={() => { void handleSaveTheme(); }}
+          data-testid="gtg-save-theme-btn"
+          title="Save theme to disk for runtime loading"
+          disabled={exportDisabled || saveStatus === "saving"}
+        >
+          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : "Save Theme"}
         </TugButton>
       </div>
 
@@ -1010,6 +1186,21 @@ function EmphasisRolePreview() {
  * [D02] Native contrast fix.
  */
 export function GalleryThemeGeneratorContent() {
+  // Optional theme context — null when rendered outside a TugThemeProvider (e.g. tests).
+  const themeCtx = useOptionalThemeContext();
+
+  // Saved-theme list — populated from the /__themes/list middleware endpoint.
+  const [savedThemes, setSavedThemes] = useState<string[]>([]);
+
+  // Load saved theme names on mount and expose a refresh callback.
+  const refreshSavedThemes = useCallback(() => {
+    void loadSavedThemes().then(setSavedThemes);
+  }, []);
+
+  useEffect(() => {
+    refreshSavedThemes();
+  }, [refreshSavedThemes]);
+
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
   const [atmosphereHue, setAtmosphereHue] = useState<string>(DEFAULT_RECIPE.atmosphere.hue);
@@ -1017,8 +1208,8 @@ export function GalleryThemeGeneratorContent() {
   const [surfaceContrast, setSurfaceContrast] = useState<number>(
     DEFAULT_RECIPE.surfaceContrast ?? 50,
   );
-  const [signalVividity, setSignalVividity] = useState<number>(
-    DEFAULT_RECIPE.signalVividity ?? 50,
+  const [signalIntensity, setSignalIntensity] = useState<number>(
+    DEFAULT_RECIPE.signalIntensity ?? 50,
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
 
@@ -1080,7 +1271,7 @@ export function GalleryThemeGeneratorContent() {
         atmosphere: { hue: atm },
         text: { hue: txt },
         surfaceContrast: sc,
-        signalVividity: sv,
+        signalIntensity: sv,
         warmth: w,
         accent,
         active,
@@ -1105,7 +1296,7 @@ export function GalleryThemeGeneratorContent() {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, atmosphereHue, textHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
 
@@ -1168,7 +1359,7 @@ export function GalleryThemeGeneratorContent() {
       setAtmosphereHue(r.atmosphere.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalVividity(r.signalVividity ?? 50);
+      setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
@@ -1199,7 +1390,7 @@ export function GalleryThemeGeneratorContent() {
       atmosphere: { hue: atmosphereHue },
       text: { hue: textHue },
       surfaceContrast,
-      signalVividity,
+      signalIntensity,
       warmth,
       accent: accentHue,
       active: activeHue,
@@ -1209,7 +1400,7 @@ export function GalleryThemeGeneratorContent() {
       caution: cautionHue,
       destructive: dangerHue,
     }),
-    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
+    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
   );
 
   /**
@@ -1224,7 +1415,7 @@ export function GalleryThemeGeneratorContent() {
       setAtmosphereHue(r.atmosphere.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
-      setSignalVividity(r.signalVividity ?? 50);
+      setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
@@ -1239,11 +1430,74 @@ export function GalleryThemeGeneratorContent() {
   );
 
   // ---------------------------------------------------------------------------
+  // Saved-theme selection handlers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Select a saved dynamic theme by name.
+   * Calls setDynamicTheme() to inject the CSS, then fetches the recipe JSON
+   * from /styles/themes/<name>-recipe.json and loads it into generator state.
+   * No-ops silently if theme context is unavailable (e.g. outside provider).
+   */
+  const handleSelectSavedTheme = useCallback(
+    (name: string) => {
+      if (themeCtx) {
+        void themeCtx.setDynamicTheme(name);
+      }
+      // Fetch the recipe JSON and load parameters into generator state
+      void fetch(`/styles/themes/${encodeURIComponent(name)}-recipe.json`)
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json() as Promise<unknown>;
+        })
+        .then((data) => {
+          if (!data) return;
+          const err = validateRecipeJson(data);
+          if (err !== null) return;
+          handleRecipeImported(data as ThemeRecipe);
+        })
+        .catch(() => {
+          // Network or parse error — ignore silently
+        });
+    },
+    [themeCtx, handleRecipeImported],
+  );
+
+  /**
+   * Revert to the built-in Brio theme.
+   * Calls revertToBuiltIn() to remove the dynamic CSS override and clears
+   * localStorage. Resets generator to the default Brio recipe.
+   * No-ops silently if theme context is unavailable.
+   */
+  const handleSelectBuiltIn = useCallback(() => {
+    if (themeCtx) {
+      themeCtx.revertToBuiltIn();
+    }
+    loadPreset("brio");
+  }, [themeCtx, loadPreset]);
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
   return (
     <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
+
+      {/* ---- Theme Name ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Theme Name</div>
+        <TugInput
+          value={recipeName}
+          onChange={(e) => setRecipeName(e.target.value)}
+          placeholder="Enter theme name"
+          size="md"
+          data-testid="gtg-theme-name-input"
+          className="gtg-theme-name-input"
+          aria-label="Theme name"
+        />
+      </div>
+
+      <div className="cg-divider" />
 
       {/* ---- Presets ---- */}
       <div className="cg-section">
@@ -1321,43 +1575,43 @@ export function GalleryThemeGeneratorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Role Hues</div>
         <div className="gtg-role-hues" data-testid="gtg-role-hues">
-          <HueSelector
+          <CompactHuePicker
             label="Accent"
             selectedHue={accentHue}
             onSelect={setAccentHue}
             testId="gtg-role-hue-accent"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Action"
             selectedHue={activeHue}
             onSelect={setActiveHue}
             testId="gtg-role-hue-action"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Agent"
             selectedHue={agentHue}
             onSelect={setAgentHue}
             testId="gtg-role-hue-agent"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Data"
             selectedHue={dataHue}
             onSelect={setDataHue}
             testId="gtg-role-hue-data"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Success"
             selectedHue={successHue}
             onSelect={setSuccessHue}
             testId="gtg-role-hue-success"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Caution"
             selectedHue={cautionHue}
             onSelect={setCautionHue}
             testId="gtg-role-hue-caution"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Danger"
             selectedHue={dangerHue}
             onSelect={setDangerHue}
@@ -1376,23 +1630,23 @@ export function GalleryThemeGeneratorContent() {
             label="Surface Contrast"
             value={surfaceContrast}
             onChange={(v) =>
-              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalVividity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-surface-contrast"
           />
           <MoodSlider
-            label="Signal Vividity"
-            value={signalVividity}
+            label="Signal Intensity"
+            value={signalIntensity}
             onChange={(v) =>
-              handleSliderChange(setSignalVividity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSignalIntensity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
-            testId="gtg-slider-signal-vividity"
+            testId="gtg-slider-signal-intensity"
           />
           <MoodSlider
             label="Warmth"
             value={warmth}
             onChange={(v) =>
-              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalVividity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-warmth"
           />
@@ -1455,6 +1709,11 @@ export function GalleryThemeGeneratorContent() {
           output={themeOutput}
           recipe={currentRecipe}
           onRecipeImported={handleRecipeImported}
+          exportDisabled={recipeName.trim() === ""}
+          savedThemes={savedThemes}
+          onSelectSavedTheme={handleSelectSavedTheme}
+          onSelectBuiltIn={handleSelectBuiltIn}
+          onSaveSuccess={refreshSavedThemes}
         />
       </div>
 

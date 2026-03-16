@@ -31,6 +31,7 @@ import { getRegistration, _resetForTest } from "@/card-registry";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
 import { validateThemeContrast, autoAdjustContrast, checkCVDDistinguishability, CVD_SEMANTIC_PAIRS, LC_THRESHOLDS, LC_MARGINAL_DELTA } from "@/components/tugways/theme-accessibility";
 import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
+import { TugThemeProvider, removeThemeCSS } from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
 // Known-exception set shared by T10.3 and T-ACC-1
@@ -346,7 +347,7 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const sc = container.querySelector("[data-testid='gtg-slider-surface-contrast']");
-    const sv = container.querySelector("[data-testid='gtg-slider-signal-vividity']");
+    const sv = container.querySelector("[data-testid='gtg-slider-signal-intensity']");
     const w = container.querySelector("[data-testid='gtg-slider-warmth']");
     expect(sc).not.toBeNull();
     expect(sv).not.toBeNull();
@@ -366,6 +367,91 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     const swatches = grid!.querySelectorAll(".gtg-token-swatch");
     // At least 200 token swatches (264 token set)
     expect(swatches.length).toBeGreaterThan(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T4: Theme name as first-class UI element
+// ---------------------------------------------------------------------------
+
+/**
+ * Invoke a React text input's onChange handler directly via fiber props.
+ * happy-dom does not propagate fireEvent.change to React's synthetic onChange
+ * for controlled inputs. This mirrors the pattern established in
+ * gallery-scale-timing-content.test.tsx for range inputs.
+ */
+function invokeInputOnChange(el: HTMLInputElement, value: string): void {
+  const key = Object.keys(el).find(
+    (k) => k.startsWith("__reactProps$") || k.startsWith("__reactFiber$"),
+  );
+  if (!key) return;
+  const fiberOrProps = (el as unknown as Record<string, unknown>)[key];
+  let props: Record<string, unknown> | null = null;
+  if (key.startsWith("__reactProps$")) {
+    props = fiberOrProps as Record<string, unknown>;
+  } else {
+    let fiber = fiberOrProps as { memoizedProps?: Record<string, unknown>; return?: unknown } | null;
+    while (fiber) {
+      if (fiber.memoizedProps) { props = fiber.memoizedProps; break; }
+      fiber = fiber.return as typeof fiber;
+    }
+  }
+  const onChange = props?.["onChange"] as ((e: { target: { value: string } }) => void) | undefined;
+  if (typeof onChange === "function") {
+    act(() => { onChange({ target: { value } }); });
+  }
+}
+
+describe("GalleryThemeGeneratorContent – theme name field (T4)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders a visible text input for theme name", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']");
+    expect(nameInput).not.toBeNull();
+    expect((nameInput as HTMLInputElement).type).toBe("text");
+  });
+
+  it("export CSS button is disabled when theme name is empty", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    invokeInputOnChange(nameInput, "");
+    const exportBtn = container.querySelector("[data-testid='gtg-export-css-btn']") as HTMLButtonElement;
+    expect(exportBtn).not.toBeNull();
+    expect(exportBtn.disabled).toBe(true);
+  });
+
+  it("export CSS button is enabled when theme name has content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    invokeInputOnChange(nameInput, "My Theme");
+    const exportBtn = container.querySelector("[data-testid='gtg-export-css-btn']") as HTMLButtonElement;
+    expect(exportBtn).not.toBeNull();
+    expect(exportBtn.disabled).toBe(false);
+  });
+
+  it("theme name input reflects current recipe name after load preset", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Load a preset — the brio preset has name "brio"
+    const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
+    act(() => {
+      fireEvent.click(brioBtn);
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    expect(nameInput.value).toBe("brio");
   });
 });
 
@@ -439,7 +525,7 @@ const CHM_NOVEL_RECIPE = {
   accent: "flame",
   active: "cobalt",
   surfaceContrast: 70,
-  signalVividity: 80,
+  signalIntensity: 80,
   warmth: 65,
 };
 
@@ -677,7 +763,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
       positive: "green",
       destructive: "red",
       surfaceContrast: 50,
-      signalVividity: 80,
+      signalIntensity: 80,
       warmth: 50,
     };
     const output = deriveTheme(greenRedRecipe);
@@ -697,18 +783,19 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders the role hues section with 7 hue strips", () => {
+  it("renders the role hues section with 7 compact hue picker rows", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const roleHues = container.querySelector("[data-testid='gtg-role-hues']");
     expect(roleHues).not.toBeNull();
-    const strips = roleHues!.querySelectorAll(".tug-hue-strip");
-    expect(strips.length).toBe(7);
+    // Each picker is a button with class gtg-compact-hue-row
+    const pickers = roleHues!.querySelectorAll(".gtg-compact-hue-row");
+    expect(pickers.length).toBe(7);
   });
 
-  it("each role hue strip has 48 swatches", () => {
+  it("each role hue picker button has the correct data-testid", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -723,10 +810,8 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       "gtg-role-hue-danger",
     ];
     for (const id of roleIds) {
-      const strip = container.querySelector(`[data-testid='${id}']`);
-      expect(strip).not.toBeNull();
-      const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
-      expect(swatches.length).toBe(48);
+      const picker = container.querySelector(`[data-testid='${id}']`);
+      expect(picker).not.toBeNull();
     }
   });
 
@@ -787,10 +872,131 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Step 7: Compact role hue pickers
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – compact role hue pickers (Step 7)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("each compact row renders with the correct role label", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const labelMap: Record<string, string> = {
+      "gtg-role-hue-accent": "Accent",
+      "gtg-role-hue-action": "Action",
+      "gtg-role-hue-agent": "Agent",
+      "gtg-role-hue-data": "Data",
+      "gtg-role-hue-success": "Success",
+      "gtg-role-hue-caution": "Caution",
+      "gtg-role-hue-danger": "Danger",
+    };
+    for (const [testId, expectedLabel] of Object.entries(labelMap)) {
+      const row = container.querySelector(`[data-testid='${testId}']`);
+      expect(row).not.toBeNull();
+      const labelEl = row!.querySelector(".gtg-compact-hue-label");
+      expect(labelEl).not.toBeNull();
+      expect(labelEl!.textContent).toBe(expectedLabel);
+    }
+  });
+
+  it("each compact row renders with a color chip swatch", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleIds = [
+      "gtg-role-hue-accent",
+      "gtg-role-hue-action",
+      "gtg-role-hue-agent",
+      "gtg-role-hue-data",
+      "gtg-role-hue-success",
+      "gtg-role-hue-caution",
+      "gtg-role-hue-danger",
+    ];
+    for (const id of roleIds) {
+      const row = container.querySelector(`[data-testid='${id}']`);
+      expect(row).not.toBeNull();
+      const chip = row!.querySelector(".gtg-compact-hue-chip");
+      expect(chip).not.toBeNull();
+    }
+  });
+
+  it("clicking a compact row opens the popover with a TugHueStrip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Before click: no hue strip visible in the document body
+    const accentRow = container.querySelector("[data-testid='gtg-role-hue-accent']") as HTMLElement;
+    expect(accentRow).not.toBeNull();
+
+    act(() => {
+      fireEvent.click(accentRow);
+    });
+
+    // After click: Radix popover renders into document.body portal
+    const popoverContent = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(popoverContent).not.toBeNull();
+    const strip = popoverContent!.querySelector(".tug-hue-strip");
+    expect(strip).not.toBeNull();
+    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
+    expect(swatches.length).toBe(48);
+  });
+
+  it("existing role hue test selectors (gtg-role-hue-accent, etc.) still work", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleIds = [
+      "gtg-role-hue-accent",
+      "gtg-role-hue-action",
+      "gtg-role-hue-agent",
+      "gtg-role-hue-data",
+      "gtg-role-hue-success",
+      "gtg-role-hue-caution",
+      "gtg-role-hue-danger",
+    ];
+    for (const id of roleIds) {
+      expect(container.querySelector(`[data-testid='${id}']`)).not.toBeNull();
+    }
+  });
+
+  it("selecting a hue in the popover closes the popover", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const accentRow = container.querySelector("[data-testid='gtg-role-hue-accent']") as HTMLElement;
+    act(() => {
+      fireEvent.click(accentRow);
+    });
+
+    // Popover is open
+    const popoverContent = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(popoverContent).not.toBeNull();
+
+    // Click a swatch inside the popover
+    const firstSwatch = popoverContent!.querySelector(".tug-hue-strip__swatch") as HTMLElement;
+    expect(firstSwatch).not.toBeNull();
+    act(() => {
+      fireEvent.click(firstSwatch!);
+    });
+
+    // Popover should now be closed
+    const afterPopover = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(afterPopover).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Step 7: Emphasis x Role Preview section
 // ---------------------------------------------------------------------------
 
-describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", () => {
+describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
@@ -867,5 +1073,176 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", ()
     expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
       withPink.tokens["--tug-base-tone-danger"],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 9: Saved-theme selector dropdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Render GalleryThemeGeneratorContent wrapped in TugThemeProvider with a
+ * mocked global.fetch so loadSavedThemes() returns a controlled list.
+ *
+ * Returns cleanup helpers and the rendered container.
+ */
+function renderWithThemeProvider(savedThemeNames: string[] = []) {
+  const originalFetch = globalThis.fetch;
+  // Mock fetch: /__themes/list returns the provided list; other URLs return ok stubs.
+  globalThis.fetch = async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/__themes/list") {
+      return new Response(JSON.stringify({ themes: savedThemeNames }), { status: 200 });
+    }
+    if (url === "/__themes/save") {
+      return new Response(JSON.stringify({ ok: true, name: "test-theme" }), { status: 200 });
+    }
+    if (url.startsWith("/styles/themes/") && url.endsWith(".css")) {
+      return new Response("body {}", { status: 200 });
+    }
+    if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
+      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", atmosphere: { hue: "amber" }, text: { hue: "sand" } });
+      return new Response(recipe, { status: 200 });
+    }
+    return new Response("", { status: 404 });
+  };
+
+  let container!: HTMLElement;
+  act(() => {
+    ({ container } = render(
+      React.createElement(
+        TugThemeProvider,
+        {},
+        React.createElement(GalleryThemeGeneratorContent, {}),
+      ),
+    ));
+  });
+
+  const restoreFetch = () => {
+    globalThis.fetch = originalFetch;
+  };
+
+  return { container, restoreFetch };
+}
+
+describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); removeThemeCSS(); });
+
+  it("dropdown renders with 'Brio (default)' option when no saved themes exist", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      // Wait for the async loadSavedThemes() effect to complete
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      const brioOption = select.querySelector("[data-testid='gtg-saved-theme-option-brio']");
+      expect(brioOption).not.toBeNull();
+      expect(brioOption!.textContent).toBe("Brio (default)");
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("dropdown shows only placeholder + 'Brio (default)' when no saved themes exist", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      // Placeholder + Brio (default) = 2 options
+      expect(select.options.length).toBe(2);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("dropdown includes saved theme names returned by loadSavedThemes()", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider(["my-theme", "dark-forest"]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      // Placeholder + Brio (default) + 2 saved themes = 4 options
+      expect(select.options.length).toBe(4);
+      const myThemeOpt = select.querySelector("[value='my-theme']");
+      const darkForestOpt = select.querySelector("[value='dark-forest']");
+      expect(myThemeOpt).not.toBeNull();
+      expect(darkForestOpt).not.toBeNull();
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("selecting 'Brio (default)' resets recipe to Brio dark mode defaults", async () => {
+    const { container, restoreFetch } = renderWithThemeProvider([]);
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      // First switch to light mode to change state away from Brio defaults
+      const lightBtn = container.querySelector("[data-testid='gtg-mode-light']") as HTMLElement;
+      act(() => { fireEvent.click(lightBtn); });
+
+      // Now select "Brio (default)" from the dropdown
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      act(() => {
+        fireEvent.change(select, { target: { value: "__brio__" } });
+      });
+
+      // After selecting Brio (default), the mode button should return to dark (Brio default)
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      const darkBtn = container.querySelector("[data-testid='gtg-mode-dark']");
+      expect(darkBtn!.classList.contains("tug-button-filled-action")).toBe(true);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("selecting a saved theme dispatches fetch for the theme CSS and recipe JSON", async () => {
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url === "/__themes/list") {
+        return new Response(JSON.stringify({ themes: ["my-custom-theme"] }), { status: 200 });
+      }
+      if (url.endsWith(".css")) {
+        return new Response("body {}", { status: 200 });
+      }
+      if (url.endsWith("-recipe.json")) {
+        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", atmosphere: { hue: "cobalt" }, text: { hue: "slate" } });
+        return new Response(recipe, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        React.createElement(TugThemeProvider, {}, React.createElement(GalleryThemeGeneratorContent, {})),
+      ));
+    });
+
+    try {
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+      const select = container.querySelector("[data-testid='gtg-saved-theme-select']") as HTMLSelectElement;
+      await act(async () => {
+        fireEvent.change(select, { target: { value: "my-custom-theme" } });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      // Verify fetch was called for the theme CSS (setDynamicTheme) and recipe JSON
+      const cssFetch = fetchCalls.find((u) => u.includes("my-custom-theme") && u.endsWith(".css") && !u.endsWith("-recipe.json"));
+      const recipeFetch = fetchCalls.find((u) => u.includes("my-custom-theme") && u.endsWith("-recipe.json"));
+      expect(cssFetch).toBeDefined();
+      expect(recipeFetch).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

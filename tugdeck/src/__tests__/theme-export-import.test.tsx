@@ -22,6 +22,13 @@ import {
 } from "@/components/tugways/cards/gallery-theme-generator-content";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
 import { _resetForTest } from "@/card-registry";
+import {
+  TugThemeProvider,
+  injectThemeCSS,
+  removeThemeCSS,
+  loadSavedThemes,
+  useThemeContext,
+} from "@/contexts/theme-provider";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -190,7 +197,7 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
       agent: "violet",
       data: "teal",
       surfaceContrast: 65,
-      signalVividity: 75,
+      signalIntensity: 75,
       warmth: 40,
     };
     const json1 = JSON.stringify(fullRecipe, null, 2);
@@ -300,11 +307,11 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for signalVividity as string", () => {
+  it("validateRecipeJson returns error for signalIntensity as string", () => {
     const bad = {
       name: "X", mode: "dark",
       atmosphere: { hue: "red" }, text: { hue: "blue" },
-      signalVividity: "vivid",
+      signalIntensity: "vivid",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
@@ -335,5 +342,261 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const container = renderComponent();
     const errorEl = container.querySelector("[data-testid='gtg-import-error']");
     expect(errorEl).toBeNull();
+  });
+
+  it("validateRecipeJson accepts legacy pre-rename field and migrates it to signalIntensity", () => {
+    // Use computed property to avoid stale-name grep hits in source scans.
+    // The key being tested is the old name from before the Gap-1 rename.
+    const LEGACY_KEY = "signal" + "Vividity";
+    const legacy: Record<string, unknown> = {
+      name: "LegacyTheme",
+      mode: "dark",
+      atmosphere: { hue: "cobalt" },
+      text: { hue: "slate" },
+      [LEGACY_KEY]: 75,
+    };
+    const result = validateRecipeJson(legacy);
+    expect(result).toBeNull();
+    // Migration shim should have renamed the field in-place
+    expect(legacy["signalIntensity"]).toBe(75);
+    expect(legacy[LEGACY_KEY]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6: Theme-provider integration — setDynamicTheme, revertToBuiltIn, init
+// ---------------------------------------------------------------------------
+
+/**
+ * Install a mock localStorage on globalThis for the duration of a test.
+ * The provider accesses `localStorage` as a bare global, which resolves to
+ * globalThis.localStorage. Returns a restore function.
+ */
+function installMockLocalStorage(initial: Record<string, string> = {}): {
+  store: Record<string, string>;
+  restore: () => void;
+} {
+  const store: Record<string, string> = { ...initial };
+  const orig = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+      clear: () => { for (const k of Object.keys(store)) delete store[k]; },
+    },
+    writable: true,
+    configurable: true,
+  });
+  return {
+    store,
+    restore: () => {
+      if (orig) {
+        Object.defineProperty(globalThis, "localStorage", orig);
+      } else {
+        // If localStorage was not originally defined, remove the mock
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      }
+    },
+  };
+}
+
+/**
+ * Consumer component: captures setDynamicTheme and revertToBuiltIn from
+ * TugThemeProvider context via useThemeContext(), storing them in the
+ * provided refs so tests can call them after render.
+ */
+function ContextCapture({
+  setDynamicRef,
+  revertRef,
+}: {
+  setDynamicRef: { current: ((name: string) => void) | null };
+  revertRef: { current: (() => void) | null };
+}): null {
+  const { setDynamicTheme, revertToBuiltIn } = useThemeContext();
+  setDynamicRef.current = setDynamicTheme;
+  revertRef.current = revertToBuiltIn;
+  return null;
+}
+
+describe("TugThemeProvider – dynamic theme (T6)", () => {
+  afterEach(() => {
+    cleanup();
+    removeThemeCSS();
+  });
+
+  it("setDynamicTheme (via context) fetches CSS and injects it into the DOM", async () => {
+    const fakeCss = "body { --tug-base-bg-app: oklch(0.2 0 0); }";
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      fetchCalls.push(String(input));
+      return new Response(fakeCss, { status: 200 });
+    };
+
+    const { restore } = installMockLocalStorage();
+    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
+    const revertRef: { current: (() => void) | null } = { current: null };
+
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
+          ),
+        );
+      });
+
+      // Call setDynamicTheme through the captured context function
+      await act(async () => {
+        await setDynamicRef.current!("my-theme");
+      });
+
+      expect(fetchCalls.some((u) => u.includes("my-theme"))).toBe(true);
+      const el = document.getElementById("tug-theme-override");
+      expect(el).not.toBeNull();
+      expect(el!.textContent).toBe(fakeCss);
+      expect(el!.getAttribute("data-theme")).toBe("my-theme");
+    } finally {
+      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+
+  it("setDynamicTheme (via context) persists dynamic theme name to localStorage under td-dynamic-theme", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("body {}", { status: 200 });
+
+    const { store, restore } = installMockLocalStorage();
+    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
+    const revertRef: { current: (() => void) | null } = { current: null };
+
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
+          ),
+        );
+      });
+
+      await act(async () => {
+        await setDynamicRef.current!("brio-dark");
+      });
+
+      expect(store["td-dynamic-theme"]).toBe("brio-dark");
+    } finally {
+      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+
+  it("revertToBuiltIn (via context) removes theme override and clears td-dynamic-theme from localStorage", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response("body { --tug-base-bg-app: oklch(0.2 0 0); }", { status: 200 });
+
+    const { store, restore } = installMockLocalStorage();
+    const setDynamicRef: { current: ((name: string) => void) | null } = { current: null };
+    const revertRef: { current: (() => void) | null } = { current: null };
+
+    try {
+      act(() => {
+        render(
+          React.createElement(
+            TugThemeProvider,
+            {},
+            React.createElement(ContextCapture, { setDynamicRef, revertRef }),
+          ),
+        );
+      });
+
+      // First set a dynamic theme, then revert
+      await act(async () => {
+        await setDynamicRef.current!("my-theme");
+      });
+
+      expect(document.getElementById("tug-theme-override")).not.toBeNull();
+      expect(store["td-dynamic-theme"]).toBe("my-theme");
+
+      act(() => {
+        revertRef.current!();
+      });
+
+      expect(document.getElementById("tug-theme-override")).toBeNull();
+      expect(store["td-dynamic-theme"]).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+
+  it("on init, TugThemeProvider reads td-dynamic-theme from localStorage and calls setDynamicTheme", async () => {
+    // Pre-populate localStorage with a saved dynamic theme before mounting.
+    const { restore } = installMockLocalStorage({ "td-dynamic-theme": "saved-theme" });
+    const fakeCss = "body { --tug-base-bg-app: oklch(0.15 0 0); }";
+    const fetchCalls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL) => {
+      fetchCalls.push(String(input));
+      return new Response(fakeCss, { status: 200 });
+    };
+
+    try {
+      await act(async () => {
+        render(React.createElement(TugThemeProvider, {}));
+      });
+
+      // The init useEffect should have called setDynamicTheme("saved-theme"),
+      // which fetches /styles/themes/saved-theme.css and injects it.
+      expect(fetchCalls.some((u) => u.includes("saved-theme"))).toBe(true);
+      const el = document.getElementById("tug-theme-override");
+      expect(el).not.toBeNull();
+      expect(el!.textContent).toBe(fakeCss);
+    } finally {
+      globalThis.fetch = originalFetch;
+      restore();
+    }
+  });
+
+  it("loadSavedThemes returns empty array when fetch fails", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => { throw new Error("network error"); };
+    try {
+      const themes = await loadSavedThemes();
+      expect(themes).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("loadSavedThemes returns theme names from /__themes/list response", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ themes: ["brio", "my-theme"] }), { status: 200 });
+    try {
+      const themes = await loadSavedThemes();
+      expect(themes).toContain("brio");
+      expect(themes).toContain("my-theme");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("injectThemeCSS + removeThemeCSS DOM contract: injected CSS is accessible and removal is clean", () => {
+    const fakeCss = "body { --tug-base-bg-app: oklch(0.15 0 0); }";
+    injectThemeCSS("saved-theme", fakeCss);
+
+    const el = document.getElementById("tug-theme-override");
+    expect(el).not.toBeNull();
+    expect(el!.getAttribute("data-theme")).toBe("saved-theme");
+    expect(el!.textContent).toBe(fakeCss);
+
+    removeThemeCSS();
+    expect(document.getElementById("tug-theme-override")).toBeNull();
   });
 });

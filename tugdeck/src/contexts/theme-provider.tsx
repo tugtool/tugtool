@@ -16,6 +16,7 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useCallback,
 } from "react";
 import { putTheme } from "../settings-api";
 import { registerThemeSetter } from "../action-dispatch";
@@ -30,6 +31,9 @@ export type ThemeName = "brio";
 interface ThemeContextValue {
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
+  dynamicThemeName: string | null;
+  setDynamicTheme: (name: string) => void;
+  revertToBuiltIn: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +117,31 @@ export function applyInitialTheme(themeName: ThemeName): void {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic theme persistence key
+// ---------------------------------------------------------------------------
+
+const DYNAMIC_THEME_KEY = "td-dynamic-theme";
+
+// ---------------------------------------------------------------------------
+// loadSavedThemes — query middleware for available saved themes
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the list of saved dynamic themes from the Vite dev middleware.
+ * Returns an empty array if the endpoint is unavailable (e.g. in production).
+ */
+export async function loadSavedThemes(): Promise<string[]> {
+  try {
+    const res = await fetch("/__themes/list");
+    if (!res.ok) return [];
+    const data = (await res.json()) as { themes?: string[] };
+    return Array.isArray(data.themes) ? data.themes : [];
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ThemeContext
 // ---------------------------------------------------------------------------
 
@@ -139,6 +168,10 @@ export function TugThemeProvider({
 }): React.JSX.Element {
   const [theme, setThemeState] = useState<ThemeName>(initialTheme);
 
+  // Dynamic theme state — tracks the active saved theme name without widening ThemeName.
+  // null means no dynamic theme is active (built-in theme is used). [D07]
+  const [dynamicThemeName, setDynamicThemeName] = useState<string | null>(null);
+
   // Stable ref always pointing at the latest setTheme function.
   // The action-dispatch handler captures this ref once on mount and reads
   // the current value on every call, preventing stale closures.
@@ -163,14 +196,62 @@ export function TugThemeProvider({
     sendCanvasColor(newTheme);
   };
 
+  /**
+   * Activate a saved dynamic theme by name.
+   * Fetches resolved CSS from /styles/themes/<name>.css, injects it via DOM
+   * (not React state — Rules of Tugways [D08, D09]), persists to localStorage.
+   * Does not touch themeCSSMap, sendCanvasColor(), or putTheme().
+   */
+  const setDynamicTheme = useCallback(async (name: string): Promise<void> => {
+    try {
+      const res = await fetch(`/styles/themes/${encodeURIComponent(name)}.css`);
+      if (!res.ok) return;
+      const css = await res.text();
+      injectThemeCSS(name, css);
+      setDynamicThemeName(name);
+      try {
+        localStorage.setItem(DYNAMIC_THEME_KEY, name);
+      } catch {
+        // localStorage may be unavailable
+      }
+    } catch {
+      // Network error — silently ignore
+    }
+  }, []);
+
+  /**
+   * Revert to the built-in theme by removing the dynamic theme override.
+   * Removes the injected stylesheet and clears the localStorage entry.
+   */
+  const revertToBuiltIn = useCallback((): void => {
+    removeThemeCSS();
+    setDynamicThemeName(null);
+    try {
+      localStorage.removeItem(DYNAMIC_THEME_KEY);
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, []);
+
   // Keep ref current on every render so the stable wrapper always calls the latest setter.
   useEffect(() => {
     setThemeRef.current = setTheme;
   });
 
-  // Apply initial theme on mount. Brio is always active via tug-base.css defaults.
-  // Sync canvas color to Swift bridge on mount.
+  // On mount: check localStorage for a saved dynamic theme and re-apply it.
+  // Dynamic theme check runs before built-in theme check (td-theme). [D04]
   useEffect(() => {
+    try {
+      const savedDynamic = localStorage.getItem(DYNAMIC_THEME_KEY);
+      if (savedDynamic) {
+        void setDynamicTheme(savedDynamic);
+        return;
+      }
+    } catch {
+      // localStorage may be unavailable
+    }
+    // Apply initial theme on mount. Brio is always active via tug-base.css defaults.
+    // Sync canvas color to Swift bridge on mount.
     sendCanvasColor(initialTheme);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -185,7 +266,7 @@ export function TugThemeProvider({
 
   return React.createElement(
     ThemeContext.Provider,
-    { value: { theme, setTheme } },
+    { value: { theme, setTheme, dynamicThemeName, setDynamicTheme, revertToBuiltIn } },
     children
   );
 }
@@ -204,4 +285,13 @@ export function useThemeContext(): ThemeContextValue {
     throw new Error("useThemeContext must be used within a TugThemeProvider");
   }
   return ctx;
+}
+
+/**
+ * Hook that returns the theme context value when inside a TugThemeProvider,
+ * or null when used outside one. Safe to call in components that may render
+ * both inside and outside a TugThemeProvider (e.g. gallery cards in tests).
+ */
+export function useOptionalThemeContext(): ThemeContextValue | null {
+  return useContext(ThemeContext);
 }
