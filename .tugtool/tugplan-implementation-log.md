@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-16T02:19:56Z
+---
+
+## step-4: Added TugInput for theme name at top of generator card bound to recipeName state. Export CSS and Export Recipe JSON buttons now disabled when name is empty. Added CSS styles and 4 new tests. 54 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-3
 date: 2025-03-16T02:12:12Z
 ---

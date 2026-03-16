@@ -57,6 +57,7 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import type { TugCheckboxRole } from "@/components/tugways/tug-checkbox";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import type { TugSwitchRole } from "@/components/tugways/tug-switch";
+import { TugInput } from "@/components/tugways/tug-input";
 import "./gallery-theme-generator-content.css";
 
 // ---------------------------------------------------------------------------
@@ -765,10 +766,12 @@ function ExportImportPanel({
   output,
   recipe,
   onRecipeImported,
+  exportDisabled,
 }: {
   output: ThemeOutput;
   recipe: ThemeRecipe;
   onRecipeImported: (r: ThemeRecipe) => void;
+  exportDisabled: boolean;
 }) {
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputId = useId();
@@ -839,6 +842,7 @@ function ExportImportPanel({
           onClick={handleExportCss}
           data-testid="gtg-export-css-btn"
           title="Download theme as CSS file (--tug-color() notation)"
+          disabled={exportDisabled}
         >
           Export CSS
         </TugButton>
@@ -849,6 +853,7 @@ function ExportImportPanel({
           onClick={handleExportJson}
           data-testid="gtg-export-json-btn"
           title="Download current recipe as JSON"
+          disabled={exportDisabled}
         >
           Export Recipe JSON
         </TugButton>
@@ -1252,6 +1257,22 @@ export function GalleryThemeGeneratorContent() {
   return (
     <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
 
+      {/* ---- Theme Name ---- */}
+      <div className="cg-section">
+        <div className="cg-section-title">Theme Name</div>
+        <TugInput
+          value={recipeName}
+          onChange={(e) => setRecipeName(e.target.value)}
+          placeholder="Enter theme name"
+          size="md"
+          data-testid="gtg-theme-name-input"
+          className="gtg-theme-name-input"
+          aria-label="Theme name"
+        />
+      </div>
+
+      <div className="cg-divider" />
+
       {/* ---- Presets ---- */}
       <div className="cg-section">
         <div className="cg-section-title">Load Preset Recipe</div>
@@ -1462,6 +1483,7 @@ export function GalleryThemeGeneratorContent() {
           output={themeOutput}
           recipe={currentRecipe}
           onRecipeImported={handleRecipeImported}
+          exportDisabled={recipeName.trim() === ""}
         />
       </div>
 

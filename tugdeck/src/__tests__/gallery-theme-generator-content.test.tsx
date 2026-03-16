@@ -370,6 +370,91 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
 });
 
 // ---------------------------------------------------------------------------
+// T4: Theme name as first-class UI element
+// ---------------------------------------------------------------------------
+
+/**
+ * Invoke a React text input's onChange handler directly via fiber props.
+ * happy-dom does not propagate fireEvent.change to React's synthetic onChange
+ * for controlled inputs. This mirrors the pattern established in
+ * gallery-scale-timing-content.test.tsx for range inputs.
+ */
+function invokeInputOnChange(el: HTMLInputElement, value: string): void {
+  const key = Object.keys(el).find(
+    (k) => k.startsWith("__reactProps$") || k.startsWith("__reactFiber$"),
+  );
+  if (!key) return;
+  const fiberOrProps = (el as unknown as Record<string, unknown>)[key];
+  let props: Record<string, unknown> | null = null;
+  if (key.startsWith("__reactProps$")) {
+    props = fiberOrProps as Record<string, unknown>;
+  } else {
+    let fiber = fiberOrProps as { memoizedProps?: Record<string, unknown>; return?: unknown } | null;
+    while (fiber) {
+      if (fiber.memoizedProps) { props = fiber.memoizedProps; break; }
+      fiber = fiber.return as typeof fiber;
+    }
+  }
+  const onChange = props?.["onChange"] as ((e: { target: { value: string } }) => void) | undefined;
+  if (typeof onChange === "function") {
+    act(() => { onChange({ target: { value } }); });
+  }
+}
+
+describe("GalleryThemeGeneratorContent – theme name field (T4)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("renders a visible text input for theme name", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']");
+    expect(nameInput).not.toBeNull();
+    expect((nameInput as HTMLInputElement).type).toBe("text");
+  });
+
+  it("export CSS button is disabled when theme name is empty", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    invokeInputOnChange(nameInput, "");
+    const exportBtn = container.querySelector("[data-testid='gtg-export-css-btn']") as HTMLButtonElement;
+    expect(exportBtn).not.toBeNull();
+    expect(exportBtn.disabled).toBe(true);
+  });
+
+  it("export CSS button is enabled when theme name has content", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    invokeInputOnChange(nameInput, "My Theme");
+    const exportBtn = container.querySelector("[data-testid='gtg-export-css-btn']") as HTMLButtonElement;
+    expect(exportBtn).not.toBeNull();
+    expect(exportBtn.disabled).toBe(false);
+  });
+
+  it("theme name input reflects current recipe name after load preset", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Load a preset — the brio preset has name "brio"
+    const brioBtn = container.querySelector("[data-testid='gtg-preset-brio']") as HTMLElement;
+    act(() => {
+      fireEvent.click(brioBtn);
+    });
+    const nameInput = container.querySelector("[data-testid='gtg-theme-name-input']") as HTMLInputElement;
+    expect(nameInput.value).toBe("brio");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T6.4: Mode toggle switches recipe mode between "dark" and "light"
 // ---------------------------------------------------------------------------
 
