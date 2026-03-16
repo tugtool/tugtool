@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-16T15:56:11Z
+---
+
+## step-5: Replaced numeric GRAY_STEPS with structured array from NAMED_GRAYS. TugAchromaticStrip now renders descriptive names (paper through pitch) as labels and data-name attributes. Updated gallery-palette-content.test.tsx assertions. 3 new tests, 40 gallery tests pass, 1793 total.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-4
 date: 2025-03-16T15:50:29Z
 ---

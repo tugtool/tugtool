@@ -427,7 +427,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     expect(strip).not.toBeNull();
   });
 
-  it("T-ACHROMATIC-TEN: achromatic strip contains 10 swatches from black to white", () => {
+  it("T-ACHROMATIC-TEN: achromatic strip contains 11 swatches: black, paper…pitch, white", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
@@ -436,13 +436,59 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     expect(strip).not.toBeNull();
     const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
     expect(swatches.length).toBe(11);
-    // First is black (gray-0), last is white (gray-100)
+    // First is black, last is white
     expect(swatches[0].getAttribute("data-name")).toBe("black");
     expect(swatches[0].getAttribute("data-tone")).toBe("0");
     expect(swatches[10].getAttribute("data-name")).toBe("white");
     expect(swatches[10].getAttribute("data-tone")).toBe("100");
-    // Middle entries are gray
-    expect(swatches[4].getAttribute("data-name")).toBe("gray");
+    // Named grays use descriptive names (indices 1–9)
+    // Index order: black(0), paper(1), linen(2), parchment(3), vellum(4),
+    //              graphite(5), carbon(6), charcoal(7), ink(8), pitch(9), white(10)
+    expect(swatches[1].getAttribute("data-name")).toBe("paper");
+    expect(swatches[4].getAttribute("data-name")).toBe("vellum");
+    expect(swatches[9].getAttribute("data-name")).toBe("pitch");
+  });
+
+  it("T-ACHROMATIC-NAMES: all 9 named gray swatches use descriptive names", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
+    const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
+    const expectedNames = ["black", "paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch", "white"];
+    expectedNames.forEach((name, idx) => {
+      expect(swatches[idx].getAttribute("data-name")).toBe(name);
+    });
+  });
+
+  it("T-ACHROMATIC-LABELS: swatch labels show descriptive names not 'gray-NN'", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
+    const labels = strip.querySelectorAll(".gp-achromatic-label");
+    const texts = Array.from(labels).map((l) => l.textContent ?? "");
+    // No label should be of the form "gray-NN"
+    expect(texts.every((t) => !/^gray-\d+$/.test(t))).toBe(true);
+    // Should contain descriptive names
+    expect(texts).toContain("paper");
+    expect(texts).toContain("graphite");
+    expect(texts).toContain("pitch");
+  });
+
+  it("T-ACHROMATIC-COLORS: all swatches have C=0 oklch colors", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
+    const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
+    swatches.forEach((s) => {
+      const color = s.getAttribute("data-color") ?? "";
+      expect(color).toMatch(/^oklch\([\d.]+ 0 0\)$/);
+    });
   });
 });
 
