@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-16T23:45:56Z
+---
+
+## step-1: Captured baseline tokens (452 lines, 373 tokens) and audited all 81 isLight branches in theme-derivation-engine.ts, confirming all can be expressed as ModePreset field differences
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-7
 date: 2025-03-16T16:07:34Z
 ---
