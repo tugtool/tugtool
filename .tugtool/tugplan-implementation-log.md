@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-16T02:27:01Z
+---
+
+## step-5: Added generateResolvedCssExport() to theme-derivation-engine.ts that formats resolved colors as oklch() CSS with header comment. Added simpleHashForEngine() utility. Added 4 new tests covering CSS structure, token naming, delta-E fidelity, and header format. 20 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-4
 date: 2025-03-16T02:19:56Z
 ---

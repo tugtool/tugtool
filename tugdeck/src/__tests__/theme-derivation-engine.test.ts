@@ -24,6 +24,7 @@ import {
   EXAMPLE_RECIPES,
   DARK_PRESET,
   LIGHT_PRESET,
+  generateResolvedCssExport,
   type ModePreset,
 } from "@/components/tugways/theme-derivation-engine";
 
@@ -1237,5 +1238,92 @@ describe("derivation-engine mode-preset", () => {
         expect(delta).toBeLessThan(0.02);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-RESOLVED-CSS: generateResolvedCssExport() produces valid resolved oklch() CSS
+// ---------------------------------------------------------------------------
+
+describe("derivation-engine generateResolvedCssExport", () => {
+  it("T-RESOLVED-CSS-1: produces valid CSS with oklch() values for all resolved tokens", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const css = generateResolvedCssExport(output, EXAMPLE_RECIPES.brio);
+
+    // Must be a non-empty string
+    expect(typeof css).toBe("string");
+    expect(css.length).toBeGreaterThan(0);
+
+    // Must contain a body block
+    expect(css).toContain("body {");
+    expect(css).toContain("}");
+
+    // Every entry in output.resolved must appear as an oklch() value in CSS
+    for (const [name] of Object.entries(output.resolved)) {
+      expect(css).toContain(name);
+    }
+
+    // All values in the body block must use oklch() notation
+    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
+    expect(bodyMatch).not.toBeNull();
+    const bodyContent = bodyMatch![1];
+    const declarations = bodyContent.split("\n").filter((l) => l.trim().startsWith("--"));
+    expect(declarations.length).toBeGreaterThan(0);
+    for (const decl of declarations) {
+      expect(decl).toContain("oklch(");
+    }
+  });
+
+  it("T-RESOLVED-CSS-2: output token names match --tug-base-* pattern", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const css = generateResolvedCssExport(output, EXAMPLE_RECIPES.brio);
+
+    const bodyMatch = css.match(/body \{([\s\S]*?)\}/);
+    expect(bodyMatch).not.toBeNull();
+    const bodyContent = bodyMatch![1];
+    const declarations = bodyContent.split("\n").filter((l) => l.trim().startsWith("--"));
+
+    for (const decl of declarations) {
+      const tokenName = decl.trim().split(":")[0].trim();
+      expect(tokenName.startsWith("--tug-base-")).toBe(true);
+    }
+  });
+
+  it("T-RESOLVED-CSS-3: for Brio recipe, resolved CSS values match deriveTheme resolved map within delta-E < 0.02", () => {
+    // Since generateResolvedCssExport reads directly from output.resolved, the
+    // round-trip delta-E is exactly 0. This test parses the CSS output and
+    // reconstructs OKLCH values to verify the serialization is lossless.
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const css = generateResolvedCssExport(output, EXAMPLE_RECIPES.brio);
+
+    // Parse token values from the CSS output
+    const tokenPattern = /^\s*(--tug-base-[^:]+):\s*oklch\(([^)]+)\)/gm;
+    let match;
+    let checked = 0;
+    while ((match = tokenPattern.exec(css)) !== null) {
+      const name = match[1].trim();
+      const parts = match[2].split(/\s+/);
+      const L = parseFloat(parts[0]);
+      const C = parseFloat(parts[1]);
+      const h = parseFloat(parts[2]);
+
+      const expected = output.resolved[name];
+      expect(expected).not.toBeUndefined();
+      if (expected !== undefined) {
+        const delta = oklchDeltaE({ L, C, h }, expected);
+        expect(delta).toBeLessThan(0.02);
+        checked++;
+      }
+    }
+    // Must have checked a meaningful number of tokens
+    expect(checked).toBeGreaterThan(50);
+  });
+
+  it("T-RESOLVED-CSS-4: header contains @theme-name and @recipe-hash", () => {
+    const output = deriveTheme(EXAMPLE_RECIPES.brio);
+    const css = generateResolvedCssExport(output, EXAMPLE_RECIPES.brio);
+    expect(css).toContain("@theme-name brio");
+    expect(css).toContain("@recipe-hash");
+    expect(css).toContain("resolved oklch() values");
   });
 });
