@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls } from "../../tug-color-parser";
-import type { TugColorParsed, TugColorError } from "../../tug-color-parser";
+import type { TugColorParsed, TugColorError, TugColorWarning } from "../../tug-color-parser";
 import { TUG_COLOR_PRESETS, ADJACENCY_RING } from "@/components/tugways/palette-engine";
 
 // All 48 named hues plus black and white
@@ -968,5 +968,114 @@ describe("tug-color-parser: bare minus without number", () => {
       expect(bareErr!.pos).toBe(5);
       expect(bareErr!.end).toBeGreaterThan(bareErr!.pos);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Soft warnings system (T-WARN-*)
+// ---------------------------------------------------------------------------
+
+/** Assert ok:true and return warnings array (may be undefined = empty). */
+function expectOkWithWarnings(input: string, hues = KNOWN_HUES): TugColorWarning[] {
+  const result = parseTugColor(input, hues, KNOWN_PRESETS, ADJACENCY_RING);
+  if (!result.ok) {
+    throw new Error(
+      `Expected ok parse for '${input}', got errors:\n` +
+      result.errors.map((e) => `  - ${e.message}`).join("\n"),
+    );
+  }
+  return result.warnings ?? [];
+}
+
+describe("tug-color-parser: soft warnings", () => {
+  it("T-WARN-PURE-BLACK: 'red, 0, 0' returns ok:true with warning about pure black", () => {
+    const warns = expectOkWithWarnings("red, 0, 0");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns.some((w) => w.message.includes("pure black"))).toBe(true);
+  });
+
+  it("T-WARN-PURE-WHITE: 'red, 0, 100' returns ok:true with warning about pure white", () => {
+    const warns = expectOkWithWarnings("red, 0, 100");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns.some((w) => w.message.includes("pure white"))).toBe(true);
+  });
+
+  it("T-WARN-BLACK-EXPLICIT-INTENSITY: 'black, 50' warns that intensity is ignored", () => {
+    const warns = expectOkWithWarnings("black, 50");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("black"))).toBe(true);
+  });
+
+  it("T-WARN-WHITE-EXPLICIT-INTENSITY: 'white, 50' warns that intensity is ignored", () => {
+    const warns = expectOkWithWarnings("white, 50");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("white"))).toBe(true);
+  });
+
+  it("T-WARN-GRAY-EXPLICIT-INTENSITY: 'gray, 50' warns that intensity is ignored for gray", () => {
+    const warns = expectOkWithWarnings("gray, 50", KNOWN_HUES_WITH_GRAY);
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("gray"))).toBe(true);
+  });
+
+  it("T-WARN-BLACK-DEFAULT-NO-WARN: 'black' with no explicit intensity produces NO warnings", () => {
+    const warns = expectOkWithWarnings("black");
+    expect(warns.length).toBe(0);
+  });
+
+  it("T-WARN-WHITE-DEFAULT-NO-WARN: 'white' with no explicit intensity produces NO warnings", () => {
+    const warns = expectOkWithWarnings("white");
+    expect(warns.length).toBe(0);
+  });
+
+  it("T-WARN-GRAY-DEFAULT-NO-WARN: 'gray' with no explicit intensity produces NO warnings", () => {
+    const warns = expectOkWithWarnings("gray", KNOWN_HUES_WITH_GRAY);
+    expect(warns.length).toBe(0);
+  });
+
+  it("T-WARN-NO-FALSE-POSITIVE: 'red, 50, 50' returns ok:true with no warnings", () => {
+    const warns = expectOkWithWarnings("red, 50, 50");
+    expect(warns.length).toBe(0);
+  });
+
+  it("T-WARN-FIELD-SHAPE: warning objects have message, pos, and end fields", () => {
+    const warns = expectOkWithWarnings("red, 0, 0");
+    expect(warns.length).toBeGreaterThan(0);
+    for (const w of warns) {
+      expect(w).toHaveProperty("message");
+      expect(w).toHaveProperty("pos");
+      expect(w).toHaveProperty("end");
+      expect(typeof w.message).toBe("string");
+      expect(typeof w.pos).toBe("number");
+      expect(typeof w.end).toBe("number");
+      expect(w.end).toBeGreaterThanOrEqual(w.pos);
+    }
+  });
+
+  it("warnings span the full input (pos=0, end=input.length)", () => {
+    const input = "red, 0, 0";
+    const result = parseTugColor(input, KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.warnings) {
+      for (const w of result.warnings) {
+        expect(w.pos).toBe(0);
+        expect(w.end).toBe(input.length);
+      }
+    }
+  });
+
+  it("no warnings field when parse is clean (ok:true, no suspicious values)", () => {
+    const result = parseTugColor("red, 50, 50", KNOWN_HUES, KNOWN_PRESETS, ADJACENCY_RING);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toBeUndefined();
+    }
+  });
+
+  it("achromatic intensity=0 on black does NOT warn about pure black (C is already 0)", () => {
+    // black with explicit intensity=0: no intensity-ignored warning because intensity=0 is not > 0
+    const warns = expectOkWithWarnings("black, 0");
+    // intensity=0 is not > 0, so no achromatic warning
+    expect(warns.every((w) => !w.message.includes("intensity is ignored"))).toBe(true);
   });
 });

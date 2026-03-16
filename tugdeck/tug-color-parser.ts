@@ -27,8 +27,12 @@
  * Positional order: color, intensity, tone, alpha
  * Positional args must precede labeled args.
  *
- * TugColorError carries both pos (start) and end (exclusive end) for source spans,
- * enabling precise error underlining in IDE integrations and build output.
+ * TugColorError and TugColorWarning both carry pos (start) and end (exclusive end)
+ * for source spans, enabling precise underlining in IDE integrations and build output.
+ *
+ * Soft warnings: a successful parse (ok: true) may include an optional warnings array
+ * for suspicious-but-valid value combinations (e.g. intensity=0 + tone=0 producing pure
+ * black, or intensity provided for an achromatic keyword that ignores it).
  *
  * @module tug-color-parser
  */
@@ -56,8 +60,14 @@ export interface TugColorError {
   end: number;
 }
 
+export interface TugColorWarning {
+  message: string;
+  pos: number;
+  end: number;
+}
+
 export type ParseResult =
-  | { ok: true; value: TugColorParsed }
+  | { ok: true; value: TugColorParsed; warnings?: TugColorWarning[] }
   | { ok: false; errors: TugColorError[] };
 
 /** A --tug-color() call found within a larger CSS value string. */
@@ -653,15 +663,49 @@ export function parseTugColor(
     }
   }
 
-  return {
-    ok: true,
-    value: {
-      color: color!,
-      intensity: intensity ?? defaultIntensity,
-      tone: tone ?? defaultTone,
-      alpha: alpha ?? DEFAULTS.alpha,
-    },
+  const resolvedIntensity = intensity ?? defaultIntensity;
+  const resolvedTone = tone ?? defaultTone;
+  const resolvedAlpha = alpha ?? DEFAULTS.alpha;
+  const resolvedColor = color!;
+
+  // Soft warnings — checked against final resolved values (Spec S04).
+  // All warning spans cover the full input (pos=0, end=input.length) because
+  // they concern the combined effect of multiple arguments, not a single token.
+  const warnings: TugColorWarning[] = [];
+  const fullSpan = { pos: 0, end: input.length };
+  const colorName = resolvedColor.name;
+  const isAchromatic = colorName === "black" || colorName === "white" || colorName === "gray";
+
+  if (!isAchromatic) {
+    if (resolvedIntensity === 0 && resolvedTone === 0) {
+      warnings.push({ message: "intensity=0 and tone=0 produce pure black; did you mean to use 'black'?", ...fullSpan });
+    } else if (resolvedIntensity === 0 && resolvedTone === 100) {
+      warnings.push({ message: "intensity=0 and tone=100 produce pure white; did you mean to use 'white'?", ...fullSpan });
+    }
+  }
+
+  // Achromatic intensity warnings fire only when intensity was explicitly provided.
+  if (attempted.has("intensity") && resolvedIntensity > 0) {
+    if (colorName === "black") {
+      warnings.push({ message: "intensity is ignored for 'black' (always oklch(0 0 0))", ...fullSpan });
+    } else if (colorName === "white") {
+      warnings.push({ message: "intensity is ignored for 'white' (always oklch(1 0 0))", ...fullSpan });
+    } else if (colorName === "gray") {
+      warnings.push({ message: "intensity is ignored for 'gray' (always C=0)", ...fullSpan });
+    }
+  }
+
+  const parsed: TugColorParsed = {
+    color: resolvedColor,
+    intensity: resolvedIntensity,
+    tone: resolvedTone,
+    alpha: resolvedAlpha,
   };
+
+  if (warnings.length > 0) {
+    return { ok: true, value: parsed, warnings };
+  }
+  return { ok: true, value: parsed };
 }
 
 // ---------------------------------------------------------------------------

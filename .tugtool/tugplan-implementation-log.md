@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-16T00:11:10Z
+---
+
+## step-6: Added TugColorWarning interface and optional warnings on ParseResult ok:true. Five suspicious-value conditions per Spec S04 with explicit-vs-default distinction. PostCSS logs warnings. 13 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-5
 date: 2025-03-16T00:04:30Z
 ---

@@ -247,6 +247,12 @@ export default function postcssTugColor(): Plugin {
           continue;
         }
 
+        if (parseResult.warnings) {
+          for (const warn of parseResult.warnings) {
+            console.warn(`postcss-tug-color: ${warn.message} in: --tug-color(${call.inner})`);
+          }
+        }
+
         const { color, intensity, tone, alpha } = parseResult.value;
         const expanded = expandTugColor(color, intensity, tone, alpha);
         result = result.slice(0, call.start) + expanded + result.slice(call.end);
