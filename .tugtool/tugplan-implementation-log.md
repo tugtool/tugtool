@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-10
+date: 2025-03-16T00:39:09Z
+---
+
+## step-10: Added TugAchromaticStrip to palette gallery with black, 5 gray tones (t=0/25/50/75/100), and white. Renders above hue strip. 2 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-9
 date: 2025-03-16T00:30:44Z
 ---
