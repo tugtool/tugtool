@@ -27,6 +27,13 @@
  * Positional order: color, intensity, tone, alpha
  * Positional args must precede labeled args.
  *
+ * TugColorError and TugColorWarning both carry pos (start) and end (exclusive end)
+ * for source spans, enabling precise underlining in IDE integrations and build output.
+ *
+ * Soft warnings: a successful parse (ok: true) may include an optional warnings array
+ * for suspicious-but-valid value combinations (e.g. intensity=0 + tone=0 producing pure
+ * black, or intensity provided for an achromatic keyword that ignores it).
+ *
  * @module tug-color-parser
  */
 
@@ -50,10 +57,17 @@ export interface TugColorParsed {
 export interface TugColorError {
   message: string;
   pos: number;
+  end: number;
+}
+
+export interface TugColorWarning {
+  message: string;
+  pos: number;
+  end: number;
 }
 
 export type ParseResult =
-  | { ok: true; value: TugColorParsed }
+  | { ok: true; value: TugColorParsed; warnings?: TugColorWarning[] }
   | { ok: false; errors: TugColorError[] };
 
 /** A --tug-color() call found within a larger CSS value string. */
@@ -66,6 +80,12 @@ export interface TugColorCallSpan {
   inner: string;
 }
 
+/** Result of findTugColorCallsWithWarnings — calls plus any unmatched-paren warnings. */
+export interface FindCallsResult {
+  calls: TugColorCallSpan[];
+  warnings: TugColorWarning[];
+}
+
 // ---------------------------------------------------------------------------
 // Tokens
 // ---------------------------------------------------------------------------
@@ -76,21 +96,41 @@ interface Token {
   type: TokenType;
   value: string;
   pos: number;
+  end: number;
 }
 
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-function tokenize(input: string): Token[] | TugColorError {
+/** Return true if ch is a valid ident character (a-z or A-Z). */
+function isIdentChar(ch: string): boolean {
+  return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z");
+}
+
+/** Result from tokenize() — tokens produced and any errors encountered during scanning. */
+interface TokenizeResult {
+  tokens: Token[];
+  errors: TugColorError[];
+}
+
+/**
+ * Tokenize the input string.
+ *
+ * Error recovery: unrecognized characters (including `+`) are recorded as errors and
+ * skipped; tokenization continues from the next position rather than aborting. This
+ * allows the parser to report all problems in a single pass.
+ */
+function tokenize(input: string): TokenizeResult {
   const tokens: Token[] = [];
+  const errors: TugColorError[] = [];
   let i = 0;
 
   while (i < input.length) {
     const ch = input[i];
 
-    // Skip whitespace
-    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+    // Skip whitespace (space, tab, newline, carriage return, NBSP U+00A0)
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\u00A0") {
       i++;
       continue;
     }
@@ -98,22 +138,72 @@ function tokenize(input: string): Token[] | TugColorError {
     const pos = i;
 
     if (ch === ",") {
-      tokens.push({ type: "comma", value: ch, pos });
+      tokens.push({ type: "comma", value: ch, pos, end: pos + 1 });
       i++;
     } else if (ch === ":") {
-      tokens.push({ type: "colon", value: ch, pos });
+      tokens.push({ type: "colon", value: ch, pos, end: pos + 1 });
       i++;
     } else if (ch === "+") {
-      // Plus is no longer valid syntax — offset syntax removed
-      return { message: `Unexpected character '+'; hue offsets have been replaced by hyphenated adjacency syntax (e.g. 'cobalt-indigo')`, pos };
-    } else if (ch === "-") {
-      tokens.push({ type: "minus", value: ch, pos });
+      // Plus is no longer valid syntax — offset syntax removed. Record error and skip.
+      errors.push({ message: `Unexpected character '+'; hue offsets have been replaced by hyphenated adjacency syntax (e.g. 'cobalt-indigo')`, pos, end: pos + 1 });
       i++;
-    } else if (ch >= "a" && ch <= "z") {
-      let end = i + 1;
-      while (end < input.length && input[end] >= "a" && input[end] <= "z") end++;
-      tokens.push({ type: "ident", value: input.slice(i, end), pos });
-      i = end;
+    } else if (ch === "-") {
+      tokens.push({ type: "minus", value: ch, pos, end: pos + 1 });
+      i++;
+    } else if (isIdentChar(ch) || ch === "\\") {
+      // Ident scanning: handles a-z, A-Z (normalized to lowercase), and CSS hex escapes (\41 etc.)
+      let identValue = "";
+      const identStart = i;
+
+      while (i < input.length) {
+        const c = input[i];
+
+        if (isIdentChar(c)) {
+          // Normalize uppercase to lowercase
+          identValue += c.toLowerCase();
+          i++;
+        } else if (c === "\\") {
+          // CSS hex escape: backslash followed by 1–6 hex digits
+          const escStart = i;
+          i++; // consume backslash
+          let hexStr = "";
+          while (hexStr.length < 6 && i < input.length) {
+            const h = input[i];
+            if ((h >= "0" && h <= "9") || (h >= "a" && h <= "f") || (h >= "A" && h <= "F")) {
+              hexStr += h;
+              i++;
+            } else {
+              break;
+            }
+          }
+          if (hexStr.length === 0) {
+            // Backslash not followed by hex digits — record error, skip backslash, end ident
+            errors.push({ message: `Unexpected character '\\'`, pos: escStart, end: escStart + 1 });
+            break;
+          }
+          // Optionally consume a single trailing space (per CSS spec)
+          if (i < input.length && (input[i] === " " || input[i] === "\t")) {
+            i++;
+          }
+          const codePoint = parseInt(hexStr, 16);
+          const decoded = String.fromCodePoint(codePoint);
+          // If decoded char is a letter, normalize to lowercase and add to ident
+          if (isIdentChar(decoded)) {
+            identValue += decoded.toLowerCase();
+          } else if (decoded === " " || decoded === "\t") {
+            // Decoded whitespace ends the ident — stop scanning
+            break;
+          } else {
+            // Non-ident decoded character — end ident here, leave i pointing past escape
+            break;
+          }
+        } else {
+          // Not an ident char or backslash — end of ident
+          break;
+        }
+      }
+
+      tokens.push({ type: "ident", value: identValue, pos: identStart, end: i });
     } else if ((ch >= "0" && ch <= "9") || ch === ".") {
       let end = i + 1;
       let hasDot = ch === ".";
@@ -128,14 +218,16 @@ function tokenize(input: string): Token[] | TugColorError {
           break;
         }
       }
-      tokens.push({ type: "number", value: input.slice(i, end), pos });
+      tokens.push({ type: "number", value: input.slice(i, end), pos, end });
       i = end;
     } else {
-      return { message: `Unexpected character '${ch}'`, pos };
+      // Unrecognized character — record error, skip, and continue
+      errors.push({ message: `Unexpected character '${ch}'`, pos, end: pos + 1 });
+      i++;
     }
   }
 
-  return tokens;
+  return { tokens, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +306,7 @@ function parseColorTokens(
   adjacencyRing?: readonly string[],
 ): TugColorValue | null {
   if (tokens.length === 0) {
-    errors.push({ message: "Expected a color name", pos: 0 });
+    errors.push({ message: "Expected a color name", pos: 0, end: 0 });
     return null;
   }
 
@@ -222,6 +314,7 @@ function parseColorTokens(
     errors.push({
       message: `Expected a color name, got '${tokens[0].value}'`,
       pos: tokens[0].pos,
+      end: tokens[0].end,
     });
     return null;
   }
@@ -229,7 +322,7 @@ function parseColorTokens(
   const name = tokens[0].value;
 
   if (!knownHues.has(name)) {
-    errors.push({ message: `Unknown color '${name}'`, pos: tokens[0].pos });
+    errors.push({ message: `Unknown color '${name}'`, pos: tokens[0].pos, end: tokens[0].end });
     return null;
   }
 
@@ -243,15 +336,18 @@ function parseColorTokens(
     errors.push({
       message: `Invalid color syntax after '${name}'`,
       pos: tokens[1].pos,
+      end: tokens[1].end,
     });
     return null;
   }
 
   // Need a third token (the ident after the minus)
   if (tokens.length < 3 || tokens[2].type !== "ident") {
+    const errTok = tokens.length < 3 ? tokens[1] : tokens[2];
     errors.push({
       message: `Expected a color or preset name after '${name}-'`,
-      pos: tokens.length < 3 ? tokens[1].pos : tokens[2].pos,
+      pos: errTok.pos,
+      end: errTok.end,
     });
     return null;
   }
@@ -265,6 +361,7 @@ function parseColorTokens(
       errors.push({
         message: `Unknown preset '${secondIdent}' for color '${name}'`,
         pos: tokens[2].pos,
+        end: tokens[2].end,
       });
       return null;
     }
@@ -273,6 +370,7 @@ function parseColorTokens(
       errors.push({
         message: `Unexpected token after preset '${secondIdent}'`,
         pos: tokens[3].pos,
+        end: tokens[3].end,
       });
       return null;
     }
@@ -284,6 +382,7 @@ function parseColorTokens(
     errors.push({
       message: `Unknown color '${secondIdent}'`,
       pos: tokens[2].pos,
+      end: tokens[2].end,
     });
     return null;
   }
@@ -297,6 +396,7 @@ function parseColorTokens(
       errors.push({
         message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
         pos: tokens[2].pos,
+        end: tokens[2].end,
       });
       return null;
     }
@@ -306,6 +406,7 @@ function parseColorTokens(
       errors.push({
         message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
         pos: tokens[2].pos,
+        end: tokens[2].end,
       });
       return null;
     }
@@ -322,6 +423,7 @@ function parseColorTokens(
     errors.push({
       message: `Expected '-preset' or end of color after '${name}-${secondIdent}'`,
       pos: tokens[3].pos,
+      end: tokens[3].end,
     });
     return null;
   }
@@ -333,6 +435,7 @@ function parseColorTokens(
     errors.push({
       message: `Expected a preset name after '${name}-${secondIdent}-', got '${thirdIdent}'`,
       pos: tokens[4].pos,
+      end: tokens[4].end,
     });
     return null;
   }
@@ -342,6 +445,7 @@ function parseColorTokens(
     errors.push({
       message: `Unknown preset '${thirdIdent}' for color '${name}-${secondIdent}'`,
       pos: tokens[4].pos,
+      end: tokens[4].end,
     });
     return null;
   }
@@ -351,6 +455,7 @@ function parseColorTokens(
     errors.push({
       message: `Unexpected token after '${name}-${secondIdent}-${thirdIdent}'`,
       pos: tokens[5].pos,
+      end: tokens[5].end,
     });
     return null;
   }
@@ -369,12 +474,12 @@ function parseNumericTokens(
   errors: TugColorError[],
 ): number | null {
   if (tokens.length === 0) {
-    errors.push({ message: `Expected a number for ${slotName}`, pos: 0 });
+    errors.push({ message: `Expected a number for ${slotName}`, pos: 0, end: 0 });
     return null;
   }
 
   let value: number;
-  const anchorPos = tokens[0].pos;
+  const anchorTok = tokens[0];
 
   if (tokens.length === 1 && tokens[0].type === "number") {
     value = parseFloat(tokens[0].value);
@@ -384,25 +489,71 @@ function parseNumericTokens(
     tokens[1].type === "number"
   ) {
     value = -parseFloat(tokens[1].value);
+  } else if (
+    tokens[0].type === "minus" &&
+    (tokens.length === 1 || tokens[1].type !== "number")
+  ) {
+    // Bare minus without a following number — slot-specific error
+    const spanEnd = tokens.length > 1 ? tokens[1].end : tokens[0].end;
+    errors.push({
+      message: `Bare '-' without a number for ${slotName}`,
+      pos: anchorTok.pos,
+      end: spanEnd,
+    });
+    return null;
   } else {
     const raw = tokens.map((t) => t.value).join("");
+    const spanEnd = tokens[tokens.length - 1].end;
     errors.push({
       message: `Invalid value '${raw}' for ${slotName}; expected a number`,
-      pos: anchorPos,
+      pos: anchorTok.pos,
+      end: spanEnd,
     });
     return null;
   }
 
   if (value < 0 || value > 100) {
+    // Span covers from anchor token to end of last token consumed
+    const lastTok = tokens.length === 2 ? tokens[1] : tokens[0];
     errors.push({
       message: `Value ${value} is out of range for ${slotName} (0–100)`,
-      pos: anchorPos,
+      pos: anchorTok.pos,
+      end: lastTok.end,
     });
     return null;
   }
 
   return value;
 }
+
+// ---------------------------------------------------------------------------
+// Slot dispatch table (Spec S07)
+// ---------------------------------------------------------------------------
+
+/**
+ * A SlotParser receives the tokens for one argument group, pushes any errors into
+ * the shared errors array, and returns the parsed value (TugColorValue, number, or null).
+ * The extra parameters (knownHues, knownPresets, adjacencyRing) are forwarded only by
+ * the color slot; numeric slots ignore them.
+ */
+type SlotParser = (
+  tokens: Token[],
+  errors: TugColorError[],
+  knownHues: ReadonlySet<string>,
+  knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
+  adjacencyRing?: readonly string[],
+) => TugColorValue | number | null;
+
+const SLOT_DISPATCH: Record<string, SlotParser> = {
+  color: (tokens, errors, knownHues, knownPresets, adjacencyRing) =>
+    parseColorTokens(tokens, knownHues, errors, knownPresets, adjacencyRing),
+  intensity: (tokens, errors) =>
+    parseNumericTokens(tokens, "intensity", errors),
+  tone: (tokens, errors) =>
+    parseNumericTokens(tokens, "tone", errors),
+  alpha: (tokens, errors) =>
+    parseNumericTokens(tokens, "alpha", errors),
+};
 
 // ---------------------------------------------------------------------------
 // Main parser
@@ -413,7 +564,7 @@ function parseNumericTokens(
  *
  * @param input  The text between the parentheses (not including them).
  * @param knownHues  Set of valid color names (e.g. "red", "cobalt", "indigo").
- *   Should include all 48 named hues plus "black" and "white".
+ *   Should include all 48 named hues plus "black", "white", and optionally "gray".
  * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
  *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(cobalt-indigo-muted, a: 50).
  *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
@@ -427,17 +578,20 @@ export function parseTugColor(
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
   adjacencyRing?: readonly string[],
 ): ParseResult {
-  const tokenResult = tokenize(input);
-  if (!Array.isArray(tokenResult)) {
-    return { ok: false, errors: [tokenResult] };
+  const { tokens, errors: tokErrors } = tokenize(input);
+
+  // Merge tokenizer errors into the parser error array before argument parsing.
+  // Tokenization continues past bad characters, so we proceed with whatever tokens
+  // were produced even when there were tokenizer errors.
+  const errors: TugColorError[] = [...tokErrors];
+
+  if (tokens.length === 0 && errors.length === 0) {
+    return { ok: false, errors: [{ message: "Empty --tug-color() call", pos: 0, end: 0 }] };
   }
 
-  if (tokenResult.length === 0) {
-    return { ok: false, errors: [{ message: "Empty --tug-color() call", pos: 0 }] };
-  }
-
-  const argGroups = splitArgs(tokenResult);
-  const errors: TugColorError[] = [];
+  // If the tokenizer found only errors and no tokens, we still fall through to
+  // the "missing color" check below, which will add the appropriate error.
+  const argGroups = splitArgs(tokens);
 
   // Parsed values — undefined means not yet assigned
   let color: TugColorValue | undefined;
@@ -454,7 +608,7 @@ export function parseTugColor(
 
   for (const group of argGroups) {
     if (group.length === 0) {
-      errors.push({ message: "Empty argument (extra comma?)", pos: 0 });
+      errors.push({ message: "Empty argument (extra comma?)", pos: 0, end: 0 });
       continue;
     }
 
@@ -473,6 +627,7 @@ export function parseTugColor(
         errors.push({
           message: `Unknown label '${rawLabel}'; expected ${VALID_LABELS}`,
           pos: group[0].pos,
+          end: group[0].end,
         });
         continue;
       }
@@ -481,6 +636,7 @@ export function parseTugColor(
         errors.push({
           message: `Duplicate value for ${slot}`,
           pos: group[0].pos,
+          end: group[0].end,
         });
         continue;
       }
@@ -488,25 +644,18 @@ export function parseTugColor(
       attempted.add(slot);
       const valueToks = group.slice(2);
 
-      if (slot === "color") {
-        const c = parseColorTokens(valueToks, knownHues, errors, knownPresets, adjacencyRing);
-        if (c) color = c;
-      } else if (slot === "intensity") {
-        const n = parseNumericTokens(valueToks, "intensity", errors);
-        if (n !== null) intensity = n;
-      } else if (slot === "tone") {
-        const n = parseNumericTokens(valueToks, "tone", errors);
-        if (n !== null) tone = n;
-      } else {
-        const n = parseNumericTokens(valueToks, "alpha", errors);
-        if (n !== null) alpha = n;
-      }
+      const labeledResult = SLOT_DISPATCH[slot](valueToks, errors, knownHues, knownPresets, adjacencyRing);
+      if (slot === "color") { if (labeledResult !== null) color = labeledResult as TugColorValue; }
+      else if (slot === "intensity") { if (labeledResult !== null) intensity = labeledResult as number; }
+      else if (slot === "tone") { if (labeledResult !== null) tone = labeledResult as number; }
+      else { if (labeledResult !== null) alpha = labeledResult as number; }
     } else {
       // Positional argument
       if (seenLabeled) {
         errors.push({
           message: "Positional argument after labeled argument",
           pos: group[0].pos,
+          end: group[group.length - 1].end,
         });
         continue;
       }
@@ -516,25 +665,18 @@ export function parseTugColor(
         errors.push({
           message: "Too many arguments; expected at most 4 (color, intensity, tone, alpha)",
           pos: group[0].pos,
+          end: group[group.length - 1].end,
         });
         continue;
       }
 
       attempted.add(slot);
 
-      if (slot === "color") {
-        const c = parseColorTokens(group, knownHues, errors, knownPresets, adjacencyRing);
-        if (c) color = c;
-      } else if (slot === "intensity") {
-        const n = parseNumericTokens(group, "intensity", errors);
-        if (n !== null) intensity = n;
-      } else if (slot === "tone") {
-        const n = parseNumericTokens(group, "tone", errors);
-        if (n !== null) tone = n;
-      } else {
-        const n = parseNumericTokens(group, "alpha", errors);
-        if (n !== null) alpha = n;
-      }
+      const positionalResult = SLOT_DISPATCH[slot](group, errors, knownHues, knownPresets, adjacencyRing);
+      if (slot === "color") { if (positionalResult !== null) color = positionalResult as TugColorValue; }
+      else if (slot === "intensity") { if (positionalResult !== null) intensity = positionalResult as number; }
+      else if (slot === "tone") { if (positionalResult !== null) tone = positionalResult as number; }
+      else { if (positionalResult !== null) alpha = positionalResult as number; }
 
       positionalIndex++;
     }
@@ -542,7 +684,7 @@ export function parseTugColor(
 
   // Color is required — add a missing error only if it wasn't attempted at all
   if (!attempted.has("color")) {
-    errors.push({ message: "Missing required color argument", pos: 0 });
+    errors.push({ message: "Missing required color argument", pos: 0, end: 0 });
   }
 
   if (errors.length > 0) {
@@ -561,15 +703,49 @@ export function parseTugColor(
     }
   }
 
-  return {
-    ok: true,
-    value: {
-      color: color!,
-      intensity: intensity ?? defaultIntensity,
-      tone: tone ?? defaultTone,
-      alpha: alpha ?? DEFAULTS.alpha,
-    },
+  const resolvedIntensity = intensity ?? defaultIntensity;
+  const resolvedTone = tone ?? defaultTone;
+  const resolvedAlpha = alpha ?? DEFAULTS.alpha;
+  const resolvedColor = color!;
+
+  // Soft warnings — checked against final resolved values (Spec S04).
+  // All warning spans cover the full input (pos=0, end=input.length) because
+  // they concern the combined effect of multiple arguments, not a single token.
+  const warnings: TugColorWarning[] = [];
+  const fullSpan = { pos: 0, end: input.length };
+  const colorName = resolvedColor.name;
+  const isAchromatic = colorName === "black" || colorName === "white" || colorName === "gray";
+
+  if (!isAchromatic) {
+    if (resolvedIntensity === 0 && resolvedTone === 0) {
+      warnings.push({ message: "intensity=0 and tone=0 produce pure black; did you mean to use 'black'?", ...fullSpan });
+    } else if (resolvedIntensity === 0 && resolvedTone === 100) {
+      warnings.push({ message: "intensity=0 and tone=100 produce pure white; did you mean to use 'white'?", ...fullSpan });
+    }
+  }
+
+  // Achromatic intensity warnings fire only when intensity was explicitly provided.
+  if (attempted.has("intensity") && resolvedIntensity > 0) {
+    if (colorName === "black") {
+      warnings.push({ message: "intensity is ignored for 'black' (always oklch(0 0 0))", ...fullSpan });
+    } else if (colorName === "white") {
+      warnings.push({ message: "intensity is ignored for 'white' (always oklch(1 0 0))", ...fullSpan });
+    } else if (colorName === "gray") {
+      warnings.push({ message: "intensity is ignored for 'gray' (always C=0)", ...fullSpan });
+    }
+  }
+
+  const parsed: TugColorParsed = {
+    color: resolvedColor,
+    intensity: resolvedIntensity,
+    tone: resolvedTone,
+    alpha: resolvedAlpha,
   };
+
+  if (warnings.length > 0) {
+    return { ok: true, value: parsed, warnings };
+  }
+  return { ok: true, value: parsed };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,11 +755,18 @@ export function parseTugColor(
 const TUG_COLOR_MARKER = "--tug-color(";
 
 /**
- * Find all --tug-color() calls in a CSS value string.
+ * Find all --tug-color() calls in a CSS value string, returning both the matched
+ * calls and warnings for any unmatched parentheses.
+ *
+ * When a `--tug-color(` opener is found but the closing `)` is never reached
+ * (depth stays > 0 after scanning to end of input), a TugColorWarning is emitted
+ * with pos=start of the opener and end=cssValue.length.
+ *
  * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
  */
-export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
+export function findTugColorCallsWithWarnings(cssValue: string): FindCallsResult {
   const calls: TugColorCallSpan[] = [];
+  const warnings: TugColorWarning[] = [];
   let searchFrom = 0;
 
   while (searchFrom < cssValue.length) {
@@ -601,7 +784,12 @@ export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
     }
 
     if (depth !== 0) {
-      // Unmatched parenthesis — skip this occurrence
+      // Unmatched parenthesis — emit a warning and skip this occurrence
+      warnings.push({
+        message: "Unmatched parenthesis in --tug-color() call",
+        pos: start,
+        end: cssValue.length,
+      });
       searchFrom = innerStart;
       continue;
     }
@@ -614,5 +802,16 @@ export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
     searchFrom = i;
   }
 
-  return calls;
+  return { calls, warnings };
+}
+
+/**
+ * Find all --tug-color() calls in a CSS value string.
+ * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
+ *
+ * For backward compatibility this function returns only the call spans. Use
+ * findTugColorCallsWithWarnings to also receive warnings about unmatched parens.
+ */
+export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
+  return findTugColorCallsWithWarnings(cssValue).calls;
 }

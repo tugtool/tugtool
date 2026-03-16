@@ -323,6 +323,70 @@ describe("postcss-tug-color: black and white", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Gray pseudo-hue (T-GRAY-TONE, T-GRAY-TONE-100, T-GRAY-INTENSITY-IGNORED, T-GRAY-ALPHA)
+// ---------------------------------------------------------------------------
+
+describe("postcss-tug-color: gray pseudo-hue", () => {
+  it("T-GRAY-TONE: --tug-color(gray, t: 0) → oklch(0.15 0 0) (L_DARK)", () => {
+    const result = processDecl("color", "--tug-color(gray, t: 0)");
+    expect(result).toBe("oklch(0.15 0 0)");
+  });
+
+  it("--tug-color(gray) → oklch(0.5 0 0) (tone=50, canonical L=0.5)", () => {
+    const result = processDecl("color", "--tug-color(gray)");
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.5, 4);
+    expect(parsed!.C).toBe(0);
+  });
+
+  it("T-GRAY-TONE-100: --tug-color(gray, t: 100) → oklch(0.96 0 0) (L_LIGHT)", () => {
+    const result = processDecl("color", "--tug-color(gray, t: 100)");
+    expect(result).toBe("oklch(0.96 0 0)");
+  });
+
+  it("T-GRAY-INTENSITY-IGNORED: gray with i:80 and gray with i:20 produce identical output at same tone", () => {
+    const with80 = processDecl("color", "--tug-color(gray, i: 80, t: 50)");
+    const with20 = processDecl("color", "--tug-color(gray, i: 20, t: 50)");
+    expect(with80).toBe(with20);
+    const parsed = parseOklch(with80);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBe(0);
+  });
+
+  it("T-GRAY-INTENSITY-IGNORED: --tug-color(gray, i: 80, t: 50) same as --tug-color(gray, t: 50)", () => {
+    const withIntensity = processDecl("color", "--tug-color(gray, i: 80, t: 50)");
+    const withoutIntensity = processDecl("color", "--tug-color(gray, t: 50)");
+    expect(withIntensity).toBe(withoutIntensity);
+  });
+
+  it("T-GRAY-ALPHA: --tug-color(gray, t: 50, a: 50) produces alpha suffix", () => {
+    const result = processDecl("color", "--tug-color(gray, t: 50, a: 50)");
+    expect(result).toContain("/ 0.5");
+    const parsed = parseOklch(result);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.C).toBe(0);
+    expect(parsed!.alpha).toBeCloseTo(0.5, 4);
+  });
+
+  it("gray C is always 0 regardless of tone", () => {
+    for (const tone of [0, 10, 25, 50, 75, 90, 100]) {
+      const result = processDecl("color", `--tug-color(gray, t: ${tone})`);
+      const parsed = parseOklch(result);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.C).toBe(0);
+    }
+  });
+
+  it("gray L follows the tone formula with canonical L=0.5", () => {
+    const atTone50 = processDecl("color", "--tug-color(gray, t: 50)");
+    const parsed = parseOklch(atTone50);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.L).toBeCloseTo(0.5, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Multiple --tug-color() calls in one declaration
 // ---------------------------------------------------------------------------
 

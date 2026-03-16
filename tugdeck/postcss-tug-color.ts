@@ -8,7 +8,7 @@
  * Syntax:
  *   --tug-color( <color> [, i: <intensity>] [, t: <tone>] [, a: <alpha>] )
  *
- *   <color>     := <hue-name> | <hue-name>-<adjacent-hue> | black | white
+ *   <color>     := <hue-name> | <hue-name>-<adjacent-hue> | black | white | gray
  *                  | <hue-name>-<preset> | <hue-name>-<adjacent-hue>-<preset>
  *   <hue-name>  := one of 48 named hues (garnet, cherry, scarlet, … berry)
  *   <intensity> := <number>   // 0–100 (default 50)
@@ -21,6 +21,7 @@
  * Special achromatic keywords:
  *   black — always expands to oklch(0 0 0), ignoring intensity/tone
  *   white — always expands to oklch(1 0 0), ignoring intensity/tone
+ *   gray  — achromatic pseudo-hue; canonical L=0.5, C=0; tone controls lightness
  *
  * Named hue examples:
  *   --tug-color(blue, i: 5, t: 13)              → oklch(0.3115 0.0143 230)
@@ -54,7 +55,7 @@ import {
   ADJACENCY_RING,
   resolveHyphenatedHue,
 } from "./src/components/tugways/palette-engine";
-import { parseTugColor, findTugColorCalls } from "./tug-color-parser";
+import { parseTugColor, findTugColorCallsWithWarnings } from "./tug-color-parser";
 import type { TugColorValue } from "./tug-color-parser";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,7 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   ...Object.keys(HUE_FAMILIES),
   "black",
   "white",
+  "gray",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -156,6 +158,16 @@ function expandTugColor(
   if (color.name === "white") {
     return `oklch(1 0 0${alphaSuffix})`;
   }
+  // Gray pseudo-hue: achromatic (C=0), canonical L=0.5, participates in tone formula.
+  // Intensity is accepted but silently ignored.
+  if (color.name === "gray") {
+    const GRAY_CANONICAL_L = 0.5;
+    const L =
+      L_DARK +
+      Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK) / 50 +
+      Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L) / 50;
+    return `oklch(${fmt(L)} 0 0${alphaSuffix})`;
+  }
 
   const baseAngle = HUE_FAMILIES[color.name];
   if (baseAngle === undefined) {
@@ -213,7 +225,10 @@ export default function postcssTugColor(): Plugin {
     Declaration(decl) {
       if (!decl.value.includes("--tug-color(")) return;
 
-      const calls = findTugColorCalls(decl.value);
+      const { calls, warnings: scanWarnings } = findTugColorCallsWithWarnings(decl.value);
+      for (const warn of scanWarnings) {
+        console.warn(`postcss-tug-color: ${warn.message}`);
+      }
       if (calls.length === 0) return;
 
       // Process in reverse order to preserve string indices
@@ -233,6 +248,12 @@ export default function postcssTugColor(): Plugin {
             throw decl.error(msg);
           }
           continue;
+        }
+
+        if (parseResult.warnings) {
+          for (const warn of parseResult.warnings) {
+            console.warn(`postcss-tug-color: ${warn.message} in: --tug-color(${call.inner})`);
+          }
         }
 
         const { color, intensity, tone, alpha } = parseResult.value;

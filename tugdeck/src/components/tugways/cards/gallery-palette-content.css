@@ -60,6 +60,46 @@
 /* Canonical color strip is now provided by the shared TugHueStrip component. */
 
 /* ============================================================================
+   Achromatic strip (black / gray tones / white)
+   ========================================================================= */
+
+.gp-achromatic-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.gp-achromatic-swatch {
+  position: relative;
+  width: 52px;
+  height: 40px;
+  border-radius: 3px;
+  border: 1px solid var(--tug-base-border-default, #444);
+  cursor: default;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.gp-achromatic-label {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8px;
+  font-family: var(--tug-base-font-family-mono, monospace);
+  color: rgba(128, 128, 128, 0.9);
+  mix-blend-mode: difference;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================================
    L Curve Editor (SVG)
    ========================================================================= */
 

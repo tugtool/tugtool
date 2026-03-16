@@ -215,6 +215,80 @@ function LCurveEditor({
 // CanonicalStrip is now provided by the shared TugHueStrip component.
 
 // ---------------------------------------------------------------------------
+// TugAchromaticStrip — black / gray (tone variations) / white swatches
+// ---------------------------------------------------------------------------
+
+/** Tone values shown as gray sub-swatches. */
+const GRAY_TONES = [0, 25, 50, 75, 100];
+
+/**
+ * Compute the oklch() string for gray at a given tone, using the same
+ * piecewise tone formula as the PostCSS plugin (canonical L=0.5).
+ */
+function grayOklch(tone: number): string {
+  const canonicalL = 0.5;
+  const L =
+    L_DARK +
+    Math.min(tone, 50) * (canonicalL - L_DARK) / 50 +
+    Math.max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50;
+  const Lstr = parseFloat(L.toFixed(4)).toString();
+  return `oklch(${Lstr} 0 0)`;
+}
+
+/**
+ * Achromatic strip: renders black, gray tone variations, and white swatches
+ * in a single inline row, visually separated from the 48-hue TugHueStrip.
+ */
+export function TugAchromaticStrip() {
+  return (
+    <div className="gp-achromatic-strip" data-testid="tug-achromatic-strip">
+      {/* Black swatch */}
+      <div
+        className="gp-achromatic-swatch gp-achromatic-swatch--black"
+        style={{ backgroundColor: "oklch(0 0 0)" }}
+        title="black: oklch(0 0 0)"
+        data-testid="gp-achromatic-swatch"
+        data-color="oklch(0 0 0)"
+        data-name="black"
+      >
+        <span className="gp-achromatic-label">black</span>
+      </div>
+
+      {/* Gray tone variations */}
+      {GRAY_TONES.map((tone) => {
+        const color = grayOklch(tone);
+        return (
+          <div
+            key={tone}
+            className="gp-achromatic-swatch gp-achromatic-swatch--gray"
+            style={{ backgroundColor: color }}
+            title={`gray t:${tone} — ${color}`}
+            data-testid="gp-achromatic-swatch"
+            data-color={color}
+            data-name="gray"
+            data-tone={tone}
+          >
+            <span className="gp-achromatic-label">gray {tone}</span>
+          </div>
+        );
+      })}
+
+      {/* White swatch */}
+      <div
+        className="gp-achromatic-swatch gp-achromatic-swatch--white"
+        style={{ backgroundColor: "oklch(1 0 0)" }}
+        title="white: oklch(1 0 0)"
+        data-testid="gp-achromatic-swatch"
+        data-color="oklch(1 0 0)"
+        data-name="white"
+      >
+        <span className="gp-achromatic-label">white</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // IntensityToneGrid — 2D grid of intensity x tone for a single hue
 // ---------------------------------------------------------------------------
 
@@ -623,6 +697,12 @@ export function GalleryPaletteContent() {
             {importError}
           </div>
         )}
+      </div>
+
+      {/* Achromatic strip: black / gray / white */}
+      <div className="cg-section">
+        <div className="cg-section-title">Achromatic</div>
+        <TugAchromaticStrip />
       </div>
 
       {/* Canonical color strip */}

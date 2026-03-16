@@ -412,6 +412,38 @@ describe("round-trip: buildExportPayload -> parseImportPayload", () => {
 });
 
 // ---------------------------------------------------------------------------
+// TugAchromaticStrip — T-ACHROMATIC-RENDER, T-ACHROMATIC-THREE
+// ---------------------------------------------------------------------------
+
+describe("GalleryPaletteContent – achromatic strip", () => {
+  afterEach(() => { cleanup(); });
+
+  it("T-ACHROMATIC-RENDER: renders the achromatic strip container", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const strip = container.querySelector("[data-testid='tug-achromatic-strip']");
+    expect(strip).not.toBeNull();
+  });
+
+  it("T-ACHROMATIC-THREE: achromatic strip contains black, gray, and white swatches", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryPaletteContent />));
+    });
+    const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
+    expect(strip).not.toBeNull();
+    const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
+    // Must include at least one swatch for each of the three primary achromaticss
+    const names = Array.from(swatches).map((s) => s.getAttribute("data-name"));
+    expect(names).toContain("black");
+    expect(names).toContain("gray");
+    expect(names).toContain("white");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Export/import UI elements
 // ---------------------------------------------------------------------------
 
