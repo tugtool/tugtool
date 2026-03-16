@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-16T15:44:00Z
+---
+
+## step-3: Updated PostCSS plugin: added named grays and transparent to KNOWN_HUES, imported palette-engine symbols, restructured expandTugColor() with 6-tier ordering (achromatic adjacency first), added transparent expansion, named gray fixed-L expansion, achromatic adjacency blending. Added preset warning for achromatic adjacency. 24 new tests, 76 postcss tests pass, 1790 total.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-2
 date: 2025-03-16T15:34:33Z
 ---

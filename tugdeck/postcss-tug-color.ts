@@ -19,15 +19,25 @@
  * Positional arguments (color, intensity, tone, alpha) are also supported.
  *
  * Special achromatic keywords:
- *   black — always expands to oklch(0 0 0), ignoring intensity/tone
- *   white — always expands to oklch(1 0 0), ignoring intensity/tone
- *   gray  — achromatic pseudo-hue; canonical L=0.5, C=0; tone controls lightness
+ *   black       — always expands to oklch(0 0 0), ignoring intensity/tone
+ *   white       — always expands to oklch(1 0 0), ignoring intensity/tone
+ *   gray        — achromatic pseudo-hue; canonical L=0.5, C=0; tone controls lightness
+ *   paper…pitch — 9 named grays with fixed L values (see NAMED_GRAYS); ignore i/t, honor alpha
+ *   transparent — always expands to oklch(0 0 0 / 0), ignoring all args
+ *
+ * Achromatic adjacency:
+ *   Consecutive pairs in the linear sequence [black, paper, …, pitch, white] may be
+ *   hyphenated as A-B, resolving to (2/3)*L(A) + (1/3)*L(B).
+ *   e.g. --tug-color(paper-linen) → oklch(0.2433 0 0)
  *
  * Named hue examples:
  *   --tug-color(blue, i: 5, t: 13)              → oklch(0.3115 0.0143 230)
  *   --tug-color(cobalt-indigo, i: 7, t: 37)     → hyphenated adjacency hue
  *   --tug-color(cobalt-indigo-intense)           → adjacency + preset
  *   --tug-color(black, i: 0, t: 0, a: 50)       → oklch(0 0 0 / 0.5)
+ *   --tug-color(paper)                          → oklch(0.22 0 0)
+ *   --tug-color(paper-linen)                    → oklch(0.2433 0 0)
+ *   --tug-color(transparent)                    → oklch(0 0 0 / 0)
  *
  * Multiple calls in a single declaration are all expanded.
  * Values without --tug-color() are passed through unchanged.
@@ -54,6 +64,10 @@ import {
   TUG_COLOR_PRESETS,
   ADJACENCY_RING,
   resolveHyphenatedHue,
+  NAMED_GRAYS,
+  ACHROMATIC_SEQUENCE,
+  ACHROMATIC_L_VALUES,
+  resolveAchromaticAdjacency,
 } from "./src/components/tugways/palette-engine";
 import { parseTugColor, findTugColorCallsWithWarnings } from "./tug-color-parser";
 import type { TugColorValue } from "./tug-color-parser";
@@ -67,6 +81,8 @@ const KNOWN_HUES: ReadonlySet<string> = new Set([
   "black",
   "white",
   "gray",
+  ...Object.keys(NAMED_GRAYS),
+  "transparent",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -121,27 +137,28 @@ function fmt(n: number): string {
 /**
  * Expand a single parsed --tug-color() call to an oklch() string.
  *
- * Special achromatic keywords:
- *   "black" → oklch(0 0 0 [/ alpha])  — true black, ignores intensity/tone
- *   "white" → oklch(1 0 0 [/ alpha])  — true white, ignores intensity/tone
+ * Expansion order (each tier returns early, preventing double-handling):
  *
- * For named hues without adjacency: uses DEFAULT_CANONICAL_L[hue] and
- *   MAX_CHROMA_FOR_HUE[hue] for exact named-hue paths.
+ *   1. Achromatic adjacency (FIRST): if adjacentName is present AND both name and
+ *      adjacentName are in ACHROMATIC_SEQUENCE, resolve via resolveAchromaticAdjacency().
+ *      Must come before black/white/named-gray early returns so that endpoint pairs
+ *      (black-paper, pitch-white) are not silently broken.
  *
- * For hyphenated adjacency hues (adjacentName present):
- *   - Resolved angle via resolveHyphenatedHue(name, adjacentName)
- *   - canonicalL from DEFAULT_CANONICAL_L[name] (primary/dominant hue)
- *   - peakC computed dynamically via findMaxChroma(canonicalL, resolvedAngle) * PEAK_C_SCALE
+ *   2. Transparent: always returns oklch(0 0 0 / 0) regardless of i/t/a values.
  *
- * L formula (piecewise, matching tugColor()):
- *   L = L_DARK + min(tone, 50) * (canonicalL - L_DARK) / 50
- *             + max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50
+ *   3. Black/white: exact L values (0 and 1), intensity/tone ignored, alpha honored.
  *
- * C formula (linear):
- *   C = (intensity / 100) * peakC   where peakC = maxChroma * PEAK_C_SCALE
+ *   4. Named grays (paper through pitch): fixed L from ACHROMATIC_L_VALUES keyed by
+ *      the inherent tone in NAMED_GRAYS; intensity and tone are ignored per [D06];
+ *      alpha IS honored.
  *
- * Alpha: parsed alpha is 0-100; emitted as `/ ${alpha/100}` in oklch output.
- * Only emit alpha suffix if alpha < 100.
+ *   5. Gray pseudo-hue: achromatic (C=0), canonical L=0.5, tone participates in the
+ *      piecewise formula; intensity silently ignored.
+ *
+ *   6. Chromatic hues: standard path — named hue or hyphenated chromatic adjacency.
+ *
+ * Alpha: parsed alpha is 0–100; emitted as `/ ${alpha/100}` in oklch output.
+ * Only emitted when alpha < 100.
  */
 function expandTugColor(
   color: TugColorValue,
@@ -151,15 +168,47 @@ function expandTugColor(
 ): string {
   const alphaSuffix = alpha < 100 ? ` / ${fmt(alpha / 100)}` : "";
 
-  // Special achromatic keywords — exact L values, no piecewise formula
+  // ── Tier 1: Achromatic adjacency ──────────────────────────────────────────
+  // Must come FIRST — before black/white/named-gray early returns — so that
+  // endpoint pairs (black-paper, pitch-white) are not silently broken.
+  if (color.adjacentName !== undefined) {
+    const idxA = ACHROMATIC_SEQUENCE.indexOf(color.name);
+    const idxB = ACHROMATIC_SEQUENCE.indexOf(color.adjacentName);
+    if (idxA !== -1 && idxB !== -1) {
+      if (color.preset !== undefined) {
+        console.warn(
+          `postcss-tug-color: preset '${color.preset}' is ignored for achromatic adjacency pair '${color.name}-${color.adjacentName}' (L is fixed by the 2/3+1/3 blend)`
+        );
+      }
+      const blendedL = resolveAchromaticAdjacency(color.name, color.adjacentName);
+      return `oklch(${fmt(blendedL)} 0 0${alphaSuffix})`;
+    }
+  }
+
+  // ── Tier 2: Transparent ───────────────────────────────────────────────────
+  if (color.name === "transparent") {
+    return "oklch(0 0 0 / 0)";
+  }
+
+  // ── Tier 3: Black / white ─────────────────────────────────────────────────
   if (color.name === "black") {
     return `oklch(0 0 0${alphaSuffix})`;
   }
   if (color.name === "white") {
     return `oklch(1 0 0${alphaSuffix})`;
   }
-  // Gray pseudo-hue: achromatic (C=0), canonical L=0.5, participates in tone formula.
-  // Intensity is accepted but silently ignored.
+
+  // ── Tier 4: Named grays (paper through pitch) ─────────────────────────────
+  // Fixed lightness per [D06]: look up inherent tone from NAMED_GRAYS,
+  // use the pre-computed L from ACHROMATIC_L_VALUES. Intensity and tone ignored.
+  const namedGrayTone = NAMED_GRAYS[color.name];
+  if (namedGrayTone !== undefined) {
+    const L = ACHROMATIC_L_VALUES[color.name] ?? 0.5;
+    return `oklch(${fmt(L)} 0 0${alphaSuffix})`;
+  }
+
+  // ── Tier 5: Gray pseudo-hue ───────────────────────────────────────────────
+  // Achromatic (C=0), canonical L=0.5; tone participates in the piecewise formula.
   if (color.name === "gray") {
     const GRAY_CANONICAL_L = 0.5;
     const L =
@@ -169,9 +218,10 @@ function expandTugColor(
     return `oklch(${fmt(L)} 0 0${alphaSuffix})`;
   }
 
+  // ── Tier 6: Chromatic hues ────────────────────────────────────────────────
   const baseAngle = HUE_FAMILIES[color.name];
   if (baseAngle === undefined) {
-    // Unknown hue — emit as comment placeholder (shouldn't happen if parseTugColor validated)
+    // Unknown hue — should not happen if parseTugColor validated correctly
     return `oklch(0.5 0 0${alphaSuffix})`;
   }
 
@@ -180,7 +230,7 @@ function expandTugColor(
   let peakC: number;
 
   if (color.adjacentName) {
-    // Hyphenated adjacency path: resolve angle via weighted blend
+    // Chromatic hyphenated adjacency: resolve angle via weighted hue-angle blend
     h = resolveHyphenatedHue(color.name, color.adjacentName);
     canonicalL = DEFAULT_CANONICAL_L[color.name] ?? 0.77;
     // Compute peakC dynamically at the resolved hyphenated angle
@@ -240,6 +290,7 @@ export default function postcssTugColor(): Plugin {
           KNOWN_HUES,
           refreshPresets(),
           ADJACENCY_RING,
+          ACHROMATIC_SEQUENCE,
         );
 
         if (!parseResult.ok) {
