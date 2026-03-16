@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-8
+date: 2025-03-16T02:58:14Z
+---
+
+## step-8: Added runPipelineForRecipe helper and 5 stress tests (T4.3-T4.7) covering warm/cool/neutral atmosphere, dark/light mode, extreme surfaceContrast (20/80), and extreme signalIntensity (10/90). All show 0 unexpected body-text failures. Added LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS for documented structural constraints. 25 engine tests pass, 1708 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-7
 date: 2025-03-16T02:50:48Z
 ---

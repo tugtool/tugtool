@@ -1327,3 +1327,250 @@ describe("derivation-engine generateResolvedCssExport", () => {
     expect(css).toContain("resolved oklch() values");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test suite: derivation-engine convergence stress tests (T4.3–T4.7)
+//
+// Five diverse recipes stress-test the derive → validate → auto-fix pipeline
+// across varied modes, atmospheres, role hues, and slider extremes.
+//
+// Each test asserts 0 unexpected body-text Lc failures after autoAdjustContrast.
+// The exception sets mirror T4.1/T4.2: known structural constraints are excluded
+// so the tests track real regressions rather than documented design choices.
+//
+// Light-mode tests (T4.4, T4.7) share the same set of structural surface-
+// derivation exceptions documented in T4.2 — the engine is calibrated for dark
+// mode and light-mode bg-app / surface-raised / surface-overlay / surface-sunken
+// / surface-screen are known structural constraints.
+// ---------------------------------------------------------------------------
+
+/**
+ * Known light-mode body-text pair exceptions (structural — same as T4.2).
+ *
+ * The engine is calibrated for dark mode. In light mode, bg-app, bg-canvas,
+ * surface-raised, surface-overlay, surface-sunken, and surface-screen are
+ * derived at lightness values close to fg-default, producing Lc well below
+ * the Lc 75 body-text threshold. These are not regressions — they are
+ * pre-existing structural constraints deferred per Q01.
+ *
+ * fg-inverse on surface-screen is also structural: fg-inverse is an inverted
+ * foreground designed for chips/badges, not body text on surface-screen.
+ */
+const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
+  "--tug-base-fg-default|--tug-base-bg-app",
+  "--tug-base-fg-default|--tug-base-bg-canvas",
+  "--tug-base-fg-default|--tug-base-surface-raised",
+  "--tug-base-fg-default|--tug-base-surface-overlay",
+  "--tug-base-fg-default|--tug-base-surface-sunken",
+  "--tug-base-fg-default|--tug-base-surface-screen",
+  "--tug-base-fg-inverse|--tug-base-surface-screen",
+]);
+
+/**
+ * Run the derive → validate → auto-fix pipeline for any ThemeRecipe and return
+ * the final contrast results plus unfixable list. Accepts a literal recipe
+ * object (not restricted to EXAMPLE_RECIPES keys).
+ */
+function runPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]): {
+  finalResults: ReturnType<typeof validateThemeContrast>;
+  unfixable: string[];
+} {
+  const output = deriveTheme(recipe);
+  const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  const failures = initialResults.filter((r) => !r.lcPass);
+  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
+  const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  return { finalResults, unfixable: adjusted.unfixable };
+}
+
+/**
+ * Filter a results array to only body-text unexpected failures, applying
+ * the shared KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS, KNOWN_PAIR_EXCEPTIONS,
+ * marginal band, and an optional set of additional pair exceptions.
+ */
+function unexpectedBodyTextFailures(
+  results: ReturnType<typeof validateThemeContrast>,
+  extraPairExceptions: ReadonlySet<string> = new Set(),
+): ReturnType<typeof validateThemeContrast> {
+  return results.filter((r) => {
+    if (r.lcPass) return false;
+    if (r.role !== "body-text") return false;
+    const margin = (LC_THRESHOLDS[r.role] ?? 15) - LC_MARGINAL_DELTA;
+    if (Math.abs(r.lc) >= margin) return false;
+    if (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS.has(r.fg)) return false;
+    if (KNOWN_PAIR_EXCEPTIONS.has(`${r.fg}|${r.bg}`)) return false;
+    if (extraPairExceptions.has(`${r.fg}|${r.bg}`)) return false;
+    return true;
+  });
+}
+
+describe("derivation-engine convergence stress tests", () => {
+  // -------------------------------------------------------------------------
+  // T4.3-stress: Warm atmosphere (amber), cool role hues (cobalt/blue/teal),
+  // dark mode, high surface contrast (80) and high signal intensity (80).
+  //
+  // Tests that warm-cool hue complementarity at high-contrast settings does
+  // not produce unexpected body-text failures in dark mode.
+  // -------------------------------------------------------------------------
+  it("T4.3-stress: warm atmosphere, cool roles, dark mode, high contrast — 0 unexpected body-text failures", () => {
+    const recipe = {
+      name: "T4.3-stress",
+      mode: "dark" as const,
+      atmosphere: { hue: "amber" },
+      text: { hue: "sand" },
+      accent: "cobalt",
+      active: "blue",
+      agent: "teal",
+      data: "cyan",
+      success: "cyan",
+      caution: "yellow",
+      destructive: "red",
+      surfaceContrast: 80,
+      signalIntensity: 80,
+      warmth: 70,
+    };
+
+    const { finalResults } = runPipelineForRecipe(recipe);
+    const failures = unexpectedBodyTextFailures(finalResults);
+    const descriptions = failures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.4-stress: Cool atmosphere (slate), warm role hues (orange/red/amber),
+  // light mode, low surface contrast (20) and low signal intensity (20).
+  //
+  // Tests that warm-atmosphere + cool-role inversion at low-contrast settings
+  // in light mode does not produce unexpected body-text failures beyond the
+  // documented light-mode structural surface-derivation constraints.
+  // -------------------------------------------------------------------------
+  it("T4.4-stress: cool atmosphere, warm roles, light mode, low contrast — 0 unexpected body-text failures", () => {
+    const recipe = {
+      name: "T4.4-stress",
+      mode: "light" as const,
+      atmosphere: { hue: "slate" },
+      text: { hue: "cobalt" },
+      accent: "orange",
+      active: "red",
+      agent: "amber",
+      data: "yellow",
+      success: "green",
+      caution: "amber",
+      destructive: "crimson",
+      surfaceContrast: 20,
+      signalIntensity: 20,
+      warmth: 30,
+    };
+
+    const { finalResults } = runPipelineForRecipe(recipe);
+    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const descriptions = failures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.5-stress: Neutral atmosphere (gray), complementary role hues
+  // (violet/indigo/purple for cool + green/yellow/red for warm), dark mode,
+  // default slider settings (surfaceContrast=50, signalIntensity=50).
+  //
+  // Tests that a near-achromatic atmosphere with complementary roles at
+  // default settings produces no unexpected body-text failures.
+  // -------------------------------------------------------------------------
+  it("T4.5-stress: neutral atmosphere, complementary roles, dark mode, default settings — 0 unexpected body-text failures", () => {
+    const recipe = {
+      name: "T4.5-stress",
+      mode: "dark" as const,
+      atmosphere: { hue: "gray" },
+      text: { hue: "slate" },
+      accent: "violet",
+      active: "indigo",
+      agent: "purple",
+      data: "cyan",
+      success: "green",
+      caution: "yellow",
+      destructive: "red",
+      surfaceContrast: 50,
+      signalIntensity: 50,
+      warmth: 50,
+    };
+
+    const { finalResults } = runPipelineForRecipe(recipe);
+    const failures = unexpectedBodyTextFailures(finalResults);
+    const descriptions = failures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.6-stress: Extreme high signalIntensity (90), dark mode.
+  //
+  // Tests that maximum signal intensity (vivid role hues) does not cause
+  // unexpected body-text failures in dark mode. Vivid hues may cause
+  // tone-on-tone pairs to become more distinguishable but can increase
+  // pressure on body-text tokens.
+  // -------------------------------------------------------------------------
+  it("T4.6-stress: extreme signalIntensity (90), dark mode — 0 unexpected body-text failures", () => {
+    const recipe = {
+      name: "T4.6-stress",
+      mode: "dark" as const,
+      atmosphere: { hue: "violet" },
+      text: { hue: "cobalt" },
+      accent: "orange",
+      active: "blue",
+      agent: "violet",
+      data: "teal",
+      success: "green",
+      caution: "yellow",
+      destructive: "red",
+      surfaceContrast: 50,
+      signalIntensity: 90,
+      warmth: 50,
+    };
+
+    const { finalResults } = runPipelineForRecipe(recipe);
+    const failures = unexpectedBodyTextFailures(finalResults);
+    const descriptions = failures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T4.7-stress: Extreme low signalIntensity (10), light mode.
+  //
+  // Tests that minimum signal intensity (desaturated role hues) in light mode
+  // does not cause unexpected body-text failures beyond the documented
+  // light-mode structural surface-derivation constraints. At low intensity,
+  // role hues approach achromatic, which can shift contrast relationships.
+  // -------------------------------------------------------------------------
+  it("T4.7-stress: extreme low signalIntensity (10), light mode — 0 unexpected body-text failures", () => {
+    const recipe = {
+      name: "T4.7-stress",
+      mode: "light" as const,
+      atmosphere: { hue: "violet" },
+      text: { hue: "cobalt" },
+      accent: "orange",
+      active: "blue",
+      agent: "violet",
+      data: "teal",
+      success: "green",
+      caution: "yellow",
+      destructive: "red",
+      surfaceContrast: 50,
+      signalIntensity: 10,
+      warmth: 50,
+    };
+
+    const { finalResults } = runPipelineForRecipe(recipe);
+    const failures = unexpectedBodyTextFailures(finalResults, LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS);
+    const descriptions = failures.map(
+      (f) => `${f.fg} on ${f.bg} [${f.role}]: Lc ${f.lc.toFixed(1)}`,
+    );
+    expect(descriptions).toEqual([]);
+  });
+});
