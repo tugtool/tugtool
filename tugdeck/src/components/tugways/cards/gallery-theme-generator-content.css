@@ -10,20 +10,38 @@
  */
 
 /* ============================================================================
-   Content wrapper
+   Content wrapper — tighter layout than default cg-content
    ========================================================================= */
 
 .gtg-content {
-  /* Inherits .cg-content scroll, padding, flex-column, gap */
+  gap: 10px;
+  padding: 12px;
 }
 
 /* ============================================================================
-   Theme Name input — prominent full-width name field at top of generator
+   Header row: name input + preset buttons + mode toggle inline
    ========================================================================= */
 
+.gtg-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .gtg-theme-name-input {
-  width: 100%;
-  font-size: 14px;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Hue grid — wrapping grid of compact hue pickers
+   ========================================================================= */
+
+.gtg-hue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px;
 }
 
 /* ============================================================================
@@ -34,10 +52,9 @@
   display: flex;
   align-items: center;
   gap: 0;
-  border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-sm);
   overflow: hidden;
-  width: fit-content;
+  flex-shrink: 0;
 }
 
 .gtg-mode-btn {
@@ -68,6 +85,111 @@
   color: var(--tug-base-fg-onAccent);
 }
 
+/* ============================================================================
+   Theme preview card — representative UI on canvas background
+   ========================================================================= */
+
+/* ============================================================================
+   Theme preview — real tugcard on canvas background
+   ========================================================================= */
+
+.gtg-preview-canvas {
+  background-color: var(--tug-base-bg-canvas);
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: var(--tug-base-radius-sm);
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.gtg-preview-canvas > .tugcard {
+  max-width: 480px;
+  width: 100%;
+}
+
+/* Content inside the tugcard content area */
+.gtg-preview-content {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gtg-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gtg-preview-header-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.gtg-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+}
+
+.gtg-preview-body {
+  font-size: 12px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  line-height: 1.5;
+}
+
+.gtg-preview-muted {
+  color: var(--tug-base-fg-muted);
+}
+
+.gtg-preview-subtle {
+  color: var(--tug-base-fg-subtle);
+}
+
+.gtg-preview-divider {
+  height: 1px;
+  background-color: var(--tug-base-divider-default);
+}
+
+.gtg-preview-inset {
+  background-color: var(--tug-base-surface-raised);
+  border: 1px solid var(--tug-base-border-muted);
+  border-radius: var(--tug-base-radius-xs);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gtg-preview-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gtg-preview-input-row .tug-input {
+  flex: 1;
+}
+
+.gtg-preview-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gtg-preview-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+}
+
 /* Hue swatch strip is now provided by the shared TugHueStrip component. */
 
 /* ============================================================================
@@ -78,7 +200,7 @@
 .gtg-erp {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 /* Each subsection (buttons / badges / selection controls) */
@@ -105,8 +227,8 @@
  */
 .gtg-erp-grid {
   display: grid;
-  grid-template-columns: 64px repeat(var(--gtg-erp-cols, 5), minmax(72px, 1fr));
-  gap: 6px;
+  grid-template-columns: 52px repeat(var(--gtg-erp-cols, 5), minmax(48px, 1fr));
+  gap: 4px;
   overflow-x: auto;
 }
 
@@ -149,7 +271,7 @@
 /* Selection controls row: one cell per role */
 .gtg-erp-selection-row {
   display: flex;
-  gap: 16px;
+  gap: 10px;
   flex-wrap: wrap;
   overflow-x: auto;
 }
@@ -159,7 +281,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* ============================================================================
@@ -177,13 +299,12 @@
 .gtg-compact-hue-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
+  gap: 6px;
+  padding: 3px 6px;
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-xs);
   background-color: var(--tug-base-surface-default);
   cursor: pointer;
-  width: 100%;
   text-align: left;
   font-family: inherit;
   transition: background-color 80ms ease;
@@ -195,19 +316,19 @@
 
 /* Role label — fixed-width so chip columns align across rows */
 .gtg-compact-hue-label {
-  font-size: 11px;
+  font-size: 10px;
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
-  width: 56px;
+  width: 52px;
   flex-shrink: 0;
   user-select: none;
 }
 
-/* 20x20px color chip swatch */
+/* 16x16px color chip swatch */
 .gtg-compact-hue-chip {
-  width: 20px;
-  height: 20px;
-  border-radius: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
   border: 1px solid var(--tug-base-border-default);
   flex-shrink: 0;
 }

@@ -319,26 +319,22 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the atmosphere hue strip with 48 swatches", () => {
+  it("renders the atmosphere hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const strip = container.querySelector("[data-testid='gtg-atmosphere-hue-strip']");
-    expect(strip).not.toBeNull();
-    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
-    expect(swatches.length).toBe(48);
+    const picker = container.querySelector("[data-testid='gtg-atmosphere-hue']");
+    expect(picker).not.toBeNull();
   });
 
-  it("renders the text hue strip with 48 swatches", () => {
+  it("renders the text hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const strip = container.querySelector("[data-testid='gtg-text-hue-strip']");
-    expect(strip).not.toBeNull();
-    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
-    expect(swatches.length).toBe(48);
+    const picker = container.querySelector("[data-testid='gtg-text-hue']");
+    expect(picker).not.toBeNull();
   });
 
   it("renders three mood sliders", () => {
@@ -783,16 +779,16 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders the role hues section with 7 compact hue picker rows", () => {
+  it("renders all 9 hue pickers (atmosphere + text + 7 roles) in the hue grid", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const roleHues = container.querySelector("[data-testid='gtg-role-hues']");
-    expect(roleHues).not.toBeNull();
+    const hueGrid = container.querySelector("[data-testid='gtg-role-hues']");
+    expect(hueGrid).not.toBeNull();
     // Each picker is a button with class gtg-compact-hue-row
-    const pickers = roleHues!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(7);
+    const pickers = hueGrid!.querySelectorAll(".gtg-compact-hue-row");
+    expect(pickers.length).toBe(9);
   });
 
   it("each role hue picker button has the correct data-testid", () => {

@@ -75,35 +75,6 @@ const HUE_NAMES: readonly string[] = ADJACENCY_RING;
 const DEFAULT_RECIPE: ThemeRecipe = EXAMPLE_RECIPES.brio;
 
 // ---------------------------------------------------------------------------
-// HueSwatch strip helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Renders a labeled TugHueStrip for atmosphere, text, or role hue selection.
- */
-function HueSelector({
-  label,
-  selectedHue,
-  onSelect,
-  testId,
-}: {
-  label: string;
-  selectedHue: string;
-  onSelect: (hue: string) => void;
-  testId: string;
-}) {
-  return (
-    <div>
-      <div className="cg-section-title" style={{ marginBottom: "8px" }}>{label}</div>
-      <TugHueStrip
-        selectedHue={selectedHue}
-        onSelectHue={onSelect}
-        data-testid={testId}
-      />
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // CompactHuePicker — compact row with color chip that opens a popover strip
 // ---------------------------------------------------------------------------
@@ -1088,6 +1059,84 @@ const SELECTION_ROLES: TugCheckboxRole[] = [
 ];
 
 /**
+ * ThemePreviewCard — uses the real tugcard/tug-tab CSS classes to render
+ * a representative card on canvas background. Shows title bar, tab bar,
+ * content area with text tiers, inset panel, and controls.
+ * All styling via inherited CSS custom properties. [D08, D09]
+ */
+function ThemePreviewCard() {
+  return (
+    <div className="gtg-preview-canvas" data-testid="gtg-theme-preview">
+      {/* Real tugcard structure using actual CSS classes */}
+      <div className="tugcard" style={{ height: "auto" }}>
+        {/* Title bar */}
+        <div className="tugcard-title-bar" style={{ cursor: "default" }}>
+          <span className="tugcard-title">Sample Card</span>
+        </div>
+
+        <div className="tugcard-body">
+          {/* Tab bar using real tug-tab classes */}
+          <div className="tugcard-accessory">
+            <div className="tug-tab-bar" style={{ position: "static" }}>
+              <button className="tug-tab" data-active="true" type="button">
+                <span className="tug-tab-title">Overview</span>
+              </button>
+              <button className="tug-tab" type="button">
+                <span className="tug-tab-title">Details</span>
+              </button>
+              <button className="tug-tab" type="button">
+                <span className="tug-tab-title">Settings</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Content area */}
+          <div className="tugcard-content" style={{ overflow: "visible" }}>
+            <div className="gtg-preview-content">
+              <div className="gtg-preview-header">
+                <span className="gtg-preview-title">Project Dashboard</span>
+                <div className="gtg-preview-header-actions">
+                  <TugBadge emphasis="filled" role="success">active</TugBadge>
+                  <TugBadge emphasis="outlined" role="data">3 items</TugBadge>
+                </div>
+              </div>
+              <div className="gtg-preview-body">
+                <span>Default text on the primary surface. </span>
+                <span className="gtg-preview-muted">Muted text for secondary. </span>
+                <span className="gtg-preview-subtle">Subtle for tertiary.</span>
+              </div>
+              <div className="gtg-preview-divider" />
+              <div className="gtg-preview-inset">
+                <div className="gtg-preview-inline-row">
+                  <TugCheckbox role="success" checked aria-label="complete" />
+                  <span>Build passed</span>
+                  <TugBadge emphasis="filled" role="success">pass</TugBadge>
+                </div>
+                <div className="gtg-preview-inline-row">
+                  <TugSwitch role="action" checked aria-label="auto-deploy" />
+                  <span>Auto-deploy</span>
+                </div>
+              </div>
+              <div className="gtg-preview-divider" />
+              <div className="gtg-preview-input-row">
+                <TugInput placeholder="Add a comment..." size="sm" aria-label="Sample input" readOnly />
+                <TugButton emphasis="filled" role="action" size="sm">Submit</TugButton>
+              </div>
+              <div className="gtg-preview-divider" />
+              <div className="gtg-preview-actions">
+                <TugButton emphasis="filled" role="accent" size="sm">Deploy</TugButton>
+                <TugButton emphasis="outlined" role="action" size="sm">Edit</TugButton>
+                <TugButton emphasis="ghost" role="danger" size="sm">Delete</TugButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * EmphasisRolePreview — renders a 3×N button grid, a 3×7 badge grid, and
  * a 1×7 selection control row showing all emphasis x role combinations.
  *
@@ -1239,6 +1288,30 @@ export function GalleryThemeGeneratorContent() {
     () => checkCVDDistinguishability(themeOutput.resolved, CVD_SEMANTIC_PAIRS),
     [themeOutput],
   );
+
+  // Live CSS custom properties for the preview — injects all derived token values
+  // as inline style so child components inherit live tokens via CSS cascade.
+  // Uses both resolved OKLCH colors and structural token values from the
+  // tokens map. Appearance changes through CSS, not React state. [D08, D09]
+  const liveTokenStyle = useMemo<React.CSSProperties>(() => {
+    const style: Record<string, string> = {};
+    // Resolved colors → oklch() values (keys already have --tug-base- prefix)
+    const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
+    for (const [token, color] of Object.entries(themeOutput.resolved)) {
+      const { L, C, h, alpha } = color;
+      const alphaSuffix = alpha < 1 ? ` / ${fmt(alpha)}` : "";
+      style[token] = `oklch(${fmt(L)} ${fmt(C)} ${h}${alphaSuffix})`;
+    }
+    // Structural tokens → var() references, "transparent", plain values
+    // (keys already have --tug-base- prefix; skip --tug-color() build-time values
+    // and tokens already resolved above)
+    for (const [token, value] of Object.entries(themeOutput.tokens)) {
+      if (token in style) continue; // already set from resolved
+      if (value.startsWith("--tug-color(")) continue; // build-time only
+      style[token] = value;
+    }
+    return style as React.CSSProperties;
+  }, [themeOutput]);
 
   // Slider debounce timer ref.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1484,25 +1557,17 @@ export function GalleryThemeGeneratorContent() {
   return (
     <div className="cg-content gtg-content" data-testid="gallery-theme-generator-content">
 
-      {/* ---- Theme Name ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Theme Name</div>
+      {/* ---- Header: name + preset + mode ---- */}
+      <div className="gtg-header-row">
         <TugInput
           value={recipeName}
           onChange={(e) => setRecipeName(e.target.value)}
-          placeholder="Enter theme name"
-          size="md"
+          placeholder="Theme name"
+          size="sm"
           data-testid="gtg-theme-name-input"
           className="gtg-theme-name-input"
           aria-label="Theme name"
         />
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Presets ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Load Preset Recipe</div>
         <div className="gtg-preset-row">
           {(Object.keys(EXAMPLE_RECIPES) as Array<keyof typeof EXAMPLE_RECIPES>).map((name) => (
             <TugButton
@@ -1517,13 +1582,6 @@ export function GalleryThemeGeneratorContent() {
             </TugButton>
           ))}
         </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Mode toggle (dark / light) ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Mode</div>
         <div className="gtg-mode-group" data-testid="gtg-mode-group">
           <TugButton
             emphasis={mode === "dark" ? "filled" : "outlined"}
@@ -1546,82 +1604,18 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      <div className="cg-divider" />
-
-      {/* ---- Atmosphere hue selector ---- */}
-      <div className="cg-section">
-        <HueSelector
-          label="Atmosphere Hue"
-          selectedHue={atmosphereHue}
-          onSelect={setAtmosphereHue}
-          testId="gtg-atmosphere-hue-strip"
-        />
+      {/* ---- Hue selectors: all 9 in a wrapping grid ---- */}
+      <div className="gtg-hue-grid" data-testid="gtg-role-hues">
+        <CompactHuePicker label="Atmosphere" selectedHue={atmosphereHue} onSelect={setAtmosphereHue} testId="gtg-atmosphere-hue" />
+        <CompactHuePicker label="Text" selectedHue={textHue} onSelect={setTextHue} testId="gtg-text-hue" />
+        <CompactHuePicker label="Accent" selectedHue={accentHue} onSelect={setAccentHue} testId="gtg-role-hue-accent" />
+        <CompactHuePicker label="Action" selectedHue={activeHue} onSelect={setActiveHue} testId="gtg-role-hue-action" />
+        <CompactHuePicker label="Agent" selectedHue={agentHue} onSelect={setAgentHue} testId="gtg-role-hue-agent" />
+        <CompactHuePicker label="Data" selectedHue={dataHue} onSelect={setDataHue} testId="gtg-role-hue-data" />
+        <CompactHuePicker label="Success" selectedHue={successHue} onSelect={setSuccessHue} testId="gtg-role-hue-success" />
+        <CompactHuePicker label="Caution" selectedHue={cautionHue} onSelect={setCautionHue} testId="gtg-role-hue-caution" />
+        <CompactHuePicker label="Danger" selectedHue={dangerHue} onSelect={setDangerHue} testId="gtg-role-hue-danger" />
       </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Text hue selector ---- */}
-      <div className="cg-section">
-        <HueSelector
-          label="Text Hue"
-          selectedHue={textHue}
-          onSelect={setTextHue}
-          testId="gtg-text-hue-strip"
-        />
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Role hue selectors ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Role Hues</div>
-        <div className="gtg-role-hues" data-testid="gtg-role-hues">
-          <CompactHuePicker
-            label="Accent"
-            selectedHue={accentHue}
-            onSelect={setAccentHue}
-            testId="gtg-role-hue-accent"
-          />
-          <CompactHuePicker
-            label="Action"
-            selectedHue={activeHue}
-            onSelect={setActiveHue}
-            testId="gtg-role-hue-action"
-          />
-          <CompactHuePicker
-            label="Agent"
-            selectedHue={agentHue}
-            onSelect={setAgentHue}
-            testId="gtg-role-hue-agent"
-          />
-          <CompactHuePicker
-            label="Data"
-            selectedHue={dataHue}
-            onSelect={setDataHue}
-            testId="gtg-role-hue-data"
-          />
-          <CompactHuePicker
-            label="Success"
-            selectedHue={successHue}
-            onSelect={setSuccessHue}
-            testId="gtg-role-hue-success"
-          />
-          <CompactHuePicker
-            label="Caution"
-            selectedHue={cautionHue}
-            onSelect={setCautionHue}
-            testId="gtg-role-hue-caution"
-          />
-          <CompactHuePicker
-            label="Danger"
-            selectedHue={dangerHue}
-            onSelect={setDangerHue}
-            testId="gtg-role-hue-danger"
-          />
-        </div>
-      </div>
-
-      <div className="cg-divider" />
 
       {/* ---- Mood sliders ---- */}
       <div className="cg-section">
@@ -1656,10 +1650,17 @@ export function GalleryThemeGeneratorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- Emphasis x Role Preview ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Emphasis × Role Preview</div>
-        <EmphasisRolePreview />
+      {/* ---- Live preview (all children inherit derived theme tokens) ---- */}
+      <div style={liveTokenStyle}>
+        <div className="cg-section">
+          <div className="cg-section-title">Preview</div>
+          <ThemePreviewCard />
+        </div>
+
+        <div className="cg-section">
+          <div className="cg-section-title">Controls</div>
+          <EmphasisRolePreview />
+        </div>
       </div>
 
       <div className="cg-divider" />
