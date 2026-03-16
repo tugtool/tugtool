@@ -565,40 +565,66 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
   });
 });
 
-describe("tug-palette.css — gray tone ramp and anchors", () => {
-  it("contains 10 gray tone steps from --tug-gray-0 to --tug-gray-100", () => {
-    const grayVars = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
-    expect(grayVars.length).toBe(11);
+describe("tug-palette.css — named gray ramp and anchors", () => {
+  it("contains exactly 9 named gray variables (paper through pitch)", () => {
+    const namedGrayVars = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(namedGrayVars.length).toBe(9);
   });
 
-  it("--tug-gray-0 matches L_DARK (black)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-gray-0: oklch(0.15 0 0)");
+  it("contains --tug-gray-paper through --tug-gray-pitch in the correct order", () => {
+    const names = ["paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch"];
+    for (const name of names) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}:`);
+    }
+    // Verify order: each name appears before the next in the file
+    for (let i = 0; i < names.length - 1; i++) {
+      const idxA = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i]}:`);
+      const idxB = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i + 1]}:`);
+      expect(idxA).toBeLessThan(idxB);
+    }
   });
 
-  it("--tug-gray-100 matches L_LIGHT (white)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-gray-100: oklch(0.96 0 0)");
+  it("named gray oklch values match Table T01 exactly", () => {
+    const expected: Record<string, string> = {
+      paper:     "oklch(0.22 0 0)",
+      linen:     "oklch(0.29 0 0)",
+      parchment: "oklch(0.36 0 0)",
+      vellum:    "oklch(0.43 0 0)",
+      graphite:  "oklch(0.5 0 0)",
+      carbon:    "oklch(0.592 0 0)",
+      charcoal:  "oklch(0.684 0 0)",
+      ink:       "oklch(0.776 0 0)",
+      pitch:     "oklch(0.868 0 0)",
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}: ${value}`);
+    }
   });
 
-  it("contains --tug-black", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-black:");
+  it("does NOT contain numeric gray variables --tug-gray-10 through --tug-gray-90 as declarations", () => {
+    // Match only CSS declarations (colon + value), not comment text
+    for (let tone = 10; tone <= 90; tone += 10) {
+      expect(TUG_PALETTE_CSS).not.toMatch(new RegExp(`--tug-gray-${tone}\\s*:`));
+    }
   });
 
-  it("contains --tug-white", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-white:");
+  it("does NOT contain --tug-gray-0 or --tug-gray-100 as declarations (dropped per D05)", () => {
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-0\s*:/);
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-100\s*:/);
   });
 
-  it("--tug-black is oklch(0 0 0)", () => {
+  it("contains --tug-black: oklch(0 0 0)", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-black: oklch(0 0 0)");
   });
 
-  it("--tug-white is oklch(1 0 0)", () => {
+  it("contains --tug-white: oklch(1 0 0)", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-white: oklch(1 0 0)");
   });
 
-  it("all gray tone variables use C=0 (achromatic)", () => {
-    const grayLines = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
-    expect(grayLines.length).toBeGreaterThan(0);
-    for (const line of grayLines) {
+  it("all named gray variables use C=0 (achromatic)", () => {
+    const namedGrayLines = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(namedGrayLines.length).toBeGreaterThan(0);
+    for (const line of namedGrayLines) {
       expect(line).toMatch(/oklch\([\d.]+ 0 0\)/);
     }
   });

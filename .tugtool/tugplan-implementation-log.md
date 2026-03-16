@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-16T15:50:29Z
+---
+
+## step-4: Updated generate-tug-palette.ts to import NAMED_GRAYS and emit --tug-gray-paper through --tug-gray-pitch. Dropped --tug-gray-0 and --tug-gray-100 per D05. Regenerated tug-palette.css. Rewrote palette-engine.test.ts gray ramp tests. No stale references found. 1790 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-3
 date: 2025-03-16T15:44:00Z
 ---
