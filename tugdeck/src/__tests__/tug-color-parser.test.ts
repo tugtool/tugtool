@@ -924,3 +924,49 @@ describe("tug-color-parser: tokenizer rewrite", () => {
     expect(result.value.color.preset).toBe("intense");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bare minus without number — slot-specific errors (T-BARE-MINUS*)
+// ---------------------------------------------------------------------------
+
+describe("tug-color-parser: bare minus without number", () => {
+  it("T-BARE-MINUS: 'red, -, 50' produces error mentioning 'bare' and 'intensity'", () => {
+    const errs = expectErrors("red, -, 50");
+    const bareErr = errs.find((e) => e.message.includes("bare") || e.message.includes("Bare"));
+    expect(bareErr).toBeDefined();
+    expect(bareErr!.message).toContain("intensity");
+  });
+
+  it("T-BARE-MINUS-END: 'red, -' produces error for bare minus mentioning 'intensity'", () => {
+    const errs = expectErrors("red, -");
+    const bareErr = errs.find((e) => e.message.includes("bare") || e.message.includes("Bare"));
+    expect(bareErr).toBeDefined();
+    expect(bareErr!.message).toContain("intensity");
+  });
+
+  it("T-BARE-MINUS-TONE: 'red, 50, -' produces error mentioning 'tone'", () => {
+    const errs = expectErrors("red, 50, -");
+    const bareErr = errs.find((e) => e.message.includes("bare") || e.message.includes("Bare"));
+    expect(bareErr).toBeDefined();
+    expect(bareErr!.message).toContain("tone");
+  });
+
+  it("bare minus in alpha slot mentions 'alpha'", () => {
+    const errs = expectErrors("red, 50, 50, -");
+    const bareErr = errs.find((e) => e.message.includes("bare") || e.message.includes("Bare"));
+    expect(bareErr).toBeDefined();
+    expect(bareErr!.message).toContain("alpha");
+  });
+
+  it("bare minus error has valid source span covering the minus", () => {
+    // "red, -, 50" — minus is at position 5
+    const result = parseTugColor("red, -, 50", KNOWN_HUES);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const bareErr = result.errors.find((e) => e.message.includes("bare") || e.message.includes("Bare"));
+      expect(bareErr).toBeDefined();
+      expect(bareErr!.pos).toBe(5);
+      expect(bareErr!.end).toBeGreaterThan(bareErr!.pos);
+    }
+  });
+});

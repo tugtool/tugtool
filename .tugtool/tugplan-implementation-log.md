@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-16T00:04:30Z
+---
+
+## step-5: Added bare-minus detection in parseNumericTokens with slot-specific error messages. 5 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-4
 date: 2025-03-15T23:59:49Z
 ---

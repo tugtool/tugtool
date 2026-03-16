@@ -455,6 +455,18 @@ function parseNumericTokens(
     tokens[1].type === "number"
   ) {
     value = -parseFloat(tokens[1].value);
+  } else if (
+    tokens[0].type === "minus" &&
+    (tokens.length === 1 || tokens[1].type !== "number")
+  ) {
+    // Bare minus without a following number — slot-specific error
+    const spanEnd = tokens.length > 1 ? tokens[1].end : tokens[0].end;
+    errors.push({
+      message: `Bare '-' without a number for ${slotName}`,
+      pos: anchorTok.pos,
+      end: spanEnd,
+    });
+    return null;
   } else {
     const raw = tokens.map((t) => t.value).join("");
     const spanEnd = tokens[tokens.length - 1].end;
