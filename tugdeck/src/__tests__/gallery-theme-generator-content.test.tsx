@@ -526,9 +526,9 @@ const CHM_NOVEL_RECIPE = {
 };
 
 describe("T10.3 – novel recipe end-to-end: derive → validate → export → postcss roundtrip", () => {
-  it("deriveTheme produces a ThemeOutput with 371 tokens for the novel recipe", () => {
+  it("deriveTheme produces a ThemeOutput with 373 tokens for the novel recipe", () => {
     const output = deriveTheme(CHM_NOVEL_RECIPE);
-    expect(Object.keys(output.tokens).length).toBe(371);
+    expect(Object.keys(output.tokens).length).toBe(373);
   });
 
   it("all token keys start with --tug-base-", () => {

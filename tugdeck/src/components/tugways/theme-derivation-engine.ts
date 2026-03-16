@@ -193,6 +193,12 @@ export interface ModePreset {
   borderIBase: number;
   borderIStrong: number;
 
+  // Card frame intensity (title bar / tab bar bg)
+  cardFrameActiveI: number;   // active title bar (Brio dark: 12)
+  cardFrameActiveTone: number;
+  cardFrameInactiveI: number; // inactive title bar (Brio dark: 4)
+  cardFrameInactiveTone: number;
+
   // Shadow / overlay alphas
   shadowXsAlpha: number;
   shadowMdAlpha: number;
@@ -268,6 +274,12 @@ export const DARK_PRESET: ModePreset = {
   borderIBase: 6,
   borderIStrong: 7,
 
+  // Card frame (original: --tug-color(indigo, i: 12, t: 18) active, i: 4, t: 15 inactive)
+  cardFrameActiveI: 12,
+  cardFrameActiveTone: 18,
+  cardFrameInactiveI: 4,
+  cardFrameInactiveTone: 15,
+
   // Shadow / overlay alphas (Brio dark)
   shadowXsAlpha: 20,
   shadowMdAlpha: 60,
@@ -342,6 +354,12 @@ export const LIGHT_PRESET: ModePreset = {
   // Border intensities
   borderIBase: 9,
   borderIStrong: 10,
+
+  // Card frame
+  cardFrameActiveI: 4,
+  cardFrameActiveTone: 92,
+  cardFrameInactiveI: 2,
+  cardFrameInactiveTone: 90,
 
   // Shadow / overlay alphas (light mode — lower alpha)
   shadowXsAlpha: 8,
@@ -1137,31 +1155,30 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   //   border-inverse: cobalt (default), i:3, t:94 (= fgDefaultRef)
   // Light mode: atmosphere hue for borders (Harmony: yellow).
 
-  // border-default base: dark=bare cobalt (fgMutedRef=offset 0), light=borderTintRefW
-  const borderHueRef = isLight ? borderTintRefW : fgMutedRef;
-  const borderHueAngle = isLight ? borderTintAngleW : fgMutedAngle;
-  const borderHueName = isLight ? borderTintNameW : fgMutedPrimaryName;
+  // border-default: uses borderTint hue in both modes (configurable via recipe).
+  const borderHueRef = borderTintRefW;
+  const borderHueAngle = borderTintAngleW;
+  const borderHueName = borderTintNameW;
   // border intensities from preset. [D03]
   const borderIBase = preset.borderIBase;
   const borderIStrong = preset.borderIStrong;
 
-  // border-muted: dark=cobalt+7 (fgSubtleRef), light=borderTintRefW at higher tone
-  const borderMutedHueRef = isLight ? borderTintRefW : fgSubtleRef;
-  const borderMutedHueAngle = isLight ? borderTintAngleW : fgSubtleAngle;
-  const borderMutedHueName = isLight ? borderTintNameW : fgSubtlePrimaryName;
+  // border-muted: borderTint hue at slightly different tone
+  const borderMutedHueRef = borderTintRefW;
+  const borderMutedHueAngle = borderTintAngleW;
+  const borderMutedHueName = borderTintNameW;
   const borderMutedTone = isLight ? 36 : fgSubtleTone;
   const borderMutedI = isLight ? 10 : borderIStrong;
 
-  // border-strong: dark=cobalt+8 (fgDisabledRef) at t:40, light=borderTint-5°
-  const borderStrongLightAngle = applyWarmthBias(borderTintHue, (borderTintAngle - 5 + 360) % 360);
-  const borderStrongLightName = closestHueName(borderStrongLightAngle);
-  const borderStrongLightRef = formatHueRef(borderStrongLightName, borderStrongLightAngle);
-  const borderStrongHueRef = isLight ? borderStrongLightRef : fgDisabledRef;
-  const borderStrongHueAngle = isLight ? borderStrongLightAngle : fgDisabledAngle;
-  const borderStrongHueName = isLight ? primaryColorName(borderStrongLightName) : fgDisabledPrimaryName;
-  // Dark mode: Brio border-strong = cobalt+8, i:7, t:40
+  // border-strong: borderTint hue shifted -5° for contrast distinction
+  const borderStrongAngle = applyWarmthBias(borderTintHue, (borderTintAngle - 5 + 360) % 360);
+  const borderStrongName = closestHueName(borderStrongAngle);
+  const borderStrongRef = formatHueRef(borderStrongName, borderStrongAngle);
+  const borderStrongHueRef = borderStrongRef;
+  const borderStrongHueAngle = borderStrongAngle;
+  const borderStrongHueName = primaryColorName(borderStrongName);
   const borderStrongTone = isLight ? Math.round(fgSubtleTone - 6) : 40;
-  const borderStrongI = isLight ? borderIStrong : borderIStrong;
+  const borderStrongI = borderIStrong;
 
   setChromatic("--tug-base-border-default", borderHueRef, borderHueAngle, borderIBase, fgPlaceholderTone, 100, borderHueName);
   setChromatic("--tug-base-border-muted", borderMutedHueRef, borderMutedHueAngle, borderMutedI, borderMutedTone, 100, borderMutedHueName);
@@ -1407,12 +1424,32 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // tab-bg-active: base token for active tab background. Component CSS
   // (tug-tab.css) overrides this with --tug-card-title-bar-bg-active to
   // visually merge the active tab with the card title bar above it.
-  // Uses cardFrame hue (default: "indigo") for dark mode, atmosphere for light mode.
+  // Uses cardFrame hue with preset intensity/tone values.
+  // Dark: Brio original was --tug-color(indigo, i: 12, t: 18).
+  // Light: atmosphere hue at lower intensity.
+  const cfActiveI = preset.cardFrameActiveI;
+  const cfActiveTone = preset.cardFrameActiveTone;
+  const cfInactiveI = preset.cardFrameInactiveI;
+  const cfInactiveTone = preset.cardFrameInactiveTone;
+
   if (isLight) {
-    setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
+    setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, cfActiveI, cfActiveTone, 100, atmNameW);
   } else {
-    // Wire to cardFrame hue (Brio: "indigo" ≈ 260°, replaces hardcoded "violet-iris")
-    setChromatic("--tug-base-tab-bg-active", cardFrameRefW, cardFrameAngleW, atmI, 18, 100, cardFrameNameW);
+    setChromatic("--tug-base-tab-bg-active", cardFrameRefW, cardFrameAngleW, cfActiveI, cfActiveTone, 100, cardFrameNameW);
+  }
+
+  // tab-bg-inactive: dimmer version of active, used for title bar and tab bar background.
+  if (isLight) {
+    setChromatic("--tug-base-tab-bg-inactive", atmRefW, atmAngleW, cfInactiveI, cfInactiveTone, 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-tab-bg-inactive", cardFrameRefW, cardFrameAngleW, cfInactiveI, cfInactiveTone, 100, cardFrameNameW);
+  }
+
+  // tab-bg-collapsed: uses cardBg hue at inactive intensity for collapsed cards.
+  if (isLight) {
+    setChromatic("--tug-base-tab-bg-collapsed", atmRefW, atmAngleW, cfInactiveI, cfInactiveTone, 100, atmNameW);
+  } else {
+    setChromatic("--tug-base-tab-bg-collapsed", atmRefW, atmAngleW, cfInactiveI, cfInactiveTone, 100, atmNameW);
   }
 
   // tab-bg-hover: visible highlight when scanning inactive tabs

@@ -97,9 +97,9 @@ body {
   /* Border */
   --tug-base-border-accent: --tug-color(orange);
   --tug-base-border-danger: --tug-color(red);
-  --tug-base-border-default: --tug-color(cobalt, i: 6, t: 30);
+  --tug-base-border-default: --tug-color(indigo-violet, i: 6, t: 30);
   --tug-base-border-inverse: --tug-color(cobalt, i: 3, t: 94);
-  --tug-base-border-muted: --tug-color(indigo-cobalt, i: 7, t: 37);
+  --tug-base-border-muted: --tug-color(indigo-violet, i: 7, t: 37);
   --tug-base-border-strong: --tug-color(indigo-cobalt, i: 7, t: 40);
 
   /* Divider */
@@ -172,8 +172,10 @@ body {
   --tug-base-highlight-snapGuide: --tug-color(cyan, i: 50, t: 50, a: 50);
 
   /* Tab */
-  --tug-base-tab-bg-active: --tug-color(indigo, i: 5, t: 18);
+  --tug-base-tab-bg-active: --tug-color(indigo, i: 12, t: 18);
+  --tug-base-tab-bg-collapsed: --tug-color(indigo-violet, i: 4, t: 15);
   --tug-base-tab-bg-hover: --tug-color(white, a: 8);
+  --tug-base-tab-bg-inactive: --tug-color(indigo, i: 4, t: 15);
   --tug-base-tab-close-bg-hover: --tug-color(white, a: 12);
   --tug-base-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 90);
   --tug-base-tab-fg-active: --tug-color(cobalt, i: 3, t: 90);

@@ -1104,18 +1104,20 @@ function ThemePreviewCard({
   structural,
   roles,
   moodSliders,
+  liveTokenStyle,
 }: {
   resolvedColor: (key: string) => string;
   structural: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
   roles: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
   moodSliders: React.ReactNode;
+  liveTokenStyle: React.CSSProperties;
 }) {
   return (
     <div className="gtg-annotated-preview" data-testid="gtg-theme-preview">
 
-      {/* ---- Center: preview card on canvas ---- */}
+      {/* ---- Center: preview card on canvas (only this gets live tokens) ---- */}
       <div className="gtg-preview-main">
-        <div className="gtg-preview-canvas">
+        <div className="gtg-preview-canvas" style={liveTokenStyle}>
           <div className="tugcard" style={{ height: "auto", width: "66.7%" }}>
             <div className="tugcard-title-bar" style={{ cursor: "default" }}>
               <span className="tugcard-title">Sample Card</span>
@@ -1377,6 +1379,30 @@ export function GalleryThemeGeneratorContent() {
       if (token in style) continue; // already set from resolved
       if (value.startsWith("--tug-color(")) continue; // build-time only
       style[token] = value;
+    }
+    // Component-level token aliases: these are defined on body with var() references
+    // to --tug-base-* tokens. CSS resolves var() at the definition site (body), not
+    // the use site, so overriding base tokens on a descendant doesn't cascade through
+    // body-level aliases. We must override the component tokens directly.
+    const COMPONENT_ALIASES: Record<string, string> = {
+      "--tug-card-title-bar-bg-active": "--tug-base-tab-bg-active",
+      "--tug-card-title-bar-bg-inactive": "--tug-base-tab-bg-inactive",
+      "--tug-card-title-bar-bg-collapsed": "--tug-base-tab-bg-collapsed",
+      "--tug-card-border": "--tug-base-border-default",
+      "--tug-card-accessory-bg": "--tug-base-surface-sunken",
+      "--tug-card-accessory-border": "--tug-base-border-default",
+      "--tug-card-bg": "--tug-base-surface-overlay",
+      "--tug-tab-bar-bg": "--tug-base-tab-bg-inactive",
+      "--tug-tab-bg-active": "--tug-base-tab-bg-active",
+      "--tug-tab-bg-hover": "--tug-base-tab-bg-hover",
+      "--tug-tab-fg-rest": "--tug-base-tab-fg-rest",
+      "--tug-tab-fg-active": "--tug-base-tab-fg-active",
+      "--tug-tab-fg-hover": "--tug-base-tab-fg-hover",
+    };
+    for (const [comp, base] of Object.entries(COMPONENT_ALIASES)) {
+      if (base in style) {
+        style[comp] = style[base];
+      }
     }
     return style as React.CSSProperties;
   }, [themeOutput]);
@@ -1707,20 +1733,21 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      {/* ---- Live preview with hue pickers + mood sliders in right panel ---- */}
-      <div style={liveTokenStyle} data-testid="gtg-role-hues">
+      {/* ---- Preview + hue pickers + mood sliders ---- */}
+      <div data-testid="gtg-role-hues">
         <div className="cg-section">
           <div className="cg-section-title">Preview</div>
           <ThemePreviewCard
             resolvedColor={resolvedColor}
+            liveTokenStyle={liveTokenStyle}
             structural={[
               { key: "cardBg", label: "Card BG", hue: cardBgHue, set: setCardBgHue, testId: "gtg-cardbg-hue" },
-              { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue" },
-              { key: "canvas", label: "Grid", hue: canvasHue, set: setCanvasHue, testId: "gtg-grid-hue" },
               { key: "cardFrame", label: "Frame", hue: cardFrameHue, set: setCardFrameHue, testId: "gtg-cardframe-hue" },
               { key: "borderTint", label: "Border", hue: borderTintHue, set: setBorderTintHue, testId: "gtg-bordertint-hue" },
               { key: "text", label: "Text", hue: textHue, set: setTextHue, testId: "gtg-text-hue" },
               { key: "link", label: "Link", hue: linkHue, set: setLinkHue, testId: "gtg-link-hue" },
+              { key: "canvas", label: "Grid", hue: canvasHue, set: setCanvasHue, testId: "gtg-grid-hue" },
+              { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue" },
             ]}
             roles={[
               { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
@@ -1744,7 +1771,9 @@ export function GalleryThemeGeneratorContent() {
 
         <div className="cg-section">
           <div className="cg-section-title">Controls</div>
-          <EmphasisRolePreview />
+          <div style={liveTokenStyle}>
+            <EmphasisRolePreview />
+          </div>
         </div>
       </div>
 

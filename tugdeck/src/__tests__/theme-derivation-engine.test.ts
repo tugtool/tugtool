@@ -93,9 +93,9 @@ describe("derivation-engine", () => {
   // -------------------------------------------------------------------------
   // T2.1: Token count
   // -------------------------------------------------------------------------
-  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 371 entries", () => {
+  it("T2.1: deriveTheme(EXAMPLE_RECIPES.brio) produces token map with 373 entries", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
-    expect(Object.keys(output.tokens).length).toBe(371);
+    expect(Object.keys(output.tokens).length).toBe(373);
   });
 
   // -------------------------------------------------------------------------
@@ -851,10 +851,10 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-bg-canvas": { L: 0.2076, C: 0.005600000000000001, h: 263.33333333333326 },
   "--tug-base-border-accent": { L: 0.78, C: 0.146, h: 55 },
   "--tug-base-border-danger": { L: 0.659, C: 0.22, h: 25 },
-  "--tug-base-border-default": { L: 0.5064, C: 0.0162, h: 250 },
+  "--tug-base-border-default": { L: 0.49559999999999993, C: 0.016800000000000002, h: 263.33333333333326 },
   "--tug-base-border-inverse": { L: 0.9340799999999999, C: 0.0081, h: 250 },
-  "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 256.66666666666663 },
-  "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 256.66666666666663 },
+  "--tug-base-border-muted": { L: 0.57624, C: 0.019600000000000003, h: 263.33333333333326 },
+  "--tug-base-border-strong": { L: 0.6108, C: 0.019600000000000003, h: 258.33333333333326 },
   "--tug-base-checkmark": { L: 0.96, C: 0.00816, h: 243.33333333333326 },
   "--tug-base-checkmark-mixed": { L: 0.81312, C: 0.013500000000000002, h: 250 },
   "--tug-base-control-disabled-bg": { L: 0.39552, C: 0.0149, h: 270 },
@@ -1082,7 +1082,7 @@ export const BRIO_GROUND_TRUTH: Record<string, { L: number; C: number; h: number
   "--tug-base-surface-raised": { L: 0.27671999999999997, C: 0.014000000000000002, h: 263.33333333333326 },
   "--tug-base-surface-screen": { L: 0.33431999999999995, C: 0.019600000000000003, h: 260 },
   "--tug-base-surface-sunken": { L: 0.27276, C: 0.0149, h: 270 },
-  "--tug-base-tab-bg-active": { L: 0.35087999999999997, C: 0.0149, h: 272.5 },
+  "--tug-base-tab-bg-active": { L: 0.35735999999999996, C: 0.033600000000000005, h: 260 },
   "--tug-base-tab-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-bg-hover": { L: 1, C: 0, h: 0 },
   "--tug-base-tab-close-fg-hover": { L: 0.9168, C: 0.0081, h: 250 },
@@ -1227,7 +1227,7 @@ describe("derivation-engine mode-preset", () => {
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     // Token count unchanged
-    expect(Object.keys(output.tokens).length).toBe(371);
+    expect(Object.keys(output.tokens).length).toBe(373);
 
     // All ground truth tokens still within OKLCH delta-E < 0.02 (complementary to T-BRIO-MATCH)
     for (const [name, expected] of Object.entries(BRIO_GROUND_TRUTH)) {

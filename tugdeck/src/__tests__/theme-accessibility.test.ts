@@ -239,6 +239,10 @@ describe("pairing-map", () => {
       // tab-bg-hover and tab-close-bg-hover are semi-transparent overlays
       "--tug-base-tab-bg-hover",
       "--tug-base-tab-close-bg-hover",
+      // tab-bg-inactive and tab-bg-collapsed are title bar/collapsed card backgrounds
+      // (text contrast is covered via tab-fg-rest / card-title-bar-fg)
+      "--tug-base-tab-bg-inactive",
+      "--tug-base-tab-bg-collapsed",
     ]);
 
     const missingBgTokens: string[] = [];

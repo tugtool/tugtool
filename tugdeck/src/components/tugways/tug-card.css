@@ -26,9 +26,9 @@ body {
   --tug-card-dim-overlay: --tug-color(black, i: 0, t: 0, a: 15);
 
   /* --- Card Title Bar --- */
-  --tug-card-title-bar-bg-active: --tug-color(indigo, i: 12, t: 18);
-  --tug-card-title-bar-bg-inactive: --tug-color(indigo, i: 4, t: 15);
-  --tug-card-title-bar-bg-collapsed: --tug-color(violet, i: 4, t: 15);
+  --tug-card-title-bar-bg-active: var(--tug-base-tab-bg-active);
+  --tug-card-title-bar-bg-inactive: var(--tug-base-tab-bg-inactive);
+  --tug-card-title-bar-bg-collapsed: var(--tug-base-tab-bg-collapsed);
   --tug-card-title-bar-fg: var(--tug-base-fg-default);
   --tug-card-title-bar-icon-active: var(--tug-base-icon-active);
   --tug-card-title-bar-icon-inactive: var(--tug-base-fg-subtle);
