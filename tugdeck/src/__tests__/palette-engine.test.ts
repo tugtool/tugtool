@@ -560,36 +560,18 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
   });
 });
 
-describe("tug-palette.css — neutral ramp and anchors", () => {
-  it("contains --tug-neutral (canonical)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral:");
+describe("tug-palette.css — gray tone ramp and anchors", () => {
+  it("contains 10 gray tone steps from --tug-gray-0 to --tug-gray-100", () => {
+    const grayVars = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(grayVars.length).toBe(11);
   });
 
-  it("contains --tug-neutral-light", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-light:");
+  it("--tug-gray-0 matches L_DARK (black)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-gray-0: oklch(0.15 0 0)");
   });
 
-  it("contains --tug-neutral-dark", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-dark:");
-  });
-
-  it("contains --tug-neutral-intense", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-intense:");
-  });
-
-  it("contains --tug-neutral-muted", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-neutral-muted:");
-  });
-
-  it("does NOT contain removed neutral presets (accent, subtle, deep)", () => {
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-accent:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-subtle:");
-    expect(TUG_PALETTE_CSS).not.toContain("--tug-neutral-deep:");
-  });
-
-  it("neutral ramp has exactly 5 preset definitions", () => {
-    const neutralPresets = TUG_PALETTE_CSS.match(/--tug-neutral(?:-\w+)?:\s*oklch\([^;]+\);/g) ?? [];
-    expect(neutralPresets.length).toBe(5);
+  it("--tug-gray-100 matches L_LIGHT (white)", () => {
+    expect(TUG_PALETTE_CSS).toContain("--tug-gray-100: oklch(0.96 0 0)");
   });
 
   it("contains --tug-black", () => {
@@ -608,11 +590,10 @@ describe("tug-palette.css — neutral ramp and anchors", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-white: oklch(1 0 0)");
   });
 
-  it("all neutral variables use C=0 (achromatic)", () => {
-    const neutralLines = TUG_PALETTE_CSS.match(/--tug-neutral[^:]*:\s*oklch\([^;]+\);/g) ?? [];
-    expect(neutralLines.length).toBeGreaterThan(0);
-    for (const line of neutralLines) {
-      // oklch(L 0 0) pattern — C must be 0
+  it("all gray tone variables use C=0 (achromatic)", () => {
+    const grayLines = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(grayLines.length).toBeGreaterThan(0);
+    for (const line of grayLines) {
       expect(line).toMatch(/oklch\([\d.]+ 0 0\)/);
     }
   });

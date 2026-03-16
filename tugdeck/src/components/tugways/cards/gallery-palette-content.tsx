@@ -215,11 +215,11 @@ function LCurveEditor({
 // CanonicalStrip is now provided by the shared TugHueStrip component.
 
 // ---------------------------------------------------------------------------
-// TugAchromaticStrip — black / gray (tone variations) / white swatches
+// TugAchromaticStrip — 10 achromatic steps from black (0) to white (100)
 // ---------------------------------------------------------------------------
 
-/** Tone values shown as gray sub-swatches. */
-const GRAY_TONES = [0, 25, 50, 75, 100];
+/** 11 achromatic steps: 0 (black) through 100 (white) in increments of 10. */
+const GRAY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 /**
  * Compute the oklch() string for gray at a given tone, using the same
@@ -236,54 +236,31 @@ function grayOklch(tone: number): string {
 }
 
 /**
- * Achromatic strip: renders black, gray tone variations, and white swatches
- * in a single inline row, visually separated from the 48-hue TugHueStrip.
+ * Achromatic strip: renders 10 gray tone steps from black (0) to white (100).
+ * Gray-0 is a synonym for black, gray-100 is a synonym for white.
  */
 export function TugAchromaticStrip() {
   return (
     <div className="gp-achromatic-strip" data-testid="tug-achromatic-strip">
-      {/* Black swatch */}
-      <div
-        className="gp-achromatic-swatch gp-achromatic-swatch--black"
-        style={{ backgroundColor: "oklch(0 0 0)" }}
-        title="black: oklch(0 0 0)"
-        data-testid="gp-achromatic-swatch"
-        data-color="oklch(0 0 0)"
-        data-name="black"
-      >
-        <span className="gp-achromatic-label">black</span>
-      </div>
-
-      {/* Gray tone variations */}
-      {GRAY_TONES.map((tone) => {
+      {GRAY_STEPS.map((tone) => {
         const color = grayOklch(tone);
+        const label = tone === 0 ? "black" : tone === 100 ? "white" : `gray-${tone}`;
+        const name = tone === 0 ? "black" : tone === 100 ? "white" : "gray";
         return (
           <div
             key={tone}
-            className="gp-achromatic-swatch gp-achromatic-swatch--gray"
+            className="gp-achromatic-swatch"
             style={{ backgroundColor: color }}
-            title={`gray t:${tone} — ${color}`}
+            title={`${label}: ${color}`}
             data-testid="gp-achromatic-swatch"
             data-color={color}
-            data-name="gray"
+            data-name={name}
             data-tone={tone}
           >
-            <span className="gp-achromatic-label">gray {tone}</span>
+            <span className="gp-achromatic-label">{label}</span>
           </div>
         );
       })}
-
-      {/* White swatch */}
-      <div
-        className="gp-achromatic-swatch gp-achromatic-swatch--white"
-        style={{ backgroundColor: "oklch(1 0 0)" }}
-        title="white: oklch(1 0 0)"
-        data-testid="gp-achromatic-swatch"
-        data-color="oklch(1 0 0)"
-        data-name="white"
-      >
-        <span className="gp-achromatic-label">white</span>
-      </div>
     </div>
   );
 }

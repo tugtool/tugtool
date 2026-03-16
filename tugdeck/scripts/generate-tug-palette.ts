@@ -117,21 +117,28 @@ for (const hue of HUE_ORDER) {
   lines.push(``);
 }
 
-// Neutral ramp
+// Gray tone ramp (10 steps) + black/white anchors
+const GRAY_CANONICAL_L = 0.5;
+const GRAY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+function grayL(tone: number): number {
+  return L_DARK
+    + Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK) / 50
+    + Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L) / 50;
+}
+
 lines.push(`  /* -------------------------------------------------------------------------`);
-lines.push(`   * Neutral ramp (5 presets) and black/white anchors — static oklch() literals`);
-lines.push(`   * C=0 for all neutrals (achromatic). L values derived from piecewise formula`);
-lines.push(`   * with L_DARK=${fmt(L_DARK)}, L_LIGHT=${fmt(L_LIGHT)}, canonical-L=0.555, rounded to 3 decimals.`);
-lines.push(`   *   tone=50: L = canonical-L = 0.555  (canonical, intense, muted — no chroma)`);
-lines.push(`   *   tone=85: L = 0.555 + 35*(${fmt(L_LIGHT)}-0.555)/50 = 0.555 + 0.284 = 0.839  (light)`);
-lines.push(`   *   tone=20: L = ${fmt(L_DARK)} + 20*(0.555-${fmt(L_DARK)})/50 = ${fmt(L_DARK)} + 0.162 = 0.312    (dark)`);
-lines.push(`   * --tug-black and --tug-white are absolute anchors, independent of val->L.`);
+lines.push(`   * Gray tone ramp (10 steps from black to white)`);
+lines.push(`   * C=0 for all grays (achromatic). L values derived from piecewise formula`);
+lines.push(`   * with L_DARK=${fmt(L_DARK)}, L_LIGHT=${fmt(L_LIGHT)}, canonical-L=${GRAY_CANONICAL_L}.`);
+lines.push(`   * --tug-gray-0 = black, --tug-gray-100 = white.`);
+lines.push(`   * --tug-black and --tug-white are convenience aliases.`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
-lines.push(`  --tug-neutral: oklch(0.555 0 0);`);
-lines.push(`  --tug-neutral-light: oklch(0.839 0 0);`);
-lines.push(`  --tug-neutral-dark: oklch(0.312 0 0);`);
-lines.push(`  --tug-neutral-intense: oklch(0.555 0 0);`);
-lines.push(`  --tug-neutral-muted: oklch(0.555 0 0);`);
+
+for (const tone of GRAY_STEPS) {
+  const L = grayL(tone);
+  lines.push(`  --tug-gray-${tone}: oklch(${fmt(L, 4)} 0 0);`);
+}
 lines.push(`  --tug-black: oklch(0 0 0);`);
 lines.push(`  --tug-white: oklch(1 0 0);`);
 lines.push(`}`);

@@ -292,19 +292,23 @@ body {
   --tug-fuchsia-peak-c: 0.44;
 
   /* -------------------------------------------------------------------------
-   * Neutral ramp (5 presets) and black/white anchors — static oklch() literals
-   * C=0 for all neutrals (achromatic). L values derived from piecewise formula
-   * with L_DARK=0.15, L_LIGHT=0.96, canonical-L=0.555, rounded to 3 decimals.
-   *   tone=50: L = canonical-L = 0.555  (canonical, intense, muted — no chroma)
-   *   tone=85: L = 0.555 + 35*(0.96-0.555)/50 = 0.555 + 0.284 = 0.839  (light)
-   *   tone=20: L = 0.15 + 20*(0.555-0.15)/50 = 0.15 + 0.162 = 0.312    (dark)
-   * --tug-black and --tug-white are absolute anchors, independent of val->L.
+   * Gray tone ramp (10 steps from black to white)
+   * C=0 for all grays (achromatic). L values derived from piecewise formula
+   * with L_DARK=0.15, L_LIGHT=0.96, canonical-L=0.5.
+   * --tug-gray-0 = black, --tug-gray-100 = white.
+   * --tug-black and --tug-white are convenience aliases.
    * ------------------------------------------------------------------------- */
-  --tug-neutral: oklch(0.555 0 0);
-  --tug-neutral-light: oklch(0.839 0 0);
-  --tug-neutral-dark: oklch(0.312 0 0);
-  --tug-neutral-intense: oklch(0.555 0 0);
-  --tug-neutral-muted: oklch(0.555 0 0);
+  --tug-gray-0: oklch(0.15 0 0);
+  --tug-gray-10: oklch(0.22 0 0);
+  --tug-gray-20: oklch(0.29 0 0);
+  --tug-gray-30: oklch(0.36 0 0);
+  --tug-gray-40: oklch(0.43 0 0);
+  --tug-gray-50: oklch(0.5 0 0);
+  --tug-gray-60: oklch(0.592 0 0);
+  --tug-gray-70: oklch(0.684 0 0);
+  --tug-gray-80: oklch(0.776 0 0);
+  --tug-gray-90: oklch(0.868 0 0);
+  --tug-gray-100: oklch(0.96 0 0);
   --tug-black: oklch(0 0 0);
   --tug-white: oklch(1 0 0);
 }

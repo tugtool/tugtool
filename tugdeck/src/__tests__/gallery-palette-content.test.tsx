@@ -427,7 +427,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     expect(strip).not.toBeNull();
   });
 
-  it("T-ACHROMATIC-THREE: achromatic strip contains black, gray, and white swatches", () => {
+  it("T-ACHROMATIC-TEN: achromatic strip contains 10 swatches from black to white", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
@@ -435,11 +435,14 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     expect(strip).not.toBeNull();
     const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
-    // Must include at least one swatch for each of the three primary achromaticss
-    const names = Array.from(swatches).map((s) => s.getAttribute("data-name"));
-    expect(names).toContain("black");
-    expect(names).toContain("gray");
-    expect(names).toContain("white");
+    expect(swatches.length).toBe(11);
+    // First is black (gray-0), last is white (gray-100)
+    expect(swatches[0].getAttribute("data-name")).toBe("black");
+    expect(swatches[0].getAttribute("data-tone")).toBe("0");
+    expect(swatches[10].getAttribute("data-name")).toBe("white");
+    expect(swatches[10].getAttribute("data-tone")).toBe("100");
+    // Middle entries are gray
+    expect(swatches[4].getAttribute("data-name")).toBe("gray");
   });
 });
 
