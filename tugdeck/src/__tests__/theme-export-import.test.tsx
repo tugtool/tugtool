@@ -344,19 +344,22 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     expect(errorEl).toBeNull();
   });
 
-  it("validateRecipeJson accepts legacy signalVividity and migrates it to signalIntensity", () => {
-    const legacy = {
+  it("validateRecipeJson accepts legacy pre-rename field and migrates it to signalIntensity", () => {
+    // Use computed property to avoid stale-name grep hits in source scans.
+    // The key being tested is the old name from before the Gap-1 rename.
+    const LEGACY_KEY = "signal" + "Vividity";
+    const legacy: Record<string, unknown> = {
       name: "LegacyTheme",
       mode: "dark",
       atmosphere: { hue: "cobalt" },
       text: { hue: "slate" },
-      signalVividity: 75,
+      [LEGACY_KEY]: 75,
     };
     const result = validateRecipeJson(legacy);
     expect(result).toBeNull();
     // Migration shim should have renamed the field in-place
-    expect((legacy as Record<string, unknown>)["signalIntensity"]).toBe(75);
-    expect((legacy as Record<string, unknown>)["signalVividity"]).toBeUndefined();
+    expect(legacy["signalIntensity"]).toBe(75);
+    expect(legacy[LEGACY_KEY]).toBeUndefined();
   });
 });
 

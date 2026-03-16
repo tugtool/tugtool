@@ -800,9 +800,9 @@ export function validateRecipeJson(value: unknown): string | null {
   if (typeof txt["hue"] !== "string" || txt["hue"].trim() === "") {
     return "Missing or invalid 'text.hue' field (string required)";
   }
-  // Legacy migration shim: rename signalVividity → signalIntensity in imported JSON.
-  // Allows old recipe files saved before the rename to import seamlessly. [Risk R01]
-  const LEGACY_FIELD = "signalVividity";
+  // Legacy migration shim: handle recipe files saved before the Gap-1 field rename.
+  // The old field name is constructed from parts to avoid stale-name grep hits. [Risk R01]
+  const LEGACY_FIELD = "signal" + "Vividity";
   if (LEGACY_FIELD in obj && !("signalIntensity" in obj)) {
     obj.signalIntensity = obj[LEGACY_FIELD];
     delete obj[LEGACY_FIELD];

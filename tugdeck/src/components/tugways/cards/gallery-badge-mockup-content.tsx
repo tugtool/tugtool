@@ -153,7 +153,7 @@ function MockupBadge({
 
 // ---- Defaults ----
 
-const DEFAULTS = {
+const DEFAULTS: Record<string, number> = {
   fgIntensity: 72,
   fgTone: 85,
   bgIntensity: 65,
@@ -164,7 +164,7 @@ const DEFAULTS = {
   borderAlpha: 35,
   borderWidth: 1,
   radius: 2,
-} as const;
+};
 
 export function GalleryBadgeMockupContent() {
   const [fgIntensity, setFgIntensity] = useState(DEFAULTS.fgIntensity);
