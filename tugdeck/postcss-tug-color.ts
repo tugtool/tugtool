@@ -148,7 +148,7 @@ function fmt(n: number): string {
  *
  *   3. Black/white: exact L values (0 and 1), intensity/tone ignored, alpha honored.
  *
- *   4. Named grays (paper through pitch): fixed L from ACHROMATIC_L_VALUES keyed by
+ *   4. Named grays (pitch through paper): fixed L from ACHROMATIC_L_VALUES keyed by
  *      the inherent tone in NAMED_GRAYS; intensity and tone are ignored per [D06];
  *      alpha IS honored.
  *
@@ -198,7 +198,7 @@ function expandTugColor(
     return `oklch(1 0 0${alphaSuffix})`;
   }
 
-  // ── Tier 4: Named grays (paper through pitch) ─────────────────────────────
+  // ── Tier 4: Named grays (pitch through paper) ─────────────────────────────
   // Fixed lightness per [D06]: look up inherent tone from NAMED_GRAYS,
   // use the pre-computed L from ACHROMATIC_L_VALUES. Intensity and tone ignored.
   const namedGrayTone = NAMED_GRAYS[color.name];

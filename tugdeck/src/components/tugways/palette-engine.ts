@@ -18,8 +18,8 @@
  * as `A-B`, resolving to (2/3)*angle(A) + (1/3)*angle(B) — yielding 144 expressible
  * hue points at approximately 2.5-degree average spacing.
  *
- * Named grays: the 9 intermediate achromatic values use descriptive names (paper
- * through pitch) in place of numeric suffixes. `NAMED_GRAYS` maps each name to its
+ * Named grays: the 9 intermediate achromatic values use descriptive names (pitch
+ * through paper, dark to light) in place of numeric suffixes. `NAMED_GRAYS` maps each name to its
  * tone value; `ACHROMATIC_L_VALUES` maps each achromatic name (including black and
  * white) to its fixed OKLCH L value.
  *
@@ -749,24 +749,20 @@ export function tugColor(
 /**
  * Named gray tone mapping: descriptive name → tone value (10–90).
  *
- * The 9 intermediate achromatic values use descriptive names (paper through pitch)
- * instead of numeric suffixes. Names are ordered dark-to-light: paper (tone 10,
- * darkest named gray) through pitch (tone 90, lightest named gray). The names map
- * to their position in the tone ramp, not to the perceived lightness of their
- * real-world referents.
- *
- * See Table T01 in tugplan-color-palette-system.md.
+ * The 9 intermediate achromatic values use descriptive names whose real-world
+ * associations match their lightness: pitch (tone 10, darkest) through paper
+ * (tone 90, lightest).
  */
 export const NAMED_GRAYS: Record<string, number> = {
-  paper:     10,
-  linen:     20,
-  parchment: 30,
-  vellum:    40,
+  pitch:     10,
+  ink:       20,
+  charcoal:  30,
+  carbon:    40,
   graphite:  50,
-  carbon:    60,
-  charcoal:  70,
-  ink:       80,
-  pitch:     90,
+  vellum:    60,
+  parchment: 70,
+  linen:     80,
+  paper:     90,
 };
 
 /**
@@ -778,15 +774,14 @@ export const NAMED_GRAYS: Record<string, number> = {
  * intentionally excluded: it is a continuous tone accessor (any lightness via
  * tone parameter), not a fixed-lightness named color.
  *
- * Adjacent pairs: black-paper, paper-linen, linen-parchment, parchment-vellum,
- * vellum-graphite, graphite-carbon, carbon-charcoal, charcoal-ink, ink-pitch,
- * pitch-white (10 pairs, 20 hyphenated names since both directions are valid).
- *
- * See List L01 in tugplan-color-palette-system.md.
+ * Adjacent pairs: black-pitch, pitch-ink, ink-charcoal, charcoal-carbon,
+ * carbon-graphite, graphite-vellum, vellum-parchment, parchment-linen,
+ * linen-paper, paper-white (10 pairs, 20 hyphenated names since both
+ * directions are valid).
  */
 export const ACHROMATIC_SEQUENCE: readonly string[] = [
-  "black", "paper", "linen", "parchment", "vellum",
-  "graphite", "carbon", "charcoal", "ink", "pitch", "white",
+  "black", "pitch", "ink", "charcoal", "carbon",
+  "graphite", "vellum", "parchment", "linen", "paper", "white",
 ];
 
 /**
@@ -801,15 +796,15 @@ export const ACHROMATIC_SEQUENCE: readonly string[] = [
  */
 export const ACHROMATIC_L_VALUES: Record<string, number> = {
   black:     0,
-  paper:     0.22,
-  linen:     0.29,
-  parchment: 0.36,
-  vellum:    0.43,
+  pitch:     0.22,
+  ink:       0.29,
+  charcoal:  0.36,
+  carbon:    0.43,
   graphite:  0.5,
-  carbon:    0.592,
-  charcoal:  0.684,
-  ink:       0.776,
-  pitch:     0.868,
+  vellum:    0.592,
+  parchment: 0.684,
+  linen:     0.776,
+  paper:     0.868,
   white:     1,
 };
 

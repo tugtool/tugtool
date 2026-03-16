@@ -292,20 +292,20 @@ body {
   --tug-fuchsia-peak-c: 0.44;
 
   /* -------------------------------------------------------------------------
-   * Named gray ramp (9 descriptive names: paper through pitch)
+   * Named gray ramp (9 descriptive names: pitch through paper)
    * C=0 for all named grays (achromatic). Fixed L values from ACHROMATIC_L_VALUES.
    * Endpoint variables --tug-gray-0 / --tug-gray-100 removed (see D05).
    * --tug-black and --tug-white are the true achromatic endpoints.
    * ------------------------------------------------------------------------- */
-  --tug-gray-paper: oklch(0.22 0 0);
-  --tug-gray-linen: oklch(0.29 0 0);
-  --tug-gray-parchment: oklch(0.36 0 0);
-  --tug-gray-vellum: oklch(0.43 0 0);
+  --tug-gray-pitch: oklch(0.22 0 0);
+  --tug-gray-ink: oklch(0.29 0 0);
+  --tug-gray-charcoal: oklch(0.36 0 0);
+  --tug-gray-carbon: oklch(0.43 0 0);
   --tug-gray-graphite: oklch(0.5 0 0);
-  --tug-gray-carbon: oklch(0.592 0 0);
-  --tug-gray-charcoal: oklch(0.684 0 0);
-  --tug-gray-ink: oklch(0.776 0 0);
-  --tug-gray-pitch: oklch(0.868 0 0);
+  --tug-gray-vellum: oklch(0.592 0 0);
+  --tug-gray-parchment: oklch(0.684 0 0);
+  --tug-gray-linen: oklch(0.776 0 0);
+  --tug-gray-paper: oklch(0.868 0 0);
   --tug-black: oklch(0 0 0);
   --tug-white: oklch(1 0 0);
 }

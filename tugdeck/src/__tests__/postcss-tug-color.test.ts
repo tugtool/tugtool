@@ -503,14 +503,14 @@ describe("postcss-tug-color: all ring-adjacent pairs expand without error", () =
 // ---------------------------------------------------------------------------
 
 describe("postcss-tug-color: named gray expansion", () => {
-  it("--tug-color(paper) expands to oklch(0.22 0 0)", () => {
+  it("--tug-color(paper) expands to oklch(0.868 0 0)", () => {
     const result = processDecl("color", "--tug-color(paper)");
-    expect(result).toBe("oklch(0.22 0 0)");
+    expect(result).toBe("oklch(0.868 0 0)");
   });
 
-  it("--tug-color(pitch) expands to oklch(0.868 0 0)", () => {
+  it("--tug-color(pitch) expands to oklch(0.22 0 0)", () => {
     const result = processDecl("color", "--tug-color(pitch)");
-    expect(result).toBe("oklch(0.868 0 0)");
+    expect(result).toBe("oklch(0.22 0 0)");
   });
 
   it("--tug-color(graphite) expands to oklch(0.5 0 0)", () => {
@@ -522,17 +522,17 @@ describe("postcss-tug-color: named gray expansion", () => {
     const withTone = processDecl("color", "--tug-color(paper, t: 80)");
     const without = processDecl("color", "--tug-color(paper)");
     expect(withTone).toBe(without);
-    expect(withTone).toBe("oklch(0.22 0 0)");
+    expect(withTone).toBe("oklch(0.868 0 0)");
   });
 
   it("named gray with i: 50 and t: 80 still expands to fixed L (both ignored)", () => {
     const result = processDecl("color", "--tug-color(paper, i: 50, t: 80)");
-    expect(result).toBe("oklch(0.22 0 0)");
+    expect(result).toBe("oklch(0.868 0 0)");
   });
 
-  it("named gray with a: 50 honors alpha — oklch(0.22 0 0 / 0.5)", () => {
+  it("named gray with a: 50 honors alpha — oklch(0.868 0 0 / 0.5)", () => {
     const result = processDecl("color", "--tug-color(paper, a: 50)");
-    expect(result).toBe("oklch(0.22 0 0 / 0.5)");
+    expect(result).toBe("oklch(0.868 0 0 / 0.5)");
   });
 
   it("all 9 named grays expand to achromatic oklch() with C=0", () => {
@@ -545,8 +545,8 @@ describe("postcss-tug-color: named gray expansion", () => {
 
   it("named gray L values match the expected fixed values from Table T01", () => {
     const expected: Record<string, number> = {
-      paper: 0.22, linen: 0.29, parchment: 0.36, vellum: 0.43, graphite: 0.5,
-      carbon: 0.592, charcoal: 0.684, ink: 0.776, pitch: 0.868,
+      pitch: 0.22, ink: 0.29, charcoal: 0.36, carbon: 0.43, graphite: 0.5,
+      vellum: 0.592, parchment: 0.684, linen: 0.776, paper: 0.868,
     };
     for (const [name, l] of Object.entries(expected)) {
       const result = processDecl("color", `--tug-color(${name})`);
@@ -583,8 +583,8 @@ describe("postcss-tug-color: transparent expansion", () => {
 // ---------------------------------------------------------------------------
 
 describe("postcss-tug-color: achromatic adjacency expansion", () => {
-  it("--tug-color(paper-linen) expands to approximately oklch(0.2433 0 0)", () => {
-    const result = processDecl("color", "--tug-color(paper-linen)");
+  it("--tug-color(pitch-ink) expands to approximately oklch(0.2433 0 0)", () => {
+    const result = processDecl("color", "--tug-color(pitch-ink)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.2433, 3);
@@ -592,50 +592,50 @@ describe("postcss-tug-color: achromatic adjacency expansion", () => {
     expect(parsed!.h).toBe(0);
   });
 
-  it("--tug-color(linen-paper) expands to approximately oklch(0.2667 0 0)", () => {
-    const result = processDecl("color", "--tug-color(linen-paper)");
+  it("--tug-color(ink-pitch) expands to approximately oklch(0.2667 0 0)", () => {
+    const result = processDecl("color", "--tug-color(ink-pitch)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.2667, 3);
   });
 
-  it("paper-linen and linen-paper produce different L values (asymmetric)", () => {
-    const pl = processDecl("color", "--tug-color(paper-linen)");
-    const lp = processDecl("color", "--tug-color(linen-paper)");
-    expect(pl).not.toBe(lp);
-    const parsedPL = parseOklch(pl)!;
-    const parsedLP = parseOklch(lp)!;
-    expect(parsedPL.L).toBeLessThan(parsedLP.L);
+  it("pitch-ink and ink-pitch produce different L values (asymmetric)", () => {
+    const pi = processDecl("color", "--tug-color(pitch-ink)");
+    const ip = processDecl("color", "--tug-color(ink-pitch)");
+    expect(pi).not.toBe(ip);
+    const parsedPI = parseOklch(pi)!;
+    const parsedIP = parseOklch(ip)!;
+    expect(parsedPI.L).toBeLessThan(parsedIP.L);
   });
 
-  it("--tug-color(black-paper) expands with achromatic adjacency before black early return", () => {
+  it("--tug-color(black-pitch) expands with achromatic adjacency before black early return", () => {
     // L = (2/3)*0 + (1/3)*0.22 ≈ 0.0733
-    const result = processDecl("color", "--tug-color(black-paper)");
+    const result = processDecl("color", "--tug-color(black-pitch)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.0733, 3);
     expect(parsed!.C).toBe(0);
   });
 
-  it("--tug-color(paper-black) expands correctly", () => {
+  it("--tug-color(pitch-black) expands correctly", () => {
     // L = (2/3)*0.22 + (1/3)*0 ≈ 0.1467
-    const result = processDecl("color", "--tug-color(paper-black)");
+    const result = processDecl("color", "--tug-color(pitch-black)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.1467, 3);
   });
 
-  it("--tug-color(pitch-white) expands with achromatic adjacency before white early return", () => {
+  it("--tug-color(paper-white) expands with achromatic adjacency before white early return", () => {
     // L = (2/3)*0.868 + (1/3)*1 ≈ 0.912
-    const result = processDecl("color", "--tug-color(pitch-white)");
+    const result = processDecl("color", "--tug-color(paper-white)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.912, 3);
   });
 
-  it("--tug-color(white-pitch) expands correctly", () => {
+  it("--tug-color(white-paper) expands correctly", () => {
     // L = (2/3)*1 + (1/3)*0.868 ≈ 0.956
-    const result = processDecl("color", "--tug-color(white-pitch)");
+    const result = processDecl("color", "--tug-color(white-paper)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.L).toBeCloseTo(0.956, 3);
@@ -665,8 +665,8 @@ describe("postcss-tug-color: achromatic adjacency expansion", () => {
     }
   });
 
-  it("--tug-color(paper-linen, a: 50) honors alpha with achromatic adjacency", () => {
-    const result = processDecl("color", "--tug-color(paper-linen, a: 50)");
+  it("--tug-color(pitch-ink, a: 50) honors alpha with achromatic adjacency", () => {
+    const result = processDecl("color", "--tug-color(pitch-ink, a: 50)");
     const parsed = parseOklch(result);
     expect(parsed).not.toBeNull();
     expect(parsed!.alpha).toBeCloseTo(0.5, 4);
@@ -685,15 +685,15 @@ describe("postcss-tug-color: achromatic adjacency expansion", () => {
     expect(msg).toContain("not adjacent");
   });
 
-  it("--tug-color(paper-linen-dark) expands to same oklch as paper-linen and emits a console.warn about the preset", () => {
+  it("--tug-color(pitch-ink-dark) expands to same oklch as pitch-ink and emits a console.warn about the preset", () => {
     const warnMessages: string[] = [];
     const originalWarn = console.warn;
     console.warn = (...args: unknown[]) => { warnMessages.push(String(args[0])); };
     try {
-      const result = processDecl("color", "--tug-color(paper-linen-dark)");
-      const expected = processDecl("color", "--tug-color(paper-linen)");
+      const result = processDecl("color", "--tug-color(pitch-ink-dark)");
+      const expected = processDecl("color", "--tug-color(pitch-ink)");
       expect(result).toBe(expected);
-      expect(warnMessages.some((m) => m.includes("preset") && m.includes("dark") && m.includes("paper-linen"))).toBe(true);
+      expect(warnMessages.some((m) => m.includes("preset") && m.includes("dark") && m.includes("pitch-ink"))).toBe(true);
     } finally {
       console.warn = originalWarn;
     }

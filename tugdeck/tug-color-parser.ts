@@ -14,7 +14,7 @@
  *   --tug-color(cobalt-indigo)            hyphenated adjacency (cobalt dominant)
  *   --tug-color(cobalt-indigo-intense)    hyphenated adjacency + preset
  *   --tug-color(paper)                    named gray (fixed L, ignores i/t)
- *   --tug-color(paper-linen)             achromatic adjacency (paper dominant, linear sequence)
+ *   --tug-color(linen-paper)             achromatic adjacency (linen dominant, linear sequence)
  *   --tug-color(transparent)             fully transparent (always oklch(0 0 0 / 0))
  *
  * Supported syntax forms:
@@ -580,7 +580,7 @@ const SLOT_DISPATCH: Record<string, SlotParser> = {
  * @param input  The text between the parentheses (not including them).
  * @param knownHues  Set of valid color names (e.g. "red", "cobalt", "indigo").
  *   Should include all 48 named hues plus "black", "white", optionally "gray",
- *   the 9 named grays (paper through pitch), and optionally "transparent".
+ *   the 9 named grays (pitch through paper), and optionally "transparent".
  * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
  *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(cobalt-indigo-muted, a: 50).
  *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
@@ -760,7 +760,7 @@ export function parseTugColor(
   // Tier 1 — Transparent: warns on ANY explicitly provided argument (i, t, or a).
   //   transparent always expands to oklch(0 0 0 / 0); all args are meaningless.
   //
-  // Tier 2 — Named grays (paper through pitch, i.e. in achromaticSequence but not
+  // Tier 2 — Named grays (pitch through paper, i.e. in achromaticSequence but not
   //   black/white/gray): fixed-lightness per [D06], so warn on intensity > 0 or
   //   explicit tone. Alpha is honored silently.
   //

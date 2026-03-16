@@ -427,7 +427,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     expect(strip).not.toBeNull();
   });
 
-  it("T-ACHROMATIC-TEN: achromatic strip contains 11 swatches: black, paper…pitch, white", () => {
+  it("T-ACHROMATIC-TEN: achromatic strip contains 11 swatches: black, pitch…paper, white", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryPaletteContent />));
@@ -442,11 +442,11 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     expect(swatches[10].getAttribute("data-name")).toBe("white");
     expect(swatches[10].getAttribute("data-tone")).toBe("100");
     // Named grays use descriptive names (indices 1–9)
-    // Index order: black(0), paper(1), linen(2), parchment(3), vellum(4),
-    //              graphite(5), carbon(6), charcoal(7), ink(8), pitch(9), white(10)
-    expect(swatches[1].getAttribute("data-name")).toBe("paper");
-    expect(swatches[4].getAttribute("data-name")).toBe("vellum");
-    expect(swatches[9].getAttribute("data-name")).toBe("pitch");
+    // Index order: black(0), pitch(1), ink(2), charcoal(3), carbon(4),
+    //              graphite(5), vellum(6), parchment(7), linen(8), paper(9), white(10)
+    expect(swatches[1].getAttribute("data-name")).toBe("pitch");
+    expect(swatches[4].getAttribute("data-name")).toBe("carbon");
+    expect(swatches[9].getAttribute("data-name")).toBe("paper");
   });
 
   it("T-ACHROMATIC-NAMES: all 9 named gray swatches use descriptive names", () => {
@@ -456,7 +456,7 @@ describe("GalleryPaletteContent – achromatic strip", () => {
     });
     const strip = container.querySelector("[data-testid='tug-achromatic-strip']")!;
     const swatches = strip.querySelectorAll("[data-testid='gp-achromatic-swatch']");
-    const expectedNames = ["black", "paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch", "white"];
+    const expectedNames = ["black", "pitch", "ink", "charcoal", "carbon", "graphite", "vellum", "parchment", "linen", "paper", "white"];
     expectedNames.forEach((name, idx) => {
       expect(swatches[idx].getAttribute("data-name")).toBe(name);
     });

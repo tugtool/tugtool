@@ -566,13 +566,13 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
 });
 
 describe("tug-palette.css — named gray ramp and anchors", () => {
-  it("contains exactly 9 named gray variables (paper through pitch)", () => {
+  it("contains exactly 9 named gray variables (pitch through paper)", () => {
     const namedGrayVars = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
     expect(namedGrayVars.length).toBe(9);
   });
 
-  it("contains --tug-gray-paper through --tug-gray-pitch in the correct order", () => {
-    const names = ["paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch"];
+  it("contains --tug-gray-pitch through --tug-gray-paper in the correct order", () => {
+    const names = ["pitch", "ink", "charcoal", "carbon", "graphite", "vellum", "parchment", "linen", "paper"];
     for (const name of names) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}:`);
     }
@@ -586,15 +586,15 @@ describe("tug-palette.css — named gray ramp and anchors", () => {
 
   it("named gray oklch values match Table T01 exactly", () => {
     const expected: Record<string, string> = {
-      paper:     "oklch(0.22 0 0)",
-      linen:     "oklch(0.29 0 0)",
-      parchment: "oklch(0.36 0 0)",
-      vellum:    "oklch(0.43 0 0)",
+      pitch:     "oklch(0.22 0 0)",
+      ink:       "oklch(0.29 0 0)",
+      charcoal:  "oklch(0.36 0 0)",
+      carbon:    "oklch(0.43 0 0)",
       graphite:  "oklch(0.5 0 0)",
-      carbon:    "oklch(0.592 0 0)",
-      charcoal:  "oklch(0.684 0 0)",
-      ink:       "oklch(0.776 0 0)",
-      pitch:     "oklch(0.868 0 0)",
+      vellum:    "oklch(0.592 0 0)",
+      parchment: "oklch(0.684 0 0)",
+      linen:     "oklch(0.776 0 0)",
+      paper:     "oklch(0.868 0 0)",
     };
     for (const [name, value] of Object.entries(expected)) {
       expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}: ${value}`);
@@ -787,15 +787,15 @@ describe("NAMED_GRAYS", () => {
   });
 
   it("contains all expected names with correct tone values", () => {
-    expect(NAMED_GRAYS["paper"]).toBe(10);
-    expect(NAMED_GRAYS["linen"]).toBe(20);
-    expect(NAMED_GRAYS["parchment"]).toBe(30);
-    expect(NAMED_GRAYS["vellum"]).toBe(40);
+    expect(NAMED_GRAYS["pitch"]).toBe(10);
+    expect(NAMED_GRAYS["ink"]).toBe(20);
+    expect(NAMED_GRAYS["charcoal"]).toBe(30);
+    expect(NAMED_GRAYS["carbon"]).toBe(40);
     expect(NAMED_GRAYS["graphite"]).toBe(50);
-    expect(NAMED_GRAYS["carbon"]).toBe(60);
-    expect(NAMED_GRAYS["charcoal"]).toBe(70);
-    expect(NAMED_GRAYS["ink"]).toBe(80);
-    expect(NAMED_GRAYS["pitch"]).toBe(90);
+    expect(NAMED_GRAYS["vellum"]).toBe(60);
+    expect(NAMED_GRAYS["parchment"]).toBe(70);
+    expect(NAMED_GRAYS["linen"]).toBe(80);
+    expect(NAMED_GRAYS["paper"]).toBe(90);
   });
 
   it("tone values are multiples of 10 in the range [10, 90]", () => {
@@ -823,7 +823,7 @@ describe("ACHROMATIC_SEQUENCE", () => {
   });
 
   it("contains all 9 named grays in the correct order", () => {
-    const expectedOrder = ["paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch"];
+    const expectedOrder = ["pitch", "ink", "charcoal", "carbon", "graphite", "vellum", "parchment", "linen", "paper"];
     const seqWithoutEndpoints = ACHROMATIC_SEQUENCE.slice(1, -1);
     expect(seqWithoutEndpoints).toEqual(expectedOrder);
   });
@@ -884,30 +884,30 @@ describe("ACHROMATIC_L_VALUES", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveAchromaticAdjacency()", () => {
-  it("paper-linen returns approximately 0.2433 ((2/3)*0.22 + (1/3)*0.29)", () => {
-    const result = resolveAchromaticAdjacency("paper", "linen");
+  it("pitch-ink returns approximately 0.2433 ((2/3)*0.22 + (1/3)*0.29)", () => {
+    const result = resolveAchromaticAdjacency("pitch", "ink");
     expect(result).toBeCloseTo(0.2433, 3);
   });
 
-  it("linen-paper returns approximately 0.2667 ((2/3)*0.29 + (1/3)*0.22)", () => {
-    const result = resolveAchromaticAdjacency("linen", "paper");
+  it("ink-pitch returns approximately 0.2667 ((2/3)*0.29 + (1/3)*0.22)", () => {
+    const result = resolveAchromaticAdjacency("ink", "pitch");
     expect(result).toBeCloseTo(0.2667, 3);
   });
 
-  it("paper-linen and linen-paper produce different values (asymmetric)", () => {
-    const pl = resolveAchromaticAdjacency("paper", "linen");
-    const lp = resolveAchromaticAdjacency("linen", "paper");
-    expect(pl).not.toBe(lp);
-    expect(pl).toBeLessThan(lp);
+  it("pitch-ink and ink-pitch produce different values (asymmetric)", () => {
+    const pi = resolveAchromaticAdjacency("pitch", "ink");
+    const ip = resolveAchromaticAdjacency("ink", "pitch");
+    expect(pi).not.toBe(ip);
+    expect(pi).toBeLessThan(ip);
   });
 
-  it("black-paper returns approximately 0.0733 ((2/3)*0 + (1/3)*0.22)", () => {
-    const result = resolveAchromaticAdjacency("black", "paper");
+  it("black-pitch returns approximately 0.0733 ((2/3)*0 + (1/3)*0.22)", () => {
+    const result = resolveAchromaticAdjacency("black", "pitch");
     expect(result).toBeCloseTo(0.0733, 3);
   });
 
-  it("pitch-white returns approximately 0.912 ((2/3)*0.868 + (1/3)*1)", () => {
-    const result = resolveAchromaticAdjacency("pitch", "white");
+  it("paper-white returns approximately 0.912 ((2/3)*0.868 + (1/3)*1)", () => {
+    const result = resolveAchromaticAdjacency("paper", "white");
     expect(result).toBeCloseTo(0.912, 3);
   });
 
@@ -922,12 +922,12 @@ describe("resolveAchromaticAdjacency()", () => {
 // ---------------------------------------------------------------------------
 
 describe("isAchromaticAdjacent()", () => {
-  it("paper and linen are adjacent (distance=1)", () => {
-    expect(isAchromaticAdjacent("paper", "linen")).toBe(true);
+  it("linen and paper are adjacent (distance=1)", () => {
+    expect(isAchromaticAdjacent("linen", "paper")).toBe(true);
   });
 
-  it("linen and paper are adjacent (symmetric)", () => {
-    expect(isAchromaticAdjacent("linen", "paper")).toBe(true);
+  it("paper and linen are adjacent (symmetric)", () => {
+    expect(isAchromaticAdjacent("paper", "linen")).toBe(true);
   });
 
   it("paper and parchment are not adjacent (distance=2)", () => {
@@ -938,12 +938,12 @@ describe("isAchromaticAdjacent()", () => {
     expect(isAchromaticAdjacent("black", "white")).toBe(false);
   });
 
-  it("black and paper are adjacent (distance=1, at the dark end)", () => {
-    expect(isAchromaticAdjacent("black", "paper")).toBe(true);
+  it("black and pitch are adjacent (distance=1, at the dark end)", () => {
+    expect(isAchromaticAdjacent("black", "pitch")).toBe(true);
   });
 
-  it("pitch and white are adjacent (distance=1, at the light end)", () => {
-    expect(isAchromaticAdjacent("pitch", "white")).toBe(true);
+  it("paper and white are adjacent (distance=1, at the light end)", () => {
+    expect(isAchromaticAdjacent("paper", "white")).toBe(true);
   });
 
   it("unknown achromatic name returns false", () => {

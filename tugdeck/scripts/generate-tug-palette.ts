@@ -119,21 +119,21 @@ for (const hue of HUE_ORDER) {
   lines.push(``);
 }
 
-// Named gray ramp (9 descriptive names, paper through pitch) + black/white anchors.
+// Named gray ramp (9 descriptive names, pitch through paper) + black/white anchors.
 // Endpoint variables --tug-gray-0 and --tug-gray-100 are dropped per [D05]; use
 // --tug-black and --tug-white for the true endpoints.
 //
 // Name-to-tone mapping from NAMED_GRAYS (palette-engine.ts):
-//   paper=10, linen=20, parchment=30, vellum=40, graphite=50,
-//   carbon=60, charcoal=70, ink=80, pitch=90
+//   pitch=10, ink=20, charcoal=30, carbon=40, graphite=50,
+//   vellum=60, parchment=70, linen=80, paper=90
 //
 // L values from ACHROMATIC_L_VALUES (pre-computed from piecewise formula).
 
 // Emit names in tone order (ascending) using NAMED_GRAYS ordering.
-const NAMED_GRAY_ORDER = Object.keys(NAMED_GRAYS); // paper … pitch in definition order
+const NAMED_GRAY_ORDER = Object.keys(NAMED_GRAYS); // pitch … paper in definition order
 
 lines.push(`  /* -------------------------------------------------------------------------`);
-lines.push(`   * Named gray ramp (9 descriptive names: paper through pitch)`);
+lines.push(`   * Named gray ramp (9 descriptive names: pitch through paper)`);
 lines.push(`   * C=0 for all named grays (achromatic). Fixed L values from ACHROMATIC_L_VALUES.`);
 lines.push(`   * Endpoint variables --tug-gray-0 / --tug-gray-100 removed (see D05).`);
 lines.push(`   * --tug-black and --tug-white are the true achromatic endpoints.`);

@@ -1394,27 +1394,27 @@ describe("tug-color-parser: transparent warnings (tier 1)", () => {
 });
 
 describe("tug-color-parser: achromatic adjacency (ring-then-achromatic fallback)", () => {
-  it("'paper-linen' succeeds with adjacentName='linen'", () => {
-    const v = expectOkFull("paper-linen");
-    expect(v.color.name).toBe("paper");
-    expect(v.color.adjacentName).toBe("linen");
-  });
-
   it("'linen-paper' succeeds with adjacentName='paper'", () => {
     const v = expectOkFull("linen-paper");
     expect(v.color.name).toBe("linen");
     expect(v.color.adjacentName).toBe("paper");
   });
 
-  it("'black-paper' succeeds via achromatic sequence fallback (black not in ring)", () => {
-    const v = expectOkFull("black-paper");
-    expect(v.color.name).toBe("black");
-    expect(v.color.adjacentName).toBe("paper");
+  it("'paper-linen' succeeds with adjacentName='linen'", () => {
+    const v = expectOkFull("paper-linen");
+    expect(v.color.name).toBe("paper");
+    expect(v.color.adjacentName).toBe("linen");
   });
 
-  it("'pitch-white' succeeds via achromatic sequence fallback", () => {
-    const v = expectOkFull("pitch-white");
-    expect(v.color.name).toBe("pitch");
+  it("'black-pitch' succeeds via achromatic sequence fallback (black not in ring)", () => {
+    const v = expectOkFull("black-pitch");
+    expect(v.color.name).toBe("black");
+    expect(v.color.adjacentName).toBe("pitch");
+  });
+
+  it("'paper-white' succeeds via achromatic sequence fallback", () => {
+    const v = expectOkFull("paper-white");
+    expect(v.color.name).toBe("paper");
     expect(v.color.adjacentName).toBe("white");
   });
 
