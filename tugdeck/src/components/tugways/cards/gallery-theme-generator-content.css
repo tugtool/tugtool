@@ -149,23 +149,62 @@
    ========================================================================= */
 
 /* ============================================================================
-   Theme preview — real tugcard on canvas background
+   Annotated preview — structural sidebar left, card center, roles right
    ========================================================================= */
+
+.gtg-annotated-preview {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+/* Center: preview card */
+.gtg-preview-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Right: two columns side by side */
+.gtg-hue-sidebars {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Right panel: hue columns + mood sliders */
+.gtg-right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.gtg-hue-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 160px;
+}
+
+.gtg-mood-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
 .gtg-preview-canvas {
   background-color: var(--tug-base-bg-canvas);
   border: 1px solid var(--tug-base-border-default);
   border-radius: var(--tug-base-radius-sm);
   padding: 16px;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: center;
+  background-image:
+    linear-gradient(var(--tug-canvas-grid-line, rgba(255,255,255,0.05)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tug-canvas-grid-line, rgba(255,255,255,0.05)) 1px, transparent 1px);
+  background-size: 24px 24px;
+  margin-bottom: 24px;
 }
 
-.gtg-preview-canvas > .tugcard {
-  max-width: 480px;
-  width: 100%;
-}
+/* (structural chip and role sidebar styles removed — both use CompactHuePicker) */
 
 /* Content inside the tugcard content area */
 .gtg-preview-content {
@@ -232,6 +271,11 @@
 
 .gtg-preview-input-row .tug-input {
   flex: 1;
+}
+
+.gtg-preview-link {
+  color: var(--tug-base-fg-link);
+  text-decoration: underline;
 }
 
 .gtg-preview-actions {
@@ -447,11 +491,15 @@
 .gtg-slider-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--tug-base-border-default);
+  border-radius: 999px;
+  background-color: var(--tug-base-surface-default);
 }
 
 .gtg-slider-label {
-  font-size: 11px;
+  font-size: 10px;
   font-family: var(--tug-base-font-family-sans);
   color: var(--tug-base-fg-default);
   width: 128px;

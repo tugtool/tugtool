@@ -1095,78 +1095,104 @@ const SELECTION_ROLES: TugCheckboxRole[] = [
 ];
 
 /**
- * ThemePreviewCard — uses the real tugcard/tug-tab CSS classes to render
- * a representative card on canvas background. Shows title bar, tab bar,
- * content area with text tiers, inset panel, and controls.
- * All styling via inherited CSS custom properties. [D08, D09]
+ * ThemePreviewCard — annotated preview with structural color chips overlaid
+ * on the elements they control, and role color chips in a right sidebar.
+ * Uses real tugcard/tug-tab CSS classes. [D08, D09]
  */
-function ThemePreviewCard() {
+function ThemePreviewCard({
+  resolvedColor,
+  structural,
+  roles,
+  moodSliders,
+}: {
+  resolvedColor: (key: string) => string;
+  structural: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  roles: Array<{ key: string; label: string; hue: string; set: (h: string) => void; testId: string }>;
+  moodSliders: React.ReactNode;
+}) {
   return (
-    <div className="gtg-preview-canvas" data-testid="gtg-theme-preview">
-      {/* Real tugcard structure using actual CSS classes */}
-      <div className="tugcard" style={{ height: "auto" }}>
-        {/* Title bar */}
-        <div className="tugcard-title-bar" style={{ cursor: "default" }}>
-          <span className="tugcard-title">Sample Card</span>
-        </div>
+    <div className="gtg-annotated-preview" data-testid="gtg-theme-preview">
 
-        <div className="tugcard-body">
-          {/* Tab bar using real tug-tab classes */}
-          <div className="tugcard-accessory">
-            <div className="tug-tab-bar" style={{ position: "static" }}>
-              <button className="tug-tab" data-active="true" type="button">
-                <span className="tug-tab-title">Overview</span>
-              </button>
-              <button className="tug-tab" type="button">
-                <span className="tug-tab-title">Details</span>
-              </button>
-              <button className="tug-tab" type="button">
-                <span className="tug-tab-title">Settings</span>
-              </button>
+      {/* ---- Center: preview card on canvas ---- */}
+      <div className="gtg-preview-main">
+        <div className="gtg-preview-canvas">
+          <div className="tugcard" style={{ height: "auto", width: "66.7%" }}>
+            <div className="tugcard-title-bar" style={{ cursor: "default" }}>
+              <span className="tugcard-title">Sample Card</span>
             </div>
-          </div>
-
-          {/* Content area */}
-          <div className="tugcard-content" style={{ overflow: "visible" }}>
-            <div className="gtg-preview-content">
-              <div className="gtg-preview-header">
-                <span className="gtg-preview-title">Project Dashboard</span>
-                <div className="gtg-preview-header-actions">
-                  <TugBadge emphasis="filled" role="success">active</TugBadge>
-                  <TugBadge emphasis="outlined" role="data">3 items</TugBadge>
+            <div className="tugcard-body">
+              <div className="tugcard-accessory">
+                <div className="tug-tab-bar" style={{ position: "static" }}>
+                  <button className="tug-tab" data-active="true" type="button"><span className="tug-tab-title">Overview</span></button>
+                  <button className="tug-tab" type="button"><span className="tug-tab-title">Details</span></button>
+                  <button className="tug-tab" type="button"><span className="tug-tab-title">Settings</span></button>
                 </div>
               </div>
-              <div className="gtg-preview-body">
-                <span>Default text on the primary surface. </span>
-                <span className="gtg-preview-muted">Muted text for secondary. </span>
-                <span className="gtg-preview-subtle">Subtle for tertiary.</span>
-              </div>
-              <div className="gtg-preview-divider" />
-              <div className="gtg-preview-inset">
-                <div className="gtg-preview-inline-row">
-                  <TugCheckbox role="success" checked aria-label="complete" />
-                  <span>Build passed</span>
-                  <TugBadge emphasis="filled" role="success">pass</TugBadge>
+              <div className="tugcard-content" style={{ overflow: "visible" }}>
+                <div className="gtg-preview-content">
+                  <div className="gtg-preview-header">
+                    <span className="gtg-preview-title">Project Dashboard</span>
+                    <div className="gtg-preview-header-actions">
+                      <TugBadge emphasis="filled" role="success">active</TugBadge>
+                      <TugBadge emphasis="outlined" role="data">3 items</TugBadge>
+                    </div>
+                  </div>
+                  <div className="gtg-preview-body">
+                    <span>Default text on the primary surface. </span>
+                    <span className="gtg-preview-muted">Muted text for secondary. </span>
+                    <span className="gtg-preview-subtle">Subtle for tertiary.</span>
+                  </div>
+                  <div className="gtg-preview-divider" />
+                  <div className="gtg-preview-inset">
+                    <div className="gtg-preview-inline-row">
+                      <TugCheckbox role="success" checked aria-label="complete" />
+                      <span>Build passed</span>
+                      <TugBadge emphasis="filled" role="success">pass</TugBadge>
+                    </div>
+                    <div className="gtg-preview-inline-row">
+                      <TugSwitch role="action" checked aria-label="auto-deploy" />
+                      <span>Auto-deploy</span>
+                    </div>
+                  </div>
+                  <div className="gtg-preview-divider" />
+                  <div className="gtg-preview-body">
+                    <span className="gtg-preview-link">View documentation</span>
+                  </div>
+                  <div className="gtg-preview-divider" />
+                  <div className="gtg-preview-input-row">
+                    <TugInput placeholder="Add a comment..." size="sm" aria-label="Sample input" readOnly />
+                    <TugButton emphasis="filled" role="action" size="sm">Submit</TugButton>
+                  </div>
+                  <div className="gtg-preview-divider" />
+                  <div className="gtg-preview-actions">
+                    <TugButton emphasis="filled" role="accent" size="sm">Deploy</TugButton>
+                    <TugButton emphasis="outlined" role="action" size="sm">Edit</TugButton>
+                    <TugButton emphasis="ghost" role="danger" size="sm">Delete</TugButton>
+                  </div>
                 </div>
-                <div className="gtg-preview-inline-row">
-                  <TugSwitch role="action" checked aria-label="auto-deploy" />
-                  <span>Auto-deploy</span>
-                </div>
-              </div>
-              <div className="gtg-preview-divider" />
-              <div className="gtg-preview-input-row">
-                <TugInput placeholder="Add a comment..." size="sm" aria-label="Sample input" readOnly />
-                <TugButton emphasis="filled" role="action" size="sm">Submit</TugButton>
-              </div>
-              <div className="gtg-preview-divider" />
-              <div className="gtg-preview-actions">
-                <TugButton emphasis="filled" role="accent" size="sm">Deploy</TugButton>
-                <TugButton emphasis="outlined" role="action" size="sm">Edit</TugButton>
-                <TugButton emphasis="ghost" role="danger" size="sm">Delete</TugButton>
               </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ---- Right: structural + role columns, mood sliders below ---- */}
+      <div className="gtg-right-panel">
+        <div className="gtg-hue-sidebars">
+          <div className="gtg-hue-sidebar">
+            <div className="gtg-hue-column-title">Structural</div>
+            {structural.map(({ key, label, hue, set, testId }) => (
+              <CompactHuePicker key={key} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
+            ))}
+          </div>
+          <div className="gtg-hue-sidebar">
+            <div className="gtg-hue-column-title">Roles</div>
+            {roles.map(({ key, label, hue, set, testId }) => (
+              <CompactHuePicker key={key} label={label} selectedHue={hue} onSelect={set} testId={testId} actualColor={resolvedColor(key)} />
+            ))}
+          </div>
+        </div>
+        {moodSliders}
       </div>
     </div>
   );
@@ -1681,96 +1707,39 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      {/* ---- Hue selectors: two-column layout — structural left, role right ---- */}
-      <div className="gtg-hue-columns" data-testid="gtg-role-hues">
-        <div className="gtg-hue-column">
-          <div className="gtg-hue-column-title">Structural</div>
-          {([
-            { key: "cardBg", label: "Card BG", hue: cardBgHue, set: setCardBgHue, testId: "gtg-cardbg-hue",
-              preview: <span className="gtg-sp gtg-sp-surface" style={{ backgroundColor: resolvedColor("cardBg") }} /> },
-            { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue",
-              preview: <span className="gtg-sp gtg-sp-canvas" style={{ backgroundColor: resolvedColor("canvas") }} /> },
-            { key: "cardFrame", label: "Card Frame", hue: cardFrameHue, set: setCardFrameHue, testId: "gtg-cardframe-hue",
-              preview: <span className="gtg-sp gtg-sp-frame" style={{ backgroundColor: resolvedColor("cardFrame") }} /> },
-            { key: "borderTint", label: "Border", hue: borderTintHue, set: setBorderTintHue, testId: "gtg-bordertint-hue",
-              preview: <span className="gtg-sp gtg-sp-border" style={{ borderColor: resolvedColor("borderTint") }} /> },
-            { key: "text", label: "Text", hue: textHue, set: setTextHue, testId: "gtg-text-hue",
-              preview: <span className="gtg-sp gtg-sp-text" style={{ color: resolvedColor("text") }}>Aa</span> },
-            { key: "link", label: "Link", hue: linkHue, set: setLinkHue, testId: "gtg-link-hue",
-              preview: <span className="gtg-sp gtg-sp-link" style={{ color: resolvedColor("link") }}>Aa</span> },
-          ] as const).map(({ key, label, hue, set, testId, preview }) => (
-            <CompactHuePicker
-              key={key}
-              label={label}
-              selectedHue={hue}
-              onSelect={set}
-              testId={testId}
-              actualColor={resolvedColor(key)}
-              preview={preview}
-            />
-          ))}
-        </div>
-        <div className="gtg-hue-column">
-          <div className="gtg-hue-column-title">Role</div>
-          {([
-            { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
-            { key: "action", label: "Action", hue: activeHue, set: setActiveHue, testId: "gtg-role-hue-action" },
-            { key: "agent", label: "Agent", hue: agentHue, set: setAgentHue, testId: "gtg-role-hue-agent" },
-            { key: "data", label: "Data", hue: dataHue, set: setDataHue, testId: "gtg-role-hue-data" },
-            { key: "success", label: "Success", hue: successHue, set: setSuccessHue, testId: "gtg-role-hue-success" },
-            { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
-            { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
-          ] as const).map(({ key, label, hue, set, testId }) => (
-            <CompactHuePicker
-              key={key}
-              label={label}
-              selectedHue={hue}
-              onSelect={set}
-              testId={testId}
-              actualColor={resolvedColor(key)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* ---- Mood sliders ---- */}
-      <div className="cg-section">
-        <div className="cg-section-title">Mood</div>
-        <div className="gtg-sliders">
-          <MoodSlider
-            label="Surface Contrast"
-            value={surfaceContrast}
-            onChange={(v) =>
-              handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardBgHue, textHue, v, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
-            }
-            testId="gtg-slider-surface-contrast"
-          />
-          <MoodSlider
-            label="Signal Intensity"
-            value={signalIntensity}
-            onChange={(v) =>
-              handleSliderChange(setSignalIntensity, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, v, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
-            }
-            testId="gtg-slider-signal-intensity"
-          />
-          <MoodSlider
-            label="Warmth"
-            value={warmth}
-            onChange={(v) =>
-              handleSliderChange(setWarmth, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, v, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
-            }
-            testId="gtg-slider-warmth"
-          />
-        </div>
-      </div>
-
-      <div className="cg-divider" />
-
-      {/* ---- Live preview (all children inherit derived theme tokens) ---- */}
-      <div style={liveTokenStyle}>
+      {/* ---- Live preview with hue pickers + mood sliders in right panel ---- */}
+      <div style={liveTokenStyle} data-testid="gtg-role-hues">
         <div className="cg-section">
           <div className="cg-section-title">Preview</div>
-          <ThemePreviewCard />
+          <ThemePreviewCard
+            resolvedColor={resolvedColor}
+            structural={[
+              { key: "cardBg", label: "Card BG", hue: cardBgHue, set: setCardBgHue, testId: "gtg-cardbg-hue" },
+              { key: "canvas", label: "Canvas", hue: canvasHue, set: setCanvasHue, testId: "gtg-canvas-hue" },
+              { key: "canvas", label: "Grid", hue: canvasHue, set: setCanvasHue, testId: "gtg-grid-hue" },
+              { key: "cardFrame", label: "Frame", hue: cardFrameHue, set: setCardFrameHue, testId: "gtg-cardframe-hue" },
+              { key: "borderTint", label: "Border", hue: borderTintHue, set: setBorderTintHue, testId: "gtg-bordertint-hue" },
+              { key: "text", label: "Text", hue: textHue, set: setTextHue, testId: "gtg-text-hue" },
+              { key: "link", label: "Link", hue: linkHue, set: setLinkHue, testId: "gtg-link-hue" },
+            ]}
+            roles={[
+              { key: "accent", label: "Accent", hue: accentHue, set: setAccentHue, testId: "gtg-role-hue-accent" },
+              { key: "action", label: "Action", hue: activeHue, set: setActiveHue, testId: "gtg-role-hue-action" },
+              { key: "agent", label: "Agent", hue: agentHue, set: setAgentHue, testId: "gtg-role-hue-agent" },
+              { key: "data", label: "Data", hue: dataHue, set: setDataHue, testId: "gtg-role-hue-data" },
+              { key: "success", label: "Success", hue: successHue, set: setSuccessHue, testId: "gtg-role-hue-success" },
+              { key: "caution", label: "Caution", hue: cautionHue, set: setCautionHue, testId: "gtg-role-hue-caution" },
+              { key: "danger", label: "Danger", hue: dangerHue, set: setDangerHue, testId: "gtg-role-hue-danger" },
+            ]}
+            moodSliders={
+              <div className="gtg-mood-panel">
+                <div className="gtg-hue-column-title">Mood</div>
+                <MoodSlider label="Surface Contrast" value={surfaceContrast} onChange={(v) => handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardBgHue, textHue, v, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-surface-contrast" />
+                <MoodSlider label="Signal Intensity" value={signalIntensity} onChange={(v) => handleSliderChange(setSignalIntensity, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, v, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-signal-intensity" />
+                <MoodSlider label="Warmth" value={warmth} onChange={(v) => handleSliderChange(setWarmth, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, v, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)} testId="gtg-slider-warmth" />
+              </div>
+            }
+          />
         </div>
 
         <div className="cg-section">

@@ -779,16 +779,16 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders all 13 hue pickers (cardBg + canvas + cardFrame + borderTint + text + link + 7 roles) in the hue grid", () => {
+  it("renders 14 hue pickers (7 structural including grid + 7 role) in the preview section", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const hueGrid = container.querySelector("[data-testid='gtg-role-hues']");
-    expect(hueGrid).not.toBeNull();
-    // Each picker is a button with class gtg-compact-hue-row
-    const pickers = hueGrid!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(13);
+    const preview = container.querySelector("[data-testid='gtg-role-hues']");
+    expect(preview).not.toBeNull();
+    // All pickers use the same CompactHuePicker component (gtg-compact-hue-row)
+    const pickers = preview!.querySelectorAll(".gtg-compact-hue-row");
+    expect(pickers.length).toBe(14);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
