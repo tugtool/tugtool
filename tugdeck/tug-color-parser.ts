@@ -8,11 +8,14 @@
  *   Tone (T):      Lightness axis, 0–100 (default 50)
  *   Alpha (A):     Opacity, 0–100 (default 100)
  *
- * Supported color forms (48-color vocabulary + adjacency):
+ * Supported color forms (60-name vocabulary: 48 chromatic + 11 achromatic + 1 transparent):
  *   --tug-color(indigo)                   bare color
  *   --tug-color(indigo-intense)           color + preset
  *   --tug-color(cobalt-indigo)            hyphenated adjacency (cobalt dominant)
  *   --tug-color(cobalt-indigo-intense)    hyphenated adjacency + preset
+ *   --tug-color(paper)                    named gray (fixed L, ignores i/t)
+ *   --tug-color(paper-linen)             achromatic adjacency (paper dominant, linear sequence)
+ *   --tug-color(transparent)             fully transparent (always oklch(0 0 0 / 0))
  *
  * Supported syntax forms:
  *   --tug-color(red)                              defaults for i/t/a
@@ -304,6 +307,7 @@ function parseColorTokens(
   errors: TugColorError[],
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
   adjacencyRing?: readonly string[],
+  achromaticSequence?: readonly string[],
 ): TugColorValue | null {
   if (tokens.length === 0) {
     errors.push({ message: "Expected a color name", pos: 0, end: 0 });
@@ -387,24 +391,34 @@ function parseColorTokens(
     return null;
   }
 
-  // Adjacency check: if ring is provided, validate ring distance = 1
-  if (adjacencyRing) {
-    const idxA = adjacencyRing.indexOf(name);
-    const idxB = adjacencyRing.indexOf(secondIdent);
-    if (idxA === -1 || idxB === -1) {
-      // One of the hues is not in the ring (e.g. black/white) — not adjacent
-      errors.push({
-        message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
-        pos: tokens[2].pos,
-        end: tokens[2].end,
-      });
-      return null;
+  // Adjacency check: try ring first, then fall back to achromatic sequence.
+  // A hard error is only produced if NEITHER adjacency check passes.
+  if (adjacencyRing || achromaticSequence) {
+    let ringAdj = false;
+    let achromaticAdj = false;
+
+    // Ring adjacency: both names must be in the ring and distance = 1 (with wrap)
+    if (adjacencyRing) {
+      const idxA = adjacencyRing.indexOf(name);
+      const idxB = adjacencyRing.indexOf(secondIdent);
+      if (idxA !== -1 && idxB !== -1) {
+        const dist = Math.abs(idxA - idxB);
+        ringAdj = dist === 1 || dist === adjacencyRing.length - 1;
+      }
     }
-    const dist = Math.abs(idxA - idxB);
-    const ringAdj = dist === 1 || dist === adjacencyRing.length - 1;
-    if (!ringAdj) {
+
+    // Achromatic adjacency fallback: both names must be in the linear sequence at distance = 1
+    if (!ringAdj && achromaticSequence) {
+      const idxA = achromaticSequence.indexOf(name);
+      const idxB = achromaticSequence.indexOf(secondIdent);
+      if (idxA !== -1 && idxB !== -1) {
+        achromaticAdj = Math.abs(idxA - idxB) === 1;
+      }
+    }
+
+    if (!ringAdj && !achromaticAdj) {
       errors.push({
-        message: `'${name}' and '${secondIdent}' are not adjacent in the hue ring`,
+        message: `'${name}' and '${secondIdent}' are not adjacent`,
         pos: tokens[2].pos,
         end: tokens[2].end,
       });
@@ -533,8 +547,8 @@ function parseNumericTokens(
 /**
  * A SlotParser receives the tokens for one argument group, pushes any errors into
  * the shared errors array, and returns the parsed value (TugColorValue, number, or null).
- * The extra parameters (knownHues, knownPresets, adjacencyRing) are forwarded only by
- * the color slot; numeric slots ignore them.
+ * The extra parameters (knownHues, knownPresets, adjacencyRing, achromaticSequence) are
+ * forwarded only by the color slot; numeric slots ignore them.
  */
 type SlotParser = (
   tokens: Token[],
@@ -542,11 +556,12 @@ type SlotParser = (
   knownHues: ReadonlySet<string>,
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
   adjacencyRing?: readonly string[],
+  achromaticSequence?: readonly string[],
 ) => TugColorValue | number | null;
 
 const SLOT_DISPATCH: Record<string, SlotParser> = {
-  color: (tokens, errors, knownHues, knownPresets, adjacencyRing) =>
-    parseColorTokens(tokens, knownHues, errors, knownPresets, adjacencyRing),
+  color: (tokens, errors, knownHues, knownPresets, adjacencyRing, achromaticSequence) =>
+    parseColorTokens(tokens, knownHues, errors, knownPresets, adjacencyRing, achromaticSequence),
   intensity: (tokens, errors) =>
     parseNumericTokens(tokens, "intensity", errors),
   tone: (tokens, errors) =>
@@ -564,19 +579,25 @@ const SLOT_DISPATCH: Record<string, SlotParser> = {
  *
  * @param input  The text between the parentheses (not including them).
  * @param knownHues  Set of valid color names (e.g. "red", "cobalt", "indigo").
- *   Should include all 48 named hues plus "black", "white", and optionally "gray".
+ *   Should include all 48 named hues plus "black", "white", optionally "gray",
+ *   the 9 named grays (paper through pitch), and optionally "transparent".
  * @param knownPresets  Optional map of preset names to {intensity, tone} defaults.
  *   When provided, enables preset syntax: --tug-color(green-intense), --tug-color(cobalt-indigo-muted, a: 50).
  *   Preset intensity/tone values serve as defaults; they can be overridden by explicit args.
  * @param adjacencyRing  Optional ordered array of hue names defining ring adjacency.
  *   When provided, non-adjacent pairs produce hard errors. When omitted, adjacency
  *   is not validated (any two known hues may be hyphenated).
+ * @param achromaticSequence  Optional ordered linear array of achromatic names
+ *   (e.g. ["black", "paper", ..., "white"]). When provided, achromatic adjacency is
+ *   validated as a fallback after ring adjacency fails. Enables hyphenated pairs like
+ *   paper-linen and black-paper. Transparent must NOT be included in this sequence.
  */
 export function parseTugColor(
   input: string,
   knownHues: ReadonlySet<string>,
   knownPresets?: ReadonlyMap<string, { intensity: number; tone: number }>,
   adjacencyRing?: readonly string[],
+  achromaticSequence?: readonly string[],
 ): ParseResult {
   const { tokens, errors: tokErrors } = tokenize(input);
 
@@ -644,7 +665,7 @@ export function parseTugColor(
       attempted.add(slot);
       const valueToks = group.slice(2);
 
-      const labeledResult = SLOT_DISPATCH[slot](valueToks, errors, knownHues, knownPresets, adjacencyRing);
+      const labeledResult = SLOT_DISPATCH[slot](valueToks, errors, knownHues, knownPresets, adjacencyRing, achromaticSequence);
       if (slot === "color") { if (labeledResult !== null) color = labeledResult as TugColorValue; }
       else if (slot === "intensity") { if (labeledResult !== null) intensity = labeledResult as number; }
       else if (slot === "tone") { if (labeledResult !== null) tone = labeledResult as number; }
@@ -672,7 +693,7 @@ export function parseTugColor(
 
       attempted.add(slot);
 
-      const positionalResult = SLOT_DISPATCH[slot](group, errors, knownHues, knownPresets, adjacencyRing);
+      const positionalResult = SLOT_DISPATCH[slot](group, errors, knownHues, knownPresets, adjacencyRing, achromaticSequence);
       if (slot === "color") { if (positionalResult !== null) color = positionalResult as TugColorValue; }
       else if (slot === "intensity") { if (positionalResult !== null) intensity = positionalResult as number; }
       else if (slot === "tone") { if (positionalResult !== null) tone = positionalResult as number; }
@@ -714,8 +735,18 @@ export function parseTugColor(
   const warnings: TugColorWarning[] = [];
   const fullSpan = { pos: 0, end: input.length };
   const colorName = resolvedColor.name;
-  const isAchromatic = colorName === "black" || colorName === "white" || colorName === "gray";
 
+  // isAchromatic: true for black, white, gray, transparent, and any named gray
+  // in the achromatic sequence. This gate prevents the chromatic warning block
+  // ("intensity=0 and tone=0 produce pure black") from firing for achromatics.
+  const isAchromatic =
+    colorName === "black" ||
+    colorName === "white" ||
+    colorName === "gray" ||
+    colorName === "transparent" ||
+    (achromaticSequence != null && achromaticSequence.includes(colorName));
+
+  // Chromatic-only warning block: only fires when isAchromatic is false.
   if (!isAchromatic) {
     if (resolvedIntensity === 0 && resolvedTone === 0) {
       warnings.push({ message: "intensity=0 and tone=0 produce pure black; did you mean to use 'black'?", ...fullSpan });
@@ -724,14 +755,51 @@ export function parseTugColor(
     }
   }
 
-  // Achromatic intensity warnings fire only when intensity was explicitly provided.
-  if (attempted.has("intensity") && resolvedIntensity > 0) {
-    if (colorName === "black") {
-      warnings.push({ message: "intensity is ignored for 'black' (always oklch(0 0 0))", ...fullSpan });
-    } else if (colorName === "white") {
-      warnings.push({ message: "intensity is ignored for 'white' (always oklch(1 0 0))", ...fullSpan });
-    } else if (colorName === "gray") {
-      warnings.push({ message: "intensity is ignored for 'gray' (always C=0)", ...fullSpan });
+  // Three-tier achromatic warning block (mutually exclusive tiers):
+  //
+  // Tier 1 — Transparent: warns on ANY explicitly provided argument (i, t, or a).
+  //   transparent always expands to oklch(0 0 0 / 0); all args are meaningless.
+  //
+  // Tier 2 — Named grays (paper through pitch, i.e. in achromaticSequence but not
+  //   black/white/gray): fixed-lightness per [D06], so warn on intensity > 0 or
+  //   explicit tone. Alpha is honored silently.
+  //
+  // Tier 3 — Existing achromatics (black, white, gray): unchanged behavior.
+  if (colorName === "transparent") {
+    // Tier 1: transparent ignores all three args
+    if (attempted.has("intensity")) {
+      warnings.push({ message: "intensity is ignored for 'transparent' (always oklch(0 0 0 / 0))", ...fullSpan });
+    }
+    if (attempted.has("tone")) {
+      warnings.push({ message: "tone is ignored for 'transparent' (always oklch(0 0 0 / 0))", ...fullSpan });
+    }
+    if (attempted.has("alpha")) {
+      warnings.push({ message: "alpha is ignored for 'transparent' (always oklch(0 0 0 / 0))", ...fullSpan });
+    }
+  } else if (
+    achromaticSequence != null &&
+    achromaticSequence.includes(colorName) &&
+    colorName !== "black" &&
+    colorName !== "white" &&
+    colorName !== "gray"
+  ) {
+    // Tier 2: named gray — fixed lightness, warn on intensity > 0 or explicit tone
+    if (attempted.has("intensity") && resolvedIntensity > 0) {
+      warnings.push({ message: `intensity is ignored for '${colorName}' (always C=0)`, ...fullSpan });
+    }
+    if (attempted.has("tone")) {
+      warnings.push({ message: `tone is ignored for '${colorName}' (fixed lightness)`, ...fullSpan });
+    }
+  } else {
+    // Tier 3: black, white, gray — existing behavior unchanged
+    if (attempted.has("intensity") && resolvedIntensity > 0) {
+      if (colorName === "black") {
+        warnings.push({ message: "intensity is ignored for 'black' (always oklch(0 0 0))", ...fullSpan });
+      } else if (colorName === "white") {
+        warnings.push({ message: "intensity is ignored for 'white' (always oklch(1 0 0))", ...fullSpan });
+      } else if (colorName === "gray") {
+        warnings.push({ message: "intensity is ignored for 'gray' (always C=0)", ...fullSpan });
+      }
     }
   }
 

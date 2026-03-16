@@ -9,6 +9,90 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-16T16:07:34Z
+---
+
+## step-7: Fixed compact hue popover CSS: added display:none for rotated labels inside popover, reduced swatch size to 14x20px for better wrapping within 360px max-width, confirmed overflow constrained via flex-wrap. Added collisionPadding={8} to Radix Popover.Content. 1793 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-6
+date: 2025-03-16T16:00:08Z
+---
+
+## step-6: Verification-only step. Full test suite passes (1793 tests). generate:palette produces clean output with named grays. Color count verified: 60 basic (48+11+1), 176 extended (144+31+1) matching Table T02.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-5
+date: 2025-03-16T15:56:11Z
+---
+
+## step-5: Replaced numeric GRAY_STEPS with structured array from NAMED_GRAYS. TugAchromaticStrip now renders descriptive names (paper through pitch) as labels and data-name attributes. Updated gallery-palette-content.test.tsx assertions. 3 new tests, 40 gallery tests pass, 1793 total.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-4
+date: 2025-03-16T15:50:29Z
+---
+
+## step-4: Updated generate-tug-palette.ts to import NAMED_GRAYS and emit --tug-gray-paper through --tug-gray-pitch. Dropped --tug-gray-0 and --tug-gray-100 per D05. Regenerated tug-palette.css. Rewrote palette-engine.test.ts gray ramp tests. No stale references found. 1790 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-3
+date: 2025-03-16T15:44:00Z
+---
+
+## step-3: Updated PostCSS plugin: added named grays and transparent to KNOWN_HUES, imported palette-engine symbols, restructured expandTugColor() with 6-tier ordering (achromatic adjacency first), added transparent expansion, named gray fixed-L expansion, achromatic adjacency blending. Added preset warning for achromatic adjacency. 24 new tests, 76 postcss tests pass, 1790 total.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-2
+date: 2025-03-16T15:34:33Z
+---
+
+## step-2: Extended parseTugColor with achromaticSequence parameter threaded through SlotParser/SLOT_DISPATCH/parseColorTokens. Added ring-then-achromatic fallback adjacency validation. Updated isAchromatic guard for named grays and transparent. Added three-tier warning logic. 26 new tests, 150 total parser tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
+step: step-1
+date: 2025-03-16T15:24:52Z
+---
+
+## step-1: Added NAMED_GRAYS (9 descriptive names mapping to tones 10-90), ACHROMATIC_SEQUENCE (11-element linear array from black to white), ACHROMATIC_L_VALUES (computed lightness values), resolveAchromaticAdjacency() (2/3+1/3 blending), and isAchromaticAdjacent() (distance-1 check). 123 palette-engine tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-10
 date: 2025-03-16T03:18:43Z
 ---

@@ -235,10 +235,23 @@
   z-index: 100;
 }
 
-/* Inside the popover, wrap the hue swatches into multiple rows */
+/* Inside the popover, wrap the hue swatches into multiple rows.
+   Override the base strip's large padding-bottom (reserved for rotated labels)
+   since labels are hidden inside the popover. */
 .gtg-compact-hue-popover .tug-hue-strip {
   flex-wrap: wrap;
   padding-bottom: 4px;
+}
+
+/* Hide rotated labels inside the compact hue popover to save vertical space */
+.gtg-compact-hue-popover .tug-hue-strip__label {
+  display: none;
+}
+
+/* Reduce swatch size inside the popover so ~12 swatches fit per row in ~300px */
+.gtg-compact-hue-popover .tug-hue-strip__swatch {
+  width: 14px;
+  height: 20px;
 }
 
 /* ============================================================================

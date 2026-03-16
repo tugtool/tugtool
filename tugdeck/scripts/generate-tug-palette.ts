@@ -21,6 +21,8 @@ import {
   L_DARK,
   L_LIGHT,
   PEAK_C_SCALE,
+  NAMED_GRAYS,
+  ACHROMATIC_L_VALUES,
 } from "../src/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -117,27 +119,29 @@ for (const hue of HUE_ORDER) {
   lines.push(``);
 }
 
-// Gray tone ramp (10 steps) + black/white anchors
-const GRAY_CANONICAL_L = 0.5;
-const GRAY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+// Named gray ramp (9 descriptive names, paper through pitch) + black/white anchors.
+// Endpoint variables --tug-gray-0 and --tug-gray-100 are dropped per [D05]; use
+// --tug-black and --tug-white for the true endpoints.
+//
+// Name-to-tone mapping from NAMED_GRAYS (palette-engine.ts):
+//   paper=10, linen=20, parchment=30, vellum=40, graphite=50,
+//   carbon=60, charcoal=70, ink=80, pitch=90
+//
+// L values from ACHROMATIC_L_VALUES (pre-computed from piecewise formula).
 
-function grayL(tone: number): number {
-  return L_DARK
-    + Math.min(tone, 50) * (GRAY_CANONICAL_L - L_DARK) / 50
-    + Math.max(tone - 50, 0) * (L_LIGHT - GRAY_CANONICAL_L) / 50;
-}
+// Emit names in tone order (ascending) using NAMED_GRAYS ordering.
+const NAMED_GRAY_ORDER = Object.keys(NAMED_GRAYS); // paper … pitch in definition order
 
 lines.push(`  /* -------------------------------------------------------------------------`);
-lines.push(`   * Gray tone ramp (10 steps from black to white)`);
-lines.push(`   * C=0 for all grays (achromatic). L values derived from piecewise formula`);
-lines.push(`   * with L_DARK=${fmt(L_DARK)}, L_LIGHT=${fmt(L_LIGHT)}, canonical-L=${GRAY_CANONICAL_L}.`);
-lines.push(`   * --tug-gray-0 = black, --tug-gray-100 = white.`);
-lines.push(`   * --tug-black and --tug-white are convenience aliases.`);
+lines.push(`   * Named gray ramp (9 descriptive names: paper through pitch)`);
+lines.push(`   * C=0 for all named grays (achromatic). Fixed L values from ACHROMATIC_L_VALUES.`);
+lines.push(`   * Endpoint variables --tug-gray-0 / --tug-gray-100 removed (see D05).`);
+lines.push(`   * --tug-black and --tug-white are the true achromatic endpoints.`);
 lines.push(`   * ------------------------------------------------------------------------- */`);
 
-for (const tone of GRAY_STEPS) {
-  const L = grayL(tone);
-  lines.push(`  --tug-gray-${tone}: oklch(${fmt(L, 4)} 0 0);`);
+for (const name of NAMED_GRAY_ORDER) {
+  const L = ACHROMATIC_L_VALUES[name];
+  lines.push(`  --tug-gray-${name}: oklch(${fmt(L, 4)} 0 0);`);
 }
 lines.push(`  --tug-black: oklch(0 0 0);`);
 lines.push(`  --tug-white: oklch(1 0 0);`);

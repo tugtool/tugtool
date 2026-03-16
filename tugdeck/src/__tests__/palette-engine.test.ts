@@ -43,6 +43,11 @@ import {
   MAX_P3_CHROMA_FOR_HUE,
   oklchToTugColor,
   tugColorPretty,
+  NAMED_GRAYS,
+  ACHROMATIC_SEQUENCE,
+  ACHROMATIC_L_VALUES,
+  resolveAchromaticAdjacency,
+  isAchromaticAdjacent,
 } from "@/components/tugways/palette-engine";
 
 // ---------------------------------------------------------------------------
@@ -560,40 +565,66 @@ describe("tug-palette.css — preset variables removed (unified into TugColor)",
   });
 });
 
-describe("tug-palette.css — gray tone ramp and anchors", () => {
-  it("contains 10 gray tone steps from --tug-gray-0 to --tug-gray-100", () => {
-    const grayVars = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
-    expect(grayVars.length).toBe(11);
+describe("tug-palette.css — named gray ramp and anchors", () => {
+  it("contains exactly 9 named gray variables (paper through pitch)", () => {
+    const namedGrayVars = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(namedGrayVars.length).toBe(9);
   });
 
-  it("--tug-gray-0 matches L_DARK (black)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-gray-0: oklch(0.15 0 0)");
+  it("contains --tug-gray-paper through --tug-gray-pitch in the correct order", () => {
+    const names = ["paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch"];
+    for (const name of names) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}:`);
+    }
+    // Verify order: each name appears before the next in the file
+    for (let i = 0; i < names.length - 1; i++) {
+      const idxA = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i]}:`);
+      const idxB = TUG_PALETTE_CSS.indexOf(`--tug-gray-${names[i + 1]}:`);
+      expect(idxA).toBeLessThan(idxB);
+    }
   });
 
-  it("--tug-gray-100 matches L_LIGHT (white)", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-gray-100: oklch(0.96 0 0)");
+  it("named gray oklch values match Table T01 exactly", () => {
+    const expected: Record<string, string> = {
+      paper:     "oklch(0.22 0 0)",
+      linen:     "oklch(0.29 0 0)",
+      parchment: "oklch(0.36 0 0)",
+      vellum:    "oklch(0.43 0 0)",
+      graphite:  "oklch(0.5 0 0)",
+      carbon:    "oklch(0.592 0 0)",
+      charcoal:  "oklch(0.684 0 0)",
+      ink:       "oklch(0.776 0 0)",
+      pitch:     "oklch(0.868 0 0)",
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(TUG_PALETTE_CSS).toContain(`--tug-gray-${name}: ${value}`);
+    }
   });
 
-  it("contains --tug-black", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-black:");
+  it("does NOT contain numeric gray variables --tug-gray-10 through --tug-gray-90 as declarations", () => {
+    // Match only CSS declarations (colon + value), not comment text
+    for (let tone = 10; tone <= 90; tone += 10) {
+      expect(TUG_PALETTE_CSS).not.toMatch(new RegExp(`--tug-gray-${tone}\\s*:`));
+    }
   });
 
-  it("contains --tug-white", () => {
-    expect(TUG_PALETTE_CSS).toContain("--tug-white:");
+  it("does NOT contain --tug-gray-0 or --tug-gray-100 as declarations (dropped per D05)", () => {
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-0\s*:/);
+    expect(TUG_PALETTE_CSS).not.toMatch(/--tug-gray-100\s*:/);
   });
 
-  it("--tug-black is oklch(0 0 0)", () => {
+  it("contains --tug-black: oklch(0 0 0)", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-black: oklch(0 0 0)");
   });
 
-  it("--tug-white is oklch(1 0 0)", () => {
+  it("contains --tug-white: oklch(1 0 0)", () => {
     expect(TUG_PALETTE_CSS).toContain("--tug-white: oklch(1 0 0)");
   });
 
-  it("all gray tone variables use C=0 (achromatic)", () => {
-    const grayLines = TUG_PALETTE_CSS.match(/--tug-gray-\d+:\s*oklch\([^;]+\);/g) ?? [];
-    expect(grayLines.length).toBeGreaterThan(0);
-    for (const line of grayLines) {
+  it("all named gray variables use C=0 (achromatic)", () => {
+    const namedGrayLines = TUG_PALETTE_CSS.match(/--tug-gray-[a-z]+:\s*oklch\([^;]+\);/g) ?? [];
+    expect(namedGrayLines.length).toBeGreaterThan(0);
+    for (const line of namedGrayLines) {
       expect(line).toMatch(/oklch\([\d.]+ 0 0\)/);
     }
   });
@@ -742,6 +773,199 @@ describe("tugColorPretty()", () => {
       const oklch = tugColor(hueName, 50, 50, canonL);
       const pretty = tugColorPretty(oklch);
       expect(pretty).toMatch(new RegExp(`^${hueName} `));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NAMED_GRAYS
+// ---------------------------------------------------------------------------
+
+describe("NAMED_GRAYS", () => {
+  it("has exactly 9 entries", () => {
+    expect(Object.keys(NAMED_GRAYS).length).toBe(9);
+  });
+
+  it("contains all expected names with correct tone values", () => {
+    expect(NAMED_GRAYS["paper"]).toBe(10);
+    expect(NAMED_GRAYS["linen"]).toBe(20);
+    expect(NAMED_GRAYS["parchment"]).toBe(30);
+    expect(NAMED_GRAYS["vellum"]).toBe(40);
+    expect(NAMED_GRAYS["graphite"]).toBe(50);
+    expect(NAMED_GRAYS["carbon"]).toBe(60);
+    expect(NAMED_GRAYS["charcoal"]).toBe(70);
+    expect(NAMED_GRAYS["ink"]).toBe(80);
+    expect(NAMED_GRAYS["pitch"]).toBe(90);
+  });
+
+  it("tone values are multiples of 10 in the range [10, 90]", () => {
+    for (const [name, tone] of Object.entries(NAMED_GRAYS)) {
+      expect(tone).toBeGreaterThanOrEqual(10);
+      expect(tone).toBeLessThanOrEqual(90);
+      expect(tone % 10).toBe(0);
+      void name;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACHROMATIC_SEQUENCE
+// ---------------------------------------------------------------------------
+
+describe("ACHROMATIC_SEQUENCE", () => {
+  it("has exactly 11 entries", () => {
+    expect(ACHROMATIC_SEQUENCE.length).toBe(11);
+  });
+
+  it("starts with 'black' and ends with 'white'", () => {
+    expect(ACHROMATIC_SEQUENCE[0]).toBe("black");
+    expect(ACHROMATIC_SEQUENCE[ACHROMATIC_SEQUENCE.length - 1]).toBe("white");
+  });
+
+  it("contains all 9 named grays in the correct order", () => {
+    const expectedOrder = ["paper", "linen", "parchment", "vellum", "graphite", "carbon", "charcoal", "ink", "pitch"];
+    const seqWithoutEndpoints = ACHROMATIC_SEQUENCE.slice(1, -1);
+    expect(seqWithoutEndpoints).toEqual(expectedOrder);
+  });
+
+  it("does not include 'gray' (pseudo-hue is excluded from achromatic adjacency)", () => {
+    expect(ACHROMATIC_SEQUENCE.includes("gray")).toBe(false);
+  });
+
+  it("does not include 'transparent' (transparent is excluded from all adjacency)", () => {
+    expect(ACHROMATIC_SEQUENCE.includes("transparent")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACHROMATIC_L_VALUES
+// ---------------------------------------------------------------------------
+
+describe("ACHROMATIC_L_VALUES", () => {
+  it("has exactly 11 entries (black + 9 named grays + white)", () => {
+    expect(Object.keys(ACHROMATIC_L_VALUES).length).toBe(11);
+  });
+
+  it("black=0 and white=1", () => {
+    expect(ACHROMATIC_L_VALUES["black"]).toBe(0);
+    expect(ACHROMATIC_L_VALUES["white"]).toBe(1);
+  });
+
+  it("L values match independently computed piecewise formula for each named gray tone", () => {
+    // Formula: L = L_DARK + min(tone,50)*(0.5 - L_DARK)/50 + max(tone-50,0)*(L_LIGHT - 0.5)/50
+    // With L_DARK=0.15, L_LIGHT=0.96
+    const L_DARK_VAL = 0.15;
+    const L_LIGHT_VAL = 0.96;
+    const canonL = 0.5;
+    function computeL(tone: number): number {
+      return L_DARK_VAL
+        + Math.min(tone, 50) * (canonL - L_DARK_VAL) / 50
+        + Math.max(tone - 50, 0) * (L_LIGHT_VAL - canonL) / 50;
+    }
+    for (const [name, tone] of Object.entries(NAMED_GRAYS)) {
+      const expected = computeL(tone);
+      const actual = ACHROMATIC_L_VALUES[name];
+      expect(actual).toBeDefined();
+      expect(actual).toBeCloseTo(expected, 3);
+    }
+  });
+
+  it("L values are strictly increasing across the achromatic sequence", () => {
+    for (let i = 0; i < ACHROMATIC_SEQUENCE.length - 1; i++) {
+      const lA = ACHROMATIC_L_VALUES[ACHROMATIC_SEQUENCE[i]];
+      const lB = ACHROMATIC_L_VALUES[ACHROMATIC_SEQUENCE[i + 1]];
+      expect(lA).toBeLessThan(lB);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAchromaticAdjacency()
+// ---------------------------------------------------------------------------
+
+describe("resolveAchromaticAdjacency()", () => {
+  it("paper-linen returns approximately 0.2433 ((2/3)*0.22 + (1/3)*0.29)", () => {
+    const result = resolveAchromaticAdjacency("paper", "linen");
+    expect(result).toBeCloseTo(0.2433, 3);
+  });
+
+  it("linen-paper returns approximately 0.2667 ((2/3)*0.29 + (1/3)*0.22)", () => {
+    const result = resolveAchromaticAdjacency("linen", "paper");
+    expect(result).toBeCloseTo(0.2667, 3);
+  });
+
+  it("paper-linen and linen-paper produce different values (asymmetric)", () => {
+    const pl = resolveAchromaticAdjacency("paper", "linen");
+    const lp = resolveAchromaticAdjacency("linen", "paper");
+    expect(pl).not.toBe(lp);
+    expect(pl).toBeLessThan(lp);
+  });
+
+  it("black-paper returns approximately 0.0733 ((2/3)*0 + (1/3)*0.22)", () => {
+    const result = resolveAchromaticAdjacency("black", "paper");
+    expect(result).toBeCloseTo(0.0733, 3);
+  });
+
+  it("pitch-white returns approximately 0.912 ((2/3)*0.868 + (1/3)*1)", () => {
+    const result = resolveAchromaticAdjacency("pitch", "white");
+    expect(result).toBeCloseTo(0.912, 3);
+  });
+
+  it("throws for unknown achromatic names", () => {
+    expect(() => resolveAchromaticAdjacency("notacolor", "paper")).toThrow();
+    expect(() => resolveAchromaticAdjacency("paper", "notacolor")).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAchromaticAdjacent()
+// ---------------------------------------------------------------------------
+
+describe("isAchromaticAdjacent()", () => {
+  it("paper and linen are adjacent (distance=1)", () => {
+    expect(isAchromaticAdjacent("paper", "linen")).toBe(true);
+  });
+
+  it("linen and paper are adjacent (symmetric)", () => {
+    expect(isAchromaticAdjacent("linen", "paper")).toBe(true);
+  });
+
+  it("paper and parchment are not adjacent (distance=2)", () => {
+    expect(isAchromaticAdjacent("paper", "parchment")).toBe(false);
+  });
+
+  it("black and white are not adjacent (distance=10)", () => {
+    expect(isAchromaticAdjacent("black", "white")).toBe(false);
+  });
+
+  it("black and paper are adjacent (distance=1, at the dark end)", () => {
+    expect(isAchromaticAdjacent("black", "paper")).toBe(true);
+  });
+
+  it("pitch and white are adjacent (distance=1, at the light end)", () => {
+    expect(isAchromaticAdjacent("pitch", "white")).toBe(true);
+  });
+
+  it("unknown achromatic name returns false", () => {
+    expect(isAchromaticAdjacent("notacolor", "paper")).toBe(false);
+    expect(isAchromaticAdjacent("paper", "notacolor")).toBe(false);
+  });
+
+  it("all consecutive pairs in ACHROMATIC_SEQUENCE are adjacent", () => {
+    for (let i = 0; i < ACHROMATIC_SEQUENCE.length - 1; i++) {
+      const a = ACHROMATIC_SEQUENCE[i];
+      const b = ACHROMATIC_SEQUENCE[i + 1];
+      expect(isAchromaticAdjacent(a, b)).toBe(true);
+    }
+  });
+
+  it("no non-consecutive pairs in ACHROMATIC_SEQUENCE are adjacent (distance≥2)", () => {
+    for (let i = 0; i < ACHROMATIC_SEQUENCE.length; i++) {
+      for (let j = 0; j < ACHROMATIC_SEQUENCE.length; j++) {
+        if (Math.abs(i - j) >= 2) {
+          expect(isAchromaticAdjacent(ACHROMATIC_SEQUENCE[i], ACHROMATIC_SEQUENCE[j])).toBe(false);
+        }
+      }
     }
   });
 });

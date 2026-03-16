@@ -31,6 +31,8 @@ import {
   TUG_COLOR_PRESETS,
   L_DARK,
   L_LIGHT,
+  NAMED_GRAYS,
+  ACHROMATIC_L_VALUES,
 } from "@/components/tugways/palette-engine";
 import { TugButton } from "@/components/tugways/tug-button";
 import { TugHueStrip } from "@/components/tugways/tug-hue-strip";
@@ -215,49 +217,47 @@ function LCurveEditor({
 // CanonicalStrip is now provided by the shared TugHueStrip component.
 
 // ---------------------------------------------------------------------------
-// TugAchromaticStrip — 10 achromatic steps from black (0) to white (100)
+// TugAchromaticStrip — 11 achromatic swatches: black, paper…pitch, white
 // ---------------------------------------------------------------------------
 
-/** 11 achromatic steps: 0 (black) through 100 (white) in increments of 10. */
-const GRAY_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
 /**
- * Compute the oklch() string for gray at a given tone, using the same
- * piecewise tone formula as the PostCSS plugin (canonical L=0.5).
+ * Ordered list of achromatic swatch entries: black + 9 named grays + white.
+ * Each entry has a descriptive name, its fixed L value, and its tone value.
+ * Uses NAMED_GRAYS and ACHROMATIC_L_VALUES from palette-engine.
  */
-function grayOklch(tone: number): string {
-  const canonicalL = 0.5;
-  const L =
-    L_DARK +
-    Math.min(tone, 50) * (canonicalL - L_DARK) / 50 +
-    Math.max(tone - 50, 0) * (L_LIGHT - canonicalL) / 50;
-  const Lstr = parseFloat(L.toFixed(4)).toString();
-  return `oklch(${Lstr} 0 0)`;
-}
+const GRAY_STEPS: ReadonlyArray<{ name: string; tone: number; L: number }> = [
+  { name: "black", tone: 0,   L: ACHROMATIC_L_VALUES["black"] },
+  ...Object.entries(NAMED_GRAYS).map(([name, tone]) => ({
+    name,
+    tone,
+    L: ACHROMATIC_L_VALUES[name],
+  })),
+  { name: "white", tone: 100, L: ACHROMATIC_L_VALUES["white"] },
+];
 
 /**
- * Achromatic strip: renders 10 gray tone steps from black (0) to white (100).
- * Gray-0 is a synonym for black, gray-100 is a synonym for white.
+ * Achromatic strip: renders 11 swatches (black + 9 named grays + white).
+ * Labels use descriptive names: black, paper, linen, …, pitch, white.
+ * data-name is set to the descriptive name for each swatch.
  */
 export function TugAchromaticStrip() {
   return (
     <div className="gp-achromatic-strip" data-testid="tug-achromatic-strip">
-      {GRAY_STEPS.map((tone) => {
-        const color = grayOklch(tone);
-        const label = tone === 0 ? "black" : tone === 100 ? "white" : `gray-${tone}`;
-        const name = tone === 0 ? "black" : tone === 100 ? "white" : "gray";
+      {GRAY_STEPS.map(({ name, tone, L }) => {
+        const Lstr = parseFloat(L.toFixed(4)).toString();
+        const color = `oklch(${Lstr} 0 0)`;
         return (
           <div
-            key={tone}
+            key={name}
             className="gp-achromatic-swatch"
             style={{ backgroundColor: color }}
-            title={`${label}: ${color}`}
+            title={`${name}: ${color}`}
             data-testid="gp-achromatic-swatch"
             data-color={color}
             data-name={name}
             data-tone={tone}
           >
-            <span className="gp-achromatic-label">{label}</span>
+            <span className="gp-achromatic-label">{name}</span>
           </div>
         );
       })}

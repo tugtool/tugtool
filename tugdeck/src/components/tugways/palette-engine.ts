@@ -18,6 +18,16 @@
  * as `A-B`, resolving to (2/3)*angle(A) + (1/3)*angle(B) — yielding 144 expressible
  * hue points at approximately 2.5-degree average spacing.
  *
+ * Named grays: the 9 intermediate achromatic values use descriptive names (paper
+ * through pitch) in place of numeric suffixes. `NAMED_GRAYS` maps each name to its
+ * tone value; `ACHROMATIC_L_VALUES` maps each achromatic name (including black and
+ * white) to its fixed OKLCH L value.
+ *
+ * Achromatic adjacency: adjacent pairs in `ACHROMATIC_SEQUENCE` may be hyphenated as
+ * `A-B`, resolving to (2/3)*L(A) + (1/3)*L(B) on a non-wrapping linear sequence.
+ * `resolveAchromaticAdjacency()` computes the blended L value; `isAchromaticAdjacent()`
+ * checks distance-1 adjacency.
+ *
  * Five convenience presets per hue (TUG_COLOR_PRESETS):
  *   canonical  intensity=50, tone=50   The crayon color — reference point
  *   light      intensity=20, tone=85   Background-safe, airy
@@ -730,6 +740,117 @@ export function tugColor(
 
   const fmt = (n: number) => parseFloat(n.toFixed(4)).toString();
   return `oklch(${fmt(L)} ${fmt(C)} ${h})`;
+}
+
+// ---------------------------------------------------------------------------
+// Named Grays — descriptive names for the 9 intermediate achromatic values
+// ---------------------------------------------------------------------------
+
+/**
+ * Named gray tone mapping: descriptive name → tone value (10–90).
+ *
+ * The 9 intermediate achromatic values use descriptive names (paper through pitch)
+ * instead of numeric suffixes. Names are ordered dark-to-light: paper (tone 10,
+ * darkest named gray) through pitch (tone 90, lightest named gray). The names map
+ * to their position in the tone ramp, not to the perceived lightness of their
+ * real-world referents.
+ *
+ * See Table T01 in tugplan-color-palette-system.md.
+ */
+export const NAMED_GRAYS: Record<string, number> = {
+  paper:     10,
+  linen:     20,
+  parchment: 30,
+  vellum:    40,
+  graphite:  50,
+  carbon:    60,
+  charcoal:  70,
+  ink:       80,
+  pitch:     90,
+};
+
+/**
+ * Linear achromatic sequence: the complete ordered list of achromatic names
+ * from black (darkest) to white (lightest).
+ *
+ * This is a non-wrapping sequence — unlike chromatic ring adjacency, there is
+ * no meaningful wrap between black and white. The `gray` pseudo-hue is
+ * intentionally excluded: it is a continuous tone accessor (any lightness via
+ * tone parameter), not a fixed-lightness named color.
+ *
+ * Adjacent pairs: black-paper, paper-linen, linen-parchment, parchment-vellum,
+ * vellum-graphite, graphite-carbon, carbon-charcoal, charcoal-ink, ink-pitch,
+ * pitch-white (10 pairs, 20 hyphenated names since both directions are valid).
+ *
+ * See List L01 in tugplan-color-palette-system.md.
+ */
+export const ACHROMATIC_SEQUENCE: readonly string[] = [
+  "black", "paper", "linen", "parchment", "vellum",
+  "graphite", "carbon", "charcoal", "ink", "pitch", "white",
+];
+
+/**
+ * Mapping from each achromatic name to its fixed OKLCH L value.
+ *
+ * Values are computed from the gray piecewise formula with canonical L=0.5:
+ *   L = L_DARK + min(tone,50)*(0.5 - L_DARK)/50 + max(tone-50,0)*(L_LIGHT - 0.5)/50
+ * using L_DARK=0.15, L_LIGHT=0.96.
+ *
+ * Endpoint values (black=0, white=1) are exact CSS values, not derived from
+ * the piecewise formula.
+ */
+export const ACHROMATIC_L_VALUES: Record<string, number> = {
+  black:     0,
+  paper:     0.22,
+  linen:     0.29,
+  parchment: 0.36,
+  vellum:    0.43,
+  graphite:  0.5,
+  carbon:    0.592,
+  charcoal:  0.684,
+  ink:       0.776,
+  pitch:     0.868,
+  white:     1,
+};
+
+/**
+ * Resolve a hyphenated achromatic pair to a blended OKLCH L value.
+ *
+ * Formula: (2/3)*L_A + (1/3)*L_B
+ * where L_A is the L value of the dominant (first) name and
+ * L_B is the L value of the secondary (second) name.
+ *
+ * @param a - Dominant (first) achromatic name; contributes 2/3 of the L value.
+ * @param b - Secondary (second) achromatic name; contributes 1/3 of the L value.
+ * @returns Blended L value.
+ * @throws Error if either name is not found in ACHROMATIC_L_VALUES.
+ */
+export function resolveAchromaticAdjacency(a: string, b: string): number {
+  const lA = ACHROMATIC_L_VALUES[a];
+  const lB = ACHROMATIC_L_VALUES[b];
+  if (lA === undefined || lB === undefined) {
+    throw new Error(
+      `resolveAchromaticAdjacency: unknown achromatic name "${lA === undefined ? a : b}"`
+    );
+  }
+  return (2 / 3) * lA + (1 / 3) * lB;
+}
+
+/**
+ * Check if two achromatic names are adjacent in the ACHROMATIC_SEQUENCE.
+ *
+ * Two achromatics are adjacent if their positions in the linear sequence differ
+ * by exactly 1 (no wrap — the sequence does not wrap from white back to black).
+ *
+ * @param a - First achromatic name.
+ * @param b - Second achromatic name.
+ * @returns True if a and b are consecutive in the achromatic sequence.
+ */
+export function isAchromaticAdjacent(a: string, b: string): boolean {
+  const idxA = ACHROMATIC_SEQUENCE.indexOf(a);
+  const idxB = ACHROMATIC_SEQUENCE.indexOf(b);
+  if (idxA === -1 || idxB === -1) return false;
+  return Math.abs(idxA - idxB) === 1;
 }
 
 // ---------------------------------------------------------------------------
