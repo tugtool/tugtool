@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-16T23:59:32Z
+---
+
+## step-2: Added ~130 new fields to ModePreset interface and populated both DARK_PRESET and LIGHT_PRESET. Fields cover hue slots, intensity/tone/alpha overrides, formula params, and per-state control emphasis. No behavioral changes.
+
+**Files changed:**
+- .tugtool/tugplan-declarative-derivation-engine.md
+
+---
+
+---
 step: step-1
 date: 2025-03-16T23:45:56Z
 ---

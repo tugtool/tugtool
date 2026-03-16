@@ -143,22 +143,30 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Bundles all mode-dependent numeric formula constants into a named preset.
+ * Bundles all mode-dependent formula constants into a named preset.
  * `deriveTheme()` selects a preset by `recipe.mode` and uses its values instead
- * of inline `isLight ? X : Y` ternaries for numeric parameters.
+ * of inline `isLight ? X : Y` ternaries for numeric parameters, hue slot
+ * assignments, and sentinel values for structural dispatch.
  *
- * Hue-selection logic (which hue ref to use per tier) and structural code paths
- * (setWhite vs setChromatic) remain as `isLight` branches in `deriveTheme()` —
- * these are algorithmic choices, not numeric parameters.
+ * Step 2 adds hue slot fields (Spec S05), sentinel hue slot fields ([D07]),
+ * per-tier intensity/tone overrides, formula parameter fields, and per-state
+ * control emphasis fields ([D10]) to absorb all 81 `isLight` branches.
+ * The existing `isLight` branches in `deriveTheme()` remain unchanged in
+ * this step — they will be eliminated in later steps once resolveHueSlots()
+ * and the rule evaluation loop are in place.
  *
- * Derived values that are computed from other preset parameters
- * (e.g. dividerTone = surfaceRaisedTone - 2) stay as computed code in
- * `deriveTheme()`, not as additional preset fields. [D03]
+ * Sentinel values for hue slot fields ([D07]):
+ *   "__white"            → setWhite()
+ *   "__highlight"        → setHighlight(alphaExpr)
+ *   "__shadow"           → setShadow(alphaExpr)
+ *   "__verboseHighlight" → verbose --tug-color(white, i:0, t:100, a:N)
  *
- * Spec S01.
+ * Spec S01, Spec S05.
  */
 export interface ModePreset {
+  // -------------------------------------------------------------------------
   // Surface tone anchors (absolute tone values at surfaceContrast=50)
+  // -------------------------------------------------------------------------
   bgAppTone: number;
   bgCanvasTone: number;
   surfaceSunkenTone: number;
@@ -169,13 +177,26 @@ export interface ModePreset {
   surfaceContentTone: number;
   surfaceScreenTone: number;
 
+  // -------------------------------------------------------------------------
   // Surface intensity — independent per-tier values.
   // Brio dark: atmI=5, overlayI=4, screenI=7 (sunken/default/raised/inset/content use atmI).
+  // -------------------------------------------------------------------------
   atmI: number;
   surfaceOverlayI: number;
   surfaceScreenI: number;
 
+  // Per-tier surface intensity overrides (Spec S05).
+  // Dark: most tiers use atmI; light uses different values per tier.
+  bgAppI: number;          // 2 (dark) | atmI (light)
+  bgCanvasI: number;       // 2 (dark) | 7 (light)
+  surfaceDefaultI: number; // atmI (dark) | 4 (light)
+  surfaceRaisedI: number;  // atmI (dark) | 5 (light)
+  surfaceInsetI: number;   // atmI (dark) | 4 (light)
+  surfaceContentI: number; // atmI (dark) | 4 (light)
+
+  // -------------------------------------------------------------------------
   // Foreground tone anchors
+  // -------------------------------------------------------------------------
   fgDefaultTone: number;
   fgMutedTone: number;
   fgSubtleTone: number;
@@ -183,23 +204,45 @@ export interface ModePreset {
   fgPlaceholderTone: number;
   fgInverseTone: number;
 
+  // -------------------------------------------------------------------------
   // Text intensity levels
+  // -------------------------------------------------------------------------
   txtI: number;
   txtISubtle: number;
   fgMutedI: number;
   atmIBorder: number; // border/divider intensity (also used for fg-placeholder in light)
 
+  // Foreground intensity overrides (Spec S05)
+  fgInverseI: number;   // txtI (dark) | 1 (light)
+  fgOnCautionI: number; // 4 (dark) | atmI (light)
+  fgOnSuccessI: number; // 4 (dark) | atmI (light)
+
+  // -------------------------------------------------------------------------
   // Border parameters
+  // -------------------------------------------------------------------------
   borderIBase: number;
   borderIStrong: number;
 
+  // Border/divider mode-dependent tones and intensities (Spec S05)
+  borderMutedTone: number;  // fgSubtleTone (dark) | 36 (light)
+  borderMutedI: number;     // borderIStrong (dark) | 10 (light)
+  borderStrongTone: number; // 40 (dark) | fgSubtleTone-6 (light)
+
+  // Divider intensity overrides (Spec S05)
+  dividerDefaultI: number; // 6 (dark) | atmI (light)
+  dividerMutedI: number;   // 4 (dark) | atmI (light)
+
+  // -------------------------------------------------------------------------
   // Card frame intensity (title bar / tab bar bg)
+  // -------------------------------------------------------------------------
   cardFrameActiveI: number;   // active title bar (Brio dark: 12)
   cardFrameActiveTone: number;
   cardFrameInactiveI: number; // inactive title bar (Brio dark: 4)
   cardFrameInactiveTone: number;
 
+  // -------------------------------------------------------------------------
   // Shadow / overlay alphas
+  // -------------------------------------------------------------------------
   shadowXsAlpha: number;
   shadowMdAlpha: number;
   shadowLgAlpha: number;
@@ -209,22 +252,64 @@ export interface ModePreset {
   overlayScrimAlpha: number;
   overlayHighlightAlpha: number;
 
+  // -------------------------------------------------------------------------
   // Control emphasis parameters
+  // -------------------------------------------------------------------------
   filledBgDarkTone: number;
   filledBgHoverTone: number;
   filledBgActiveTone: number;
 
-  // Toggle tone
-  toggleTrackOnHoverTone: number;
+  // -------------------------------------------------------------------------
+  // Icon tone overrides (Spec S05)
+  // -------------------------------------------------------------------------
+  iconActiveTone: number; // 80 (dark) | 22 (light)
 
+  // -------------------------------------------------------------------------
+  // Tab tone overrides (Spec S05)
+  // -------------------------------------------------------------------------
+  tabFgActiveTone: number; // 90 (dark) | fgDefaultTone (light)
+
+  // -------------------------------------------------------------------------
+  // Toggle tone
+  // -------------------------------------------------------------------------
+  toggleTrackOnHoverTone: number;
+  toggleThumbDisabledTone: number; // 40 (dark) | fgDisabledTone (light)
+  toggleTrackDisabledI: number;    // atmI (dark) | 6 (light)
+
+  // -------------------------------------------------------------------------
   // Field tone anchors
+  // -------------------------------------------------------------------------
   fieldBgRestTone: number;
   fieldBgHoverTone: number;
   fieldBgFocusTone: number;
   fieldBgDisabledTone: number;
   fieldBgReadOnlyTone: number;
 
+  // Field intensity overrides (Spec S05)
+  fieldBgRestI: number; // atmI (dark) | 7 (light)
+
+  // -------------------------------------------------------------------------
+  // Control disabled parameters (Spec S05)
+  // -------------------------------------------------------------------------
+  disabledBgI: number;     // atmI (dark) | 6 (light)
+  disabledBorderI: number; // 6 (dark) | atmIBorder (light)
+
+  // -------------------------------------------------------------------------
+  // Formula parameter fields for non-standard tone computations (Spec S03)
+  // -------------------------------------------------------------------------
+  // bgCanvas: dark reuses bgApp formula (same anchor/scale); light uses separate formula.
+  // Unified: Math.round(bgCanvasToneBase + ((sc - bgCanvasToneSCCenter) / (bgCanvasToneSCCenter === 0 ? 100 : 50)) * bgCanvasToneScale)
+  bgCanvasToneBase: number;     // bgAppTone (dark, = 5) | 35 (light)
+  bgCanvasToneSCCenter: number; // 50 (dark) | 0 (light)
+  bgCanvasToneScale: number;    // 8 (dark) | 10 (light)
+
+  // disabledBg: dark is flat 22; light is 70 + (sc/100)*10
+  disabledBgBase: number;  // 22 (dark) | 70 (light)
+  disabledBgScale: number; // 0 (dark) | 10 (light)
+
+  // -------------------------------------------------------------------------
   // Badge tinted emphasis formula parameters
+  // -------------------------------------------------------------------------
   badgeTintedFgI: number;
   badgeTintedFgTone: number;
   badgeTintedBgI: number;
@@ -233,11 +318,178 @@ export interface ModePreset {
   badgeTintedBorderI: number;
   badgeTintedBorderTone: number;
   badgeTintedBorderAlpha: number;
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — surface tiers (Spec S05)
+  // Each field names a key in ResolvedHueSlots or a sentinel string [D07].
+  // -------------------------------------------------------------------------
+  bgAppHueSlot: string;          // "canvas" (dark) | "txt" (light)
+  bgCanvasHueSlot: string;       // "canvas" (dark) | "atm" (light)
+  surfaceSunkenHueSlot: string;  // "surfBareBase" (dark) | "atm" (light)
+  surfaceDefaultHueSlot: string; // "surfBareBase" (dark) | "atm" (light)
+  surfaceRaisedHueSlot: string;  // "atm" (dark) | "txt" (light)
+  surfaceOverlayHueSlot: string; // "surfBareBase" (dark) | "atm" (light)
+  surfaceInsetHueSlot: string;   // "atm" (dark) | "atm" (light)
+  surfaceContentHueSlot: string; // "atm" (dark) | "atm" (light)
+  surfaceScreenHueSlot: string;  // "surfScreen" (dark) | "txt" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — foreground tiers (Spec S05)
+  // -------------------------------------------------------------------------
+  fgMutedHueSlot: string;      // "fgMuted" (dark) | "txt" (light)
+  fgSubtleHueSlot: string;     // "fgSubtle" (dark) | "txt" (light)
+  fgDisabledHueSlot: string;   // "fgDisabled" (dark) | "txt" (light)
+  fgPlaceholderHueSlot: string; // "fgPlaceholder" (dark) | "atm" (light)
+  fgInverseHueSlot: string;    // "fgInverse" (dark) | "txt" (light)
+  fgOnAccentHueSlot: string;   // "fgInverse" (dark) | "__white" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — icon tiers (Spec S05)
+  // -------------------------------------------------------------------------
+  iconMutedHueSlot: string;    // "fgSubtle" (dark) | "atm" (light)
+  iconOnAccentHueSlot: string; // "fgInverse" (dark) | "__white" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — border/divider tiers (Spec S05)
+  // -------------------------------------------------------------------------
+  dividerMutedHueSlot: string; // "borderTintBareBase" (dark) | "borderTint" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — control disabled (Spec S05)
+  // -------------------------------------------------------------------------
+  disabledBgHueSlot: string; // "surfBareBase" (dark) | "atm" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — field (Spec S05)
+  // -------------------------------------------------------------------------
+  fieldBgHoverHueSlot: string;    // "surfBareBase" (dark) | "atm" (light)
+  fieldBgReadOnlyHueSlot: string; // "surfBareBase" (dark) | "atm" (light)
+  fieldPlaceholderHueSlot: string; // "fgPlaceholder" (dark) | "atm" (light)
+  fieldBorderRestHueSlot: string;  // "fgPlaceholder" (dark) | "atm" (light)
+  fieldBorderHoverHueSlot: string; // "fgSubtle" (dark) | "borderStrong" (light)
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — toggle (Spec S05)
+  // -------------------------------------------------------------------------
+  toggleTrackDisabledHueSlot: string; // "surfBareBase" (dark) | "atm" (light)
+  toggleThumbHueSlot: string;         // "fgInverse" (dark) | "__white" (light)
+  checkmarkHueSlot: string;           // "fgInverse" (dark) | "__white" (light)
+  radioDotHueSlot: string;            // "fgInverse" (dark) | "__white" (light)
+
+  // -------------------------------------------------------------------------
+  // Sentinel hue slot fields — structural dispatch per mode [D07]
+  // Values are ResolvedHueSlots keys or sentinel strings.
+  // -------------------------------------------------------------------------
+  outlinedBgHoverHueSlot: string;     // "__highlight" (dark) | "atm" (light)
+  outlinedBgActiveHueSlot: string;    // "__highlight" (dark) | "atm" (light)
+  ghostActionBgHoverHueSlot: string;  // "__highlight" (dark) | "__shadow" (light)
+  ghostActionBgActiveHueSlot: string; // "__highlight" (dark) | "__shadow" (light)
+  ghostOptionBgHoverHueSlot: string;  // "__highlight" (dark) | "__shadow" (light)
+  ghostOptionBgActiveHueSlot: string; // "__highlight" (dark) | "__shadow" (light)
+  tabBgHoverHueSlot: string;          // "__highlight" (dark) | "__shadow" (light)
+  tabCloseBgHoverHueSlot: string;     // "__highlight" (dark) | "__shadow" (light)
+  highlightHoverHueSlot: string;      // "__verboseHighlight" (dark) | "__shadow" (light)
+
+  // -------------------------------------------------------------------------
+  // Alpha values for sentinel-dispatched tokens [D07]
+  // -------------------------------------------------------------------------
+  tabBgHoverAlpha: number;          // 8 (dark, highlight) | 6 (light, shadow)
+  tabCloseBgHoverAlpha: number;     // 12 (dark, highlight) | 10 (light, shadow)
+  outlinedBgHoverAlpha: number;     // 10 (dark, highlight) | N/A (light, chromatic; unused)
+  outlinedBgActiveAlpha: number;    // 20 (dark, highlight) | N/A (light, chromatic; unused)
+  ghostActionBgHoverAlpha: number;  // 10 (dark, highlight) | 6 (light, shadow)
+  ghostActionBgActiveAlpha: number; // 20 (dark, highlight) | 12 (light, shadow)
+  ghostOptionBgHoverAlpha: number;  // 10 (dark, highlight) | 6 (light, shadow)
+  ghostOptionBgActiveAlpha: number; // 20 (dark, highlight) | 12 (light, shadow)
+  highlightHoverAlpha: number;      // 5 (dark, verboseHighlight) | 4 (light, shadow)
+  ghostDangerBgHoverAlpha: number;  // 10 (dark) | 8 (light)
+  ghostDangerBgActiveAlpha: number; // 20 (dark) | 15 (light)
+
+  // -------------------------------------------------------------------------
+  // Per-state control emphasis fields [D10]
+  // Naming convention: {family}{State}{Property}
+  // Dark mode uses uniform values across all states (rest/hover/active identical).
+  // Light mode has per-state variation.
+  // -------------------------------------------------------------------------
+
+  // Shared dark-mode values for outlined/ghost fg/icon (all states identical in dark):
+  // tone = filledFgTone (100), I = Math.max(1, txtI - 1) (= 2 for Brio dark)
+  outlinedFgTone: number; // 100 (dark, uniform) | per-state (light)
+  outlinedFgI: number;    // 2 (dark, uniform) | per-state (light)
+
+  // Outlined-action fg per-state light tones (intensity = txtI in all light states)
+  outlinedActionFgRestToneLight: number;   // fgDefaultTone (light)
+  outlinedActionFgHoverToneLight: number;  // 10 (light)
+  outlinedActionFgActiveToneLight: number; // 8 (light)
+  // Outlined-action icon per-state light (intensity = txtISubtle in rest/hover; txtISubtle active)
+  outlinedActionIconRestToneLight: number;   // fgMutedTone (light)
+  outlinedActionIconHoverToneLight: number;  // 22 (light)
+  outlinedActionIconActiveToneLight: number; // 13 (light)
+
+  // Outlined-agent fg/icon — same pattern as outlined-action
+  outlinedAgentFgRestToneLight: number;    // fgDefaultTone (light)
+  outlinedAgentFgHoverToneLight: number;   // 10 (light)
+  outlinedAgentFgActiveToneLight: number;  // 8 (light)
+  outlinedAgentIconRestToneLight: number;  // fgMutedTone (light)
+  outlinedAgentIconHoverToneLight: number; // 22 (light)
+  outlinedAgentIconActiveToneLight: number;// 13 (light)
+
+  // Outlined-option fg/icon — same pattern as outlined-action
+  outlinedOptionFgRestToneLight: number;    // fgDefaultTone (light)
+  outlinedOptionFgHoverToneLight: number;   // 10 (light)
+  outlinedOptionFgActiveToneLight: number;  // 8 (light)
+  outlinedOptionIconRestToneLight: number;  // fgMutedTone (light)
+  outlinedOptionIconHoverToneLight: number; // 22 (light)
+  outlinedOptionIconActiveToneLight: number;// 13 (light)
+
+  // Ghost-action fg/icon dark (uniform across states)
+  ghostActionFgTone: number; // 100 (dark, uniform)
+  ghostActionFgI: number;    // 2 (dark, uniform)
+  // Ghost-action fg per-state light
+  ghostActionFgRestToneLight: number;  // fgMutedTone (light)
+  ghostActionFgHoverToneLight: number; // 15 (light)
+  ghostActionFgActiveToneLight: number;// 10 (light)
+  ghostActionFgRestILight: number;     // txtISubtle (light)
+  ghostActionFgHoverILight: number;    // 9 (light)
+  ghostActionFgActiveILight: number;   // 9 (light)
+  // Ghost-action icon per-state light
+  ghostActionIconRestToneLight: number;   // fgMutedTone (light)
+  ghostActionIconHoverToneLight: number;  // 22 (light)
+  ghostActionIconActiveToneLight: number; // 13 (light)
+  ghostActionIconActiveILight: number;    // 27 (light; rest/hover use txtISubtle)
+  // Ghost-action border (same i/t in both dark and light states for hover/active)
+  ghostActionBorderI: number;    // 20 (dark) | 10 (light)
+  ghostActionBorderTone: number; // 60 (dark) | 35 (light)
+
+  // Ghost-option fg/icon — same pattern as ghost-action
+  ghostOptionFgTone: number; // 100 (dark, uniform)
+  ghostOptionFgI: number;    // 2 (dark, uniform)
+  ghostOptionFgRestToneLight: number;  // fgMutedTone (light)
+  ghostOptionFgHoverToneLight: number; // 15 (light)
+  ghostOptionFgActiveToneLight: number;// 10 (light)
+  ghostOptionFgRestILight: number;     // txtISubtle (light)
+  ghostOptionFgHoverILight: number;    // 9 (light)
+  ghostOptionFgActiveILight: number;   // 9 (light)
+  ghostOptionIconRestToneLight: number;   // fgMutedTone (light)
+  ghostOptionIconHoverToneLight: number;  // 22 (light)
+  ghostOptionIconActiveToneLight: number; // 13 (light)
+  ghostOptionIconActiveILight: number;    // 27 (light)
+  ghostOptionBorderI: number;    // 20 (dark) | 10 (light)
+  ghostOptionBorderTone: number; // 60 (dark) | 35 (light)
+
+  // Outlined-option border tones (intensity uses txtISubtle in both modes)
+  outlinedOptionBorderRestTone: number;   // 50 (dark) | fgMutedTone (light)
+  outlinedOptionBorderHoverTone: number;  // 55 (dark) | fgMutedTone-3 (light)
+  outlinedOptionBorderActiveTone: number; // 60 (dark) | fgMutedTone-6 (light)
 }
 
 /**
  * Dark-mode preset — parameter values reproduce the hand-authored Brio dark-mode
  * CSS exactly (verified by T-BRIO-MATCH). [D03]
+ *
+ * Extended in Step 2 with hue slot fields (Spec S05), sentinel hue slot fields
+ * ([D07]), per-tier intensity/tone overrides, formula parameters, and per-state
+ * control emphasis fields ([D10]).
  */
 export const DARK_PRESET: ModePreset = {
   // Surface tones (Brio ground truth at surfaceContrast=50)
@@ -256,6 +508,14 @@ export const DARK_PRESET: ModePreset = {
   surfaceOverlayI: 4,
   surfaceScreenI: 7,
 
+  // Per-tier surface intensity overrides (dark: bg-app and bg-canvas use i=2)
+  bgAppI: 2,
+  bgCanvasI: 2,
+  surfaceDefaultI: 5, // = atmI
+  surfaceRaisedI: 5,  // = atmI
+  surfaceInsetI: 5,   // = atmI
+  surfaceContentI: 5, // = atmI
+
   // Foreground tones (Brio ground truth)
   fgDefaultTone: 94,
   fgMutedTone: 66,
@@ -270,9 +530,23 @@ export const DARK_PRESET: ModePreset = {
   fgMutedI: 5,
   atmIBorder: 6,
 
+  // Foreground intensity overrides (dark)
+  fgInverseI: 3,   // = txtI
+  fgOnCautionI: 4,
+  fgOnSuccessI: 4,
+
   // Border intensities
   borderIBase: 6,
   borderIStrong: 7,
+
+  // Border/divider mode-dependent tones/intensities (dark)
+  borderMutedTone: 37, // = fgSubtleTone
+  borderMutedI: 7,     // = borderIStrong
+  borderStrongTone: 40,
+
+  // Divider intensity (dark)
+  dividerDefaultI: 6,
+  dividerMutedI: 4,
 
   // Card frame (original: --tug-color(indigo, i: 12, t: 18) active, i: 4, t: 15 inactive)
   cardFrameActiveI: 12,
@@ -295,8 +569,16 @@ export const DARK_PRESET: ModePreset = {
   filledBgHoverTone: 40,
   filledBgActiveTone: 50,
 
-  // Toggle tone
+  // Icon tone overrides (dark)
+  iconActiveTone: 80,
+
+  // Tab tone overrides (dark)
+  tabFgActiveTone: 90,
+
+  // Toggle tones (dark)
   toggleTrackOnHoverTone: 45,
+  toggleThumbDisabledTone: 40,
+  toggleTrackDisabledI: 5, // = atmI
 
   // Field tones (Brio dark ground truth)
   fieldBgRestTone: 8,
@@ -304,6 +586,20 @@ export const DARK_PRESET: ModePreset = {
   fieldBgFocusTone: 7,
   fieldBgDisabledTone: 6,
   fieldBgReadOnlyTone: 11,
+
+  // Field intensity (dark)
+  fieldBgRestI: 5, // = atmI
+
+  // Control disabled (dark)
+  disabledBgI: 5,     // = atmI
+  disabledBorderI: 6,
+
+  // Formula parameter fields (dark)
+  bgCanvasToneBase: 5,      // = bgAppTone; dark bg-canvas reuses bgApp formula
+  bgCanvasToneSCCenter: 50, // same center as bgApp formula
+  bgCanvasToneScale: 8,     // same scale as bgApp formula
+  disabledBgBase: 22,       // dark disabled-bg is flat: 22 + (sc - 50)/50 * 0 = 22
+  disabledBgScale: 0,       // flat (no sc scaling) in dark
 
   // Badge tinted emphasis formula parameters
   badgeTintedFgI: 72,
@@ -314,11 +610,168 @@ export const DARK_PRESET: ModePreset = {
   badgeTintedBorderI: 50,
   badgeTintedBorderTone: 50,
   badgeTintedBorderAlpha: 35,
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — surface tiers (dark)
+  // -------------------------------------------------------------------------
+  bgAppHueSlot: "canvas",
+  bgCanvasHueSlot: "canvas",
+  surfaceSunkenHueSlot: "surfBareBase",
+  surfaceDefaultHueSlot: "surfBareBase",
+  surfaceRaisedHueSlot: "atm",
+  surfaceOverlayHueSlot: "surfBareBase",
+  surfaceInsetHueSlot: "atm",
+  surfaceContentHueSlot: "atm",
+  surfaceScreenHueSlot: "surfScreen",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — foreground tiers (dark)
+  // -------------------------------------------------------------------------
+  fgMutedHueSlot: "fgMuted",
+  fgSubtleHueSlot: "fgSubtle",
+  fgDisabledHueSlot: "fgDisabled",
+  fgPlaceholderHueSlot: "fgPlaceholder",
+  fgInverseHueSlot: "fgInverse",
+  fgOnAccentHueSlot: "fgInverse",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — icon tiers (dark)
+  // -------------------------------------------------------------------------
+  iconMutedHueSlot: "fgSubtle",
+  iconOnAccentHueSlot: "fgInverse",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — border/divider (dark)
+  // -------------------------------------------------------------------------
+  dividerMutedHueSlot: "borderTintBareBase",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — control disabled (dark)
+  // -------------------------------------------------------------------------
+  disabledBgHueSlot: "surfBareBase",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — field (dark)
+  // -------------------------------------------------------------------------
+  fieldBgHoverHueSlot: "surfBareBase",
+  fieldBgReadOnlyHueSlot: "surfBareBase",
+  fieldPlaceholderHueSlot: "fgPlaceholder",
+  fieldBorderRestHueSlot: "fgPlaceholder",
+  fieldBorderHoverHueSlot: "fgSubtle",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — toggle (dark)
+  // -------------------------------------------------------------------------
+  toggleTrackDisabledHueSlot: "surfBareBase",
+  toggleThumbHueSlot: "fgInverse",
+  checkmarkHueSlot: "fgInverse",
+  radioDotHueSlot: "fgInverse",
+
+  // -------------------------------------------------------------------------
+  // Sentinel hue slot fields (dark) [D07]
+  // -------------------------------------------------------------------------
+  outlinedBgHoverHueSlot: "__highlight",
+  outlinedBgActiveHueSlot: "__highlight",
+  ghostActionBgHoverHueSlot: "__highlight",
+  ghostActionBgActiveHueSlot: "__highlight",
+  ghostOptionBgHoverHueSlot: "__highlight",
+  ghostOptionBgActiveHueSlot: "__highlight",
+  tabBgHoverHueSlot: "__highlight",
+  tabCloseBgHoverHueSlot: "__highlight",
+  highlightHoverHueSlot: "__verboseHighlight",
+
+  // -------------------------------------------------------------------------
+  // Alpha values for sentinel-dispatched tokens (dark)
+  // -------------------------------------------------------------------------
+  tabBgHoverAlpha: 8,
+  tabCloseBgHoverAlpha: 12,
+  outlinedBgHoverAlpha: 10,
+  outlinedBgActiveAlpha: 20,
+  ghostActionBgHoverAlpha: 10,
+  ghostActionBgActiveAlpha: 20,
+  ghostOptionBgHoverAlpha: 10,
+  ghostOptionBgActiveAlpha: 20,
+  highlightHoverAlpha: 5,
+  ghostDangerBgHoverAlpha: 10,
+  ghostDangerBgActiveAlpha: 20,
+
+  // -------------------------------------------------------------------------
+  // Per-state control emphasis fields [D10] (dark)
+  // Dark uses uniform values across all states (rest/hover/active identical):
+  //   tone = 100 (filledFgTone), I = 2 (= Math.max(1, txtI-1) = Math.max(1, 3-1))
+  // -------------------------------------------------------------------------
+  outlinedFgTone: 100,
+  outlinedFgI: 2,
+
+  // Outlined-action fg/icon per-state light tones (dark values: not used; set to 0)
+  outlinedActionFgRestToneLight: 0,
+  outlinedActionFgHoverToneLight: 0,
+  outlinedActionFgActiveToneLight: 0,
+  outlinedActionIconRestToneLight: 0,
+  outlinedActionIconHoverToneLight: 0,
+  outlinedActionIconActiveToneLight: 0,
+
+  // Outlined-agent fg/icon per-state light tones (dark: not used)
+  outlinedAgentFgRestToneLight: 0,
+  outlinedAgentFgHoverToneLight: 0,
+  outlinedAgentFgActiveToneLight: 0,
+  outlinedAgentIconRestToneLight: 0,
+  outlinedAgentIconHoverToneLight: 0,
+  outlinedAgentIconActiveToneLight: 0,
+
+  // Outlined-option fg/icon per-state light tones (dark: not used)
+  outlinedOptionFgRestToneLight: 0,
+  outlinedOptionFgHoverToneLight: 0,
+  outlinedOptionFgActiveToneLight: 0,
+  outlinedOptionIconRestToneLight: 0,
+  outlinedOptionIconHoverToneLight: 0,
+  outlinedOptionIconActiveToneLight: 0,
+
+  // Ghost-action fg/icon (dark: uniform across states)
+  ghostActionFgTone: 100,
+  ghostActionFgI: 2,
+  ghostActionFgRestToneLight: 0,
+  ghostActionFgHoverToneLight: 0,
+  ghostActionFgActiveToneLight: 0,
+  ghostActionFgRestILight: 0,
+  ghostActionFgHoverILight: 0,
+  ghostActionFgActiveILight: 0,
+  ghostActionIconRestToneLight: 0,
+  ghostActionIconHoverToneLight: 0,
+  ghostActionIconActiveToneLight: 0,
+  ghostActionIconActiveILight: 0,
+  ghostActionBorderI: 20,
+  ghostActionBorderTone: 60,
+
+  // Ghost-option fg/icon (dark: uniform across states)
+  ghostOptionFgTone: 100,
+  ghostOptionFgI: 2,
+  ghostOptionFgRestToneLight: 0,
+  ghostOptionFgHoverToneLight: 0,
+  ghostOptionFgActiveToneLight: 0,
+  ghostOptionFgRestILight: 0,
+  ghostOptionFgHoverILight: 0,
+  ghostOptionFgActiveILight: 0,
+  ghostOptionIconRestToneLight: 0,
+  ghostOptionIconHoverToneLight: 0,
+  ghostOptionIconActiveToneLight: 0,
+  ghostOptionIconActiveILight: 0,
+  ghostOptionBorderI: 20,
+  ghostOptionBorderTone: 60,
+
+  // Outlined-option border tones (dark)
+  outlinedOptionBorderRestTone: 50,
+  outlinedOptionBorderHoverTone: 55,
+  outlinedOptionBorderActiveTone: 60,
 };
 
 /**
  * Light-mode preset — wraps the current light-mode formula values.
  * Formula accuracy against a hand-authored light-mode ground truth is deferred (Q01).
+ *
+ * Extended in Step 2 with hue slot fields (Spec S05), sentinel hue slot fields
+ * ([D07]), per-tier intensity/tone overrides, formula parameters, and per-state
+ * control emphasis fields ([D10]).
  */
 export const LIGHT_PRESET: ModePreset = {
   // Surface tones (from Harmony, yellow atmosphere)
@@ -337,6 +790,14 @@ export const LIGHT_PRESET: ModePreset = {
   surfaceOverlayI: 6,
   surfaceScreenI: 4,
 
+  // Per-tier surface intensity overrides (light)
+  bgAppI: 5,  // = atmI; bg-app light uses txt hue at atmI
+  bgCanvasI: 7,
+  surfaceDefaultI: 4,
+  surfaceRaisedI: 5,
+  surfaceInsetI: 4,
+  surfaceContentI: 4,
+
   // Foreground tones (light mode, near-black text)
   fgDefaultTone: 13,
   fgMutedTone: 22,
@@ -351,9 +812,23 @@ export const LIGHT_PRESET: ModePreset = {
   fgMutedI: 9, // = txtISubtle in light
   atmIBorder: 9,
 
+  // Foreground intensity overrides (light)
+  fgInverseI: 1,
+  fgOnCautionI: 5, // = atmI
+  fgOnSuccessI: 5, // = atmI
+
   // Border intensities
   borderIBase: 9,
   borderIStrong: 10,
+
+  // Border/divider mode-dependent tones/intensities (light)
+  borderMutedTone: 36,
+  borderMutedI: 10,
+  borderStrongTone: 24, // = fgSubtleTone(30) - 6
+
+  // Divider intensity (light)
+  dividerDefaultI: 5, // = atmI
+  dividerMutedI: 5,   // = atmI
 
   // Card frame
   cardFrameActiveI: 4,
@@ -376,8 +851,16 @@ export const LIGHT_PRESET: ModePreset = {
   filledBgHoverTone: 40,
   filledBgActiveTone: 50,
 
-  // Toggle tone
+  // Icon tone overrides (light)
+  iconActiveTone: 22,
+
+  // Tab tone overrides (light)
+  tabFgActiveTone: 13, // = fgDefaultTone
+
+  // Toggle tones (light)
   toggleTrackOnHoverTone: 40,
+  toggleThumbDisabledTone: 44, // = fgDisabledTone
+  toggleTrackDisabledI: 6,
 
   // Field tones (light mode)
   fieldBgRestTone: 51,
@@ -385,6 +868,20 @@ export const LIGHT_PRESET: ModePreset = {
   fieldBgFocusTone: 99,
   fieldBgDisabledTone: 48,
   fieldBgReadOnlyTone: 74,
+
+  // Field intensity (light)
+  fieldBgRestI: 7,
+
+  // Control disabled (light)
+  disabledBgI: 6,
+  disabledBorderI: 9, // = atmIBorder
+
+  // Formula parameter fields (light)
+  bgCanvasToneBase: 35,      // light bg-canvas uses independent formula anchored at 35
+  bgCanvasToneSCCenter: 0,   // anchored at sc=0, scales with sc/100
+  bgCanvasToneScale: 10,
+  disabledBgBase: 70,        // light: 70 + (sc/100)*10
+  disabledBgScale: 10,
 
   // Badge tinted emphasis formula parameters
   badgeTintedFgI: 72,
@@ -395,6 +892,159 @@ export const LIGHT_PRESET: ModePreset = {
   badgeTintedBorderI: 50,
   badgeTintedBorderTone: 50,
   badgeTintedBorderAlpha: 35,
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — surface tiers (light)
+  // -------------------------------------------------------------------------
+  bgAppHueSlot: "txt",
+  bgCanvasHueSlot: "atm",
+  surfaceSunkenHueSlot: "atm",
+  surfaceDefaultHueSlot: "atm",
+  surfaceRaisedHueSlot: "txt",
+  surfaceOverlayHueSlot: "atm",
+  surfaceInsetHueSlot: "atm",
+  surfaceContentHueSlot: "atm",
+  surfaceScreenHueSlot: "txt",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — foreground tiers (light)
+  // -------------------------------------------------------------------------
+  fgMutedHueSlot: "txt",
+  fgSubtleHueSlot: "txt",
+  fgDisabledHueSlot: "txt",
+  fgPlaceholderHueSlot: "atm",
+  fgInverseHueSlot: "txt",
+  fgOnAccentHueSlot: "__white",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — icon tiers (light)
+  // -------------------------------------------------------------------------
+  iconMutedHueSlot: "atm",
+  iconOnAccentHueSlot: "__white",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — border/divider (light)
+  // -------------------------------------------------------------------------
+  dividerMutedHueSlot: "borderTint",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — control disabled (light)
+  // -------------------------------------------------------------------------
+  disabledBgHueSlot: "atm",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — field (light)
+  // -------------------------------------------------------------------------
+  fieldBgHoverHueSlot: "atm",
+  fieldBgReadOnlyHueSlot: "atm",
+  fieldPlaceholderHueSlot: "atm",
+  fieldBorderRestHueSlot: "atm",
+  fieldBorderHoverHueSlot: "borderStrong",
+
+  // -------------------------------------------------------------------------
+  // Hue slot fields — toggle (light)
+  // -------------------------------------------------------------------------
+  toggleTrackDisabledHueSlot: "atm",
+  toggleThumbHueSlot: "__white",
+  checkmarkHueSlot: "__white",
+  radioDotHueSlot: "__white",
+
+  // -------------------------------------------------------------------------
+  // Sentinel hue slot fields (light) [D07]
+  // -------------------------------------------------------------------------
+  outlinedBgHoverHueSlot: "atm",
+  outlinedBgActiveHueSlot: "atm",
+  ghostActionBgHoverHueSlot: "__shadow",
+  ghostActionBgActiveHueSlot: "__shadow",
+  ghostOptionBgHoverHueSlot: "__shadow",
+  ghostOptionBgActiveHueSlot: "__shadow",
+  tabBgHoverHueSlot: "__shadow",
+  tabCloseBgHoverHueSlot: "__shadow",
+  highlightHoverHueSlot: "__shadow",
+
+  // -------------------------------------------------------------------------
+  // Alpha values for sentinel-dispatched tokens (light)
+  // -------------------------------------------------------------------------
+  tabBgHoverAlpha: 6,
+  tabCloseBgHoverAlpha: 10,
+  outlinedBgHoverAlpha: 0,  // unused in light (chromatic dispatch via "atm")
+  outlinedBgActiveAlpha: 0, // unused in light (chromatic dispatch via "atm")
+  ghostActionBgHoverAlpha: 6,
+  ghostActionBgActiveAlpha: 12,
+  ghostOptionBgHoverAlpha: 6,
+  ghostOptionBgActiveAlpha: 12,
+  highlightHoverAlpha: 4,
+  ghostDangerBgHoverAlpha: 8,
+  ghostDangerBgActiveAlpha: 15,
+
+  // -------------------------------------------------------------------------
+  // Per-state control emphasis fields [D10] (light)
+  // Dark uniform values not used in light; set to 0.
+  // Light has per-state variation in tones.
+  // -------------------------------------------------------------------------
+  outlinedFgTone: 0,  // not used in light (uses per-state fields below)
+  outlinedFgI: 0,     // not used in light
+
+  // Outlined-action fg/icon per-state light tones
+  outlinedActionFgRestToneLight: 13,    // = fgDefaultTone
+  outlinedActionFgHoverToneLight: 10,
+  outlinedActionFgActiveToneLight: 8,
+  outlinedActionIconRestToneLight: 22,  // = fgMutedTone
+  outlinedActionIconHoverToneLight: 22,
+  outlinedActionIconActiveToneLight: 13,
+
+  // Outlined-agent fg/icon — same as outlined-action
+  outlinedAgentFgRestToneLight: 13,
+  outlinedAgentFgHoverToneLight: 10,
+  outlinedAgentFgActiveToneLight: 8,
+  outlinedAgentIconRestToneLight: 22,
+  outlinedAgentIconHoverToneLight: 22,
+  outlinedAgentIconActiveToneLight: 13,
+
+  // Outlined-option fg/icon — same as outlined-action
+  outlinedOptionFgRestToneLight: 13,
+  outlinedOptionFgHoverToneLight: 10,
+  outlinedOptionFgActiveToneLight: 8,
+  outlinedOptionIconRestToneLight: 22,
+  outlinedOptionIconHoverToneLight: 22,
+  outlinedOptionIconActiveToneLight: 13,
+
+  // Ghost-action fg/icon (dark uniform not used in light)
+  ghostActionFgTone: 0,
+  ghostActionFgI: 0,
+  ghostActionFgRestToneLight: 22,  // = fgMutedTone
+  ghostActionFgHoverToneLight: 15,
+  ghostActionFgActiveToneLight: 10,
+  ghostActionFgRestILight: 9,      // = txtISubtle
+  ghostActionFgHoverILight: 9,
+  ghostActionFgActiveILight: 9,
+  ghostActionIconRestToneLight: 22,  // = fgMutedTone
+  ghostActionIconHoverToneLight: 22,
+  ghostActionIconActiveToneLight: 13,
+  ghostActionIconActiveILight: 27,
+  ghostActionBorderI: 10,
+  ghostActionBorderTone: 35,
+
+  // Ghost-option fg/icon — same pattern as ghost-action
+  ghostOptionFgTone: 0,
+  ghostOptionFgI: 0,
+  ghostOptionFgRestToneLight: 22,  // = fgMutedTone
+  ghostOptionFgHoverToneLight: 15,
+  ghostOptionFgActiveToneLight: 10,
+  ghostOptionFgRestILight: 9,      // = txtISubtle
+  ghostOptionFgHoverILight: 9,
+  ghostOptionFgActiveILight: 9,
+  ghostOptionIconRestToneLight: 22,  // = fgMutedTone
+  ghostOptionIconHoverToneLight: 22,
+  ghostOptionIconActiveToneLight: 13,
+  ghostOptionIconActiveILight: 27,
+  ghostOptionBorderI: 10,
+  ghostOptionBorderTone: 35,
+
+  // Outlined-option border tones (light)
+  outlinedOptionBorderRestTone: 22,   // = fgMutedTone
+  outlinedOptionBorderHoverTone: 19,  // = fgMutedTone - 3
+  outlinedOptionBorderActiveTone: 16, // = fgMutedTone - 6
 };
 
 // ---------------------------------------------------------------------------
