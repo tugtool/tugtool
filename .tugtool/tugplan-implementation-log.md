@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-6
+date: 2025-03-16T02:40:33Z
+---
+
+## step-6: Created styles/themes/ directory. Added Vite middleware plugin for POST /__themes/save and GET /__themes/list. Extended theme-provider with dynamicThemeName state, setDynamicTheme, revertToBuiltIn, loadSavedThemes, and localStorage persistence. Added Save Theme button to generator UI. Created 8 middleware unit tests and 7 provider integration tests exercising actual context functions. 51 new tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-5
 date: 2025-03-16T02:27:01Z
 ---

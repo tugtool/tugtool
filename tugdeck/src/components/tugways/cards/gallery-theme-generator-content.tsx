@@ -31,6 +31,7 @@ import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
+  generateResolvedCssExport,
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
@@ -774,6 +775,7 @@ function ExportImportPanel({
   exportDisabled: boolean;
 }) {
   const [importError, setImportError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -788,6 +790,27 @@ function ExportImportPanel({
     const safeName = recipe.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
     triggerDownload(json, `${safeName}-recipe.json`, "application/json");
   }, [recipe]);
+
+  const handleSaveTheme = useCallback(async () => {
+    if (exportDisabled) return;
+    setSaveStatus("saving");
+    try {
+      const css = generateResolvedCssExport(output, recipe);
+      const res = await fetch("/__themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, css, recipe: JSON.stringify(recipe) }),
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      } else {
+        setSaveStatus("error");
+      }
+    } catch {
+      setSaveStatus("error");
+    }
+  }, [output, recipe, exportDisabled]);
 
   const handleImportClick = useCallback(() => {
     setImportError(null);
@@ -856,6 +879,17 @@ function ExportImportPanel({
           disabled={exportDisabled}
         >
           Export Recipe JSON
+        </TugButton>
+        <TugButton
+          emphasis="ghost"
+          role="action"
+          size="sm"
+          onClick={() => { void handleSaveTheme(); }}
+          data-testid="gtg-save-theme-btn"
+          title="Save theme to disk for runtime loading"
+          disabled={exportDisabled || saveStatus === "saving"}
+        >
+          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved" : "Save Theme"}
         </TugButton>
       </div>
 

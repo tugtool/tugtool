@@ -72,6 +72,106 @@ function controlTokenHotReload(): VitePlugin {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Theme save/load middleware — handles /__themes/save and /__themes/list
+// Handler functions are exported for unit testing with mocked fs.
+// ---------------------------------------------------------------------------
+
+const THEMES_DIR = path.resolve(__dirname, "styles/themes");
+
+export interface ThemeSaveBody {
+  name: string;
+  css: string;
+  recipe: string;
+}
+
+/**
+ * Handle POST /__themes/save.
+ * Writes <name>.css and <name>-recipe.json to styles/themes/.
+ * Returns { ok: true } on success, { error: string } with status 400 on failure.
+ */
+export function handleThemesSave(
+  body: ThemeSaveBody,
+  fsImpl: { writeFileSync: (p: string, data: string, enc: "utf-8") => void },
+  themesDir: string,
+): { status: number; body: string } {
+  const { name, css, recipe } = body;
+  if (!name || typeof name !== "string" || name.trim() === "") {
+    return { status: 400, body: JSON.stringify({ error: "name is required" }) };
+  }
+  const safeName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+  try {
+    fsImpl.writeFileSync(path.join(themesDir, `${safeName}.css`), css, "utf-8");
+    fsImpl.writeFileSync(path.join(themesDir, `${safeName}-recipe.json`), recipe, "utf-8");
+    return { status: 200, body: JSON.stringify({ ok: true, name: safeName }) };
+  } catch (err) {
+    return { status: 500, body: JSON.stringify({ error: String(err) }) };
+  }
+}
+
+/**
+ * Handle GET /__themes/list.
+ * Reads styles/themes/ and returns theme names derived from .css files.
+ */
+export function handleThemesList(
+  fsImpl: { readdirSync: (p: string) => string[] },
+  themesDir: string,
+): { status: number; body: string } {
+  try {
+    const files = fsImpl.readdirSync(themesDir);
+    const names = files
+      .filter((f) => f.endsWith(".css"))
+      .map((f) => f.slice(0, -4));
+    return { status: 200, body: JSON.stringify({ themes: names }) };
+  } catch {
+    return { status: 200, body: JSON.stringify({ themes: [] }) };
+  }
+}
+
+/**
+ * Vite plugin: theme save/load API endpoints for the dev server.
+ * POST /__themes/save — save a generated theme to disk
+ * GET  /__themes/list  — list available saved themes
+ */
+function themeSaveLoadPlugin(): VitePlugin {
+  return {
+    name: "theme-save-load",
+    configureServer(server) {
+      server.middlewares.use(
+        "/__themes",
+        (req: import("http").IncomingMessage, res: import("http").ServerResponse, next: () => void) => {
+          const url = req.url ?? "/";
+          if (req.method === "POST" && url === "/save") {
+            let raw = "";
+            req.on("data", (chunk: Buffer) => { raw += chunk.toString(); });
+            req.on("end", () => {
+              let body: ThemeSaveBody;
+              try {
+                body = JSON.parse(raw) as ThemeSaveBody;
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "invalid JSON body" }));
+                return;
+              }
+              const result = handleThemesSave(body, fs, THEMES_DIR);
+              res.writeHead(result.status, { "Content-Type": "application/json" });
+              res.end(result.body);
+            });
+            return;
+          }
+          if (req.method === "GET" && url === "/list") {
+            const result = handleThemesList(fs, THEMES_DIR);
+            res.writeHead(result.status, { "Content-Type": "application/json" });
+            res.end(result.body);
+            return;
+          }
+          next();
+        },
+      );
+    },
+  };
+}
+
 export default defineConfig(() => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
   const proxyConfig = {
@@ -80,7 +180,7 @@ export default defineConfig(() => {
     "/api": { target: `http://localhost:${tugcastPort}` },
   };
   return {
-    plugins: [react(), paletteHotReload(), controlTokenHotReload()],
+    plugins: [react(), paletteHotReload(), controlTokenHotReload(), themeSaveLoadPlugin()],
     css: {
       postcss: {
         plugins: [postcssTugColor()],
