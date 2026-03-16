@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-16T15:24:52Z
+---
+
+## step-1: Added NAMED_GRAYS (9 descriptive names mapping to tones 10-90), ACHROMATIC_SEQUENCE (11-element linear array from black to white), ACHROMATIC_L_VALUES (computed lightness values), resolveAchromaticAdjacency() (2/3+1/3 blending), and isAchromaticAdjacent() (distance-1 check). 123 palette-engine tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-10
 date: 2025-03-16T03:18:43Z
 ---
