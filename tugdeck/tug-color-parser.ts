@@ -80,6 +80,12 @@ export interface TugColorCallSpan {
   inner: string;
 }
 
+/** Result of findTugColorCallsWithWarnings — calls plus any unmatched-paren warnings. */
+export interface FindCallsResult {
+  calls: TugColorCallSpan[];
+  warnings: TugColorWarning[];
+}
+
 // ---------------------------------------------------------------------------
 // Tokens
 // ---------------------------------------------------------------------------
@@ -715,11 +721,18 @@ export function parseTugColor(
 const TUG_COLOR_MARKER = "--tug-color(";
 
 /**
- * Find all --tug-color() calls in a CSS value string.
+ * Find all --tug-color() calls in a CSS value string, returning both the matched
+ * calls and warnings for any unmatched parentheses.
+ *
+ * When a `--tug-color(` opener is found but the closing `)` is never reached
+ * (depth stays > 0 after scanning to end of input), a TugColorWarning is emitted
+ * with pos=start of the opener and end=cssValue.length.
+ *
  * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
  */
-export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
+export function findTugColorCallsWithWarnings(cssValue: string): FindCallsResult {
   const calls: TugColorCallSpan[] = [];
+  const warnings: TugColorWarning[] = [];
   let searchFrom = 0;
 
   while (searchFrom < cssValue.length) {
@@ -737,7 +750,12 @@ export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
     }
 
     if (depth !== 0) {
-      // Unmatched parenthesis — skip this occurrence
+      // Unmatched parenthesis — emit a warning and skip this occurrence
+      warnings.push({
+        message: "Unmatched parenthesis in --tug-color() call",
+        pos: start,
+        end: cssValue.length,
+      });
       searchFrom = innerStart;
       continue;
     }
@@ -750,5 +768,16 @@ export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
     searchFrom = i;
   }
 
-  return calls;
+  return { calls, warnings };
+}
+
+/**
+ * Find all --tug-color() calls in a CSS value string.
+ * Handles nested parentheses correctly (e.g. inside calc() or linear-gradient()).
+ *
+ * For backward compatibility this function returns only the call spans. Use
+ * findTugColorCallsWithWarnings to also receive warnings about unmatched parens.
+ */
+export function findTugColorCalls(cssValue: string): TugColorCallSpan[] {
+  return findTugColorCallsWithWarnings(cssValue).calls;
 }

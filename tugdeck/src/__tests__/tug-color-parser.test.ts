@@ -15,8 +15,8 @@
  * - Gray pseudo-hue: achromatic, C=0, tone formula with canonical L=0.5
  */
 import { describe, it, expect } from "bun:test";
-import { parseTugColor, findTugColorCalls } from "../../tug-color-parser";
-import type { TugColorParsed, TugColorError, TugColorWarning } from "../../tug-color-parser";
+import { parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings } from "../../tug-color-parser";
+import type { TugColorParsed, TugColorError, TugColorWarning, FindCallsResult } from "../../tug-color-parser";
 import { TUG_COLOR_PRESETS, ADJACENCY_RING } from "@/components/tugways/palette-engine";
 
 // All 48 named hues plus black and white
@@ -1077,5 +1077,68 @@ describe("tug-color-parser: soft warnings", () => {
     const warns = expectOkWithWarnings("black, 0");
     // intensity=0 is not > 0, so no achromatic warning
     expect(warns.every((w) => !w.message.includes("intensity is ignored"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findTugColorCallsWithWarnings — unmatched paren warnings (T-UNMATCHED-PAREN etc.)
+// ---------------------------------------------------------------------------
+
+describe("findTugColorCallsWithWarnings", () => {
+  it("T-UNMATCHED-PAREN: unmatched '--tug-color(red' returns empty calls and one warning", () => {
+    const result: FindCallsResult = findTugColorCallsWithWarnings("--tug-color(red");
+    expect(result.calls.length).toBe(0);
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].message).toContain("Unmatched parenthesis");
+  });
+
+  it("T-MATCHED-PAREN: '--tug-color(red)' returns one call and no warnings", () => {
+    const result: FindCallsResult = findTugColorCallsWithWarnings("--tug-color(red)");
+    expect(result.calls.length).toBe(1);
+    expect(result.calls[0].inner).toBe("red");
+    expect(result.warnings.length).toBe(0);
+  });
+
+  it("T-BACKWARD-COMPAT: findTugColorCalls still returns TugColorCallSpan[] directly", () => {
+    const calls = findTugColorCalls("--tug-color(red)");
+    expect(Array.isArray(calls)).toBe(true);
+    expect(calls.length).toBe(1);
+    expect(calls[0].inner).toBe("red");
+  });
+
+  it("unmatched paren warning has correct pos (start of --tug-color() marker)", () => {
+    const input = "bg: --tug-color(red";
+    const result = findTugColorCallsWithWarnings(input);
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].pos).toBe(4); // "--tug-color(" starts at index 4
+    expect(result.warnings[0].end).toBe(input.length);
+  });
+
+  it("unmatched paren warning fields have correct shape", () => {
+    const result = findTugColorCallsWithWarnings("--tug-color(red");
+    expect(result.warnings.length).toBeGreaterThan(0);
+    const warn = result.warnings[0];
+    expect(warn).toHaveProperty("message");
+    expect(warn).toHaveProperty("pos");
+    expect(warn).toHaveProperty("end");
+    expect(typeof warn.message).toBe("string");
+    expect(typeof warn.pos).toBe("number");
+    expect(typeof warn.end).toBe("number");
+    expect(warn.end).toBeGreaterThanOrEqual(warn.pos);
+  });
+
+  it("matched calls mixed with unmatched: valid call extracted, warning for unmatched", () => {
+    const input = "--tug-color(blue) text --tug-color(red";
+    const result = findTugColorCallsWithWarnings(input);
+    expect(result.calls.length).toBe(1);
+    expect(result.calls[0].inner).toBe("blue");
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].message).toContain("Unmatched parenthesis");
+  });
+
+  it("findTugColorCalls ignores unmatched paren silently (backward compat)", () => {
+    const calls = findTugColorCalls("--tug-color(red");
+    expect(calls.length).toBe(0);
+    // No throw — silently returns empty array
   });
 });

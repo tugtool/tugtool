@@ -55,7 +55,7 @@ import {
   ADJACENCY_RING,
   resolveHyphenatedHue,
 } from "./src/components/tugways/palette-engine";
-import { parseTugColor, findTugColorCalls } from "./tug-color-parser";
+import { parseTugColor, findTugColorCallsWithWarnings } from "./tug-color-parser";
 import type { TugColorValue } from "./tug-color-parser";
 
 // ---------------------------------------------------------------------------
@@ -225,7 +225,10 @@ export default function postcssTugColor(): Plugin {
     Declaration(decl) {
       if (!decl.value.includes("--tug-color(")) return;
 
-      const calls = findTugColorCalls(decl.value);
+      const { calls, warnings: scanWarnings } = findTugColorCallsWithWarnings(decl.value);
+      for (const warn of scanWarnings) {
+        console.warn(`postcss-tug-color: ${warn.message}`);
+      }
       if (calls.length === 0) return;
 
       // Process in reverse order to preserve string indices

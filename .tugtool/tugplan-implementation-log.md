@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-16T00:17:04Z
+---
+
+## step-7: Added findTugColorCallsWithWarnings returning {calls, warnings}. Unmatched --tug-color( parens produce TugColorWarning. Existing findTugColorCalls delegates for backward compat. PostCSS logs scan warnings. 7 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-6
 date: 2025-03-16T00:11:10Z
 ---
