@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-16T15:34:33Z
+---
+
+## step-2: Extended parseTugColor with achromaticSequence parameter threaded through SlotParser/SLOT_DISPATCH/parseColorTokens. Added ring-then-achromatic fallback adjacency validation. Updated isAchromatic guard for named grays and transparent. Added three-tier warning logic. 26 new tests, 150 total parser tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-color-palette-system.md
+
+---
+
+---
 step: step-1
 date: 2025-03-16T15:24:52Z
 ---

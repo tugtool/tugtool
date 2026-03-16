@@ -17,7 +17,7 @@
 import { describe, it, expect } from "bun:test";
 import { parseTugColor, findTugColorCalls, findTugColorCallsWithWarnings } from "../../tug-color-parser";
 import type { TugColorParsed, TugColorError, TugColorWarning, FindCallsResult } from "../../tug-color-parser";
-import { TUG_COLOR_PRESETS, ADJACENCY_RING } from "@/components/tugways/palette-engine";
+import { TUG_COLOR_PRESETS, ADJACENCY_RING, ACHROMATIC_SEQUENCE, NAMED_GRAYS } from "@/components/tugways/palette-engine";
 
 // All 48 named hues plus black and white
 const KNOWN_HUES = new Set([
@@ -1227,5 +1227,215 @@ describe("tug-color-parser: error recovery", () => {
       const badCharErrors = result.errors.filter((e) => e.message.includes("Unexpected character"));
       expect(badCharErrors.length).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Named grays and transparent — step-2 new behavior
+// ---------------------------------------------------------------------------
+
+// Full vocabulary: 48 chromatic + black + white + gray + 9 named grays + transparent
+const KNOWN_HUES_FULL = new Set([
+  ...ADJACENCY_RING,
+  "black", "white", "gray",
+  ...Object.keys(NAMED_GRAYS),
+  "transparent",
+]);
+
+const KNOWN_PRESETS_FULL: ReadonlyMap<string, { intensity: number; tone: number }> =
+  new Map(Object.entries(TUG_COLOR_PRESETS));
+
+/** Parse with full vocabulary, ring, and achromatic sequence. */
+function parseFullVocab(input: string) {
+  return parseTugColor(input, KNOWN_HUES_FULL, KNOWN_PRESETS_FULL, ADJACENCY_RING, ACHROMATIC_SEQUENCE);
+}
+
+/** Assert ok and return value. */
+function expectOkFull(input: string): TugColorParsed {
+  const result = parseFullVocab(input);
+  if (!result.ok) {
+    throw new Error(
+      `Expected ok parse for '${input}', got errors:\n` +
+      result.errors.map((e) => `  - ${e.message}`).join("\n"),
+    );
+  }
+  return result.value;
+}
+
+/** Assert ok and return warnings (may be empty array). */
+function expectOkFullWarnings(input: string): TugColorWarning[] {
+  const result = parseFullVocab(input);
+  if (!result.ok) {
+    throw new Error(
+      `Expected ok parse for '${input}', got errors:\n` +
+      result.errors.map((e) => `  - ${e.message}`).join("\n"),
+    );
+  }
+  return result.warnings ?? [];
+}
+
+/** Assert errors and return error list. */
+function expectErrorsFull(input: string): TugColorError[] {
+  const result = parseFullVocab(input);
+  if (result.ok) {
+    throw new Error(`Expected errors for '${input}', got ok: ${JSON.stringify(result.value)}`);
+  }
+  return result.errors;
+}
+
+describe("tug-color-parser: named grays parsing", () => {
+  it("all 9 named grays parse successfully when included in knownHues", () => {
+    for (const name of Object.keys(NAMED_GRAYS)) {
+      const result = parseFullVocab(name);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.color.name).toBe(name);
+      }
+    }
+  });
+
+  it("parseTugColor('paper') succeeds with name='paper'", () => {
+    const v = expectOkFull("paper");
+    expect(v.color.name).toBe("paper");
+  });
+
+  it("parseTugColor('pitch') succeeds with name='pitch'", () => {
+    const v = expectOkFull("pitch");
+    expect(v.color.name).toBe("pitch");
+  });
+
+  it("parseTugColor('graphite') succeeds with name='graphite'", () => {
+    const v = expectOkFull("graphite");
+    expect(v.color.name).toBe("graphite");
+  });
+});
+
+describe("tug-color-parser: transparent parsing", () => {
+  it("parseTugColor('transparent') succeeds with name='transparent'", () => {
+    const v = expectOkFull("transparent");
+    expect(v.color.name).toBe("transparent");
+  });
+
+  it("parseTugColor('transparent') parses with default intensity=50, tone=50, alpha=100", () => {
+    const v = expectOkFull("transparent");
+    expect(v.intensity).toBe(50);
+    expect(v.tone).toBe(50);
+    expect(v.alpha).toBe(100);
+  });
+});
+
+describe("tug-color-parser: named gray warnings (tier 2)", () => {
+  it("'paper, i: 50' produces intensity-ignored warning", () => {
+    const warns = expectOkFullWarnings("paper, i: 50");
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("paper"))).toBe(true);
+  });
+
+  it("'paper, t: 80' produces tone-ignored warning", () => {
+    const warns = expectOkFullWarnings("paper, t: 80");
+    expect(warns.some((w) => w.message.includes("tone is ignored") && w.message.includes("paper"))).toBe(true);
+  });
+
+  it("'pitch, i: 50' produces intensity-ignored warning", () => {
+    const warns = expectOkFullWarnings("pitch, i: 50");
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("pitch"))).toBe(true);
+  });
+
+  it("'paper, i: 0, t: 0' produces tone-ignored warning but NOT pure-black chromatic warning", () => {
+    const warns = expectOkFullWarnings("paper, i: 0, t: 0");
+    // tone-ignored warning fires (tone was explicitly provided)
+    expect(warns.some((w) => w.message.includes("tone is ignored"))).toBe(true);
+    // pure-black chromatic warning must NOT fire (isAchromatic gate suppresses it)
+    expect(warns.every((w) => !w.message.includes("pure black"))).toBe(true);
+  });
+
+  it("'paper' with no explicit args produces NO warnings", () => {
+    const warns = expectOkFullWarnings("paper");
+    expect(warns.length).toBe(0);
+  });
+
+  it("'paper, a: 50' produces no warnings (alpha is honored silently for named grays)", () => {
+    const warns = expectOkFullWarnings("paper, a: 50");
+    expect(warns.length).toBe(0);
+  });
+
+  it("named gray intensity=0 does NOT trigger intensity-ignored warning (not > 0)", () => {
+    // intensity=0 is a no-op for achromatics but is not unusual to specify
+    const warns = expectOkFullWarnings("paper, i: 0");
+    expect(warns.every((w) => !w.message.includes("intensity is ignored"))).toBe(true);
+  });
+});
+
+describe("tug-color-parser: transparent warnings (tier 1)", () => {
+  it("'transparent, i: 50' produces intensity-ignored warning", () => {
+    const warns = expectOkFullWarnings("transparent, i: 50");
+    expect(warns.some((w) => w.message.includes("intensity is ignored") && w.message.includes("transparent"))).toBe(true);
+  });
+
+  it("'transparent, t: 50' produces tone-ignored warning", () => {
+    const warns = expectOkFullWarnings("transparent, t: 50");
+    expect(warns.some((w) => w.message.includes("tone is ignored") && w.message.includes("transparent"))).toBe(true);
+  });
+
+  it("'transparent, a: 50' produces alpha-ignored warning", () => {
+    const warns = expectOkFullWarnings("transparent, a: 50");
+    expect(warns.some((w) => w.message.includes("alpha is ignored") && w.message.includes("transparent"))).toBe(true);
+  });
+
+  it("'transparent' with no args produces NO warnings", () => {
+    const warns = expectOkFullWarnings("transparent");
+    expect(warns.length).toBe(0);
+  });
+
+  it("'transparent, i: 0, t: 0' does NOT produce pure-black chromatic warning", () => {
+    // transparent is in isAchromatic gate — chromatic warning block is skipped entirely
+    const warns = expectOkFullWarnings("transparent, i: 0, t: 0");
+    expect(warns.every((w) => !w.message.includes("pure black"))).toBe(true);
+  });
+});
+
+describe("tug-color-parser: achromatic adjacency (ring-then-achromatic fallback)", () => {
+  it("'paper-linen' succeeds with adjacentName='linen'", () => {
+    const v = expectOkFull("paper-linen");
+    expect(v.color.name).toBe("paper");
+    expect(v.color.adjacentName).toBe("linen");
+  });
+
+  it("'linen-paper' succeeds with adjacentName='paper'", () => {
+    const v = expectOkFull("linen-paper");
+    expect(v.color.name).toBe("linen");
+    expect(v.color.adjacentName).toBe("paper");
+  });
+
+  it("'black-paper' succeeds via achromatic sequence fallback (black not in ring)", () => {
+    const v = expectOkFull("black-paper");
+    expect(v.color.name).toBe("black");
+    expect(v.color.adjacentName).toBe("paper");
+  });
+
+  it("'pitch-white' succeeds via achromatic sequence fallback", () => {
+    const v = expectOkFull("pitch-white");
+    expect(v.color.name).toBe("pitch");
+    expect(v.color.adjacentName).toBe("white");
+  });
+
+  it("'cobalt-indigo' succeeds via ring adjacency (chromatic path unchanged)", () => {
+    const v = expectOkFull("cobalt-indigo");
+    expect(v.color.name).toBe("cobalt");
+    expect(v.color.adjacentName).toBe("indigo");
+  });
+
+  it("'paper-parchment' produces hard error (not adjacent in ring or achromatic sequence)", () => {
+    const errs = expectErrorsFull("paper-parchment");
+    expect(errs.some((e) => e.message.includes("not adjacent"))).toBe(true);
+  });
+
+  it("'paper-transparent' produces hard error (transparent not in ring or achromatic sequence)", () => {
+    const errs = expectErrorsFull("paper-transparent");
+    expect(errs.some((e) => e.message.includes("not adjacent"))).toBe(true);
+  });
+
+  it("'black-white' produces hard error (distance=10, not adjacent)", () => {
+    const errs = expectErrorsFull("black-white");
+    expect(errs.some((e) => e.message.includes("not adjacent"))).toBe(true);
   });
 });
