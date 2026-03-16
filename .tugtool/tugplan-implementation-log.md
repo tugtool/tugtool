@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-11
+date: 2025-03-16T00:45:03Z
+---
+
+## step-11: Final integration checkpoint. 1678 pass, 0 fail (62 new tests from baseline of 1616). All exit criteria met: gray pseudo-hue, tokenizer rewrite, source spans, soft warnings, unmatched paren detection, dispatch refactor, error recovery, achromatic gallery strip.
+
+**Files changed:**
+- .tugtool/tugplan-gray-parser-rewrite.md
+
+---
+
+---
 step: step-10
 date: 2025-03-16T00:39:09Z
 ---
