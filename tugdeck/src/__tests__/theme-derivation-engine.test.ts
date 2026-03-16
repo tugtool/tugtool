@@ -1416,7 +1416,7 @@ describe("derivation-engine convergence stress tests", () => {
     const recipe = {
       name: "T4.3-stress",
       mode: "dark" as const,
-      atmosphere: { hue: "amber" },
+      cardBg: { hue: "amber" },
       text: { hue: "sand" },
       accent: "cobalt",
       active: "blue",
@@ -1450,7 +1450,7 @@ describe("derivation-engine convergence stress tests", () => {
     const recipe = {
       name: "T4.4-stress",
       mode: "light" as const,
-      atmosphere: { hue: "slate" },
+      cardBg: { hue: "slate" },
       text: { hue: "cobalt" },
       accent: "orange",
       active: "red",
@@ -1484,7 +1484,7 @@ describe("derivation-engine convergence stress tests", () => {
     const recipe = {
       name: "T4.5-stress",
       mode: "dark" as const,
-      atmosphere: { hue: "gray" },
+      cardBg: { hue: "gray" },
       text: { hue: "slate" },
       accent: "violet",
       active: "indigo",
@@ -1518,7 +1518,7 @@ describe("derivation-engine convergence stress tests", () => {
     const recipe = {
       name: "T4.6-stress",
       mode: "dark" as const,
-      atmosphere: { hue: "violet" },
+      cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       accent: "orange",
       active: "blue",
@@ -1552,7 +1552,7 @@ describe("derivation-engine convergence stress tests", () => {
     const recipe = {
       name: "T4.7-stress",
       mode: "light" as const,
-      atmosphere: { hue: "violet" },
+      cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       accent: "orange",
       active: "blue",

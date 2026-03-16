@@ -718,7 +718,7 @@ export function generateCssExport(
   const recipeJson = JSON.stringify(recipe);
   const hash = simpleHash(recipeJson);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const desc = `Generated theme (${recipe.mode} mode, atmosphere: ${recipe.atmosphere.hue}, text: ${recipe.text.hue})`;
+  const desc = `Generated theme (${recipe.mode} mode, cardBg: ${recipe.cardBg.hue}, text: ${recipe.text.hue})`;
 
   const header = [
     "/**",
@@ -758,12 +758,12 @@ export function validateRecipeJson(value: unknown): string | null {
   if (obj["mode"] !== "dark" && obj["mode"] !== "light") {
     return "Invalid 'mode' field (must be 'dark' or 'light')";
   }
-  if (typeof obj["atmosphere"] !== "object" || obj["atmosphere"] === null) {
-    return "Missing or invalid 'atmosphere' field (object required)";
+  if (typeof obj["cardBg"] !== "object" || obj["cardBg"] === null) {
+    return "Missing or invalid 'cardBg' field (object required)";
   }
-  const atm = obj["atmosphere"] as Record<string, unknown>;
-  if (typeof atm["hue"] !== "string" || atm["hue"].trim() === "") {
-    return "Missing or invalid 'atmosphere.hue' field (string required)";
+  const cardBg = obj["cardBg"] as Record<string, unknown>;
+  if (typeof cardBg["hue"] !== "string" || cardBg["hue"].trim() === "") {
+    return "Missing or invalid 'cardBg.hue' field (string required)";
   }
   if (typeof obj["text"] !== "object" || obj["text"] === null) {
     return "Missing or invalid 'text' field (object required)";
@@ -1253,7 +1253,7 @@ export function GalleryThemeGeneratorContent() {
 
   const [recipeName, setRecipeName] = useState<string>(DEFAULT_RECIPE.name);
   const [mode, setMode] = useState<"dark" | "light">(DEFAULT_RECIPE.mode);
-  const [atmosphereHue, setAtmosphereHue] = useState<string>(DEFAULT_RECIPE.atmosphere.hue);
+  const [cardBgHue, setCardBgHue] = useState<string>(DEFAULT_RECIPE.cardBg.hue);
   const [textHue, setTextHue] = useState<string>(DEFAULT_RECIPE.text.hue);
   const [surfaceContrast, setSurfaceContrast] = useState<number>(
     DEFAULT_RECIPE.surfaceContrast ?? 50,
@@ -1262,6 +1262,12 @@ export function GalleryThemeGeneratorContent() {
     DEFAULT_RECIPE.signalIntensity ?? 50,
   );
   const [warmth, setWarmth] = useState<number>(DEFAULT_RECIPE.warmth ?? 50);
+
+  // Structural hue state — new fields for canvas, cardFrame, borderTint, link. [D04]
+  const [canvasHue, setCanvasHue] = useState<string>(DEFAULT_RECIPE.canvas ?? DEFAULT_RECIPE.cardBg.hue);
+  const [cardFrameHue, setCardFrameHue] = useState<string>(DEFAULT_RECIPE.cardFrame ?? "indigo");
+  const [borderTintHue, setBorderTintHue] = useState<string>(DEFAULT_RECIPE.borderTint ?? DEFAULT_RECIPE.cardBg.hue);
+  const [linkHue, setLinkHue] = useState<string>(DEFAULT_RECIPE.link ?? DEFAULT_RECIPE.active ?? "blue");
 
   // Role hue state — one per role in the 7-role system. [D05, Step 6]
   // Note: recipe field "destructive" maps to the "danger" role in the UI.
@@ -1326,11 +1332,15 @@ export function GalleryThemeGeneratorContent() {
     (
       n: string,
       m: "dark" | "light",
-      atm: string,
+      cardBg: string,
       txt: string,
       sc: number,
       sv: number,
       w: number,
+      canvas: string,
+      cardFrame: string,
+      borderTint: string,
+      link: string,
       accent: string,
       active: string,
       agent: string,
@@ -1342,11 +1352,15 @@ export function GalleryThemeGeneratorContent() {
       const recipe: ThemeRecipe = {
         name: n,
         mode: m,
-        atmosphere: { hue: atm },
+        cardBg: { hue: cardBg },
         text: { hue: txt },
         surfaceContrast: sc,
         signalIntensity: sv,
         warmth: w,
+        canvas,
+        cardFrame,
+        borderTint,
+        link,
         accent,
         active,
         agent,
@@ -1370,9 +1384,9 @@ export function GalleryThemeGeneratorContent() {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    runDerive(recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
+    runDerive(recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, atmosphereHue, textHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
+  }, [mode, cardBgHue, textHue, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue]);
 
   /**
    * Debounced re-derive for slider changes (150ms delay).
@@ -1385,11 +1399,15 @@ export function GalleryThemeGeneratorContent() {
       newValue: number,
       n: string,
       m: "dark" | "light",
-      atm: string,
+      cardBg: string,
       txt: string,
       sc: number,
       sv: number,
       w: number,
+      canvas: string,
+      cardFrame: string,
+      borderTint: string,
+      link: string,
       accent: string,
       active: string,
       agent: string,
@@ -1404,7 +1422,7 @@ export function GalleryThemeGeneratorContent() {
       }
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
-        runDerive(n, m, atm, txt, sc, sv, w, accent, active, agent, data, success, caution, danger);
+        runDerive(n, m, cardBg, txt, sc, sv, w, canvas, cardFrame, borderTint, link, accent, active, agent, data, success, caution, danger);
       }, 150);
     },
     [runDerive],
@@ -1430,11 +1448,15 @@ export function GalleryThemeGeneratorContent() {
       const r = EXAMPLE_RECIPES[presetKey];
       setRecipeName(r.name);
       setMode(r.mode);
-      setAtmosphereHue(r.atmosphere.hue);
+      setCardBgHue(r.cardBg.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
+      setCanvasHue(r.canvas ?? r.cardBg.hue);
+      setCardFrameHue(r.cardFrame ?? "indigo");
+      setBorderTintHue(r.borderTint ?? r.cardBg.hue);
+      setLinkHue(r.link ?? r.active ?? "blue");
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
       setAgentHue(r.agent ?? "violet");
@@ -1461,11 +1483,15 @@ export function GalleryThemeGeneratorContent() {
     () => ({
       name: recipeName,
       mode,
-      atmosphere: { hue: atmosphereHue },
+      cardBg: { hue: cardBgHue },
       text: { hue: textHue },
       surfaceContrast,
       signalIntensity,
       warmth,
+      canvas: canvasHue,
+      cardFrame: cardFrameHue,
+      borderTint: borderTintHue,
+      link: linkHue,
       accent: accentHue,
       active: activeHue,
       agent: agentHue,
@@ -1474,7 +1500,7 @@ export function GalleryThemeGeneratorContent() {
       caution: cautionHue,
       destructive: dangerHue,
     }),
-    [recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
+    [recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue],
   );
 
   /**
@@ -1486,11 +1512,15 @@ export function GalleryThemeGeneratorContent() {
     (r: ThemeRecipe) => {
       setRecipeName(r.name);
       setMode(r.mode);
-      setAtmosphereHue(r.atmosphere.hue);
+      setCardBgHue(r.cardBg.hue);
       setTextHue(r.text.hue);
       setSurfaceContrast(r.surfaceContrast ?? 50);
       setSignalIntensity(r.signalIntensity ?? 50);
       setWarmth(r.warmth ?? 50);
+      setCanvasHue(r.canvas ?? r.cardBg.hue);
+      setCardFrameHue(r.cardFrame ?? "indigo");
+      setBorderTintHue(r.borderTint ?? r.cardBg.hue);
+      setLinkHue(r.link ?? r.active ?? "blue");
       setAccentHue(r.accent ?? "orange");
       setActiveHue(r.active ?? "blue");
       setAgentHue(r.agent ?? "violet");
@@ -1604,10 +1634,14 @@ export function GalleryThemeGeneratorContent() {
         </div>
       </div>
 
-      {/* ---- Hue selectors: all 9 in a wrapping grid ---- */}
+      {/* ---- Hue selectors: structural + role hues in a wrapping grid ---- */}
       <div className="gtg-hue-grid" data-testid="gtg-role-hues">
-        <CompactHuePicker label="Atmosphere" selectedHue={atmosphereHue} onSelect={setAtmosphereHue} testId="gtg-atmosphere-hue" />
+        <CompactHuePicker label="Card BG" selectedHue={cardBgHue} onSelect={setCardBgHue} testId="gtg-cardbg-hue" />
+        <CompactHuePicker label="Canvas" selectedHue={canvasHue} onSelect={setCanvasHue} testId="gtg-canvas-hue" />
+        <CompactHuePicker label="Card Frame" selectedHue={cardFrameHue} onSelect={setCardFrameHue} testId="gtg-cardframe-hue" />
+        <CompactHuePicker label="Border Tint" selectedHue={borderTintHue} onSelect={setBorderTintHue} testId="gtg-bordertint-hue" />
         <CompactHuePicker label="Text" selectedHue={textHue} onSelect={setTextHue} testId="gtg-text-hue" />
+        <CompactHuePicker label="Link" selectedHue={linkHue} onSelect={setLinkHue} testId="gtg-link-hue" />
         <CompactHuePicker label="Accent" selectedHue={accentHue} onSelect={setAccentHue} testId="gtg-role-hue-accent" />
         <CompactHuePicker label="Action" selectedHue={activeHue} onSelect={setActiveHue} testId="gtg-role-hue-action" />
         <CompactHuePicker label="Agent" selectedHue={agentHue} onSelect={setAgentHue} testId="gtg-role-hue-agent" />
@@ -1625,7 +1659,7 @@ export function GalleryThemeGeneratorContent() {
             label="Surface Contrast"
             value={surfaceContrast}
             onChange={(v) =>
-              handleSliderChange(setSurfaceContrast, v, recipeName, mode, atmosphereHue, textHue, v, signalIntensity, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSurfaceContrast, v, recipeName, mode, cardBgHue, textHue, v, signalIntensity, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-surface-contrast"
           />
@@ -1633,7 +1667,7 @@ export function GalleryThemeGeneratorContent() {
             label="Signal Intensity"
             value={signalIntensity}
             onChange={(v) =>
-              handleSliderChange(setSignalIntensity, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, v, warmth, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setSignalIntensity, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, v, warmth, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-signal-intensity"
           />
@@ -1641,7 +1675,7 @@ export function GalleryThemeGeneratorContent() {
             label="Warmth"
             value={warmth}
             onChange={(v) =>
-              handleSliderChange(setWarmth, v, recipeName, mode, atmosphereHue, textHue, surfaceContrast, signalIntensity, v, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
+              handleSliderChange(setWarmth, v, recipeName, mode, cardBgHue, textHue, surfaceContrast, signalIntensity, v, canvasHue, cardFrameHue, borderTintHue, linkHue, accentHue, activeHue, agentHue, dataHue, successHue, cautionHue, dangerHue)
             }
             testId="gtg-slider-warmth"
           />

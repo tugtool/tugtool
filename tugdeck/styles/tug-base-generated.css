@@ -172,7 +172,7 @@ body {
   --tug-base-highlight-snapGuide: --tug-color(cyan, i: 50, t: 50, a: 50);
 
   /* Tab */
-  --tug-base-tab-bg-active: --tug-color(violet-iris, i: 5, t: 18);
+  --tug-base-tab-bg-active: --tug-color(indigo, i: 5, t: 18);
   --tug-base-tab-bg-hover: --tug-color(white, a: 8);
   --tug-base-tab-close-bg-hover: --tug-color(white, a: 12);
   --tug-base-tab-close-fg-hover: --tug-color(cobalt, i: 3, t: 90);

@@ -187,8 +187,12 @@ describe("theme-import – T9.3: recipe JSON round-trips", () => {
     const fullRecipe = {
       name: "TestTheme",
       mode: "light" as const,
-      atmosphere: { hue: "cyan", offset: 3 },
-      text: { hue: "blue", offset: -2 },
+      cardBg: { hue: "cyan" },
+      text: { hue: "blue" },
+      canvas: "cyan",
+      cardFrame: "indigo",
+      borderTint: "cyan",
+      link: "cobalt",
       accent: "orange",
       active: "cobalt",
       destructive: "red",
@@ -279,29 +283,29 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   });
 
   it("validateRecipeJson returns error for wrong mode ('sepia')", () => {
-    const bad = { name: "X", mode: "sepia", atmosphere: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { name: "X", mode: "sepia", cardBg: { hue: "red" }, text: { hue: "blue" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing name", () => {
-    const bad = { mode: "dark", atmosphere: { hue: "red" }, text: { hue: "blue" } };
+    const bad = { mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
-  it("validateRecipeJson returns error for missing atmosphere", () => {
+  it("validateRecipeJson returns error for missing cardBg", () => {
     const bad = { name: "X", mode: "dark", text: { hue: "blue" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for missing text", () => {
-    const bad = { name: "X", mode: "dark", atmosphere: { hue: "red" } };
+    const bad = { name: "X", mode: "dark", cardBg: { hue: "red" } };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson returns error for surfaceContrast as string", () => {
     const bad = {
       name: "X", mode: "dark",
-      atmosphere: { hue: "red" }, text: { hue: "blue" },
+      cardBg: { hue: "red" }, text: { hue: "blue" },
       surfaceContrast: "high",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
@@ -310,7 +314,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson returns error for signalIntensity as string", () => {
     const bad = {
       name: "X", mode: "dark",
-      atmosphere: { hue: "red" }, text: { hue: "blue" },
+      cardBg: { hue: "red" }, text: { hue: "blue" },
       signalIntensity: "vivid",
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
@@ -319,15 +323,15 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
   it("validateRecipeJson returns error for warmth as boolean", () => {
     const bad = {
       name: "X", mode: "dark",
-      atmosphere: { hue: "red" }, text: { hue: "blue" },
+      cardBg: { hue: "red" }, text: { hue: "blue" },
       warmth: true,
     };
     expect(validateRecipeJson(bad)).not.toBeNull();
   });
 
   it("validateRecipeJson accepts both 'dark' and 'light' modes", () => {
-    const dark = { name: "X", mode: "dark", atmosphere: { hue: "red" }, text: { hue: "blue" } };
-    const light = { name: "X", mode: "light", atmosphere: { hue: "red" }, text: { hue: "blue" } };
+    const dark = { name: "X", mode: "dark", cardBg: { hue: "red" }, text: { hue: "blue" } };
+    const light = { name: "X", mode: "light", cardBg: { hue: "red" }, text: { hue: "blue" } };
     expect(validateRecipeJson(dark)).toBeNull();
     expect(validateRecipeJson(light)).toBeNull();
   });
@@ -351,7 +355,7 @@ describe("theme-import – T9.4: invalid JSON import shows error, does not crash
     const legacy: Record<string, unknown> = {
       name: "LegacyTheme",
       mode: "dark",
-      atmosphere: { hue: "cobalt" },
+      cardBg: { hue: "cobalt" },
       text: { hue: "slate" },
       [LEGACY_KEY]: 75,
     };

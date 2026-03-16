@@ -43,22 +43,25 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Compact recipe input. Minimum 3 values (mode + atmosphere + text);
- * full control with ~12. Spec S01.
+ * Compact recipe input. Minimum 3 values (mode + cardBg + text);
+ * full control with ~16. Spec S01.
  */
 export interface ThemeRecipe {
   name: string;
   mode: "dark" | "light";
-  atmosphere: { hue: string };
+  cardBg: { hue: string };
   text: { hue: string };
   accent?: string;
   active?: string;
-  interactive?: string; // optional interactive-feedback hue (defaults to active); [D05]
+  link?: string;      // hue for fg-link, fg-link-hover, selection highlight; [D05]
   destructive?: string;
   success?: string;
   caution?: string;
   agent?: string;
   data?: string;
+  canvas?: string;    // hue for bg-canvas, bg-app (default: same as cardBg hue)
+  cardFrame?: string; // hue for card title bar, tab bar bg (default: "indigo")
+  borderTint?: string; // hue for border-default/muted/strong, dividers (default: same as cardBg hue)
   surfaceContrast?: number; // 0-100, default 50
   signalIntensity?: number; // 0-100, default 50
   warmth?: number; // 0-100, default 50
@@ -126,9 +129,12 @@ export const EXAMPLE_RECIPES: Record<string, ThemeRecipe> = {
   brio: {
     name: "brio",
     mode: "dark",
-    atmosphere: { hue: "indigo-violet" },
+    cardBg: { hue: "indigo-violet" },
     text: { hue: "cobalt" },
-    interactive: "cyan", // [D05]: link/selection/highlight use cyan; active stays blue
+    link: "cyan",            // [D05]: link/selection/highlight use cyan; active stays blue
+    canvas: "indigo-violet", // bg-canvas, bg-app use same hue as cardBg
+    cardFrame: "indigo",     // card title bar, tab bar bg
+    borderTint: "indigo-violet", // borders and dividers use same hue as cardBg
   },
 };
 
@@ -636,7 +642,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 1. Resolve seed hue angles
   // -------------------------------------------------------------------------
-  const atmHue = recipe.atmosphere.hue;
+  const atmHue = recipe.cardBg.hue;
   const atmAngle = resolveHueAngle(atmHue);
 
   const txtHue = recipe.text.hue;
@@ -651,12 +657,24 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const activeName = closestHueName(activeAngle);
   const activeRef = formatHueRef(activeName, activeAngle);
 
-  // [D05] Interactive hue: used for link, selection, highlight, and field-border-active.
+  // [D05] Link hue: used for fg-link, fg-link-hover, selection, highlight, and field-border-active.
   // Defaults to active hue when not specified.
-  const interactiveHue = recipe.interactive ?? recipe.active ?? "blue";
+  const interactiveHue = recipe.link ?? recipe.active ?? "blue";
   const interactiveAngle = resolveHueAngle(interactiveHue);
   const interactiveName = closestHueName(interactiveAngle);
   const interactiveRef = formatHueRef(interactiveName, interactiveAngle);
+
+  // Canvas hue: used for bg-canvas, bg-app. Defaults to cardBg hue.
+  const canvasHue = recipe.canvas ?? atmHue;
+  const canvasAngle = resolveHueAngle(canvasHue);
+
+  // CardFrame hue: used for card title bar, tab bar bg. Defaults to "indigo".
+  const cardFrameHue = recipe.cardFrame ?? "indigo";
+  const cardFrameAngle = resolveHueAngle(cardFrameHue);
+
+  // BorderTint hue: used for border-default/muted/strong, dividers. Defaults to cardBg hue.
+  const borderTintHue = recipe.borderTint ?? atmHue;
+  const borderTintAngle = resolveHueAngle(borderTintHue);
 
   const destructiveHue = recipe.destructive ?? "red";
   const successHue = recipe.success ?? "green";
@@ -714,6 +732,21 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const txtNameW = closestHueName(txtAngleW);
   const txtPrimaryNameW = primaryColorName(txtNameW);
   const txtRefW = formatHueRef(txtNameW, txtAngleW);
+
+  // Canvas angle with warmth bias applied (defaults to atm)
+  const canvasAngleW = applyWarmthBias(canvasHue, canvasAngle);
+  const canvasNameW = closestHueName(canvasAngleW);
+  const canvasRefW = formatHueRef(canvasNameW, canvasAngleW);
+
+  // CardFrame angle with warmth bias applied (defaults to "indigo")
+  const cardFrameAngleW = applyWarmthBias(cardFrameHue, cardFrameAngle);
+  const cardFrameNameW = closestHueName(cardFrameAngleW);
+  const cardFrameRefW = formatHueRef(cardFrameNameW, cardFrameAngleW);
+
+  // BorderTint angle with warmth bias applied (defaults to atm)
+  const borderTintAngleW = applyWarmthBias(borderTintHue, borderTintAngle);
+  const borderTintNameW = closestHueName(borderTintAngleW);
+  const borderTintRefW = formatHueRef(borderTintNameW, borderTintAngleW);
 
   // Base hue angles — the primary named angle used for per-tier hue derivation.
   // For hyphenated names (e.g. "indigo-violet"), use the resolved hyphenated angle
@@ -958,20 +991,20 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // Light mode uses atmRefW (atmosphere hue with warmth bias) for atmosphere-colored surfaces.
 
   // bg-app:
-  //   Dark mode: Brio uses violet-6 (= atmRefW), i:2, t:5.
+  //   Dark mode: Brio uses violet-6 (= canvasRefW/atmRefW), i:2, t:5.
   //   Light mode: Harmony uses TEXT hue (blue+5) for bg-app, not atmosphere (yellow).
   if (isLight) {
     setChromatic("--tug-base-bg-app", txtRefW, txtAngleW, atmI, Math.round(darkBgApp), 100, txtNameW);
   } else {
-    setChromatic("--tug-base-bg-app", atmRefW, atmAngleW, 2, Math.round(darkBgApp), 100, atmNameW);
+    setChromatic("--tug-base-bg-app", canvasRefW, canvasAngleW, 2, Math.round(darkBgApp), 100, canvasNameW);
   }
 
-  // bg-canvas: Brio uses violet-6, i:2, t:5 (same as bg-app).
+  // bg-canvas: Brio uses violet-6 (= canvasRefW/atmRefW), i:2, t:5 (same as bg-app).
   const bgCanvasTone = isLight ? Math.round(35 + (surfaceContrast / 100) * 10) : Math.round(darkBgCanvas);
   if (isLight) {
     setChromatic("--tug-base-bg-canvas", atmRefW, atmAngleW, 7, Math.round(bgCanvasTone), 100, atmNameW);
   } else {
-    setChromatic("--tug-base-bg-canvas", atmRefW, atmAngleW, 2, Math.round(bgCanvasTone), 100, atmNameW);
+    setChromatic("--tug-base-bg-canvas", canvasRefW, canvasAngleW, 2, Math.round(bgCanvasTone), 100, canvasNameW);
   }
 
   // surface-sunken: Brio uses bare violet (offset=0), i:5, t:11.
@@ -1104,23 +1137,23 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   //   border-inverse: cobalt (default), i:3, t:94 (= fgDefaultRef)
   // Light mode: atmosphere hue for borders (Harmony: yellow).
 
-  // border-default base: dark=bare cobalt (fgMutedRef=offset 0), light=atmRefW
-  const borderHueRef = isLight ? atmRefW : fgMutedRef;
-  const borderHueAngle = isLight ? atmAngleW : fgMutedAngle;
-  const borderHueName = isLight ? atmNameW : fgMutedPrimaryName;
+  // border-default base: dark=bare cobalt (fgMutedRef=offset 0), light=borderTintRefW
+  const borderHueRef = isLight ? borderTintRefW : fgMutedRef;
+  const borderHueAngle = isLight ? borderTintAngleW : fgMutedAngle;
+  const borderHueName = isLight ? borderTintNameW : fgMutedPrimaryName;
   // border intensities from preset. [D03]
   const borderIBase = preset.borderIBase;
   const borderIStrong = preset.borderIStrong;
 
-  // border-muted: dark=cobalt+7 (fgSubtleRef), light=atmRefW at higher tone
-  const borderMutedHueRef = isLight ? atmRefW : fgSubtleRef;
-  const borderMutedHueAngle = isLight ? atmAngleW : fgSubtleAngle;
-  const borderMutedHueName = isLight ? atmNameW : fgSubtlePrimaryName;
+  // border-muted: dark=cobalt+7 (fgSubtleRef), light=borderTintRefW at higher tone
+  const borderMutedHueRef = isLight ? borderTintRefW : fgSubtleRef;
+  const borderMutedHueAngle = isLight ? borderTintAngleW : fgSubtleAngle;
+  const borderMutedHueName = isLight ? borderTintNameW : fgSubtlePrimaryName;
   const borderMutedTone = isLight ? 36 : fgSubtleTone;
   const borderMutedI = isLight ? 10 : borderIStrong;
 
-  // border-strong: dark=cobalt+8 (fgDisabledRef) at t:40, light=atm-5° (Harmony: yellow-5)
-  const borderStrongLightAngle = applyWarmthBias(atmHue, (atmBaseAngle - 5 + 360) % 360);
+  // border-strong: dark=cobalt+8 (fgDisabledRef) at t:40, light=borderTint-5°
+  const borderStrongLightAngle = applyWarmthBias(borderTintHue, (borderTintAngle - 5 + 360) % 360);
   const borderStrongLightName = closestHueName(borderStrongLightAngle);
   const borderStrongLightRef = formatHueRef(borderStrongLightName, borderStrongLightAngle);
   const borderStrongHueRef = isLight ? borderStrongLightRef : fgDisabledRef;
@@ -1137,7 +1170,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   setChromatic("--tug-base-border-accent", accentHue, accentAngle, signalI, 50, 100, accentName);
   setChromatic("--tug-base-border-danger", destructiveHue, resolveHueAngle(destructiveHue), signalI, 50);
 
-  // dividers: atmosphere hue, very low intensity.
+  // dividers: borderTint hue (defaults to cardBg/atmosphere), very low intensity.
   // Brio ground truth: divider-default = violet-6, i:6, t:17
   //                    divider-muted   = violet, i:4, t:15
   // Dark mode: use specific Brio tones. dividerTone is also used for disabled/toggle/separator.
@@ -1145,13 +1178,24 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   const dividerMutedTone = isLight ? Math.round(darkSurfaceOverlay) : 15;
   // dividerTone: shared reference used by disabled/toggle/separator (= divider-default tone in dark)
   const dividerTone = dividerDefaultTone;
-  // divider-default: dark=violet-6 (atmRefW), i:6
-  setChromatic("--tug-base-divider-default", atmRefW, atmAngleW, isLight ? atmI : 6, Math.round(dividerDefaultTone), 100, atmNameW);
-  // divider-muted: dark=violet (bare, surfBareBaseRef), i:4
+  // Derive the "bare base" for the borderTint hue (same logic as surfBareBaseRef but for borderTint).
+  const borderTintBareBaseName = (() => {
+    const hyphenIdx = borderTintHue.lastIndexOf("-");
+    if (hyphenIdx > 0) {
+      const lastSeg = borderTintHue.slice(hyphenIdx + 1);
+      if (lastSeg in HUE_FAMILIES) return lastSeg;
+    }
+    return closestHueName(borderTintAngle);
+  })();
+  const borderTintBareAngle = applyWarmthBias(borderTintBareBaseName, HUE_FAMILIES[borderTintBareBaseName] ?? borderTintAngle);
+  const borderTintBareName = closestHueName(borderTintBareAngle);
+  // divider-default: dark=borderTintRefW (= atmRefW for Brio), i:6
+  setChromatic("--tug-base-divider-default", borderTintRefW, borderTintAngleW, isLight ? atmI : 6, Math.round(dividerDefaultTone), 100, borderTintNameW);
+  // divider-muted: dark=bare borderTint (= surfBareBaseRef for Brio), i:4
   if (isLight) {
-    setChromatic("--tug-base-divider-muted", atmRefW, atmAngleW, atmI, Math.round(dividerMutedTone), 100, atmNameW);
+    setChromatic("--tug-base-divider-muted", borderTintRefW, borderTintAngleW, atmI, Math.round(dividerMutedTone), 100, borderTintNameW);
   } else {
-    setChromatic("--tug-base-divider-muted", surfBareBaseRef, surfBareBaseAngle, 4, Math.round(dividerMutedTone), 100, surfBareBaseName);
+    setChromatic("--tug-base-divider-muted", borderTintBareBaseName, borderTintBareAngle, 4, Math.round(dividerMutedTone), 100, borderTintBareName);
   }
 
   // --- Elevation / Overlay ---
@@ -1363,15 +1407,12 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // tab-bg-active: base token for active tab background. Component CSS
   // (tug-tab.css) overrides this with --tug-card-title-bar-bg-active to
   // visually merge the active tab with the card title bar above it.
+  // Uses cardFrame hue (default: "indigo") for dark mode, atmosphere for light mode.
   if (isLight) {
     setChromatic("--tug-base-tab-bg-active", atmRefW, atmAngleW, 4, 92, 100, atmNameW);
   } else {
-    // Brio: violet+5 → violet-iris (272.5°) per migration mapping [D08]
-    const tabBgActiveHue = "violet-iris";
-    const tabBgActiveAngle = applyWarmthBias("violet", resolveHueAngle(tabBgActiveHue));
-    const tabBgActiveName = closestHueName(tabBgActiveAngle);
-    const tabBgActiveRef = formatHueRef(tabBgActiveName, tabBgActiveAngle);
-    setChromatic("--tug-base-tab-bg-active", tabBgActiveRef, tabBgActiveAngle, atmI, 18, 100, tabBgActiveName);
+    // Wire to cardFrame hue (Brio: "indigo" ≈ 260°, replaces hardcoded "violet-iris")
+    setChromatic("--tug-base-tab-bg-active", cardFrameRefW, cardFrameAngleW, atmI, 18, 100, cardFrameNameW);
   }
 
   // tab-bg-hover: visible highlight when scanning inactive tabs
@@ -1975,7 +2016,7 @@ export function generateResolvedCssExport(
   const recipeJson = JSON.stringify(recipe);
   const hash = simpleHashForEngine(recipeJson);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const desc = `Generated theme (${recipe.mode} mode, atmosphere: ${recipe.atmosphere.hue}, text: ${recipe.text.hue})`;
+  const desc = `Generated theme (${recipe.mode} mode, cardBg: ${recipe.cardBg.hue}, text: ${recipe.text.hue})`;
 
   const header = [
     "/**",

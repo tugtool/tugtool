@@ -319,12 +319,12 @@ describe("GalleryThemeGeneratorContent – renders without errors (T6.3)", () =>
     expect(container.querySelector("[data-testid='gtg-mode-group']")).not.toBeNull();
   });
 
-  it("renders the atmosphere hue as a compact picker", () => {
+  it("renders the cardBg hue as a compact picker", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
-    const picker = container.querySelector("[data-testid='gtg-atmosphere-hue']");
+    const picker = container.querySelector("[data-testid='gtg-cardbg-hue']");
     expect(picker).not.toBeNull();
   });
 
@@ -516,7 +516,7 @@ describe("GalleryThemeGeneratorContent – mode toggle (T6.4)", () => {
 const CHM_NOVEL_RECIPE = {
   name: "CHM Mood",
   mode: "dark" as const,
-  atmosphere: { hue: "amber" },
+  cardBg: { hue: "amber" },
   text: { hue: "sand" },
   accent: "flame",
   active: "cobalt",
@@ -754,7 +754,7 @@ describe("T-ACC-3 – CVD distinguishability: green/warning confusion under prot
     const greenRedRecipe = {
       name: "GreenRed",
       mode: "dark" as const,
-      atmosphere: { hue: "slate" },
+      cardBg: { hue: "slate" },
       text: { hue: "slate" },
       positive: "green",
       destructive: "red",
@@ -779,7 +779,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders all 9 hue pickers (atmosphere + text + 7 roles) in the hue grid", () => {
+  it("renders all 13 hue pickers (cardBg + canvas + cardFrame + borderTint + text + link + 7 roles) in the hue grid", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -788,7 +788,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     expect(hueGrid).not.toBeNull();
     // Each picker is a button with class gtg-compact-hue-row
     const pickers = hueGrid!.querySelectorAll(".gtg-compact-hue-row");
-    expect(pickers.length).toBe(9);
+    expect(pickers.length).toBe(13);
   });
 
   it("each role hue picker button has the correct data-testid", () => {
@@ -819,7 +819,7 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const explicit = deriveTheme({
       name: "brio",
       mode: "dark",
-      atmosphere: { hue: "violet", offset: -6 },
+      cardBg: { hue: "indigo-violet" },
       text: { hue: "cobalt" },
       accent: "orange",
       active: "blue",
@@ -850,14 +850,14 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
     const withRed = deriveTheme({
       name: "test",
       mode: "dark",
-      atmosphere: { hue: "violet" },
+      cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       destructive: "red",
     });
     const withPink = deriveTheme({
       name: "test",
       mode: "dark",
-      atmosphere: { hue: "violet" },
+      cardBg: { hue: "violet" },
       text: { hue: "cobalt" },
       destructive: "pink",
     });
@@ -1058,12 +1058,12 @@ describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
     // is a CSS cascade effect invisible to JSDOM.
     const withRed = deriveTheme({
       name: "test", mode: "dark",
-      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
       destructive: "red",
     });
     const withPink = deriveTheme({
       name: "test", mode: "dark",
-      atmosphere: { hue: "violet" }, text: { hue: "cobalt" },
+      cardBg: { hue: "violet" }, text: { hue: "cobalt" },
       destructive: "pink",
     });
     expect(withRed.tokens["--tug-base-tone-danger"]).not.toBe(
@@ -1097,7 +1097,7 @@ function renderWithThemeProvider(savedThemeNames: string[] = []) {
       return new Response("body {}", { status: 200 });
     }
     if (url.startsWith("/styles/themes/") && url.endsWith("-recipe.json")) {
-      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", atmosphere: { hue: "amber" }, text: { hue: "sand" } });
+      const recipe = JSON.stringify({ name: "Saved Theme", mode: "dark", cardBg: { hue: "amber" }, text: { hue: "sand" } });
       return new Response(recipe, { status: 200 });
     }
     return new Response("", { status: 404 });
@@ -1210,7 +1210,7 @@ describe("GalleryThemeGeneratorContent – saved-theme selector (Step 9)", () =>
         return new Response("body {}", { status: 200 });
       }
       if (url.endsWith("-recipe.json")) {
-        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", atmosphere: { hue: "cobalt" }, text: { hue: "slate" } });
+        const recipe = JSON.stringify({ name: "My Custom Theme", mode: "dark", cardBg: { hue: "cobalt" }, text: { hue: "slate" } });
         return new Response(recipe, { status: 200 });
       }
       return new Response("", { status: 404 });
