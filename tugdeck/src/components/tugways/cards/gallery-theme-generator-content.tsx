@@ -27,6 +27,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, useId } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { HUE_FAMILIES, ADJACENCY_RING, tugColor, DEFAULT_CANONICAL_L, oklchToHex } from "@/components/tugways/palette-engine";
 import {
   deriveTheme,
@@ -99,6 +100,89 @@ function HueSelector({
         data-testid={testId}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompactHuePicker — compact row with color chip that opens a popover strip
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the canonical-L swatch color for a hue name using tugColor at
+ * intensity=50 tone=50 with the hue's canonical L value.
+ *
+ * This matches the swatch color the TugHueStrip renders for the selected hue.
+ */
+function hueSwatchColor(hueName: string): string {
+  const canonicalL = DEFAULT_CANONICAL_L[hueName] ?? 0.55;
+  return tugColor(hueName, 50, 50, canonicalL);
+}
+
+/**
+ * CompactHuePicker — a compact row showing:
+ *   - Role label text
+ *   - 20x20 color chip swatch (current hue color)
+ *   - Current hue name text
+ *
+ * Clicking the row opens a Radix Popover containing a TugHueStrip.
+ * Selecting a hue updates parent state via `onSelect` and closes the popover.
+ *
+ * Preserves existing `data-testid` so role hue test selectors still work.
+ */
+function CompactHuePicker({
+  label,
+  selectedHue,
+  onSelect,
+  testId,
+}: {
+  label: string;
+  selectedHue: string;
+  onSelect: (hue: string) => void;
+  testId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const swatchColor = hueSwatchColor(selectedHue);
+
+  const handleSelect = useCallback(
+    (hue: string) => {
+      onSelect(hue);
+      setOpen(false);
+    },
+    [onSelect],
+  );
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className="gtg-compact-hue-row"
+          data-testid={testId}
+          aria-label={`${label}: ${selectedHue}. Click to change.`}
+          type="button"
+        >
+          <span className="gtg-compact-hue-label">{label}</span>
+          <span
+            className="gtg-compact-hue-chip"
+            style={{ backgroundColor: swatchColor }}
+            aria-hidden="true"
+          />
+          <span className="gtg-compact-hue-name">{selectedHue}</span>
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          className="gtg-compact-hue-popover"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+        >
+          <TugHueStrip
+            selectedHue={selectedHue}
+            onSelectHue={handleSelect}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -1383,43 +1467,43 @@ export function GalleryThemeGeneratorContent() {
       <div className="cg-section">
         <div className="cg-section-title">Role Hues</div>
         <div className="gtg-role-hues" data-testid="gtg-role-hues">
-          <HueSelector
+          <CompactHuePicker
             label="Accent"
             selectedHue={accentHue}
             onSelect={setAccentHue}
             testId="gtg-role-hue-accent"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Action"
             selectedHue={activeHue}
             onSelect={setActiveHue}
             testId="gtg-role-hue-action"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Agent"
             selectedHue={agentHue}
             onSelect={setAgentHue}
             testId="gtg-role-hue-agent"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Data"
             selectedHue={dataHue}
             onSelect={setDataHue}
             testId="gtg-role-hue-data"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Success"
             selectedHue={successHue}
             onSelect={setSuccessHue}
             testId="gtg-role-hue-success"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Caution"
             selectedHue={cautionHue}
             onSelect={setCautionHue}
             testId="gtg-role-hue-caution"
           />
-          <HueSelector
+          <CompactHuePicker
             label="Danger"
             selectedHue={dangerHue}
             onSelect={setDangerHue}

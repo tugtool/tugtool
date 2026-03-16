@@ -782,18 +782,19 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders the role hues section with 7 hue strips", () => {
+  it("renders the role hues section with 7 compact hue picker rows", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
     });
     const roleHues = container.querySelector("[data-testid='gtg-role-hues']");
     expect(roleHues).not.toBeNull();
-    const strips = roleHues!.querySelectorAll(".tug-hue-strip");
-    expect(strips.length).toBe(7);
+    // Each picker is a button with class gtg-compact-hue-row
+    const pickers = roleHues!.querySelectorAll(".gtg-compact-hue-row");
+    expect(pickers.length).toBe(7);
   });
 
-  it("each role hue strip has 48 swatches", () => {
+  it("each role hue picker button has the correct data-testid", () => {
     let container!: HTMLElement;
     act(() => {
       ({ container } = render(<GalleryThemeGeneratorContent />));
@@ -808,10 +809,8 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
       "gtg-role-hue-danger",
     ];
     for (const id of roleIds) {
-      const strip = container.querySelector(`[data-testid='${id}']`);
-      expect(strip).not.toBeNull();
-      const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
-      expect(swatches.length).toBe(48);
+      const picker = container.querySelector(`[data-testid='${id}']`);
+      expect(picker).not.toBeNull();
     }
   });
 
@@ -872,10 +871,131 @@ describe("GalleryThemeGeneratorContent – role hue selectors (Step 6)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Step 7: Compact role hue pickers
+// ---------------------------------------------------------------------------
+
+describe("GalleryThemeGeneratorContent – compact role hue pickers (Step 7)", () => {
+  beforeEach(() => { _resetForTest(); });
+  afterEach(() => { _resetForTest(); cleanup(); });
+
+  it("each compact row renders with the correct role label", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const labelMap: Record<string, string> = {
+      "gtg-role-hue-accent": "Accent",
+      "gtg-role-hue-action": "Action",
+      "gtg-role-hue-agent": "Agent",
+      "gtg-role-hue-data": "Data",
+      "gtg-role-hue-success": "Success",
+      "gtg-role-hue-caution": "Caution",
+      "gtg-role-hue-danger": "Danger",
+    };
+    for (const [testId, expectedLabel] of Object.entries(labelMap)) {
+      const row = container.querySelector(`[data-testid='${testId}']`);
+      expect(row).not.toBeNull();
+      const labelEl = row!.querySelector(".gtg-compact-hue-label");
+      expect(labelEl).not.toBeNull();
+      expect(labelEl!.textContent).toBe(expectedLabel);
+    }
+  });
+
+  it("each compact row renders with a color chip swatch", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleIds = [
+      "gtg-role-hue-accent",
+      "gtg-role-hue-action",
+      "gtg-role-hue-agent",
+      "gtg-role-hue-data",
+      "gtg-role-hue-success",
+      "gtg-role-hue-caution",
+      "gtg-role-hue-danger",
+    ];
+    for (const id of roleIds) {
+      const row = container.querySelector(`[data-testid='${id}']`);
+      expect(row).not.toBeNull();
+      const chip = row!.querySelector(".gtg-compact-hue-chip");
+      expect(chip).not.toBeNull();
+    }
+  });
+
+  it("clicking a compact row opens the popover with a TugHueStrip", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    // Before click: no hue strip visible in the document body
+    const accentRow = container.querySelector("[data-testid='gtg-role-hue-accent']") as HTMLElement;
+    expect(accentRow).not.toBeNull();
+
+    act(() => {
+      fireEvent.click(accentRow);
+    });
+
+    // After click: Radix popover renders into document.body portal
+    const popoverContent = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(popoverContent).not.toBeNull();
+    const strip = popoverContent!.querySelector(".tug-hue-strip");
+    expect(strip).not.toBeNull();
+    const swatches = strip!.querySelectorAll(".tug-hue-strip__swatch");
+    expect(swatches.length).toBe(48);
+  });
+
+  it("existing role hue test selectors (gtg-role-hue-accent, etc.) still work", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const roleIds = [
+      "gtg-role-hue-accent",
+      "gtg-role-hue-action",
+      "gtg-role-hue-agent",
+      "gtg-role-hue-data",
+      "gtg-role-hue-success",
+      "gtg-role-hue-caution",
+      "gtg-role-hue-danger",
+    ];
+    for (const id of roleIds) {
+      expect(container.querySelector(`[data-testid='${id}']`)).not.toBeNull();
+    }
+  });
+
+  it("selecting a hue in the popover closes the popover", () => {
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(<GalleryThemeGeneratorContent />));
+    });
+    const accentRow = container.querySelector("[data-testid='gtg-role-hue-accent']") as HTMLElement;
+    act(() => {
+      fireEvent.click(accentRow);
+    });
+
+    // Popover is open
+    const popoverContent = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(popoverContent).not.toBeNull();
+
+    // Click a swatch inside the popover
+    const firstSwatch = popoverContent!.querySelector(".tug-hue-strip__swatch") as HTMLElement;
+    expect(firstSwatch).not.toBeNull();
+    act(() => {
+      fireEvent.click(firstSwatch!);
+    });
+
+    // Popover should now be closed
+    const afterPopover = document.body.querySelector(".gtg-compact-hue-popover");
+    expect(afterPopover).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Step 7: Emphasis x Role Preview section
 // ---------------------------------------------------------------------------
 
-describe("GalleryThemeGeneratorContent – emphasis x role preview (Step 7)", () => {
+describe("GalleryThemeGeneratorContent – emphasis x role preview", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 

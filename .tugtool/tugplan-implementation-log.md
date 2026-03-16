@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-7
+date: 2025-03-16T02:50:48Z
+---
+
+## step-7: Added CompactHuePicker component using Radix Popover. Replaced 7 full-width HueSelector instances in Role Hues section with compact rows showing label, 20x20 color chip, and hue name. Click opens popover with TugHueStrip. Added @radix-ui/react-popover dependency. Updated setup-rtl.ts for Radix compatibility. 59 tests pass, 1703 total.
+
+**Files changed:**
+- .tugtool/tugplan-theme-creation-gaps.md
+
+---
+
+---
 step: step-6
 date: 2025-03-16T02:40:33Z
 ---

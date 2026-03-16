@@ -80,6 +80,30 @@ if (typeof (global as any).URL.revokeObjectURL !== "function") {
   (global as any).URL.revokeObjectURL = () => {};
 }
 
+// NodeFilter is required by Radix UI's Popover (and other primitives that use TreeWalker).
+if (typeof (global as any).NodeFilter === "undefined" && (happyWindow as any).NodeFilter) {
+  (global as any).NodeFilter = (happyWindow as any).NodeFilter;
+}
+
+// HTML element subtypes required by Radix UI focus management (aria-hidden, focus trapping).
+const HTML_ELEMENT_SUBTYPES = [
+  "HTMLInputElement",
+  "HTMLTextAreaElement",
+  "HTMLSelectElement",
+  "HTMLButtonElement",
+  "HTMLAnchorElement",
+  "HTMLAreaElement",
+  "HTMLAudioElement",
+  "HTMLVideoElement",
+  "HTMLDetailsElement",
+  "HTMLIFrameElement",
+] as const;
+for (const name of HTML_ELEMENT_SUBTYPES) {
+  if (typeof (global as any)[name] === "undefined" && (happyWindow as any)[name]) {
+    (global as any)[name] = (happyWindow as any)[name];
+  }
+}
+
 // ResizeObserver is not provided by happy-dom
 (global as any).ResizeObserver = class ResizeObserver {
   observe() {}
