@@ -23,9 +23,9 @@ import { describe, it, expect } from "bun:test";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
-  BRIO_DARK_FORMULAS,
+  DARK_FORMULAS,
   BASE_FORMULAS,
-  BRIO_DARK_OVERRIDES,
+  DARK_OVERRIDES,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
@@ -1252,15 +1252,15 @@ describe("derivation-engine brio-match", () => {
 
 // ---------------------------------------------------------------------------
 // Step 9: DerivationFormulas exports (T-FORMULAS-EXPORTS)
-// Verifies that BRIO_DARK_FORMULAS is exported and satisfies DerivationFormulas,
+// Verifies that DARK_FORMULAS is exported and satisfies DerivationFormulas,
 // and that deriveTheme output is unchanged after the preset deletion. [D01] [D07]
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine formulas-exports", () => {
-  it("T-FORMULAS-EXPORTS: BRIO_DARK_FORMULAS satisfies DerivationFormulas with correct values", () => {
-    // Verify BRIO_DARK_FORMULAS satisfies the DerivationFormulas interface
+  it("T-FORMULAS-EXPORTS: DARK_FORMULAS satisfies DerivationFormulas with correct values", () => {
+    // Verify DARK_FORMULAS satisfies the DerivationFormulas interface
     // (TypeScript compile-time check + runtime field presence). [D01] [D07]
-    const formulas: DerivationFormulas = BRIO_DARK_FORMULAS;
+    const formulas: DerivationFormulas = DARK_FORMULAS;
 
     // Spot-check key fields match Brio ground truth values documented in the plan
     expect(formulas.bgAppTone).toBe(5);
@@ -1271,9 +1271,9 @@ describe("derivation-engine formulas-exports", () => {
     expect(formulas.filledBgDarkTone).toBe(20);
     expect(formulas.fieldBgRestTone).toBe(8);
 
-    // Verify EXAMPLE_RECIPES.brio.formulas is composed from BASE_FORMULAS + BRIO_DARK_OVERRIDES [D03]
-    // The composed object equals BRIO_DARK_FORMULAS in value (deep equality), not reference.
-    expect(EXAMPLE_RECIPES.brio.formulas).toEqual(BRIO_DARK_FORMULAS);
+    // Verify EXAMPLE_RECIPES.brio.formulas is composed from BASE_FORMULAS + DARK_OVERRIDES [D03]
+    // The composed object equals DARK_FORMULAS in value (deep equality), not reference.
+    expect(EXAMPLE_RECIPES.brio.formulas).toEqual(DARK_FORMULAS);
   });
 
   it("T-FORMULAS-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset deletion", () => {
@@ -1301,57 +1301,57 @@ describe("derivation-engine formulas-exports", () => {
 // ---------------------------------------------------------------------------
 // Step 3: Formula consolidation tests (T-FORMULAS-STEP3)
 // Verifies that DerivationFormulas has been consolidated to emphasis-level
-// fields, that BASE_FORMULAS + BRIO_DARK_OVERRIDES compose correctly, and
+// fields, that BASE_FORMULAS + DARK_OVERRIDES compose correctly, and
 // that the net field count reduction meets the plan target (>= 40 fields). [D02] [D03]
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine formula-consolidation step-3", () => {
-  it("T-FORMULAS-STEP3-BASE-OVERRIDES: BASE_FORMULAS + BRIO_DARK_OVERRIDES compose to BRIO_DARK_FORMULAS", () => {
-    // BASE_FORMULAS IS the Brio dark recipe (BRIO_DARK_OVERRIDES is currently empty).
-    // The composed spread should equal BRIO_DARK_FORMULAS value-wise.
-    const composed = { ...BASE_FORMULAS, ...BRIO_DARK_OVERRIDES };
-    expect(composed).toEqual(BRIO_DARK_FORMULAS);
-    // BASE_FORMULAS equals BRIO_DARK_FORMULAS by reference (it's an alias for now)
-    expect(BASE_FORMULAS).toBe(BRIO_DARK_FORMULAS);
-    // BRIO_DARK_OVERRIDES is empty
-    expect(Object.keys(BRIO_DARK_OVERRIDES)).toHaveLength(0);
+  it("T-FORMULAS-STEP3-BASE-OVERRIDES: BASE_FORMULAS + DARK_OVERRIDES compose to DARK_FORMULAS", () => {
+    // BASE_FORMULAS IS the Brio dark recipe (DARK_OVERRIDES is currently empty).
+    // The composed spread should equal DARK_FORMULAS value-wise.
+    const composed = { ...BASE_FORMULAS, ...DARK_OVERRIDES };
+    expect(composed).toEqual(DARK_FORMULAS);
+    // BASE_FORMULAS equals DARK_FORMULAS by reference (it's an alias for now)
+    expect(BASE_FORMULAS).toBe(DARK_FORMULAS);
+    // DARK_OVERRIDES is empty
+    expect(Object.keys(DARK_OVERRIDES)).toHaveLength(0);
   });
 
   it("T-FORMULAS-STEP3-EMPHASIS-FIELDS: emphasis-level outlined fields exist with correct values", () => {
     // Outlined fg/icon emphasis-level fields (Table T01 D02)
-    expect(BRIO_DARK_FORMULAS.outlinedFgRestTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedFgHoverTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedFgActiveTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedFgI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.outlinedIconRestTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedIconHoverTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedIconActiveTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.outlinedIconI).toBe(2);
+    expect(DARK_FORMULAS.outlinedFgRestTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedFgHoverTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedFgActiveTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedFgI).toBe(2);
+    expect(DARK_FORMULAS.outlinedIconRestTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedIconHoverTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedIconActiveTone).toBe(100);
+    expect(DARK_FORMULAS.outlinedIconI).toBe(2);
     // Ghost emphasis-level fields (Table T02 D02)
-    expect(BRIO_DARK_FORMULAS.ghostFgRestTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostFgHoverTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostFgActiveTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostFgRestI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostFgHoverI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostFgActiveI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostIconRestTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostIconHoverTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostIconActiveTone).toBe(100);
-    expect(BRIO_DARK_FORMULAS.ghostIconRestI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostIconHoverI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostIconActiveI).toBe(2);
-    expect(BRIO_DARK_FORMULAS.ghostBorderI).toBe(20);
-    expect(BRIO_DARK_FORMULAS.ghostBorderTone).toBe(60);
+    expect(DARK_FORMULAS.ghostFgRestTone).toBe(100);
+    expect(DARK_FORMULAS.ghostFgHoverTone).toBe(100);
+    expect(DARK_FORMULAS.ghostFgActiveTone).toBe(100);
+    expect(DARK_FORMULAS.ghostFgRestI).toBe(2);
+    expect(DARK_FORMULAS.ghostFgHoverI).toBe(2);
+    expect(DARK_FORMULAS.ghostFgActiveI).toBe(2);
+    expect(DARK_FORMULAS.ghostIconRestTone).toBe(100);
+    expect(DARK_FORMULAS.ghostIconHoverTone).toBe(100);
+    expect(DARK_FORMULAS.ghostIconActiveTone).toBe(100);
+    expect(DARK_FORMULAS.ghostIconRestI).toBe(2);
+    expect(DARK_FORMULAS.ghostIconHoverI).toBe(2);
+    expect(DARK_FORMULAS.ghostIconActiveI).toBe(2);
+    expect(DARK_FORMULAS.ghostBorderI).toBe(20);
+    expect(DARK_FORMULAS.ghostBorderTone).toBe(60);
     // Per-role exception preserved: outlined-option border tones
-    expect(BRIO_DARK_FORMULAS.outlinedOptionBorderRestTone).toBe(50);
-    expect(BRIO_DARK_FORMULAS.outlinedOptionBorderHoverTone).toBe(55);
-    expect(BRIO_DARK_FORMULAS.outlinedOptionBorderActiveTone).toBe(60);
+    expect(DARK_FORMULAS.outlinedOptionBorderRestTone).toBe(50);
+    expect(DARK_FORMULAS.outlinedOptionBorderHoverTone).toBe(55);
+    expect(DARK_FORMULAS.outlinedOptionBorderActiveTone).toBe(60);
   });
 
   it("T-FORMULAS-STEP3-PER-ROLE-REMOVED: per-role outlined/ghost fg fields are absent from DerivationFormulas", () => {
     // These per-role fields should NOT exist in the consolidated interface.
     // Checking via hasOwnProperty at runtime to verify TypeScript removed them.
-    const f = BRIO_DARK_FORMULAS as Record<string, unknown>;
+    const f = DARK_FORMULAS as Record<string, unknown>;
     // Outlined per-role fields that were removed
     expect(f["outlinedActionFgRestTone"]).toBeUndefined();
     expect(f["outlinedAgentFgRestTone"]).toBeUndefined();
@@ -1380,7 +1380,7 @@ describe("derivation-engine formula-consolidation step-3", () => {
   it("T-FORMULAS-STEP3-NET-REDUCTION: DerivationFormulas field count reduced by >= 40 vs pre-consolidation", () => {
     // Pre-consolidation field count was captured before making changes.
     // After consolidation, the interface should have at least 40 fewer fields.
-    // Pre-step3 field count: measured from the old BRIO_DARK_FORMULAS at the time.
+    // Pre-step3 field count: measured from the old DARK_FORMULAS at the time.
     // The old per-role section had:
     //   - outlinedFgTone, outlinedFgI (2 - renamed/kept)
     //   - outlined*{Action,Agent,Option}Fg*ToneLight (18 fields)
@@ -1398,8 +1398,8 @@ describe("derivation-engine formula-consolidation step-3", () => {
     // Total old per-role section: ~108 fields
     // New emphasis-level section has ~62 fields
     // Net reduction: ~46 fields
-    const fieldCount = Object.keys(BRIO_DARK_FORMULAS).length;
-    // Pre-consolidation the old BRIO_DARK_FORMULAS had 268 fields.
+    const fieldCount = Object.keys(DARK_FORMULAS).length;
+    // Pre-consolidation the old DARK_FORMULAS had 268 fields.
     // After consolidation it should have <= 228 fields (reduction >= 40).
     // Actual measured reduction: 268 -> 198 (70 fields removed).
     expect(fieldCount).toBeLessThanOrEqual(228);
@@ -1896,9 +1896,9 @@ describe("resolveHueSlots — Step 3", () => {
   it("T-RESOLVE-LIGHT: light-mode recipe collapses fg tiers to txt", () => {
     // Supply light-mode hue-name formulas. The fg tiers all point to txtHue ("cobalt"),
     // fgPlaceholder copies atm, selectionInactive uses the atm-offset (non-semantic) path.
-    // All other formula fields are irrelevant to resolveHueSlots, so spread BRIO_DARK_FORMULAS.
+    // All other formula fields are irrelevant to resolveHueSlots, so spread DARK_FORMULAS.
     const lightFormulas = {
-      ...BRIO_DARK_FORMULAS,
+      ...DARK_FORMULAS,
       surfScreenHue: "cobalt",          // same as txtHue -> copies txt slot
       fgMutedHueExpr: "cobalt",         // literal txtHue (not "__bare_primary")
       fgSubtleHue: "cobalt",            // collapses to txt
@@ -2105,7 +2105,7 @@ describe("computeTones — Step 4", () => {
   const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
 
   // ---------------------------------------------------------------------------
-  // T-TONES-DARK: computeTones(BRIO_DARK_FORMULAS, sc=50) matches Brio dark ground truth.
+  // T-TONES-DARK: computeTones(DARK_FORMULAS, sc=50) matches Brio dark ground truth.
   //
   // Brio dark ground truth (surfaceContrast=50, from T-BRIO-MATCH fixture):
   //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14, inset=6, content=6, screen=16
@@ -2116,7 +2116,7 @@ describe("computeTones — Step 4", () => {
   //   signalI=50
   // ---------------------------------------------------------------------------
   it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
-    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, DARK_KNOBS_50);
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, DARK_KNOBS_50);
 
     // Surface tones (Brio ground truth)
     expect(ct.bgApp).toBe(5);
@@ -2158,7 +2158,7 @@ describe("computeTones — Step 4", () => {
   // ---------------------------------------------------------------------------
   // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
   //
-  // Dark mode extreme values (derived from BRIO_DARK_FORMULAS):
+  // Dark mode extreme values (derived from DARK_FORMULAS):
   //   sc=0:   bgApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
   //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
   //   sc=100: bgApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
@@ -2166,7 +2166,7 @@ describe("computeTones — Step 4", () => {
   //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
   // ---------------------------------------------------------------------------
   it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
-    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
 
     // bgApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
     expect(ct.bgApp).toBe(-3);
@@ -2181,7 +2181,7 @@ describe("computeTones — Step 4", () => {
   });
 
   it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
-    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
 
     // bgApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
     expect(ct.bgApp).toBe(13);
@@ -2194,8 +2194,8 @@ describe("computeTones — Step 4", () => {
   });
 
   it("T-TONES-SC: signal intensity extremes map directly to signalI", () => {
-    const ct0 = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
-    const ct100 = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+    const ct0 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
+    const ct100 = computeTones(DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
     expect(ct0.signalI).toBe(0);
     expect(ct100.signalI).toBe(100);
   });
@@ -2229,7 +2229,7 @@ describe("computeTones — Step 4", () => {
   // T-TONES-INTERFACE: ComputedTones has all required fields (type completeness).
   // ---------------------------------------------------------------------------
   it("T-TONES-INTERFACE: computeTones returns all required ComputedTones fields", () => {
-    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, DARK_KNOBS_50);
+    const ct: ComputedTones = computeTones(DARK_FORMULAS, DARK_KNOBS_50);
 
     // All fields from Spec S03 must be present and be numbers
     const requiredFields: (keyof ComputedTones)[] = [
@@ -2261,7 +2261,7 @@ describe("computeTones — Step 4", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
     const computed = computeTones(recipeFormulas, knobs);
@@ -2443,7 +2443,7 @@ describe("derivation-engine step-6 rules", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
     const computed = computeTones(recipeFormulas, knobs);

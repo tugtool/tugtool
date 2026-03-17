@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-4
+date: 2025-03-17T22:44:31Z
+---
+
+## step-4: Mechanical rename of BRIO_DARK_FORMULAS to DARK_FORMULAS and BRIO_DARK_OVERRIDES to DARK_OVERRIDES across theme-derivation-engine.ts, theme-derivation-engine.test.ts, and gallery-theme-generator-content.test.tsx. BASE_FORMULAS alias updated. Zero old-name occurrences remain. Token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
 step: step-3
 date: 2025-03-17T22:35:04Z
 ---
