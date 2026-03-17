@@ -24,6 +24,7 @@ import {
   EXAMPLE_RECIPES,
   DARK_PRESET,
   LIGHT_PRESET,
+  BRIO_DARK_FORMULAS,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
@@ -1701,12 +1702,27 @@ describe("resolveHueSlots — Step 3", () => {
   // per-tier hues (fg tiers collapse to txt; selection uses atmBaseAngle-20).
   // -------------------------------------------------------------------------
   it("T-RESOLVE-LIGHT: light-mode recipe collapses fg tiers to txt", () => {
+    // Supply light-mode hue-name formulas. The fg tiers all point to txtHue ("cobalt"),
+    // fgPlaceholder copies atm, selectionInactive uses the atm-offset (non-semantic) path.
+    // All other formula fields are irrelevant to resolveHueSlots, so spread BRIO_DARK_FORMULAS.
+    const lightFormulas = {
+      ...BRIO_DARK_FORMULAS,
+      surfScreenHue: "cobalt",          // same as txtHue -> copies txt slot
+      fgMutedHueExpr: "cobalt",         // literal txtHue (not "__bare_primary")
+      fgSubtleHue: "cobalt",            // collapses to txt
+      fgDisabledHue: "cobalt",          // collapses to txt
+      fgInverseHue: "cobalt",           // collapses to txt
+      fgPlaceholderSource: "atm",       // copies atm slot
+      selectionInactiveSemanticMode: false, // compute atm-offset path
+      selectionInactiveHue: "yellow",   // unused when semanticMode=false
+    };
     const lightRecipe = {
       name: "test-light",
       mode: "light" as const,
       cardBg: { hue: "yellow" },
       text: { hue: "cobalt" },
       warmth: 50,
+      formulas: lightFormulas,
     };
     const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe, 50);
 

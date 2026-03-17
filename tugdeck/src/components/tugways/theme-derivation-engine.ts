@@ -1994,12 +1994,21 @@ export function applyWarmthBias(hueName: string, angle: number, warmthBias: numb
  * The output `ResolvedHueSlots` is the canonical source for all hue angles
  * and refs used in token derivation.
  *
- * @param recipe - The theme recipe
- * @param warmth - Warmth knob value (0-100, default 50)
+ * Per-tier derived hue slots (surfScreen, fgMuted, fgSubtle, fgDisabled,
+ * fgInverse, fgPlaceholder, selectionInactive) are driven by
+ * `formulas` fields when `recipe.formulas` is present, eliminating
+ * all runtime mode branches from the formula path. [D03]
+ *
+ * @param recipe  - The theme recipe
+ * @param warmth  - Warmth knob value (0-100, default 50)
+ * @param formulas - Formula constants; defaults to recipe.formulas ?? BRIO_DARK_FORMULAS
  */
-export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHueSlots {
+export function resolveHueSlots(
+  recipe: ThemeRecipe,
+  warmth: number,
+  formulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS,
+): ResolvedHueSlots {
   const warmthBias = ((warmth - 50) / 50) * 12; // ±12° at extremes
-  const isLight = recipe.mode === "light";
 
   /** Build a ResolvedHueSlot from a hue name, applying warmth bias. */
   function resolveSlot(hueName: string): ResolvedHueSlot {
@@ -2079,24 +2088,29 @@ export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHu
     primaryName: atmBareBaseName,
   };
 
-  // surfScreen: "indigo" in dark (cobalt+10 → indigo); txt in light.
-  // The slot value is mode-dependent: dark uses fixed "indigo"; light uses the txt slot.
-  // The preset's surfaceScreenHueSlot field ("surfScreen" in dark, "txt" in light) then
-  // routes the rule evaluator to this slot, which already holds the correct value.
-  const surfScreen: ResolvedHueSlot = isLight
+  // surfScreen: driven by formulas.surfScreenHue. [D03]
+  // When surfScreenHue equals txtHue, copy the txt slot (light-mode equivalent);
+  // otherwise resolve it as a named hue with warmth bias.
+  const surfScreen: ResolvedHueSlot = formulas.surfScreenHue === txtHue
     ? { ...txt }
     : (() => {
-        const surfScreenHueDark = "indigo";
-        const angle = applyWarmthBias(surfScreenHueDark, resolveHueAngle(surfScreenHueDark), warmthBias);
+        const angle = applyWarmthBias(
+          formulas.surfScreenHue,
+          resolveHueAngle(formulas.surfScreenHue),
+          warmthBias,
+        );
         return slotFromAngle(angle);
       })();
 
-  // fgMuted: dark = bare primary of txtHue (e.g., "cobalt" from "indigo-cobalt").
-  //          light = full txt slot.
-  const fgMutedHueName = isLight ? txtHue : (() => {
-    const primary = primaryColorName(txtHue);
-    return primary in HUE_FAMILIES ? primary : txtHue;
-  })();
+  // fgMuted: driven by formulas.fgMutedHueExpr. [D03]
+  // "__bare_primary" → bare primary of txtHue (dark-mode default).
+  // Any other value → treat as a literal hue name.
+  const fgMutedHueName = formulas.fgMutedHueExpr === "__bare_primary"
+    ? (() => {
+        const primary = primaryColorName(txtHue);
+        return primary in HUE_FAMILIES ? primary : txtHue;
+      })()
+    : formulas.fgMutedHueExpr;
   const fgMutedRawAngle = resolveHueAngle(fgMutedHueName);
   const fgMutedAngle = applyWarmthBias(fgMutedHueName, fgMutedRawAngle, warmthBias);
   const fgMutedName = closestHueName(fgMutedAngle);
@@ -2108,35 +2122,36 @@ export function resolveHueSlots(recipe: ThemeRecipe, warmth: number): ResolvedHu
     primaryName: primaryColorName(fgMutedName),
   };
 
-  // fgSubtle: dark = "indigo-cobalt"; light = txt.
-  const fgSubtleHueName = isLight ? txtHue : "indigo-cobalt";
+  // fgSubtle: driven by formulas.fgSubtleHue. [D03]
+  const fgSubtleHueName = formulas.fgSubtleHue;
   const fgSubtleAngle = applyWarmthBias(primaryColorName(fgSubtleHueName), resolveHueAngle(fgSubtleHueName), warmthBias);
   const fgSubtle = slotFromAngle(fgSubtleAngle);
 
-  // fgDisabled: dark = "indigo-cobalt"; light = txt. (same as fgSubtle)
-  const fgDisabledHueName = isLight ? txtHue : "indigo-cobalt";
+  // fgDisabled: driven by formulas.fgDisabledHue. [D03]
+  const fgDisabledHueName = formulas.fgDisabledHue;
   const fgDisabledAngle = applyWarmthBias(primaryColorName(fgDisabledHueName), resolveHueAngle(fgDisabledHueName), warmthBias);
   const fgDisabled = slotFromAngle(fgDisabledAngle);
 
-  // fgInverse: dark = "sapphire-cobalt"; light = txt.
-  const fgInverseHueName = isLight ? txtHue : "sapphire-cobalt";
+  // fgInverse: driven by formulas.fgInverseHue. [D03]
+  const fgInverseHueName = formulas.fgInverseHue;
   const fgInverseAngle = applyWarmthBias(primaryColorName(fgInverseHueName), resolveHueAngle(fgInverseHueName), warmthBias);
   const fgInverse = slotFromAngle(fgInverseAngle);
 
-  // fgPlaceholder: dark = same as fgMuted (bare txt hue, e.g. cobalt).
-  //               light = atm hue (atmosphere-colored placeholder per Harmony).
-  const fgPlaceholder: ResolvedHueSlot = isLight ? { ...atm } : { ...fgMuted };
+  // fgPlaceholder: driven by formulas.fgPlaceholderSource. [D03]
+  // "fgMuted" → copy fgMuted slot; "atm" → copy atm slot.
+  const fgPlaceholder: ResolvedHueSlot =
+    formulas.fgPlaceholderSource === "atm" ? { ...atm } : { ...fgMuted };
 
-  // selectionInactive:
-  //   dark = "yellow" (fixed hue, no warmth bias — Brio ground truth)
-  //   light = atmBaseAngle - 20° with warmth bias applied
-  const selectionInactive: ResolvedHueSlot = isLight
-    ? (() => {
+  // selectionInactive: driven by formulas.selectionInactiveSemanticMode. [D03]
+  // true  → resolveSemanticSlot(selectionInactiveHue) — no warmth bias (dark default)
+  // false → compute atm offset: atmBaseAngle - 20° with warmth bias (light-mode style)
+  const selectionInactive: ResolvedHueSlot = formulas.selectionInactiveSemanticMode
+    ? resolveSemanticSlot(formulas.selectionInactiveHue)
+    : (() => {
         const atmBaseAngle = resolveHueAngle(atmHue);
         const selAngle = applyWarmthBias(atmHue, (atmBaseAngle - 20 + 360) % 360, warmthBias);
         return slotFromAngle(selAngle);
-      })()
-    : resolveSemanticSlot("yellow"); // fixed yellow, no warmth bias in dark
+      })();
 
   // borderTintBareBase: same logic as surfBareBase but for borderTint hue.
   const borderTintBareBaseName = (() => {
@@ -2812,7 +2827,7 @@ export function deriveTheme(recipe: ThemeRecipe): ThemeOutput {
   // -------------------------------------------------------------------------
   // 3. Layer 1 — resolve all hue slots (Spec S02)
   // -------------------------------------------------------------------------
-  const resolvedSlots = resolveHueSlots(recipe, warmth);
+  const resolvedSlots = resolveHueSlots(recipe, warmth, formulas);
 
   // -------------------------------------------------------------------------
   // 4. Layer 2 — pre-compute derived tone values (Spec S03)

@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-17T04:07:16Z
+---
+
+## step-5: Refactored resolveHueSlots() to accept DerivationFormulas parameter and read hue-name fields instead of branching on isLight. Zero isLight branches remain in the function. T-RESOLVE-LIGHT adapted with inline light formulas. All 1817 tests pass, baseline match.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T03:55:46Z
 ---
