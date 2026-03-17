@@ -34,6 +34,203 @@
  * [D08] Scope: --tug-base-* tokens only
  * [D09] Dual output: string tokens + resolved OKLCH map
  *
+ * ---------------------------------------------------------------------------
+ * Semantic Decision Groups
+ * ---------------------------------------------------------------------------
+ *
+ * A theme recipe is a set of positions on ~23 semantic decisions. Each field
+ * in `DerivationFormulas` is tagged with `@semantic <group>` to link it to
+ * its decision group. A recipe author — human or LLM — can locate all the
+ * parameters for a given design intent by searching for `@semantic <group>`.
+ *
+ * Group                    What it controls
+ * ----------------------   -------------------------------------------------------
+ * canvas-darkness          How dark/light the app background is.
+ *                          Fields: bgAppTone, bgCanvasTone
+ *
+ * surface-layering         How surfaces stack visually above the canvas. The tone
+ *                          values set the absolute lightness of each surface tier
+ *                          at surfaceContrast=50.
+ *                          Fields: surfaceSunkenTone, surfaceDefaultTone,
+ *                                  surfaceRaisedTone, surfaceOverlayTone,
+ *                                  surfaceInsetTone, surfaceContentTone,
+ *                                  surfaceScreenTone
+ *
+ * surface-coloring         How much chroma surfaces carry. Controls the intensity
+ *                          (saturation) applied to atmosphere and canvas hues for
+ *                          every surface tier.
+ *                          Fields: atmI, bgAppI, bgCanvasI, surfaceDefaultI,
+ *                                  surfaceRaisedI, surfaceOverlayI, surfaceScreenI,
+ *                                  surfaceInsetI, surfaceContentI, bgAppSurfaceI
+ *
+ * text-brightness          How bright primary and inverse text is.
+ *                          Fields: fgDefaultTone, fgInverseTone
+ *
+ * text-hierarchy           How much secondary/tertiary text dims from primary. The
+ *                          tone spread across muted, subtle, disabled, and
+ *                          placeholder tiers.
+ *                          Fields: fgMutedTone, fgSubtleTone, fgDisabledTone,
+ *                                  fgPlaceholderTone
+ *
+ * text-coloring            How much chroma text carries. Controls saturation for
+ *                          primary, subtle, muted, inverse, and on-surface text.
+ *                          Fields: txtI, txtISubtle, fgMutedI, atmIBorder,
+ *                                  fgInverseI, fgOnCautionI, fgOnSuccessI
+ *
+ * border-visibility        How visible borders and dividers are. Controls tone and
+ *                          intensity for default, muted, strong borders and dividers.
+ *                          Fields: borderIBase, borderIStrong, borderMutedTone,
+ *                                  borderMutedI, borderStrongTone, dividerDefaultI,
+ *                                  dividerMutedI
+ *
+ * card-frame-style         How card title bars and tab bars present. Controls the
+ *                          tone and intensity of active and inactive card frames.
+ *                          Fields: cardFrameActiveI, cardFrameActiveTone,
+ *                                  cardFrameInactiveI, cardFrameInactiveTone
+ *
+ * shadow-depth             How pronounced shadows and overlay tints are. Controls
+ *                          alpha values for all shadow sizes and overlay layers.
+ *                          Fields: shadowXsAlpha, shadowMdAlpha, shadowLgAlpha,
+ *                                  shadowXlAlpha, shadowOverlayAlpha, overlayDimAlpha,
+ *                                  overlayScrimAlpha, overlayHighlightAlpha
+ *
+ * filled-control-prominence How bold filled buttons are. Controls the tone of the
+ *                          filled button background at rest, hover, and press.
+ *                          Fields: filledBgDarkTone, filledBgHoverTone,
+ *                                  filledBgActiveTone
+ *
+ * outlined-control-style   How outlined buttons present across states and modes.
+ *                          Controls fg/icon tone and intensity, option border tones,
+ *                          hover/active background intensity and alpha.
+ *                          Fields: outlinedFgRestTone, outlinedFgHoverTone,
+ *                                  outlinedFgActiveTone, outlinedFgI,
+ *                                  outlinedIconRestTone, outlinedIconHoverTone,
+ *                                  outlinedIconActiveTone, outlinedIconI,
+ *                                  outlinedFgRestToneLight, outlinedFgHoverToneLight,
+ *                                  outlinedFgActiveToneLight,
+ *                                  outlinedIconRestToneLight,
+ *                                  outlinedIconHoverToneLight,
+ *                                  outlinedIconActiveToneLight,
+ *                                  outlinedOptionBorderRestTone,
+ *                                  outlinedOptionBorderHoverTone,
+ *                                  outlinedOptionBorderActiveTone,
+ *                                  outlinedBgHoverI, outlinedBgHoverAlphaValue,
+ *                                  outlinedBgActiveI, outlinedBgActiveAlphaValue
+ *
+ * ghost-control-style      How ghost buttons present across states and modes.
+ *                          Controls fg/icon/border tone and intensity for action
+ *                          and option roles.
+ *                          Fields: ghostFgRestTone, ghostFgHoverTone,
+ *                                  ghostFgActiveTone, ghostFgRestI, ghostFgHoverI,
+ *                                  ghostFgActiveI, ghostIconRestTone,
+ *                                  ghostIconHoverTone, ghostIconActiveTone,
+ *                                  ghostIconRestI, ghostIconHoverI, ghostIconActiveI,
+ *                                  ghostBorderI, ghostBorderTone,
+ *                                  ghostFgRestToneLight, ghostFgHoverToneLight,
+ *                                  ghostFgActiveToneLight, ghostFgRestILight,
+ *                                  ghostFgHoverILight, ghostFgActiveILight,
+ *                                  ghostIconRestToneLight, ghostIconHoverToneLight,
+ *                                  ghostIconActiveToneLight, ghostIconActiveILight
+ *
+ * badge-style              How tinted badges present. Controls fg/bg/border tone,
+ *                          intensity, and alpha for the tinted badge variant.
+ *                          Fields: badgeTintedFgI, badgeTintedFgTone,
+ *                                  badgeTintedBgI, badgeTintedBgTone,
+ *                                  badgeTintedBgAlpha, badgeTintedBorderI,
+ *                                  badgeTintedBorderTone, badgeTintedBorderAlpha
+ *
+ * icon-style               How icons present in non-control contexts. Controls
+ *                          tone and intensity for active and muted icon tiers.
+ *                          Fields: iconActiveTone, iconMutedI, iconMutedTone
+ *
+ * tab-style                How tabs present. Controls the active tab foreground
+ *                          tone and the hue slots for tab backgrounds.
+ *                          Fields: tabFgActiveTone, tabBgActiveHueSlot,
+ *                                  tabBgInactiveHueSlot
+ *
+ * toggle-style             How toggles present. Controls hover/disabled tones and
+ *                          intensity for the toggle track and thumb.
+ *                          Fields: toggleTrackOnHoverTone, toggleThumbDisabledTone,
+ *                                  toggleTrackDisabledI
+ *
+ * field-style              How form fields present. Controls tone anchors and
+ *                          intensity for field backgrounds and borders across all
+ *                          states, plus disabled control parameters.
+ *                          Fields: fieldBgRestTone, fieldBgHoverTone,
+ *                                  fieldBgFocusTone, fieldBgDisabledTone,
+ *                                  fieldBgReadOnlyTone, fieldBgRestI,
+ *                                  disabledBgI, disabledBorderI
+ *
+ * hue-slot-dispatch        Which hue slot each surface, foreground, icon, border,
+ *                          disabled, field, and toggle tier reads from. These are
+ *                          string keys into ResolvedHueSlots that determine what
+ *                          hue family each token uses.
+ *                          Fields: bgAppHueSlot, bgCanvasHueSlot,
+ *                                  surfaceSunkenHueSlot, surfaceDefaultHueSlot,
+ *                                  surfaceRaisedHueSlot, surfaceOverlayHueSlot,
+ *                                  surfaceInsetHueSlot, surfaceContentHueSlot,
+ *                                  surfaceScreenHueSlot, fgMutedHueSlot,
+ *                                  fgSubtleHueSlot, fgDisabledHueSlot,
+ *                                  fgPlaceholderHueSlot, fgInverseHueSlot,
+ *                                  fgOnAccentHueSlot, iconMutedHueSlot,
+ *                                  iconOnAccentHueSlot, dividerMutedHueSlot,
+ *                                  disabledBgHueSlot, fieldBgHoverHueSlot,
+ *                                  fieldBgReadOnlyHueSlot, fieldPlaceholderHueSlot,
+ *                                  fieldBorderRestHueSlot, fieldBorderHoverHueSlot,
+ *                                  toggleTrackDisabledHueSlot, toggleThumbHueSlot,
+ *                                  checkmarkHueSlot, radioDotHueSlot
+ *
+ * sentinel-hue-dispatch    Which sentinel hue slot hover/active interactive
+ *                          backgrounds use (__highlight, __verboseHighlight, etc.).
+ *                          Fields: outlinedBgHoverHueSlot, outlinedBgActiveHueSlot,
+ *                                  ghostActionBgHoverHueSlot,
+ *                                  ghostActionBgActiveHueSlot,
+ *                                  ghostOptionBgHoverHueSlot,
+ *                                  ghostOptionBgActiveHueSlot,
+ *                                  tabBgHoverHueSlot, tabCloseBgHoverHueSlot,
+ *                                  highlightHoverHueSlot
+ *
+ * sentinel-alpha           Alpha values for sentinel-dispatched hover/active
+ *                          interactive tokens. Determines how opaque the tinted
+ *                          hover/press overlay appears.
+ *                          Fields: tabBgHoverAlpha, tabCloseBgHoverAlpha,
+ *                                  outlinedBgHoverAlpha, outlinedBgActiveAlpha,
+ *                                  ghostActionBgHoverAlpha,
+ *                                  ghostActionBgActiveAlpha,
+ *                                  ghostOptionBgHoverAlpha,
+ *                                  ghostOptionBgActiveAlpha, highlightHoverAlpha,
+ *                                  ghostDangerBgHoverAlpha, ghostDangerBgActiveAlpha
+ *
+ * computed-tone-override   Flat-value overrides for tones that otherwise derive
+ *                          from formulas, plus formula parameters for canvas and
+ *                          disabled-bg tone computations.
+ *                          Fields: dividerDefaultToneOverride,
+ *                                  dividerMutedToneOverride, disabledFgToneValue,
+ *                                  disabledBorderToneOverride,
+ *                                  outlinedBgRestToneOverride,
+ *                                  outlinedBgHoverToneOverride,
+ *                                  outlinedBgActiveToneOverride,
+ *                                  toggleTrackOffToneOverride,
+ *                                  toggleDisabledToneOverride,
+ *                                  bgCanvasToneBase, bgCanvasToneSCCenter,
+ *                                  bgCanvasToneScale, disabledBgBase,
+ *                                  disabledBgScale, borderStrongToneValue
+ *
+ * hue-name-dispatch        Named hue values used in resolveHueSlots() to eliminate
+ *                          runtime mode branches. These string fields directly name
+ *                          the hue family for derived slots (surfScreen, fgMuted,
+ *                          fgSubtle, etc.).
+ *                          Fields: surfScreenHue, fgMutedHueExpr, fgSubtleHue,
+ *                                  fgDisabledHue, fgInverseHue, fgPlaceholderSource,
+ *                                  selectionInactiveHue
+ *
+ * selection-mode           Selection behavior mode flags and parameters. Controls
+ *                          how the inactive selection background is resolved and
+ *                          how prominent it appears.
+ *                          Fields: selectionInactiveSemanticMode,
+ *                                  selectionBgInactiveI, selectionBgInactiveTone,
+ *                                  selectionBgInactiveAlpha
+ *
  * @module components/tugways/theme-derivation-engine
  */
 

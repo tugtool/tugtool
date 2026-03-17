@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-3
+date: 2025-03-17T23:41:06Z
+---
+
+## step-3: Expanded @module JSDoc block with Semantic Decision Groups section documenting all 23 groups, their descriptions, and field inventories. 197 lines added. Documentation-only, token output byte-identical.
+
+**Files changed:**
+- .tugtool/tugplan-semantic-layer-annotations.md
+
+---
+
+---
 step: step-2
 date: 2025-03-17T23:35:47Z
 ---
