@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-17T17:12:08Z
+---
+
+## step-2: Replaced computePerceptualContrast with OKLab L-based metric. Removed old constants, added CONTRAST_SCALE=150, POLARITY_FACTOR=0.85, CONTRAST_MIN_DELTA=0.03. Calibrated thresholds against Brio token set. Added CB6 rank-ordering calibration test. 40 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-1
 date: 2025-03-17T16:29:34Z
 ---

@@ -112,7 +112,7 @@ export function computeWcagContrast(fgHex: string, bgHex: string): number {
  * Returns the OKLab L component in the range [0, 1]:
  *   black (#000000) → ~0.0
  *   white (#ffffff) → ~1.0
- *   mid-gray (#777777) → ~0.53
+ *   mid-gray (#777777) → ~0.57
  *
  * @param hex - Color as #rrggbb hex string
  * @returns OKLab perceptual lightness L ∈ [0, 1]
@@ -137,95 +137,93 @@ export function hexToOkLabL(hex: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Perceptual contrast calculation
+// Perceptual contrast calculation — OKLab L-based metric with polarity correction
 // ---------------------------------------------------------------------------
 
-// Perceptual contrast constants
-const NORMAL_BG_EXP = 0.56;
-const NORMAL_TXT_EXP = 0.57;
-const REVERSE_BG_EXP = 0.65;
-const REVERSE_TXT_EXP = 0.62;
-const CONTRAST_SCALE = 1.14;
-const LOW_CLIP = 0.1;
-const DELTA_MIN = 0.0005;
-const LUMINANCE_EXPONENT = 2.4;
+/**
+ * Scale factor converting OKLab ΔL to the contrast score range used by
+ * CONTRAST_THRESHOLDS (body-text=75, large-text=60, ui-component=30, decorative=15).
+ *
+ * Calibrated against the Brio dark token set. The anchor pair fg-default/bg-app
+ * has OKLab ΔL≈0.727 (fgL≈0.935, bgL≈0.208), yielding a score of ≈−92.7 with
+ * POLARITY_FACTOR=0.85 — comfortably above the body-text threshold of 75.
+ *
+ * Reference: Ottosson 2020 OKLab perceptual lightness model.
+ */
+export const CONTRAST_SCALE = 150;
 
 /**
- * Compute the perceptual gamma for a linearised-sRGB channel.
- * This is the "flare" or "ambient" coefficient used in the perceptual contrast formula.
+ * Polarity correction factor applied to negative-polarity contrast (light
+ * element on dark surface).
+ *
+ * Vision science literature (Piepenbrock 2013, Whittle 1986) documents that
+ * light-on-dark text requires ~15% more physical contrast to reach the same
+ * perceived readability as dark-on-light text. This factor applies a
+ * corresponding reduction: negative-polarity scores are multiplied by 0.85.
+ *
+ * Starting value: 0.85 (matching the published ~15% disadvantage figure).
+ * Calibrated against Brio dark token set to preserve pass/fail boundaries.
+ *
+ * References:
+ *   Piepenbrock et al. (2013) — "Positive Display Polarity Is Particularly
+ *     Advantageous for Small Character Sizes"
+ *   Whittle (1986) — "Increments and decrements: luminance discrimination"
  */
-function perceptualGamma(y: number): number {
-  return Math.pow(Math.abs(y), LUMINANCE_EXPONENT) * Math.sign(y);
-}
+export const POLARITY_FACTOR = 0.85;
 
 /**
- * Compute the perceptual luminance (stimulus luminance) for a hex color.
+ * Minimum OKLab ΔL below which contrast is reported as zero.
  *
- * Uses the same linearisation formula as WCAG 2.x but applies
- * an additional power function (exponent = 2.4) to the result.
- * The "flare" constant 0.05 is not added here — it is handled in the
- * soft-clip phase.
- *
- * Y = 0.2126R^2.4 + 0.7152G^2.4 + 0.0722B^2.4
- * which is equivalent to applying perceptualGamma to each channel then
- * applying the standard luminance coefficients.
+ * Pairs whose surface and element L values differ by less than this amount
+ * are perceptually indistinguishable in lightness and produce a score of 0.
+ * This is the OKLab-equivalent of the soft-clip behaviour in the previous
+ * algorithm.
  */
-function perceptualLuminance(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const rLin = srgbChannelToLinear(r);
-  const gLin = srgbChannelToLinear(g);
-  const bLin = srgbChannelToLinear(b);
-  return 0.2126 * perceptualGamma(rLin) + 0.7152 * perceptualGamma(gLin) + 0.0722 * perceptualGamma(bLin);
-}
+export const CONTRAST_MIN_DELTA = 0.03;
 
 /**
  * Compute the perceptual contrast for an element/surface pair.
  *
- * Returns the signed contrast value:
- *   - Positive: dark text on light background (normal polarity)
- *   - Negative: light text on dark background (reverse polarity)
+ * Implements the OKLab L-based metric (Spec S01):
+ *   1. Convert each hex color to OKLab L via hexToOkLabL (Spec S02).
+ *   2. Compute deltaL = surfaceL - elementL.
+ *   3. If |deltaL| < CONTRAST_MIN_DELTA, return 0.
+ *   4. Positive polarity (surface is lighter, dark element on light surface):
+ *        return deltaL * CONTRAST_SCALE
+ *   5. Negative polarity (surface is darker, light element on dark surface):
+ *        return deltaL * CONTRAST_SCALE * POLARITY_FACTOR
+ *
+ * Returns the signed contrast score:
+ *   - Positive: dark element on light surface (positive polarity)
+ *   - Negative: light element on dark surface (negative polarity, after correction)
+ *   - 0: insufficient lightness delta (perceptually indistinguishable)
  *
  * Magnitude is the normative contrast gate per CONTRAST_THRESHOLDS:
- *   >= 75 → body text (normal)
+ *   >= 75 → body text
  *   >= 60 → large / bold text
+ *   >= 45 → subdued text (muted/placeholder/read-only)
  *   >= 30 → UI components / icons
  *   >= 15 → decorative
  *
- * @param fgHex - Element (foreground) color as #rrggbb
- * @param bgHex - Surface (background) color as #rrggbb
- * @returns Signed perceptual contrast value
+ * @param elementHex - Element (foreground) color as #rrggbb
+ * @param surfaceHex - Surface (background) color as #rrggbb
+ * @returns Signed perceptual contrast score
  */
-export function computePerceptualContrast(fgHex: string, bgHex: string): number {
-  const yTxt = perceptualLuminance(fgHex);
-  const yBg = perceptualLuminance(bgHex);
+export function computePerceptualContrast(elementHex: string, surfaceHex: string): number {
+  const elementL = hexToOkLabL(elementHex);
+  const surfaceL = hexToOkLabL(surfaceHex);
 
-  // Polarity: if bg is lighter, normal polarity (dark text on light bg)
-  const isNormal = yBg > yTxt;
+  const deltaL = surfaceL - elementL;
 
-  let sapc: number;
+  if (Math.abs(deltaL) < CONTRAST_MIN_DELTA) return 0;
 
-  if (isNormal) {
-    // Normal polarity: dark text on light background
-    const yBgPow = Math.pow(yBg, NORMAL_BG_EXP);
-    const yTxtPow = Math.pow(yTxt, NORMAL_TXT_EXP);
-    const deltaYc = yBgPow - yTxtPow;
-    // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
-    sapc = deltaYc < 0 ? 0 : deltaYc * CONTRAST_SCALE;
-    if (sapc < LOW_CLIP) return 0;
-    return (sapc - 0.027) * 100;
+  if (deltaL > 0) {
+    // Positive polarity: dark element on light surface
+    return deltaL * CONTRAST_SCALE;
   } else {
-    // Reverse polarity: light text on dark background
-    const yBgPow = Math.pow(yBg, REVERSE_BG_EXP);
-    const yTxtPow = Math.pow(yTxt, REVERSE_TXT_EXP);
-    const deltaYc = yBgPow - yTxtPow;
-    // Soft-clip low contrasts
-    if (Math.abs(deltaYc) < DELTA_MIN) return 0;
-    sapc = deltaYc > 0 ? 0 : deltaYc * CONTRAST_SCALE;
-    if (sapc > -LOW_CLIP) return 0;
-    return (sapc + 0.027) * 100;
+    // Negative polarity: light element on dark surface
+    // Apply polarity correction — light-on-dark requires more contrast for same readability
+    return deltaL * CONTRAST_SCALE * POLARITY_FACTOR;
   }
 }
 
