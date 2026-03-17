@@ -22,8 +22,7 @@ import { describe, it, expect } from "bun:test";
 import {
   deriveTheme,
   EXAMPLE_RECIPES,
-  DARK_PRESET,
-  LIGHT_PRESET,
+  BRIO_DARK_FORMULAS,
   generateResolvedCssExport,
   resolveHueSlots,
   computeTones,
@@ -31,7 +30,7 @@ import {
   ACHROMATIC_ADJACENT_HUES,
   primaryColorName,
   applyWarmthBias,
-  type ModePreset,
+  type DerivationFormulas,
   type MoodKnobs,
   type ComputedTones,
   type ResolvedHueSlots,
@@ -1197,44 +1196,35 @@ describe("derivation-engine brio-match", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Step 6: ModePreset type and preset exports (T-PRESET-EXPORTS)
-// Verifies that ModePreset, DARK_PRESET, and LIGHT_PRESET are exported and
-// structurally valid, and that deriveTheme output is unchanged after the
-// preset refactor. [D03]
+// Step 9: DerivationFormulas exports (T-FORMULAS-EXPORTS)
+// Verifies that BRIO_DARK_FORMULAS is exported and satisfies DerivationFormulas,
+// and that deriveTheme output is unchanged after the preset deletion. [D01] [D07]
 // ---------------------------------------------------------------------------
 
-describe("derivation-engine mode-preset", () => {
-  it("T-PRESET-EXPORTS: DARK_PRESET and LIGHT_PRESET are exported and implement ModePreset", () => {
-    // Verify DARK_PRESET satisfies the ModePreset interface (TypeScript compile-time
-    // check + runtime field presence). [D03]
-    const dark: ModePreset = DARK_PRESET;
-    const light: ModePreset = LIGHT_PRESET;
+describe("derivation-engine formulas-exports", () => {
+  it("T-FORMULAS-EXPORTS: BRIO_DARK_FORMULAS satisfies DerivationFormulas with correct values", () => {
+    // Verify BRIO_DARK_FORMULAS satisfies the DerivationFormulas interface
+    // (TypeScript compile-time check + runtime field presence). [D01] [D07]
+    const formulas: DerivationFormulas = BRIO_DARK_FORMULAS;
 
     // Spot-check key fields match Brio ground truth values documented in the plan
-    expect(dark.bgAppTone).toBe(5);
-    expect(dark.surfaceSunkenTone).toBe(11);
-    expect(dark.fgDefaultTone).toBe(94);
-    expect(dark.txtI).toBe(3);
-    expect(dark.shadowXsAlpha).toBe(20);
-    expect(dark.filledBgDarkTone).toBe(20);
-    expect(dark.fieldBgRestTone).toBe(8);
+    expect(formulas.bgAppTone).toBe(5);
+    expect(formulas.surfaceSunkenTone).toBe(11);
+    expect(formulas.fgDefaultTone).toBe(94);
+    expect(formulas.txtI).toBe(3);
+    expect(formulas.shadowXsAlpha).toBe(20);
+    expect(formulas.filledBgDarkTone).toBe(20);
+    expect(formulas.fieldBgRestTone).toBe(8);
 
-    // Light preset must have all required fields
-    expect(light.bgAppTone).toBeGreaterThanOrEqual(0);
-    expect(light.fgDefaultTone).toBeGreaterThanOrEqual(0);
-    expect(light.txtI).toBeGreaterThan(0);
-
-    // Both presets must have the same set of keys (same interface shape)
-    const darkKeys = Object.keys(dark).sort();
-    const lightKeys = Object.keys(light).sort();
-    expect(darkKeys).toEqual(lightKeys);
+    // Verify EXAMPLE_RECIPES.brio.formulas references BRIO_DARK_FORMULAS [D02]
+    expect(EXAMPLE_RECIPES.brio.formulas).toBe(BRIO_DARK_FORMULAS);
   });
 
-  it("T-PRESET-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset refactor", () => {
-    // The preset refactor must produce identical output to the pre-refactor baseline.
+  it("T-FORMULAS-NO-REGRESSION: deriveTheme(brio) output is unchanged after preset deletion", () => {
+    // The preset deletion must produce identical output to the pre-refactor baseline.
     // This is verified by the T-BRIO-MATCH test above; this test adds a
     // complementary check that the full token count and all ground truth tokens
-    // still match after the step-6 refactor. [D01]
+    // still match after the step-9 deletion. [D01]
     const output = deriveTheme(EXAMPLE_RECIPES.brio);
 
     // Token count unchanged
@@ -1701,12 +1691,27 @@ describe("resolveHueSlots — Step 3", () => {
   // per-tier hues (fg tiers collapse to txt; selection uses atmBaseAngle-20).
   // -------------------------------------------------------------------------
   it("T-RESOLVE-LIGHT: light-mode recipe collapses fg tiers to txt", () => {
+    // Supply light-mode hue-name formulas. The fg tiers all point to txtHue ("cobalt"),
+    // fgPlaceholder copies atm, selectionInactive uses the atm-offset (non-semantic) path.
+    // All other formula fields are irrelevant to resolveHueSlots, so spread BRIO_DARK_FORMULAS.
+    const lightFormulas = {
+      ...BRIO_DARK_FORMULAS,
+      surfScreenHue: "cobalt",          // same as txtHue -> copies txt slot
+      fgMutedHueExpr: "cobalt",         // literal txtHue (not "__bare_primary")
+      fgSubtleHue: "cobalt",            // collapses to txt
+      fgDisabledHue: "cobalt",          // collapses to txt
+      fgInverseHue: "cobalt",           // collapses to txt
+      fgPlaceholderSource: "atm",       // copies atm slot
+      selectionInactiveSemanticMode: false, // compute atm-offset path
+      selectionInactiveHue: "yellow",   // unused when semanticMode=false
+    };
     const lightRecipe = {
       name: "test-light",
       mode: "light" as const,
       cardBg: { hue: "yellow" },
       text: { hue: "cobalt" },
       warmth: 50,
+      formulas: lightFormulas,
     };
     const slots: ResolvedHueSlots = resolveHueSlots(lightRecipe, 50);
 
@@ -1896,7 +1901,7 @@ describe("computeTones — Step 4", () => {
   const LIGHT_KNOBS_50: MoodKnobs = { surfaceContrast: 50, signalIntensity: 50, warmth: 50 };
 
   // ---------------------------------------------------------------------------
-  // T-TONES-DARK: computeTones(DARK_PRESET, sc=50) matches Brio dark ground truth.
+  // T-TONES-DARK: computeTones(BRIO_DARK_FORMULAS, sc=50) matches Brio dark ground truth.
   //
   // Brio dark ground truth (surfaceContrast=50, from T-BRIO-MATCH fixture):
   //   bg-app=5, bg-canvas=5, sunken=11, default=12, raised=11, overlay=14, inset=6, content=6, screen=16
@@ -1907,7 +1912,7 @@ describe("computeTones — Step 4", () => {
   //   signalI=50
   // ---------------------------------------------------------------------------
   it("T-TONES-DARK: Brio dark at sc=50 matches ground-truth tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, DARK_KNOBS_50);
 
     // Surface tones (Brio ground truth)
     expect(ct.bgApp).toBe(5);
@@ -1943,65 +1948,13 @@ describe("computeTones — Step 4", () => {
     expect(ct.signalI).toBe(50);
   });
 
-  // ---------------------------------------------------------------------------
-  // T-TONES-LIGHT: computeTones(LIGHT_PRESET, sc=50) matches current light-mode
-  // inline values at surfaceContrast=50.
-  //
-  // Light preset ground truth (from LIGHT_PRESET + inline formula at sc=50):
-  //   bg-app=20, bg-canvas=Math.round(35 + (50/100)*10)=40
-  //   sunken=44, default=99, raised=24, overlay=48, inset=100, content=100, screen=80
-  //   divider-default=Math.round(48-2)=46, divider-muted=48
-  //   disabled-bg=Math.round(70 + (50/100)*10)=75
-  //   disabled-fg=44 (=LIGHT_PRESET.fgDisabledTone)
-  //   disabled-border=46 (=dividerTone at sc=50 light)
-  //   outlined-bg-rest=51, outlined-bg-hover=99, outlined-bg-active=48
-  //   toggle-track-off=46 (=dividerTone), toggle-disabled=48 (=surfaceOverlay)
-  //   signalI=50
-  // ---------------------------------------------------------------------------
-  it("T-TONES-LIGHT: light mode at sc=50 matches expected light-mode inline values", () => {
-    const ct: ComputedTones = computeTones(LIGHT_PRESET, LIGHT_KNOBS_50);
-
-    // Surface tones
-    expect(ct.bgApp).toBe(20);
-    // bgCanvas light: Math.round(35 + (50/100)*10) = Math.round(40) = 40
-    expect(ct.bgCanvas).toBe(40);
-    expect(ct.surfaceSunken).toBe(44);
-    expect(ct.surfaceDefault).toBe(99);
-    expect(ct.surfaceRaised).toBe(24);
-    expect(ct.surfaceOverlay).toBe(48);
-    expect(ct.surfaceInset).toBe(100);
-    expect(ct.surfaceContent).toBe(100);
-    expect(ct.surfaceScreen).toBe(80);
-
-    // Divider tones: light = surfaceOverlay-2 / surfaceOverlay
-    expect(ct.dividerDefault).toBe(46); // Math.round(48-2)
-    expect(ct.dividerMuted).toBe(48);   // Math.round(48)
-    expect(ct.dividerTone).toBe(46);
-
-    // disabled-bg: Math.round(70 + (50/100)*10) = 75
-    expect(ct.disabledBgTone).toBe(75);
-    // disabled-fg: LIGHT_PRESET.fgDisabledTone = 44
-    expect(ct.disabledFgTone).toBe(44);
-    // disabled-border: dividerTone at sc=50 = 46
-    expect(ct.disabledBorderTone).toBe(46);
-
-    // Outlined bg: flat light values
-    expect(ct.outlinedBgRestTone).toBe(51);
-    expect(ct.outlinedBgHoverTone).toBe(99);
-    expect(ct.outlinedBgActiveTone).toBe(48);
-
-    // Toggle: light uses divider/overlay
-    expect(ct.toggleTrackOffTone).toBe(46); // = dividerTone
-    expect(ct.toggleDisabledTone).toBe(48); // = surfaceOverlay
-
-    // Signal intensity
-    expect(ct.signalI).toBe(50);
-  });
+  // T-TONES-LIGHT deleted in step 6: computeTones takes DerivationFormulas;
+  // no light-mode DerivationFormulas exists yet. [D06]
 
   // ---------------------------------------------------------------------------
   // T-TONES-SC: surfaceContrast=0 and surfaceContrast=100 produce expected extremes.
   //
-  // Dark mode extreme values (derived from DARK_PRESET formulas):
+  // Dark mode extreme values (derived from BRIO_DARK_FORMULAS):
   //   sc=0:   bgApp = round(5 + (0-50)/50 * 8) = round(5 - 8) = round(-3) = -3
   //           (clamping is not applied by computeTones; rules/deriveTheme clamp)
   //   sc=100: bgApp = round(5 + (100-50)/50 * 8) = round(5 + 8) = 13
@@ -2009,7 +1962,7 @@ describe("computeTones — Step 4", () => {
   //   surfaceSunken sc=100: round(11 + (100-50)/50*5) = round(11+5) = 16
   // ---------------------------------------------------------------------------
   it("T-TONES-SC: dark mode surfaceContrast=0 produces minimum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 0, signalIntensity: 50, warmth: 50 });
 
     // bgApp: 5 + (0-50)/50 * 8 = 5 - 8 = -3
     expect(ct.bgApp).toBe(-3);
@@ -2024,7 +1977,7 @@ describe("computeTones — Step 4", () => {
   });
 
   it("T-TONES-SC: dark mode surfaceContrast=100 produces maximum tone values", () => {
-    const ct: ComputedTones = computeTones(DARK_PRESET, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
+    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 100, signalIntensity: 50, warmth: 50 });
 
     // bgApp: 5 + (100-50)/50 * 8 = 5 + 8 = 13
     expect(ct.bgApp).toBe(13);
@@ -2037,8 +1990,8 @@ describe("computeTones — Step 4", () => {
   });
 
   it("T-TONES-SC: signal intensity extremes map directly to signalI", () => {
-    const ct0 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
-    const ct100 = computeTones(DARK_PRESET, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
+    const ct0 = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 0, warmth: 50 });
+    const ct100 = computeTones(BRIO_DARK_FORMULAS, { surfaceContrast: 50, signalIntensity: 100, warmth: 50 });
     expect(ct0.signalI).toBe(0);
     expect(ct100.signalI).toBe(100);
   });
@@ -2072,7 +2025,7 @@ describe("computeTones — Step 4", () => {
   // T-TONES-INTERFACE: ComputedTones has all required fields (type completeness).
   // ---------------------------------------------------------------------------
   it("T-TONES-INTERFACE: computeTones returns all required ComputedTones fields", () => {
-    const ct: ComputedTones = computeTones(DARK_PRESET, DARK_KNOBS_50);
+    const ct: ComputedTones = computeTones(BRIO_DARK_FORMULAS, DARK_KNOBS_50);
 
     // All fields from Spec S03 must be present and be numbers
     const requiredFields: (keyof ComputedTones)[] = [
@@ -2104,11 +2057,10 @@ describe("computeTones — Step 4", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const isLight = recipe.mode === "light";
-    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
-    const computed = computeTones(preset, knobs);
+    const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
@@ -2116,7 +2068,7 @@ describe("computeTones — Step 4", () => {
     evaluateRules(
       CORE_VISUAL_RULES,
       resolvedSlots,
-      preset,
+      recipeFormulas,
       knobs,
       computed,
       ruleTokens,
@@ -2263,9 +2215,10 @@ describe("computeTones — Step 4", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH, T-RULES-LIGHT-MATCH
+// Step 6 tests: T-RULES-COMPLETE, T-RULES-DARK-MATCH
 // These verify that the full RULES table covers all 373 tokens and that
-// evaluateRules(RULES, ...) matches imperative output for both dark and light modes.
+// evaluateRules(RULES, ...) matches imperative dark-mode output.
+// T-RULES-LIGHT-MATCH deleted (clean break per D06 — deferred to light-formulas step).
 // ---------------------------------------------------------------------------
 
 describe("derivation-engine step-6 rules", () => {
@@ -2277,11 +2230,10 @@ describe("derivation-engine step-6 rules", () => {
     const warmth = recipe.warmth ?? 50;
     const surfaceContrast = recipe.surfaceContrast ?? 50;
     const signalIntensity = recipe.signalIntensity ?? 50;
-    const isLight = recipe.mode === "light";
-    const preset = isLight ? LIGHT_PRESET : DARK_PRESET;
+    const recipeFormulas: DerivationFormulas = recipe.formulas ?? BRIO_DARK_FORMULAS;
     const knobs = { surfaceContrast, signalIntensity, warmth };
     const resolvedSlots = resolveHueSlots(recipe, warmth);
-    const computed = computeTones(preset, knobs);
+    const computed = computeTones(recipeFormulas, knobs);
 
     const ruleTokens: Record<string, string> = {};
     const ruleResolved: Record<string, ResolvedColor> = {};
@@ -2289,7 +2241,7 @@ describe("derivation-engine step-6 rules", () => {
     evaluateRules(
       RULES,
       resolvedSlots,
-      preset,
+      recipeFormulas,
       knobs,
       computed,
       ruleTokens,
@@ -2350,20 +2302,6 @@ describe("derivation-engine step-6 rules", () => {
     expect(mismatches).toEqual([]);
   });
 
-  // -------------------------------------------------------------------------
-  // T-RULES-LIGHT-MATCH: All RULES-derived light tokens match imperative output
-  // -------------------------------------------------------------------------
-  it("T-RULES-LIGHT-MATCH: all rule-derived light tokens match imperative output", () => {
-    const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
-    const { ruleTokens, imperative } = runAllRules(brioLight);
-
-    const mismatches: string[] = [];
-    for (const [token, ruleValue] of Object.entries(ruleTokens)) {
-      const impValue = imperative.tokens[token];
-      if (ruleValue !== impValue) {
-        mismatches.push(`${token}:\n  rule: ${ruleValue}\n  imp:  ${impValue}`);
-      }
-    }
-    expect(mismatches).toEqual([]);
-  });
 });
+// T-RULES-LIGHT-MATCH deleted in step 6 (clean break per D06):
+// light-mode rule parity requires BRIO_LIGHT_FORMULAS which is deferred to a later step.
