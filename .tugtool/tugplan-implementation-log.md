@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-17T18:47:27Z
+---
+
+## step-5: Deprecated autoAdjustContrast, replaced AutoFixPanel with ContrastDiagnosticsPanel showing floor-applied and structurally-fixed diagnostics. Updated 4 test files to remove auto-fix pipeline calls. 1842 tests pass, 0 failures.
+
+**Files changed:**
+- .tugtool/tugplan-contrast-engine-overhaul.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T18:25:56Z
 ---

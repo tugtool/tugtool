@@ -6,7 +6,8 @@
  * - T2.4: All output values for chromatic tokens match --tug-color(...) pattern
  * - T2.5: Theme-invariant tokens are correct for Brio
  * - T2.6: Non-override tokens resolve to valid sRGB gamut colors
- * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures after autoAdjustContrast
+ * - T4.1: End-to-end Brio dark pipeline — 0 unexpected failures from engine contrast floors
+ *         (Step 5: autoAdjustContrast removed from pipeline; engine contrast floors are authoritative)
  * - T4.2: End-to-end Brio light pipeline — 0 unexpected body-text failures + focus indicator contrast 30
  * - T-BRIO-MATCH: Engine output matches Brio ground truth fixture within OKLCH delta-E < 0.02
  *
@@ -45,7 +46,6 @@ import { CORE_VISUAL_RULES, RULES } from "@/components/tugways/derivation-rules"
 
 import {
   validateThemeContrast,
-  autoAdjustContrast,
   CONTRAST_THRESHOLDS,
   CONTRAST_MARGINAL_DELTA,
   toneToL,
@@ -574,8 +574,12 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
 ]);
 
 /**
- * Run the full derivation → contrast-validation → auto-adjustment pipeline for
- * a given recipe and return the final contrast results after adjustment.
+ * Run the full derivation → contrast-validation pipeline for a given recipe.
+ *
+ * Step 5: autoAdjustContrast has been removed from this pipeline. The derivation
+ * engine now enforces contrast floors by construction via enforceContrastFloor
+ * inside evaluateRules. The engine's output is authoritative — no post-hoc
+ * adjustment is needed or applied here.
  *
  * Verifies [D09]: deriveTheme().resolved feeds directly into validateThemeContrast()
  * with no intermediate parsing or conversion.
@@ -583,31 +587,22 @@ const KNOWN_PAIR_EXCEPTIONS = new Set([
 function runFullPipeline(recipeName: string): {
   initialFailureCount: number;
   finalResults: ReturnType<typeof validateThemeContrast>;
-  unfixable: string[];
   tokensAndResolvedConsistent: boolean;
 } {
   const recipe = EXAMPLE_RECIPES[recipeName];
 
   // Step 1: Derive theme — resolved map is OKLCH, no conversion needed [D09]
+  // enforceContrastFloor runs inside evaluateRules; tokens are compliant by construction.
   const output = deriveTheme(recipe);
 
   // Step 2: Validate contrast — resolved feeds directly into validateThemeContrast [D09]
-  const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const initialFailureCount = initialResults.filter((r) => !r.contrastPass).length;
+  const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  const initialFailureCount = finalResults.filter((r) => !r.contrastPass).length;
 
-  // Step 3: Auto-adjust any failures
-  const failures = initialResults.filter((r) => !r.contrastPass);
-  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-
-  // Step 4: Re-validate with adjusted resolved map
-  const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-
-  // Consistency check: every token that was adjusted must still have a
-  // --tug-color() string in adjusted.tokens. This verifies tokens and
-  // resolved stay in sync after adjustment [D09].
+  // Consistency check: every chromatic token must still have a --tug-color() string.
   let tokensAndResolvedConsistent = true;
-  for (const tokenName of Object.keys(adjusted.resolved)) {
-    const tokenStr = adjusted.tokens[tokenName];
+  for (const tokenName of Object.keys(output.resolved)) {
+    const tokenStr = output.tokens[tokenName];
     if (!tokenStr || !tokenStr.includes("--tug-color(")) {
       tokensAndResolvedConsistent = false;
       break;
@@ -617,7 +612,6 @@ function runFullPipeline(recipeName: string): {
   return {
     initialFailureCount,
     finalResults,
-    unfixable: adjusted.unfixable,
     tokensAndResolvedConsistent,
   };
 }
@@ -630,17 +624,17 @@ describe("derivation-engine integration", () => {
   // -------------------------------------------------------------------------
   // T4.1: Brio end-to-end pipeline
   // -------------------------------------------------------------------------
-  it("T4.1: deriveTheme(brio) -> validateThemeContrast -> 0 unexpected body-text failures after autoAdjustContrast", () => {
+  it("T4.1: deriveTheme(brio) -> validateThemeContrast -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
     const { initialFailureCount, finalResults, tokensAndResolvedConsistent } =
       runFullPipeline("brio");
 
-    // Pipeline must have evaluated some pairs initially
+    // Pipeline must have evaluated some pairs
     expect(initialFailureCount).toBeGreaterThanOrEqual(0);
 
-    // tokens and resolved must remain consistent after adjustment [D09]
+    // tokens and resolved must be consistent [D09]
     expect(tokensAndResolvedConsistent).toBe(true);
 
-    // After adjustment, failures must only come from the documented exception sets:
+    // Failures must only come from the documented exception sets:
     // element-level (KNOWN_BELOW_THRESHOLD_ELEMENT_TOKENS), pair-level (KNOWN_PAIR_EXCEPTIONS),
     // or marginal band (within CONTRAST_MARGINAL_DELTA contrast units of the role threshold). [D02]
     const unexpectedFailures = finalResults.filter((r) => {
@@ -705,13 +699,12 @@ describe("derivation-engine integration", () => {
   // the gallery test suite, which runs all EXAMPLE_RECIPES with the complete
   // exception set.
   // -------------------------------------------------------------------------
-  it("T4.2: deriveTheme(brio-light) -> 0 unexpected body-text failures after autoAdjustContrast", () => {
+  it("T4.2: deriveTheme(brio-light) -> 0 unexpected body-text failures (engine contrast floors enforced by construction)", () => {
     const brioLight = { ...EXAMPLE_RECIPES.brio, mode: "light" as const };
     const output = deriveTheme(brioLight);
-    const initial = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = initial.filter((r) => !r.contrastPass);
-    const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-    const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+    // Step 5: engine contrast floors are applied by construction inside evaluateRules.
+    // No autoAdjustContrast post-processing is needed or performed.
+    const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
 
     // Known light-mode surface-derivation constraints (engine calibrated for dark mode;
     // these pairs are structurally constrained in light mode, not regressions).
@@ -1522,10 +1515,12 @@ describe("derivation-engine generateResolvedCssExport", () => {
 // ---------------------------------------------------------------------------
 // Test suite: derivation-engine convergence stress tests (T4.3–T4.7)
 //
-// Five diverse recipes stress-test the derive → validate → auto-fix pipeline
+// Five diverse recipes stress-test the derive → validate pipeline
 // across varied modes, atmospheres, role hues, and slider extremes.
 //
-// Each test asserts 0 unexpected body-text perceptual contrast failures after autoAdjustContrast.
+// Each test asserts 0 unexpected body-text perceptual contrast failures.
+// Step 5: autoAdjustContrast is no longer invoked — the engine's enforceContrastFloor
+// produces compliant tokens by construction.
 // The exception sets mirror T4.1/T4.2: known structural constraints are excluded
 // so the tests track real regressions rather than documented design choices.
 //
@@ -1564,9 +1559,9 @@ const LIGHT_MODE_BODY_TEXT_PAIR_EXCEPTIONS = new Set([
  * fg-default (txt hue at t=100) and fg-inverse at t=100 achieve contrast ~68
  * against surface-screen — below body-text threshold (75) and outside the
  * marginal band (≥70). The contrast floor correctly identifies that even t=100
- * fails, and autoAdjustContrast cannot improve on the maximum tone. This is a
- * structural constraint for recipes combining a warm/ochre text hue with
- * high surface contrast; not a regression.
+ * fails — the ceiling constraint is structural. This is a structural constraint
+ * for recipes combining a warm/ochre text hue with high surface contrast; not
+ * a regression.
  */
 const DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS = new Set([
   "--tug-base-fg-default|--tug-base-surface-screen",
@@ -1574,20 +1569,19 @@ const DARK_HIGH_CONTRAST_PAIR_EXCEPTIONS = new Set([
 ]);
 
 /**
- * Run the derive → validate → auto-fix pipeline for any ThemeRecipe and return
- * the final contrast results plus unfixable list. Accepts a literal recipe
- * object (not restricted to EXAMPLE_RECIPES keys).
+ * Run the derive → validate pipeline for any ThemeRecipe and return
+ * the final contrast results. Accepts a literal recipe object (not restricted
+ * to EXAMPLE_RECIPES keys).
+ *
+ * Step 5: autoAdjustContrast removed from pipeline. enforceContrastFloor inside
+ * evaluateRules produces compliant tokens by construction.
  */
 function runPipelineForRecipe(recipe: Parameters<typeof deriveTheme>[0]): {
   finalResults: ReturnType<typeof validateThemeContrast>;
-  unfixable: string[];
 } {
   const output = deriveTheme(recipe);
-  const initialResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  const failures = initialResults.filter((r) => !r.contrastPass);
-  const adjusted = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-  const finalResults = validateThemeContrast(adjusted.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-  return { finalResults, unfixable: adjusted.unfixable };
+  const finalResults = validateThemeContrast(output.resolved, ELEMENT_SURFACE_PAIRING_MAP);
+  return { finalResults };
 }
 
 /**

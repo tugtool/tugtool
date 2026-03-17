@@ -955,6 +955,60 @@
 }
 
 /* ============================================================================
+   Contrast diagnostics panel (Step 5)
+   ========================================================================= */
+
+.gtg-diag-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gtg-diag-section-title {
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  font-weight: 600;
+  color: var(--tug-base-fg-muted);
+  user-select: none;
+}
+
+.gtg-diag-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gtg-diag-item {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-base-font-family-sans);
+  color: var(--tug-base-fg-default);
+  line-height: 1.5;
+}
+
+.gtg-diag-token {
+  font-family: var(--tug-base-font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--tug-base-fg-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.gtg-diag-detail {
+  font-size: 10px;
+  color: var(--tug-base-fg-muted);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
    Saved-theme selector — dropdown row for loading saved themes [Step 9]
    ========================================================================= */
 

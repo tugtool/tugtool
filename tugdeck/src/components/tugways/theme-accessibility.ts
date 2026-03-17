@@ -504,6 +504,13 @@ function baseHueName(hueRef: string): string {
 /**
  * Automatically adjust element token tones to satisfy perceptual contrast thresholds.
  *
+ * @deprecated Contrast floor enforcement is now performed by `enforceContrastFloor`
+ * inside the derivation engine's `evaluateRules` pass, producing compliant tokens by
+ * construction. Structured diagnostics are available as `ThemeOutput.diagnostics`
+ * (populated with `ContrastDiagnostic` entries). This function is retained for
+ * backward compatibility and unit-test coverage only; it is no longer called by
+ * the derivation pipeline or the gallery UI.
+ *
  * Strategy per plan spec (cascade-aware, convergence-based):
  *   1. Group all failing pairs by element token.
  *   2. For each element token, find the most restrictive surface (the surface

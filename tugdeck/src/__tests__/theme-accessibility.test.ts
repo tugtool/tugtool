@@ -10,10 +10,11 @@
  * - T3.1: computeWcagContrast("#000000", "#ffffff") returns 21.0
  * - T3.2: computeWcagContrast("#777777", "#ffffff") returns ~4.48
  * - T3.3: computePerceptualContrast polarity detection
- * - T3.4: autoAdjustContrast fixes a deliberately failing pair
+ * - T3.4: autoAdjustContrast fixes a deliberately failing pair (deprecated; retained for coverage)
  * - T3.5: validateThemeContrast against Brio — all body-text pairs pass 4.5:1
- * - T3.6: autoAdjustContrast most-restrictive-bg strategy
- * - T3.7: autoAdjustContrast returns unfixable list when token cannot reach threshold
+ * - T3.6: autoAdjustContrast most-restrictive-bg strategy (deprecated; retained for coverage)
+ * - T3.7: autoAdjustContrast returns unfixable list when token cannot reach threshold (deprecated)
+ * - T3.DEP: autoAdjustContrast is marked @deprecated (Step 5)
  * - T5.1: simulateCVD with pure gray returns nearly unchanged values for all types
  * - T5.2: Protanopia simulation of pure red significantly reduces the R channel
  * - T5.3: checkCVDDistinguishability flags green/red pair under protanopia + deuteranopia
@@ -885,6 +886,35 @@ describe("theme-accessibility", () => {
     const newSurfHex = oklchToHex(result.resolved[sharedSurface].L, 0.01, 264);
     const lcB = computePerceptualContrast(newBHex, newSurfHex);
     expect(Math.abs(lcB)).toBeGreaterThanOrEqual(CONTRAST_THRESHOLDS["body-text"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // T3.DEP: autoAdjustContrast is @deprecated (Step 5)
+  //
+  // The function is retained for backward compatibility but is no longer called
+  // by the derivation pipeline or the gallery UI. Contrast floors are now
+  // enforced by enforceContrastFloor inside evaluateRules, producing
+  // ContrastDiagnostic entries in ThemeOutput.diagnostics.
+  //
+  // This test verifies:
+  //   1. The function is still callable (compiles and runs without throwing)
+  //   2. It returns the expected {tokens, resolved, unfixable} shape
+  //   3. It is a no-op when given an empty failures array
+  // -------------------------------------------------------------------------
+  it("T3.DEP: autoAdjustContrast (deprecated) is still callable and returns correct shape", () => {
+    // Import is present at file top — compile-time check passes.
+    // Runtime check: call with an empty failures array; must return a no-op result.
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const result = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, [], []);
+
+    // Shape must be correct
+    expect(result).toHaveProperty("tokens");
+    expect(result).toHaveProperty("resolved");
+    expect(result).toHaveProperty("unfixable");
+
+    // No-op: tokens and resolved should be unchanged
+    expect(result.tokens).toEqual(brioOutput.tokens);
+    expect(result.unfixable).toEqual([]);
   });
 });
 

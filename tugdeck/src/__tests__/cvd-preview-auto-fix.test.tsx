@@ -1,10 +1,11 @@
 /**
- * cvd-preview-auto-fix tests — Step 8.
+ * cvd-preview-auto-fix tests — Steps 8 and 5.
  *
  * Tests cover:
  * - T8.1: CVD strip renders 4 simulation rows (one per type)
  * - T8.2: Each row shows the correct number of semantic color swatches
- * - T8.3: Auto-fix button triggers autoAdjustContrast and updates tokens
+ * - T8.3: Contrast diagnostics panel renders and shows diagnostic output
+ *         (replaces former auto-fix button tests — Step 5)
  *
  * Note: setup-rtl MUST be the first import (required for all RTL test files).
  */
@@ -12,12 +13,10 @@ import "./setup-rtl";
 
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { render, act, cleanup, fireEvent } from "@testing-library/react";
+import { render, act, cleanup } from "@testing-library/react";
 
 import { GalleryThemeGeneratorContent } from "@/components/tugways/cards/gallery-theme-generator-content";
-import { autoAdjustContrast, validateThemeContrast } from "@/components/tugways/theme-accessibility";
 import { deriveTheme, EXAMPLE_RECIPES } from "@/components/tugways/theme-derivation-engine";
-import { ELEMENT_SURFACE_PAIRING_MAP } from "@/components/tugways/element-surface-pairing-map";
 import { _resetForTest } from "@/card-registry";
 
 // ---------------------------------------------------------------------------
@@ -124,97 +123,81 @@ describe("cvd-preview – T8.2: each row shows correct number of swatches", () =
 });
 
 // ---------------------------------------------------------------------------
-// T8.3: Auto-fix button triggers autoAdjustContrast and updates tokens
+// T8.3: Contrast diagnostics panel renders and shows diagnostic output (Step 5)
+//
+// The former auto-fix button has been replaced by a ContrastDiagnosticsPanel.
+// The panel displays ThemeOutput.diagnostics entries from the derivation engine:
+//   - "floor-applied": tokens clamped by enforceContrastFloor to meet threshold
+//   - "structurally-fixed": tokens that are not adjustable (alpha, black, white)
+//
+// There is no longer a button to click — diagnostics are produced by deriveTheme()
+// directly and displayed immediately.
 // ---------------------------------------------------------------------------
 
-describe("auto-fix – T8.3: button triggers autoAdjustContrast and updates tokens", () => {
+describe("contrast-diagnostics – T8.3: panel renders diagnostic output", () => {
   beforeEach(() => { _resetForTest(); });
   afterEach(() => { _resetForTest(); cleanup(); });
 
-  it("renders the auto-fix panel", () => {
+  it("renders the diagnostics panel container", () => {
     const container = renderComponent();
     expect(container.querySelector("[data-testid='gtg-autofix-panel']")).not.toBeNull();
   });
 
-  it("renders the auto-fix button", () => {
+  it("renders the floor diagnostics section", () => {
     const container = renderComponent();
-    expect(container.querySelector("[data-testid='gtg-autofix-btn']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='gtg-diag-floor-section']")).not.toBeNull();
   });
 
-  it("auto-fix button is disabled when there are no failures (all-pass Brio recipe)", () => {
-    // Brio has very few non-intentional failures. The button should show a
-    // failure count. When count is 0, the button is disabled.
+  it("renders the floor diagnostics title", () => {
     const container = renderComponent();
-    const btn = container.querySelector("[data-testid='gtg-autofix-btn']") as HTMLButtonElement;
-    expect(btn).not.toBeNull();
+    const title = container.querySelector("[data-testid='gtg-diag-floor-title']");
+    expect(title).not.toBeNull();
+    // Title text should mention floor-applied count or confirm no adjustments needed
+    expect(title!.textContent).not.toBe("");
+  });
 
-    // Compute actual failure count from logic to know expected button state
+  it("does NOT render the former auto-fix button", () => {
+    // The gtg-autofix-btn was removed in Step 5 — no button should be present
+    const container = renderComponent();
+    expect(container.querySelector("[data-testid='gtg-autofix-btn']")).toBeNull();
+  });
+
+  it("diagnostics panel content matches ThemeOutput.diagnostics from deriveTheme", () => {
+    // Pure logic test: verify the engine produces the same diagnostics that the UI
+    // would display. This catches any mismatch between render path and engine output.
     const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
+    const floorApplied = brioOutput.diagnostics.filter((d) => d.reason === "floor-applied");
 
-    if (failures.length === 0) {
-      expect(btn.disabled).toBe(true);
-    } else {
-      expect(btn.disabled).toBe(false);
+    const container = renderComponent();
+
+    // If engine produced floor-applied entries, the list should be rendered
+    if (floorApplied.length > 0) {
+      const list = container.querySelector("[data-testid='gtg-diag-floor-list']");
+      expect(list).not.toBeNull();
+      const items = container.querySelectorAll("[data-testid='gtg-diag-floor-item']");
+      expect(items.length).toBe(floorApplied.length);
     }
   });
 
-  it("clicking auto-fix renders the result summary", () => {
+  it("each floor-applied item shows token name and tone delta", () => {
+    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
+    const floorApplied = brioOutput.diagnostics.filter((d) => d.reason === "floor-applied");
+
+    if (floorApplied.length === 0) return; // nothing to verify
+
     const container = renderComponent();
+    const items = container.querySelectorAll("[data-testid='gtg-diag-floor-item']");
 
-    // Check if there are failures — if so, clicking should show a result.
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
-
-    if (failures.length > 0) {
-      const btn = container.querySelector("[data-testid='gtg-autofix-btn']") as HTMLButtonElement;
-      act(() => {
-        fireEvent.click(btn);
-      });
-      const resultEl = container.querySelector("[data-testid='gtg-autofix-result']");
-      expect(resultEl).not.toBeNull();
-      expect(resultEl!.textContent).toMatch(/\d+ token/);
-    }
-  });
-
-  it("autoAdjustContrast (unit): adjusts failing tokens and returns updated maps", () => {
-    // Pure-logic test verifying the underlying function works correctly,
-    // independent of UI rendering.
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
-
-    if (failures.length > 0) {
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-      // The result must be an object with tokens, resolved, unfixable
-      expect(fixed).toHaveProperty("tokens");
-      expect(fixed).toHaveProperty("resolved");
-      expect(fixed).toHaveProperty("unfixable");
-      // At least one token must have changed
-      const changed = Object.keys(fixed.tokens).filter(
-        (k) => fixed.tokens[k] !== brioOutput.tokens[k],
-      );
-      expect(changed.length).toBeGreaterThan(0);
-    } else {
-      // No failures — autoAdjustContrast should be a no-op
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, [], ELEMENT_SURFACE_PAIRING_MAP);
-      expect(fixed.unfixable).toEqual([]);
-    }
-  });
-
-  it("autoAdjustContrast (unit): re-validating fixed tokens shows improved contrast", () => {
-    const brioOutput = deriveTheme(EXAMPLE_RECIPES.brio);
-    const results = validateThemeContrast(brioOutput.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-    const failures = results.filter((r) => !r.contrastPass && r.role !== "decorative");
-
-    if (failures.length > 0) {
-      const fixed = autoAdjustContrast(brioOutput.tokens, brioOutput.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-      const fixedResults = validateThemeContrast(fixed.resolved, ELEMENT_SURFACE_PAIRING_MAP);
-      const fixedFailures = fixedResults.filter((r) => !r.contrastPass && r.role !== "decorative");
-      // After auto-fix, there should be fewer failures than before
-      expect(fixedFailures.length).toBeLessThanOrEqual(failures.length);
+    for (let i = 0; i < Math.min(items.length, 3); i++) {
+      const item = items[i] as HTMLElement;
+      const tokenSpan = item.querySelector("[class*='gtg-diag-token']") as HTMLElement | null;
+      const detailSpan = item.querySelector("[class*='gtg-diag-detail']") as HTMLElement | null;
+      expect(tokenSpan).not.toBeNull();
+      expect(detailSpan).not.toBeNull();
+      // Token name should start with --tug-base-
+      expect(tokenSpan!.textContent ?? "").toMatch(/--tug-base-/);
+      // Detail should contain tone arrow (→)
+      expect(detailSpan!.textContent ?? "").toContain("→");
     }
   });
 });

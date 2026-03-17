@@ -4,12 +4,13 @@
  * Interactive tool for deriving complete 264-token --tug-base-* themes from a
  * compact ThemeRecipe: atmosphere + text hue selectors, mode toggle,
  * three mood sliders, token preview grid, contrast dashboard, CVD preview
- * strip, and auto-fix.
+ * strip, and contrast diagnostics.
  *
  * Wires controls to `deriveTheme()` with 150ms debounce on slider changes.
  * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on every
- * derived output. The Auto-fix button runs `autoAdjustContrast()` on contrast
- * failures and displays CVD hue-shift suggestions for confusable pairs.
+ * derived output. The Contrast Diagnostics panel shows ContrastDiagnostic
+ * entries from ThemeOutput.diagnostics (floor-applied and structurally-fixed)
+ * and displays CVD hue-shift suggestions for confusable pairs.
  *
  * Rules of Tugways compliance:
  *   - Appearance changes through CSS custom properties on the preview container,
@@ -20,7 +21,7 @@
  *
  * **Authoritative references:** [D04] ThemeRecipe, [D05] CVD matrices,
  * [D06] Gallery tab pattern, [D07] Contrast thresholds, [D03] Pairing map,
- * [D02] Native contrast fix, Spec S01, Spec S02,
+ * [D04] ContrastDiagnostic output, Spec S01, Spec S02, Spec S04,
  * (#constraints, #internal-architecture)
  *
  * @module components/tugways/cards/gallery-theme-generator-content
@@ -36,11 +37,11 @@ import {
   type ThemeRecipe,
   type ThemeOutput,
   type ContrastResult,
+  type ContrastDiagnostic,
   type CVDWarning,
 } from "@/components/tugways/theme-derivation-engine";
 import {
   validateThemeContrast,
-  autoAdjustContrast,
   checkCVDDistinguishability,
   CVD_SEMANTIC_PAIRS,
   simulateCVDFromOKLCH,
@@ -619,48 +620,40 @@ function CvdPreviewStrip({
 }
 
 // ---------------------------------------------------------------------------
-// AutoFixPanel — auto-fix button + CVD suggestions
+// ContrastDiagnosticsPanel — structured contrast diagnostic output
 // ---------------------------------------------------------------------------
 
 /**
- * AutoFixPanel — renders the Auto-fix button and, after a fix has been run,
- * shows:
- *   - A summary of how many tokens were adjusted
- *   - Any tokens that could not be fixed (unfixable list)
- *   - CVD hue-shift suggestions from the warning set
+ * ContrastDiagnosticsPanel — displays structured ContrastDiagnostic output
+ * from ThemeOutput.diagnostics.
  *
- * The button triggers `autoAdjustContrast` on the current contrast failures
- * and passes the updated output up via `onFixApplied`.
+ * Replaces the former auto-fix button. The derivation engine now produces
+ * contrast-compliant tokens by construction (via enforceContrastFloor in
+ * evaluateRules), so there is nothing to "fix" interactively. Instead, this
+ * panel shows what the engine did:
+ *
+ *   - "floor-applied": token tone was raised/lowered to meet the contrast threshold.
+ *     Shows token name, initial tone, final tone, and threshold.
+ *   - "structurally-fixed": token is black/white/transparent/alpha and is not
+ *     adjustable. Shows token name and paired surfaces.
+ *
+ * CVD hue-shift suggestions from cvdWarnings are shown below the diagnostic list.
  */
-function AutoFixPanel({
-  output,
-  contrastResults,
+function ContrastDiagnosticsPanel({
+  diagnostics,
   cvdWarnings,
-  onFixApplied,
 }: {
-  output: ThemeOutput;
-  contrastResults: ContrastResult[];
+  diagnostics: ContrastDiagnostic[];
   cvdWarnings: CVDWarning[];
-  onFixApplied: (updated: Pick<ThemeOutput, "tokens" | "resolved">) => void;
 }) {
-  const [lastFixResult, setLastFixResult] = useState<{
-    adjustedCount: number;
-    unfixable: string[];
-  } | null>(null);
-
-  const failures = useMemo(
-    () => contrastResults.filter((r) => !r.contrastPass && r.role !== "decorative"),
-    [contrastResults],
+  const floorApplied = useMemo(
+    () => diagnostics.filter((d) => d.reason === "floor-applied"),
+    [diagnostics],
   );
-
-  const handleAutoFix = useCallback(() => {
-    const result = autoAdjustContrast(output.tokens, output.resolved, failures, ELEMENT_SURFACE_PAIRING_MAP);
-    const adjustedCount = Object.keys(result.tokens).filter(
-      (k) => result.tokens[k] !== output.tokens[k],
-    ).length;
-    setLastFixResult({ adjustedCount, unfixable: result.unfixable });
-    onFixApplied({ tokens: result.tokens, resolved: result.resolved });
-  }, [output, failures, onFixApplied]);
+  const structurallyFixed = useMemo(
+    () => diagnostics.filter((d) => d.reason === "structurally-fixed"),
+    [diagnostics],
+  );
 
   // Unique CVD suggestions (de-duped by suggestion text)
   const suggestions = useMemo(() => {
@@ -674,31 +667,49 @@ function AutoFixPanel({
 
   return (
     <div className="gtg-autofix-panel" data-testid="gtg-autofix-panel">
-      <div className="gtg-autofix-row">
-        <TugButton
-          emphasis="outlined"
-          role="action"
-          size="sm"
-          onClick={handleAutoFix}
-          disabled={failures.length === 0}
-          data-testid="gtg-autofix-btn"
-          title={
-            failures.length === 0
-              ? "No contrast failures to fix"
-              : `Fix ${failures.length} contrast failure${failures.length !== 1 ? "s" : ""}`
-          }
-        >
-          Auto-fix ({failures.length} {failures.length === 1 ? "failure" : "failures"})
-        </TugButton>
-        {lastFixResult !== null && (
-          <span className="gtg-autofix-result" data-testid="gtg-autofix-result">
-            {lastFixResult.adjustedCount} token{lastFixResult.adjustedCount !== 1 ? "s" : ""} adjusted
-            {lastFixResult.unfixable.length > 0
-              ? `, ${lastFixResult.unfixable.length} unfixable`
-              : ""}
-          </span>
-        )}
-      </div>
+      {/* Floor-applied diagnostics */}
+      {floorApplied.length > 0 ? (
+        <div className="gtg-diag-section" data-testid="gtg-diag-floor-section">
+          <div className="gtg-diag-section-title" data-testid="gtg-diag-floor-title">
+            Floor-applied ({floorApplied.length} token{floorApplied.length !== 1 ? "s" : ""} clamped to meet contrast threshold)
+          </div>
+          <ul className="gtg-diag-list" data-testid="gtg-diag-floor-list">
+            {floorApplied.map((d, idx) => (
+              <li key={idx} className="gtg-diag-item" data-testid="gtg-diag-floor-item">
+                <span className="gtg-diag-token" title={d.token}>{d.token}</span>
+                <span className="gtg-diag-detail">
+                  tone {d.initialTone} → {d.finalTone} (threshold {d.threshold})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="gtg-diag-section" data-testid="gtg-diag-floor-section">
+          <div className="gtg-diag-section-title" data-testid="gtg-diag-floor-title">
+            No floor adjustments — all tokens passed contrast thresholds natively.
+          </div>
+        </div>
+      )}
+
+      {/* Structurally-fixed diagnostics */}
+      {structurallyFixed.length > 0 && (
+        <div className="gtg-diag-section" data-testid="gtg-diag-structural-section">
+          <div className="gtg-diag-section-title" data-testid="gtg-diag-structural-title">
+            Structurally fixed ({structurallyFixed.length} token{structurallyFixed.length !== 1 ? "s" : ""} not adjustable)
+          </div>
+          <ul className="gtg-diag-list" data-testid="gtg-diag-structural-list">
+            {structurallyFixed.map((d, idx) => (
+              <li key={idx} className="gtg-diag-item" data-testid="gtg-diag-structural-item">
+                <span className="gtg-diag-token" title={d.token}>{d.token}</span>
+                <span className="gtg-diag-detail">
+                  surfaces: {d.surfaces.join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* CVD hue-shift suggestions */}
       {suggestions.length > 0 && (
@@ -1293,7 +1304,7 @@ function EmphasisRolePreview() {
  * Calls `deriveTheme()` on every recipe change, debounced 150ms for sliders.
  * Runs `validateThemeContrast()` and `checkCVDDistinguishability()` on each
  * derived output to populate the contrast dashboard and CVD strip.
- * The Auto-fix button runs `autoAdjustContrast()` on failures.
+ * The Contrast Diagnostics panel displays ThemeOutput.diagnostics entries.
  *
  * **Authoritative reference:** [D06] Gallery tab pattern, [D04] ThemeRecipe,
  * [D07] Contrast thresholds, [D03] Pairing map, [D05] CVD matrices,
@@ -1343,7 +1354,7 @@ export function GalleryThemeGeneratorContent() {
   const [cautionHue, setCautionHue] = useState<string>(DEFAULT_RECIPE.caution ?? "yellow");
   const [dangerHue, setDangerHue] = useState<string>(DEFAULT_RECIPE.destructive ?? "red");
 
-  // The derived theme output — updated whenever recipe changes or auto-fix runs.
+  // The derived theme output — updated whenever the recipe changes.
   const [themeOutput, setThemeOutput] = useState<ThemeOutput>(() => deriveTheme(DEFAULT_RECIPE));
 
   // Contrast results — derived from themeOutput via validateThemeContrast().
@@ -1525,17 +1536,6 @@ export function GalleryThemeGeneratorContent() {
       }, 150);
     },
     [runDerive],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Auto-fix handler — merges adjusted tokens/resolved into themeOutput
-  // ---------------------------------------------------------------------------
-
-  const handleFixApplied = useCallback(
-    (updated: Pick<ThemeOutput, "tokens" | "resolved">) => {
-      setThemeOutput((prev) => ({ ...prev, ...updated }));
-    },
-    [],
   );
 
   // ---------------------------------------------------------------------------
@@ -1805,14 +1805,12 @@ export function GalleryThemeGeneratorContent() {
 
       <div className="cg-divider" />
 
-      {/* ---- Auto-fix ---- */}
+      {/* ---- Contrast Diagnostics ---- */}
       <div className="cg-section">
-        <div className="cg-section-title">Auto-fix</div>
-        <AutoFixPanel
-          output={themeOutput}
-          contrastResults={contrastResults}
+        <div className="cg-section-title">Contrast Diagnostics</div>
+        <ContrastDiagnosticsPanel
+          diagnostics={themeOutput.diagnostics}
           cvdWarnings={cvdWarnings}
-          onFixApplied={handleFixApplied}
         />
       </div>
 
