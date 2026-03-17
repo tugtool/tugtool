@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-1
+date: 2025-03-17T03:33:18Z
+---
+
+## step-1: Captured baseline tokens (4916 bytes, 153 lines) to .tugtool/baseline-tokens.txt. All 1817 tests pass. No code changes.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-9
 date: 2025-03-17T02:04:55Z
 ---
