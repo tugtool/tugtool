@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-2
+date: 2025-03-17T03:44:52Z
+---
+
+## step-2: Added DerivationFormulas interface (ModePreset minus isLight), BRIO_DARK_FORMULAS const, optional formulas field on ThemeRecipe, and formulas fallback in deriveTheme(). Purely additive — ModePreset/DARK_PRESET/LIGHT_PRESET kept in place.
+
+**Files changed:**
+- .tugtool/tugplan-recipe-formulas-refactor.md
+
+---
+
+---
 step: step-1
 date: 2025-03-17T03:33:18Z
 ---
