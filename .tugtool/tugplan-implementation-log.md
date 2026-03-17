@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: step-5
+date: 2025-03-17T22:49:36Z
+---
+
+## step-5: Final verification: all 1842 tests pass, token output byte-identical to pre-refactor baseline, zero BRIO_DARK occurrences remain, DARK_FORMULAS and DARK_OVERRIDES properly exported, golden snapshot removed.
+
+**Files changed:**
+- .tugtool/tugplan-formula-builders-rename.md
+
+---
+
+---
 step: step-4
 date: 2025-03-17T22:44:31Z
 ---
